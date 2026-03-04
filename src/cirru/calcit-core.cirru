@@ -261,27 +261,27 @@
         |&fn:apply $ %{} :CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote
             defn &fn:apply (f g)
-              hint-fn $ return-type :fn
-              assert-type f :fn
-              assert-type g :fn
+              hint-fn (generics 'A 'B 'C) $ return-type (:: :fn ('A 'C) ('A) 'C)
+              assert-type f $ :: :fn ('A 'B) ('A) 'B
+              assert-type g $ :: :fn ('A 'B 'C) ('A 'B) 'C
               fn (x)
                 g x $ f x
           :examples $ []
         |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
           :code $ quote
             defn &fn:bind (m f)
-              hint-fn $ return-type :fn
-              assert-type m :fn
-              assert-type f :fn
+              hint-fn (generics 'A 'B 'C) $ return-type (:: :fn ('A 'C) ('A) 'C)
+              assert-type m $ :: :fn ('A 'B) ('A) 'B
+              assert-type f $ :: :fn ('A 'B 'C) ('B 'A) 'C
               fn (x)
                 f (m x) x
           :examples $ []
         |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote
             defn &fn:map (f g)
-              hint-fn $ return-type :fn
-              assert-type f :fn
-              assert-type g :fn
+              hint-fn (generics 'A 'B 'C) $ return-type (:: :fn ('A 'C) ('A) 'C)
+              assert-type f $ :: :fn ('B 'C) ('B) 'C
+              assert-type g $ :: :fn ('A 'B) ('A) 'B
               fn (x)
                 f $ g x
           :examples $ []
@@ -386,9 +386,9 @@
         |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
           :code $ quote
             defn &list:apply (xs fs)
-              hint-fn $ return-type :list
-              assert-type xs :list
-              assert-type fs :list
+              hint-fn (generics 'T 'U) $ return-type (:: :list 'U)
+              assert-type xs $ :: :list 'T
+              assert-type fs $ :: :list (:: :fn ('T 'U) ('T) 'U)
               &list:concat & $ map fs
                 fn (f)
                   map xs $ fn (x) (f x)
@@ -420,8 +420,8 @@
         |&list:empty $ %{} :CodeEntry (:doc "||internal helper for list :empty method entry")
           :code $ quote
             defn &list:empty (_xs)
-              hint-fn $ return-type :list
-              assert-type _xs :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type _xs $ :: :list 'T
               []
           :examples $ []
         |&list:empty? $ %{} :CodeEntry (:doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements")
@@ -430,9 +430,9 @@
         |&list:filter $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:filter (xs f)
-              hint-fn $ return-type :list
-              assert-type xs :list
-              assert-type f :fn
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs $ :: :list 'T
+              assert-type f $ :: :fn ('T) ('T) :bool
               reduce xs ([])
                 defn %&list:filter (acc x)
                   if (f x) (append acc x) acc
@@ -453,18 +453,18 @@
         |&list:find-last $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last (xs f)
-              hint-fn $ return-type :dynamic
-              assert-type xs :list
-              assert-type f :fn
+              hint-fn (generics 'T) $ return-type (:: :optional 'T)
+              assert-type xs $ :: :list 'T
+              assert-type f $ :: :fn ('T) ('T) :bool
               foldr-shortcut xs nil nil $ fn (_acc x)
                 if (f x) (:: true x) (:: false nil)
           :examples $ []
         |&list:find-last-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last-index (xs f)
-              hint-fn $ return-type :dynamic
-              assert-type xs :list
-              assert-type f :fn
+              hint-fn (generics 'T) $ return-type (:: :optional :number)
+              assert-type xs $ :: :list 'T
+              assert-type f $ :: :fn ('T) ('T) :bool
               foldr-shortcut xs
                 dec $ count xs
                 , nil $ fn (idx x)
@@ -489,9 +489,9 @@
         |&list:last-index-of $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:last-index-of (xs item)
-              hint-fn $ return-type :dynamic
-              assert-type xs :list
-              assert-type item :dynamic
+              hint-fn (generics 'T) $ return-type (:: :optional :number)
+              assert-type xs $ :: :list 'T
+              assert-type item 'T
               foldr-shortcut xs
                 dec $ count xs
                 , nil $ fn (idx x)
@@ -501,9 +501,9 @@
         |&list:map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:map (xs f)
-              hint-fn $ return-type :list
-              assert-type xs :list
-              assert-type f :fn
+              hint-fn (generics 'T 'U) $ return-type (:: :list 'U)
+              assert-type xs $ :: :list 'T
+              assert-type f $ :: :fn ('T 'U) ('T) 'U
               foldl xs ([])
                 defn %&list:map (acc x)
                   append acc $ f x
@@ -511,9 +511,9 @@
         |&list:map-pair $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:map-pair (xs f)
-              hint-fn $ return-type :list
+              hint-fn (generics 'U) $ return-type (:: :list 'U)
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('K 'V 'U) ('K 'V) 'U
               if (list? xs)
                 map xs $ defn %map-pair (pair)
                   assert "|expected a pair" $ and (list? pair)
@@ -524,16 +524,16 @@
         |&list:mappend $ %{} :CodeEntry (:doc "|internal helper for list :mappend method entry")
           :code $ quote
             defn &list:mappend (x y)
-              hint-fn $ return-type :list
-              assert-type x :list
-              assert-type y :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type x $ :: :list 'T
+              assert-type y $ :: :list 'T
               &list:concat x y
           :examples $ []
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:max (xs)
-              hint-fn $ return-type :dynamic
-              assert-type xs :list
+              hint-fn (generics 'T) $ return-type (:: :optional 'T)
+              assert-type xs $ :: :list 'T
               list-match xs
                 () nil
                 (x0 xss)
@@ -542,8 +542,8 @@
         |&list:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:min (xs)
-              hint-fn $ return-type :dynamic
-              assert-type xs :list
+              hint-fn (generics 'T) $ return-type (:: :optional 'T)
+              assert-type xs $ :: :list 'T
               list-match xs
                 () nil
                 (x0 xss)
@@ -564,8 +564,8 @@
         |&list:sort-by $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:sort-by (xs f)
-              hint-fn $ return-type :list
-              assert-type xs :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs $ :: :list 'T
               assert-type f :dynamic
               if (tag? f)
                 sort xs $ defn %&list:sort-by (a b)
@@ -625,10 +625,11 @@
             defn &map:filter (xs f)
               hint-fn $ return-type :map
               assert-type xs :map
-              assert-type f :fn
+              assert-type f $ :: :fn ('P) ('P) :bool
               reduce xs (&{})
                 defn %&map:filter (acc x)
                   hint-fn $ return-type :map
+                  assert-type x 'P
                   if (f x)
                     &map:assoc acc (nth x 0) (nth x 1)
                     , acc
@@ -638,7 +639,7 @@
             defn &map:filter-kv (xs f)
               hint-fn $ return-type :map
               assert-type xs :map
-              assert-type f :fn
+              assert-type f $ :: :fn ('K 'V) ('K 'V) :bool
               reduce xs (&{})
                 defn %map:filter-kv (acc x)
                   hint-fn $ return-type :map
@@ -658,12 +659,14 @@
             defn &map:map (xs f)
               hint-fn $ return-type :map
               assert-type xs :map
-              assert-type f :fn
+              assert-type f $ :: :fn ('P 'Q) ('P) 'Q
               foldl xs ({})
                 defn &map:map (acc pair)
                   hint-fn $ return-type :map
+                  assert-type pair 'P
                   &let
                     result $ f pair
+                    assert-type result 'Q
                     assert "|expected pair returned when mapping hashmap" $ and (list? result)
                       &= 2 $ &list:count result
                     &map:assoc acc (nth result 0) (nth result 1)
@@ -671,13 +674,15 @@
         |&map:map-list $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &map:map-list (xs f)
-              hint-fn $ return-type :list
+              hint-fn (generics 'U) $ return-type (:: :list 'U)
               assert-type xs :map
-              assert-type f :fn
+              assert-type f $ :: :fn ('P 'U) ('P) 'U
               if (map? xs)
                 foldl xs ([])
                   defn %&map:map-list (acc pair)
-                    hint-fn $ return-type :list
+                    hint-fn (generics 'U) $ return-type (:: :list 'U)
+                    assert-type acc $ :: :list 'U
+                    assert-type pair 'P
                     append acc $ f pair
                 raise $ str-spaced "|&map:map-list expected a map, got:" xs
           :examples $ []
@@ -1628,12 +1633,12 @@
         |concat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn concat (& args)
-              hint-fn $ return-type :list
-              assert-type args $ :: :& :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type args $ :: :& (:: :list 'T)
               list-match args
                 () $ []
                 (a0 as)
-                  do (assert-type a0 :list) (&list:concat a0 & as)
+                  do (assert-type a0 $ :: :list 'T) (&list:concat a0 & as)
           :examples $ []
             quote $ assert= ([] 1 2 3 4 5)
               concat ([] 1 2) ([] 3 4) ([] 5)
@@ -1670,10 +1675,10 @@
         |conj $ %{} :CodeEntry (:doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments.")
           :code $ quote
             defn conj (xs y0 & ys)
-              hint-fn $ return-type :list
-              assert-type xs :list
-              assert-type y0 :dynamic
-              assert-type ys $ :: :& :dynamic
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs $ :: :list 'T
+              assert-type y0 'T
+              assert-type ys $ :: :& 'T
               if (empty? ys) (append xs y0)
                 recur (append xs y0) & ys
           :examples $ []
@@ -2626,9 +2631,9 @@
         |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
           :code $ quote
             defn index-of (xs item)
-              hint-fn $ return-type :number
-              assert-type xs :list
-              assert-type item :dynamic
+              hint-fn (generics 'T) $ return-type (:: :optional :number)
+              assert-type xs $ :: :list 'T
+              assert-type item 'T
               foldl-shortcut xs 0 nil $ defn %index-of (idx x)
                 if (&= item x) (:: true idx)
                   :: false $ &+ 1 idx
@@ -2640,17 +2645,17 @@
         |interleave $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn interleave (xs0 ys0)
-              hint-fn $ return-type :list
-              assert-type xs0 :list
-              assert-type ys0 :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs0 $ :: :list 'T
+              assert-type ys0 $ :: :list 'T
               apply-args
                   []
                   , xs0 ys0
                 defn %interleave (acc xs ys)
-                  hint-fn $ return-type :list
-                  assert-type acc :list
-                  assert-type xs :list
-                  assert-type ys :list
+                  hint-fn (generics 'T) $ return-type (:: :list 'T)
+                  assert-type acc $ :: :list 'T
+                  assert-type xs $ :: :list 'T
+                  assert-type ys $ :: :list 'T
                   if
                     if (&list:empty? xs) true $ &list:empty? ys
                     , acc $ recur
@@ -2674,16 +2679,16 @@
         |join $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn join (xs0 sep)
-              hint-fn $ return-type :list
-              assert-type xs0 :list
-              assert-type sep :dynamic
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs0 $ :: :list 'T
+              assert-type sep 'T
               apply-args
                   []
                   , xs0 true
                 defn %join (acc xs beginning?)
-                  hint-fn $ return-type :list
-                  assert-type acc :list
-                  assert-type xs :list
+                  hint-fn (generics 'T) $ return-type (:: :list 'T)
+                  assert-type acc $ :: :list 'T
+                  assert-type xs $ :: :list 'T
                   assert-type beginning? :bool
                   list-match xs
                     () acc
@@ -2998,7 +3003,7 @@
         |map $ %{} :CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
           :code $ quote
             defn map (xs f)
-              assert-type f $ :: :fn ('T) ('T) 'T
+              assert-type f $ :: :fn ('T 'U) ('T) 'U
               assert-type xs :dynamic
               hint-fn $ return-type :dynamic
               if (list? xs) (&list:map xs f)
@@ -3018,12 +3023,13 @@
         |map-indexed $ %{} :CodeEntry (:doc "|Map over a collection with index, f takes index and value")
           :code $ quote
             defn map-indexed (xs f)
+              hint-fn (generics 'T 'U) $ return-type (:: :list 'U)
               assert-type xs :dynamic
-              assert-type f $ :: :fn ('T) (:number 'T) 'T
+              assert-type f $ :: :fn ('T 'U) (:number 'T) 'U
               foldl xs ([])
                 defn %map-indexed (acc x)
-                  hint-fn $ return-type :list
-                  assert-type acc :list
+                  hint-fn (generics 'U) $ return-type (:: :list 'U)
+                  assert-type acc $ :: :list 'U
                   append acc $ f (count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
