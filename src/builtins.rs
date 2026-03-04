@@ -558,16 +558,8 @@ pub fn handle_syntax(
     ArgOptional => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolate => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
-    AssertType => CalcitErr::err_nodes(
-      CalcitErrKind::Unimplemented,
-      "`assert-type` is not supported at runtime yet",
-      &nodes.to_vec(),
-    ),
-    AssertTraits => CalcitErr::err_nodes(
-      CalcitErrKind::Unimplemented,
-      "`assert-traits` is not supported at runtime yet",
-      &nodes.to_vec(),
-    ),
+    AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),
+    AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
   }
 }
 

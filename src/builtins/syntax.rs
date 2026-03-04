@@ -240,6 +240,8 @@ fn extract_return_type_from_args(args: &CalcitList) -> Option<Arc<CalcitTypeAnno
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::calcit::{CalcitRecord, CalcitStruct, CalcitTrait};
+  use crate::call_stack::CallStackList;
   use cirru_edn::EdnTag;
 
   #[test]
@@ -294,6 +296,61 @@ mod tests {
       }
       other => panic!("expected function, got {other}"),
     }
+  }
+
+  #[test]
+  fn assert_type_runtime_checks_pass() {
+    let scope = CalcitScope::default();
+    let expr = CalcitList::Vector(vec![Calcit::Number(1.0), Calcit::Tag(EdnTag::from("number"))]);
+    let result = assert_type(&expr, &scope, "tests.assert", &CallStackList::default()).expect("assert-type should pass");
+    assert!(matches!(result, Calcit::Number(1.0)));
+  }
+
+  #[test]
+  fn assert_type_runtime_checks_fail() {
+    let scope = CalcitScope::default();
+    let expr = CalcitList::Vector(vec![Calcit::Str(Arc::from("oops")), Calcit::Tag(EdnTag::from("number"))]);
+    let err = assert_type(&expr, &scope, "tests.assert", &CallStackList::default()).expect_err("assert-type should fail");
+    assert!(format!("{err}").contains("assert-type failed"));
+  }
+
+  #[test]
+  fn assert_traits_runtime_checks_pass() {
+    let mut scope = CalcitScope::default();
+    let sym = Arc::from("x");
+    let idx = CalcitLocal::track_sym(&sym);
+    scope.insert_mut(
+      idx,
+      Calcit::Record(CalcitRecord {
+        struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Person"), vec![])),
+        values: Arc::new(vec![]),
+      }),
+    );
+
+    let empty_trait = Calcit::Trait(CalcitTrait::new(EdnTag::from("Noop"), vec![], vec![]));
+    let expr = CalcitList::Vector(vec![
+      Calcit::Local(CalcitLocal {
+        idx,
+        sym: Arc::from("x"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.assert"),
+          at_def: Arc::from("main"),
+        }),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+      empty_trait,
+    ]);
+    let result = assert_traits(&expr, &scope, "tests.assert", &CallStackList::default()).expect("assert-traits should pass");
+    assert!(matches!(result, Calcit::Record(_)));
+  }
+
+  #[test]
+  fn assert_traits_runtime_checks_fail_on_non_trait() {
+    let scope = CalcitScope::default();
+    let expr = CalcitList::Vector(vec![Calcit::Number(1.0), Calcit::Tag(EdnTag::from("not-trait"))]);
+    let err = assert_traits(&expr, &scope, "tests.assert", &CallStackList::default()).expect_err("assert-traits should fail");
+    assert!(format!("{err}").contains("expected a trait definition"));
   }
 
   fn make_symbol(name: &str, ns: &str, def: &str) -> Calcit {
@@ -473,6 +530,53 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
     Some(_) => CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid node, but received: {}", expr.to_owned())),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "let expected a pair or nil, but received none"),
   }
+}
+
+pub fn assert_type(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "assert-type expected 2 arguments, but received:",
+      &expr.to_vec(),
+    );
+  }
+
+  let value = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let expected = CalcitTypeAnnotation::parse_type_annotation_form(&expr[1]);
+
+  if !calcit::value_matches_type_annotation(&value, expected.as_ref()) {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!(
+        "assert-type failed: expected `{}`, got `:{}` for value {value}",
+        expected.to_brief_string(),
+        calcit::brief_type_of_value(&value)
+      ),
+      call_stack,
+      expr.first().and_then(|node| node.get_location()),
+    ));
+  }
+
+  Ok(value)
+}
+
+pub fn assert_traits(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() < 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "assert-traits expected at least 2 arguments, but received:",
+      &expr.to_vec(),
+    );
+  }
+
+  let mut value = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+
+  for trait_form in expr.iter().skip(1) {
+    let trait_value = runner::evaluate_expr(trait_form, scope, file_ns, call_stack)?;
+    value = builtins::meta::assert_traits(&[value, trait_value], call_stack)?;
+  }
+
+  Ok(value)
 }
 
 // code replaced from `~` and `~@` returns different results

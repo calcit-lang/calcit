@@ -141,7 +141,7 @@ impl CalcitSyntax {
       }),
       AssertType => Some(SyntaxTypeSignature {
         param_names: vec!["expr", "type"],
-        param_types: vec![dyn_t.clone(), tag_t.clone()],
+        param_types: vec![dyn_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),
       AssertTraits => Some(SyntaxTypeSignature {

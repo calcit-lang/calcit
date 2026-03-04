@@ -1555,6 +1555,7 @@ fn check_record_method_args(
       return;
     }
 
+    let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
     let arg_types_without_receiver = signature.arg_types.iter().skip(1);
     for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
       if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
@@ -1562,7 +1563,7 @@ fn check_record_method_args(
       }
 
       if let Some(actual_type) = resolve_type_value(arg, scope_types) {
-        if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+        if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
           let expected_str = expected_type.as_ref().to_brief_string();
           let actual_str = actual_type.as_ref().to_brief_string();
           gen_check_warning(
@@ -1643,6 +1644,7 @@ fn check_record_method_args(
   // Check argument types if available
   // method_args excludes receiver, but arg_types[0] is for receiver
   // So we need to skip the first type and check remaining args
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   let arg_types_without_receiver = fn_info.arg_types.iter().skip(1);
 
   for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
@@ -1652,7 +1654,7 @@ fn check_record_method_args(
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
         let expected_str = expected_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
@@ -2072,6 +2074,35 @@ fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTyp
   }
 }
 
+fn merge_if_branch_types(
+  true_type: Arc<CalcitTypeAnnotation>,
+  false_type: Arc<CalcitTypeAnnotation>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  if true_type.as_ref().matches_annotation(false_type.as_ref()) {
+    Some(true_type)
+  } else if false_type.as_ref().matches_annotation(true_type.as_ref()) {
+    Some(false_type)
+  } else {
+    None
+  }
+}
+
+fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 3 {
+    return None;
+  }
+
+  let true_expr = xs.get(2)?;
+  let true_type = resolve_type_value(true_expr, scope_types)?;
+
+  if let Some(false_expr) = xs.get(3) {
+    let false_type = resolve_type_value(false_expr, scope_types)?;
+    merge_if_branch_types(true_type, false_type)
+  } else {
+    Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)))
+  }
+}
+
 /// Given a function's type info and the actual call arguments, resolve a generic return type.
 /// If the return type contains TypeVars, match actual arg types against declared arg types
 /// to build bindings, then substitute TypeVars in the return type.
@@ -2169,6 +2200,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
             None
           }
         }
+        Calcit::Syntax(CalcitSyntax::If, _) => infer_if_return_type(xs, scope_types),
 
         // Local variable as head (function call)
         // If it's a function type, return its return type
@@ -3307,17 +3339,17 @@ pub fn preprocess_assert_type(
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
-      format!("{head} expected a local and a type expression, got {}", args.len()),
+      format!("{head} expected an expression and a type expression, got {}", args.len()),
       ctx.call_stack,
       args.first().and_then(|node| node.get_location()),
     ));
   }
 
-  let local_raw = args.get(0).unwrap();
+  let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
-  let local_form = preprocess_expr(
-    local_raw,
+  let target_form = preprocess_expr(
+    target_raw,
     ctx.scope_defs,
     ctx.scope_types,
     ctx.file_ns,
@@ -3325,33 +3357,22 @@ pub fn preprocess_assert_type(
     ctx.call_stack,
   )?;
 
-  let local = match local_form {
-    Calcit::Local(local) => local.to_owned(),
-    other => {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!("assert-type expected local as first arg, got {other:?}"),
-        ctx.call_stack,
-        other.get_location(),
-      ));
-    }
-  };
+  let asserted_target = target_form;
+  if let Calcit::Local(local) = &asserted_target {
+    let type_entry = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
+    ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
-  let type_entry = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
-  ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
-
-  let mut zs: Vec<Calcit> = vec![
-    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
-    Calcit::Local(local),
-    type_form.to_owned(),
-  ];
-
-  if let Some(Calcit::Local(typed_local)) = zs.get_mut(1) {
+    let mut typed_local = local.to_owned();
     typed_local.type_info = type_entry;
+
+    return Ok(Calcit::Local(typed_local));
   }
 
-  // assert-type is preprocessed away, return nil at runtime
-  Ok(Calcit::Nil)
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    asserted_target,
+    type_form.to_owned(),
+  ]))
 }
 
 pub fn preprocess_assert_traits(
@@ -3364,7 +3385,7 @@ pub fn preprocess_assert_traits(
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
       format!(
-        "assert-traits misuse. Expected: (assert-traits local trait ...). Actual: {head} with {} argument(s). Fix: bind target value to a local in let, then pass that local as first argument.",
+        "assert-traits expected an expression and one or more trait definitions, got {head} with {} argument(s).",
         args.len()
       ),
       ctx.call_stack,
@@ -3372,30 +3393,20 @@ pub fn preprocess_assert_traits(
     ));
   }
 
-  let local_raw = args.get(0).unwrap();
+  let target_raw = args.get(0).unwrap();
   let trait_forms = args.iter().skip(1).collect::<Vec<_>>();
 
-  let local_form = preprocess_expr(
-    local_raw,
+  let target_form = preprocess_expr(
+    target_raw,
     ctx.scope_defs,
     ctx.scope_types,
     ctx.file_ns,
     ctx.check_warnings,
     ctx.call_stack,
   )?;
-
-  let local = match local_form {
-    Calcit::Local(local) => local.to_owned(),
-    other => {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!(
-          "assert-traits misuse. Expected: first argument is a local symbol. Actual: {other}. Fix: rewrite to `let ((x expr)) (assert-traits x Trait ...)`."
-        ),
-        ctx.call_stack,
-        other.get_location(),
-      ));
-    }
+  let local_opt = match &target_form {
+    Calcit::Local(local) => Some(local.to_owned()),
+    _ => None,
   };
 
   let mut trait_defs: Vec<Arc<CalcitTrait>> = vec![];
@@ -3430,18 +3441,43 @@ pub fn preprocess_assert_traits(
     }
   }
 
-  let existing_entry = ctx.scope_types.get(&local.sym).cloned().or_else(|| {
-    if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
-      None
-    } else {
-      Some(local.type_info.clone())
-    }
-  });
+  let mut assert_target = target_form;
 
-  let resolved_entry = if let Some(existing) = existing_entry.as_ref() {
-    let ann = existing.as_ref();
-    if !is_dynamic_annotation(ann) && !is_trait_annotation(ann) {
-      existing.clone()
+  if let Some(local) = local_opt {
+    let existing_entry = ctx.scope_types.get(&local.sym).cloned().or_else(|| {
+      if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+        None
+      } else {
+        Some(local.type_info.clone())
+      }
+    });
+
+    let resolved_entry = if let Some(existing) = existing_entry.as_ref() {
+      let ann = existing.as_ref();
+      if !is_dynamic_annotation(ann) && !is_trait_annotation(ann) {
+        existing.clone()
+      } else if let Some(fallback) = fallback_entry.as_ref() {
+        let fallback_ann = fallback.as_ref();
+        if !is_dynamic_annotation(fallback_ann) && !is_trait_annotation(fallback_ann) {
+          fallback.clone()
+        } else if !trait_defs.is_empty() {
+          if trait_defs.len() == 1 {
+            Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
+          } else {
+            Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
+          }
+        } else {
+          fallback.clone()
+        }
+      } else if !trait_defs.is_empty() {
+        if trait_defs.len() == 1 {
+          Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
+        } else {
+          Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
+        }
+      } else {
+        crate::calcit::DYNAMIC_TYPE.clone()
+      }
     } else if let Some(fallback) = fallback_entry.as_ref() {
       let fallback_ann = fallback.as_ref();
       if !is_dynamic_annotation(fallback_ann) && !is_trait_annotation(fallback_ann) {
@@ -3463,36 +3499,16 @@ pub fn preprocess_assert_traits(
       }
     } else {
       crate::calcit::DYNAMIC_TYPE.clone()
-    }
-  } else if let Some(fallback) = fallback_entry.as_ref() {
-    let fallback_ann = fallback.as_ref();
-    if !is_dynamic_annotation(fallback_ann) && !is_trait_annotation(fallback_ann) {
-      fallback.clone()
-    } else if !trait_defs.is_empty() {
-      if trait_defs.len() == 1 {
-        Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
-      } else {
-        Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
-      }
-    } else {
-      fallback.clone()
-    }
-  } else if !trait_defs.is_empty() {
-    if trait_defs.len() == 1 {
-      Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
-    } else {
-      Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
-    }
-  } else {
-    crate::calcit::DYNAMIC_TYPE.clone()
-  };
+    };
 
-  ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());
+    ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());
 
-  let mut typed_local = local.to_owned();
-  typed_local.type_info = resolved_entry;
+    let mut typed_local = local.to_owned();
+    typed_local.type_info = resolved_entry;
+    assert_target = Calcit::Local(typed_local);
+  }
 
-  let mut assert_expr: Calcit = Calcit::Local(typed_local);
+  let mut assert_expr: Calcit = assert_target;
   for trait_form in trait_forms.iter() {
     let trait_value = preprocess_expr(
       trait_form,
@@ -3546,8 +3562,7 @@ mod tests {
     let resolved =
       preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
 
-    // assert-type now returns Nil after preprocessing
-    assert!(matches!(resolved, Calcit::Nil), "assert-type should be preprocessed to Nil");
+    assert!(matches!(resolved, Calcit::Local(_)), "local assert-type should return typed local");
 
     // Check that type info is stored in scope_types
     assert!(scope_types.contains_key("x"), "type should be registered in scope");
@@ -3573,7 +3588,7 @@ mod tests {
     let resolved =
       preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
 
-    assert!(matches!(resolved, Calcit::Nil), "assert-type should be preprocessed to Nil");
+    assert!(matches!(resolved, Calcit::Local(_)), "local assert-type should return typed local");
 
     if let Some(type_val) = scope_types.get("x") {
       match type_val.as_ref() {
@@ -3680,10 +3695,10 @@ mod tests {
     };
 
     let assert_typed_result = nodes.get(2);
-    // assert-type now returns Nil after preprocessing
+    // local assert-type should become typed local while local type info is injected
     assert!(
-      matches!(assert_typed_result, Some(Calcit::Nil)),
-      "assert-type should be preprocessed to Nil"
+      matches!(assert_typed_result, Some(Calcit::Local(_))),
+      "local assert-type should be preprocessed into typed local"
     );
 
     // Check that type info persists in the trailing reference
@@ -3697,6 +3712,65 @@ mod tests {
     } else {
       panic!("expected trailing local expression");
     }
+  }
+
+  #[test]
+  fn passes_assert_type_expression_without_local_binding() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-type"),
+      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("1"), Cirru::leaf("2")]),
+      Cirru::leaf(":number"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "expr", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    let nodes = match resolved {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("assert-type should remain syntax form, got {other}"),
+    };
+    assert!(
+      matches!(nodes.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))),
+      "assert-type head should remain syntax"
+    );
+    assert!(scope_types.is_empty(), "expression assert-type should not mutate local scope types");
+  }
+
+  #[test]
+  fn passes_assert_traits_expression_without_local_binding() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-traits"),
+      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("1"), Cirru::leaf("2")]),
+      Cirru::leaf("Show"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "expr", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-traits");
+
+    match resolved {
+      Calcit::List(xs) => {
+        assert!(
+          matches!(xs.first(), Some(Calcit::Proc(CalcitProc::NativeAssertTraits))),
+          "assert-traits expression should compile to runtime assert proc"
+        );
+      }
+      other => panic!("assert-traits expression should be preserved for runtime check, got {other}"),
+    }
+
+    assert!(
+      scope_types.is_empty(),
+      "expression assert-traits should not mutate local scope types"
+    );
   }
 
   #[test]
@@ -4190,6 +4264,55 @@ mod tests {
     assert!(
       warning_msg.contains("number") || warning_msg.contains(":number"),
       "warning should mention actual type: {warning_msg}"
+    );
+  }
+
+  #[test]
+  fn checks_function_return_type_from_if_expression() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_parser::Cirru;
+
+    // (defn wrong-ret-if ()
+    //   (hint-fn (return-type :string))
+    //   (if true 1 2))
+    let expr = Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("wrong-ret-if"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![
+        Cirru::leaf("hint-fn"),
+        Cirru::List(vec![Cirru::leaf("return-type"), Cirru::leaf(":string")]),
+      ]),
+      Cirru::List(vec![Cirru::leaf("if"), Cirru::leaf("true"), Cirru::leaf("1"), Cirru::leaf("2")]),
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.return_type", "demo", vec![]).expect("parse cirru");
+
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _result = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.return_type", &warnings, &stack);
+
+    let warnings_vec = warnings.borrow();
+    assert!(
+      !warnings_vec.is_empty(),
+      "should have warning for if-expression return type mismatch"
+    );
+
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("return") && warning_msg.contains("type"),
+      "warning should mention return type: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("string") || warning_msg.contains(":string"),
+      "warning should mention declared type: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("number") || warning_msg.contains(":number"),
+      "warning should mention inferred if-branch type: {warning_msg}"
     );
   }
 
