@@ -1,6 +1,7 @@
 mod calcit_impl;
 mod calcit_struct;
 mod calcit_trait;
+mod compare;
 mod fns;
 mod list;
 mod local;
@@ -44,6 +45,11 @@ pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, brief_type_of_value, value_matches_type_annotation,
+};
+
+use compare::{
+  compare_any_ref_values, compare_calcit_enum_values, compare_calcit_impl_values, compare_calcit_struct_values,
+  compare_calcit_trait_values, compare_map_values, compare_record_values, compare_set_values,
 };
 
 use crate::builtins::ValueAndListeners;
@@ -496,7 +502,9 @@ impl Hash for Calcit {
         generics.hash(_state);
         for imp in impls {
           imp.name().hash(_state);
+          imp.origin().hash(_state);
           imp.fields().hash(_state);
+          imp.values.hash(_state);
         }
       }
       Enum(enum_def) => {
@@ -535,11 +543,12 @@ impl Hash for Calcit {
       }
       Trait(t) => {
         "trait:".hash(_state);
-        t.name.hash(_state);
+        t.hash(_state);
       }
       Impl(impl_def) => {
         "impl:".hash(_state);
         impl_def.name.hash(_state);
+        impl_def.origin.hash(_state);
         impl_def.fields.hash(_state);
         impl_def.values.hash(_state);
       }
@@ -649,19 +658,19 @@ impl Ord for Calcit {
       (Record { .. }, _) => Less,
       (_, Record { .. }) => Greater,
 
-      (Struct(a), Struct(b)) => a.name.cmp(&b.name),
+      (Struct(a), Struct(b)) => compare_calcit_struct_values(a, b),
       (Struct { .. }, _) => Less,
       (_, Struct { .. }) => Greater,
 
-      (Enum(a), Enum(b)) => a.name().cmp(b.name()),
+      (Enum(a), Enum(b)) => compare_calcit_enum_values(a, b),
       (Enum { .. }, _) => Less,
       (_, Enum { .. }) => Greater,
 
-      (Trait(a), Trait(b)) => a.name.cmp(&b.name),
+      (Trait(a), Trait(b)) => compare_calcit_trait_values(a, b),
       (Trait { .. }, _) => Less,
       (_, Trait { .. }) => Greater,
 
-      (Impl(a), Impl(b)) => a.name.cmp(&b.name),
+      (Impl(a), Impl(b)) => compare_calcit_impl_values(a, b),
       (Impl { .. }, _) => Less,
       (_, Impl { .. }) => Greater,
       (Proc(a), Proc(b)) => a.cmp(b),
@@ -696,51 +705,6 @@ impl Ord for Calcit {
   }
 }
 
-fn compare_any_ref_values(a: &EdnAnyRef, b: &EdnAnyRef) -> Ordering {
-  if a == b {
-    Equal
-  } else {
-    format!("{:p}", Arc::as_ptr(&a.0)).cmp(&format!("{:p}", Arc::as_ptr(&b.0)))
-  }
-}
-
-fn compare_set_values(a: &rpds::HashTrieSetSync<Calcit>, b: &rpds::HashTrieSetSync<Calcit>) -> Ordering {
-  match a.size().cmp(&b.size()) {
-    Equal => {
-      let mut left: Vec<&Calcit> = a.iter().collect();
-      let mut right: Vec<&Calcit> = b.iter().collect();
-      left.sort_unstable();
-      right.sort_unstable();
-      left.cmp(&right)
-    }
-    ord => ord,
-  }
-}
-
-fn compare_map_values(a: &rpds::HashTrieMapSync<Calcit, Calcit>, b: &rpds::HashTrieMapSync<Calcit, Calcit>) -> Ordering {
-  match a.size().cmp(&b.size()) {
-    Equal => {
-      let mut left: Vec<(&Calcit, &Calcit)> = a.iter().collect();
-      let mut right: Vec<(&Calcit, &Calcit)> = b.iter().collect();
-      let sort_pair = |(ka, va): &(&Calcit, &Calcit), (kb, vb): &(&Calcit, &Calcit)| ka.cmp(kb).then(va.cmp(vb));
-      left.sort_unstable_by(sort_pair);
-      right.sort_unstable_by(sort_pair);
-      left.cmp(&right)
-    }
-    ord => ord,
-  }
-}
-
-fn compare_record_values(a: &CalcitRecord, b: &CalcitRecord) -> Ordering {
-  match a.struct_ref.name.cmp(&b.struct_ref.name) {
-    Equal => match a.struct_ref.fields.cmp(&b.struct_ref.fields) {
-      Equal => a.values.cmp(&b.values),
-      ord => ord,
-    },
-    ord => ord,
-  }
-}
-
 impl PartialOrd for Calcit {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
     Some(self.cmp(other))
@@ -759,12 +723,6 @@ impl PartialEq for Calcit {
       (Number(a), Number(b)) => a == b,
       (Symbol { sym: a, .. }, Symbol { sym: b, .. }) => a == b,
       (Local(CalcitLocal { sym: a, .. }), Local(CalcitLocal { sym: b, .. })) => a == b,
-
-      // special case for symbol and local, compatible with old implementation
-      (Symbol { sym: a, .. }, Local(CalcitLocal { sym: b, .. })) => a == b,
-      (Local(CalcitLocal { sym: a, .. }), Symbol { sym: b, .. }) => a == b,
-      (Symbol { sym: a, .. }, Import(CalcitImport { def: b, .. })) => a == b,
-      (Import(CalcitImport { def: b, .. }), Symbol { sym: a, .. }) => a == b,
       (Registered(a), Registered(b)) => a == b,
 
       (Import(CalcitImport { ns: a, def: a1, .. }), Import(CalcitImport { ns: b, def: b1, .. })) => a == b && a1 == b1,
@@ -1255,8 +1213,16 @@ pub fn format_proc_examples_hint(proc: &CalcitProc) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use cirru_edn::EdnTag;
   use std::collections::hash_map::DefaultHasher;
   use std::hash::{Hash, Hasher};
+  use std::sync::Arc;
+
+  fn calcit_hash(value: &Calcit) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+  }
 
   #[test]
   fn infers_warning_arity_from_expects_message() {
@@ -1348,5 +1314,142 @@ mod tests {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     let _hash = hasher.finish();
+  }
+
+  #[test]
+  fn symbol_local_import_are_not_cross_variant_equal() {
+    let symbol = Calcit::Symbol {
+      sym: Arc::from("foo"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_def: Arc::from("demo"),
+        at_ns: Arc::from("app.main"),
+      }),
+      location: None,
+    };
+    let local = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("foo"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_def: Arc::from("demo"),
+        at_ns: Arc::from("app.main"),
+      }),
+      location: None,
+      type_info: DYNAMIC_TYPE.clone(),
+    });
+    let import = Calcit::Import(CalcitImport {
+      ns: Arc::from("lib.demo"),
+      def: Arc::from("foo"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_def: Arc::from("demo"),
+        at_ns: Arc::from("app.main"),
+      }),
+      coord: None,
+    });
+
+    assert_ne!(symbol, local);
+    assert_ne!(symbol, import);
+    assert_ne!(local, import);
+  }
+
+  #[test]
+  fn cmp_equal_matches_eq_for_complex_named_variants() {
+    let trait_left = CalcitTrait::new(EdnTag::new("X"), vec![EdnTag::new("foo")], vec![DYNAMIC_TYPE.clone()]);
+    let trait_right = CalcitTrait::new(EdnTag::new("X"), vec![EdnTag::new("bar")], vec![DYNAMIC_TYPE.clone()]);
+    let trait_left_value = Calcit::Trait(trait_left.clone());
+    let trait_right_value = Calcit::Trait(trait_right.clone());
+    assert_ne!(trait_left_value, trait_right_value);
+    assert_ne!(trait_left_value.cmp(&trait_right_value), Equal);
+
+    let impl_left = Calcit::Impl(CalcitImpl {
+      name: EdnTag::new("Box"),
+      origin: Some(Arc::new(trait_left.clone())),
+      fields: Arc::new(vec![EdnTag::new("foo")]),
+      values: Arc::new(vec![Calcit::Number(1.0)]),
+    });
+    let impl_right = Calcit::Impl(CalcitImpl {
+      name: EdnTag::new("Box"),
+      origin: Some(Arc::new(trait_right.clone())),
+      fields: Arc::new(vec![EdnTag::new("foo")]),
+      values: Arc::new(vec![Calcit::Number(1.0)]),
+    });
+    assert_ne!(impl_left, impl_right);
+    assert_ne!(impl_left.cmp(&impl_right), Equal);
+
+    let struct_left = Calcit::Struct(CalcitStruct {
+      name: EdnTag::new("Person"),
+      fields: Arc::new(vec![EdnTag::new("age")]),
+      field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let struct_right = Calcit::Struct(CalcitStruct {
+      name: EdnTag::new("Person"),
+      fields: Arc::new(vec![EdnTag::new("age")]),
+      field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      impls: vec![],
+    });
+    assert_ne!(struct_left, struct_right);
+    assert_ne!(struct_left.cmp(&struct_right), Equal);
+
+    let enum_left_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Result"), vec![EdnTag::new("ok")])),
+      values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![])))]),
+    };
+    let enum_right_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Result"), vec![EdnTag::new("ok")])),
+      values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")])))]),
+    };
+    let enum_left = Calcit::Enum(CalcitEnum::from_record(enum_left_record).expect("valid enum"));
+    let enum_right = Calcit::Enum(CalcitEnum::from_record(enum_right_record).expect("valid enum"));
+    assert_ne!(enum_left, enum_right);
+    assert_ne!(enum_left.cmp(&enum_right), Equal);
+  }
+
+  #[test]
+  fn hash_matches_eq_for_complex_named_variants() {
+    let trait_value = Calcit::Trait(CalcitTrait::new(
+      EdnTag::new("Display"),
+      vec![EdnTag::new("show")],
+      vec![DYNAMIC_TYPE.clone()],
+    ));
+    let impl_value = Calcit::Impl(CalcitImpl {
+      name: EdnTag::new("Box"),
+      origin: Some(Arc::new(CalcitTrait::new(
+        EdnTag::new("Display"),
+        vec![EdnTag::new("show")],
+        vec![DYNAMIC_TYPE.clone()],
+      ))),
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Fn {
+        id: Arc::from("fn-1"),
+        info: Arc::new(CalcitFn {
+          name: Arc::from("show"),
+          def_ns: Arc::from("app.main"),
+          def_ref: None,
+          usage: CalcitFnUsageMeta::default(),
+          scope: Arc::new(CalcitScope::default()),
+          args: Arc::new(CalcitFnArgs::Args(vec![])),
+          body: vec![Calcit::Str(Arc::from("ok"))],
+          generics: Arc::new(vec![]),
+          return_type: DYNAMIC_TYPE.clone(),
+          arg_types: vec![],
+        }),
+      }]),
+    });
+    let struct_value = Calcit::Struct(CalcitStruct {
+      name: EdnTag::new("S"),
+      fields: Arc::new(vec![EdnTag::new("v")]),
+      field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      impls: vec![],
+    });
+
+    for value in [trait_value, impl_value, struct_value] {
+      let cloned = value.clone();
+      assert_eq!(value, cloned);
+      assert_eq!(value.cmp(&cloned), Equal);
+      assert_eq!(calcit_hash(&value), calcit_hash(&cloned));
+    }
   }
 }

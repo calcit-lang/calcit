@@ -26,10 +26,11 @@
                 assert=
                   macroexpand-all $ quote
                     case (+ 1 2) (1 |one) (2 |two) (3 |three)
-                  quasiquote $ ~&let
-                    v__1 $ + 1 2
-                    ~if (~&= v__1 1) |one $ ~if (~&= v__1 2) |two
-                      ~if (~&= v__1 3) |three nil
+                  macroexpand-all $ quote
+                    &let
+                      v__1 $ calcit.core/+ 1 2
+                      if (&= v__1 1) |one $ if (&= v__1 2) |two
+                        if (&= v__1 3) |three nil
                 assert=
                   macroexpand $ quote
                     case (+ 1 2) (1 |one) (2 |two) (3 |three)
@@ -111,28 +112,31 @@
                 assert=
                   macroexpand-all $ quote
                     let[] (a b) ([] 1 2) (+ a b)
-                  quasiquote $ ~&let
-                    v__1 $ ~[] 1 2
-                    ~&let
-                      a $ ~&list:nth v__1 0
-                      ~&let
-                        b $ ~&list:nth v__1 1
-                        + a b
+                  macroexpand-all $ quote
+                    &let
+                      v__1 $ [] 1 2
+                      &let
+                        a $ &list:nth v__1 0
+                        &let
+                          b $ &list:nth v__1 1
+                          calcit.core/+ a b
                 assert=
                   macroexpand-all $ quote
                     let[] (a b) xs $ + a b
-                  quasiquote $ ~&let
-                    a $ ~&list:nth xs 0
-                    ~&let
-                      b $ ~&list:nth xs 1
-                      + a b
+                  macroexpand-all $ quote
+                    &let
+                      a $ &list:nth xs 0
+                      &let
+                        b $ &list:nth xs 1
+                        calcit.core/+ a b
                 assert=
                   macroexpand-all $ quote
                     cond
                         = a 1
                         , |one
                       true |other
-                  quasiquote $ ~if (= a 1) |one |other
+                  macroexpand-all $ quote
+                    if (= a 1) |one |other
               assert= ([] 3 4 5 6)
                 let-sugar
                       [] a b
@@ -182,16 +186,22 @@
               inside-eval:
                 assert=
                   macroexpand-all $ quote (\ + 2 %)
-                  quasiquote $ ~defn %\ (? % %2) (+ 2 %)
+                  macroexpand-all $ quote
+                    defn %\ (? % %2)
+                      calcit.core/+ 2 %
                 ; assert=
                   macroexpand-all $ quote (\ x)
                   quasiquote $ ~defn %\ (? % %2) (x)
                 assert=
                   macroexpand-all $ quote (\ + x %)
-                  quasiquote $ ~defn %\ (? % %2) (+ x %)
+                  macroexpand-all $ quote
+                    defn %\ (? % %2)
+                      calcit.core/+ x %
                 assert=
                   macroexpand-all $ quote (\ + x % %2)
-                  quasiquote $ ~defn %\ (? % %2) (+ x % %2)
+                  macroexpand-all $ quote
+                    defn %\ (? % %2)
+                      calcit.core/+ x % %2
                 assert=
                   macroexpand $ quote (\. x x)
                   quasiquote $ defn f_x (x) x
