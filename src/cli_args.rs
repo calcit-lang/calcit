@@ -670,6 +670,8 @@ pub struct EditCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
 pub enum EditSubcommand {
+  /// rewrite snapshot file in canonical format without semantic changes
+  Format(EditFormatCommand),
   /// add or update a definition
   Def(EditDefCommand),
   /// move a definition to another namespace
@@ -715,6 +717,11 @@ pub enum EditSubcommand {
   /// extract a sub-expression into a new definition and replace in-place with the new name
   SplitDef(EditSplitDefCommand),
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "format")]
+/// rewrite target snapshot file in canonical format
+pub struct EditFormatCommand {}
 
 // --- Definition operations ---
 

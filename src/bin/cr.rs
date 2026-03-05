@@ -1278,22 +1278,34 @@ fn normalize_schema_symbol_name(name: &str) -> String {
   }
 }
 
-fn read_schema_param_tuple(item: &Cirru) -> Option<(String, String)> {
-  let Cirru::List(xs) = item else {
-    return None;
-  };
-  let Some(Cirru::Leaf(head)) = xs.first() else {
-    return None;
-  };
-  if &**head != "[]" && &**head != "::" {
-    return None;
+fn read_schema_param_tuple(item: &Cirru, default_name: &str) -> Option<(String, String)> {
+  match item {
+    Cirru::Leaf(_) => Some((default_name.to_owned(), render_cirru_inline(item))),
+    Cirru::List(xs) => {
+      let Some(Cirru::Leaf(head)) = xs.first() else {
+        return None;
+      };
+      if &**head != "[]" && &**head != "::" {
+        return None;
+      }
+
+      match xs.len() {
+        2 => {
+          let ty = xs.get(1).map_or_else(|| ":dynamic".to_owned(), render_cirru_inline);
+          Some((default_name.to_owned(), ty))
+        }
+        3 => {
+          let name = match xs.get(1) {
+            Some(Cirru::Leaf(s)) => normalize_schema_symbol_name(s),
+            _ => return None,
+          };
+          let ty = xs.get(2).map_or_else(|| ":dynamic".to_owned(), render_cirru_inline);
+          Some((name, ty))
+        }
+        _ => None,
+      }
+    }
   }
-  let name = match xs.get(1) {
-    Some(Cirru::Leaf(s)) => normalize_schema_symbol_name(s),
-    _ => return None,
-  };
-  let ty = xs.get(2).map_or_else(|| ":dynamic".to_owned(), render_cirru_inline);
-  Some((name, ty))
 }
 
 type FnSchemaHints = (Vec<String>, BTreeMap<String, Vec<String>>, Vec<String>, CoverageLevel);
@@ -1308,8 +1320,8 @@ fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
     && let Cirru::List(items) = args_node
     && matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]")
   {
-    for item in items.iter().skip(1) {
-      if let Some((name, ty)) = read_schema_param_tuple(item) {
+    for (idx, item) in items.iter().skip(1).enumerate() {
+      if let Some((name, ty)) = read_schema_param_tuple(item, &format!("arg{idx}")) {
         params.push(name.clone());
         param_annotations.entry(name).or_default().push(ty);
       }
@@ -1317,7 +1329,7 @@ fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
   }
 
   if let Some(rest_node) = schema.get(":rest")
-    && let Some((name, ty)) = read_schema_param_tuple(rest_node)
+    && let Some((name, ty)) = read_schema_param_tuple(rest_node, "rest")
   {
     params.push(name.clone());
     param_annotations.entry(name).or_default().push(ty);

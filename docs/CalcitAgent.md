@@ -492,6 +492,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 **定义操作：**
 
+- `cr edit format` - 不修改语义，按当前快照序列化逻辑重写目标 snapshot 文件（用于刷新格式）
 - `cr edit def <namespace/definition>` - 添加新定义（默认若已存在会报错；加 `--overwrite` 可强制覆盖）
 - `cr edit rename <namespace/definition> <new-name>` - 在当前命名空间内重命名定义（不可覆盖）
 - `cr edit mv-def <source> <target>` - 将定义移动到另一个命名空间（跨命名空间移动）
@@ -645,7 +646,7 @@ let
 
 - **紧凑模式（推荐）**：紧跟在参数列表后的类型标签。
 - **正式模式**：使用 `hint-fn`（通常放在函数体开头）。
-  - 泛型变量：`hint-fn (generics 'T 'S)`
+  - 泛型变量：`hint-fn $ {} (:generics ([] 'T 'S))`
 
 验证示例：
 
@@ -656,11 +657,11 @@ let
       &+ a b
     ; 正式模式
     get-name $ fn (user)
-      hint-fn $ return-type :string
+      hint-fn $ {} (:args ([] :dynamic)) (:return :string)
       |demo
     ; 泛型声明示例
     id $ fn (x)
-      hint-fn (generics 'T)
+      hint-fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:return 'T)
       x
   add 1 2
 ```

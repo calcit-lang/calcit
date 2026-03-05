@@ -143,32 +143,96 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  fn is_hint_fn_form(list: &CalcitList) -> bool {
+    match list.first() {
+      Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
+      _ => false,
+    }
+  }
+
+  fn is_schema_key(form: &Calcit, name: &str) -> bool {
+    match form {
+      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == name,
+      Calcit::Symbol { sym, .. } => {
+        let raw = sym.as_ref();
+        raw == name || raw.trim_start_matches(':') == name
+      }
+      Calcit::Str(text) => text.as_ref() == name,
+      _ => false,
+    }
+  }
+
+  fn is_schema_map_literal_head(form: &Calcit) -> bool {
+    match form {
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "{}" => true,
+      Calcit::Proc(CalcitProc::NativeMap) => true,
+      Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == CORE_NS && def.as_ref() == "{}" => true,
+      _ => false,
+    }
+  }
+
+  fn extract_schema_value<'a>(form: &'a Calcit, keys: &[&str]) -> Option<&'a Calcit> {
+    match form {
+      Calcit::Map(xs) => {
+        for (key, value) in xs {
+          if keys.iter().any(|name| Self::is_schema_key(key, name)) {
+            return Some(value);
+          }
+        }
+        None
+      }
+      Calcit::List(xs) => {
+        if !matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) {
+          return None;
+        }
+
+        for entry in xs.iter().skip(1) {
+          let Calcit::List(pair) = entry else {
+            continue;
+          };
+          if pair.len() < 2 {
+            continue;
+          }
+          let Some(key) = pair.get(0) else {
+            continue;
+          };
+          let Some(value) = pair.get(1) else {
+            continue;
+          };
+          if keys.iter().any(|name| Self::is_schema_key(key, name)) {
+            return Some(value);
+          }
+        }
+        None
+      }
+      _ => None,
+    }
+  }
+
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
     let list = match form {
       Calcit::List(xs) => xs,
       _ => return None,
     };
 
-    let is_hint_fn = match list.first() {
-      Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
-      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
-      _ => false,
-    };
-
-    if !is_hint_fn {
+    if !Self::is_hint_fn_form(list) {
       return None;
     }
 
     let items = list.skip(1).ok()?;
     for item in items.iter() {
-      let Calcit::List(inner) = item else {
-        continue;
-      };
-      let head = inner.first();
-      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "return-type") {
-        if let Some(type_expr) = inner.get(1) {
-          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
+      if let Calcit::List(inner) = item {
+        let head = inner.first();
+        if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "return-type") {
+          if let Some(type_expr) = inner.get(1) {
+            return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
+          }
         }
+      }
+
+      if let Some(type_expr) = Self::extract_schema_value(item, &["return", "return-type"]) {
+        return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
       }
     }
     None
@@ -180,28 +244,27 @@ impl CalcitTypeAnnotation {
       _ => return None,
     };
 
-    let is_hint_fn = match list.first() {
-      Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
-      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
-      _ => false,
-    };
-
-    if !is_hint_fn {
+    if !Self::is_hint_fn_form(list) {
       return None;
     }
 
     let items = list.skip(1).ok()?;
     for item in items.iter() {
-      let Calcit::List(inner) = item else {
-        continue;
-      };
-      let head = inner.first();
-      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars" || sym.as_ref() == "generics") {
-        let mut vars = vec![];
-        for entry in inner.iter().skip(1) {
-          vars.push(Self::parse_type_var_form(entry)?);
+      if let Calcit::List(inner) = item {
+        let head = inner.first();
+        if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars" || sym.as_ref() == "generics") {
+          let mut vars = vec![];
+          for entry in inner.iter().skip(1) {
+            vars.push(Self::parse_type_var_form(entry)?);
+          }
+          return Some(vars);
         }
-        return Some(vars);
+      }
+
+      if let Some(value) = Self::extract_schema_value(item, &["generics", "type-vars"]) {
+        if let Some(vars) = Self::parse_generics_list(value) {
+          return Some(vars);
+        }
       }
     }
     None
@@ -1611,6 +1674,42 @@ mod tests {
     let arg_types = CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &params);
 
     assert!(matches!(arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn extracts_return_type_from_schema_first_hint() {
+    let ns: Arc<str> = Arc::from("tests");
+    let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::HintFn, ns.clone()),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        symbol("{}"),
+        Calcit::List(Arc::new(CalcitList::from(&[
+          Calcit::Tag(EdnTag::from("return")),
+          Calcit::Tag(EdnTag::from("number")),
+        ]))),
+      ]))),
+    ])));
+
+    let detected = CalcitTypeAnnotation::extract_return_type_from_hint_form(&hint_form).expect("return type from schema");
+    assert!(matches!(detected.as_ref(), CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn extracts_generics_from_schema_first_hint() {
+    let ns: Arc<str> = Arc::from("tests");
+    let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::HintFn, ns.clone()),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        symbol("{}"),
+        Calcit::List(Arc::new(CalcitList::from(&[
+          Calcit::Tag(EdnTag::from("generics")),
+          Calcit::List(Arc::new(CalcitList::from(&[symbol("T"), symbol("U")]))),
+        ]))),
+      ]))),
+    ])));
+
+    let vars = CalcitTypeAnnotation::extract_generics_from_hint_form(&hint_form).expect("generics from schema");
+    assert_eq!(vars, vec![Arc::from("T"), Arc::from("U")]);
   }
 
   #[test]

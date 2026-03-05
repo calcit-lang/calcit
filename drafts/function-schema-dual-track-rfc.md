@@ -34,12 +34,9 @@
   :code $ quote ...
   :schema $ quote $ {}
     :kind :fn
-    :name 'my-fn
     :generics $ [] 'T 'U
-    :args $ []
-      :: 'x 'T
-      :: 'y :number
-    :rest $ :: 'ys (:: :list :number)
+    :args $ [] 'T :number
+    :rest $ :: :list :number
     :return $ :: :tuple :ok 'U
     :where $ []
       :: 'Eq 'T
@@ -49,6 +46,7 @@
 
 - `:schema` 可选，缺失时回退 body 抽取；
 - `:schema` 与 `:code` 并存；
+- schema 中不再要求 `:name`，函数名需要时可从 `:code` 提取；
 - 字段值全部为现有 Calcit 数据结构；
 - 支持以 `:optional` 开头包裹 schema，用于渐进迁移；
 - schema 中未设置的字段按 `:dynamic` 语义处理；
@@ -71,19 +69,19 @@
 主示例 parse 校验命令：
 
 ```bash
-cr demos/compact.cirru cirru parse-edn "{} (:kind :fn) (:name 'my-fn) (:generics ([] 'T 'U)) (:args ([] (:: 'x 'T) (:: 'y :number))) (:rest (:: 'ys (:: :list :number))) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))"
+cr demos/compact.cirru cirru parse-edn "{} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest (:: :list :number)) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))"
 ```
 
 可选包裹示例（迁移期推荐）：
 
 ```bash
-cr demos/compact.cirru cirru parse-edn "{} (:optional ({} (:name 'legacy-fn)))"
+cr demos/compact.cirru cirru parse-edn "{} (:optional ({} (:kind :fn) (:args ([] :dynamic)) (:return :dynamic)))"
 ```
 
 ### 运行时数据验证（`cr eval` + `println`）
 
 ```bash
-cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:name 'my-fn) (:generics ([] 'T 'U)) (:args ([] (:: 'x 'T) (:: 'y :number))) (:rest (:: 'ys (:: :list :number))) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))) (println schema) (println (type-of schema)) , schema"
+cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest (:: :list :number)) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))) (println schema) (println (type-of schema)) , schema"
 ```
 
 预期：`println (type-of schema)` 输出 `:map`，证明 schema 在运行时是普通数据。
@@ -103,6 +101,32 @@ cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:name 'my-fn) (:gener
 
 ### 约束表示
 
+约束统一放在 `:where`，每条约束是一个 tuple：`:: Trait TypeVar`。
+
+单变量多个约束：
+
+```cirru
+[]
+  :: 'Eq 'T
+  :: 'Show 'T
+```
+
+多个变量各自约束：
+
+```cirru
+[]
+  :: 'Eq 'T
+  :: 'Ord 'T
+  :: 'Show 'U
+```
+
+说明：
+
+- 同一个变量出现多条约束时表示“且”关系（必须同时满足）；
+- 约束顺序不影响语义，但建议按变量分组，便于 review；
+- 迁移期如暂不表达约束，可用 `:where $ []`；
+- 若未来引入复杂约束组合，建议保持 tuple 结构并新增显式 tag，而不是复用字符串。
+
 ```cirru
 :: Eq 'T
 :: Show 'T
@@ -113,17 +137,16 @@ cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:name 'my-fn) (:gener
 ```cirru
 {}
   :kind :fn
-  :name 'map2
   :generics $ [] 'A 'B 'C
   :args $ []
-    :: 'f $ :: :fn
+    :: :fn
       [] 'A 'B 'C
       :: 'A 'B
       'C
-    :: 'xs $ :: :list 'A
-    :: 'ys $ :: :list 'B
+    :: :list 'A
+    :: :list 'B
   :return $ :: :list 'C
-  :where $ []
+  :where $ [] (:: 'Eq 'A)
 ```
 
 ## 一致性规则
@@ -170,10 +193,8 @@ defn %err (message)
 ```cirru
 quote $ {}
   :kind :fn
-  :name '%err
   :generics $ []
-  :args $ []
-    :: 'message :dynamic
+  :args $ [] :dynamic
   :return :tuple
   :where $ []
 ```

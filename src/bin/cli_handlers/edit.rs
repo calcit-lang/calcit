@@ -10,9 +10,9 @@
 
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
-  EditDefCommand, EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand,
-  EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand,
-  EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
+  EditDefCommand, EditDocCommand, EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
+  EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand,
+  EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -54,6 +54,7 @@ pub(crate) fn process_node_with_references(
 
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
+    EditSubcommand::Format(opts) => handle_format(opts, snapshot_file),
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
     EditSubcommand::MvDef(opts) => handle_mv_def(opts, snapshot_file),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
@@ -77,6 +78,14 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Config(opts) => handle_config(opts, snapshot_file),
     EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
   }
+}
+
+fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
+  let snapshot = load_snapshot(snapshot_file)?;
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!("{} Refreshed snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

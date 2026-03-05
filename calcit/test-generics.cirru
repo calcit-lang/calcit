@@ -6,40 +6,43 @@
   :files $ {}
     |test-generics.main $ %{} :FileEntry
       :defs $ {}
-        |Box $ %{} :CodeEntry (:doc |)
+        |Box $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Box $ :value :number
           :examples $ []
-        |Holder $ %{} :CodeEntry (:doc |)
+        |Holder $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Holder $ :box Box
           :examples $ []
-        |Pair $ %{} :CodeEntry (:doc |)
+        |Pair $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Pair (:left :number) (:right :string)
           :examples $ []
-        |Wrapped $ %{} :CodeEntry (:doc |)
+        |Wrapped $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defenum Wrapped
               :pair $ :: Pair :number :string
               :none
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (println "|Testing generics...") (test-struct-generics) (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-        |test-fn-generics $ %{} :CodeEntry (:doc |)
+        |test-fn-generics $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-fn-generics () $ let
                 id $ fn (x)
-                  hint-fn $ type-vars 'T
+                  hint-fn $ {}
+                    :generics $ [] 'T
                   do x
                 id2 $ fn (x)
-                  hint-fn (type-vars 'T) (return-type 'T)
+                  hint-fn $ {}
+                    :generics $ [] 'T
+                    :return 'T
                   do x
                 n $ id2 1
                 s $ id2 |hi
@@ -50,7 +53,7 @@
               &inspect-type n
               &inspect-type s
           :examples $ []
-        |test-struct-generics $ %{} :CodeEntry (:doc |)
+        |test-struct-generics $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-struct-generics () $ let
                 p $ %{} Pair (:left 1) (:right |hi)
@@ -63,6 +66,6 @@
               &inspect-type b
               &inspect-type h
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-generics.main)
         :examples $ []

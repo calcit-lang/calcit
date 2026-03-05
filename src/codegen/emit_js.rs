@@ -1166,13 +1166,103 @@ fn gen_js_func(
 
 /// this is a very rough implementation for now
 fn hinted_async(xs: &CalcitList) -> bool {
-  for x in xs {
-    match x {
-      Calcit::Symbol { sym, .. } if &**sym == "async" => return true,
-      _ => {}
+  fn is_async_key(form: &Calcit) -> bool {
+    match form {
+      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == "async",
+      Calcit::Symbol { sym, .. } => {
+        let raw = sym.as_ref();
+        raw == "async" || raw.trim_start_matches(':') == "async"
+      }
+      Calcit::Str(text) => text.as_ref() == "async",
+      _ => false,
     }
   }
-  false
+
+  fn is_truthy(form: &Calcit) -> bool {
+    !matches!(form, Calcit::Nil | Calcit::Bool(false))
+  }
+
+  fn schema_marks_async(form: &Calcit) -> bool {
+    match form {
+      Calcit::Map(map) => map.iter().any(|(key, value)| is_async_key(key) && is_truthy(value)),
+      Calcit::List(list) => {
+        let is_map_literal = matches!(list.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}")
+          || matches!(list.first(), Some(Calcit::Proc(CalcitProc::NativeMap)));
+        if !is_map_literal {
+          return false;
+        }
+
+        list.iter().skip(1).any(|entry| {
+          let Calcit::List(pair) = entry else {
+            return false;
+          };
+          if pair.len() < 2 {
+            return false;
+          }
+          match (pair.get(0), pair.get(1)) {
+            (Some(key), Some(value)) => is_async_key(key) && is_truthy(value),
+            _ => false,
+          }
+        })
+      }
+      _ => false,
+    }
+  }
+
+  xs.iter().skip(1).any(|item| match item {
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "async" => true,
+    Calcit::Tag(tag) if tag.ref_str().trim_start_matches(':') == "async" => true,
+    _ => schema_marks_async(item),
+  })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::CalcitSymbolInfo;
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.emit-js"),
+        at_def: Arc::from("hinted-async"),
+      }),
+      location: None,
+    }
+  }
+
+  #[test]
+  fn hinted_async_accepts_legacy_symbol() {
+    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), symbol("async")]);
+    assert!(hinted_async(&hint));
+  }
+
+  #[test]
+  fn hinted_async_accepts_schema_map_literal() {
+    let schema = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Tag(EdnTag::from("async")),
+        Calcit::Bool(true),
+      ]))),
+    ])));
+    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
+    assert!(hinted_async(&hint));
+  }
+
+  #[test]
+  fn hinted_async_ignores_false_schema_marker() {
+    let schema = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Tag(EdnTag::from("async")),
+        Calcit::Bool(false),
+      ]))),
+    ])));
+    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
+    assert!(!hinted_async(&hint));
+  }
 }
 
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {

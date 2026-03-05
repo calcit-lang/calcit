@@ -6,42 +6,51 @@
   :files $ {}
     |test-types-inference.main $ %{} :FileEntry
       :defs $ {}
-        |Address $ %{} :CodeEntry (:doc |)
+        |Address $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Address $ :city :string
           :examples $ []
-        |Job $ %{} :CodeEntry (:doc |)
+        |Job $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Job (:title :string) (:status Status)
           :examples $ []
-        |Outcome $ %{} :CodeEntry (:doc |)
+        |Outcome $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defenum Outcome (:status Status) (:none)
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |)
+        |Person $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Person (:name :string) (:age :number)
               :address $ :: Address
           :examples $ []
-        |PersonWrap $ %{} :CodeEntry (:doc |)
+        |PersonWrap $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defenum PersonWrap
               :person $ :: Person
               :none
           :examples $ []
-        |Status $ %{} :CodeEntry (:doc |)
+        |Status $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defenum Status (:ok :number) (:err :string)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-fn-inference) (test-map-inference) (test-set-inference) (test-ref-inference) (test-record-inference) (test-type-ref-combos) (test-generics-identity)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-        |test-generics-identity $ %{} :CodeEntry (:doc |)
+        |test-fn-inference $ %{} :CodeEntry (:doc |) (:schema nil)
+          :code $ quote
+            defn test-fn-inference () $ let
+                f $ fn (x) (+ x 1)
+              hint-fn f $ {}
+                :args $ [] :number
+                :return :number
+              &inspect-type f
+          :examples $ []
+        |test-generics-identity $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-generics-identity () $ let
                 n $ identity 42
@@ -51,14 +60,7 @@
               &inspect-type n
               &inspect-type s
           :examples $ []
-        |test-fn-inference $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn test-fn-inference () $ let
-                f $ fn (x) (+ x 1)
-              hint-fn f $ :: :fn (:number) :number
-              &inspect-type f
-          :examples $ []
-        |test-list-inference $ %{} :CodeEntry (:doc |)
+        |test-list-inference $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-list-inference () $ let
                 nested $ [] ([] 1 2) ([] 3)
@@ -71,7 +73,7 @@
                     val $ &list:nth inner 0
                   &inspect-type val
           :examples $ []
-        |test-map-inference $ %{} :CodeEntry (:doc |)
+        |test-map-inference $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-map-inference () $ let
                 m $ {}
@@ -84,7 +86,7 @@
                 &inspect-type m3
                 &inspect-type m4
           :examples $ []
-        |test-optional-inference $ %{} :CodeEntry (:doc |)
+        |test-optional-inference $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-optional-inference ()
               let
@@ -96,7 +98,7 @@
                 assert-type opt-nil $ :: :optional :string
                 &inspect-type opt-nil
           :examples $ []
-        |test-record-inference $ %{} :CodeEntry (:doc |)
+        |test-record-inference $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-record-inference () $ let
                 addr $ %{} Address (:city |sh)
@@ -104,7 +106,7 @@
               assert-type p $ :: Person
               &inspect-type p
           :examples $ []
-        |test-ref-inference $ %{} :CodeEntry (:doc |)
+        |test-ref-inference $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-ref-inference () $ let
                 r $ atom 1
@@ -114,7 +116,7 @@
                 &inspect-type r
                 &inspect-type x
           :examples $ []
-        |test-set-inference $ %{} :CodeEntry (:doc |)
+        |test-set-inference $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-set-inference () $ let
                 s $ #{}
@@ -124,7 +126,7 @@
                 &inspect-type s
                 &inspect-type xs
           :examples $ []
-        |test-type-ref-combos $ %{} :CodeEntry (:doc |)
+        |test-type-ref-combos $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-type-ref-combos () $ let
                 addr $ %{} Address (:city |sh)
@@ -143,6 +145,6 @@
                 &inspect-type wrapped
                 &inspect-type outcome
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-types-inference.main)
         :examples $ []

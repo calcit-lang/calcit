@@ -12,7 +12,7 @@ use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 
 use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitLocal, CalcitMacro,
-  CalcitProc, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
+  CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -186,110 +186,11 @@ fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
 }
 
 fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
-  let list = match form {
-    Calcit::List(xs) => xs,
-    _ => return None,
-  };
-  match list.first() {
-    Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => {}
-    _ => return None,
-  }
-
-  match list.get(1) {
-    Some(Calcit::List(args)) => extract_return_type_from_args(args),
-    _ => None,
-  }
+  CalcitTypeAnnotation::extract_return_type_from_hint_form(form)
 }
 
 fn extract_generics_from_hint(form: &Calcit) -> Option<Vec<Arc<str>>> {
-  let list = match form {
-    Calcit::List(xs) => xs,
-    _ => return None,
-  };
-
-  match list.first() {
-    Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => {}
-    _ => return None,
-  }
-
-  match list.get(1) {
-    Some(Calcit::List(args)) => extract_generics_from_args(args),
-    _ => None,
-  }
-}
-
-fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
-  let Calcit::List(list) = form else {
-    return None;
-  };
-
-  let head = list.first()?;
-  let is_quote_head =
-    matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _)) || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote");
-
-  if !is_quote_head {
-    return None;
-  }
-
-  match list.get(1) {
-    Some(Calcit::Symbol { sym, .. }) => Some(sym.to_owned()),
-    _ => None,
-  }
-}
-
-fn extract_generics_from_args(args: &CalcitList) -> Option<Vec<Arc<str>>> {
-  let items = args.to_vec();
-  for item in items.iter() {
-    if let Calcit::List(inner) = item {
-      let head = inner.first();
-      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars") {
-        let mut vars = vec![];
-        for entry in inner.iter().skip(1) {
-          vars.push(parse_type_var_form(entry)?);
-        }
-        return Some(vars);
-      }
-      let is_tuple_head = matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::")
-        || matches!(head, Some(Calcit::Proc(CalcitProc::NativeTuple)));
-      if is_tuple_head {
-        if let Some(Calcit::Tag(tag)) = inner.get(1) {
-          if tag.ref_str().trim_start_matches(':') == "generics" {
-            let mut vars = vec![];
-            for entry in inner.iter().skip(2) {
-              vars.push(parse_type_var_form(entry)?);
-            }
-            return Some(vars);
-          }
-        }
-      }
-      if let Some(found) = extract_generics_from_args(inner) {
-        return Some(found);
-      }
-    }
-  }
-  None
-}
-
-fn extract_return_type_from_args(args: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
-  let items = args.to_vec();
-  let mut idx = 0;
-  while idx < items.len() {
-    match &items[idx] {
-      Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
-        if let Some(type_expr) = items.get(idx + 1) {
-          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
-        }
-      }
-      Calcit::List(inner) => {
-        if let Some(found) = extract_return_type_from_args(inner) {
-          return Some(found);
-        }
-      }
-      _ => {}
-    }
-    idx += 1;
-  }
-  None
+  CalcitTypeAnnotation::extract_generics_from_hint_form(form)
 }
 
 #[cfg(test)]

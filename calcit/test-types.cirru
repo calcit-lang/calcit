@@ -6,19 +6,19 @@
   :files $ {}
     |test-types.main $ %{} :FileEntry
       :defs $ {}
-        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
+        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata") (:schema nil)
           :code $ quote
             defimpl EnumImpl :EnumImpl $ .dummy nil
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks")
+        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks") (:schema nil)
           :code $ quote
             defstruct Person (:name :string) (:age nil)
           :examples $ []
-        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks")
+        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks") (:schema nil)
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests")
+        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests") (:schema nil)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .describe
               fn (self)
@@ -27,36 +27,36 @@
                     str "|ok " value
                   (:err msg) (str "|err " msg)
           :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests")
+        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests") (:schema nil)
           :code $ quote
             deftrait ResultTrait $ .describe :fn
           :examples $ []
-        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
+        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata") (:schema nil)
           :code $ quote
             defimpl StructImpl :StructImpl $ .dummy nil
           :examples $ []
-        |add-numbers $ %{} :CodeEntry (:doc |)
+        |add-numbers $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn add-numbers (a b) (assert-type a :number) (assert-type b :number)
-              hint-fn $ return-type :number
+              hint-fn $ {} (:return :number)
               &+ a b
           :examples $ []
-        |chained-return-type $ %{} :CodeEntry (:doc "|Uses return-type hinting more than once")
+        |chained-return-type $ %{} :CodeEntry (:doc "|Uses return-type hinting more than once") (:schema nil)
           :code $ quote
             defn chained-return-type (base extra) (assert-type base :number) (assert-type extra :number)
               let
                   first-sum $ add-numbers base extra
                 assert-type first-sum :number
-                hint-fn $ return-type :number
+                hint-fn $ {} (:return :number)
                 add-numbers first-sum 5
           :examples $ []
-        |describe-typed $ %{} :CodeEntry (:doc "|Combines typed label and number")
+        |describe-typed $ %{} :CodeEntry (:doc "|Combines typed label and number") (:schema nil)
           :code $ quote
             defn describe-typed (label value) (assert-type label :string) (assert-type value :number)
-              hint-fn $ return-type :string
+              hint-fn $ {} (:return :string)
               str label "|: " value
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (println "|Testing types...")
               println $ add-numbers 1 2
@@ -90,27 +90,27 @@
               ; in unit tests via assert-type with Record instances.
               ; Currently not supported for runtime Record literals.
           :examples $ []
-        |process-string $ %{} :CodeEntry (:doc |)
+        |process-string $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn process-string (s) (assert-type s :string) (str s |!!!)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |show-type-info $ %{} :CodeEntry (:doc |)
+        |show-type-info $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn show-type-info (x) (assert-type x :number) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)
           :examples $ []
-        |slice-as-string $ %{} :CodeEntry (:doc "|Guarded dynamic .slice call")
+        |slice-as-string $ %{} :CodeEntry (:doc "|Guarded dynamic .slice call") (:schema nil)
           :code $ quote
             defn slice-as-string (text) (assert-type text :string) (.slice text 1 4)
           :examples $ []
-        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning")
+        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning") (:schema nil)
           :code $ quote
             defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
-        |test-builtin-proc-types $ %{} :CodeEntry (:doc "|Tests that Proc (builtin) functions check argument types during preprocess")
+        |test-builtin-proc-types $ %{} :CodeEntry (:doc "|Tests that Proc (builtin) functions check argument types during preprocess") (:schema nil)
           :code $ quote
             defn test-builtin-proc-types () (; Test math operations with typed arguments)
               let
@@ -126,10 +126,10 @@
                   println |rounded: rounded
                   println |negated: negated
           :examples $ []
-        |test-complex-threading $ %{} :CodeEntry (:doc "|Tests type preservation with multiple typed functions in -> chain")
+        |test-complex-threading $ %{} :CodeEntry (:doc "|Tests type preservation with multiple typed functions in -> chain") (:schema nil)
           :code $ quote
             defn test-complex-threading (a b) (assert-type a :number) (assert-type b :number)
-              hint-fn $ return-type :number
+              hint-fn $ {} (:return :number)
               let
                   ; "先计算初始值，然后使用" -> "语法串联多个有" return-type "标注的函数"
                   sum-ab $ add-numbers a b
@@ -138,7 +138,7 @@
                 assert-type final-result :number
                 &+ final-result 5
           :examples $ []
-        |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
+        |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples") (:schema nil)
           :code $ quote
             defn test-defstruct-defenum ()
               assert= :struct $ type-of Person
@@ -156,7 +156,7 @@
                 assert= "|(%:: :ok 1 (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
           :examples $ []
-        |test-dynamic-methods $ %{} :CodeEntry (:doc "|Ensures .slice target type is validated")
+        |test-dynamic-methods $ %{} :CodeEntry (:doc "|Ensures .slice target type is validated") (:schema nil)
           :code $ quote
             defn test-dynamic-methods ()
               let
@@ -170,11 +170,11 @@
               println "|slice checks succeeded"
               , "|slice checks passed"
           :examples $ []
-        |test-fn-type $ %{} :CodeEntry (:doc |)
+        |test-fn-type $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-fn-type (f x) (assert-type f :fn) (assert-type x :number) (f x)
           :examples $ []
-        |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects")
+        |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects") (:schema nil)
           :code $ quote
             defn test-list-methods () (; Create a list and annotate its type)
               let
@@ -195,7 +195,7 @@
                   assert= 5 list-len
               , "|List method checks passed"
           :examples $ []
-        |test-method-type-errors $ %{} :CodeEntry (:doc "|Tests that invalid method calls are caught in preprocess")
+        |test-method-type-errors $ %{} :CodeEntry (:doc "|Tests that invalid method calls are caught in preprocess") (:schema nil)
           :code $ quote
             defn test-method-type-errors () (; "⚠️" "这些代码故意包含错误，用于验证" preprocess "阶段的类型检查") (; "当启用时，会在编译阶段就报错，而不是运行时") (; "测试" 1: list "对象调用不存在的方法") (; let)
               ; xs $ [] 1 2 3
@@ -215,7 +215,7 @@
               println "|Uncomment them to see preprocess-time validation"
               , "|Tests disabled to allow compilation"
           :examples $ []
-        |test-preprocess-method-validation $ %{} :CodeEntry (:doc "|Demonstrates that valid method calls pass preprocess validation")
+        |test-preprocess-method-validation $ %{} :CodeEntry (:doc "|Demonstrates that valid method calls pass preprocess validation") (:schema nil)
           :code $ quote
             defn test-preprocess-method-validation () (; "所有这些方法调用都是合法的，应该通过" preprocess "检查")
               let
@@ -244,17 +244,17 @@
                   println "|✓ Map methods validated at preprocess"
               , "|All valid method calls passed preprocess validation"
           :examples $ []
-        |test-proc-type $ %{} :CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
+        |test-proc-type $ %{} :CodeEntry (:doc "|Tests Proc (builtin function) type annotation") (:schema nil)
           :code $ quote
             defn test-proc-type (p x y) (assert-type p :fn) (assert-type x :number) (assert-type y :number)
-              hint-fn $ return-type :number
+              hint-fn $ {} (:return :number)
               p x y
           :examples $ []
-        |test-proc-type-warnings $ %{} :CodeEntry (:doc "|Test that should generate type warnings - disabled by default")
+        |test-proc-type-warnings $ %{} :CodeEntry (:doc "|Test that should generate type warnings - disabled by default") (:schema nil)
           :code $ quote
             defn test-proc-type-warnings () (; This function intentionally contains type errors for testing) (; It is not called in normal tests to avoid blocking execution) (println "|Warning: This test contains intentional type errors")
           :examples $ []
-        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with impls")
+        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with impls") (:schema nil)
           :code $ quote
             defn test-record-methods () (; "使用" impl-traits "挂载实现" Record methods)
               let
@@ -269,7 +269,7 @@
                   assert= "|Hello, I'm Alice" greeting
               , "|Record method checks passed"
           :examples $ []
-        |test-string-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed string objects")
+        |test-string-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed string objects") (:schema nil)
           :code $ quote
             defn test-string-methods ()
               let
@@ -293,15 +293,15 @@
                   assert= true starts
               , "|String method checks passed"
           :examples $ []
-        |test-threading-types $ %{} :CodeEntry (:doc "|Tests type preservation through -> threading macro")
+        |test-threading-types $ %{} :CodeEntry (:doc "|Tests type preservation through -> threading macro") (:schema nil)
           :code $ quote
             defn test-threading-types (text) (assert-type text :string)
-              hint-fn $ return-type :string
+              hint-fn $ {} (:return :string)
               ; "使用" -> "串联：text" "先经过" str "拼接，再经过" process-string
               ; "最终结果应该保留" :string "类型（从" process-string "的" return-type "推断）"
               -> text (str |prefix:) (process-string)
           :examples $ []
-        |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns")
+        |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns") (:schema nil)
           :code $ quote
             defn test-typed-method-access () (; "当对象有类型标注时，方法调用会检查该类型支持的方法")
               let
@@ -329,10 +329,10 @@
                   assert= |t str-first
               , "|Typed method access checks passed"
           :examples $ []
-        |typed-only $ %{} :CodeEntry (:doc "|Used to verify arg type hints are collected")
+        |typed-only $ %{} :CodeEntry (:doc "|Used to verify arg type hints are collected") (:schema nil)
           :code $ quote
             defn typed-only (a) (assert-type a :number) (&+ 1 0)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-types.main)
         :examples $ []
