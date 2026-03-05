@@ -12,7 +12,7 @@ use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
   EditDefCommand, EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand,
   EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand,
-  EditRmNsCommand, EditSplitDefCommand, EditSubcommand,
+  EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -62,6 +62,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Rename(opts) => handle_rename(opts, snapshot_file),
     EditSubcommand::SplitDef(opts) => handle_split_def(opts, snapshot_file),
     EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
+    EditSubcommand::Schema(opts) => handle_schema(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
     EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
@@ -555,6 +556,125 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
 
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",
+    "✓".green(),
+    definition.cyan(),
+    namespace
+  );
+
+  Ok(())
+}
+
+fn unwrap_schema_quote_input(schema: Cirru) -> Result<Cirru, String> {
+  match schema {
+    Cirru::List(items) => {
+      if let Some(Cirru::Leaf(head)) = items.first()
+        && &**head == "quote"
+      {
+        if items.len() != 2 {
+          return Err("Schema quote expects exactly one payload expression".to_string());
+        }
+        return Ok(items[1].clone());
+      }
+      Ok(Cirru::List(items))
+    }
+    other => Ok(other),
+  }
+}
+
+fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
+  match schema {
+    Cirru::List(items) => {
+      if items.is_empty() {
+        return Cirru::List(items);
+      }
+
+      if let Some(Cirru::Leaf(head)) = items.first() {
+        if &**head == ":optional" && items.len() == 2 {
+          return Cirru::List(vec![items[0].clone(), strip_name_field_from_schema(items[1].clone())]);
+        }
+        if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+          return Cirru::List(vec![
+            items[0].clone(),
+            items[1].clone(),
+            strip_name_field_from_schema(items[2].clone()),
+          ]);
+        }
+
+        if &**head == "{}" {
+          let mut next_items = vec![items[0].clone()];
+          for pair in items.iter().skip(1) {
+            if let Cirru::List(xs) = pair
+              && xs.len() == 2
+              && matches!(xs.first(), Some(Cirru::Leaf(key)) if &**key == ":name")
+            {
+              continue;
+            }
+            next_items.push(pair.clone());
+          }
+          return Cirru::List(next_items);
+        }
+
+        if &**head == "&{}" {
+          let mut next_items = vec![items[0].clone()];
+          let mut idx = 1usize;
+          while idx < items.len() {
+            if idx + 1 < items.len() && matches!(&items[idx], Cirru::Leaf(key) if &**key == ":name") {
+              idx += 2;
+              continue;
+            }
+            next_items.push(items[idx].clone());
+            idx += 1;
+          }
+          return Cirru::List(next_items);
+        }
+      }
+
+      Cirru::List(items)
+    }
+    other => other,
+  }
+}
+
+fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  if opts.clear {
+    code_entry.schema = None;
+    save_snapshot(&snapshot, snapshot_file)?;
+    println!(
+      "{} Cleared schema for '{}' in namespace '{}'",
+      "✓".green(),
+      definition.cyan(),
+      namespace
+    );
+    return Ok(());
+  }
+
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let schema_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
+  let schema_payload = unwrap_schema_quote_input(schema_node)?;
+  let schema_payload = strip_name_field_from_schema(schema_payload);
+
+  snapshot::parse_schema_data(&schema_payload)?;
+  code_entry.schema = Some(schema_payload);
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Updated schema payload for '{}' in namespace '{}' (quote wrapper preserved on write)",
     "✓".green(),
     definition.cyan(),
     namespace

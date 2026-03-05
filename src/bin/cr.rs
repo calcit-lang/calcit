@@ -677,6 +677,7 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
         doc: "Generated function to check all examples in this namespace".to_string(),
         examples: Vec::new(),
         code: check_function_code,
+        schema: None,
       },
     );
   }
@@ -1147,6 +1148,21 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
   let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
     Cirru::List(xs) => match xs.first() {
       Some(Cirru::Leaf(head)) if &**head == "defn" => {
+        if let Some(schema) = &entry.schema
+          && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(schema)
+        {
+          return TypeCoverageRow {
+            ns: ns.to_owned(),
+            def: def_name.to_owned(),
+            kind: DefKind::Fn,
+            level,
+            params,
+            param_annotations,
+            return_type_hints,
+            data_type: None,
+          };
+        }
+
         let args = xs.get(2);
         let body = &xs[3..];
         let params = extract_param_symbols(args);
@@ -1190,6 +1206,148 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
     return_type_hints,
     data_type,
   }
+}
+
+fn unwrap_optional_schema(schema: &Cirru) -> &Cirru {
+  match schema {
+    Cirru::List(items) => {
+      if let Some(Cirru::Leaf(head)) = items.first() {
+        if &**head == ":optional" && items.len() == 2 {
+          return &items[1];
+        }
+        if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+          return &items[2];
+        }
+      }
+      schema
+    }
+    _ => schema,
+  }
+}
+
+fn schema_to_map(schema: &Cirru) -> Option<BTreeMap<&str, &Cirru>> {
+  let schema = unwrap_optional_schema(schema);
+  let Cirru::List(items) = schema else {
+    return None;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return None;
+  };
+
+  let mut data = BTreeMap::new();
+  match &**head {
+    "&{}" => {
+      if (items.len() - 1) % 2 != 0 {
+        return None;
+      }
+      for idx in (1..items.len()).step_by(2) {
+        let key = match &items[idx] {
+          Cirru::Leaf(s) if s.starts_with(':') => s.as_ref(),
+          _ => return None,
+        };
+        data.insert(key, &items[idx + 1]);
+      }
+    }
+    "{}" => {
+      for pair in items.iter().skip(1) {
+        let Cirru::List(xs) = pair else {
+          return None;
+        };
+        if xs.len() != 2 {
+          return None;
+        }
+        let key = match &xs[0] {
+          Cirru::Leaf(s) if s.starts_with(':') => s.as_ref(),
+          _ => return None,
+        };
+        data.insert(key, &xs[1]);
+      }
+    }
+    _ => return None,
+  }
+  Some(data)
+}
+
+fn normalize_schema_symbol_name(name: &str) -> String {
+  if let Some(stripped) = name.strip_prefix('\'') {
+    stripped.to_owned()
+  } else if let Some(stripped) = name.strip_prefix('|') {
+    stripped.to_owned()
+  } else {
+    name.to_owned()
+  }
+}
+
+fn read_schema_param_tuple(item: &Cirru) -> Option<(String, String)> {
+  let Cirru::List(xs) = item else {
+    return None;
+  };
+  let Some(Cirru::Leaf(head)) = xs.first() else {
+    return None;
+  };
+  if &**head != "[]" && &**head != "::" {
+    return None;
+  }
+  let name = match xs.get(1) {
+    Some(Cirru::Leaf(s)) => normalize_schema_symbol_name(s),
+    _ => return None,
+  };
+  let ty = xs.get(2).map_or_else(|| ":dynamic".to_owned(), render_cirru_inline);
+  Some((name, ty))
+}
+
+type FnSchemaHints = (Vec<String>, BTreeMap<String, Vec<String>>, Vec<String>, CoverageLevel);
+
+fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
+  let schema = schema_to_map(schema)?;
+
+  let mut params: Vec<String> = Vec::new();
+  let mut param_annotations: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+  if let Some(args_node) = schema.get(":args")
+    && let Cirru::List(items) = args_node
+    && matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]")
+  {
+    for item in items.iter().skip(1) {
+      if let Some((name, ty)) = read_schema_param_tuple(item) {
+        params.push(name.clone());
+        param_annotations.entry(name).or_default().push(ty);
+      }
+    }
+  }
+
+  if let Some(rest_node) = schema.get(":rest")
+    && let Some((name, ty)) = read_schema_param_tuple(rest_node)
+  {
+    params.push(name.clone());
+    param_annotations.entry(name).or_default().push(ty);
+  }
+
+  let return_type_hints = vec![
+    schema
+      .get(":return")
+      .map_or_else(|| ":dynamic".to_owned(), |v| render_cirru_inline(v)),
+  ];
+
+  let typed_count = params
+    .iter()
+    .filter(|name| {
+      param_annotations
+        .get(*name)
+        .is_some_and(|hints| hints.iter().any(|hint| hint != ":dynamic"))
+    })
+    .count();
+
+  let ret_typed = return_type_hints.iter().any(|hint| hint != ":dynamic");
+  let level = if ret_typed && (params.is_empty() || typed_count == params.len()) {
+    CoverageLevel::Full
+  } else if ret_typed || typed_count > 0 {
+    CoverageLevel::Partial
+  } else {
+    CoverageLevel::None
+  };
+
+  Some((params, param_annotations, return_type_hints, level))
 }
 
 fn extract_param_symbols(args: Option<&Cirru>) -> Vec<String> {

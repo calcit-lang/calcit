@@ -137,6 +137,8 @@ pub struct DetailedCodeEntry {
   #[serde(default)]
   pub examples: Vec<DetailCirru>,
   pub code: DetailCirru,
+  #[serde(default)]
+  pub schema: Option<DetailCirru>,
 }
 
 impl From<CodeEntry> for DetailedCodeEntry {
@@ -145,6 +147,7 @@ impl From<CodeEntry> for DetailedCodeEntry {
       doc: entry.doc,
       examples: entry.examples.into_iter().map(|e| e.into()).collect(),
       code: entry.code.into(),
+      schema: entry.schema.map(Into::into),
     }
   }
 }
@@ -155,6 +158,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
       doc: detailed.doc,
       examples: detailed.examples.into_iter().map(|e| e.into()).collect(),
       code: detailed.code.into(),
+      schema: detailed.schema.map(Into::into),
     }
   }
 }
@@ -167,6 +171,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         let mut doc = String::new();
         let mut examples = Vec::new();
         let mut code = None;
+        let mut schema = None;
 
         for (key, value) in record.pairs.iter() {
           match key.arc_str().as_ref() {
@@ -185,12 +190,22 @@ impl TryFrom<Edn> for DetailedCodeEntry {
             "code" => {
               code = Some(value.to_owned().try_into()?);
             }
+            "schema" => {
+              if !matches!(value, Edn::Nil) {
+                schema = Some(value.to_owned().try_into()?);
+              }
+            }
             _ => {}
           }
         }
 
         let code = code.ok_or("Missing code field")?;
-        Ok(DetailedCodeEntry { doc, examples, code })
+        Ok(DetailedCodeEntry {
+          doc,
+          examples,
+          code,
+          schema,
+        })
       }
       _ => Err("Expected record for DetailedCodeEntry".to_string()),
     }

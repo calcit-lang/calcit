@@ -696,6 +696,7 @@ fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entr
           doc: String::new(),
           examples: vec![],
           code: cirru_parser::Cirru::Leaf("".into()).into(),
+          schema: None,
         };
 
         detailed.files.insert(

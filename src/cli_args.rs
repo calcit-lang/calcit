@@ -678,6 +678,8 @@ pub enum EditSubcommand {
   RmDef(EditRmDefCommand),
   /// update definition documentation
   Doc(EditDocCommand),
+  /// update definition schema payload (inside quote)
+  Schema(EditSchemaCommand),
   /// set definition examples
   Examples(EditExamplesCommand),
   /// add a single example to definition
@@ -774,6 +776,33 @@ pub struct EditDocCommand {
   /// documentation text
   #[argh(positional)]
   pub doc: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "schema")]
+/// update definition schema payload (updates quote inner content only)
+pub struct EditSchemaCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// read schema from file (Cirru format by default, use -J for JSON)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// schema as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
+  /// schema as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// treat file input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
+  /// clear schema field
+  #[argh(switch, long = "clear")]
+  pub clear: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

@@ -267,6 +267,7 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
 
   for def in &defs {
     let entry = &file_data.defs[*def];
+    let schema_hint = if entry.schema.is_some() { " [schema]" } else { "" };
     if !entry.doc.is_empty() {
       let doc_first_line = entry.doc.lines().next().unwrap_or("");
       let doc_display = if doc_first_line.len() > 50 {
@@ -274,9 +275,9 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
       } else {
         doc_first_line.to_string()
       };
-      println!("  {} - {}", def.green(), doc_display.dimmed());
+      println!("  {}{} - {}", def.green(), schema_hint.dimmed(), doc_display.dimmed());
     } else {
-      println!("  {}", def.green());
+      println!("  {}{}", def.green(), schema_hint.dimmed());
     }
   }
 
@@ -454,9 +455,18 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
   let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
   println!("{cirru_str}");
 
+  println!("\n{}", "Schema:".bold());
+  if let Some(schema) = &code_entry.schema {
+    let schema_str =
+      cirru_parser::format(std::slice::from_ref(schema), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+    println!("{schema_str}");
+  } else {
+    println!("{}", "(none)".dimmed());
+  }
+
   if show_json {
     println!("\n{}", "JSON:".bold());
-    let json = cirru_to_json(&code_entry.code);
+    let json = code_entry_to_json(code_entry);
     println!("{}", serde_json::to_string(&json).unwrap());
   }
 
@@ -481,6 +491,15 @@ fn cirru_to_json(cirru: &Cirru) -> serde_json::Value {
     Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
     Cirru::List(items) => serde_json::Value::Array(items.iter().map(cirru_to_json).collect()),
   }
+}
+
+fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
+  serde_json::json!({
+    "doc": entry.doc,
+    "examples": entry.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
+    "code": cirru_to_json(&entry.code),
+    "schema": entry.schema.as_ref().map(cirru_to_json),
+  })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -581,6 +600,18 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   // Always show examples count
   println!("{} {}", "Examples:".bold(), code_entry.examples.len());
 
+  if let Some(schema) = &code_entry.schema {
+    let preview = schema.format_one_liner()?;
+    let display = if preview.len() > 120 {
+      format!("{}...", &preview[..120])
+    } else {
+      preview
+    };
+    println!("{} {}", "Schema:".bold(), display.dimmed());
+  } else {
+    println!("{} -", "Schema:".bold());
+  }
+
   // Tips - show relevant next steps
   println!("\n{}", "Tips:".bold());
   println!("  {} cr query def {}/{}", "-".dimmed(), namespace, definition);
@@ -596,7 +627,7 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
   let snapshot = load_snapshot(input_path)?;
 
   let mut found_definitions: Vec<(String, String)> = vec![];
-  let mut found_references: Vec<(String, String, String, Vec<Vec<usize>>)> = vec![]; // (ns, def, context, coords)
+  let mut found_references: Vec<(String, String, String, Vec<Vec<usize>>, &'static str)> = vec![]; // (ns, def, context, coords, source)
 
   for (ns_name, file_data) in &snapshot.files {
     let is_core = ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.");
@@ -620,6 +651,20 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
           def_name.clone(),
           get_symbol_context_cirru(&code_entry.code, symbol),
           coords,
+          "code",
+        ));
+      }
+
+      if let Some(schema) = &code_entry.schema
+        && find_symbol_in_cirru(schema, symbol)
+      {
+        let coords = find_symbol_coords(schema, symbol);
+        found_references.push((
+          ns_name.clone(),
+          def_name.clone(),
+          get_symbol_context_cirru(schema, symbol),
+          coords,
+          "schema",
         ));
       }
     }
@@ -646,17 +691,17 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
   // Print references (excluding the definition itself)
   let references: Vec<_> = found_references
     .iter()
-    .filter(|(ns, def, _, _)| !found_definitions.iter().any(|(dns, ddef)| dns == ns && ddef == def))
+    .filter(|(ns, def, _, _, _)| !found_definitions.iter().any(|(dns, ddef)| dns == ns && ddef == def))
     .collect();
 
   if !references.is_empty() {
     println!("{}", "Referenced in:".bold());
-    for (ns, def, context, coords) in &references {
+    for (ns, def, context, coords, source) in &references {
       // Show main line
       if !context.is_empty() {
-        println!("  {}/{}  {}", ns.cyan(), def, context.dimmed());
+        println!("  {}/{} [{}]  {}", ns.cyan(), def, source.dimmed(), context.dimmed());
       } else {
-        println!("  {}/{}", ns.cyan(), def);
+        println!("  {}/{} [{}]", ns.cyan(), def, source.dimmed());
       }
 
       // Show coordinates on one line with "and" separator
@@ -701,7 +746,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     .get(target_def)
     .ok_or_else(|| format!("Definition '{target_def}' not found in namespace '{target_ns}'"))?;
 
-  let mut usages: Vec<(String, String, String, Vec<Vec<usize>>)> = vec![]; // (ns, def, context, coords)
+  let mut usages: Vec<(String, String, String, Vec<Vec<usize>>, &'static str)> = vec![]; // (ns, def, context, coords, source)
 
   for (ns_name, file_data) in &snapshot.files {
     // Skip core namespaces unless deps is requested
@@ -719,7 +764,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
       }
 
       // Search for the symbol (could be qualified or unqualified depending on import)
-      let found = if imports_target || ns_name == target_ns {
+      let found_in_code = if imports_target || ns_name == target_ns {
         find_symbol_in_cirru(&code_entry.code, target_def)
       } else {
         // Check for qualified reference: target_ns/target_def
@@ -727,16 +772,35 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
         find_symbol_in_cirru(&code_entry.code, &qualified)
       };
 
-      if found {
+      if found_in_code {
         let context = get_symbol_context_cirru(&code_entry.code, target_def);
-        // Get all coordinates where the symbol appears
         let coords = if imports_target || ns_name == target_ns {
           find_symbol_coords(&code_entry.code, target_def)
         } else {
           let qualified = format!("{target_ns}/{target_def}");
           find_symbol_coords(&code_entry.code, &qualified)
         };
-        usages.push((ns_name.clone(), def_name.clone(), context, coords));
+        usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
+      }
+
+      if let Some(schema) = &code_entry.schema {
+        let found_in_schema = if imports_target || ns_name == target_ns {
+          find_symbol_in_cirru(schema, target_def)
+        } else {
+          let qualified = format!("{target_ns}/{target_def}");
+          find_symbol_in_cirru(schema, &qualified)
+        };
+
+        if found_in_schema {
+          let context = get_symbol_context_cirru(schema, target_def);
+          let coords = if imports_target || ns_name == target_ns {
+            find_symbol_coords(schema, target_def)
+          } else {
+            let qualified = format!("{target_ns}/{target_def}");
+            find_symbol_coords(schema, &qualified)
+          };
+          usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
+        }
       }
     }
   }
@@ -756,12 +820,12 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     );
   } else {
     println!();
-    for (ns, def, context, coords) in &usages {
+    for (ns, def, context, coords, source) in &usages {
       // Show main line
       if !context.is_empty() {
-        println!("  {}/{}  {}", ns.cyan(), def.green(), context.dimmed());
+        println!("  {}/{} [{}]  {}", ns.cyan(), def.green(), source.dimmed(), context.dimmed());
       } else {
-        println!("  {}/{}", ns.cyan(), def.green());
+        println!("  {}/{} [{}]", ns.cyan(), def.green(), source.dimmed());
       }
 
       // Show coordinates on one line with "and" separator

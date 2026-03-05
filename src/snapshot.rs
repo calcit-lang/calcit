@@ -32,9 +32,13 @@ pub struct FileInSnapShot {
 
 impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
+    let mut defs_map = EdnMapView::default();
+    for (k, v) in &data.defs {
+      defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
+    }
     Edn::Record(EdnRecordView {
       tag: EdnTag::new("FileEntry"),
-      pairs: vec![("defs".into(), Edn::from(data.defs.to_owned())), ("ns".into(), Edn::from(&data.ns))], // TODO
+      pairs: vec![("defs".into(), Edn::from(defs_map)), ("ns".into(), Edn::from(&data.ns))], // TODO
     })
   }
 }
@@ -71,7 +75,11 @@ impl TryFrom<Edn> for FileInSnapShot {
 
 impl From<FileInSnapShot> for Edn {
   fn from(data: FileInSnapShot) -> Edn {
-    Edn::map_from_iter([("defs".into(), data.defs.into()), ("ns".into(), data.ns.into())])
+    let mut defs_map = EdnMapView::default();
+    for (k, v) in data.defs {
+      defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
+    }
+    Edn::map_from_iter([("defs".into(), Edn::from(defs_map)), ("ns".into(), data.ns.into())])
   }
 }
 
@@ -81,23 +89,181 @@ pub struct CodeEntry {
   #[serde(default)]
   pub examples: Vec<Cirru>,
   pub code: Cirru,
+  #[serde(default)]
+  pub schema: Option<Cirru>,
 }
 
 impl TryFrom<Edn> for CodeEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
-    from_edn(data).map_err(|e| format!("failed to parse CodeEntry: {e}"))
+    let mut doc = String::new();
+    let mut examples: Vec<Cirru> = vec![];
+    let mut code: Option<Cirru> = None;
+    let mut schema: Option<Cirru> = None;
+
+    match data {
+      Edn::Record(record) => {
+        for (key, value) in &record.pairs {
+          match key.arc_str().as_ref() {
+            "doc" => {
+              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.doc: {e}"))?;
+            }
+            "examples" => {
+              examples = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.examples: {e}"))?;
+            }
+            "code" => {
+              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.code: {e}"))?);
+            }
+            "schema" => {
+              if !matches!(value, Edn::Nil) {
+                schema = Some(parse_schema_cirru_from_edn(value)?);
+              }
+            }
+            _ => {}
+          }
+        }
+      }
+      Edn::Map(map) => {
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
+          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.doc: {e}"))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("examples"))) {
+          examples = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.examples: {e}"))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
+          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.code: {e}"))?);
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("schema")))
+          && !matches!(value, Edn::Nil)
+        {
+          schema = Some(parse_schema_cirru_from_edn(value)?);
+        }
+      }
+      other => {
+        return Err(format!("failed to parse CodeEntry: expected record/map, got: {other:?}"));
+      }
+    }
+
+    let entry = CodeEntry {
+      doc,
+      examples,
+      code: code.ok_or_else(|| "failed to parse CodeEntry: missing code field".to_owned())?,
+      schema,
+    };
+
+    if let Some(schema) = &entry.schema {
+      parse_schema_data(schema)?;
+    }
+    Ok(entry)
+  }
+}
+
+fn parse_schema_cirru_from_edn(value: &Edn) -> Result<Cirru, String> {
+  if let Ok(schema) = from_edn::<Cirru>(value.to_owned()) {
+    return Ok(schema);
+  }
+
+  let schema_text = cirru_edn::format(value, true).map_err(|e| format!("Failed to format schema EDN to Cirru: {e}"))?;
+  let schema_nodes = cirru_parser::parse(&schema_text).map_err(|e| format!("Failed to parse schema Cirru from EDN text: {e}"))?;
+
+  if schema_nodes.len() != 1 {
+    return Err(format!(
+      "Schema EDN should convert to exactly 1 Cirru expression, got {}",
+      schema_nodes.len()
+    ));
+  }
+  Ok(schema_nodes[0].to_owned())
+}
+
+pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
+  if let Cirru::List(items) = schema {
+    if let Some(Cirru::Leaf(head)) = items.first() {
+      if &**head == ":optional" {
+        if items.len() != 2 {
+          return Err("schema `:optional` expects exactly one payload".to_owned());
+        }
+        return parse_schema_data(&items[1]);
+      }
+      if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+        return parse_schema_data(&items[2]);
+      }
+    }
+  }
+
+  let schema_text =
+    cirru_parser::format(std::slice::from_ref(schema), true.into()).map_err(|e| format!("Failed to format schema to Cirru: {e}"))?;
+
+  cirru_edn::parse(&schema_text).map_err(|e| format!("Failed to parse schema as Cirru EDN: {e}"))?;
+
+  Ok(())
+}
+
+fn strip_name_field_from_schema(schema: &Cirru) -> Cirru {
+  match schema {
+    Cirru::List(items) => {
+      if items.is_empty() {
+        return Cirru::List(items.clone());
+      }
+
+      if let Some(Cirru::Leaf(head)) = items.first() {
+        if &**head == "quote" && items.len() == 2 {
+          return strip_name_field_from_schema(&items[1]);
+        }
+        if &**head == ":optional" && items.len() == 2 {
+          return Cirru::List(vec![items[0].clone(), strip_name_field_from_schema(&items[1])]);
+        }
+        if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+          return Cirru::List(vec![items[0].clone(), items[1].clone(), strip_name_field_from_schema(&items[2])]);
+        }
+
+        if &**head == "{}" {
+          let mut next_items = vec![items[0].clone()];
+          for pair in items.iter().skip(1) {
+            if let Cirru::List(xs) = pair
+              && xs.len() == 2
+              && matches!(xs.first(), Some(Cirru::Leaf(key)) if &**key == ":name")
+            {
+              continue;
+            }
+            next_items.push(pair.clone());
+          }
+          return Cirru::List(next_items);
+        }
+
+        if &**head == "&{}" {
+          let mut next_items = vec![items[0].clone()];
+          let mut idx = 1usize;
+          while idx < items.len() {
+            if idx + 1 < items.len() && matches!(&items[idx], Cirru::Leaf(key) if &**key == ":name") {
+              idx += 2;
+              continue;
+            }
+            next_items.push(items[idx].clone());
+            idx += 1;
+          }
+          return Cirru::List(next_items);
+        }
+      }
+
+      Cirru::List(items.clone())
+    }
+    other => other.clone(),
   }
 }
 
 impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
+    let schema = data
+      .schema
+      .as_ref()
+      .map_or(Edn::Nil, |s| Edn::Quote(strip_name_field_from_schema(s)));
     Edn::record_from_pairs(
       "CodeEntry".into(),
       &[
         ("doc".into(), data.doc.into()),
         ("examples".into(), data.examples.into()),
         ("code".into(), data.code.into()),
+        ("schema".into(), schema),
       ],
     )
   }
@@ -105,12 +271,17 @@ impl From<CodeEntry> for Edn {
 
 impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
+    let schema = data
+      .schema
+      .as_ref()
+      .map_or(Edn::Nil, |s| Edn::Quote(strip_name_field_from_schema(s)));
     Edn::record_from_pairs(
       "CodeEntry".into(),
       &[
         ("doc".into(), data.doc.to_owned().into()),
         ("examples".into(), data.examples.to_owned().into()),
         ("code".into(), data.code.to_owned().into()),
+        ("schema".into(), schema),
       ],
     )
   }
@@ -122,6 +293,7 @@ impl CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
       code,
+      schema: None,
     }
   }
 }
@@ -188,6 +360,7 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
       doc: "".to_owned(),
       examples: vec![],
       code: vec!["ns", ns].into(),
+      schema: None,
     },
     defs: def_dict,
   }
@@ -496,6 +669,13 @@ mod tests {
         Cirru::List(vec![Cirru::leaf("+"), Cirru::leaf("a"), Cirru::leaf("b")]),
       ]),
       examples,
+      schema: Some(Cirru::List(vec![
+        Cirru::leaf("{}"),
+        Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+        Cirru::List(vec![Cirru::leaf(":name"), Cirru::leaf("'add")]),
+        Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
+        Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":number")]),
+      ])),
     };
 
     // 验证 examples 字段
@@ -524,5 +704,34 @@ mod tests {
     }
 
     println!("✅ CodeEntry with examples test passed!");
+  }
+
+  #[test]
+  fn test_parse_schema_data_valid_and_invalid() {
+    let valid = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":name"), Cirru::leaf("'demo")]),
+      Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
+      Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":dynamic")]),
+    ]);
+    assert!(parse_schema_data(&valid).is_ok());
+
+    let missing_return = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":name"), Cirru::leaf("'demo")]),
+      Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
+    ]);
+    assert!(parse_schema_data(&missing_return).is_ok());
+
+    let optional_wrapped = Cirru::List(vec![Cirru::leaf(":optional"), valid.clone()]);
+    assert!(parse_schema_data(&optional_wrapped).is_ok());
+
+    let optional_wrapped_by_tuple = Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), valid]);
+    assert!(parse_schema_data(&optional_wrapped_by_tuple).is_ok());
+
+    let invalid_edn = Cirru::List(vec![Cirru::leaf("~"), Cirru::leaf("x")]);
+    assert!(parse_schema_data(&invalid_edn).is_err());
   }
 }

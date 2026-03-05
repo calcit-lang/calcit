@@ -24,6 +24,8 @@ pub struct CodeEntry {
   #[serde(default)]
   pub examples: Vec<Cirru>,
   pub code: Cirru,
+  #[serde(default)]
+  pub schema: Option<Cirru>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
