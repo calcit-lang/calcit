@@ -1,32 +1,40 @@
 
-{} (:package |util)
-  :configs $ {} (:init-fn |util.core/main!) (:reload-fn |util.core/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |util)
+  :configs $ {} (:init-fn |util.core/main!) (:reload-fn |util.core/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |util.core $ %{} :FileEntry
       :defs $ {}
-        |inside-eval: $ %{} :CodeEntry (:doc |)
+        |inside-eval: $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro inside-eval: (& body)
               if
                 = :eval $ &get-calcit-running-mode
                 quasiquote $ do (println "|env: eval") ~@body
                 quasiquote $ do (println "|env: not eval. tests skipped")
-        |inside-js: $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |inside-js: $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro inside-js: (& body)
               if
                 not= :eval $ &get-calcit-running-mode
                 quasiquote $ do (println "|env: js") ~@body
                 quasiquote $ do (println "|env: not js. tests skipped")
-        |log-title $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |log-title $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-        |main! $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () $ :: :unit
-        |reload! $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () $ :: :unit
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns util.core $ :require
+        :examples $ []

@@ -13,7 +13,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'acc :dynamic) (:: 'target :dynamic) (:: 'step :dynamic)
+              :args $ [] :dynamic :dynamic :dynamic
               :return :dynamic
         |bad-recur-too-few $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -24,7 +24,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'x :dynamic) (:: 'y :dynamic) (:: 'z :dynamic)
+              :args $ [] :dynamic :dynamic :dynamic
               :return :dynamic
         |bad-recur-too-many $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -35,7 +35,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'x :dynamic) (:: 'y :dynamic)
+              :args $ [] :dynamic :dynamic
               :return :dynamic
         |bad-recur-wrong-count $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -46,7 +46,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'a :dynamic) (:: 'b :dynamic) (:: 'c :dynamic) (:: 'd :dynamic)
+              :args $ [] :dynamic :dynamic :dynamic :dynamic
               :return :dynamic
         |factorial $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -55,7 +55,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'n :dynamic) (:: 'acc :dynamic)
+              :args $ [] :dynamic :dynamic
               :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -87,7 +87,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'n :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote

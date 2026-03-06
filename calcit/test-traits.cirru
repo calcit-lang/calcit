@@ -84,7 +84,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: '_x :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |mybar:bar2 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl2/:bar")
           :code $ quote
@@ -92,7 +92,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: '_x :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |myfoo:foo $ %{} :CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote
@@ -101,7 +101,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'p :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |myfoo:foo2 $ %{} :CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote
@@ -110,7 +110,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'p :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |myzap:a $ %{} :CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote
@@ -118,7 +118,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: '_x :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |myzap:b $ %{} :CodeEntry (:doc "|method implementation for MyZapB/:zap")
           :code $ quote
@@ -126,7 +126,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: '_x :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |test-add-trait $ %{} :CodeEntry (:doc "|Test Add trait")
           :code $ quote

@@ -24,7 +24,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'title :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -52,7 +52,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'message :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -60,7 +60,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'value :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -80,7 +80,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'action :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-sum-types.main)

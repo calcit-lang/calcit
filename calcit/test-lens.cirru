@@ -1,16 +1,20 @@
 
-{} (:package |test-lens)
-  :configs $ {} (:init-fn |test-lens.main/main!) (:reload-fn |test-lens.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-lens)
+  :configs $ {} (:init-fn |test-lens.main/main!) (:reload-fn |test-lens.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-lens.main $ %{} :FileEntry
       :defs $ {}
-        |log-title $ %{} :CodeEntry (:doc |)
+        |log-title $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-        |main! $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing lens") (test-lens) (do true)
-        |test-lens $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-lens $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-lens ()
               assert=
@@ -50,10 +54,10 @@
                   , inc
                 {} $ :a (:: 'quote 2)
               assert=
-                update-in ({})
-                  [] :a :b
+                update-in ({}) ([] :a :b)
                   fn (x) 1
-                {} $ :a $ {} $ :b 1
+                {} $ :a
+                  {} $ :b 1
               assert=
                 dissoc-in
                   {} $ :a
@@ -108,6 +112,8 @@
               assert= true $ contains-in?
                 :: :a :b $ [] 1 2 3
                 [] 2 2
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-lens.main $ :require
+        :examples $ []

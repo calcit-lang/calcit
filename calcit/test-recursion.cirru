@@ -34,7 +34,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'x :number)
+              :args $ [] :number
               :return :number
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -42,7 +42,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'title :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

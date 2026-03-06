@@ -43,7 +43,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'a :number) (:: 'b :number)
+              :args $ [] :number :number
               :return :number
         |chained-return-type $ %{} :CodeEntry (:doc "|Uses return-type hinting more than once")
           :code $ quote
@@ -56,7 +56,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'base :number) (:: 'extra :number)
+              :args $ [] :number :number
               :return :number
         |describe-typed $ %{} :CodeEntry (:doc "|Combines typed label and number")
           :code $ quote
@@ -66,7 +66,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'label :string) (:: 'value :number)
+              :args $ [] :string :number
               :return :string
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -112,7 +112,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 's :string)
+              :args $ [] :string
               :return :string
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -128,7 +128,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'x :number)
+              :args $ [] :number
               :return :number
         |slice-as-string $ %{} :CodeEntry (:doc "|Guarded dynamic .slice call")
           :code $ quote
@@ -136,7 +136,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'text :string)
+              :args $ [] :string
               :return :string
         |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning")
           :code $ quote
@@ -180,8 +180,8 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'a :number) (:: 'b :number)
-              :return :dynamic
+              :args $ [] :number :number
+              :return :number
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
           :code $ quote
             defn test-defstruct-defenum ()
@@ -228,7 +228,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'f :fn) (:: 'x :number)
+              :args $ [] :fn :number
               :return :dynamic
         |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects")
           :code $ quote
@@ -320,7 +320,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'p :fn) (:: 'x :number) (:: 'y :number)
+              :args $ [] :fn :number :number
               :return :number
         |test-proc-type-warnings $ %{} :CodeEntry (:doc "|Test that should generate type warnings - disabled by default")
           :code $ quote
@@ -387,7 +387,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'text :string)
+              :args $ [] :string
               :return :string
         |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns")
           :code $ quote
@@ -427,7 +427,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'a :number)
+              :args $ [] :number
               :return :number
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-types.main)

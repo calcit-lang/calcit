@@ -21,7 +21,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: 'x :dynamic)
+              :args $ [] :dynamic
               :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (:ns test-gynienic.lib)

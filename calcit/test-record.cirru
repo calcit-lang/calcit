@@ -6,66 +6,69 @@
   :files $ {}
     |test-record.main $ %{} :FileEntry
       :defs $ {}
-        |A $ %{} :CodeEntry (:doc |)
+        |A $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct A $ :a :dynamic
           :examples $ []
-        |A0 $ %{} :CodeEntry (:doc |)
+        |A0 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct A0 $ :name :string
           :examples $ []
-        |B $ %{} :CodeEntry (:doc |)
+        |B $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct B $ :b :dynamic
           :examples $ []
-        |BirdImpl $ %{} :CodeEntry (:doc |)
+        |BirdImpl $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defimpl BirdImpl BirdTrait
               .show $ fn (self)
                 println $ :name self
               .rename $ fn (self name) (assoc self :name name)
           :examples $ []
-        |BirdShape $ %{} :CodeEntry (:doc |)
+        |BirdShape $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct BirdShape (:show :fn) (:rename :fn)
           :examples $ []
-        |BirdTrait $ %{} :CodeEntry (:doc |)
+        |BirdTrait $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             deftrait BirdTrait (.show :fn) (.rename :fn)
           :examples $ []
-        |C $ %{} :CodeEntry (:doc |)
+        |C $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct C $ :c :dynamic
           :examples $ []
-        |Cat $ %{} :CodeEntry (:doc |)
+        |Cat $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Cat (:name :string) (:color :tag)
           :examples $ []
-        |City $ %{} :CodeEntry (:doc |)
+        |City $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct City (:name :string) (:province :string)
           :examples $ []
-        |Demo $ %{} :CodeEntry (:doc |)
+        |Demo $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Demo (:a :dynamic) (:b :dynamic) (:c :dynamic) (:d :dynamic)
           :examples $ []
-        |Lagopus $ %{} :CodeEntry (:doc |)
+        |Lagopus $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             def Lagopus $ impl-traits Lagopus0 BirdImpl
           :examples $ []
-        |Lagopus0 $ %{} :CodeEntry (:doc |)
+        |Lagopus0 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Lagopus0 $ :name (:optional :string)
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |)
+        |Person $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            defstruct Person (:name (:optional :string)) (:age (:optional :number)) (:position (:optional :tag))
+            defstruct Person
+              :name $ :optional :string
+              :age $ :optional :number
+              :position $ :optional :tag
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (do true)
           :examples $ []
-        |test-edn $ %{} :CodeEntry (:doc |)
+        |test-edn $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               let
@@ -87,7 +90,7 @@
                     :d 5
                 assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim (format-cirru-edn data)
           :examples $ []
-        |test-match $ %{} :CodeEntry (:doc |)
+        |test-match $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing record match")
               let
@@ -107,7 +110,7 @@
                   B bb $ :b bb
                   _ o (println |others) :other
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing record methods")
               &let
@@ -133,7 +136,7 @@
                   assert= 10 $ &record:get persian :age
                   assert= :Persian $ &record:get-name persian
           :examples $ []
-        |test-partial-record $ %{} :CodeEntry (:doc |)
+        |test-partial-record $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing partial record")
               let
@@ -148,7 +151,7 @@
                 assert= 31 $ get p3 :age
                 assert= nil $ get p3 :position
           :examples $ []
-        |test-polymorphism $ %{} :CodeEntry (:doc |)
+        |test-polymorphism $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Test record polymorphism") (println Lagopus)
               let
@@ -167,7 +170,7 @@
                   .show l2t
                   assert= (&record:impls l1) (&record:impls a1r)
           :examples $ []
-        |test-record $ %{} :CodeEntry (:doc |)
+        |test-record $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing record")
               let
@@ -214,7 +217,7 @@
                 assert= 3 $ count p1
                 assert= 21 $ get (update p1 :age inc) :age
           :examples $ []
-        |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
+        |test-record-with $ %{} :CodeEntry (:doc "|test record-with") (:schema nil)
           :code $ quote
             fn () (log-title "|Testing record-with")
               let
@@ -227,7 +230,7 @@
                 assert= :shanghai $ get p2 :position
                 assert= |Chen $ get p2 :name
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-record.main $ :require
             util.core :refer $ log-title inside-js:
