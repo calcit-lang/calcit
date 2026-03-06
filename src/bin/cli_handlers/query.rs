@@ -20,9 +20,10 @@ use super::edit::navigate_to_path;
 type SearchResults = Vec<(String, String, Vec<(Vec<usize>, Cirru)>)>;
 
 /// Parse "namespace/definition" format into (namespace, definition)
+/// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
   target
-    .rsplit_once('/')
+    .split_once('/')
     .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 

@@ -25,9 +25,10 @@ use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to
 use super::tips::Tips;
 
 /// Parse "namespace/definition" format into (namespace, definition)
+/// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
 pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
   target
-    .rsplit_once('/')
+    .split_once('/')
     .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 

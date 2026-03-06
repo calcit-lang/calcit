@@ -21,7 +21,7 @@
 
 - 不改 `defn/defmacro` 执行语义；
 - 不要求一次性补全历史 schema；
-- 不立即移除 `hint-fn/assert-type`。
+- 逐步迁移 `hint-fn/assert-type`。
 
 ## 数据模型提案
 
