@@ -1,6 +1,8 @@
 
-{} (:package |test-fn)
-  :configs $ {} (:init-fn |test-fn.main/main!) (:reload-fn |test-fn.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-fn)
+  :configs $ {} (:init-fn |test-fn.main/main!) (:reload-fn |test-fn.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-fn.main $ %{} :FileEntry
       :defs $ {}
@@ -15,7 +17,13 @@
                 assert= 1 $ f1 1
                 assert= 3 $ f2 1 2
                 assert= 3 $ apply f2 ([] 1 2)
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-fn.main $ :require
             util.core :refer $ log-title
+        :examples $ []

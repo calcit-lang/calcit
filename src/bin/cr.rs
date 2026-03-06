@@ -1278,9 +1278,48 @@ fn normalize_schema_symbol_name(name: &str) -> String {
   }
 }
 
-fn read_schema_param_tuple(item: &Cirru, default_name: &str) -> Option<(String, String)> {
+fn is_schema_list_annotation(node: &Cirru) -> bool {
+  match node {
+    Cirru::Leaf(s) => s.as_ref() == ":list",
+    Cirru::List(xs) => {
+      matches!(xs.first(), Some(Cirru::Leaf(head)) if &**head == "::")
+        && matches!(xs.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":list")
+    }
+  }
+}
+
+fn render_schema_param_type(ty_node: Option<&Cirru>, wrap_rest_as_list: bool) -> String {
+  let Some(ty_node) = ty_node else {
+    return ":dynamic".to_owned();
+  };
+
+  let rendered = render_cirru_inline(ty_node);
+  if !wrap_rest_as_list || rendered == ":dynamic" || is_schema_list_annotation(ty_node) {
+    rendered
+  } else {
+    format!(":: :list {rendered}")
+  }
+}
+
+fn should_treat_tuple_as_type_only(xs: &[Cirru], wrap_rest_as_list: bool) -> bool {
+  let Some(Cirru::Leaf(marker)) = xs.get(1) else {
+    return false;
+  };
+
+  if marker.starts_with(':') {
+    return true;
+  }
+
+  if wrap_rest_as_list && marker.as_ref() == ":list" {
+    return true;
+  }
+
+  false
+}
+
+fn read_schema_param_tuple(item: &Cirru, default_name: &str, wrap_rest_as_list: bool) -> Option<(String, String)> {
   match item {
-    Cirru::Leaf(_) => Some((default_name.to_owned(), render_cirru_inline(item))),
+    Cirru::Leaf(_) => Some((default_name.to_owned(), render_schema_param_type(Some(item), wrap_rest_as_list))),
     Cirru::List(xs) => {
       let Some(Cirru::Leaf(head)) = xs.first() else {
         return None;
@@ -1291,15 +1330,20 @@ fn read_schema_param_tuple(item: &Cirru, default_name: &str) -> Option<(String, 
 
       match xs.len() {
         2 => {
-          let ty = xs.get(1).map_or_else(|| ":dynamic".to_owned(), render_cirru_inline);
+          let ty = render_schema_param_type(xs.get(1), wrap_rest_as_list);
           Some((default_name.to_owned(), ty))
         }
         3 => {
+          if should_treat_tuple_as_type_only(xs, wrap_rest_as_list) {
+            let ty = render_schema_param_type(Some(item), wrap_rest_as_list);
+            return Some((default_name.to_owned(), ty));
+          }
+
           let name = match xs.get(1) {
             Some(Cirru::Leaf(s)) => normalize_schema_symbol_name(s),
             _ => return None,
           };
-          let ty = xs.get(2).map_or_else(|| ":dynamic".to_owned(), render_cirru_inline);
+          let ty = render_schema_param_type(xs.get(2), wrap_rest_as_list);
           Some((name, ty))
         }
         _ => None,
@@ -1321,7 +1365,7 @@ fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
     && matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]")
   {
     for (idx, item) in items.iter().skip(1).enumerate() {
-      if let Some((name, ty)) = read_schema_param_tuple(item, &format!("arg{idx}")) {
+      if let Some((name, ty)) = read_schema_param_tuple(item, &format!("arg{idx}"), false) {
         params.push(name.clone());
         param_annotations.entry(name).or_default().push(ty);
       }
@@ -1329,7 +1373,7 @@ fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
   }
 
   if let Some(rest_node) = schema.get(":rest")
-    && let Some((name, ty)) = read_schema_param_tuple(rest_node, "rest")
+    && let Some((name, ty)) = read_schema_param_tuple(rest_node, "rest", true)
   {
     params.push(name.clone());
     param_annotations.entry(name).or_default().push(ty);
@@ -1541,5 +1585,55 @@ fn infer_data_type(node: &Cirru) -> Option<String> {
       Some(Cirru::Leaf(head)) if &**head == "defmacro" => Some("macro".to_string()),
       _ => None,
     },
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn leaf(text: &str) -> Cirru {
+    Cirru::Leaf(Arc::from(text))
+  }
+
+  fn list(items: Vec<Cirru>) -> Cirru {
+    Cirru::List(items)
+  }
+
+  fn schema_with_rest(rest: Cirru) -> Cirru {
+    list(vec![
+      leaf("{}"),
+      list(vec![leaf(":kind"), leaf(":fn")]),
+      list(vec![leaf(":args"), list(vec![leaf("[]")])]),
+      list(vec![leaf(":rest"), rest]),
+      list(vec![leaf(":return"), leaf(":dynamic")]),
+    ])
+  }
+
+  #[test]
+  fn schema_rest_shorthand_normalizes_to_list_annotation() {
+    let schema = schema_with_rest(leaf(":number"));
+    let (_, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
+
+    assert_eq!(param_annotations.get("rest"), Some(&vec![":: :list :number".to_owned()]));
+  }
+
+  #[test]
+  fn schema_rest_explicit_list_keeps_default_name() {
+    let schema = schema_with_rest(list(vec![leaf("::"), leaf(":list"), leaf(":number")]));
+    let (params, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
+
+    assert_eq!(params, vec!["rest".to_owned()]);
+    assert_eq!(param_annotations.get("rest"), Some(&vec!["(:: :list :number)".to_owned()]));
+    assert!(!param_annotations.contains_key(":list"));
+  }
+
+  #[test]
+  fn schema_rest_named_tuple_keeps_name_and_normalizes_type() {
+    let schema = schema_with_rest(list(vec![leaf("::"), leaf("'ys"), leaf(":number")]));
+    let (params, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
+
+    assert_eq!(params, vec!["ys".to_owned()]);
+    assert_eq!(param_annotations.get("ys"), Some(&vec![":: :list :number".to_owned()]));
   }
 }

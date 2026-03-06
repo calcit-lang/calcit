@@ -1,16 +1,28 @@
 
-{} (:package |test-math)
-  :configs $ {} (:init-fn |test-math.main/main!) (:reload-fn |test-math.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-math)
+  :configs $ {} (:init-fn |test-math.main/main!) (:reload-fn |test-math.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-math.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'title :dynamic)
+              :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing numbers") (test-numbers) (log-title "|Testing math") (test-math) (log-title "|Testing compare") (test-compare) (test-hex) (test-integer) (test-methods) (test-bit-math) (do true)
-        |test-bit-math $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-bit-math $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|testing bit math")
               assert= 0 $ bit-shr 1 1
@@ -19,6 +31,7 @@
               assert= 2 $ bit-shl 1 1
               assert= 4 $ bit-shl 2 1
               assert= 16 $ bit-shl 4 2
+          :examples $ []
         |test-compare $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-compare ()
@@ -43,14 +56,21 @@
               assert=
                 &compare :k $ :: 0 0
                 , -1
-        |test-hex $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-hex $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing hex") (assert= 16 0x10) (assert= 15 0xf)
-        |test-integer $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-integer $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing integer")
               assert= true $ round? 1
               assert= false $ round? 1.1
+          :examples $ []
         |test-math $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-math ()
@@ -70,9 +90,14 @@
               assert= 9 $ sqrt 81
               println |PI &PI
               println |E &E
-              assert= 4 (abs 4)
+              assert= 4 $ abs 4
               assert= (negate -4) (abs -4)
-        |test-methods $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing number methods")
               assert= 1 $ .floor 1.1
@@ -87,6 +112,7 @@
               assert= 3 $ .rem 3 6
               assert= 2 $ .rem 11 3
               ; "has problem in comparing float numbers" $ assert= 0.1 (.fract 1.1)
+          :examples $ []
         |test-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-numbers ()
@@ -102,6 +128,12 @@
               assert-detect empty? nil
               assert-detect empty? $ []
               do true
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-math.main $ :require
+        :examples $ []

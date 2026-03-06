@@ -6,15 +6,15 @@
   :files $ {}
     |test-edn.main $ %{} :FileEntry
       :defs $ {}
-        |A $ %{} :CodeEntry (:doc |)
+        |A $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct A $ :a :dynamic
           :examples $ []
-        |DemoEnum $ %{} :CodeEntry (:doc |)
+        |DemoEnum $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defenum DemoEnum (:ok) (:err :string)
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |)
+        |Person $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defstruct Person (:name :string) (:age :number)
           :examples $ []
@@ -22,12 +22,20 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'title :dynamic)
+              :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)
               inside-eval: $ test-symbol
               test-atom
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |test-atom $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-atom () (log-title "|Testing atom to edn")
@@ -38,6 +46,10 @@
                 assert= 1 $ deref a
                 assert= "|atom 1" $ trim (format-cirru-edn a)
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn () $ let
@@ -109,6 +121,10 @@
                 assert= :err $ &tuple:nth enum-err 0
                 assert= "|%:: :DemoEnum :err |oops" $ trim (format-cirru-edn enum-err)
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |test-edn-comment $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn-comment () (log-title "|Testing edn comment")
@@ -120,6 +136,10 @@
                 parse-cirru-edn "|{} (:a 1) (:b 2)"
               assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |test-symbol $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-symbol () (log-title "|Testing symbol to edn")
@@ -143,7 +163,11 @@
                   code $ quote (+ 1 2)
                 assert= code $ eval (&data-to-code code)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-edn.main $ :require
             [] util.core :refer $ [] inside-eval:

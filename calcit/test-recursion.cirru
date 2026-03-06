@@ -1,15 +1,17 @@
 
-{} (:package |test-recursion)
-  :configs $ {} (:init-fn |test-recursion.main/main!) (:reload-fn |test-recursion.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-recursion)
+  :configs $ {} (:init-fn |test-recursion.main/main!) (:reload-fn |test-recursion.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-recursion.main $ %{} :FileEntry
       :defs $ {}
-        |*count-effects $ %{} :CodeEntry (:doc |)
+        |*count-effects $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote (defatom *count-effects 0)
+          :examples $ []
         |hole-series $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn hole-series (x)
-              assert-type x :number
+            defn hole-series (x) (assert-type x :number)
               if (&<= x 0) (raise "\"unexpected small number")
                 if (&= x 1) 0 $ if (&= x 2) 1
                   let
@@ -29,9 +31,19 @@
                           &+
                             &* 2 $ hole-series (&+ unit 1)
                             hole-series unit
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'x :number)
+              :return :number
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'title :dynamic)
+              :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
@@ -39,13 +51,23 @@
               log-title "|Testing loop"
               test-loop
               do true
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |test-hole-series $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-hole-series () $ assert "|hole series numbers"
               =
                 map (range 1 20) hole-series
                 [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
-        |test-loop $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-loop $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               assert= 55 $ apply
@@ -64,6 +86,8 @@
                   do (swap! *count-effects + x)
                     recur $ dec x
               assert= 6 @*count-effects
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-recursion.main $ :require
+        :examples $ []

@@ -1,16 +1,28 @@
 
-{} (:package |test-set)
-  :configs $ {} (:init-fn |test-set.main/main!) (:reload-fn |test-set.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-set)
+  :configs $ {} (:init-fn |test-set.main/main!) (:reload-fn |test-set.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-set.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'title :dynamic)
+              :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing set") (test-set) (test-methods) (do true)
-        |test-methods $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               assert= (#{} 1 2 3)
@@ -54,6 +66,7 @@
                   fn (x) (&> x 5)
               assert= 4 $ .max (#{} 1 2 3 4)
               assert= 1 $ .min (#{} 1 2 3 4)
+          :examples $ []
         |test-set $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-set ()
@@ -106,6 +119,12 @@
               assert=
                 &hash $ #{} 3 4 2 1
                 &hash $ #{} 3 2 1 4
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-set.main $ :require
+        :examples $ []

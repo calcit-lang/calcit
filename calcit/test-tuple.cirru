@@ -1,14 +1,15 @@
 
-{} (:package |test-tuple)
-  :configs $ {} (:init-fn |test-tuple.main/main!) (:reload-fn |test-tuple.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-tuple)
+  :configs $ {} (:init-fn |test-tuple.main/main!) (:reload-fn |test-tuple.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-tuple.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |)
+        |Result $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            defenum Result
-              :ok :number
-              :err :string
+            defenum Result (:ok :number) (:err :string)
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
@@ -57,16 +58,15 @@
                   (:none) (:: :empty)
                   (:some k0 v0 ms)
                     :: :parts $ count ms
-
-              assert= 1 $ try-size $ :: :dyn
-              assert= 2 $ try-size $ :: :dyn 1
-              assert= 3 $ try-size $ :: :dyn 1 2
-              assert= 4 $ try-size $ :: :dyn 1 2 3
-              assert= :many $ try-size $ :: :dyn 1 2 3 4
-              assert= :many $ try-size $ :: :dyn 1 2 3 4 5
+              assert= 1 $ try-size (:: :dyn)
+              assert= 2 $ try-size (:: :dyn 1)
+              assert= 3 $ try-size (:: :dyn 1 2)
+              assert= 4 $ try-size (:: :dyn 1 2 3)
+              assert= :many $ try-size (:: :dyn 1 2 3 4)
+              assert= :many $ try-size (:: :dyn 1 2 3 4 5)
               let
                   ok $ %:: Result :ok 1
-                assert= :enum $ type-of $ &tuple:enum ok
+                assert= :enum $ type-of (&tuple:enum ok)
                 assert= "|(%:: :ok 1 (:enum Result))" $ str ok
                 assert= true $ &tuple:enum-has-variant? Result :ok
                 assert= 1 $ &tuple:enum-variant-arity Result :ok
@@ -74,17 +74,28 @@
               let
                   plain $ :: :plain 1
                 assert= nil $ &tuple:enum plain
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |try-size $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)
               tag-match x
-                (:dyn) 1
+                  :dyn
+                  , 1
                 (:dyn x) 2
                 (:dyn x y) 3
                 (:dyn x y z) 4
                 _ :many
-
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'x :dynamic)
+              :return :dynamic
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-tuple.main $ :require
             util.core :refer $ log-title
+        :examples $ []

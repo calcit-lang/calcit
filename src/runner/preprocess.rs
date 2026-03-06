@@ -9,7 +9,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cell::RefCell, vec};
@@ -1759,6 +1759,81 @@ fn warn_on_trait_impl_method_tag_syntax(
   }
 }
 
+fn extract_hint_fn_legacy_clause_name(form: &Calcit) -> Option<&str> {
+  match form {
+    Calcit::Symbol { sym, .. } => match sym.as_ref() {
+      "return-type" => Some("return-type"),
+      "generics" => Some("generics"),
+      "type-vars" => Some("type-vars"),
+      _ => None,
+    },
+    Calcit::Import(CalcitImport { def, .. }) => match def.as_ref() {
+      "return-type" => Some("return-type"),
+      "generics" => Some("generics"),
+      "type-vars" => Some("type-vars"),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+fn warn_on_legacy_hint_fn_syntax(
+  processed_body: &[Calcit],
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+
+  for form in processed_body {
+    let Calcit::List(xs) = form else {
+      continue;
+    };
+
+    let is_hint_fn = matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _)))
+      || matches!(xs.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn");
+    if !is_hint_fn {
+      continue;
+    }
+
+    let mut legacy_clauses: BTreeSet<&str> = BTreeSet::new();
+    let mut warning_location: Option<NodeLocation> = None;
+
+    for item in xs.iter().skip(1) {
+      let Calcit::List(inner) = item else {
+        continue;
+      };
+      let Some(head) = inner.first() else {
+        continue;
+      };
+
+      if let Some(name) = extract_hint_fn_legacy_clause_name(head) {
+        legacy_clauses.insert(name);
+        if warning_location.is_none() {
+          warning_location = item.get_location().or_else(|| form.get_location());
+        }
+      }
+    }
+
+    if legacy_clauses.is_empty() {
+      continue;
+    }
+
+    let clauses = legacy_clauses.into_iter().collect::<Vec<_>>().join(", ");
+    let message = format!(
+      "[Warn] `{file_ns}/{def_name}` uses legacy hint-fn clauses ({clauses}); prefer schema map form like `(hint-fn $ {{}} (:args ...) (:return ...))`"
+    );
+
+    if let Some(loc) = warning_location {
+      gen_check_warning_with_location(message, loc, check_warnings);
+    } else {
+      gen_check_warning(message, file_ns, check_warnings);
+    }
+  }
+}
+
 fn warn_on_method_name_conflict(
   head: &Calcit,
   args: &CalcitList,
@@ -3151,6 +3226,8 @@ pub fn preprocess_defn(
         Ok(())
       })?;
 
+      warn_on_legacy_hint_fn_syntax(&processed_body, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
+
       // Check function return type if declared
       // Extract return type hint from processed body (after preprocessing)
       let return_type_hint = detect_return_type_hint_from_processed_body(&processed_body);
@@ -4145,6 +4222,52 @@ mod tests {
         .any(|msg| msg.contains("defimpl") && msg.contains("legacy tag style") && msg.contains(".foo")),
       "expected migration warning for trait/impl method key, got: {warning_msgs:?}"
     );
+  }
+
+  #[test]
+  fn warns_on_legacy_hint_fn_clause_syntax() {
+    use crate::data::cirru::code_to_calcit;
+
+    let hint_form = Cirru::List(vec![
+      Cirru::leaf("hint-fn"),
+      Cirru::List(vec![Cirru::leaf("return-type"), Cirru::leaf(":string")]),
+      Cirru::List(vec![
+        Cirru::leaf("generics"),
+        Cirru::List(vec![Cirru::leaf("quote"), Cirru::leaf("T")]),
+      ]),
+    ]);
+    let hint = code_to_calcit(&hint_form, "tests.hint", "demo", vec![]).expect("parse cirru");
+    let warnings = RefCell::new(vec![]);
+
+    warn_on_legacy_hint_fn_syntax(&[hint], "tests.hint", "demo", &warnings);
+
+    let warning_msgs: Vec<String> = warnings.borrow().iter().map(|w| w.to_string()).collect();
+    assert!(
+      warning_msgs
+        .iter()
+        .any(|msg| msg.contains("legacy hint-fn clauses") && msg.contains("return-type") && msg.contains("generics")),
+      "expected warning for legacy hint-fn clauses, got: {warning_msgs:?}"
+    );
+  }
+
+  #[test]
+  fn does_not_warn_on_schema_hint_fn_syntax() {
+    use crate::data::cirru::code_to_calcit;
+
+    let hint_form = Cirru::List(vec![
+      Cirru::leaf("hint-fn"),
+      Cirru::List(vec![
+        Cirru::leaf("{}"),
+        Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
+        Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":string")]),
+      ]),
+    ]);
+    let hint = code_to_calcit(&hint_form, "tests.hint", "demo", vec![]).expect("parse cirru");
+    let warnings = RefCell::new(vec![]);
+
+    warn_on_legacy_hint_fn_syntax(&[hint], "tests.hint", "demo", &warnings);
+
+    assert!(warnings.borrow().is_empty(), "schema hint-fn should not emit legacy warning");
   }
 
   #[test]

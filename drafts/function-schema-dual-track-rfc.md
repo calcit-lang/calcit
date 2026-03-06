@@ -36,7 +36,7 @@
     :kind :fn
     :generics $ [] 'T 'U
     :args $ [] 'T :number
-    :rest $ :: :list :number
+    :rest :number
     :return $ :: :tuple :ok 'U
     :where $ []
       :: 'Eq 'T
@@ -49,6 +49,7 @@
 - schema 中不再要求 `:name`，函数名需要时可从 `:code` 提取；
 - 字段值全部为现有 Calcit 数据结构；
 - 支持以 `:optional` 开头包裹 schema，用于渐进迁移；
+- `:rest` 支持元素类型短写（如 `:rest :number`），工具链按 `:: :list :number` 解释；
 - schema 中未设置的字段按 `:dynamic` 语义处理；
 - 可扩展 `:kind :macro/:proc`。
 
@@ -69,7 +70,7 @@
 主示例 parse 校验命令：
 
 ```bash
-cr demos/compact.cirru cirru parse-edn "{} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest (:: :list :number)) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))"
+cr demos/compact.cirru cirru parse-edn "{} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))"
 ```
 
 可选包裹示例（迁移期推荐）：
@@ -81,7 +82,7 @@ cr demos/compact.cirru cirru parse-edn "{} (:optional ({} (:kind :fn) (:args ([]
 ### 运行时数据验证（`cr eval` + `println`）
 
 ```bash
-cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest (:: :list :number)) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))) (println schema) (println (type-of schema)) , schema"
+cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))) (println schema) (println (type-of schema)) , schema"
 ```
 
 预期：`println (type-of schema)` 输出 `:map`，证明 schema 在运行时是普通数据。

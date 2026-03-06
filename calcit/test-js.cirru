@@ -11,11 +11,15 @@
             defmacro load-data-code (s)
               &data-to-code $ parse-cirru-edn s
           :examples $ []
-        |log-title $ %{} :CodeEntry (:doc |) (:schema nil)
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'title :dynamic)
+              :return :dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)
               when (> 1 2)
@@ -33,6 +37,10 @@
               test-return-raw-code
               do true
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |test-async $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () $ let

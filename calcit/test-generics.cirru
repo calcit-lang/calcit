@@ -24,15 +24,23 @@
               :pair $ :: Pair :number :string
               :none
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing generics...") (test-struct-generics) (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-        |test-fn-generics $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-fn-generics $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-fn-generics () $ let
                 id $ fn (x)
@@ -53,7 +61,11 @@
               &inspect-type n
               &inspect-type s
           :examples $ []
-        |test-struct-generics $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-struct-generics $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-struct-generics () $ let
                 p $ %{} Pair (:left 1) (:right |hi)
@@ -66,6 +78,10 @@
               &inspect-type b
               &inspect-type h
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-generics.main)
         :examples $ []
