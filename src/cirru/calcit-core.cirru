@@ -6,12 +6,22 @@
   :files $ {}
     |calcit.core $ %{} :FileEntry
       :defs $ {}
-        |#{} $ %{} :CodeEntry (:doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements") (:schema nil)
+        |#{} $ %{} :CodeEntry (:doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:impl-traits to attach impls)") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :rest :dynamic
+              :return :set
+        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:impl-traits to attach impls)")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'enum :dynamic) (:: 'tag :dynamic)
+              :rest :dynamic
+              :return :tuple
         |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
           :code $ quote
             defmacro %<- (& xs)
@@ -103,21 +113,42 @@
         |&%{}? $ %{} :CodeEntry (:doc "|internal function for partial record construction\nSyntax: (&%{}? proto & key-value-pairs)\nParams: proto (struct), key-value-pairs (any, variadic)\nReturns: record\nMissing fields default to nil.") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&* $ %{} :CodeEntry (:doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats") (:schema nil)
+        |&* $ %{} :CodeEntry (:doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&+ $ %{} :CodeEntry (:doc "|internal function for addition\nSyntax: (&+ a b)\nParams: a (number), b (number)\nReturns: number\nAdds two numbers together, supports integers and floats") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |&+ $ %{} :CodeEntry (:doc "|internal function for addition\nSyntax: (&+ a b)\nParams: a (number), b (number)\nReturns: number\nAdds two numbers together, supports integers and floats")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&- $ %{} :CodeEntry (:doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |&- $ %{} :CodeEntry (:doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&/ $ %{} :CodeEntry (:doc "|internal function for division\nSyntax: (&/ a b)\nParams: a (number), b (number)\nReturns: number\nDivides first number by second, returns float result") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |&/ $ %{} :CodeEntry (:doc "|internal function for division\nSyntax: (&/ a b)\nParams: a (number), b (number)\nReturns: number\nDivides first number by second, returns float result")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&< $ %{} :CodeEntry (:doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |&< $ %{} :CodeEntry (:doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :rest :number
+              :return :bool
         |&<= $ %{} :CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote
             defn &<= (a b)
@@ -134,12 +165,22 @@
             {} (:kind :fn)
               :args $ [] (:: 'a :number) (:: 'b :number)
               :return :bool
-        |&= $ %{} :CodeEntry (:doc "|internal function for equality comparison\nSyntax: (&= a b & values)\nParams: a (any), b (any), values (any, variadic)\nReturns: boolean\nReturns true if all values are equal using deep comparison") (:schema nil)
+        |&= $ %{} :CodeEntry (:doc "|internal function for equality comparison\nSyntax: (&= a b & values)\nParams: a (any), b (any), values (any, variadic)\nReturns: boolean\nReturns true if all values are equal using deep comparison")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&> $ %{} :CodeEntry (:doc "|internal function for greater than comparison\nSyntax: (&> a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in descending order") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :dynamic) (:: 'b :dynamic)
+              :rest :dynamic
+              :return :bool
+        |&> $ %{} :CodeEntry (:doc "|internal function for greater than comparison\nSyntax: (&> a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in descending order")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :rest :number
+              :return :bool
         |&>= $ %{} :CodeEntry (:doc "|Greater than or equal comparison for two values")
           :code $ quote
             defn &>= (a b)
@@ -156,12 +197,20 @@
             {} (:kind :fn)
               :args $ [] (:: 'a :number) (:: 'b :number)
               :return :bool
-        |&atom:deref $ %{} :CodeEntry (:doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom") (:schema nil)
+        |&atom:deref $ %{} :CodeEntry (:doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&buffer $ %{} :CodeEntry (:doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'atom :ref)
+              :return :dynamic
+        |&buffer $ %{} :CodeEntry (:doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'data :dynamic)
+              :return :buffer
         |&call-spread $ %{} :CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -184,18 +233,34 @@
               :args $ [] (:: 'item :dynamic) (:: 'default :dynamic) (:: 'pattern :dynamic)
               :rest :dynamic
               :return :dynamic
-        |&cirru-nth $ %{} :CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node or nil\nGets nth element from Cirru list node, returns nil if index out of bounds") (:schema nil)
+        |&cirru-nth $ %{} :CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node or nil\nGets nth element from Cirru list node, returns nil if index out of bounds")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&cirru-quote:to-list $ %{} :CodeEntry (:doc "|internal function for converting Cirru quote to list\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list\nConverts Cirru quote structure to regular list") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'cirru-list :dynamic) (:: 'index :number)
+              :return :dynamic
+        |&cirru-quote:to-list $ %{} :CodeEntry (:doc "|internal function for converting Cirru quote to list\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list\nConverts Cirru quote structure to regular list")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&cirru-type $ %{} :CodeEntry (:doc "|internal function for getting Cirru type\nSyntax: (&cirru-type cirru-node)\nParams: cirru-node (cirru quote)\nReturns: keyword (:leaf or :list)\nReturns type of Cirru node, either :leaf for atoms or :list for expressions") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'quote :dynamic)
+              :return :list
+        |&cirru-type $ %{} :CodeEntry (:doc "|internal function for getting Cirru type\nSyntax: (&cirru-type cirru-node)\nParams: cirru-node (cirru quote)\nReturns: keyword (:leaf or :list)\nReturns type of Cirru node, either :leaf for atoms or :list for expressions")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&compare $ %{} :CodeEntry (:doc "|internal function for native comparison\nSyntax: (&compare a b)\nParams: a (any), b (any)\nReturns: number (-1, 0, or 1)\nPerforms three-way comparison returning -1 (less), 0 (equal), or 1 (greater)") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'cirru-node :dynamic)
+              :return :tag
+        |&compare $ %{} :CodeEntry (:doc "|internal function for native comparison\nSyntax: (&compare a b)\nParams: a (any), b (any)\nReturns: number (-1, 0, or 1)\nPerforms three-way comparison returning -1 (less), 0 (equal), or 1 (greater)")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :dynamic) (:: 'b :dynamic)
+              :return :number
         |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn") (:schema nil)
           :code $ quote
             def &core-fn-impls $ [] &core-fn-methods internal/&core-show-impl
@@ -1653,9 +1718,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :number)
               :return :number
-        |add-watch $ %{} :CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: atom\nAdds watcher function to atom") (:schema nil)
+        |add-watch $ %{} :CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: atom\nAdds watcher function to atom")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'atom :ref) (:: 'key :dynamic) (:: 'callback :dynamic)
+              :return :ref
         |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
             defmacro and (& xs)
@@ -1708,9 +1777,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'xs :dynamic) (:: 'f :fn)
               :return :bool
-        |append $ %{} :CodeEntry (:doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end") (:schema nil)
+        |append $ %{} :CodeEntry (:doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list) (:: 'element :dynamic)
+              :return :list
         |apply $ %{} :CodeEntry (:doc "|calls a function with arguments from a list, spreads the list as individual arguments")
           :code $ quote
             defn apply (f args)
@@ -1877,30 +1950,62 @@
             {} (:kind :fn)
               :args $ [] (:: 'data :dynamic) (:: 'path :list) (:: 'v :dynamic)
               :return :dynamic
-        |atom $ %{} :CodeEntry (:doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value") (:schema nil)
+        |atom $ %{} :CodeEntry (:doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |bit-and $ %{} :CodeEntry (:doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :ref
+        |bit-and $ %{} :CodeEntry (:doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |bit-not $ %{} :CodeEntry (:doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |bit-not $ %{} :CodeEntry (:doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |bit-or $ %{} :CodeEntry (:doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
+        |bit-or $ %{} :CodeEntry (:doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |bit-shl $ %{} :CodeEntry (:doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |bit-shl $ %{} :CodeEntry (:doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |bit-shr $ %{} :CodeEntry (:doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number) (:: 'shift :number)
+              :return :number
+        |bit-shr $ %{} :CodeEntry (:doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |bit-xor $ %{} :CodeEntry (:doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number) (:: 'shift :number)
+              :return :number
+        |bit-xor $ %{} :CodeEntry (:doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |blank? $ %{} :CodeEntry (:doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :number) (:: 'b :number)
+              :return :number
+        |blank? $ %{} :CodeEntry (:doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string)
+              :return :bool
         |bool? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bool? (x)
@@ -1925,9 +2030,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element") (:schema nil)
+        |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list)
+              :return :list
         |call-w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro call-w-log (f & xs)
@@ -2017,12 +2126,20 @@
               :args $ [] (:: 'x :dynamic) (:: 'default :dynamic)
               :rest :dynamic
               :return :dynamic
-        |ceil $ %{} :CodeEntry (:doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n") (:schema nil)
+        |ceil $ %{} :CodeEntry (:doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |char-from-code $ %{} :CodeEntry (:doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
+        |char-from-code $ %{} :CodeEntry (:doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'code :number)
+              :return :string
         |cirru-quote? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn cirru-quote? (x)
@@ -2205,9 +2322,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic) (:: 'k :dynamic)
               :return :bool
-        |cos $ %{} :CodeEntry (:doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians") (:schema nil)
+        |cos $ %{} :CodeEntry (:doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
         |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
             defn count (x)
@@ -2229,9 +2350,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :number
-        |cpu-time $ %{} :CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement") (:schema nil)
+        |cpu-time $ %{} :CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :number
         |dec $ %{} :CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote
             defn dec (x)
@@ -2788,9 +2913,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |ends-with? $ %{} :CodeEntry (:doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix") (:schema nil)
+        |ends-with? $ %{} :CodeEntry (:doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string) (:: 'suffix :string)
+              :return :bool
         |enum? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is an enum definition.")
           :code $ quote
             defn enum? (x)
@@ -2967,9 +3096,13 @@
               :args $ [] (:: 'f :dynamic)
               :rest :dynamic
               :return :dynamic
-        |floor $ %{} :CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n") (:schema nil)
+        |floor $ %{} :CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
         |fn $ %{} :CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
           :code $ quote
             defmacro fn (args & body)
@@ -3006,9 +3139,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |foldl $ %{} :CodeEntry (:doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value") (:schema nil)
+        |foldl $ %{} :CodeEntry (:doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list) (:: 'initial :dynamic) (:: 'reducer :dynamic)
+              :return :dynamic
         |foldl' $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn foldl' (xs acc f) (assert-type xs :list) (assert-type acc :dynamic)
@@ -3039,27 +3176,55 @@
             {} (:kind :fn)
               :args $ [] (:: 'xs :list) (:: 'acc :dynamic) (:: 'f :dynamic)
               :return :bool
-        |foldl-shortcut $ %{} :CodeEntry (:doc "|internal function for left fold with shortcut\nSyntax: (foldl-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with early termination support") (:schema nil)
+        |foldl-shortcut $ %{} :CodeEntry (:doc "|internal function for left fold with shortcut\nSyntax: (foldl-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with early termination support")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |foldr-shortcut $ %{} :CodeEntry (:doc "|internal function for right fold with shortcut\nSyntax: (foldr-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from right with early termination support") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list) (:: 'initial :dynamic) (:: 'reducer :dynamic)
+              :return :dynamic
+        |foldr-shortcut $ %{} :CodeEntry (:doc "|internal function for right fold with shortcut\nSyntax: (foldr-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from right with early termination support")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |format-cirru $ %{} :CodeEntry (:doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list) (:: 'initial :dynamic) (:: 'reducer :dynamic)
+              :return :dynamic
+        |format-cirru $ %{} :CodeEntry (:doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |format-cirru-edn $ %{} :CodeEntry (:doc "|internal function for formatting Cirru EDN\nSyntax: (format-cirru-edn data)\nParams: data (any)\nReturns: string\nFormats Calcit data structures into Cirru EDN format text") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'data :list)
+              :return :string
+        |format-cirru-edn $ %{} :CodeEntry (:doc "|internal function for formatting Cirru EDN\nSyntax: (format-cirru-edn data)\nParams: data (any)\nReturns: string\nFormats Calcit data structures into Cirru EDN format text")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |format-cirru-one-liner $ %{} :CodeEntry (:doc "|internal function for formatting Cirru as one-liner\nSyntax: (format-cirru-one-liner data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru one-liner syntax text") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'data :dynamic)
+              :return :string
+        |format-cirru-one-liner $ %{} :CodeEntry (:doc "|internal function for formatting Cirru as one-liner\nSyntax: (format-cirru-one-liner data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru one-liner syntax text")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |format-to-cirru $ %{} :CodeEntry (:doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'data :list)
+              :return :string
+        |format-to-cirru $ %{} :CodeEntry (:doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |format-to-lisp $ %{} :CodeEntry (:doc "|internal function for formatting to Lisp syntax\nSyntax: (format-to-lisp value)\nParams: value (any)\nReturns: string in Lisp format\nConverts Calcit data structures to Lisp-style string representation") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :string
+        |format-to-lisp $ %{} :CodeEntry (:doc "|internal function for formatting to Lisp syntax\nSyntax: (format-to-lisp value)\nParams: value (any)\nReturns: string in Lisp format\nConverts Calcit data structures to Lisp-style string representation")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :string
         |frequencies $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn frequencies (xs0)
@@ -3084,9 +3249,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'xs0 :list)
               :return :map
-        |generate-id! $ %{} :CodeEntry (:doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use") (:schema nil)
+        |generate-id! $ %{} :CodeEntry (:doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :return :string
         |gensym $ %{} :CodeEntry (:doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -3111,12 +3280,20 @@
             {} (:kind :fn)
               :args $ [] (:: 'base :dynamic) (:: 'k :dynamic)
               :return :dynamic
-        |get-char-code $ %{} :CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character") (:schema nil)
+        |get-char-code $ %{} :CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'char :string)
+              :return :number
+        |get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'var-name :string)
+              :return $ :: :optional :string
         |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
           :code $ quote
             defn get-in (base path)
@@ -3177,9 +3354,13 @@
         |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (used for async and generics)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (keyword or list), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and generic type metadata (type-vars, return-type)") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
-        |identical? $ %{} :CodeEntry (:doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal") (:schema nil)
+        |identical? $ %{} :CodeEntry (:doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'a :dynamic) (:: 'b :dynamic)
+              :return :bool
         |identity $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn identity (x)
@@ -3385,9 +3566,13 @@
               :args $ [] (:: 'base :set)
               :rest $ :: 'xs (:: :list :set)
               :return :set
-        |is-spreading-mark? $ %{} :CodeEntry (:doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &") (:schema nil)
+        |is-spreading-mark? $ %{} :CodeEntry (:doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :bool
         |join $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn join (xs0 sep)
@@ -4000,9 +4185,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :dynamic
-        |not $ %{} :CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (any)\nReturns: boolean\nReturns true if value is falsy (nil or false), false otherwise") (:schema nil)
+        |not $ %{} :CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (any)\nReturns: boolean\nReturns true if value is falsy (nil or false), false otherwise")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :bool
         |not= $ %{} :CodeEntry (:doc "|Returns true when its two arguments are not identical according to `=`.")
           :code $ quote
             defn not= (x y)
@@ -4138,41 +4327,78 @@
             {} (:kind :fn)
               :args $ [] (:: 'xs :list)
               :return :map
-        |parse-cirru $ %{} :CodeEntry (:doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure") (:schema nil)
+        |parse-cirru $ %{} :CodeEntry (:doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |parse-cirru-edn $ %{} :CodeEntry (:doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'text :string)
+              :return :list
+        |parse-cirru-edn $ %{} :CodeEntry (:doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |parse-cirru-list $ %{} :CodeEntry (:doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'text :string)
+              :return :dynamic
+        |parse-cirru-list $ %{} :CodeEntry (:doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'text :string)
+              :return :list
+        |parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |pow $ %{} :CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string)
+              :return $ :: :optional :number
+        |pow $ %{} :CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |prepend $ %{} :CodeEntry (:doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'base :number) (:: 'exponent :number)
+              :return :number
+        |prepend $ %{} :CodeEntry (:doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list) (:: 'element :dynamic)
+              :return :list
         |quasiquote $ %{} :CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
             quote $ quasiquote (&+ ~x 1)
             quote $ quasiquote ([] ~x ~@xs)
-        |quit! $ %{} :CodeEntry (:doc "|internal function for quitting program\nSyntax: (quit! exit-code)\nParams: exit-code (number, optional, defaults to 0)\nReturns: never returns (exits program)\nTerminates the program with specified exit code") (:schema nil)
+        |quit! $ %{} :CodeEntry (:doc "|internal function for quitting program\nSyntax: (quit! exit-code)\nParams: exit-code (number, optional, defaults to 0)\nReturns: never returns (exits program)\nTerminates the program with specified exit code")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'exit-code :number)
+              :return :dynamic
         |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
-        |raise $ %{} :CodeEntry (:doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message") (:schema nil)
+        |raise $ %{} :CodeEntry (:doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |range $ %{} :CodeEntry (:doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'message :string)
+              :return :dynamic
+        |range $ %{} :CodeEntry (:doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'x :number)
+                :: 'y $ :: :optional :number
+              :return :list
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
@@ -4194,9 +4420,13 @@
               :args $ [] (:: 'x :number)
                 :: 'y $ :: :optional :number
               :return :list
-        |read-file $ %{} :CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found") (:schema nil)
+        |read-file $ %{} :CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'filepath :string)
+              :return :string
         |record-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro record-match (value & body)
@@ -4248,9 +4478,14 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |recur $ %{} :CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls") (:schema nil)
+        |recur $ %{} :CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ []
+              :rest :dynamic
+              :return :dynamic
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
             defn reduce (xs x0 f) (assert-type xs :dynamic) (assert-type x0 :dynamic)
@@ -4275,9 +4510,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |remove-watch $ %{} :CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: atom\nRemoves watcher with specified key from atom") (:schema nil)
+        |remove-watch $ %{} :CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: atom\nRemoves watcher with specified key from atom")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'atom :ref) (:: 'key :dynamic)
+              :return :ref
         |repeat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn repeat (x n0)
@@ -4352,12 +4591,20 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :list)
               :return :list
-        |round $ %{} :CodeEntry (:doc "|internal function for rounding numbers\nSyntax: (round n)\nParams: n (number)\nReturns: number\nRounds number to nearest integer") (:schema nil)
+        |round $ %{} :CodeEntry (:doc "|internal function for rounding numbers\nSyntax: (round n)\nParams: n (number)\nReturns: number\nRounds number to nearest integer")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |round? $ %{} :CodeEntry (:doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
+        |round? $ %{} :CodeEntry (:doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :bool
         |section-by $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn section-by (xs0 n)
@@ -4417,9 +4664,13 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |sin $ %{} :CodeEntry (:doc "|internal function for sine\nSyntax: (sin n)\nParams: n (number, radians)\nReturns: number\nReturns sine of angle in radians") (:schema nil)
+        |sin $ %{} :CodeEntry (:doc "|internal function for sine\nSyntax: (sin n)\nParams: n (number, radians)\nReturns: number\nReturns sine of angle in radians")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
         |slice $ %{} :CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
             defn slice (xs n ? m)
@@ -4476,21 +4727,42 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |sort $ %{} :CodeEntry (:doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator") (:schema nil)
+        |sort $ %{} :CodeEntry (:doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |split $ %{} :CodeEntry (:doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'list :list)
+                :: 'comparator $ :: :optional :dynamic
+              :return :list
+        |split $ %{} :CodeEntry (:doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |split-lines $ %{} :CodeEntry (:doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string) (:: 'delimiter :string)
+              :return :list
+        |split-lines $ %{} :CodeEntry (:doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |sqrt $ %{} :CodeEntry (:doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string)
+              :return :list
+        |sqrt $ %{} :CodeEntry (:doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |starts-with? $ %{} :CodeEntry (:doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'n :number)
+              :return :number
+        |starts-with? $ %{} :CodeEntry (:doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string) (:: 'prefix :string)
+              :return :bool
         |str $ %{} :CodeEntry (:doc "|converts values to string and concatenates them")
           :code $ quote
             defn str (x0 & xs) (assert-type x0 :dynamic)
@@ -4756,15 +5028,27 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :bool
-        |to-lispy-string $ %{} :CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation") (:schema nil)
+        |to-lispy-string $ %{} :CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |to-pairs $ %{} :CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :string
+        |to-pairs $ %{} :CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |trim $ %{} :CodeEntry (:doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'map :map)
+              :return :set
+        |trim $ %{} :CodeEntry (:doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 's :string)
+              :return :string
         |try $ %{} :CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -4789,18 +5073,34 @@
             {} (:kind :fn)
               :args $ [] (:: 'x :dynamic)
               :return :string
-        |turn-string $ %{} :CodeEntry (:doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation") (:schema nil)
+        |turn-string $ %{} :CodeEntry (:doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |turn-symbol $ %{} :CodeEntry (:doc "|internal function for converting to symbol\nSyntax: (turn-symbol value)\nParams: value (string, tag, or symbol)\nReturns: symbol\nConverts string, tag, or existing symbol to symbol type") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :string
+        |turn-symbol $ %{} :CodeEntry (:doc "|internal function for converting to symbol\nSyntax: (turn-symbol value)\nParams: value (string, tag, or symbol)\nReturns: symbol\nConverts string, tag, or existing symbol to symbol type")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |turn-tag $ %{} :CodeEntry (:doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :symbol
+        |turn-tag $ %{} :CodeEntry (:doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |type-of $ %{} :CodeEntry (:doc "|internal function for getting type of value\nSyntax: (type-of value)\nParams: value (any)\nReturns: tag representing the type\nReturns type tag like :nil, :bool, :number, :string, :list, :map, :set, :fn, etc.") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :tag
+        |type-of $ %{} :CodeEntry (:doc "|internal function for getting type of value\nSyntax: (type-of value)\nParams: value (any)\nReturns: tag representing the type\nReturns type tag like :nil, :bool, :number, :string, :list, :map, :set, :fn, etc.")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'value :dynamic)
+              :return :tag
         |union $ %{} :CodeEntry (:doc "|Returns the union of all sets")
           :code $ quote
             defn union (base & xs) (assert-type base :set)
@@ -5077,9 +5377,13 @@
             {} (:kind :macro)
               :args $ [] (:: 'x :dynamic)
               :return :dynamic
-        |write-file $ %{} :CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: nil or error\nWrites string content to file, creates directories if needed") (:schema nil)
+        |write-file $ %{} :CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: nil or error\nWrites string content to file, creates directories if needed")
           :code $ quote &runtime-inplementation
           :examples $ []
+          :schema $ quote
+            {} (:kind :fn)
+              :args $ [] (:: 'filepath :string) (:: 'content :string)
+              :return :dynamic
         |zipmap $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn zipmap (xs0 ys0)

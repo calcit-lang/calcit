@@ -54,7 +54,7 @@
             defn test-fn-inference () $ let
                 f $ fn (x) (+ x 1)
               hint-fn f $ {}
-                :args $ [] :number
+                :args $ [] (:: 'x :number)
                 :return :number
               &inspect-type f
           :examples $ []

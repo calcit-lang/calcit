@@ -647,6 +647,7 @@ let
 - **紧凑模式（推荐）**：紧跟在参数列表后的类型标签。
 - **正式模式**：使用 `hint-fn`（通常放在函数体开头）。
   - 泛型变量：`hint-fn $ {} (:generics ([] 'T 'S))`
+  - 旧 clause 写法（如 `(hint-fn (return-type ...))` / `(generics ...)` / `(type-vars ...)`）已不再支持，会直接报错。
 
 验证示例：
 
@@ -657,11 +658,11 @@ let
       &+ a b
     ; 正式模式
     get-name $ fn (user)
-      hint-fn $ {} (:args ([] :dynamic)) (:return :string)
+      hint-fn $ {} (:args ([] (:: 'user :dynamic))) (:return :string)
       |demo
     ; 泛型声明示例
     id $ fn (x)
-      hint-fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:return 'T)
+      hint-fn $ {} (:generics ([] 'T)) (:args ([] (:: 'x 'T))) (:return 'T)
       x
   add 1 2
 ```
