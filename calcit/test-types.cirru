@@ -37,9 +37,7 @@
           :examples $ []
         |add-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn add-numbers (a b) (assert-type a :number) (assert-type b :number)
-              hint-fn $ {} (:return :number)
-              &+ a b
+            defn add-numbers (a b) (assert-type a :number) (assert-type b :number) (&+ a b)
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
@@ -60,9 +58,7 @@
               :return :number
         |describe-typed $ %{} :CodeEntry (:doc "|Combines typed label and number")
           :code $ quote
-            defn describe-typed (label value) (assert-type label :string) (assert-type value :number)
-              hint-fn $ {} (:return :string)
-              str label "|: " value
+            defn describe-typed (label value) (assert-type label :string) (assert-type value :number) (str label "|: " value)
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
@@ -169,7 +165,6 @@
         |test-complex-threading $ %{} :CodeEntry (:doc "|Tests type preservation with multiple typed functions in -> chain")
           :code $ quote
             defn test-complex-threading (a b) (assert-type a :number) (assert-type b :number)
-              hint-fn $ {} (:return :number)
               let
                   ; "先计算初始值，然后使用" -> "语法串联多个有" return-type "标注的函数"
                   sum-ab $ add-numbers a b
@@ -314,9 +309,7 @@
               :return :dynamic
         |test-proc-type $ %{} :CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
           :code $ quote
-            defn test-proc-type (p x y) (assert-type p :fn) (assert-type x :number) (assert-type y :number)
-              hint-fn $ {} (:return :number)
-              p x y
+            defn test-proc-type (p x y) (assert-type p :fn) (assert-type x :number) (assert-type y :number) (p x y)
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
@@ -379,10 +372,7 @@
               :return :dynamic
         |test-threading-types $ %{} :CodeEntry (:doc "|Tests type preservation through -> threading macro")
           :code $ quote
-            defn test-threading-types (text) (assert-type text :string)
-              hint-fn $ {} (:return :string)
-              ; "使用" -> "串联：text" "先经过" str "拼接，再经过" process-string
-              ; "最终结果应该保留" :string "类型（从" process-string "的" return-type "推断）"
+            defn test-threading-types (text) (assert-type text :string) (; "使用" -> "串联：text" "先经过" str "拼接，再经过" process-string) (; "最终结果应该保留" :string "类型（从" process-string "的" return-type "推断）")
               -> text (str |prefix:) (process-string)
           :examples $ []
           :schema $ quote
