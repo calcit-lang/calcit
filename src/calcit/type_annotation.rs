@@ -222,16 +222,7 @@ impl CalcitTypeAnnotation {
 
     let items = list.skip(1).ok()?;
     for item in items.iter() {
-      if let Calcit::List(inner) = item {
-        let head = inner.first();
-        if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "return-type") {
-          if let Some(type_expr) = inner.get(1) {
-            return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
-          }
-        }
-      }
-
-      if let Some(type_expr) = Self::extract_schema_value(item, &["return", "return-type"]) {
+      if let Some(type_expr) = Self::extract_schema_value(item, &["return"]) {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
       }
     }
@@ -250,18 +241,7 @@ impl CalcitTypeAnnotation {
 
     let items = list.skip(1).ok()?;
     for item in items.iter() {
-      if let Calcit::List(inner) = item {
-        let head = inner.first();
-        if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars" || sym.as_ref() == "generics") {
-          let mut vars = vec![];
-          for entry in inner.iter().skip(1) {
-            vars.push(Self::parse_type_var_form(entry)?);
-          }
-          return Some(vars);
-        }
-      }
-
-      if let Some(value) = Self::extract_schema_value(item, &["generics", "type-vars"]) {
+      if let Some(value) = Self::extract_schema_value(item, &["generics"]) {
         if let Some(vars) = Self::parse_generics_list(value) {
           return Some(vars);
         }

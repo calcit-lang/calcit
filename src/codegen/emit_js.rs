@@ -1210,8 +1210,6 @@ fn hinted_async(xs: &CalcitList) -> bool {
   }
 
   xs.iter().skip(1).any(|item| match item {
-    Calcit::Symbol { sym, .. } if sym.as_ref() == "async" => true,
-    Calcit::Tag(tag) if tag.ref_str().trim_start_matches(':') == "async" => true,
     _ => schema_marks_async(item),
   })
 }
@@ -1230,12 +1228,6 @@ mod tests {
       }),
       location: None,
     }
-  }
-
-  #[test]
-  fn hinted_async_accepts_legacy_symbol() {
-    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), symbol("async")]);
-    assert!(hinted_async(&hint));
   }
 
   #[test]

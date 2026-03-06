@@ -203,9 +203,17 @@ mod tests {
   #[test]
   fn detects_return_type_from_hint() {
     let ns = "tests.fn";
-    let ret_sym = make_symbol("return-type", ns, "demo");
     let type_expr = Calcit::Tag(EdnTag::from("number"));
-    let hint_form = make_hint_form(ns, vec![ret_sym, type_expr.to_owned()]);
+    let hint_form = make_hint_form(
+      ns,
+      vec![
+        make_symbol("{}", ns, "demo"),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![
+          Calcit::Tag(EdnTag::from("return")),
+          type_expr.to_owned(),
+        ]))),
+      ],
+    );
 
     let detected = detect_return_type_hint(&[hint_form]);
     assert!(
@@ -217,7 +225,7 @@ mod tests {
   #[test]
   fn ignores_flat_return_type_hint() {
     let ns = "tests.fn";
-    let ret_sym = make_symbol("return-type", ns, "demo");
+    let ret_sym = make_symbol("return", ns, "demo");
     let type_expr = Calcit::Tag(EdnTag::from("number"));
     let nodes = vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)), ret_sym, type_expr];
     let flat_hint = Calcit::List(Arc::new(CalcitList::Vector(nodes)));
@@ -237,7 +245,13 @@ mod tests {
     let args_list = Calcit::List(Arc::new(CalcitList::Vector(vec![arg_local])));
     let hint_form = make_hint_form(
       ns,
-      vec![make_symbol("return-type", ns, "main"), Calcit::Tag(EdnTag::from("number"))],
+      vec![
+        make_symbol("{}", ns, "main"),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![
+          Calcit::Tag(EdnTag::from("return")),
+          Calcit::Tag(EdnTag::from("number")),
+        ]))),
+      ],
     );
     let body_expr = make_symbol("x", ns, "main");
 

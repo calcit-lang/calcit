@@ -1268,16 +1268,6 @@ fn schema_to_map(schema: &Cirru) -> Option<BTreeMap<&str, &Cirru>> {
   Some(data)
 }
 
-fn normalize_schema_symbol_name(name: &str) -> String {
-  if let Some(stripped) = name.strip_prefix('\'') {
-    stripped.to_owned()
-  } else if let Some(stripped) = name.strip_prefix('|') {
-    stripped.to_owned()
-  } else {
-    name.to_owned()
-  }
-}
-
 fn is_schema_list_annotation(node: &Cirru) -> bool {
   match node {
     Cirru::Leaf(s) => s.as_ref() == ":list",
@@ -1301,22 +1291,6 @@ fn render_schema_param_type(ty_node: Option<&Cirru>, wrap_rest_as_list: bool) ->
   }
 }
 
-fn should_treat_tuple_as_type_only(xs: &[Cirru], wrap_rest_as_list: bool) -> bool {
-  let Some(Cirru::Leaf(marker)) = xs.get(1) else {
-    return false;
-  };
-
-  if marker.starts_with(':') {
-    return true;
-  }
-
-  if wrap_rest_as_list && marker.as_ref() == ":list" {
-    return true;
-  }
-
-  false
-}
-
 fn read_schema_param_tuple(item: &Cirru, default_name: &str, wrap_rest_as_list: bool) -> Option<(String, String)> {
   match item {
     Cirru::Leaf(_) => Some((default_name.to_owned(), render_schema_param_type(Some(item), wrap_rest_as_list))),
@@ -1334,17 +1308,12 @@ fn read_schema_param_tuple(item: &Cirru, default_name: &str, wrap_rest_as_list: 
           Some((default_name.to_owned(), ty))
         }
         3 => {
-          if should_treat_tuple_as_type_only(xs, wrap_rest_as_list) {
-            let ty = render_schema_param_type(Some(item), wrap_rest_as_list);
-            return Some((default_name.to_owned(), ty));
-          }
-
-          let name = match xs.get(1) {
-            Some(Cirru::Leaf(s)) => normalize_schema_symbol_name(s),
-            _ => return None,
+          let ty_node = match xs.get(1) {
+            Some(Cirru::Leaf(name)) if name.starts_with('\'') => xs.get(2),
+            _ => Some(item),
           };
-          let ty = render_schema_param_type(xs.get(2), wrap_rest_as_list);
-          Some((name, ty))
+          let ty = render_schema_param_type(ty_node, wrap_rest_as_list);
+          Some((default_name.to_owned(), ty))
         }
         _ => None,
       }
@@ -1629,11 +1598,11 @@ mod tests {
   }
 
   #[test]
-  fn schema_rest_named_tuple_keeps_name_and_normalizes_type() {
+  fn schema_rest_named_tuple_is_treated_as_type_only() {
     let schema = schema_with_rest(list(vec![leaf("::"), leaf("'ys"), leaf(":number")]));
     let (params, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
 
-    assert_eq!(params, vec!["ys".to_owned()]);
-    assert_eq!(param_annotations.get("ys"), Some(&vec![":: :list :number".to_owned()]));
+    assert_eq!(params, vec!["rest".to_owned()]);
+    assert_eq!(param_annotations.get("rest"), Some(&vec![":: :list :number".to_owned()]));
   }
 }
