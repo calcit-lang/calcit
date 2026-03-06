@@ -1564,7 +1564,7 @@
             {} (:kind :macro)
               :args $ []
               :rest :dynamic
-              :return :nil
+              :return :unit
         |< $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn < (x & ys)

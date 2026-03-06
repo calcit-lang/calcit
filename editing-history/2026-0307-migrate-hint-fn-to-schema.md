@@ -13,6 +13,7 @@
 ## 保留 hint-fn 的情况
 
 内层/局部函数没有 schema 位置，仍然保留 hint-fn，例如：
+
 - `{,}` 内的 `&{,}` 局部函数
 - `map` 内的 `%map`
 - `join` 内的 `%join` / `%join-str`

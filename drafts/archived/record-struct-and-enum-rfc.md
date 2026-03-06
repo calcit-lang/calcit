@@ -98,7 +98,6 @@ assert-type result Result
 {} (:type :string)
 {} (:type :tag)
 {} (:type :bool)
-{} (:type :nil)
 {} (:type :symbol)
 {} (:type :list)
 {} (:type :map)

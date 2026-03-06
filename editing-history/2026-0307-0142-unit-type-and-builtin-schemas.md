@@ -9,6 +9,7 @@
 **使用场景**: 副作用函数 (side-effectful functions), 明确标注返回 `nil` 的情况, 区别于 `:dynamic` (未知类型)。
 
 **涉及改动点**:
+
 - `CalcitTypeAnnotation` enum: 新增 `Nil` variant
 - `builtin_type_from_tag_name`: `"unit" | "nil" => Self::Nil`
 - `builtin_tag_name`: `Self::Nil => Some("unit")`
@@ -22,14 +23,14 @@
 
 在 `src/cirru/calcit-core.cirru` 中为以下函数补充 `:return :unit` schema:
 
-| 函数名 | schema 要点 |
-|--------|------------|
-| `each` | `:args ([] :dynamic :fn) :return :unit` |
-| `write-file` | `:args ([] :string :string) :return :unit` |
-| `quit!` | `:args ([] (:: :optional :number)) :return :unit` |
-| `add-watch` | `:args ([] :ref :dynamic :fn) :return :unit` |
-| `remove-watch` | `:args ([] :ref :dynamic) :return :unit` |
-| `reset!` | `:generics 'T :args ([] (:: :ref 'T) 'T) :return :unit` |
+| 函数名         | schema 要点                                             |
+| -------------- | ------------------------------------------------------- |
+| `each`         | `:args ([] :dynamic :fn) :return :unit`                 |
+| `write-file`   | `:args ([] :string :string) :return :unit`              |
+| `quit!`        | `:args ([] (:: :optional :number)) :return :unit`       |
+| `add-watch`    | `:args ([] :ref :dynamic :fn) :return :unit`            |
+| `remove-watch` | `:args ([] :ref :dynamic) :return :unit`                |
+| `reset!`       | `:generics 'T :args ([] (:: :ref 'T) 'T) :return :unit` |
 
 **注意事项**: 在 `:: :fn ('T) :unit` 中, `'T` 出现在 `('T)` 列表的算子位置会触发 EDN 解析错误 (`invalid operator for edn: 'T`)。对 `each` 的解决方案是简化成 `:fn`, 避免在 fn 参数类型中使用泛型变量作为算子。
 
@@ -46,6 +47,7 @@
 **集合操作 (10 条)**: `&difference`, `&exclude`, `&include`, `&set:count`, `&set:destruct`, `&set:empty?`, `&set:includes?`, `&set:intersection`, `&set:to-list`, `&union`
 
 **泛型模式** (使用 `'T` 非算子位置):
+
 ```cirru
 {} (:kind :fn)
   :generics $ [] 'T
@@ -66,10 +68,9 @@
 - **不可用位置**: `('T)` 即 `'T` 作为列表算子 (head), 例如 `(:: :fn ('T) :unit)` 中的 `('T)`
 - **根本原因**: schema 验证通过 `cirru_edn::parse` 进行, EDN 解析器要求列表头部必须是合法算子
 
-### `:unit` vs `:nil` vs `:dynamic`
+### `:unit` vs `:dynamic`
 
 - `:unit` — 明确标注 "此函数返回 nil, 且是预期行为" (副作用函数)
-- `:nil` — 内部等价于 `:unit` (通过 `"unit" | "nil"` 分支解析)
 - `:dynamic` — 未知/任意类型 (默认回退)
 
 ## 验证结果

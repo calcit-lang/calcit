@@ -32,7 +32,6 @@ defn f1 (x y)
   - `:number` - 数字类型
   - `:string` - 字符串类型
   - `:bool` - 布尔类型
-  - `:nil` - nil 类型
   - `:tag` - 标签类型
   - `:fn` - 函数类型（基础形式，用户定义的函数）
   - `:fn (arg-types...) return-type` - 函数类型（带签名）
