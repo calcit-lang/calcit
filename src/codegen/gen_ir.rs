@@ -414,6 +414,7 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       }
       Edn::map_from_iter([(Edn::tag("type"), Edn::tag("traits")), (Edn::tag("value"), list.into())])
     }
+    CalcitTypeAnnotation::Nil => type_tag_map("unit"),
   }
 }
 

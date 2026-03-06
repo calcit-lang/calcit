@@ -1209,9 +1209,7 @@ fn hinted_async(xs: &CalcitList) -> bool {
     }
   }
 
-  xs.iter().skip(1).any(|item| match item {
-    _ => schema_marks_async(item),
-  })
+  xs.iter().skip(1).any(schema_marks_async)
 }
 
 #[cfg(test)]

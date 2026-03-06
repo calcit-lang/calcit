@@ -75,6 +75,8 @@ pub enum CalcitTypeAnnotation {
   Trait(Arc<CalcitTrait>),
   /// Multiple trait constraints recorded in order
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
+  /// Nil/unit type — for side-effectful functions that explicitly return nil
+  Nil,
 }
 
 impl CalcitTypeAnnotation {
@@ -100,6 +102,7 @@ impl CalcitTypeAnnotation {
       "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
+      "unit" | "nil" => Some(Self::Nil),
       _ => None,
     }
   }
@@ -119,6 +122,7 @@ impl CalcitTypeAnnotation {
       Self::Ref(_) => Some("ref"),
       Self::Buffer => Some("buffer"),
       Self::CirruQuote => Some("cirru-quote"),
+      Self::Nil => Some("unit"),
       _ => None,
     }
   }
@@ -974,7 +978,8 @@ impl CalcitTypeAnnotation {
       | (Self::Tag, Self::Tag)
       | (Self::DynFn, Self::DynFn)
       | (Self::Buffer, Self::Buffer)
-      | (Self::CirruQuote, Self::CirruQuote) => true,
+      | (Self::CirruQuote, Self::CirruQuote)
+      | (Self::Nil, Self::Nil) => true,
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) => {
           let bound = bound.clone();
@@ -1375,6 +1380,7 @@ impl CalcitTypeAnnotation {
       Self::Enum(_) => 24,
       Self::Trait(_) => 25,
       Self::TraitSet(_) => 26,
+      Self::Nil => 27,
     }
   }
 }
@@ -1812,6 +1818,7 @@ impl Hash for CalcitTypeAnnotation {
           t.name.hash(state);
         }
       }
+      Self::Nil => "nil".hash(state),
     }
   }
 }
@@ -1943,6 +1950,7 @@ impl CalcitFnTypeAnnotation {
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
   match expected {
     CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::Nil => matches!(value, Calcit::Nil),
     CalcitTypeAnnotation::Optional(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
     CalcitTypeAnnotation::Number => matches!(value, Calcit::Number(_)),

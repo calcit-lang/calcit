@@ -19,6 +19,9 @@ use super::edit::navigate_to_path;
 /// Type alias for search results: (namespace, definition, matches)
 type SearchResults = Vec<(String, String, Vec<(Vec<usize>, Cirru)>)>;
 
+/// Type alias for reference results: (namespace, definition, context, coordinate-path, source-label)
+type RefResults = Vec<(String, String, String, Vec<Vec<usize>>, &'static str)>;
+
 /// Parse "namespace/definition" format into (namespace, definition)
 /// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
@@ -628,7 +631,7 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
   let snapshot = load_snapshot(input_path)?;
 
   let mut found_definitions: Vec<(String, String)> = vec![];
-  let mut found_references: Vec<(String, String, String, Vec<Vec<usize>>, &'static str)> = vec![]; // (ns, def, context, coords, source)
+  let mut found_references: RefResults = vec![]; // (ns, def, context, coords, source)
 
   for (ns_name, file_data) in &snapshot.files {
     let is_core = ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.");
@@ -747,7 +750,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     .get(target_def)
     .ok_or_else(|| format!("Definition '{target_def}' not found in namespace '{target_ns}'"))?;
 
-  let mut usages: Vec<(String, String, String, Vec<Vec<usize>>, &'static str)> = vec![]; // (ns, def, context, coords, source)
+  let mut usages: RefResults = vec![]; // (ns, def, context, coords, source)
 
   for (ns_name, file_data) in &snapshot.files {
     // Skip core namespaces unless deps is requested
