@@ -3158,6 +3158,13 @@ pub fn preprocess_defn(
 
       let mut to_skip = 2;
       let mut processed_body: Vec<Calcit> = vec![];
+
+      if let Some(schema) = program::lookup_def_schema(ctx.file_ns, def_name.as_ref()) {
+        let schema_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)), schema]);
+        processed_body.push(schema_hint.to_owned());
+        xs = xs.push_right(schema_hint);
+      }
+
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
           to_skip -= 1;

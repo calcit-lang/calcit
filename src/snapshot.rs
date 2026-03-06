@@ -199,6 +199,47 @@ pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
 }
 
 fn strip_name_field_from_schema(schema: &Cirru) -> Cirru {
+  fn strip_named_param_annotation(form: &Cirru) -> Cirru {
+    match form {
+      Cirru::List(xs)
+        if xs.len() == 3
+          && matches!(xs.first(), Some(Cirru::Leaf(head)) if &**head == "::")
+          && matches!(xs.get(1), Some(Cirru::Leaf(name)) if name.starts_with('\'')) =>
+      {
+        strip_name_field_from_schema(&xs[2])
+      }
+      _ => strip_name_field_from_schema(form),
+    }
+  }
+
+  fn strip_args_field(value: &Cirru) -> Cirru {
+    match value {
+      Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]") => {
+        let mut next_items = vec![items[0].clone()];
+        for item in items.iter().skip(1) {
+          next_items.push(strip_named_param_annotation(item));
+        }
+        Cirru::List(next_items)
+      }
+      Cirru::List(items)
+        if items.len() >= 2
+          && matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "$")
+          && matches!(items.get(1), Some(Cirru::Leaf(head)) if &**head == "[]") =>
+      {
+        let mut next_items = vec![items[0].clone(), items[1].clone()];
+        for item in items.iter().skip(2) {
+          next_items.push(strip_named_param_annotation(item));
+        }
+        Cirru::List(next_items)
+      }
+      _ => strip_name_field_from_schema(value),
+    }
+  }
+
+  fn strip_rest_field(value: &Cirru) -> Cirru {
+    strip_named_param_annotation(value)
+  }
+
   match schema {
     Cirru::List(items) => {
       if items.is_empty() {
@@ -225,7 +266,21 @@ fn strip_name_field_from_schema(schema: &Cirru) -> Cirru {
             {
               continue;
             }
-            next_items.push(pair.clone());
+
+            if let Cirru::List(xs) = pair
+              && xs.len() == 2
+              && let Some(Cirru::Leaf(key)) = xs.first()
+            {
+              let value = match key.as_ref() {
+                ":args" => strip_args_field(&xs[1]),
+                ":rest" => strip_rest_field(&xs[1]),
+                _ => strip_name_field_from_schema(&xs[1]),
+              };
+              next_items.push(Cirru::List(vec![xs[0].clone(), value]));
+              continue;
+            }
+
+            next_items.push(strip_name_field_from_schema(pair));
           }
           return Cirru::List(next_items);
         }
@@ -238,7 +293,22 @@ fn strip_name_field_from_schema(schema: &Cirru) -> Cirru {
               idx += 2;
               continue;
             }
-            next_items.push(items[idx].clone());
+
+            if idx + 1 < items.len() {
+              if let Cirru::Leaf(key) = &items[idx] {
+                let value = match key.as_ref() {
+                  ":args" => strip_args_field(&items[idx + 1]),
+                  ":rest" => strip_rest_field(&items[idx + 1]),
+                  _ => strip_name_field_from_schema(&items[idx + 1]),
+                };
+                next_items.push(items[idx].clone());
+                next_items.push(value);
+                idx += 2;
+                continue;
+              }
+            }
+
+            next_items.push(strip_name_field_from_schema(&items[idx]));
             idx += 1;
           }
           return Cirru::List(next_items);

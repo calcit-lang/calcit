@@ -658,11 +658,11 @@ let
       &+ a b
     ; 正式模式
     get-name $ fn (user)
-      hint-fn $ {} (:args ([] (:: 'user :dynamic))) (:return :string)
+      hint-fn $ {} (:args ([] :dynamic)) (:return :string)
       |demo
     ; 泛型声明示例
     id $ fn (x)
-      hint-fn $ {} (:generics ([] 'T)) (:args ([] (:: 'x 'T))) (:return 'T)
+      hint-fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:return 'T)
       x
   add 1 2
 ```

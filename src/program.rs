@@ -21,6 +21,7 @@ pub type ProgramEvaledData = EntryBook<EntryBook<Calcit>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramDefEntry {
   pub code: Calcit,
+  pub schema: Option<Calcit>,
   pub doc: Arc<str>,
   pub examples: Vec<Cirru>,
 }
@@ -136,11 +137,16 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
     let code = code_to_calcit(&entry.code, &ns, &at_def, vec![])?;
+    let schema = match &entry.schema {
+      Some(v) => Some(code_to_calcit(v, &ns, &at_def, vec![])?),
+      None => None,
+    };
     let doc = Arc::from(entry.doc.as_str());
     defs.insert(
       def.to_owned().into(),
       ProgramDefEntry {
         code,
+        schema,
         doc,
         examples: entry.examples.clone(),
       },
@@ -174,6 +180,13 @@ pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
   let file = program_code.get(ns)?;
   let entry = file.defs.get(def)?;
   Some(entry.code.to_owned())
+}
+
+pub fn lookup_def_schema(ns: &str, def: &str) -> Option<Calcit> {
+  let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
+  let file = program_code.get(ns)?;
+  let entry = file.defs.get(def)?;
+  entry.schema.to_owned()
 }
 
 /// lookup documentation for a definition from program data
@@ -301,6 +314,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
       let entry = ProgramDefEntry {
         code: calcit_code,
+        schema: None,
         doc: Arc::from(""), // No doc info in changes, use empty string
         examples: vec![],   // No examples info in changes, use empty vector
       };
@@ -311,14 +325,15 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
     }
     for (def, code) in &info.changed_defs {
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-      let (doc, examples) = match file.defs.get(def.as_str()) {
-        Some(existing) => (existing.doc.clone(), existing.examples.clone()),
-        None => (Arc::from(""), Vec::new()),
+      let (schema, doc, examples) = match file.defs.get(def.as_str()) {
+        Some(existing) => (existing.schema.clone(), existing.doc.clone(), existing.examples.clone()),
+        None => (None, Arc::from(""), Vec::new()),
       };
       file.defs.insert(
         def.to_owned().into(),
         ProgramDefEntry {
           code: calcit_code,
+          schema,
           doc,
           examples,
         },
