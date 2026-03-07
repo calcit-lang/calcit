@@ -155,6 +155,15 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// If `form` is a `hint-fn` expression, return its argument items (everything after the head).
+  fn get_hint_fn_items(form: &Calcit) -> Option<CalcitList> {
+    let Calcit::List(list) = form else { return None };
+    if !Self::is_hint_fn_form(list) {
+      return None;
+    }
+    list.skip(1).ok()
+  }
+
   fn is_schema_key(form: &Calcit, name: &str) -> bool {
     match form {
       Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == name,
@@ -215,16 +224,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
-    let list = match form {
-      Calcit::List(xs) => xs,
-      _ => return None,
-    };
-
-    if !Self::is_hint_fn_form(list) {
-      return None;
-    }
-
-    let items = list.skip(1).ok()?;
+    let items = Self::get_hint_fn_items(form)?;
     for item in items.iter() {
       if let Some(type_expr) = Self::extract_schema_value(item, &["return"]) {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
@@ -234,16 +234,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
-    let list = match form {
-      Calcit::List(xs) => xs,
-      _ => return None,
-    };
-
-    if !Self::is_hint_fn_form(list) {
-      return None;
-    }
-
-    let items = list.skip(1).ok()?;
+    let items = Self::get_hint_fn_items(form)?;
     for item in items.iter() {
       if let Some(value) = Self::extract_schema_value(item, &["generics"]) {
         if let Some(vars) = Self::parse_generics_list(value) {
@@ -295,16 +286,7 @@ impl CalcitTypeAnnotation {
   /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
   /// the highest-priority source for `CalcitFn.arg_types` (before `assert-type` body scanning).
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
-    let list = match form {
-      Calcit::List(xs) => xs,
-      _ => return None,
-    };
-
-    if !Self::is_hint_fn_form(list) {
-      return None;
-    }
-
-    let items = list.skip(1).ok()?;
+    let items = Self::get_hint_fn_items(form)?;
     for item in items.iter() {
       if let Some(args_form) = Self::extract_schema_value(item, &["args"]) {
         let types = Self::parse_schema_args_types(args_form, params.len());

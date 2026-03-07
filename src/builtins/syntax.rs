@@ -36,7 +36,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
       let mut arg_types = body_items
         .iter()
         .find_map(|f| CalcitTypeAnnotation::extract_arg_types_from_hint_form(f, &param_symbols))
-        .unwrap_or_else(|| detect_arg_type_hints(&body_items, &param_symbols));
+        .unwrap_or_else(|| CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &param_symbols));
       // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
       // extract types from Local nodes in the preprocessed args list
       if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
@@ -112,7 +112,7 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
 
 fn detect_return_type_hint(forms: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
   for form in forms {
-    if let Some(hint) = extract_return_type_from_hint(form) {
+    if let Some(hint) = CalcitTypeAnnotation::extract_return_type_from_hint_form(form) {
       return hint;
     }
   }
@@ -121,15 +121,11 @@ fn detect_return_type_hint(forms: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
 
 fn detect_fn_generics(forms: &[Calcit]) -> Arc<Vec<Arc<str>>> {
   for form in forms {
-    if let Some(vars) = extract_generics_from_hint(form) {
+    if let Some(vars) = CalcitTypeAnnotation::extract_generics_from_hint_form(form) {
       return Arc::new(vars);
     }
   }
   Arc::new(vec![])
-}
-
-fn detect_arg_type_hints(forms: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
-  CalcitTypeAnnotation::collect_arg_type_hints_from_body(forms, params)
 }
 
 /// Extract arg types from preprocessed Local nodes in the args list.
@@ -188,14 +184,6 @@ fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
     _ => Err(format!("collect-param-symbols unexpected argument: {item:?}")),
   })?;
   Ok(params)
-}
-
-fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
-  CalcitTypeAnnotation::extract_return_type_from_hint_form(form)
-}
-
-fn extract_generics_from_hint(form: &Calcit) -> Option<Vec<Arc<str>>> {
-  CalcitTypeAnnotation::extract_generics_from_hint_form(form)
 }
 
 #[cfg(test)]
