@@ -1181,7 +1181,11 @@ mod tests {
     // Check the schema was preserved
     match reloaded.schema.as_ref() {
       CalcitTypeAnnotation::Fn(fn_annot) => {
-        assert_eq!(fn_annot.fn_kind, SchemaKind::Macro, "fn_kind must survive round-trip; cirru_text: {cirru_text:?}");
+        assert_eq!(
+          fn_annot.fn_kind,
+          SchemaKind::Macro,
+          "fn_kind must survive round-trip; cirru_text: {cirru_text:?}"
+        );
         assert_eq!(fn_annot.arg_types.len(), 2, "arg_types must survive round-trip");
       }
       other => panic!("schema must be Fn after round-trip, got {other:?}; cirru_text: {cirru_text:?}"),
@@ -1205,7 +1209,10 @@ mod tests {
 
     // Parse the schema (as done when reading back)
     let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn);
-    assert!(fn_schema.is_some(), "parse_fn_schema_from_edn must return Some for macro schema; schema_edn={schema_edn:?}");
+    assert!(
+      fn_schema.is_some(),
+      "parse_fn_schema_from_edn must return Some for macro schema; schema_edn={schema_edn:?}"
+    );
     let fn_schema = fn_schema.unwrap();
     assert_eq!(fn_schema.fn_kind, SchemaKind::Macro, "fn_kind must be Macro");
     assert_eq!(fn_schema.arg_types.len(), 2, "must have 2 arg types");
@@ -1213,7 +1220,10 @@ mod tests {
     // Simulate a save (to_schema_edn) + reload
     let saved_edn = fn_schema.to_schema_edn();
     let fn_schema2 = CalcitTypeAnnotation::parse_fn_schema_from_edn(&saved_edn);
-    assert!(fn_schema2.is_some(), "reload: parse_fn_schema_from_edn must return Some; saved_edn={saved_edn:?}");
+    assert!(
+      fn_schema2.is_some(),
+      "reload: parse_fn_schema_from_edn must return Some; saved_edn={saved_edn:?}"
+    );
     let fn_schema2 = fn_schema2.unwrap();
     assert_eq!(fn_schema2.fn_kind, SchemaKind::Macro, "reload: fn_kind must be Macro");
     assert_eq!(fn_schema2.arg_types.len(), 2, "reload: must have 2 arg types");
@@ -1221,7 +1231,10 @@ mod tests {
     // Simulate normalize_schema_edn path (as used in TryFrom<Edn> for CodeEntry)
     let normalized = normalize_schema_edn(&saved_edn).expect("normalize must succeed");
     let fn_schema3 = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized);
-    assert!(fn_schema3.is_some(), "normalized: parse_fn_schema_from_edn must return Some; normalized={normalized:?}");
+    assert!(
+      fn_schema3.is_some(),
+      "normalized: parse_fn_schema_from_edn must return Some; normalized={normalized:?}"
+    );
     let fn_schema3 = fn_schema3.unwrap();
     assert_eq!(fn_schema3.fn_kind, SchemaKind::Macro, "normalized: fn_kind must be Macro");
   }

@@ -3,7 +3,7 @@ use crate::{
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitList,
     CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo,
-    CalcitTrait, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
+    CalcitTrait, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -3127,10 +3127,26 @@ pub fn preprocess_defn(
       })?;
       xs = xs.push_right(Calcit::from(zs.clone()));
 
+      let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
+      let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
+      if !schema_issues.is_empty() {
+        let details = schema_issues.join("\n  - ");
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Type,
+          format!("schema mismatch while preprocessing definition:\n  - {details}"),
+          ctx.call_stack,
+          Some(NodeLocation::new(
+            info.at_ns.to_owned(),
+            info.at_def.to_owned(),
+            location.to_owned().unwrap_or_default(),
+          )),
+        ));
+      }
+
       let mut to_skip = 2;
       let mut processed_body: Vec<Calcit> = vec![];
 
-      if let CalcitTypeAnnotation::Fn(fn_annot) = program::lookup_def_schema(ctx.file_ns, def_name.as_ref()).as_ref() {
+      if let CalcitTypeAnnotation::Fn(fn_annot) = def_schema.as_ref() {
         let schema_calcit = fn_annot.to_schema_calcit();
         let schema_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)), schema_calcit]);
         processed_body.push(schema_hint.to_owned());
@@ -3617,6 +3633,70 @@ pub fn preprocess_assert_traits(
   }
 
   Ok(assert_expr)
+}
+
+fn analyze_def_schema_param_arity(args: &CalcitList) -> (usize, bool) {
+  let mut required_count = 0;
+  let mut has_rest = false;
+
+  for item in args {
+    if matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      has_rest = true;
+      continue;
+    }
+    required_count += 1;
+  }
+
+  (required_count, has_rest)
+}
+
+fn validate_def_schema_during_preprocess(
+  head: &CalcitSyntax,
+  ns: &str,
+  def_name: &str,
+  args: &CalcitList,
+  schema: &CalcitTypeAnnotation,
+) -> Vec<String> {
+  let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
+    return vec![];
+  };
+
+  let code_kind = match head {
+    CalcitSyntax::Defn => "defn",
+    CalcitSyntax::Defmacro => "defmacro",
+    _ => return vec![],
+  };
+
+  let mut issues: Vec<String> = vec![];
+
+  match (fn_annot.fn_kind, code_kind) {
+    (SchemaKind::Fn, "defmacro") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :fn but code uses defmacro"));
+    }
+    (SchemaKind::Macro, "defn") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses defn"));
+    }
+    _ => {}
+  }
+
+  let (required_count, has_rest) = analyze_def_schema_param_arity(args);
+  let schema_required = fn_annot.arg_types.len();
+  let schema_has_rest = fn_annot.rest_type.is_some();
+
+  if required_count != schema_required {
+    issues.push(format!(
+      "{ns}/{def_name}: schema has {schema_required} required arg(s) but code has {required_count}"
+    ));
+  }
+  if has_rest != schema_has_rest {
+    if has_rest {
+      issues.push(format!("{ns}/{def_name}: code has & rest param but schema has no :rest"));
+    } else {
+      issues.push(format!("{ns}/{def_name}: schema has :rest but code has no & param"));
+    }
+  }
+
+  issues
 }
 
 #[cfg(test)]
@@ -4863,5 +4943,79 @@ mod tests {
       let msg = format!("{err}");
       assert!(msg.contains("if expects 2 or 3 arguments"), "error should mention if arity: {msg}");
     }
+  }
+
+  fn fn_schema_annotation(kind: SchemaKind, arg_count: usize, has_rest: bool) -> Arc<CalcitTypeAnnotation> {
+    let mut arg_types = Vec::with_capacity(arg_count);
+    for _ in 0..arg_count {
+      arg_types.push(Arc::new(CalcitTypeAnnotation::Number));
+    }
+    Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types,
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: kind,
+      rest_type: has_rest.then(|| Arc::new(CalcitTypeAnnotation::Number)),
+    })))
+  }
+
+  #[test]
+  fn catches_schema_arity_mismatch_during_preprocess() {
+    let args = CalcitList::from(
+      &[
+        Calcit::Symbol {
+          sym: Arc::from("a"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("tests.schema"),
+            at_def: Arc::from("demo"),
+          }),
+          location: None,
+        },
+        Calcit::Symbol {
+          sym: Arc::from("b"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("tests.schema"),
+            at_def: Arc::from("demo"),
+          }),
+          location: None,
+        },
+      ][..],
+    );
+
+    let issues = validate_def_schema_during_preprocess(
+      &CalcitSyntax::Defn,
+      "tests.schema",
+      "demo",
+      &args,
+      &fn_schema_annotation(SchemaKind::Fn, 3, false),
+    );
+
+    assert_eq!(issues.len(), 1, "expected 1 issue, got: {issues:?}");
+    assert!(issues[0].contains("schema has 3 required arg(s) but code has 2"));
+  }
+
+  #[test]
+  fn catches_schema_kind_mismatch_during_preprocess() {
+    let args = CalcitList::from(
+      &[Calcit::Symbol {
+        sym: Arc::from("a"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.schema"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+      }][..],
+    );
+
+    let issues = validate_def_schema_during_preprocess(
+      &CalcitSyntax::Defn,
+      "tests.schema",
+      "demo",
+      &args,
+      &fn_schema_annotation(SchemaKind::Macro, 1, false),
+    );
+
+    assert_eq!(issues.len(), 1, "expected 1 issue, got: {issues:?}");
+    assert!(issues[0].contains("schema :kind is :macro but code uses defn"));
   }
 }

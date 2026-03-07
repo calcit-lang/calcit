@@ -56,6 +56,19 @@ Added structural validation that compares a definition's code form against its s
    - `analyze_param_arity` basics
 8. **`CR_DEBUG_SCHEMA` debug flag** — when `CR_DEBUG_SCHEMA=1`, prints per-entry schema kind debug info to stderr during `analyze check-types`.
 
+### `src/runner/preprocess.rs`
+
+1. **Runtime/preprocess enforcement added** — schema-vs-definition structural checks now run while preprocessing `defn`/`defmacro`, not only in `analyze check-types`.
+2. **`validate_def_schema_during_preprocess(...)`** — mirrors the `check-types` validation for `:kind`, required arity, and `:rest`, and raises a hard `[Type Error]` during normal execution paths such as `yarn try-rs`.
+3. **Schema hints preserved** — preprocess still injects `hint-fn`, but now only after the definition passes structural schema validation.
+4. **2 new preprocess tests** covering arity mismatch and `:kind` mismatch at preprocess time.
+
+### `calcit/test-hygienic.cirru`
+
+- Updated existing test fixture schemas so they match actual code:
+   - `add-11` / `add-11-safe`: `:kind :macro`
+   - `add-2`: arg schema corrected from 2 params to 1
+
 ### `src/snapshot.rs`
 
 - **`test_macro_schema_round_trip`** — verifies `schema_cirru_to_edn` + `parse_fn_schema_from_edn` + `normalize_schema_edn` preserve `SchemaKind::Macro` end-to-end.
@@ -63,20 +76,21 @@ Added structural validation that compares a definition's code form against its s
 
 ## Validation Rule Summary
 
-| Schema `:kind` | Code form    | Result          |
-|----------------|--------------|-----------------|
-| `:fn`          | `defn`       | ✓ ok            |
-| `:fn`          | `defmacro`   | ✗ kind mismatch |
-| `:macro`       | `defmacro`   | ✓ ok            |
-| `:macro`       | `defn`       | ✗ kind mismatch |
-| any            | `&runtime-inplementation` | ✓ skip |
+| Schema `:kind` | Code form                 | Result          |
+| -------------- | ------------------------- | --------------- |
+| `:fn`          | `defn`                    | ✓ ok            |
+| `:fn`          | `defmacro`                | ✗ kind mismatch |
+| `:macro`       | `defmacro`                | ✓ ok            |
+| `:macro`       | `defn`                    | ✗ kind mismatch |
+| any            | `&runtime-inplementation` | ✓ skip          |
 
 Arg count and rest param are checked independently of kind.
 
 ## Notes
 
 - **`calcit.core` schemas require binary rebuild**: Schema edits to `src/cirru/calcit-core.cirru` do not take effect at runtime until the binary is rebuilt, because the core namespace is always loaded from the embedded `include_bytes!` snapshot produced by `build.rs`. Schema validation is most useful for user-defined namespaces.
+- **Normal execution now checks schemas too**: before this follow-up, schema-vs-def mismatches were only reported by `analyze check-types`; now they fail fast during normal preprocess/runtime startup as well.
 
 ## Test Results
 
-All 123 tests pass (97 library + 26 binary), including 2 new snapshot round-trip tests.
+All 125 tests pass (99 library + 26 binary), including 2 new snapshot round-trip tests and 2 new preprocess validation tests.

@@ -15,7 +15,7 @@
                 quasiquote $ do (println "\"c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
+          :schema $ {} (:kind :macro) (:return :dynamic)
             :args $ [] :dynamic :dynamic
         |add-11-safe $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -25,14 +25,14 @@
                   &let (~c 11)
                     [] (~ a) (~ b) ~c
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
+          :schema $ {} (:kind :macro) (:return :dynamic)
             :args $ [] :dynamic :dynamic
         |add-2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
           :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number :number
+            :args $ [] :number
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (:ns test-hygienic.lib)
         :examples $ []

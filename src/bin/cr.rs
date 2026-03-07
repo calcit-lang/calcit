@@ -1275,15 +1275,13 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
         }
         if std::env::var("CR_DEBUG_SCHEMA").is_ok() {
           let schema_kind = match entry.schema.as_ref() {
-            CalcitTypeAnnotation::Fn(fn_annot) => {
-              match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
-                Ok(schema) => match extract_fn_schema_hints(&schema) {
-                  Some(_) => "Fn/schema-hints-ok".to_owned(),
-                  None => "Fn/schema-hints-none".to_owned(),
-                },
-                Err(e) => format!("Fn/edn-to-cirru-err:{e}"),
-              }
-            }
+            CalcitTypeAnnotation::Fn(fn_annot) => match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+              Ok(schema) => match extract_fn_schema_hints(&schema) {
+                Some(_) => "Fn/schema-hints-ok".to_owned(),
+                None => "Fn/schema-hints-none".to_owned(),
+              },
+              Err(e) => format!("Fn/edn-to-cirru-err:{e}"),
+            },
             other => format!("non-fn:{other:?}"),
           };
           eprintln!("[debug] {ns}/{def_name}: schema={schema_kind}");
