@@ -2972,7 +2972,7 @@
                 defn %gt1 (x) (&> x 1)
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] (:: :list :dynamic) :dynamic
+              :args $ [] :dynamic :dynamic
               :return :bool
         |exclude $ %{} :CodeEntry (:doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item.")
           :code $ quote
@@ -3605,7 +3605,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :map
+              :args $ [] :dynamic
               :return :set
         |keys-non-nil $ %{} :CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote
@@ -3930,7 +3930,7 @@
             {} (:kind :fn)
               :generics $ [] 'T 'U
               :args $ [] :dynamic
-                :: :fn ([] 'T 'U) (:: 'T) 'U
+                :: :fn ([] 'T 'U) ([] 'T) 'U
               :return :dynamic
         |map-indexed $ %{} :CodeEntry (:doc "|Map over a collection with index, f takes index and value")
           :code $ quote
@@ -4030,8 +4030,8 @@
                 {} $ :c 3
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :map
-              :rest $ :: :list :map
+              :args $ [] :dynamic
+              :rest $ :: :list :dynamic
               :return :map
         |merge-non-nil $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -4039,8 +4039,8 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :map
-              :rest $ :: :list :map
+              :args $ [] :dynamic
+              :rest $ :: :list :dynamic
               :return :map
         |min $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -4369,7 +4369,7 @@
             {} (:kind :fn)
               :generics $ [] 'T 'U
               :args $ [] :dynamic 'T
-                :: :fn ([] 'T 'U) (:: 'T 'U) 'T
+                :: :fn ([] 'T 'U) ([] 'T 'U) 'T
               :return 'T
         |ref? $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -1647,11 +1647,32 @@ fn check_record_method_args(
   // method_args excludes receiver, but arg_types[0] is for receiver
   // So we need to skip the first type and check remaining args
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-  let arg_types_without_receiver = fn_info.arg_types.iter().skip(1);
+  let arg_types_without_receiver: Vec<Arc<CalcitTypeAnnotation>> = fn_info.arg_types.iter().skip(1).cloned().collect();
 
-  for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
+  for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver.iter()).enumerate() {
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
+    }
+
+    // Handle variadic argument type (same as check_user_fn_arg_types)
+    if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
+      for (rest_idx, rest_arg) in method_args.iter().skip(idx).enumerate() {
+        if let Some(actual_type) = resolve_type_value(rest_arg, scope_types) {
+          if !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings) {
+            let expected_str = inner_type.as_ref().to_brief_string();
+            let actual_str = actual_type.as_ref().to_brief_string();
+            gen_check_warning(
+              format!(
+                "[Warn] Method `.{method_name}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+                idx + rest_idx + 2
+              ),
+              file_ns,
+              check_warnings,
+            );
+          }
+        }
+      }
+      return;
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {

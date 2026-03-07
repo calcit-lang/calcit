@@ -254,13 +254,81 @@ impl CalcitTypeAnnotation {
     None
   }
 
+  /// Check if the given Calcit value is the `[]` list constructor head.
+  fn is_args_list_head(form: &Calcit) -> bool {
+    match form {
+      Calcit::Symbol { sym, .. } => sym.as_ref() == "[]",
+      Calcit::Proc(CalcitProc::List) => true,
+      Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == CORE_NS && def.as_ref() == "[]",
+      _ => false,
+    }
+  }
+
+  /// Parse a schema `:args` value into a positional vec of type annotations.
+  ///
+  /// The `:args` form looks like `([] :type1 :type2 ...)` where `[]` is the list constructor head.
+  fn parse_schema_args_types(form: &Calcit, count: usize) -> Vec<Arc<CalcitTypeAnnotation>> {
+    let mut result = vec![DYNAMIC_TYPE.clone(); count];
+
+    let Calcit::List(xs) = form else {
+      return result;
+    };
+
+    // Skip the `[]` list constructor head if present
+    let start = if xs.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+      1
+    } else {
+      0
+    };
+
+    for (idx, type_form) in xs.iter().skip(start).enumerate() {
+      if idx >= count {
+        break;
+      }
+      result[idx] = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
+    }
+    result
+  }
+
+  /// Extract arg types from a schema hint-fn form, e.g. `(HintFn {:args ([] :number :fn) :return :number})`.
+  ///
+  /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
+  /// the highest-priority source for `CalcitFn.arg_types` (before `assert-type` body scanning).
+  pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+    let list = match form {
+      Calcit::List(xs) => xs,
+      _ => return None,
+    };
+
+    if !Self::is_hint_fn_form(list) {
+      return None;
+    }
+
+    let items = list.skip(1).ok()?;
+    for item in items.iter() {
+      if let Some(args_form) = Self::extract_schema_value(item, &["args"]) {
+        let types = Self::parse_schema_args_types(args_form, params.len());
+        return Some(types);
+      }
+    }
+    None
+  }
+
   fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
     let Calcit::List(items) = form else {
       return None;
     };
 
+    // Skip a leading `[]` list-constructor head so that `([] 'T 'U)` is accepted
+    // as a generics list with two TypeVars.
+    let start = if items.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+      1
+    } else {
+      0
+    };
+
     let mut vars = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items.iter().skip(start) {
       if let Some(name) = Self::parse_type_var_form(item) {
         vars.push(name);
         continue;
@@ -627,7 +695,12 @@ impl CalcitTypeAnnotation {
             (tuple.extra.first().unwrap_or(&Calcit::Nil), tuple.extra.get(1))
           };
           let arg_types = if let Calcit::List(args) = args_form {
-            args.iter().map(Self::parse_type_annotation_form).collect()
+            let start = if args.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+              1
+            } else {
+              0
+            };
+            args.iter().skip(start).map(Self::parse_type_annotation_form).collect()
           } else {
             vec![]
           };
@@ -709,7 +782,12 @@ impl CalcitTypeAnnotation {
           };
 
           let arg_types = if let Calcit::List(args) = args_form {
-            args.iter().map(Self::parse_type_annotation_form).collect()
+            let start = if args.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+              1
+            } else {
+              0
+            };
+            args.iter().skip(start).map(Self::parse_type_annotation_form).collect()
           } else {
             vec![]
           };
@@ -811,7 +889,12 @@ impl CalcitTypeAnnotation {
               (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
             };
             let arg_types = if let Calcit::List(args) = args_form {
-              args.iter().map(Self::parse_type_annotation_form).collect()
+              let start = if args.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+                1
+              } else {
+                0
+              };
+              args.iter().skip(start).map(Self::parse_type_annotation_form).collect()
             } else {
               vec![]
             };
@@ -1078,6 +1161,8 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(actual), Self::Tuple(expected)) => Self::tuple_matches(actual.as_ref(), expected.as_ref()),
       // Function type matching: DynFn matches any Fn, specific Fn must match signature
       (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => true,
+      // Tags are callable in Calcit (as map key accessors), so they satisfy :fn requirements
+      (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => true,
       (Self::Fn(a), Self::Fn(b)) => a.matches_signature(b.as_ref()),
       (Self::Variadic(a), Self::Variadic(b)) => a.matches_with_bindings(b, bindings),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
@@ -1927,9 +2012,8 @@ impl CalcitFnTypeAnnotation {
       return false;
     }
 
-    if self.generics.len() != other.generics.len() {
-      return false;
-    }
+    // Don't require generics count to match: actual concrete functions don't declare
+    // generics even when expected fn type uses TypeVars. Bindings resolve TypeVars below.
 
     let mut bindings = TypeBindings::new();
 

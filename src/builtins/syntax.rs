@@ -31,7 +31,12 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
           return CalcitErr::err_str(CalcitErrKind::Type, format!("defn args parse error: {err}"));
         }
       };
-      let mut arg_types = detect_arg_type_hints(&body_items, &param_symbols);
+      // Highest priority: extract arg types from an injected schema hint-fn form.
+      // The schema is injected during preprocessing via `program::lookup_def_schema`.
+      let mut arg_types = body_items
+        .iter()
+        .find_map(|f| CalcitTypeAnnotation::extract_arg_types_from_hint_form(f, &param_symbols))
+        .unwrap_or_else(|| detect_arg_type_hints(&body_items, &param_symbols));
       // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
       // extract types from Local nodes in the preprocessed args list
       if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
