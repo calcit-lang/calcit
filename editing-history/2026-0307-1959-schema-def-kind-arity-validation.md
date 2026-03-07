@@ -66,8 +66,8 @@ Added structural validation that compares a definition's code form against its s
 ### `calcit/test-hygienic.cirru`
 
 - Updated existing test fixture schemas so they match actual code:
-   - `add-11` / `add-11-safe`: `:kind :macro`
-   - `add-2`: arg schema corrected from 2 params to 1
+  - `add-11` / `add-11-safe`: `:kind :macro`
+  - `add-2`: arg schema corrected from 2 params to 1
 
 ### `src/snapshot.rs`
 

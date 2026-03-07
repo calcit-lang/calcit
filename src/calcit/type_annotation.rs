@@ -163,12 +163,14 @@ impl CalcitTypeAnnotation {
 
     match list.get(1) {
       Some(Calcit::Symbol { sym, .. }) => {
-        if sym.starts_with('\'') {
+        let stripped = sym.trim_start_matches('\'');
+        let n_quotes = sym.len() - stripped.len();
+        if n_quotes > 0 {
           eprintln!(
             "[Error] Type variable `'{sym}` has excess leading quotes — expected a plain uppercase symbol like `'T`, got `'{sym}`"
           );
         }
-        Some(sym.to_owned())
+        Some(Arc::from(stripped))
       }
       _ => None,
     }
@@ -386,12 +388,13 @@ impl CalcitTypeAnnotation {
           .iter()
           .filter_map(|x| {
             if let Edn::Symbol(s) = x {
-              // Type var symbols are serialized with a leading quote: `'T` → `"'T"`.
-              // Strip the quote to get the var name; error on excess quotes.
+              // Cirru EDN stores a quoted symbol `'T` as `Edn::Symbol("T")`.
+              // Older buggy snapshots may contain `Edn::Symbol("'T")`; keep reading
+              // them by stripping leading quotes, but warn so they can be normalized.
               let stripped = s.trim_start_matches('\'');
               let n_quotes = s.len() - stripped.len();
-              if n_quotes > 1 {
-                eprintln!("[Error] Generic type variable `{s}` has excess leading quotes — expected a single-quoted name like `'T`");
+              if n_quotes > 0 {
+                eprintln!("[Warn] Generic type variable `{s}` contains legacy leading quotes — expected a single-quoted source form like `'T`, which should be stored as symbol `T` in EDN");
               }
               Some(Arc::from(stripped))
             } else {
@@ -442,10 +445,12 @@ impl CalcitTypeAnnotation {
         continue;
       }
       if let Calcit::Symbol { sym, .. } = item {
-        if sym.starts_with('\'') {
+        let stripped = sym.trim_start_matches('\'');
+        let n_quotes = sym.len() - stripped.len();
+        if n_quotes > 0 {
           eprintln!("[Error] Generic type variable `{sym}` has excess leading quotes — expected plain uppercase like `'T`");
         }
-        vars.push(sym.to_owned());
+        vars.push(Arc::from(stripped));
         continue;
       }
       return None;
@@ -1455,8 +1460,8 @@ impl CalcitTypeAnnotation {
       Self::DynTuple => Edn::tag("tuple"),
       Self::Buffer => Edn::tag("buffer"),
       Self::CirruQuote => Edn::tag("cirru-quote"),
-      // TypeVar: serialized as quoted symbol `'T` (as Edn::Symbol)
-      Self::TypeVar(name) => Edn::Symbol(Arc::from(format!("'{}", name.trim_start_matches('\'')))),
+      // TypeVar: source syntax uses `'T`, while Cirru EDN stores that as `Edn::Symbol("T")`.
+      Self::TypeVar(name) => Edn::Symbol(Arc::from(name.trim_start_matches('\''))),
       // Parameterized builtins – keep inner type if non-dynamic
       Self::List(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
@@ -2178,7 +2183,11 @@ impl CalcitFnTypeAnnotation {
     map.insert_key("args", Edn::List(EdnListView(args)));
     map.insert_key("return", self.return_type.to_type_edn());
     if !self.generics.is_empty() {
-      let generics: Vec<Edn> = self.generics.iter().map(|s| Edn::Symbol(Arc::from(format!("'{s}")))).collect();
+      let generics: Vec<Edn> = self
+        .generics
+        .iter()
+        .map(|s| Edn::Symbol(Arc::from(s.trim_start_matches('\''))))
+        .collect();
       map.insert_key("generics", Edn::List(EdnListView(generics)));
     }
     if let Some(rest) = &self.rest_type {

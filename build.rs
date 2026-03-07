@@ -48,10 +48,54 @@ fn parse_schema_from_edn(value: &Edn) -> Result<Edn, String> {
   // Old format: Edn::Quote wrapping Cirru — convert to direct map Edn
   if let Ok(cirru) = from_edn::<Cirru>(value.clone()) {
     let text = cirru_parser::format(&[cirru], true.into()).map_err(|e| format!("schema format error: {e}"))?;
-    return cirru_edn::parse(&text).map_err(|e| format!("schema parse error: {e}"));
+    let parsed = cirru_edn::parse(&text).map_err(|e| format!("schema parse error: {e}"))?;
+    validate_schema_edn_no_legacy_quotes(&parsed)?;
+    return Ok(parsed);
   }
   // New format: already a direct Edn map
+  validate_schema_edn_no_legacy_quotes(value)?;
   Ok(value.clone())
+}
+
+fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
+  match value {
+    Edn::Symbol(s) => {
+      if s.starts_with('\'') {
+        let inner = s.trim_start_matches('\'');
+        return Err(format!(
+          "Legacy schema generic symbol `{s}` is invalid. Use single-quoted source syntax like `'{inner}`, which should be stored as plain EDN symbol `{inner}`."
+        ));
+      }
+      Ok(())
+    }
+    Edn::List(xs) => {
+      for item in &xs.0 {
+        validate_schema_edn_no_legacy_quotes(item)?;
+      }
+      Ok(())
+    }
+    Edn::Map(map) => {
+      for (_, v) in &map.0 {
+        validate_schema_edn_no_legacy_quotes(v)?;
+      }
+      Ok(())
+    }
+    Edn::Tuple(view) => {
+      validate_schema_edn_no_legacy_quotes(view.tag.as_ref())?;
+      for item in &view.extra {
+        validate_schema_edn_no_legacy_quotes(item)?;
+      }
+      Ok(())
+    }
+    Edn::Set(set) => {
+      for item in &set.0 {
+        validate_schema_edn_no_legacy_quotes(item)?;
+      }
+      Ok(())
+    }
+    Edn::Record(_) => Ok(()),
+    _ => Ok(()),
+  }
 }
 
 fn parse_code_entry(edn: Edn) -> Result<CodeEntry, String> {

@@ -130,6 +130,10 @@ Calcit 程序使用 `cr` 命令：
   - 默认输出：Doc、Examples 数量、Cirru 格式代码
   - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
   - 推荐：LLM 直接读取 Cirru 格式即可，通常不需要 JSON
+- `cr query schema <namespace/definition> [-j] [--no-tips]` - 读取定义当前的 schema
+  - 默认输出：Definition 标识 + schema 的 Cirru one-liner 预览
+  - `-j` / `--json`：输出 schema 对应的 Cirru EDN 结构；无 schema 时输出 `nil`
+  - 适合在修改前确认 `:kind` / `:args` / `:return` / `:rest` 当前值
 - `cr query examples <namespace/definition>` - 读取定义的示例代码
   - 输出：每个 example 的 Cirru 格式和 JSON 格式
 
@@ -503,6 +507,11 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 - `cr edit split-def <ns/def> -p <path> -n <new-name>` - 将定义内某路径的子表达式提取为同命名空间内的新定义，原位置替换为新定义名称（新名称不可与已有定义重名）
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
+- `cr edit schema <namespace/definition>` - 更新定义 schema（写入前会校验 schema 结构）
+  - 常用输入：`-e '{} (:kind :fn) (:return :number) (:args ([] :number :number))'`
+  - 也支持 `-f <file>` / `-j '<json>'` / `-J` / `--leaf`
+  - `--clear`：清空 schema，恢复为 `nil`
+  - 写入后会保存为直接 map 形式；后续运行与 preprocess 会用它做 `defn` / `defmacro` 一致性校验
 - `cr edit examples <namespace/definition>` - 设置定义的示例代码（批量替换）
 - `cr edit add-example <namespace/definition>` - 添加单个示例
 - `cr edit rm-example <namespace/definition> <index>` - 删除指定索引的示例（0-based）
@@ -625,21 +634,25 @@ send-event! $ :: :clipboard/read text
 
 Calcit 提供了静态类型分析系统，可以在预处理阶段发现潜在的类型错误。
 
-#### 1. 参数类型标注 (`assert-type`)
+#### 1. 顶层定义优先使用 `:schema`，局部函数继续使用 `hint-fn`
 
-使用 `assert-type` 标注参数类型。它可以出现在函数体内的任何位置。
+现在更推荐这样分工：
+
+- 顶层 `defn` / `defmacro` 的参数、返回值、泛型信息，优先写到 `:schema`
+- 局部 `fn` / 内部辅助函数，继续用 `hint-fn`
+- `assert-type` 仍然可用，但更适合做函数体内的额外约束或中间值检查，而不是顶层定义的主标注方式
 
 验证示例：
 
 ```cirru
 let
-    calculate-total $ fn (items discount)
-      assert-type items :list
-      assert-type discount :number
-      let
-          sum $ foldl items 0 &+
-        * sum $ - 1 discount
-  calculate-total ([] 1 2 3) 0.1
+    sum-items $ fn (items)
+      foldl items 0 $ fn (acc item)
+        hint-fn $ {}
+          :args $ [] :number :number
+          :return :number
+        &+ acc item
+  sum-items ([] 1 2 3)
 ```
 
 #### 2. 返回类型标注
@@ -648,7 +661,7 @@ let
 
 - **紧凑模式（推荐）**：紧跟在参数列表后的类型标签。
 - **正式模式**：使用 `hint-fn`（通常放在函数体开头）。
-  - 泛型变量：`hint-fn $ {} (:generics ([] 'T 'S))`
+  - 泛型变量：`hint-fn $ {} (:generics $ [] 'T 'S)`
   - 旧 clause 写法（如 `(hint-fn (return-type ...))` / `(generics ...)` / `(type-vars ...)`）已不再支持，会直接报错。
 
 验证示例：
@@ -660,11 +673,11 @@ let
       &+ a b
     ; 正式模式
     get-name $ fn (user)
-      hint-fn $ {} (:args ([] :dynamic)) (:return :string)
+      hint-fn $ {} (:args $ [] :dynamic) (:return :string)
       |demo
     ; 泛型声明示例
     id $ fn (x)
-      hint-fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:return 'T)
+      hint-fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:return 'T)
       x
   add 1 2
 ```
@@ -731,6 +744,69 @@ let
 ```
 
 **验证类型：** 运行或者编译时会先完成校验.
+
+#### 5. Schema 与 `defn` / `defmacro` 一致性检查
+
+如果定义带有 `:schema`，现在不仅 `cr analyze check-types` 会检查，普通运行路径也会在 **preprocess 阶段** 直接校验：
+
+- `:kind :fn` 必须对应 `defn`
+- `:kind :macro` 必须对应 `defmacro`
+- `:args` 的必选参数个数必须和实际参数列表一致
+- `:rest` 必须和代码里的 `&` rest 参数一致
+
+这意味着下面几类命令都会在启动时直接失败，而不是等到 `analyze` 才发现：
+
+- `cr <file>`
+- `cr --check-only <file>`
+- `cr <file> js`
+- `yarn try-rs`
+
+复杂但正确的示例（顶层用 `:schema`，局部函数用 `hint-fn`）：
+
+```cirru
+|join-str $ %{} :CodeEntry (:doc |)
+  :code $ quote
+    defn join-str (xs0 sep)
+      apply-args (| xs0 true)
+        defn %join-str (acc xs beginning?)
+          hint-fn $ {}
+            :args $ [] :string :list :bool
+            :return :string
+          list-match xs
+            () acc
+            (x0 xss)
+              recur
+                &str:concat
+                  if beginning? acc $ &str:concat acc sep
+                  , x0
+                , xss false
+  :examples $ []
+  :schema $ {} (:kind :fn) (:return :string)
+    :args $ [] :list :string
+```
+
+这个例子里，schema 与代码是完全对齐的：
+
+- `:kind :fn` 对应 `defn`
+- `:args` 里 2 个必选参数，对应 `(xs0 sep)`
+- `:return :string` 对应整个 `join-str` 的返回值
+- 内部辅助函数 `%join-str` 不是顶层定义，所以继续用 `hint-fn`
+
+推荐工作流：
+
+```bash
+# 先查看 calcit.core 里真实存在的 schema
+cr query schema calcit.core/join-str
+
+# 再仿照它给自己的定义写 schema
+cr edit schema app.main/my-fn -e '{} (:kind :fn) (:args $ [] :list :string) (:return :string)'
+
+# 最后验证
+cr --check-only
+cr analyze check-types
+```
+
+实务上，`analyze check-types` 更适合做全量巡检；普通运行路径现在会做 fail-fast 阻断。
 
 ### 其他易错点
 
@@ -1378,19 +1454,20 @@ cr eval 'let ((x 1)) (+ x 2)'
 
 ### 错误信息对照表
 
-| 错误信息                              | 原因                                   | 解决方法                                                |
-| ------------------------------------- | -------------------------------------- | ------------------------------------------------------- |
-| `Path index X out of bounds`          | 路径索引已过期（操作后变化）           | 重新运行 `cr query search` 获取最新路径                 |
-| `tag-match expected tuple`            | 传入 vector 而非 tuple                 | 改用 `::` 语法，如 `:: :event-name data`                |
-| `unknown symbol: xxx`                 | 符号未定义或未 import                  | `cr query find xxx` 确认位置，`cr edit add-import` 引入 |
-| `expects pairs in list for let`       | `let` 绑定语法错误                     | 改为 `let ((x val)) body`（双层括号）                   |
-| `cannot be used as operator`          | 末尾符号被当作函数调用                 | 改用 `, acc` 前缀传递值，或用函数包裹                   |
-| `unknown data for foldl-shortcut`     | 参数顺序错误（Calcit vs Clojure 差异） | Calcit 集合在第一位：`map data fn`                      |
-| `Do not include ':require' as prefix` | `cr edit imports` 格式错误             | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`      |
-| `Namespace name mismatch`             | `add-ns -e` 名称不一致                 | ns 表达式名称必须与位置参数完全一致                     |
-| 字符串被拆分成多个 token              | 没有用 `\|` 或 `"` 包裹                | 使用 `\|complete string` 或 `"complete string`          |
-| `unexpected format`                   | Cirru 语法错误                         | 用 `cr cirru parse '<code>'` 验证语法                   |
-| `Type warning` 导致 eval 失败         | 类型不匹配（阻断执行）                 | 检查参数类型标注，或用 `assert-type` 确认预期类型       |
+| 错误信息                                         | 原因                                              | 解决方法                                                       |
+| ------------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
+| `Path index X out of bounds`                     | 路径索引已过期（操作后变化）                      | 重新运行 `cr query search` 获取最新路径                        |
+| `tag-match expected tuple`                       | 传入 vector 而非 tuple                            | 改用 `::` 语法，如 `:: :event-name data`                       |
+| `unknown symbol: xxx`                            | 符号未定义或未 import                             | `cr query find xxx` 确认位置，`cr edit add-import` 引入        |
+| `expects pairs in list for let`                  | `let` 绑定语法错误                                | 改为 `let ((x val)) body`（双层括号）                          |
+| `cannot be used as operator`                     | 末尾符号被当作函数调用                            | 改用 `, acc` 前缀传递值，或用函数包裹                          |
+| `unknown data for foldl-shortcut`                | 参数顺序错误（Calcit vs Clojure 差异）            | Calcit 集合在第一位：`map data fn`                             |
+| `Do not include ':require' as prefix`            | `cr edit imports` 格式错误                        | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`             |
+| `Namespace name mismatch`                        | `add-ns -e` 名称不一致                            | ns 表达式名称必须与位置参数完全一致                            |
+| 字符串被拆分成多个 token                         | 没有用 `\|` 或 `"` 包裹                           | 使用 `\|complete string` 或 `"complete string`                 |
+| `unexpected format`                              | Cirru 语法错误                                    | 用 `cr cirru parse '<code>'` 验证语法                          |
+| `Type warning` 导致 eval 失败                    | 类型不匹配（阻断执行）                            | 检查参数类型标注，或用 `assert-type` 确认预期类型              |
+| `schema mismatch while preprocessing definition` | `:schema` 与 `defn` / `defmacro` / 参数个数不一致 | 修正 `:kind`、`:args`、`:rest`，或让代码定义与 schema 保持一致 |
 
 ### 调试常用命令
 

@@ -206,9 +206,56 @@ impl TryFrom<Edn> for CodeEntry {
 fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
   // Old format stored as Edn::Quote — convert via Cirru → Edn map
   if let Ok(cirru) = from_edn::<Cirru>(value.to_owned()) {
-    return Ok(schema_cirru_to_edn(cirru));
+    let normalized = schema_cirru_to_edn(cirru);
+    validate_schema_edn_no_legacy_quotes(&normalized)?;
+    return Ok(normalized);
   }
+  validate_schema_edn_no_legacy_quotes(value)?;
   Ok(value.clone())
+}
+
+fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
+  match value {
+    Edn::Symbol(s) => {
+      if s.starts_with('\'') {
+        let inner = s.trim_start_matches('\'');
+        return Err(format!(
+          "Legacy schema generic symbol `{s}` is invalid. Use single-quoted source syntax like `'{inner}`, which should be stored as plain EDN symbol `{inner}`."
+        ));
+      }
+      Ok(())
+    }
+    Edn::List(xs) => {
+      for item in &xs.0 {
+        validate_schema_edn_no_legacy_quotes(item)?;
+      }
+      Ok(())
+    }
+    Edn::Map(map) => {
+      for (_, v) in map.0.iter() {
+        validate_schema_edn_no_legacy_quotes(v)?;
+      }
+      Ok(())
+    }
+    Edn::Tuple(view) => {
+      validate_schema_edn_no_legacy_quotes(view.tag.as_ref())?;
+      for item in &view.extra {
+        validate_schema_edn_no_legacy_quotes(item)?;
+      }
+      Ok(())
+    }
+    Edn::Set(set) => {
+      for item in &set.0 {
+        validate_schema_edn_no_legacy_quotes(item)?;
+      }
+      Ok(())
+    }
+    Edn::Record(record) => {
+      let _ = record;
+      Ok(())
+    }
+    _ => Ok(()),
+  }
 }
 
 /// Convert a schema Edn value to Cirru for operations that require Cirru (validation, runtime).
@@ -218,10 +265,10 @@ pub fn schema_edn_to_cirru(value: &Edn) -> Result<Cirru, String> {
 }
 
 fn parse_schema_cirru_from_edn(value: &Edn) -> Result<Cirru, String> {
-  if let Ok(schema) = from_edn::<Cirru>(value.to_owned()) {
-    return Ok(schema);
-  }
-
+  // Do not use `from_edn::<Cirru>` here: EDN symbols such as `Edn::Symbol("T")`
+  // would become Cirru leaves like `'T`, while valid schema source should round-trip
+  // through the parser into `(quote T)` / `'T` syntax without embedding quote
+  // characters inside leaf names.
   let schema_text = cirru_edn::format(value, true).map_err(|e| format!("Failed to format schema EDN to Cirru: {e}"))?;
   let schema_nodes = cirru_parser::parse(&schema_text).map_err(|e| format!("Failed to parse schema Cirru from EDN text: {e}"))?;
 
@@ -293,14 +340,14 @@ fn check_no_nil_type(node: &Cirru) -> Result<(), String> {
   }
 }
 
-/// Recursively check for symbols with excess leading single-quotes (e.g. `''''T`).
-/// A valid generic type variable is a quoted uppercase symbol like `'T`, which after
-/// Cirru parsing becomes a `(quote T)` list — the symbol name itself has no quotes.
+/// Recursively check for symbols with excess leading single-quotes.
+/// In schema source, a valid generic type variable is written as `'T`, so a single
+/// leading quote in a leaf is valid, but `''T` and deeper are malformed.
 fn check_no_excess_quotes(node: &Cirru) -> Result<(), String> {
   match node {
     Cirru::Leaf(s) => {
-      // A leaf that starts with ' means the Cirru serializer emitted a quoted symbol name,
-      // which indicates the underlying symbol still contains leading quote characters.
+      // A leaf with one leading quote is valid schema source syntax for an EDN symbol.
+      // More than one means the underlying symbol name itself also contains quote chars.
       let name = s.as_ref();
       if name.starts_with('\'') && !name.trim_start_matches('\'').is_empty() {
         let inner = name.trim_start_matches('\'');
@@ -388,7 +435,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   // Reject deprecated :nil type annotation
   check_no_nil_type(schema)?;
 
-  // Reject excess-quoted type variables like ''''T
+  // Reject excess-quoted type variables like ''T.
   check_no_excess_quotes(schema)?;
 
   // Field-level validation
@@ -1137,6 +1184,70 @@ mod tests {
       !matches!(edn, Edn::Quote(_)),
       "output must NOT be Quote-wrapped (new direct-map format)"
     );
+  }
+
+  #[test]
+  fn test_schema_generics_round_trip_uses_single_quote_source_syntax() {
+    let schema_text = "{} (:kind :fn) (:args ([] :number)) (:generics ([] 'T)) (:return :number)";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+
+    let schema_edn = schema_cirru_to_edn(schema_cirru);
+    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).expect("must parse generic schema");
+    assert_eq!(fn_schema.generics.as_ref(), &[Arc::from("T")]);
+
+    let saved_edn = fn_schema.to_schema_edn();
+    let Edn::Map(saved_map) = &saved_edn else {
+      panic!("saved schema must be a map, got {saved_edn:?}");
+    };
+    let Some(Edn::List(generics)) = saved_map.tag_get("generics") else {
+      panic!("saved schema must contain :generics, got {saved_edn:?}");
+    };
+    assert_eq!(generics.0, vec![Edn::Symbol(Arc::from("T"))]);
+
+    let saved_cirru = schema_edn_to_cirru(&saved_edn).expect("schema edn to cirru");
+    validate_schema_for_write(&saved_cirru).expect("saved schema should still be writable");
+    let saved_text = cirru_parser::format(&[saved_cirru], true.into()).expect("format schema");
+    assert!(
+      saved_text.contains(":generics $ [] 'T"),
+      "saved schema should use single-quoted source syntax: {saved_text}"
+    );
+    assert!(
+      !saved_text.contains("''T"),
+      "saved schema must not contain double-leading-quote generics: {saved_text}"
+    );
+  }
+
+  #[test]
+  fn test_normalize_schema_rejects_legacy_quoted_generic_symbol() {
+    let schema = Edn::Map(EdnMapView::from(HashMap::from([
+      (Edn::tag("kind"), Edn::tag("fn")),
+      (Edn::tag("args"), Edn::List(cirru_edn::EdnListView(vec![Edn::tag("number")]))),
+      (
+        Edn::tag("generics"),
+        Edn::List(cirru_edn::EdnListView(vec![Edn::Symbol(Arc::from("'T"))])),
+      ),
+      (Edn::tag("return"), Edn::tag("number")),
+    ])));
+
+    let err = normalize_schema_edn(&schema).expect_err("legacy quoted generic symbol should fail on load");
+    assert!(err.contains("Legacy schema generic symbol"), "unexpected error: {err}");
+  }
+
+  #[test]
+  fn test_schema_write_rejects_double_quoted_generics() {
+    let schema_text = "{} (:kind :fn) (:args ([] :number)) (:generics ([] ''T)) (:return :number)";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+
+    let err = validate_schema_for_write(&schema_cirru).expect_err("double-quoted generic should be rejected");
+    assert!(err.contains("excess leading quotes"), "unexpected error: {err}");
   }
 
   #[test]
