@@ -15,11 +15,9 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)
               when (> 1 2)
@@ -37,10 +35,6 @@
               test-return-raw-code
               do true
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-async $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () $ let

@@ -32,19 +32,15 @@
                             &* 2 $ hole-series (&+ unit 1)
                             hole-series unit
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :number
-              :return :number
+          :schema $ {} (:kind :fn) (:return :number)
+            :args $ [] :number
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
               ; println $ hole-series 100
@@ -52,21 +48,13 @@
               test-loop
               do true
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |test-hole-series $ %{} :CodeEntry (:doc |)
+        |test-hole-series $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-hole-series () $ assert "|hole series numbers"
               =
                 map (range 1 20) hole-series
                 [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-loop $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()

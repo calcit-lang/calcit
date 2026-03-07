@@ -10,18 +10,12 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-bitwise $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
@@ -132,7 +126,7 @@
                 format-cirru-one-liner $ [] |+ |1 |2
                 , "|+ 1 2"
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-methods () (log-title "|Testing string methods")
               assert= true $ .blank? |
@@ -179,15 +173,11 @@
               assert= |12312a $ .pad-left |a 6 |123
               assert= |a12312 $ .pad-right |a 6 |123
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-parse $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () $ assert= 0 (parse-float |0)
           :examples $ []
-        |test-str $ %{} :CodeEntry (:doc |)
+        |test-str $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-str ()
               assert= (&str:concat |a |b) |ab
@@ -218,10 +208,6 @@
               assert= 1 $ &compare |b |a
               assert= 0 $ &compare |a |a
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-trim $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()

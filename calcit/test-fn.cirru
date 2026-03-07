@@ -6,7 +6,7 @@
   :files $ {}
     |test-fn.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing fn")
               let
@@ -18,10 +18,6 @@
                 assert= 3 $ f2 1 2
                 assert= 3 $ apply f2 ([] 1 2)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-fn.main $ :require

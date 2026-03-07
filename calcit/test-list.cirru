@@ -9,29 +9,21 @@
         |*counted $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote (defatom *counted 0)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-alias $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
           :examples $ []
-        |test-apply $ %{} :CodeEntry (:doc |)
+        |test-apply $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-apply ()
               assert= 10 $ apply + ([] 1 2 3 4)
               assert= 10 $ + & ([] 1 2 3 4)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-comma $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             assert= ([] 1 2 3 4) ([,] 1 2 3 4)
@@ -59,7 +51,7 @@
               assert= 10 $ deref *counted
               assert= 10 @*counted
           :examples $ []
-        |test-every $ %{} :CodeEntry (:doc |)
+        |test-every $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-every ()
               let
@@ -75,11 +67,7 @@
               assert-detect some? 1
               assert-detect not $ some? nil
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |test-foldl $ %{} :CodeEntry (:doc |)
+        |test-foldl $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-foldl ()
               assert= 1 $ get ([] 1 2 3) 0
@@ -101,11 +89,7 @@
                 reduce ([] 3 4 5) 2 +
                 , 14
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |test-groups $ %{} :CodeEntry (:doc |)
+        |test-groups $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-groups ()
               assert=
@@ -128,10 +112,6 @@
                 section-by ([]) 2
                 []
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-join $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
@@ -152,7 +132,7 @@
               let[] (a b c & d) ([] 1 2 3 4 5) (assert= 1 a) (assert= 2 b) (assert= 3 c)
                 assert= ([] 4 5) d
           :examples $ []
-        |test-list $ %{} :CodeEntry (:doc |)
+        |test-list $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-list () $ let
                 a $ [] 1 2 3
@@ -303,10 +283,6 @@
                   , 0
                 , 0
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-match $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing list match")

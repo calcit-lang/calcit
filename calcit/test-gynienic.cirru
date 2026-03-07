@@ -19,24 +19,18 @@
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (:ns test-gynienic.lib)
         :examples $ []
     |test-gynienic.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |try-hygienic $ %{} :CodeEntry (:doc |)
+        |try-hygienic $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn try-hygienic () (println "|Testing gynienic")
               let
@@ -44,10 +38,6 @@
                 assert= (add-11 1 2) ([] 1 2 4 11 10)
                 , true
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-gynienic.main $ :require

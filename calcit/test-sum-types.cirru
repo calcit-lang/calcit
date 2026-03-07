@@ -25,7 +25,7 @@
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (println "|Testing sum types...")
               let
@@ -42,34 +42,22 @@
                 println "|All sum type checks passed."
               println |Done!
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message) (%:: ActionResult :err message)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value) (%:: ActionResult :ok value)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () nil
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
@@ -78,10 +66,8 @@
                   str "|handled ok " value
                 (:err message) (str "|handled err " message)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-sum-types.main)
         :examples $ []

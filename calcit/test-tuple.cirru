@@ -10,7 +10,7 @@
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
               assert= (:: :parts |1 |23)
@@ -75,10 +75,6 @@
                   plain $ :: :plain 1
                 assert= nil $ &tuple:enum plain
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |try-size $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)
@@ -90,10 +86,8 @@
                 (:dyn x y z) 4
                 _ :many
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-tuple.main $ :require

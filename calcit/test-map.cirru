@@ -6,14 +6,10 @@
   :files $ {}
     |test-map.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-diff $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing diff")
@@ -76,7 +72,7 @@
               assert= ({,} :a 1 :b 2 :c 3)
                 {} (:a 1) (:b 2) (:c 3)
           :examples $ []
-        |test-maps $ %{} :CodeEntry (:doc |)
+        |test-maps $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-maps ()
               assert= 2 $ count
@@ -142,10 +138,6 @@
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing map methods")
@@ -263,7 +255,7 @@
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1
           :examples $ []
-        |test-native-map-syntax $ %{} :CodeEntry (:doc |)
+        |test-native-map-syntax $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-native-map-syntax () $ inside-eval:
               assert=
@@ -271,10 +263,6 @@
                   {} $ :a 1
                 quote $ &{} :a 1
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-pairs $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()

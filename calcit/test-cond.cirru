@@ -10,18 +10,12 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ [] :dynamic
-              :return :dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) (test-field-match) true
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-and $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing and")
@@ -43,7 +37,7 @@
                 and (> 10 9) (> 10 11)
                 , false
           :examples $ []
-        |test-case $ %{} :CodeEntry (:doc |)
+        |test-case $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-case ()
               let
@@ -64,11 +58,7 @@
                 assert= (detect-x 1) |one
                 assert= (detect-x 2) |two
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |test-cond $ %{} :CodeEntry (:doc |)
+        |test-cond $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -82,10 +72,6 @@
               assert= (compare-x 6) |>5
               assert= (compare-x 4) |<=5
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
         |test-either $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing either")

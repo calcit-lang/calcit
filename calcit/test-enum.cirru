@@ -18,23 +18,15 @@
           :code $ quote
             deftrait ResultTrait $ .dummy :fn
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-tag-match-validation) (println "|All tests passed!")
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () $ println |Reloaded
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |test-enum-creation $ %{} :CodeEntry (:doc |)
+        |test-enum-creation $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-enum-creation () $ do (println "|Testing enum tuple creation...") (; Valid tuple creation)
               let
@@ -61,11 +53,7 @@
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
-        |test-tag-match-validation $ %{} :CodeEntry (:doc |)
+        |test-tag-match-validation $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-tag-match-validation () $ do (println "|Testing tag-match runtime validation...")
               let
@@ -77,10 +65,6 @@
                 assert= :ok v
               println "|✓ Tag-match validation passed"
           :examples $ []
-          :schema $ quote
-            {} (:kind :fn)
-              :args $ []
-              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-enum.main)
         :examples $ []
