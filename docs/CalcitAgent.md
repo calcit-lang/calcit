@@ -85,6 +85,8 @@ Calcit 程序使用 `cr` 命令：
   - 用于 CI/CD 或快速验证代码修改
 - `cr js -1` - 检查代码正确性，生成 JavaScript(兼容参数，默认已是单次)
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
+- `cr --no-tips <subcommand> ...` - 隐藏所有编辑/查询命令输出的 "Tips:" 提示行（适合脚本/Agent 使用）
+  - 示例：`cr --no-tips demos/compact.cirru query def calcit.core/foldl`
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
   - **不需要**项目 `compact.cirru`：core 内置函数（`range`、`+`、`map` 等）直接可用
   - 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块
@@ -684,6 +686,19 @@ let
 | `:dynamic` | 任意类型 (通配符) |
 
 > 约定：动态类型标注统一使用 `:dynamic`，不再使用 `:any` 或 `nil` 作为 dynamic 的显式写法。
+
+**高阶函数（HOF）回调类型检查：**
+
+内置 HOF（`foldl`、`sort`、`filter`、`find`、`find-index`、`filter-not`、`mapcat`、`group-by` 等）的回调参数已强制要求 `:fn` 类型。传入非函数值（如数字、字符串）时会在预处理阶段触发类型警告：
+
+```bash
+# ❌ 错误：第三个参数应为函数，传了数字
+cr eval 'foldl (list 1 2 3) 0 42'
+# Type warning: expects :fn but got :number
+
+# ✅ 正确
+cr eval 'foldl (list 1 2 3) 0 &+'
+```
 
 #### 4. 复杂类型标注
 
