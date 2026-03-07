@@ -43,65 +43,107 @@ pub struct Snapshot {
   pub files: HashMap<String, FileInSnapShot>,
 }
 
+fn format_edn_preview(value: &Edn) -> String {
+  let raw = cirru_edn::format(value, true).unwrap_or_else(|_| format!("{value:?}"));
+  const LIMIT: usize = 220;
+  if raw.chars().count() > LIMIT {
+    let truncated = raw.chars().take(LIMIT).collect::<String>();
+    format!("{truncated}…")
+  } else {
+    raw
+  }
+}
+
+fn schema_path_label(path: &[String]) -> String {
+  if path.is_empty() { "<root>".to_owned() } else { path.join("") }
+}
+
+fn map_key_path_segment(key: &Edn) -> String {
+  match key {
+    Edn::Tag(tag) => format!(".{}", tag.ref_str()),
+    Edn::Str(text) => format!(".{text}"),
+    Edn::Symbol(text) => format!(".{text}"),
+    _ => ".<key>".to_owned(),
+  }
+}
+
 /// Convert a schema Edn value (either old Quote-wrapped or new direct map) into Edn map form.
-fn parse_schema_from_edn(value: &Edn) -> Result<Edn, String> {
+fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
   // Old format: Edn::Quote wrapping Cirru — convert to direct map Edn
   if let Ok(cirru) = from_edn::<Cirru>(value.clone()) {
-    let text = cirru_parser::format(&[cirru], true.into()).map_err(|e| format!("schema format error: {e}"))?;
-    let parsed = cirru_edn::parse(&text).map_err(|e| format!("schema parse error: {e}"))?;
-    validate_schema_edn_no_legacy_quotes(&parsed)?;
+    let text = cirru_parser::format(&[cirru], true.into())
+      .map_err(|e| format!("{owner}: failed to format quoted schema before validation: {e}"))?;
+    let parsed =
+      cirru_edn::parse(&text).map_err(|e| format!("{owner}: failed to parse quoted schema after formatting: {e}; schema={text}"))?;
+    validate_schema_edn_no_legacy_quotes(&parsed, owner)?;
     return Ok(parsed);
   }
   // New format: already a direct Edn map
-  validate_schema_edn_no_legacy_quotes(value)?;
+  validate_schema_edn_no_legacy_quotes(value, owner)?;
   Ok(value.clone())
 }
 
-fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
-  match value {
-    Edn::Symbol(s) => {
-      if s.starts_with('\'') {
-        let inner = s.trim_start_matches('\'');
-        return Err(format!(
-          "Legacy schema generic symbol `{s}` is invalid. Use single-quoted source syntax like `'{inner}`, which should be stored as plain EDN symbol `{inner}`."
-        ));
+fn validate_schema_edn_no_legacy_quotes(value: &Edn, owner: &str) -> Result<(), String> {
+  fn walk(value: &Edn, owner: &str, path: &mut Vec<String>) -> Result<(), String> {
+    match value {
+      Edn::Symbol(s) => {
+        if s.starts_with('\'') {
+          let inner = s.trim_start_matches('\'');
+          return Err(format!(
+            "{owner}: invalid schema generic symbol `{s}` at {}. Use source syntax like `'{inner}`, but store it as plain EDN symbol `{inner}`.",
+            schema_path_label(path)
+          ));
+        }
+        Ok(())
       }
-      Ok(())
-    }
-    Edn::List(xs) => {
-      for item in &xs.0 {
-        validate_schema_edn_no_legacy_quotes(item)?;
+      Edn::List(xs) => {
+        for (idx, item) in xs.0.iter().enumerate() {
+          path.push(format!("[{idx}]"));
+          walk(item, owner, path)?;
+          path.pop();
+        }
+        Ok(())
       }
-      Ok(())
-    }
-    Edn::Map(map) => {
-      for (_, v) in &map.0 {
-        validate_schema_edn_no_legacy_quotes(v)?;
+      Edn::Map(map) => {
+        for (k, v) in &map.0 {
+          path.push(map_key_path_segment(k));
+          walk(v, owner, path)?;
+          path.pop();
+        }
+        Ok(())
       }
-      Ok(())
-    }
-    Edn::Tuple(view) => {
-      validate_schema_edn_no_legacy_quotes(view.tag.as_ref())?;
-      for item in &view.extra {
-        validate_schema_edn_no_legacy_quotes(item)?;
+      Edn::Tuple(view) => {
+        path.push(".tag".to_owned());
+        walk(view.tag.as_ref(), owner, path)?;
+        path.pop();
+        for (idx, item) in view.extra.iter().enumerate() {
+          path.push(format!("[{idx}]"));
+          walk(item, owner, path)?;
+          path.pop();
+        }
+        Ok(())
       }
-      Ok(())
-    }
-    Edn::Set(set) => {
-      for item in &set.0 {
-        validate_schema_edn_no_legacy_quotes(item)?;
+      Edn::Set(set) => {
+        for (idx, item) in set.0.iter().enumerate() {
+          path.push(format!("[#{idx}]"));
+          walk(item, owner, path)?;
+          path.pop();
+        }
+        Ok(())
       }
-      Ok(())
+      Edn::Record(_) => Ok(()),
+      _ => Ok(()),
     }
-    Edn::Record(_) => Ok(()),
-    _ => Ok(()),
   }
+
+  let mut path = vec![];
+  walk(value, owner, &mut path)
 }
 
-fn parse_code_entry(edn: Edn) -> Result<CodeEntry, String> {
+fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   let record: EdnRecordView = match edn {
     Edn::Record(r) => r,
-    other => return Err(format!("CodeEntry: expected record, got {other:?}")),
+    other => return Err(format!("{owner}: expected CodeEntry record, got {}", format_edn_preview(&other))),
   };
   let mut doc = String::new();
   let mut examples: Vec<Cirru> = vec![];
@@ -109,12 +151,12 @@ fn parse_code_entry(edn: Edn) -> Result<CodeEntry, String> {
   let mut schema: Option<Edn> = None;
   for (key, value) in &record.pairs {
     match key.arc_str().as_ref() {
-      "doc" => doc = from_edn(value.clone()).map_err(|e| format!("doc: {e}"))?,
-      "examples" => examples = from_edn(value.clone()).map_err(|e| format!("examples: {e}"))?,
-      "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("code: {e}"))?),
+      "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
+      "examples" => examples = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:examples`: {e}"))?,
+      "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
       "schema" => {
         if !matches!(value, Edn::Nil) {
-          schema = Some(parse_schema_from_edn(value).map_err(|e| format!("schema: {e}"))?);
+          schema = Some(parse_schema_from_edn(value, owner).map_err(|e| format!("{owner}: invalid `:schema`: {e}"))?);
         }
       }
       _ => {}
@@ -123,36 +165,42 @@ fn parse_code_entry(edn: Edn) -> Result<CodeEntry, String> {
   Ok(CodeEntry {
     doc,
     examples,
-    code: code.ok_or("CodeEntry: missing code field")?,
+    code: code.ok_or_else(|| format!("{owner}: missing `:code` field in CodeEntry"))?,
     schema,
   })
 }
 
-fn parse_file_in_snapshot(edn: Edn) -> Result<FileInSnapShot, String> {
+fn parse_file_in_snapshot(edn: Edn, file_name: &str) -> Result<FileInSnapShot, String> {
   let record: EdnRecordView = match edn {
     Edn::Record(r) => r,
-    other => return Err(format!("FileInSnapShot: expected record, got {other:?}")),
+    other => {
+      return Err(format!(
+        "{file_name}: expected FileEntry record, got {}",
+        format_edn_preview(&other)
+      ));
+    }
   };
   let mut ns: Option<CodeEntry> = None;
   let mut defs: HashMap<String, CodeEntry> = HashMap::new();
   for (key, value) in &record.pairs {
     match key.arc_str().as_ref() {
-      "ns" => ns = Some(parse_code_entry(value.clone())?),
+      "ns" => ns = Some(parse_code_entry(value.clone(), &format!("{file_name}/:ns"))?),
       "defs" => {
         let map = match value {
           Edn::Map(m) => m,
-          other => return Err(format!("FileInSnapShot.defs: expected map, got {other:?}")),
+          other => return Err(format!("{file_name}: expected `:defs` map, got {}", format_edn_preview(other))),
         };
         for (def_key, def_value) in &map.0 {
-          let name: String = from_edn(def_key.clone()).map_err(|e| format!("def key: {e}"))?;
-          defs.insert(name, parse_code_entry(def_value.clone())?);
+          let name: String = from_edn(def_key.clone()).map_err(|e| format!("{file_name}: invalid def key: {e}"))?;
+          let owner = format!("{file_name}/{name}");
+          defs.insert(name, parse_code_entry(def_value.clone(), &owner)?);
         }
       }
       _ => {}
     }
   }
   Ok(FileInSnapShot {
-    ns: ns.ok_or("FileInSnapShot: missing ns field")?,
+    ns: ns.ok_or_else(|| format!("{file_name}: missing `:ns` field in FileEntry"))?,
     defs,
   })
 }
@@ -162,12 +210,12 @@ fn parse_files(edn: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
     Edn::Map(map) => {
       let mut result = HashMap::with_capacity(map.0.len());
       for (key, value) in map.0 {
-        let name: String = from_edn(key).map_err(|e| format!("file key: {e}"))?;
-        result.insert(name, parse_file_in_snapshot(value)?);
+        let name: String = from_edn(key).map_err(|e| format!("invalid file key: {e}"))?;
+        result.insert(name.clone(), parse_file_in_snapshot(value, &name)?);
       }
       Ok(result)
     }
-    other => Err(format!("files: expected map, got {other:?}")),
+    other => Err(format!("snapshot `:files` must be a map, got {}", format_edn_preview(&other))),
   }
 }
 
@@ -177,28 +225,34 @@ fn main() {
   let out_dir = env::var_os("OUT_DIR").unwrap();
   let dest_path = Path::new(&out_dir).join("calcit-core.rmp");
 
-  let core_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("read core");
-  let core_data = cirru_edn::parse(&core_content).expect("parse core");
+  let core_content =
+    fs::read_to_string("src/cirru/calcit-core.cirru").unwrap_or_else(|e| panic!("failed to read src/cirru/calcit-core.cirru: {e}"));
+  let core_data =
+    cirru_edn::parse(&core_content).unwrap_or_else(|e| panic!("failed to parse src/cirru/calcit-core.cirru as Cirru EDN: {e}"));
 
   // Minimal logic to convert Edn to Snapshot as in src/snapshot.rs
-  let data = core_data.view_map().expect("map");
-  let pkg: String = from_edn(data.get_or_nil("package")).expect("pkg");
+  let data = core_data
+    .view_map()
+    .unwrap_or_else(|e| panic!("calcit-core snapshot root must be a map: {e}"));
+  let pkg: String = from_edn(data.get_or_nil("package")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:package`: {e}"));
   let about = match data.get_or_nil("about") {
     Edn::Nil => None,
-    value => Some(from_edn::<String>(value).expect("about")),
+    value => Some(from_edn::<String>(value).unwrap_or_else(|e| panic!("failed to parse calcit-core `:about`: {e}"))),
   };
 
-  let files = parse_files(data.get_or_nil("files")).expect("files");
+  let files = parse_files(data.get_or_nil("files")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:files`: {e}"));
 
   let snapshot = Snapshot {
     package: pkg,
     about,
-    configs: from_edn(data.get_or_nil("configs")).expect("configs"),
-    entries: from_edn(data.get_or_nil("entries")).expect("entries"),
+    configs: from_edn(data.get_or_nil("configs")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:configs`: {e}")),
+    entries: from_edn(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}")),
     files,
   };
 
   let mut buf = Vec::new();
-  snapshot.serialize(&mut rmp_serde::Serializer::new(&mut buf)).expect("serialize");
-  fs::write(dest_path, buf).expect("write");
+  snapshot
+    .serialize(&mut rmp_serde::Serializer::new(&mut buf))
+    .unwrap_or_else(|e| panic!("failed to serialize embedded calcit-core snapshot: {e}"));
+  fs::write(dest_path, buf).unwrap_or_else(|e| panic!("failed to write embedded calcit-core snapshot: {e}"));
 }
