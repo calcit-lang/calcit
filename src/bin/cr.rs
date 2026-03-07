@@ -25,7 +25,7 @@ use notify_debouncer_mini::new_debouncer;
 
 use calcit::{
   ProgramEntries, builtins,
-  calcit::{CalcitProc, CalcitSyntax, ProcTypeSignature, SyntaxTypeSignature},
+  calcit::{CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SyntaxTypeSignature},
   call_stack, cli_args, codegen,
   codegen::COMPILE_ERRORS_FILE,
   codegen::emit_js::gen_stack,
@@ -681,7 +681,7 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
         doc: "Generated function to check all examples in this namespace".to_string(),
         examples: Vec::new(),
         code: check_function_code,
-        schema: None,
+        schema: calcit::calcit::DYNAMIC_TYPE.clone(),
       },
     );
   }
@@ -1152,8 +1152,9 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
   let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
     Cirru::List(xs) => match xs.first() {
       Some(Cirru::Leaf(head)) if &**head == "defn" => {
-        if let Some(schema) = &entry.schema
-          && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(schema)
+        if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref()
+          && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+          && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(&schema)
         {
           return TypeCoverageRow {
             ns: ns.to_owned(),

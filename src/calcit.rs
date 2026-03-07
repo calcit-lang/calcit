@@ -44,7 +44,8 @@ pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
-  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, brief_type_of_value, value_matches_type_annotation,
+  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, brief_type_of_value, register_program_lookups,
+  value_matches_type_annotation,
 };
 
 use compare::{
@@ -510,8 +511,12 @@ impl Hash for Calcit {
       Enum(enum_def) => {
         "enum:".hash(_state);
         enum_def.name().hash(_state);
-        enum_def.prototype().struct_ref.fields.hash(_state);
-        enum_def.prototype().values.hash(_state);
+        for v in enum_def.variants() {
+          v.tag.hash(_state);
+          for t in v.payload_types() {
+            t.hash(_state);
+          }
+        }
       }
       Proc(name) => {
         "proc:".hash(_state);
@@ -738,7 +743,7 @@ impl PartialEq for Calcit {
       (Map(a), Map(b)) => a == b,
       (Record(a), Record(b)) => a == b,
       (Struct(a), Struct(b)) => a == b,
-      (Enum(a), Enum(b)) => a.prototype() == b.prototype(),
+      (Enum(a), Enum(b)) => a.name() == b.name() && a.variants() == b.variants(),
       (Trait(a), Trait(b)) => a == b,
       (Impl(a), Impl(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,

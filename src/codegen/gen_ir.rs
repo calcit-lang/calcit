@@ -361,8 +361,8 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
     }
     CalcitTypeAnnotation::Buffer => type_tag_map("buffer"),
     CalcitTypeAnnotation::CirruQuote => type_tag_map("cirru-quote"),
-    CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
-    CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
+    CalcitTypeAnnotation::Record(record) => dump_struct_code(record.as_ref()),
+    CalcitTypeAnnotation::Tuple(tuple) => dump_enum_code(tuple.as_ref()),
     CalcitTypeAnnotation::DynTuple => type_tag_map("tuple"),
     CalcitTypeAnnotation::Fn(signature) => dump_function_type_annotation(signature.as_ref()),
     CalcitTypeAnnotation::Set(_) => type_tag_map("set"),
@@ -414,7 +414,7 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       }
       Edn::map_from_iter([(Edn::tag("type"), Edn::tag("traits")), (Edn::tag("value"), list.into())])
     }
-    CalcitTypeAnnotation::Nil => type_tag_map("unit"),
+    CalcitTypeAnnotation::Unit => type_tag_map("unit"),
   }
 }
 
@@ -436,31 +436,9 @@ fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {
   Edn::map_from_iter(entries)
 }
 
-fn dump_tuple_annotation(tuple: &CalcitTuple) -> Edn {
-  let mut entries = tuple_type_metadata_entries(tuple);
-  let mut payload = EdnListView::default();
-  for hint in &tuple.extra {
-    payload.push(dump_code(hint));
-  }
-  entries.push((Edn::tag("payload"), payload.into()));
-  entries.push((Edn::tag("payload-size"), Edn::Number(tuple.extra.len() as f64)));
-  Edn::map_from_iter(entries)
-}
-
 fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
   let mut entries = vec![
     (Edn::tag("kind"), Edn::tag("tuple")),
-    (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
-  ];
-  if let Some(sum_type) = &tuple.sum_type {
-    entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
-  }
-  entries
-}
-
-fn tuple_type_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
-  let mut entries = vec![
-    (Edn::tag("type"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
   if let Some(sum_type) = &tuple.sum_type {
@@ -476,20 +454,6 @@ fn dump_record_code(record: &CalcitRecord) -> Edn {
     fields.push(Edn::map_from_iter([
       (Edn::tag("field"), Edn::Str(field.ref_str().into())),
       (Edn::tag("value"), dump_code(value)),
-    ]));
-  }
-  entries.push((Edn::tag("fields"), fields.into()));
-  entries.push((Edn::tag("field-count"), Edn::Number(record.struct_ref.fields.len() as f64)));
-  Edn::map_from_iter(entries)
-}
-
-fn dump_record_type_summary(record: &CalcitRecord) -> Edn {
-  let mut entries = record_type_metadata(record);
-  let mut fields = EdnListView::default();
-  for (field, field_type) in record.struct_ref.fields.iter().zip(record.struct_ref.field_types.iter()) {
-    fields.push(Edn::map_from_iter([
-      (Edn::tag("field"), Edn::Str(field.ref_str().into())),
-      (Edn::tag("type"), dump_type_annotation(field_type.as_ref())),
     ]));
   }
   entries.push((Edn::tag("fields"), fields.into()));
@@ -557,14 +521,6 @@ fn dump_enum_code(enum_def: &CalcitEnum) -> Edn {
 fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
   let entries = vec![
     (Edn::tag("kind"), Edn::tag("record")),
-    (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
-  ];
-  entries
-}
-
-fn record_type_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
-  let entries = vec![
-    (Edn::tag("type"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
   entries

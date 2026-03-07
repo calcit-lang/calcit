@@ -146,7 +146,6 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
     }
     Enum(enum_def) => {
-      let proto = enum_def.prototype();
       let mut ys = vec![Calcit::Symbol {
         sym: "defenum".into(),
         info: Arc::new(crate::calcit::CalcitSymbolInfo {
@@ -155,23 +154,13 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         }),
         location: None,
       }];
-      ys.push(Calcit::Tag(proto.struct_ref.name.to_owned()));
-      for (field, value) in proto.struct_ref.fields.iter().zip(proto.values.iter()) {
-        if let Calcit::List(payloads) = value {
-          let mut variant = vec![Calcit::tag(field.ref_str())];
-          payloads.traverse(&mut |payload| {
-            variant.push(payload.to_owned());
-          });
-          ys.push(Calcit::from(CalcitList::from(&variant[..])));
-        } else if matches!(value, Calcit::Nil) {
-          let variant = [Calcit::tag(field.ref_str())];
-          ys.push(Calcit::from(CalcitList::from(&variant[..])));
-        } else {
-          ys.push(Calcit::from(CalcitList::from(&[
-            Calcit::tag(field.ref_str()),
-            data_to_calcit(value, ns, at_def)?,
-          ])));
+      ys.push(Calcit::Tag(enum_def.name().to_owned()));
+      for variant in enum_def.variants() {
+        let mut variant_form = vec![Calcit::tag(variant.tag.ref_str())];
+        for payload_type in variant.payload_types() {
+          variant_form.push(payload_type.to_calcit());
         }
+        ys.push(Calcit::from(CalcitList::from(&variant_form[..])));
       }
       let enum_value = Calcit::from(ys);
       let impls = enum_def.impls();

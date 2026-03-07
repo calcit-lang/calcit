@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitImpl, CalcitRecord, CalcitTypeAnnotation};
+use crate::calcit::{Calcit, CalcitImpl, CalcitList, CalcitRecord, CalcitStruct, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
@@ -23,7 +23,7 @@ impl EnumVariant {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitEnum {
-  prototype: Arc<CalcitRecord>,
+  name: EdnTag,
   variants: Arc<Vec<EnumVariant>>,
   /// Trait implementations attached to this enum (multiple allowed for composition)
   pub impls: Vec<Arc<CalcitImpl>>,
@@ -32,15 +32,18 @@ pub struct CalcitEnum {
 }
 
 impl CalcitEnum {
+  /// Create from a `CalcitRecord` using the old-style enum definition format.
+  /// The record's fields are variant tags and values are payload type lists.
   pub fn from_record(record: CalcitRecord) -> Result<Self, String> {
     Self::from_arc(Arc::new(record))
   }
 
   pub fn from_arc(record: Arc<CalcitRecord>) -> Result<Self, String> {
     let (variants, variant_index) = Self::collect_variants(&record)?;
+    let name = record.name().to_owned();
     let impls = record.struct_ref.impls.clone();
     Ok(Self {
-      prototype: record,
+      name,
       variants: Arc::new(variants),
       impls,
       variant_index: Arc::new(variant_index),
@@ -48,11 +51,36 @@ impl CalcitEnum {
   }
 
   pub fn name(&self) -> &EdnTag {
-    self.prototype.name()
+    &self.name
   }
 
-  pub fn prototype(&self) -> &CalcitRecord {
-    &self.prototype
+  /// Reconstruct a `CalcitRecord` prototype from the enum's data.
+  /// Used for serialization and backwards-compatibility paths that expect a record.
+  pub fn to_record_prototype(&self) -> CalcitRecord {
+    let fields: Vec<EdnTag> = self.variants.iter().map(|v| v.tag.clone()).collect();
+    let values: Vec<Calcit> = self
+      .variants
+      .iter()
+      .map(|v| {
+        if v.payload_types.is_empty() {
+          Calcit::Nil
+        } else {
+          let items: Vec<Calcit> = v.payload_types.iter().map(|t| t.to_calcit()).collect();
+          Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
+        }
+      })
+      .collect();
+    let struct_def = CalcitStruct {
+      name: self.name.clone(),
+      fields: Arc::new(fields),
+      field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
+      generics: Arc::new(vec![]),
+      impls: self.impls.clone(),
+    };
+    CalcitRecord {
+      struct_ref: Arc::new(struct_def),
+      values: Arc::new(values),
+    }
   }
 
   pub fn impls(&self) -> &[Arc<CalcitImpl>] {

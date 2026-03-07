@@ -8,13 +8,16 @@
 //! - `--json <string>` - inline JSON string
 //! - `--code <string>` - inline Cirru string
 
+use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
   EditDefCommand, EditDocCommand, EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
   EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand,
   EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
-use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file, validate_schema_for_write};
+use calcit::snapshot::{
+  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file, validate_schema_for_write,
+};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
@@ -662,7 +665,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
   if opts.clear {
-    code_entry.schema = None;
+    code_entry.schema = DYNAMIC_TYPE.clone();
     save_snapshot(&snapshot, snapshot_file)?;
     println!(
       "{} Cleared schema for '{}' in namespace '{}'",
@@ -680,7 +683,10 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
 
   validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
   snapshot::parse_schema_data(&schema_payload)?;
-  code_entry.schema = Some(schema_payload);
+  let schema_edn = snapshot::schema_cirru_to_edn(schema_payload);
+  code_entry.schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
+    .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+    .unwrap_or_else(|| DYNAMIC_TYPE.clone());
 
   save_snapshot(&snapshot, snapshot_file)?;
 

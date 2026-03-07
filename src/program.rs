@@ -7,7 +7,7 @@ use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
-use crate::calcit::Calcit;
+use crate::calcit::{self, Calcit, CalcitTypeAnnotation, DYNAMIC_TYPE};
 use crate::data::cirru::code_to_calcit;
 use crate::snapshot;
 use crate::snapshot::Snapshot;
@@ -21,7 +21,7 @@ pub type ProgramEvaledData = EntryBook<EntryBook<Calcit>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramDefEntry {
   pub code: Calcit,
-  pub schema: Option<Calcit>,
+  pub schema: Arc<CalcitTypeAnnotation>,
   pub doc: Arc<str>,
   pub examples: Vec<Cirru>,
 }
@@ -137,10 +137,7 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
     let code = code_to_calcit(&entry.code, &ns, &at_def, vec![])?;
-    let schema = match &entry.schema {
-      Some(v) => Some(code_to_calcit(v, &ns, &at_def, vec![])?),
-      None => None,
-    };
+    let schema = entry.schema.clone();
     let doc = Arc::from(entry.doc.as_str());
     defs.insert(
       def.to_owned().into(),
@@ -156,6 +153,10 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
 }
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
+  // Register the program lookup functions in type_annotation so it can resolve
+  // imported type definitions without a circular module dependency.
+  calcit::register_program_lookups(lookup_evaled_def, lookup_def_code);
+
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
 
   for (ns, file) in &s.files {
@@ -182,11 +183,17 @@ pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
   Some(entry.code.to_owned())
 }
 
-pub fn lookup_def_schema(ns: &str, def: &str) -> Option<Calcit> {
+pub fn lookup_def_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
   let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
-  let file = program_code.get(ns)?;
-  let entry = file.defs.get(def)?;
-  entry.schema.to_owned()
+  let file = match program_code.get(ns) {
+    Some(f) => f,
+    None => return DYNAMIC_TYPE.clone(),
+  };
+  let entry = match file.defs.get(def) {
+    Some(e) => e,
+    None => return DYNAMIC_TYPE.clone(),
+  };
+  entry.schema.clone()
 }
 
 /// lookup documentation for a definition from program data
@@ -314,7 +321,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
       let entry = ProgramDefEntry {
         code: calcit_code,
-        schema: None,
+        schema: DYNAMIC_TYPE.clone(),
         doc: Arc::from(""), // No doc info in changes, use empty string
         examples: vec![],   // No examples info in changes, use empty vector
       };
@@ -327,7 +334,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
       let (schema, doc, examples) = match file.defs.get(def.as_str()) {
         Some(existing) => (existing.schema.clone(), existing.doc.clone(), existing.examples.clone()),
-        None => (None, Arc::from(""), Vec::new()),
+        None => (DYNAMIC_TYPE.clone(), Arc::from(""), Vec::new()),
       };
       file.defs.insert(
         def.to_owned().into(),

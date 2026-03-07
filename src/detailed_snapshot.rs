@@ -6,6 +6,7 @@ use std::collections::hash_map::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use crate::snapshot::{CodeEntry, FileInSnapShot, gen_meta_ns};
 
 /// Detailed Cirru structure with metadata for tracking changes
@@ -130,6 +131,39 @@ impl TryFrom<Edn> for DetailCirru {
   }
 }
 
+mod schema_serde {
+  use super::*;
+
+  pub fn default_schema() -> Arc<CalcitTypeAnnotation> {
+    DYNAMIC_TYPE.clone()
+  }
+
+  pub fn serialize<S>(schema: &Arc<CalcitTypeAnnotation>, s: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    let edn: Option<Edn> = match schema.as_ref() {
+      CalcitTypeAnnotation::Dynamic => None,
+      CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.to_schema_edn()),
+      _ => None,
+    };
+    edn.serialize(s)
+  }
+
+  pub fn deserialize<'de, D>(d: D) -> Result<Arc<CalcitTypeAnnotation>, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    let opt = Option::<Edn>::deserialize(d)?;
+    Ok(match opt {
+      None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
+      Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
+        .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+        .unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+    })
+  }
+}
+
 /// Detailed code entry with metadata
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetailedCodeEntry {
@@ -137,8 +171,8 @@ pub struct DetailedCodeEntry {
   #[serde(default)]
   pub examples: Vec<DetailCirru>,
   pub code: DetailCirru,
-  #[serde(default)]
-  pub schema: Option<DetailCirru>,
+  #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
+  pub schema: Arc<CalcitTypeAnnotation>,
 }
 
 impl From<CodeEntry> for DetailedCodeEntry {
@@ -147,7 +181,7 @@ impl From<CodeEntry> for DetailedCodeEntry {
       doc: entry.doc,
       examples: entry.examples.into_iter().map(|e| e.into()).collect(),
       code: entry.code.into(),
-      schema: entry.schema.map(Into::into),
+      schema: entry.schema,
     }
   }
 }
@@ -158,7 +192,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
       doc: detailed.doc,
       examples: detailed.examples.into_iter().map(|e| e.into()).collect(),
       code: detailed.code.into(),
-      schema: detailed.schema.map(Into::into),
+      schema: detailed.schema,
     }
   }
 }
@@ -192,7 +226,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
             }
             "schema" => {
               if !matches!(value, Edn::Nil) {
-                schema = Some(value.to_owned().try_into()?);
+                schema = Some(value.to_owned());
               }
             }
             _ => {}
@@ -200,11 +234,17 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         }
 
         let code = code.ok_or("Missing code field")?;
+        let schema_parsed: Arc<CalcitTypeAnnotation> = match schema {
+          None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
+          Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
+            .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+            .unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+        };
         Ok(DetailedCodeEntry {
           doc,
           examples,
           code,
-          schema,
+          schema: schema_parsed,
         })
       }
       _ => Err("Expected record for DetailedCodeEntry".to_string()),

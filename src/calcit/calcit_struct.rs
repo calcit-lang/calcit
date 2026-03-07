@@ -27,6 +27,11 @@ impl CalcitStruct {
       impls: vec![],
     }
   }
+
+  /// Binary search for the position of a field name (fields must be sorted)
+  pub fn index_of(&self, y: &str) -> Option<usize> {
+    self.fields.iter().position(|f| f.ref_str() == y)
+  }
 }
 
 impl Hash for CalcitStruct {

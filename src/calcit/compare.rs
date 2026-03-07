@@ -126,7 +126,34 @@ fn compare_struct_impls(a: &[Arc<CalcitImpl>], b: &[Arc<CalcitImpl>]) -> Orderin
 }
 
 pub(super) fn compare_calcit_enum_values(a: &CalcitEnum, b: &CalcitEnum) -> Ordering {
-  compare_record_values(a.prototype(), b.prototype())
+  match a.name().cmp(b.name()) {
+    Equal => {
+      let av = a.variants();
+      let bv = b.variants();
+      av.len().cmp(&bv.len()).then_with(|| {
+        for (va, vb) in av.iter().zip(bv.iter()) {
+          let tag_ord = va.tag.cmp(&vb.tag);
+          if tag_ord != Equal {
+            return tag_ord;
+          }
+          let pa = va.payload_types();
+          let pb = vb.payload_types();
+          let len_ord = pa.len().cmp(&pb.len());
+          if len_ord != Equal {
+            return len_ord;
+          }
+          for (ta, tb) in pa.iter().zip(pb.iter()) {
+            let t_ord = ta.to_calcit().cmp(&tb.to_calcit());
+            if t_ord != Equal {
+              return t_ord;
+            }
+          }
+        }
+        Equal
+      })
+    }
+    ord => ord,
+  }
 }
 
 pub(super) fn compare_any_ref_values(a: &EdnAnyRef, b: &EdnAnyRef) -> Ordering {

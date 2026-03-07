@@ -271,7 +271,11 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
 
   for def in &defs {
     let entry = &file_data.defs[*def];
-    let schema_hint = if entry.schema.is_some() { " [schema]" } else { "" };
+    let schema_hint = if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      " [schema]"
+    } else {
+      ""
+    };
     if !entry.doc.is_empty() {
       let doc_first_line = entry.doc.lines().next().unwrap_or("");
       let doc_display = if doc_first_line.len() > 50 {
@@ -460,9 +464,11 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
   println!("{cirru_str}");
 
   println!("\n{}", "Schema:".bold());
-  if let Some(schema) = &code_entry.schema {
-    let schema_str =
-      cirru_parser::format(std::slice::from_ref(schema), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+  if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
+    let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+      Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
+      Err(e) => format!("(schema error: {e})"),
+    };
     println!("{schema_str}");
   } else {
     println!("{}", "(none)".dimmed());
@@ -498,11 +504,17 @@ fn cirru_to_json(cirru: &Cirru) -> serde_json::Value {
 }
 
 fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
+  let schema_json = match entry.schema.as_ref() {
+    CalcitTypeAnnotation::Fn(fn_annot) => snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+      .ok()
+      .map(|c| cirru_to_json(&c)),
+    _ => None,
+  };
   serde_json::json!({
     "doc": entry.doc,
     "examples": entry.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
     "code": cirru_to_json(&entry.code),
-    "schema": entry.schema.as_ref().map(cirru_to_json),
+    "schema": schema_json,
   })
 }
 
@@ -604,8 +616,11 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   // Always show examples count
   println!("{} {}", "Examples:".bold(), code_entry.examples.len());
 
-  if let Some(schema) = &code_entry.schema {
-    let preview = schema.format_one_liner()?;
+  if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
+    let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+      Ok(c) => c.format_one_liner()?,
+      Err(e) => format!("(schema error: {e})"),
+    };
     let display = if preview.len() > 120 {
       format!("{}...", &preview[..120])
     } else {
@@ -659,14 +674,15 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
         ));
       }
 
-      if let Some(schema) = &code_entry.schema
-        && find_symbol_in_cirru(schema, symbol)
+      if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref()
+        && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+        && find_symbol_in_cirru(&schema, symbol)
       {
-        let coords = find_symbol_coords(schema, symbol);
+        let coords = find_symbol_coords(&schema, symbol);
         found_references.push((
           ns_name.clone(),
           def_name.clone(),
-          get_symbol_context_cirru(schema, symbol),
+          get_symbol_context_cirru(&schema, symbol),
           coords,
           "schema",
         ));
@@ -787,23 +803,25 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
       }
 
-      if let Some(schema) = &code_entry.schema {
-        let found_in_schema = if imports_target || ns_name == target_ns {
-          find_symbol_in_cirru(schema, target_def)
-        } else {
-          let qualified = format!("{target_ns}/{target_def}");
-          find_symbol_in_cirru(schema, &qualified)
-        };
-
-        if found_in_schema {
-          let context = get_symbol_context_cirru(schema, target_def);
-          let coords = if imports_target || ns_name == target_ns {
-            find_symbol_coords(schema, target_def)
+      if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
+        if let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+          let found_in_schema = if imports_target || ns_name == target_ns {
+            find_symbol_in_cirru(&schema, target_def)
           } else {
             let qualified = format!("{target_ns}/{target_def}");
-            find_symbol_coords(schema, &qualified)
+            find_symbol_in_cirru(&schema, &qualified)
           };
-          usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
+
+          if found_in_schema {
+            let context = get_symbol_context_cirru(&schema, target_def);
+            let coords = if imports_target || ns_name == target_ns {
+              find_symbol_coords(&schema, target_def)
+            } else {
+              let qualified = format!("{target_ns}/{target_def}");
+              find_symbol_coords(&schema, &qualified)
+            };
+            usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
+          }
         }
       }
     }
