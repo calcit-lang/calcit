@@ -790,7 +790,7 @@ pub struct EditDocCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "schema")]
-/// update definition schema payload (updates quote inner content only)
+/// update definition schema (validates structure before writing; cr edit format normalises old quote-wrapped schemas to direct map)
 pub struct EditSchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]

@@ -321,12 +321,97 @@ fn strip_name_field_from_schema(schema: &Cirru) -> Cirru {
   }
 }
 
+/// Convert a Cirru schema tree to a direct Edn value (not Quote-wrapped).
+/// Used when serializing CodeEntry to file: the schema is stored as a native
+/// EDN map instead of a quoted Cirru expression.
+/// `cr edit format` normalises old quote-wrapped schemas to this format.
+/// Returns `Edn::Nil` if conversion fails (should not happen for valid schemas).
+fn schema_cirru_to_edn(schema: Cirru) -> Edn {
+  let text = match cirru_parser::format(&[schema], true.into()) {
+    Ok(t) => t,
+    Err(_) => return Edn::Nil,
+  };
+  match cirru_edn::parse(&text) {
+    Ok(edn) => edn,
+    Err(_) => Edn::Nil,
+  }
+}
+
+/// Valid top-level field names accepted in a schema map.
+pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics"];
+
+/// Strict validation for schemas submitted via `cr edit schema`.
+/// Ensures the schema is a `{}` map, has a recognised `:kind`, and contains
+/// only permitted fields.  Loading (read-only) only requires the weaker
+/// `parse_schema_data` check.
+pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
+  let Cirru::List(items) = schema else {
+    let leaf = if let Cirru::Leaf(s) = schema { s.to_string() } else { "(unexpected)".to_owned() };
+    return Err(format!("Schema must be a `{{}}` map expression, got leaf: `{leaf}`"));
+  };
+
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return Err("Schema must be a non-empty list starting with `{}`".to_owned());
+  };
+
+  if head.as_ref() != "{}" {
+    return Err(format!(
+      "Schema top-level must start with `{{}}`, got: `{head}`. \
+       Example: `{{}} (:kind :fn) (:args ([] :string)) (:return :bool)`"
+    ));
+  }
+
+  // EDN-level validity
+  parse_schema_data(schema)?;
+
+  // Field-level validation
+  let mut has_kind = false;
+  for pair in items.iter().skip(1) {
+    let Cirru::List(xs) = pair else {
+      let text = cirru_parser::format(&[pair.clone()], true.into()).unwrap_or_else(|_| format!("{pair:?}"));
+      return Err(format!("Each schema field must be a `(:key val)` pair list, got: {text}"));
+    };
+
+    if xs.len() < 2 {
+      return Err(format!("Schema field pair must have exactly 2 elements, got {} in: {xs:?}", xs.len()));
+    }
+
+    let Some(Cirru::Leaf(key)) = xs.first() else {
+      return Err(format!("Schema field key must be a leaf tag, got: {:?}", xs.first()));
+    };
+
+    if !VALID_SCHEMA_FIELDS.contains(&key.as_ref()) {
+      return Err(format!(
+        "Unknown schema field: `{key}`. Valid fields: {}",
+        VALID_SCHEMA_FIELDS.join(", ")
+      ));
+    }
+
+    if key.as_ref() == ":kind" {
+      has_kind = true;
+      match xs.get(1) {
+        Some(Cirru::Leaf(val)) if val.as_ref() == ":fn" || val.as_ref() == ":macro" => {}
+        Some(Cirru::Leaf(val)) => {
+          return Err(format!("Schema `:kind` must be `:fn` or `:macro`, got: `{val}`"));
+        }
+        _ => return Err("Schema `:kind` value must be a leaf tag (`:fn` or `:macro`)".to_owned()),
+      }
+    }
+  }
+
+  if !has_kind {
+    return Err("Schema must have a `:kind` field (`:fn` or `:macro`)".to_owned());
+  }
+
+  Ok(())
+}
+
 impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
     let schema = data
       .schema
       .as_ref()
-      .map_or(Edn::Nil, |s| Edn::Quote(strip_name_field_from_schema(s)));
+      .map_or(Edn::Nil, |s| schema_cirru_to_edn(strip_name_field_from_schema(s)));
     Edn::record_from_pairs(
       "CodeEntry".into(),
       &[
@@ -344,7 +429,7 @@ impl From<&CodeEntry> for Edn {
     let schema = data
       .schema
       .as_ref()
-      .map_or(Edn::Nil, |s| Edn::Quote(strip_name_field_from_schema(s)));
+      .map_or(Edn::Nil, |s| schema_cirru_to_edn(strip_name_field_from_schema(s)));
     Edn::record_from_pairs(
       "CodeEntry".into(),
       &[
@@ -803,5 +888,64 @@ mod tests {
 
     let invalid_edn = Cirru::List(vec![Cirru::leaf("~"), Cirru::leaf("x")]);
     assert!(parse_schema_data(&invalid_edn).is_err());
+  }
+
+  #[test]
+  fn test_validate_schema_for_write() {
+    let valid = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf(":string")])]),
+      Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":bool")]),
+    ]);
+    assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
+
+    // Missing :kind
+    let no_kind = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
+    ]);
+    assert!(validate_schema_for_write(&no_kind).is_err(), "missing :kind should fail");
+
+    // Unknown field
+    let unknown_field = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":foobar"), Cirru::leaf(":dynamic")]),
+    ]);
+    assert!(validate_schema_for_write(&unknown_field).is_err(), "unknown field should fail");
+
+    // Bad :kind value
+    let bad_kind = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":something-else")]),
+    ]);
+    assert!(validate_schema_for_write(&bad_kind).is_err(), "bad :kind value should fail");
+
+    // Leaf (not a map form)
+    let leaf = Cirru::Leaf(Arc::from(":fn"));
+    assert!(validate_schema_for_write(&leaf).is_err(), "leaf should fail");
+
+    // Wrong head (still quote-wrapped - must be unwrapped by caller first)
+    let quote_wrapped = Cirru::List(vec![
+      Cirru::leaf("quote"),
+      Cirru::List(vec![
+        Cirru::leaf("{}"),
+        Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      ]),
+    ]);
+    assert!(validate_schema_for_write(&quote_wrapped).is_err(), "quote-wrapped should fail (caller must unwrap)");
+  }
+
+  #[test]
+  fn test_schema_cirru_to_edn_no_quote_wrapper() {
+    let schema = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":string")]),
+    ]);
+    let edn = schema_cirru_to_edn(schema);
+    assert!(!matches!(edn, Edn::Nil), "should not produce Nil for valid schema");
+    assert!(!matches!(edn, Edn::Quote(_)), "output must NOT be Quote-wrapped (new direct-map format)");
   }
 }

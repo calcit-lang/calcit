@@ -14,7 +14,7 @@ use calcit::cli_args::{
   EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand,
   EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
-use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
+use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file, validate_schema_for_write};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
@@ -678,13 +678,14 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   let schema_payload = unwrap_schema_quote_input(schema_node)?;
   let schema_payload = strip_name_field_from_schema(schema_payload);
 
+  validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
   snapshot::parse_schema_data(&schema_payload)?;
   code_entry.schema = Some(schema_payload);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
-    "{} Updated schema payload for '{}' in namespace '{}' (quote wrapper preserved on write)",
+    "{} Updated schema for '{}' in namespace '{}'",
     "✓".green(),
     definition.cyan(),
     namespace
