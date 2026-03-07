@@ -464,6 +464,14 @@ fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(dynamic_tag()))
 }
 
+fn some_fn() -> Arc<CalcitTypeAnnotation> {
+  tag_type("fn")
+}
+
+fn optional_fn() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Optional(some_fn()))
+}
+
 impl CalcitProc {
   /// Get the namespace and definition name for this proc.
   /// All built-in procs are defined in calcit.core namespace.
@@ -733,7 +741,7 @@ impl CalcitProc {
       }),
       Sort => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), optional_tag("dynamic")],
+        arg_types: vec![some_tag("list"), optional_fn()],
       }),
       NativeListConcat => Some(ProcTypeSignature {
         return_type: some_tag("list"),
@@ -785,11 +793,11 @@ impl CalcitProc {
       }),
       Foldl => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag()],
+        arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
       }),
       FoldlShortcut | FoldrShortcut => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), dynamic_tag()],
+        arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
       }),
 
       // === Map operations ===

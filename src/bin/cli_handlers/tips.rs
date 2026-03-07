@@ -1,4 +1,12 @@
 use colored::Colorize;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static TIPS_SUPPRESSED: AtomicBool = AtomicBool::new(false);
+
+/// Suppress all tips output globally (set once at startup via --no-tips)
+pub fn suppress_tips() {
+  TIPS_SUPPRESSED.store(true, Ordering::Relaxed);
+}
 
 /// Simple helper to collect and print tips consistently across commands
 pub struct Tips {
@@ -29,7 +37,7 @@ impl Tips {
 
   /// Print collected tips using a consistent format
   pub fn print(&self) {
-    if self.items.is_empty() {
+    if self.items.is_empty() || TIPS_SUPPRESSED.load(Ordering::Relaxed) {
       return;
     }
     println!("{}: {}", "Tips".blue().bold(), self.items.join("; "));

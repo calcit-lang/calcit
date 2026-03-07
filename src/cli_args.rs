@@ -49,6 +49,9 @@ pub struct ToplevelCalcit {
   /// print version only
   #[argh(switch)]
   pub version: bool,
+  /// suppress tips output in all commands
+  #[argh(switch)]
+  pub no_tips: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

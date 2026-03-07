@@ -3034,8 +3034,10 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :dynamic :dynamic
-              :return :dynamic
+              :generics $ [] 'T
+              :args $ [] (:: :list 'T)
+                :: :fn ([] 'T) ([] 'T) :bool
+              :return $ :: :list 'T
         |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
           :code $ quote
             defn find (xs f) (assert-type xs :dynamic)
@@ -3051,8 +3053,10 @@
                 fn (x) (&> x 10)
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :dynamic :dynamic
-              :return :dynamic
+              :generics $ [] 'T
+              :args $ [] (:: :list 'T)
+                :: :fn ([] 'T) ([] 'T) :bool
+              :return $ :: :optional 'T
         |find-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn find-index (xs f) (assert-type xs :dynamic)
@@ -3063,8 +3067,10 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :dynamic :dynamic
-              :return :dynamic
+              :generics $ [] 'T
+              :args $ [] (:: :list 'T)
+                :: :fn ([] 'T) ([] 'T) :bool
+              :return $ :: :optional :number
         |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
@@ -3136,8 +3142,10 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic :dynamic
-              :return :dynamic
+              :generics $ [] 'T 'U
+              :args $ [] :dynamic 'T
+                :: :fn ([] 'T 'U) ([] 'T 'U) 'T
+              :return 'T
         |foldl' $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn foldl' (xs acc f) (assert-type xs :list) (assert-type acc :dynamic)
@@ -3149,8 +3157,10 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic :dynamic
-              :return :dynamic
+              :generics $ [] 'T 'U
+              :args $ [] :dynamic 'T
+                :: :fn ([] 'T 'U) ([] 'T 'U) 'T
+              :return 'T
         |foldl-compare $ %{} :CodeEntry (:doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure.")
           :code $ quote
             defn foldl-compare (xs acc f) (assert-type xs :list) (assert-type acc :dynamic)
@@ -3166,21 +3176,23 @@
               foldl-compare ([] 1 3 2 4) 0 &<
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic :dynamic
+              :generics $ [] 'T
+              :args $ [] :dynamic 'T
+                :: :fn ([] 'T) ([] 'T 'T) :bool
               :return :bool
         |foldl-shortcut $ %{} :CodeEntry (:doc "|internal function for left fold with shortcut\nSyntax: (foldl-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with early termination support")
           :code $ quote &runtime-inplementation
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic :dynamic
+              :args $ [] :list :dynamic :fn
               :return :dynamic
         |foldr-shortcut $ %{} :CodeEntry (:doc "|internal function for right fold with shortcut\nSyntax: (foldr-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from right with early termination support")
           :code $ quote &runtime-inplementation
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic :dynamic
+              :args $ [] :list :dynamic :fn
               :return :dynamic
         |format-cirru $ %{} :CodeEntry (:doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text")
           :code $ quote &runtime-inplementation
@@ -3332,7 +3344,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic
+              :args $ [] :list :fn
               :return :map
         |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (used for async and generics)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (keyword or list), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and generic type metadata (type-vars, return-type)") (:schema nil)
           :code $ quote &runtime-inplementation
@@ -4002,7 +4014,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list :dynamic
+              :args $ [] :list :fn
               :return :list
         |max $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -4579,7 +4591,7 @@
           :examples $ []
           :schema $ quote
             {} (:kind :fn)
-              :args $ [] :list (:: :optional :dynamic)
+              :args $ [] :list (:: :optional :fn)
               :return :list
         |split $ %{} :CodeEntry (:doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings")
           :code $ quote &runtime-inplementation

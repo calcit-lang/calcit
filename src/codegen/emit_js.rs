@@ -1212,49 +1212,6 @@ fn hinted_async(xs: &CalcitList) -> bool {
   xs.iter().skip(1).any(schema_marks_async)
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::calcit::CalcitSymbolInfo;
-
-  fn symbol(name: &str) -> Calcit {
-    Calcit::Symbol {
-      sym: Arc::from(name),
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from("tests.emit-js"),
-        at_def: Arc::from("hinted-async"),
-      }),
-      location: None,
-    }
-  }
-
-  #[test]
-  fn hinted_async_accepts_schema_map_literal() {
-    let schema = Calcit::List(Arc::new(CalcitList::from(&[
-      symbol("{}"),
-      Calcit::List(Arc::new(CalcitList::from(&[
-        Calcit::Tag(EdnTag::from("async")),
-        Calcit::Bool(true),
-      ]))),
-    ])));
-    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
-    assert!(hinted_async(&hint));
-  }
-
-  #[test]
-  fn hinted_async_ignores_false_schema_marker() {
-    let schema = Calcit::List(Arc::new(CalcitList::from(&[
-      symbol("{}"),
-      Calcit::List(Arc::new(CalcitList::from(&[
-        Calcit::Tag(EdnTag::from("async")),
-        Calcit::Bool(false),
-      ]))),
-    ])));
-    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
-    assert!(!hinted_async(&hint));
-  }
-}
-
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let code_emit_path = Path::new(emit_path);
   if !code_emit_path.exists() {
@@ -1465,4 +1422,47 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let _ = internal_states::finish_compilation();
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::CalcitSymbolInfo;
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.emit-js"),
+        at_def: Arc::from("hinted-async"),
+      }),
+      location: None,
+    }
+  }
+
+  #[test]
+  fn hinted_async_accepts_schema_map_literal() {
+    let schema = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Tag(EdnTag::from("async")),
+        Calcit::Bool(true),
+      ]))),
+    ])));
+    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
+    assert!(hinted_async(&hint));
+  }
+
+  #[test]
+  fn hinted_async_ignores_false_schema_marker() {
+    let schema = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Tag(EdnTag::from("async")),
+        Calcit::Bool(false),
+      ]))),
+    ])));
+    let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
+    assert!(!hinted_async(&hint));
+  }
 }

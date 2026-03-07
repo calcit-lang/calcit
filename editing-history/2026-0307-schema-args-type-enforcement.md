@@ -8,6 +8,7 @@
 ## 根因分析
 
 类型检查数据流：
+
 ```
 calcit-core.cirru :schema :args
   → preprocess.rs 注入为 (HintFn schema_value) 进 defn 体
@@ -41,14 +42,14 @@ calcit-core.cirru :schema :args
 
 ### 4. calcit-core.cirru schema 修正
 
-| 函数         | 修正内容 |
-|------------|------|
-| `every?`   | `:args $ (:: :list :dynamic)` → `:dynamic`（接受 set） |
-| `keys`     | `:args $ :map` → `:dynamic`（接受 record） |
-| `merge`    | `:args $ :map` + `:rest $ :map` → `:dynamic`（接受 record） |
-| `merge-non-nil` | 同上 |
-| `reduce`   | fn-arg 格式 `([] 'T 'U)(:: 'T 'U)` → `([] 'T 'U)([] 'T 'U)`（正确 generics+args） |
-| `map`      | fn-arg 格式 `([] 'T 'U)(:: 'T)` → `([] 'T 'U)([] 'T)`（正确 generics+1-arg） |
+| 函数            | 修正内容                                                                          |
+| --------------- | --------------------------------------------------------------------------------- |
+| `every?`        | `:args $ (:: :list :dynamic)` → `:dynamic`（接受 set）                            |
+| `keys`          | `:args $ :map` → `:dynamic`（接受 record）                                        |
+| `merge`         | `:args $ :map` + `:rest $ :map` → `:dynamic`（接受 record）                       |
+| `merge-non-nil` | 同上                                                                              |
+| `reduce`        | fn-arg 格式 `([] 'T 'U)(:: 'T 'U)` → `([] 'T 'U)([] 'T 'U)`（正确 generics+args） |
+| `map`           | fn-arg 格式 `([] 'T 'U)(:: 'T)` → `([] 'T 'U)([] 'T)`（正确 generics+1-arg）      |
 
 ## 验证
 

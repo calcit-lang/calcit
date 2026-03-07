@@ -275,7 +275,7 @@ impl CalcitTypeAnnotation {
     };
 
     // Skip the `[]` list constructor head if present
-    let start = if xs.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+    let start = if xs.first().map(Self::is_args_list_head).unwrap_or(false) {
       1
     } else {
       0
@@ -321,7 +321,7 @@ impl CalcitTypeAnnotation {
 
     // Skip a leading `[]` list-constructor head so that `([] 'T 'U)` is accepted
     // as a generics list with two TypeVars.
-    let start = if items.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+    let start = if items.first().map(Self::is_args_list_head).unwrap_or(false) {
       1
     } else {
       0
@@ -695,7 +695,7 @@ impl CalcitTypeAnnotation {
             (tuple.extra.first().unwrap_or(&Calcit::Nil), tuple.extra.get(1))
           };
           let arg_types = if let Calcit::List(args) = args_form {
-            let start = if args.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+            let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
               1
             } else {
               0
@@ -782,7 +782,7 @@ impl CalcitTypeAnnotation {
           };
 
           let arg_types = if let Calcit::List(args) = args_form {
-            let start = if args.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+            let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
               1
             } else {
               0
@@ -889,7 +889,7 @@ impl CalcitTypeAnnotation {
               (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
             };
             let arg_types = if let Calcit::List(args) = args_form {
-              let start = if args.first().map(|f| Self::is_args_list_head(f)).unwrap_or(false) {
+              let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
                 1
               } else {
                 0
