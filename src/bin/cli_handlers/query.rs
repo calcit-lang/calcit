@@ -79,6 +79,10 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       opts.json,
       opts.entry.as_deref(),
     ),
+    QuerySubcommand::Schema(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_schema(input_path, ns, def, opts.json, opts.no_tips)
+    }
   }
 }
 
@@ -636,7 +640,51 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   println!("  {} cr query def {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr query schema {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+
+  Ok(())
+}
+
+/// Show definition schema
+fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool, no_tips: bool) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  if json {
+    let schema_edn: cirru_edn::Edn = match code_entry.schema.as_ref() {
+      CalcitTypeAnnotation::Dynamic => cirru_edn::Edn::Nil,
+      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
+      _ => cirru_edn::Edn::Nil,
+    };
+    println!("{}", cirru_edn::format(&schema_edn, true)?);
+    return Ok(());
+  }
+
+  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
+
+  if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
+    let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())?;
+    println!("{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
+  } else {
+    println!("{} -", "Schema:".bold());
+  }
+
+  if !no_tips {
+    // Tips
+    println!("\n{}", "Tips:".bold());
+    println!("  {} cr query peek {}/{}", "-".dimmed(), namespace, definition);
+    println!("  {} cr edit schema {}/{} -e '{{}} ...'", "-".dimmed(), namespace, definition);
+  }
 
   Ok(())
 }

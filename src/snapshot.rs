@@ -276,6 +276,51 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
 /// Valid top-level field names accepted in a schema map.
 pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics"];
 
+/// Recursively check a Cirru schema tree for deprecated `:nil` type annotations.
+fn check_no_nil_type(node: &Cirru) -> Result<(), String> {
+  match node {
+    Cirru::Leaf(s) if s.as_ref() == ":nil" => Err(
+      "`:nil` is no longer a valid schema type. Use `:unit` for functions returning nil/unit, or `:dynamic` for unknown types."
+        .to_owned(),
+    ),
+    Cirru::List(items) => {
+      for item in items.iter() {
+        check_no_nil_type(item)?;
+      }
+      Ok(())
+    }
+    _ => Ok(()),
+  }
+}
+
+/// Recursively check for symbols with excess leading single-quotes (e.g. `''''T`).
+/// A valid generic type variable is a quoted uppercase symbol like `'T`, which after
+/// Cirru parsing becomes a `(quote T)` list — the symbol name itself has no quotes.
+fn check_no_excess_quotes(node: &Cirru) -> Result<(), String> {
+  match node {
+    Cirru::Leaf(s) => {
+      // A leaf that starts with ' means the Cirru serializer emitted a quoted symbol name,
+      // which indicates the underlying symbol still contains leading quote characters.
+      let name = s.as_ref();
+      if name.starts_with('\'') && !name.trim_start_matches('\'').is_empty() {
+        let inner = name.trim_start_matches('\'');
+        if name.chars().filter(|c| *c == '\'').count() > 1 {
+          return Err(format!(
+            "Type variable `{name}` has excess leading quotes. Use a single-quoted uppercase symbol like `'{inner}`."
+          ));
+        }
+      }
+      Ok(())
+    }
+    Cirru::List(items) => {
+      for item in items.iter() {
+        check_no_excess_quotes(item)?;
+      }
+      Ok(())
+    }
+  }
+}
+
 /// Strict validation for schemas submitted via `cr edit schema`.
 /// Ensures the schema is a `{}` map, has a recognised `:kind`, and contains
 /// only permitted fields.  Loading (read-only) only requires the weaker
@@ -303,6 +348,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
   // EDN-level validity
   parse_schema_data(schema)?;
+
+  // Reject deprecated :nil type annotation
+  check_no_nil_type(schema)?;
+
+  // Reject excess-quoted type variables like ''''T
+  check_no_excess_quotes(schema)?;
 
   // Field-level validation
   let mut has_kind = false;

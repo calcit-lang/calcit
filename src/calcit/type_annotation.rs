@@ -122,7 +122,7 @@ impl CalcitTypeAnnotation {
       "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
-      "unit" | "nil" => Some(Self::Unit),
+      "unit" => Some(Self::Unit),
       _ => None,
     }
   }
@@ -162,7 +162,14 @@ impl CalcitTypeAnnotation {
     }
 
     match list.get(1) {
-      Some(Calcit::Symbol { sym, .. }) => Some(sym.to_owned()),
+      Some(Calcit::Symbol { sym, .. }) => {
+        if sym.starts_with('\'') {
+          eprintln!(
+            "[Error] Type variable `'{sym}` has excess leading quotes — expected a plain uppercase symbol like `'T`, got `'{sym}`"
+          );
+        }
+        Some(sym.to_owned())
+      }
       _ => None,
     }
   }
@@ -413,6 +420,9 @@ impl CalcitTypeAnnotation {
         continue;
       }
       if let Calcit::Symbol { sym, .. } = item {
+        if sym.starts_with('\'') {
+          eprintln!("[Error] Generic type variable `{sym}` has excess leading quotes — expected plain uppercase like `'T`");
+        }
         vars.push(sym.to_owned());
         continue;
       }

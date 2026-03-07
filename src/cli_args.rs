@@ -256,6 +256,23 @@ pub enum QuerySubcommand {
   Search(QuerySearchCommand),
   /// search for structural expressions (Cirru expr or JSON array) in definition
   SearchExpr(QuerySearchExprCommand),
+  /// read a definition's schema (type information)
+  Schema(QuerySchemaCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "schema")]
+/// read a definition's schema (type information)
+pub struct QuerySchemaCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// also output JSON format for programmatic consumption
+  #[argh(switch, short = 'j')]
+  pub json: bool,
+  /// do not display helpful usage tips
+  #[argh(switch)]
+  pub no_tips: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

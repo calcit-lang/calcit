@@ -70,49 +70,59 @@
           :code $ quote
             defstruct Person0 $ :name :string
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-show-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-tuple-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
           :examples $ []
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
         |mybar:bar1 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote
             defn mybar:bar1 (_x) |bar1
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ quote
+            {} (:kind :fn) (:return :dynamic)
+              :args $ [] :dynamic
         |mybar:bar2 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl2/:bar")
           :code $ quote
             defn mybar:bar2 (_x) |bar2
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ quote
+            {} (:kind :fn) (:return :dynamic)
+              :args $ [] :dynamic
         |myfoo:foo $ %{} :CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote
             defn myfoo:foo (p)
               str "|foo " $ :name p
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ quote
+            {} (:kind :fn) (:return :dynamic)
+              :args $ [] :dynamic
         |myfoo:foo2 $ %{} :CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote
             defn myfoo:foo2 (p)
               str "|foo2 " $ :name p
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ quote
+            {} (:kind :fn) (:return :dynamic)
+              :args $ [] :dynamic
         |myzap:a $ %{} :CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote
             defn myzap:a (_x) |zapA
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ quote
+            {} (:kind :fn) (:return :dynamic)
+              :args $ [] :dynamic
         |myzap:b $ %{} :CodeEntry (:doc "|method implementation for MyZapB/:zap")
           :code $ quote
             defn myzap:b (_x) |zapB
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
-        |test-add-trait $ %{} :CodeEntry (:doc "|Test Add trait") (:schema nil)
+          :schema $ quote
+            {} (:kind :fn) (:return :dynamic)
+              :args $ [] :dynamic
+        |test-add-trait $ %{} :CodeEntry (:doc "|Test Add trait")
           :code $ quote
             defn test-add-trait () (println "|Testing Add trait...") (; Number addition)
               assert= 3 $ + 1 2
@@ -128,7 +138,11 @@
                 .add ([] 1) 2
               println "|  Add trait: ✓"
           :examples $ []
-        |test-assert-trait $ %{} :CodeEntry (:doc "|Test assert-traits") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-assert-trait $ %{} :CodeEntry (:doc "|Test assert-traits")
           :code $ quote
             defn test-assert-trait () (println "|Testing assert-traits...")
               let
@@ -156,7 +170,11 @@
                   fn (e) (do :true)
               println "|  assert-traits: ✓"
           :examples $ []
-        |test-collection-traits $ %{} :CodeEntry (:doc "|Test Len/Empty/Contains traits for collections") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-collection-traits $ %{} :CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
           :code $ quote
             defn test-collection-traits () (println "|Testing Collection traits (Len, Empty)...") (; Len trait)
               assert= 0 $ count ([])
@@ -188,7 +206,11 @@
               assert= false $ contains? (#{} 1 2 3) 4
               println "|  Collection traits: ✓"
           :examples $ []
-        |test-compare-trait $ %{} :CodeEntry (:doc "|Test Compare trait") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-compare-trait $ %{} :CodeEntry (:doc "|Test Compare trait")
           :code $ quote
             defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
               assert= true $ < 1 2
@@ -202,7 +224,11 @@
               ; assert= :lt $ compare ([] 1 2) ([] 1 3)
               println "|  Compare trait: ✓"
           :examples $ []
-        |test-cross-trait-method-conflict $ %{} :CodeEntry (:doc "|Test method conflict across traits") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-cross-trait-method-conflict $ %{} :CodeEntry (:doc "|Test method conflict across traits")
           :code $ quote
             defn test-cross-trait-method-conflict () (println "|Testing cross-trait method conflict...")
               let
@@ -224,7 +250,11 @@
                 assert= |zapA $ .zap tb
               println "|  cross-trait conflict: ✓"
           :examples $ []
-        |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro")
           :code $ quote
             defn test-deftrait () (println "|Testing deftrait macro...")
               assert= :trait $ type-of MyFoo
@@ -234,7 +264,11 @@
                 assert= "|foo Alice" $ .foo p
                 println "|  deftrait: ✓"
           :examples $ []
-        |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")
           :code $ quote
             defn test-eq-trait () (println "|Testing Eq trait...") (; Value equality)
               assert= true $ = 1 1
@@ -250,7 +284,11 @@
               assert= false $ = ([] 1 2) ([] 1 2 3)
               println "|  Eq trait: ✓"
           :examples $ []
-        |test-explicit-trait-call $ %{} :CodeEntry (:doc "|Test explicit trait-call for disambiguation") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-explicit-trait-call $ %{} :CodeEntry (:doc "|Test explicit trait-call for disambiguation")
           :code $ quote
             defn test-explicit-trait-call () (println "|Testing explicit trait-call...")
               let
@@ -270,7 +308,11 @@
                 assert= |zapB $ &trait-call MyZapB :zap t
               println "|  explicit trait-call: ✓"
           :examples $ []
-        |test-impl-precedence-order $ %{} :CodeEntry (:doc "|Test impl precedence order") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-impl-precedence-order $ %{} :CodeEntry (:doc "|Test impl precedence order")
           :code $ quote
             defn test-impl-precedence-order () (println "|Testing impl precedence order...")
               let
@@ -280,7 +322,11 @@
                 assert= "|foo2 Alice" $ .foo p
               println "|  precedence: ✓"
           :examples $ []
-        |test-method-introspection $ %{} :CodeEntry (:doc "|Test runtime method introspection helpers") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-method-introspection $ %{} :CodeEntry (:doc "|Test runtime method introspection helpers")
           :code $ quote
             defn test-method-introspection () (println "|Testing method introspection...")
               let
@@ -300,7 +346,11 @@
                 assert= p $ &inspect-methods p |record
               println "|  method introspection: ✓"
           :examples $ []
-        |test-option-result-map $ %{} :CodeEntry (:doc "|Test Mappable trait for Option/Result") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-option-result-map $ %{} :CodeEntry (:doc "|Test Mappable trait for Option/Result")
           :code $ quote
             defn test-option-result-map () (println "|Testing Option/Result Mappable...")
               let
@@ -318,7 +368,11 @@
                 assert= (%err |oops) (.map res-err inc)
               println "|  Option/Result map: ✓"
           :examples $ []
-        |test-show-trait $ %{} :CodeEntry (:doc "|Test Show trait for built-in types") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-show-trait $ %{} :CodeEntry (:doc "|Test Show trait for built-in types")
           :code $ quote
             defn test-show-trait () (println "|Testing Show trait...") (; All types should be showable)
               assert= |true $ str true
@@ -332,7 +386,11 @@
               ; assert= "|(#{} 1 2)" $ str (#{} 1 2)
               println "|  Show trait: ✓"
           :examples $ []
-        |test-tuple-impl-precedence-order $ %{} :CodeEntry (:doc "|Test tuple impl precedence order") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-tuple-impl-precedence-order $ %{} :CodeEntry (:doc "|Test tuple impl precedence order")
           :code $ quote
             defn test-tuple-impl-precedence-order () (println "|Testing tuple impl precedence order...")
               let
@@ -341,6 +399,10 @@
                 assert= |bar2 $ .bar t
               println "|  tuple precedence: ✓"
           :examples $ []
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-traits.main $ :require

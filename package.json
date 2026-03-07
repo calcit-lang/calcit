@@ -7,7 +7,7 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "compile": "rm -rfv lib/* && tsc",
+    "compile": "rm -rf lib && tsc",
     "procs-link": "ln -sfn ../../ node_modules/@calcit/procs",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
     "eval": "cargo run --bin cr -- eval",

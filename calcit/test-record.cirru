@@ -64,11 +64,15 @@
               :age $ :optional :number
               :position $ :optional :tag
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (do true)
           :examples $ []
-        |test-edn $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               let
@@ -90,7 +94,11 @@
                     :d 5
                 assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim (format-cirru-edn data)
           :examples $ []
-        |test-match $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record match")
               let
@@ -110,7 +118,11 @@
                   B bb $ :b bb
                   _ o (println |others) :other
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record methods")
               &let
@@ -136,7 +148,11 @@
                   assert= 10 $ &record:get persian :age
                   assert= :Persian $ &record:get-name persian
           :examples $ []
-        |test-partial-record $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-partial-record $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing partial record")
               let
@@ -151,7 +167,11 @@
                 assert= 31 $ get p3 :age
                 assert= nil $ get p3 :position
           :examples $ []
-        |test-polymorphism $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-polymorphism $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test record polymorphism") (println Lagopus)
               let
@@ -170,7 +190,11 @@
                   .show l2t
                   assert= (&record:impls l1) (&record:impls a1r)
           :examples $ []
-        |test-record $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-record $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record")
               let
@@ -217,7 +241,11 @@
                 assert= 3 $ count p1
                 assert= 21 $ get (update p1 :age inc) :age
           :examples $ []
-        |test-record-with $ %{} :CodeEntry (:doc "|test record-with") (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")
               let
@@ -230,6 +258,10 @@
                 assert= :shanghai $ get p2 :position
                 assert= |Chen $ get p2 :name
           :examples $ []
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-record.main $ :require

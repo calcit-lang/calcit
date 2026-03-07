@@ -6,7 +6,7 @@
   :files $ {}
     |test-hygienic.lib $ %{} :FileEntry
       :defs $ {}
-        |add-11 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |add-11 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-11 (a b)
               let
@@ -15,7 +15,9 @@
                 quasiquote $ do (println "\"c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
-        |add-11-safe $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic :dynamic
+        |add-11-safe $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-11-safe (a b)
               with-gensyms (c)
@@ -23,20 +25,26 @@
                   &let (~c 11)
                     [] (~ a) (~ b) ~c
           :examples $ []
-        |add-2 $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ {} (:kind :fn) (:return :dynamic)
+            :args $ [] :dynamic :dynamic
+        |add-2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
+          :schema $ {} (:kind :fn) (:return :number)
+            :args $ [] :number :number
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (:ns test-hygienic.lib)
         :examples $ []
     |test-hygienic.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
-        |try-hygienic $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ {} (:kind :fn) (:return :unit)
+            :args $ []
+        |try-hygienic $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-hygienic () (println "|Testing hygienic")
               let
@@ -45,6 +53,8 @@
                 assert= (add-11-safe 1 2) ([] 1 2 11)
                 , true
           :examples $ []
+          :schema $ {} (:kind :fn) (:return :unit)
+            :args $ []
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-hygienic.main $ :require

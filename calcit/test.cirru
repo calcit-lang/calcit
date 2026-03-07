@@ -70,7 +70,7 @@
           :code $ quote
             defenum ValueBox $ :value :dynamic
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
               println $ &get-os
@@ -117,11 +117,19 @@
               inside-js: $ test-js/main!
               do true
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-        |test-arguments $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
               let
@@ -133,7 +141,11 @@
                 assert= (f1 :a :b) ([] :a :b nil)
                 assert= (f1 :a :b :c) ([] :a :b :c)
           :examples $ []
-        |test-atom $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-atom $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               let
@@ -144,12 +156,20 @@
               assert= 1 $ deref (%:: AtomBox :atom 1)
               assert= 2 $ deref (%:: AtomBox :atom 2)
           :examples $ []
-        |test-buffer $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-buffer $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |Buffer)
               println "|buffer value:" $ &buffer 0x11 |11
           :examples $ []
-        |test-cirru-parser $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-cirru-parser $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing Cirru parser")
               assert= (parse-cirru-list "|def f (a b) $ + a b")
@@ -176,7 +196,11 @@
                   :b $ []
                     {} (|c 3) (4 5)
           :examples $ []
-        |test-detects $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-detects $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-detects ()
               assert-detect fn? $ fn () 1
@@ -226,18 +250,30 @@
               assert= false $ some-in? ([] 1 2 3) ([] :a)
               assert= 1 $ non-nil! 1
           :examples $ []
-        |test-display-stack $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-display-stack $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
           :examples $ []
-        |test-effect $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-effect $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing effect")
               println "|Env mode:" $ get-env |mode
               println "|Env mode:" $ get-env |m0 "|default m0"
               eprintln "|stdout message"
           :examples $ []
-        |test-fn $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-fn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing fn")
               &let
@@ -248,7 +284,11 @@
                 assert= ([] 1 2 3 4 5)
                   coll-f 1 & ([] 2 3 4) 5
           :examples $ []
-        |test-fn-eq $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-fn-eq $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing equality of functions")
               let
@@ -258,13 +298,21 @@
                 assert= b b
                 assert= false $ &= a b
           :examples $ []
-        |test-if $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-if $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing if with nil")
               assert= (if false 1) (if nil 1)
               assert= (if false 1 2) (if nil 1 2)
           :examples $ []
-        |test-method $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing method")
               let
@@ -287,7 +335,11 @@
                     assert= (%:: NumBox :number 2) a2
                     assert= |1 $ .show a1
           :examples $ []
-        |test-refs $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
               add-watch *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
@@ -312,7 +364,11 @@
                 assert= 1 @*b
                 assert= 1 @*c
           :examples $ []
-        |test-tag $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag ()
               ; assert "|tag function" $ =
@@ -326,7 +382,11 @@
                   [] $ &{} :a 1
                   , :a
           :examples $ []
-        |test-try $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-try $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-try ()
               assert= false $ try
@@ -340,7 +400,11 @@
                   fn (error) (str :a)
               println "|Finished testing try"
           :examples $ []
-        |test-tuple $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |test-tuple $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tuple")
               assert= :tuple $ type-of (:: :a :b)
@@ -380,6 +444,10 @@
                 assert= "|(%:: :a 1 (:enum Demo))" $ str b
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
           :examples $ []
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke)

@@ -6,7 +6,7 @@
   :files $ {}
     |util.core $ %{} :FileEntry
       :defs $ {}
-        |inside-eval: $ %{} :CodeEntry (:doc |) (:schema nil)
+        |inside-eval: $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro inside-eval: (& body)
               if
@@ -14,7 +14,11 @@
                 quasiquote $ do (println "|env: eval") ~@body
                 quasiquote $ do (println "|env: not eval. tests skipped")
           :examples $ []
-        |inside-js: $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :macro)
+              :args $ [] :dynamic
+              :return :dynamic
+        |inside-js: $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro inside-js: (& body)
               if
@@ -22,18 +26,34 @@
                 quasiquote $ do (println "|env: js") ~@body
                 quasiquote $ do (println "|env: not js. tests skipped")
           :examples $ []
-        |log-title $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :macro)
+              :args $ [] :dynamic
+              :return :dynamic
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ [] :dynamic
+              :return :dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ :: :unit
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
+          :schema $ quote
+            [] $ {} (:kind :fn)
+              :args $ []
+              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns util.core $ :require
