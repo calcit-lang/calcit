@@ -25,7 +25,7 @@ use notify_debouncer_mini::new_debouncer;
 
 use calcit::{
   ProgramEntries, builtins,
-  calcit::{CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SyntaxTypeSignature},
+  calcit::{CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SchemaKind, SyntaxTypeSignature},
   call_stack, cli_args, codegen,
   codegen::COMPILE_ERRORS_FILE,
   codegen::emit_js::gen_stack,
@@ -860,6 +860,8 @@ struct TypeCoverageRow {
   param_annotations: BTreeMap<String, Vec<String>>,
   return_type_hints: Vec<String>,
   data_type: Option<String>,
+  /// Schema-vs-definition mismatch warnings (kind, arity, rest).
+  schema_issues: Vec<String>,
 }
 
 fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
@@ -1054,6 +1056,13 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
       }
     }
 
+    if !row.schema_issues.is_empty() {
+      println!("  schema-issues:");
+      for issue in &row.schema_issues {
+        println!("    - {issue}");
+      }
+    }
+
     println!();
   }
 
@@ -1093,6 +1102,7 @@ fn analyze_builtin_syntax(def_name: &str, sig: &SyntaxTypeSignature) -> TypeCove
     param_annotations,
     return_type_hints,
     data_type: None,
+    schema_issues: vec![],
   }
 }
 
@@ -1130,7 +1140,102 @@ fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverage
     param_annotations,
     return_type_hints,
     data_type: None,
+    schema_issues: vec![],
   }
+}
+
+/// Validate that a code entry matches its schema (kind, arity, rest param presence).
+/// Returns a list of warning/error messages. Empty means no issues.
+/// - `&runtime-inplementation` = builtin proc/syntax → always skipped.
+/// - Schema `:kind :fn`   → code must use `defn`.
+/// - Schema `:kind :macro` → code must use `defmacro`.
+/// - Schema `:args` length must match required param count in code.
+/// - Schema `:rest` presence must match `&` rest param in code.
+fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &CalcitTypeAnnotation) -> Vec<String> {
+  // builtin proc/syntax — skip structural checks
+  if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-inplementation") {
+    return vec![];
+  }
+
+  let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
+    // Non-Fn schema (Dynamic, etc.) has no structural constraints
+    return vec![];
+  };
+
+  let Cirru::List(xs) = code else {
+    return vec![];
+  };
+
+  let code_kind = match xs.first() {
+    Some(Cirru::Leaf(s)) if s.as_ref() == "defn" => "defn",
+    Some(Cirru::Leaf(s)) if s.as_ref() == "defmacro" => "defmacro",
+    _ => return vec![], // not a defn/defmacro form — skip
+  };
+
+  let mut issues: Vec<String> = vec![];
+
+  // Kind mismatch
+  match (fn_annot.fn_kind, code_kind) {
+    (SchemaKind::Fn, "defmacro") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :fn but code uses defmacro"));
+    }
+    (SchemaKind::Macro, "defn") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses defn"));
+    }
+    _ => {}
+  }
+
+  // Arity check
+  let (required_count, has_rest) = analyze_param_arity(xs.get(2));
+  let schema_required = fn_annot.arg_types.len();
+  let schema_has_rest = fn_annot.rest_type.is_some();
+
+  if required_count != schema_required {
+    issues.push(format!(
+      "{ns}/{def_name}: schema has {schema_required} required arg(s) but code has {required_count}"
+    ));
+  }
+  if has_rest != schema_has_rest {
+    if has_rest {
+      issues.push(format!("{ns}/{def_name}: code has & rest param but schema has no :rest"));
+    } else {
+      issues.push(format!("{ns}/{def_name}: schema has :rest but code has no & param"));
+    }
+  }
+
+  issues
+}
+
+/// Count required params and detect rest param from a defn/defmacro args form.
+fn analyze_param_arity(args: Option<&Cirru>) -> (usize, bool) {
+  let Some(Cirru::List(xs)) = args else {
+    return (0, false);
+  };
+  let mut required = 0usize;
+  let mut has_rest = false;
+  let mut after_amp = false;
+  for item in xs.iter() {
+    match item {
+      Cirru::Leaf(s) => {
+        let s = s.as_ref();
+        if s == "&" {
+          after_amp = true;
+        } else if s == "[]" || s == "," || s == "?" {
+          // skip structural markers
+        } else if after_amp {
+          has_rest = true;
+        } else if !s.starts_with(':') && !s.starts_with('|') && !s.chars().all(|c| c.is_ascii_digit()) {
+          required += 1;
+        }
+      }
+      Cirru::List(_) => {
+        if !after_amp {
+          required += 1;
+        }
+      }
+    }
+  }
+  (required, has_rest)
 }
 
 fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> TypeCoverageRow {
@@ -1165,7 +1270,23 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
             param_annotations,
             return_type_hints,
             data_type: None,
+            schema_issues: validate_def_vs_schema(ns, def_name, &entry.code, &entry.schema),
           };
+        }
+        if std::env::var("CR_DEBUG_SCHEMA").is_ok() {
+          let schema_kind = match entry.schema.as_ref() {
+            CalcitTypeAnnotation::Fn(fn_annot) => {
+              match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+                Ok(schema) => match extract_fn_schema_hints(&schema) {
+                  Some(_) => "Fn/schema-hints-ok".to_owned(),
+                  None => "Fn/schema-hints-none".to_owned(),
+                },
+                Err(e) => format!("Fn/edn-to-cirru-err:{e}"),
+              }
+            }
+            other => format!("non-fn:{other:?}"),
+          };
+          eprintln!("[debug] {ns}/{def_name}: schema={schema_kind}");
         }
 
         let args = xs.get(2);
@@ -1210,6 +1331,7 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
     param_annotations,
     return_type_hints,
     data_type,
+    schema_issues: validate_def_vs_schema(ns, def_name, &entry.code, &entry.schema),
   }
 }
 
@@ -1609,5 +1731,115 @@ mod tests {
 
     assert_eq!(params, vec!["rest".to_owned()]);
     assert_eq!(param_annotations.get("rest"), Some(&vec![":: :list :number".to_owned()]));
+  }
+
+  // --- validate_def_vs_schema tests ---
+
+  fn fn_schema_annotation(kind: SchemaKind, arg_count: usize, has_rest: bool) -> CalcitTypeAnnotation {
+    let arg_types = vec![calcit::calcit::DYNAMIC_TYPE.clone(); arg_count];
+    let rest_type = if has_rest {
+      Some(calcit::calcit::DYNAMIC_TYPE.clone())
+    } else {
+      None
+    };
+    CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types,
+      return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+      fn_kind: kind,
+      rest_type,
+    }))
+  }
+
+  fn defn_code(param_names: &[&str], has_rest: bool) -> Cirru {
+    let mut params: Vec<Cirru> = param_names.iter().map(|n| leaf(n)).collect();
+    if has_rest {
+      params.push(leaf("&"));
+      params.push(leaf("rest"));
+    }
+    list(vec![leaf("defn"), leaf("test-fn"), list(params), leaf("nil")])
+  }
+
+  fn defmacro_code(param_names: &[&str]) -> Cirru {
+    let params: Vec<Cirru> = param_names.iter().map(|n| leaf(n)).collect();
+    list(vec![leaf("defmacro"), leaf("test-macro"), list(params), leaf("nil")])
+  }
+
+  #[test]
+  fn validate_runtime_impl_is_skipped() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
+    let code = Cirru::Leaf(Arc::from("&runtime-inplementation"));
+    let issues = validate_def_vs_schema("calcit.core", "some-proc", &code, &schema);
+    assert!(issues.is_empty(), "runtime-inplementation should be skipped: {issues:?}");
+  }
+
+  #[test]
+  fn validate_correct_defn_no_issues() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
+    let code = defn_code(&["a", "b"], false);
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(issues.is_empty(), "correct defn should have no issues: {issues:?}");
+  }
+
+  #[test]
+  fn validate_correct_defn_with_rest_no_issues() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 1, true);
+    let code = defn_code(&["a"], true);
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(issues.is_empty(), "correct defn with rest should have no issues: {issues:?}");
+  }
+
+  #[test]
+  fn validate_kind_mismatch_fn_vs_defmacro() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 1, false);
+    let code = defmacro_code(&["a"]);
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(!issues.is_empty(), "kind mismatch fn/defmacro should be detected");
+    assert!(issues[0].contains(":fn") && issues[0].contains("defmacro"), "issue: {}", issues[0]);
+  }
+
+  #[test]
+  fn validate_kind_mismatch_macro_vs_defn() {
+    let schema = fn_schema_annotation(SchemaKind::Macro, 1, false);
+    let code = defn_code(&["a"], false);
+    let issues = validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(!issues.is_empty(), "kind mismatch macro/defn should be detected");
+    assert!(issues[0].contains(":macro") && issues[0].contains("defn"), "issue: {}", issues[0]);
+  }
+
+  #[test]
+  fn validate_arity_mismatch_detected() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 3, false); // schema expects 3 args
+    let code = defn_code(&["a", "b"], false); // code has 2
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(!issues.is_empty(), "arity mismatch should be detected");
+    assert!(issues.iter().any(|i| i.contains("3") && i.contains("2")), "issues: {issues:?}");
+  }
+
+  #[test]
+  fn validate_rest_mismatch_schema_has_rest_code_does_not() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 1, true); // schema has rest
+    let code = defn_code(&["a"], false); // code has no rest
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(!issues.is_empty(), "rest mismatch should be detected");
+    assert!(issues.iter().any(|i| i.contains(":rest")), "issues: {issues:?}");
+  }
+
+  #[test]
+  fn analyze_param_arity_basic() {
+    // ([] a b c)
+    let args = list(vec![leaf("[]"), leaf("a"), leaf("b"), leaf("c")]);
+    let (req, rest) = analyze_param_arity(Some(&args));
+    assert_eq!(req, 3);
+    assert!(!rest);
+  }
+
+  #[test]
+  fn analyze_param_arity_with_rest() {
+    // ([] a & xs)
+    let args = list(vec![leaf("[]"), leaf("a"), leaf("&"), leaf("xs")]);
+    let (req, rest) = analyze_param_arity(Some(&args));
+    assert_eq!(req, 1);
+    assert!(rest);
   }
 }

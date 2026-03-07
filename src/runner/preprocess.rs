@@ -2191,8 +2191,14 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
       None => Some(Arc::new(CalcitTypeAnnotation::DynTuple)),
     },
     Calcit::Record(record) => Some(Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone()))),
-    Calcit::Struct(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![])))),
-    Calcit::Enum(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![])))),
+    Calcit::Struct(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(
+      Arc::new(struct_def.to_owned()),
+      Arc::new(vec![]),
+    ))),
+    Calcit::Enum(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(
+      Arc::new(enum_def.to_owned()),
+      Arc::new(vec![]),
+    ))),
     Calcit::Ref(..) => Some(Arc::new(CalcitTypeAnnotation::Ref(calcit::DYNAMIC_TYPE.clone()))),
     Calcit::Buffer(_) => Some(Arc::new(CalcitTypeAnnotation::Buffer)),
     Calcit::CirruQuote(_) => Some(Arc::new(CalcitTypeAnnotation::CirruQuote)),

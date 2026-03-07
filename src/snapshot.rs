@@ -321,6 +321,42 @@ fn check_no_excess_quotes(node: &Cirru) -> Result<(), String> {
   }
 }
 
+/// Recursively collect all type-variable names from a Cirru node.
+/// A type variable is represented as `(quote Name)` in the Cirru AST,
+/// i.e. the source form `'T` parses to `(quote T)`.
+fn collect_type_vars(node: &Cirru, out: &mut HashSet<String>) {
+  if let Cirru::List(items) = node {
+    if items.len() == 2 {
+      if let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1)) {
+        if head.as_ref() == "quote" {
+          out.insert(name.to_string());
+          return;
+        }
+      }
+    }
+    for item in items.iter() {
+      collect_type_vars(item, out);
+    }
+  }
+}
+
+/// Extract the list of declared generic type-variable names from a `:generics` value node.
+/// Accepts `([] 'T 'U ...)` — each `(quote X)` child is one variable.
+fn parse_generics_vars(node: &Cirru) -> HashSet<String> {
+  let mut vars = HashSet::new();
+  if let Cirru::List(items) = node {
+    // skip leading `[]` head if present
+    let start = match items.first() {
+      Some(Cirru::Leaf(s)) if s.as_ref() == "[]" => 1,
+      _ => 0,
+    };
+    for item in items.iter().skip(start) {
+      collect_type_vars(item, &mut vars);
+    }
+  }
+  vars
+}
+
 /// Strict validation for schemas submitted via `cr edit schema`.
 /// Ensures the schema is a `{}` map, has a recognised `:kind`, and contains
 /// only permitted fields.  Loading (read-only) only requires the weaker
@@ -395,6 +431,76 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
   if !has_kind {
     return Err("Schema must have a `:kind` field (`:fn` or `:macro`)".to_owned());
+  }
+
+  // --- Type-variable consistency check ---
+  // Collect declared generics, args, and return from the schema pairs.
+  let mut generics_node: Option<&Cirru> = None;
+  let mut args_node: Option<&Cirru> = None;
+  let mut return_node: Option<&Cirru> = None;
+  let mut rest_node: Option<&Cirru> = None;
+
+  for pair in items.iter().skip(1) {
+    if let Cirru::List(xs) = pair {
+      if let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1)) {
+        match key.as_ref() {
+          ":generics" => generics_node = Some(val),
+          ":args" => args_node = Some(val),
+          ":return" => return_node = Some(val),
+          ":rest" => rest_node = Some(val),
+          _ => {}
+        }
+      }
+    }
+  }
+
+  if let Some(gen_node) = generics_node {
+    let declared: HashSet<String> = parse_generics_vars(gen_node);
+
+    // Collect used type vars from :args, :return, :rest
+    let mut used: HashSet<String> = HashSet::new();
+    if let Some(node) = args_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = return_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+
+    // Every declared var must be used at least once
+    for var in &declared {
+      if !used.contains(var) {
+        return Err(format!(
+          "Generic type variable `'{var}` is declared in `:generics` but never used in `:args`, `:rest`, or `:return`."
+        ));
+      }
+    }
+
+    // Every used var must be declared in :generics
+    for var in &used {
+      if !declared.contains(var) {
+        return Err(format!(
+          "Type variable `'{var}` is used in `:args`/`:rest`/`:return` but not declared in `:generics`."
+        ));
+      }
+    }
+  } else {
+    // No :generics — any type var usage is an error
+    let mut used: HashSet<String> = HashSet::new();
+    if let Some(node) = args_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = return_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(var) = used.iter().next() {
+      return Err(format!("Type variable `'{var}` is used but no `:generics` field is declared."));
+    }
   }
 
   Ok(())
@@ -942,6 +1048,83 @@ mod tests {
   }
 
   #[test]
+  fn test_typevar_consistency_validation() {
+    // Helper: make a (quote X) node representing 'X type var
+    fn quote(name: &str) -> Cirru {
+      Cirru::List(vec![Cirru::leaf("quote"), Cirru::leaf(name)])
+    }
+
+    // Valid: 'T declared and used in both args and return
+    let valid_generic = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":generics"), Cirru::List(vec![Cirru::leaf("[]"), quote("T")])]),
+      Cirru::List(vec![
+        Cirru::leaf(":args"),
+        Cirru::List(vec![
+          Cirru::leaf("[]"),
+          Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":list"), quote("T")]),
+        ]),
+      ]),
+      Cirru::List(vec![Cirru::leaf(":return"), quote("T")]),
+    ]);
+    assert!(validate_schema_for_write(&valid_generic).is_ok(), "valid generics should pass");
+
+    // Invalid: 'K used in :return but not declared in :generics
+    let undeclared = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":generics"), Cirru::List(vec![Cirru::leaf("[]"), quote("T")])]),
+      Cirru::List(vec![
+        Cirru::leaf(":args"),
+        Cirru::List(vec![
+          Cirru::leaf("[]"),
+          Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":list"), quote("T")]),
+        ]),
+      ]),
+      Cirru::List(vec![Cirru::leaf(":return"), quote("K")]),
+    ]);
+    assert!(
+      validate_schema_for_write(&undeclared).is_err(),
+      "undeclared type var 'K should fail"
+    );
+
+    // Invalid: 'U declared but never used
+    let unused_declared = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![
+        Cirru::leaf(":generics"),
+        Cirru::List(vec![Cirru::leaf("[]"), quote("T"), quote("U")]),
+      ]),
+      Cirru::List(vec![
+        Cirru::leaf(":args"),
+        Cirru::List(vec![
+          Cirru::leaf("[]"),
+          Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":list"), quote("T")]),
+        ]),
+      ]),
+      Cirru::List(vec![Cirru::leaf(":return"), quote("T")]),
+    ]);
+    assert!(
+      validate_schema_for_write(&unused_declared).is_err(),
+      "unused declared 'U should fail"
+    );
+
+    // Invalid: type var used without any :generics
+    let typevar_no_generics = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]"), quote("T")])]),
+      Cirru::List(vec![Cirru::leaf(":return"), quote("T")]),
+    ]);
+    assert!(
+      validate_schema_for_write(&typevar_no_generics).is_err(),
+      "type var without :generics should fail"
+    );
+  }
+
+  #[test]
   fn test_schema_cirru_to_edn_no_quote_wrapper() {
     let schema = Cirru::List(vec![
       Cirru::leaf("{}"),
@@ -954,5 +1137,92 @@ mod tests {
       !matches!(edn, Edn::Quote(_)),
       "output must NOT be Quote-wrapped (new direct-map format)"
     );
+  }
+
+  #[test]
+  fn test_macro_schema_full_file_round_trip() {
+    use crate::calcit::SchemaKind;
+    // Simulate saving + loading via the actual file format:
+    // 1. Write a CodeEntry with :kind :macro schema to Edn (as done by save_snapshot_to_file)
+    // 2. Format it to Cirru string (via cirru_edn::format)
+    // 3. Parse it back (via cirru_edn::parse)
+    // 4. TryFrom<Edn> for CodeEntry
+    // 5. Check entry.schema is Fn with fn_kind: Macro
+
+    let schema_text = "{} (:kind :macro) (:return :bool) (:args ([] :number :number))";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+    let schema_edn = schema_cirru_to_edn(schema_cirru);
+
+    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).expect("must parse");
+    assert_eq!(fn_schema.fn_kind, SchemaKind::Macro);
+
+    // Build a minimal CodeEntry with this schema
+    let entry = CodeEntry {
+      doc: "test fn".to_owned(),
+      examples: vec![],
+      code: vec!["defn", "test-fn", "(a b)", "nil"].into(),
+      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(fn_schema))),
+    };
+
+    // Serialize to Edn (as From<&CodeEntry> for Edn does)
+    let entry_edn: Edn = Edn::from(&entry);
+
+    // Format to Cirru string and parse back (as save_snapshot + load_snapshot do)
+    let cirru_text = cirru_edn::format(&entry_edn, true).expect("format should succeed");
+    let parsed_edn = cirru_edn::parse(&cirru_text).expect("parse should succeed");
+
+    // Deserialize back to CodeEntry
+    let reloaded: CodeEntry = parsed_edn.try_into().expect("TryFrom<Edn> should succeed");
+
+    // Check the schema was preserved
+    match reloaded.schema.as_ref() {
+      CalcitTypeAnnotation::Fn(fn_annot) => {
+        assert_eq!(fn_annot.fn_kind, SchemaKind::Macro, "fn_kind must survive round-trip; cirru_text: {cirru_text:?}");
+        assert_eq!(fn_annot.arg_types.len(), 2, "arg_types must survive round-trip");
+      }
+      other => panic!("schema must be Fn after round-trip, got {other:?}; cirru_text: {cirru_text:?}"),
+    }
+  }
+
+  #[test]
+  fn test_macro_schema_round_trip() {
+    use crate::calcit::SchemaKind;
+    // Simulate writing a :kind :macro schema and reading it back
+    let schema_text = "{} (:kind :macro) (:return :bool) (:args ([] :number :number))";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+
+    // Convert to EDN (as done by handle_schema)
+    let schema_edn = schema_cirru_to_edn(schema_cirru);
+    assert!(!matches!(schema_edn, Edn::Nil), "schema_edn must not be Nil: {schema_edn:?}");
+
+    // Parse the schema (as done when reading back)
+    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn);
+    assert!(fn_schema.is_some(), "parse_fn_schema_from_edn must return Some for macro schema; schema_edn={schema_edn:?}");
+    let fn_schema = fn_schema.unwrap();
+    assert_eq!(fn_schema.fn_kind, SchemaKind::Macro, "fn_kind must be Macro");
+    assert_eq!(fn_schema.arg_types.len(), 2, "must have 2 arg types");
+
+    // Simulate a save (to_schema_edn) + reload
+    let saved_edn = fn_schema.to_schema_edn();
+    let fn_schema2 = CalcitTypeAnnotation::parse_fn_schema_from_edn(&saved_edn);
+    assert!(fn_schema2.is_some(), "reload: parse_fn_schema_from_edn must return Some; saved_edn={saved_edn:?}");
+    let fn_schema2 = fn_schema2.unwrap();
+    assert_eq!(fn_schema2.fn_kind, SchemaKind::Macro, "reload: fn_kind must be Macro");
+    assert_eq!(fn_schema2.arg_types.len(), 2, "reload: must have 2 arg types");
+
+    // Simulate normalize_schema_edn path (as used in TryFrom<Edn> for CodeEntry)
+    let normalized = normalize_schema_edn(&saved_edn).expect("normalize must succeed");
+    let fn_schema3 = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized);
+    assert!(fn_schema3.is_some(), "normalized: parse_fn_schema_from_edn must return Some; normalized={normalized:?}");
+    let fn_schema3 = fn_schema3.unwrap();
+    assert_eq!(fn_schema3.fn_kind, SchemaKind::Macro, "normalized: fn_kind must be Macro");
   }
 }

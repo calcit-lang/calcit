@@ -44,7 +44,7 @@ pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
-  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, brief_type_of_value, register_program_lookups,
+  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, brief_type_of_value, register_program_lookups,
   value_matches_type_annotation,
 };
 

@@ -384,7 +384,20 @@ impl CalcitTypeAnnotation {
       .map(|xs| {
         xs.0
           .iter()
-          .filter_map(|x| if let Edn::Symbol(s) = x { Some(s.clone()) } else { None })
+          .filter_map(|x| {
+            if let Edn::Symbol(s) = x {
+              // Type var symbols are serialized with a leading quote: `'T` → `"'T"`.
+              // Strip the quote to get the var name; error on excess quotes.
+              let stripped = s.trim_start_matches('\'');
+              let n_quotes = s.len() - stripped.len();
+              if n_quotes > 1 {
+                eprintln!("[Error] Generic type variable `{s}` has excess leading quotes — expected a single-quoted name like `'T`");
+              }
+              Some(Arc::from(stripped))
+            } else {
+              None
+            }
+          })
           .collect()
       })
       .unwrap_or_default();
@@ -392,10 +405,19 @@ impl CalcitTypeAnnotation {
     if arg_types.is_empty() && matches!(*return_type, CalcitTypeAnnotation::Dynamic) && generics.is_empty() {
       None
     } else {
+      let fn_kind = match map.tag_get("kind") {
+        Some(Edn::Tag(t)) if t.ref_str() == "macro" => SchemaKind::Macro,
+        _ => SchemaKind::Fn,
+      };
+      let rest_type = map
+        .tag_get("rest")
+        .map(|v| Self::parse_type_annotation_form(&Self::edn_type_to_calcit(v)));
       Some(CalcitFnTypeAnnotation {
         generics: Arc::new(generics),
         arg_types,
         return_type,
+        fn_kind,
+        rest_type,
       })
     }
   }
@@ -526,6 +548,8 @@ impl CalcitTypeAnnotation {
         generics: Arc::new(generics),
         arg_types: final_arg_types,
         return_type,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
       };
       return Some(signature.render_signature_brief());
     }
@@ -706,6 +730,19 @@ impl CalcitTypeAnnotation {
       return Arc::new(CalcitTypeAnnotation::TypeVar(type_var));
     }
 
+    // EDN-serialized type variables come as `Calcit::Symbol { sym: "'T" }` (leading quote in the
+    // symbol name). Recognize them as TypeVar and strip the quote. Reject excess quotes (``''T``).
+    if let Calcit::Symbol { sym, .. } = form {
+      if sym.starts_with('\'') {
+        let stripped = sym.trim_start_matches('\'');
+        let n_quotes = sym.len() - stripped.len();
+        if n_quotes > 1 {
+          eprintln!("[Error] Type variable `{sym}` has excess leading quotes — expected a single-quoted uppercase symbol like `'T`");
+        }
+        return Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)));
+      }
+    }
+
     if let Calcit::Tuple(tuple) = form {
       if let Some(struct_def) = resolve_struct_def(tuple.tag.as_ref()) {
         let args = tuple.extra.iter().map(Self::parse_type_annotation_form).collect::<Vec<_>>();
@@ -794,6 +831,8 @@ impl CalcitTypeAnnotation {
             generics: Arc::new(generics),
             arg_types,
             return_type,
+            fn_kind: SchemaKind::Fn,
+            rest_type: None,
           })));
         }
       }
@@ -881,6 +920,8 @@ impl CalcitTypeAnnotation {
             generics: Arc::new(generics),
             arg_types,
             return_type,
+            fn_kind: SchemaKind::Fn,
+            rest_type: None,
           })));
         }
       }
@@ -988,6 +1029,8 @@ impl CalcitTypeAnnotation {
               generics: Arc::new(generics),
               arg_types,
               return_type,
+              fn_kind: SchemaKind::Fn,
+              rest_type: None,
             })));
           }
         }
@@ -1069,10 +1112,13 @@ impl CalcitTypeAnnotation {
       Self::Fn(sig) => {
         let new_args = sig.arg_types.iter().map(|a| a.substitute_type_vars(bindings)).collect();
         let new_ret = sig.return_type.substitute_type_vars(bindings);
+        let new_rest = sig.rest_type.as_ref().map(|r| r.substitute_type_vars(bindings));
         Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
           generics: sig.generics.clone(),
           arg_types: new_args,
           return_type: new_ret,
+          fn_kind: sig.fn_kind,
+          rest_type: new_rest,
         })))
       }
       Self::Struct(base, args) => {
@@ -1287,6 +1333,8 @@ impl CalcitTypeAnnotation {
       generics: Arc::new(vec![]),
       arg_types,
       return_type,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
     }))
   }
 
@@ -2091,11 +2139,23 @@ impl Ord for CalcitTypeAnnotation {
   }
 }
 
+/// Distinguishes fn-kind schemas (`:kind :fn`) from macro-kind schemas (`:kind :macro`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum SchemaKind {
+  #[default]
+  Fn,
+  Macro,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CalcitFnTypeAnnotation {
   pub generics: Arc<Vec<Arc<str>>>,
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
   pub return_type: Arc<CalcitTypeAnnotation>,
+  /// Whether this schema was declared as `:kind :macro` (default: `:kind :fn`).
+  pub fn_kind: SchemaKind,
+  /// Rest-param type from `:rest` in the schema, if present.
+  pub rest_type: Option<Arc<CalcitTypeAnnotation>>,
 }
 
 impl CalcitFnTypeAnnotation {
@@ -2110,12 +2170,19 @@ impl CalcitFnTypeAnnotation {
   pub fn to_schema_edn(&self) -> Edn {
     let args: Vec<Edn> = self.arg_types.iter().map(|t| t.to_type_edn()).collect();
     let mut map = EdnMapView::default();
-    map.insert_key("kind", Edn::tag("fn"));
+    let kind_str = match self.fn_kind {
+      SchemaKind::Fn => "fn",
+      SchemaKind::Macro => "macro",
+    };
+    map.insert_key("kind", Edn::tag(kind_str));
     map.insert_key("args", Edn::List(EdnListView(args)));
     map.insert_key("return", self.return_type.to_type_edn());
     if !self.generics.is_empty() {
       let generics: Vec<Edn> = self.generics.iter().map(|s| Edn::Symbol(Arc::from(format!("'{s}")))).collect();
       map.insert_key("generics", Edn::List(EdnListView(generics)));
+    }
+    if let Some(rest) = &self.rest_type {
+      map.insert_key("rest", rest.to_type_edn());
     }
     Edn::Map(map)
   }
