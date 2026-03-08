@@ -14,8 +14,8 @@
                 quasiquote $ do (println "|env: eval") ~@body
                 quasiquote $ do (println "|env: not eval. tests skipped")
           :examples $ []
-          :schema $ :: :fn
-            {} (:kind :macro) (:rest :dynamic) (:return :dynamic)
+          :schema $ :: :macro
+            {} (:rest :dynamic)
               :args $ [] :dynamic
         |inside-js: $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -25,8 +25,8 @@
                 quasiquote $ do (println "|env: js") ~@body
                 quasiquote $ do (println "|env: not js. tests skipped")
           :examples $ []
-          :schema $ :: :fn
-            {} (:kind :macro) (:rest :dynamic) (:return :dynamic)
+          :schema $ :: :macro
+            {} (:rest :dynamic)
               :args $ [] :dynamic
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote

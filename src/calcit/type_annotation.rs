@@ -468,15 +468,23 @@ impl CalcitTypeAnnotation {
   /// Parse a schema [`Edn`] map value (as stored in [`crate::snapshot::CodeEntry::schema`])
   /// directly into a [`CalcitFnTypeAnnotation`], without going through a Cirru/Calcit roundtrip.
   ///
-  /// Accepts both a plain schema map and the wrapped top-level form `(:: :fn ({} ...))`.
+  /// Accepts both a plain schema map and the wrapped top-level form `(:: :fn ({} ...))`
+  /// or `(:: :macro ({} ...))`.
   /// Returns `None` only when the input does not look like a function schema at all.
   pub fn parse_fn_schema_from_edn(schema: &Edn) -> Option<CalcitFnTypeAnnotation> {
+    let mut wrapped_kind: Option<SchemaKind> = None;
     let map = match schema {
       Edn::Map(map) => map,
-      Edn::Tuple(view) if matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "fn") => match view.extra.first() {
-        Some(Edn::Map(map)) => map,
-        _ => return None,
-      },
+      Edn::Tuple(view) if matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro")) => {
+        wrapped_kind = match view.tag.as_ref() {
+          Edn::Tag(tag) if tag.ref_str() == "macro" => Some(SchemaKind::Macro),
+          _ => Some(SchemaKind::Fn),
+        };
+        match view.extra.first() {
+          Some(Edn::Map(map)) => map,
+          _ => return None,
+        }
+      }
       _ => return None,
     };
 
@@ -530,7 +538,7 @@ impl CalcitTypeAnnotation {
 
     let fn_kind = match map.tag_get("kind") {
       Some(Edn::Tag(t)) if t.ref_str() == "macro" => SchemaKind::Macro,
-      _ => SchemaKind::Fn,
+      _ => wrapped_kind.unwrap_or(SchemaKind::Fn),
     };
     let rest_type = map
       .tag_get("rest")
@@ -2472,6 +2480,7 @@ mod tests {
       panic!("fn payload should be schema map: {edn:?}");
     };
     assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "macro"));
+    assert!(map.tag_get("return").is_none(), "macro payload should omit return field: {edn:?}");
   }
 
   #[test]
@@ -2504,6 +2513,21 @@ mod tests {
   }
 
   #[test]
+  fn parse_wrapped_top_level_macro_schema_from_edn() {
+    let schema = Edn::tuple(
+      Edn::tag("macro"),
+      vec![Edn::Map(EdnMapView::from(HashMap::from([
+        (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("dynamic")]))),
+        (Edn::tag("return"), Edn::tag("dynamic")),
+      ])))],
+    );
+
+    let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema).expect("wrapped macro schema should parse");
+    assert_eq!(parsed.fn_kind, SchemaKind::Macro);
+    assert!(matches!(parsed.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Dynamic)));
+  }
+
+  #[test]
   fn wrapped_top_level_fn_schema_omits_default_kind_but_keeps_rest() {
     let schema = CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
@@ -2522,6 +2546,32 @@ mod tests {
     };
     assert!(map.tag_get("kind").is_none(), "default fn kind should be omitted");
     assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "tag"));
+  }
+
+  #[test]
+  fn wrapped_top_level_macro_schema_uses_macro_tag_and_omits_inner_kind() {
+    let schema = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      fn_kind: SchemaKind::Macro,
+      rest_type: Some(Arc::new(CalcitTypeAnnotation::Dynamic)),
+    };
+
+    let edn = schema.to_wrapped_schema_edn();
+    let Edn::Tuple(view) = edn else {
+      panic!("wrapped schema should serialize as tuple");
+    };
+    assert!(matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro"));
+    let Some(Edn::Map(map)) = view.extra.first() else {
+      panic!("wrapped schema payload should be a map");
+    };
+    assert!(
+      map.tag_get("kind").is_none(),
+      "wrapped macro schema should omit redundant inner :kind"
+    );
+    assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit return field");
+    assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
   }
 
   #[test]
@@ -2713,7 +2763,9 @@ impl CalcitFnTypeAnnotation {
       map.insert_key("kind", Edn::tag("macro"));
     }
     map.insert_key("args", Edn::List(EdnListView(args)));
-    map.insert_key("return", self.return_type.to_type_edn());
+    if !matches!(self.fn_kind, SchemaKind::Macro) {
+      map.insert_key("return", self.return_type.to_type_edn());
+    }
     if !self.generics.is_empty() {
       let generics: Vec<Edn> = self
         .generics
@@ -2761,7 +2813,30 @@ impl CalcitFnTypeAnnotation {
   }
 
   pub fn to_wrapped_schema_edn(&self) -> Edn {
-    Edn::tuple(Edn::tag("fn"), vec![self.to_inline_type_schema_edn()])
+    let args: Vec<Edn> = self.arg_types.iter().map(|t| t.to_type_edn()).collect();
+    let mut map = EdnMapView::default();
+    map.insert_key("args", Edn::List(EdnListView(args)));
+    if !matches!(self.fn_kind, SchemaKind::Macro) {
+      map.insert_key("return", self.return_type.to_type_edn());
+    }
+    if !self.generics.is_empty() {
+      let generics: Vec<Edn> = self
+        .generics
+        .iter()
+        .map(|s| Edn::Symbol(Arc::from(s.trim_start_matches('\''))))
+        .collect();
+      map.insert_key("generics", Edn::List(EdnListView(generics)));
+    }
+    if let Some(rest) = &self.rest_type {
+      map.insert_key("rest", rest.to_type_edn());
+    }
+
+    let wrapped_tag = match self.fn_kind {
+      SchemaKind::Fn => Edn::tag("fn"),
+      SchemaKind::Macro => Edn::tag("macro"),
+    };
+
+    Edn::tuple(wrapped_tag, vec![Edn::Map(map)])
   }
 
   pub fn describe(&self) -> String {

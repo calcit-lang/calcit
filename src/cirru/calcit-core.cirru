@@ -71,9 +71,8 @@
                 Point $ defstruct Point (:x :number) (:y :number)
                 rec $ %{} Point ([] :x 1) ([] :y 2)
               assert= 1 $ :x rec
-          :schema $ :: :fn
-            {} (:return :tag)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |%{}? $ %{} :CodeEntry (:doc "|Partial record constructor — allows omitting optional fields\nOmitted fields default to nil when using a struct prototype.\nSyntax: (%{}? R & field-value-pairs)\nParams: R (struct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
           :code $ quote
             defmacro %{}? (R & xs)
@@ -88,9 +87,8 @@
                 Point $ defstruct Point (:x :number) (:y :number)
                 p $ %{}? Point (:x 1)
               assert= nil $ :y p
-          :schema $ :: :fn
-            {} (:return :tag)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |& $ %{} :CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -195,9 +193,8 @@
                   ~ $ if (&list:empty? others) default
                     quasiquote $ &case ~item ~default ~@others
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic :dynamic)
         |&cirru-nth $ %{} :CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node or nil\nGets nth element from Cirru list node, returns nil if index out of bounds")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -312,9 +309,8 @@
                 n $ [] 1 2
                 reset! *seen $ append (deref *seen) n
               assert= ([] 1 2) (deref *seen)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -499,9 +495,8 @@
                       &list:slice ~v 1
                     &let () ~@branch2
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic :dynamic :dynamic)
         |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
           :code $ quote
             defn &list:apply (xs fs)
@@ -1047,9 +1042,8 @@
                             ~@ $ &list:slice pair 2
                           &record-match-internal ~value $ ~@ (&list:rest body)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |&record:assoc $ %{} :CodeEntry (:doc "|internal function for record field association\nSyntax: (&record:assoc record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with field associations") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -1443,9 +1437,8 @@
             quote $ assert= 3 (-> 1 inc inc)
             quote $ assert= 9
               -> 2 inc $ * 3
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |->% $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions")
           :code $ quote
             defmacro ->% (base & xs)
@@ -1457,9 +1450,8 @@
                       defn %->% (x) ([] '% x)
                 quasiquote $ let ~pairs ~tail
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |->> $ %{} :CodeEntry (:doc "|thread macro passing value at end of each expression")
           :code $ quote
             defmacro ->> (base & xs)
@@ -1478,9 +1470,8 @@
                     &call-spread recur (append x0 base) & $ &list:rest xs
                     &call-spread recur ([] x0 base) & $ &list:rest xs
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |/ $ %{} :CodeEntry (:doc |dividing)
           :code $ quote
             defn / (x & ys)
@@ -1510,9 +1501,8 @@
           :examples $ []
             quote $ assert= (:: :point 1 2) (: :point 1 2)
             quote $ assert= (:: :name |calcit) (: |name |calcit)
-          :schema $ :: :fn
-            {} (:return :tuple)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: impls & values)\nParams: impls (any), values (any, variable number)\nReturns: tuple with impls and values\nCreates a tuple with specified impls and values") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -1520,9 +1510,8 @@
           :code $ quote
             defmacro ;nil (& _body) nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
-              :args $ []
+          :schema $ :: :macro
+            {} $ :args ([])
         |< $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn < (x & ys)
@@ -1680,9 +1669,8 @@
                   fn (x) (/= x ',)
                 quasiquote $ [] ~@xs
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :list)
-              :args $ []
+          :schema $ :: :macro
+            {} $ :args ([])
         |[] $ %{} :CodeEntry (:doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -1698,18 +1686,16 @@
                     quasiquote $ [] ~@ys
                 quasiquote $ [] ~@items
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :list)
-              :args $ []
+          :schema $ :: :macro
+            {} $ :args ([])
         |\ $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro \ (& xs)
               if (&list:empty? xs) (raise "|\\ expects function body")
               quasiquote $ defn %\ (? % %2) ~xs
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :fn)
-              :args $ []
+          :schema $ :: :macro
+            {} $ :args ([])
         |\. $ %{} :CodeEntry (:doc "|this syntax is bared used, deprecating")
           :code $ quote
             defmacro \. (args-alias & xs)
@@ -1736,9 +1722,8 @@
                               , body
                             recur code $ butlast ys
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :fn)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |abs $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn abs (x)
@@ -1831,9 +1816,8 @@
               apply-args ([] 1 2 3) +
             quote $ assert= 15
               apply-args ([] 5 10) +
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |assert $ %{} :CodeEntry (:doc "|asserts that an expression is truthy, raises an error with message if not")
           :code $ quote
             defmacro assert (message xs)
@@ -1854,9 +1838,8 @@
             quote $ assert "|x should be positive" (> 1 0)
             quote $ assert "|list should not be empty"
               not $ empty? ([] 1)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |assert-detect $ %{} :CodeEntry (:doc "|asserts that a value satisfies a predicate function, raises error with details if not")
           :code $ quote
             defmacro assert-detect (f code)
@@ -1875,9 +1858,8 @@
             quote $ assert-detect number? (+ 1 2)
             quote $ assert-detect list? ([] 1 2 3)
             quote $ assert-detect even? (* 2 5)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |assert-type $ %{} :CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -1900,9 +1882,8 @@
             quote $ assert= 4 (+ 2 2)
             quote $ assert= |hello (str |hel |lo)
             quote $ assert= ([] 1 2 3) (range 1 4)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
             defn assoc (x & args)
@@ -2041,9 +2022,8 @@
                   println |args: ~args-value
                   ~ v
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |call-wo-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro call-wo-log (f & xs)
@@ -2052,9 +2032,8 @@
                 raise $ str-spaced "|call-wo-log expects function expression, got:" f
               quasiquote $ ~f ~@xs
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro case (item & patterns)
@@ -2071,9 +2050,8 @@
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v nil ~@patterns)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |case-default $ %{} :CodeEntry (:doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches.")
           :code $ quote
             defmacro case-default (item default & patterns)
@@ -2097,9 +2075,8 @@
               case-default 3 |none $ 1 |one
             quote $ assert= |fallback
               case-default 5 |fallback (1 |one) (2 |two) (3 |three)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |ceil $ %{} :CodeEntry (:doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -2303,9 +2280,8 @@
           :code $ quote
             defmacro def (_name x) x
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |defatom $ %{} :CodeEntry (:doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -2349,9 +2325,8 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (.method value) ...), (defimpl ImplName Trait (:: .method value) ...), or legacy (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
           :code $ quote
             defmacro defimpl (name trait & pairs)
@@ -2433,9 +2408,8 @@
                                       raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
                                 quasiquote $ [] ~key ~v0
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -2467,9 +2441,8 @@
                   ~f-name $ defn ~f-name ~args ~@body
                   call-w-log ~f-name ~@args
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |defn-wo-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro defn-wo-log (f-name args & body)
@@ -2482,9 +2455,8 @@
               if (&list:empty? body) (raise "|defn-wo-log expects function body")
               quasiquote $ defn ~f-name ~args ~@body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |defstruct $ %{} :CodeEntry (:doc "|macro for defining record structs\nSyntax: (defstruct Name [('T 'S)] :field :type ...)\nParams: Name (symbol/tag), optional generics list, field pairs (tag + type)\nReturns: struct definition value\nExpands to &struct::new")
           :code $ quote
             defmacro defstruct (name & pairs)
@@ -2536,9 +2508,8 @@
                           ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name :string) (:age :number)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn (args...) return)) ...), legacy :method is also accepted\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
             defmacro deftrait (name & methods)
@@ -2571,9 +2542,8 @@
                     ~ $ turn-tag name
                     [] ~@normalized
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
             defn deref (*a)
@@ -2828,9 +2798,8 @@
                     assert "|expected map value to match" $ map? ~value
                     internal/&field-match-internal ~value ~@body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f)
@@ -2916,9 +2885,8 @@
               quasiquote $ ~f
                 ~@ $ reverse args
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |floor $ %{} :CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -2939,9 +2907,8 @@
               fn (x) (* x 2)
             quote $ filter ([] 1 2 3 4 5)
               fn (n) (> n 2)
-          :schema $ :: :fn
-            {} (:return :fn)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |fn? $ %{} :CodeEntry (:doc "|Check if a value is a function")
           :code $ quote
             defn fn? (x)
@@ -3196,9 +3163,8 @@
               if-let
                 v $ :: :none
                 , v |missing
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |if-not $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro if-not (& xs)
@@ -3455,9 +3421,8 @@
             quote $ let
                 a 10
               * a a
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |let-destruct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let-destruct (pattern v & body)
@@ -3477,9 +3442,8 @@
                       raise $ str-spaced "|Unknown pattern to destruct:" pattern
                   raise $ str-spaced "|Unknown structure to destruct:" pattern
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |let-sugar $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let-sugar (pairs & body)
@@ -3501,9 +3465,8 @@
                         ~ $ &list:rest pairs
                         ~@ body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |let[] $ %{} :CodeEntry (:doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings.")
           :code $ quote
             defmacro let[] (vars data & body)
@@ -3542,9 +3505,8 @@
           :examples $ []
             quote $ let[] (x y) ([] 1 2) (+ x y)
             quote $ let[] (head & tail) ([] 9 8 7) (count tail)
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |let{} $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let{} (items base & body)
@@ -3561,9 +3523,8 @@
                         [] x $ [] (turn-tag x) var-result
                     ~@ body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |list-match $ %{} :CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.") (:schema nil)
           :code $ quote
             defmacro list-match (& values)
@@ -3651,9 +3612,8 @@
                 if (empty? xs) total $ recur
                   + total $ first xs
                   rest xs
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |macro? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn macro? (x)
@@ -3853,9 +3813,8 @@
           :code $ quote
             defmacro noted (_doc v) v
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
             defn nth (x i)
@@ -4046,9 +4005,8 @@
                     assert "|expected record to match" $ record? ~value
                     &record-match-internal ~value ~@body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |record-with $ %{} :CodeEntry (:doc "|macro to extend existing record with new values in pairs, internally using &record:with which takes flattern items")
           :code $ quote
             defmacro record-with (record & pairs) (; "check if args are in pairs")
@@ -4062,9 +4020,8 @@
               quasiquote $ &record:with ~record
                 ~@ $ &list:concat & pairs
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct-based record (created with defstruct + %{}).")
           :code $ quote
             defn record? (x)
@@ -4387,9 +4344,8 @@
               assert= 1 $ deref *counter
             quote $ do (defatom *state 1) (swap! *state + 2)
               assert= 3 $ deref *state
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |symbol? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
           :code $ quote
             defn symbol? (x)
@@ -4436,9 +4392,8 @@
                   :some x
                   str x |:got
                 (:none) |nothing
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |tag? $ %{} :CodeEntry (:doc "|Check if a value is a tag (keyword)")
           :code $ quote
             defn tag? (x)
@@ -4717,9 +4672,8 @@
                     , |=> ~x
                   ~ x
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro w-log (x)
@@ -4740,9 +4694,8 @@
                       , |=> ~x
                     ~ x
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |when $ %{} :CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
           :code $ quote
             defmacro when (condition & body)
@@ -4758,9 +4711,8 @@
               when (&> 3 2) (inc 3)
             quote $ assert= nil
               when false $ inc 1
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |when-let $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro when-let (pair & body)
@@ -4778,9 +4730,8 @@
                   if (some? ~x)
                     do $ ~@ body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |when-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro when-not (condition & body)
@@ -4792,9 +4743,8 @@
                 quasiquote $ if (not ~condition)
                   &let () ~@body
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |with-cpu-time $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro with-cpu-time (x)
@@ -4813,9 +4763,8 @@
                       , |ms
                   ~ v
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |with-gensyms $ %{} :CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
           :code $ quote
             defmacro with-gensyms (names & body)
@@ -4829,23 +4778,20 @@
           :examples $ []
             quote $ with-gensyms (v)
               quasiquote $ &let (~v 1) ~v
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro wo-js-log (x) x
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |wo-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro wo-log (x) x
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |write-file $ %{} :CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: nil or error\nWrites string content to file, creates directories if needed")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -4897,9 +4843,8 @@
           :examples $ []
             quote $ {} (:a 1) (:b 2)
             quote $ {} (:name |Alice) (:age 30)
-          :schema $ :: :fn
-            {} (:return :map)
-              :args $ []
+          :schema $ :: :macro
+            {} $ :args ([])
         |~ $ %{} :CodeEntry (:doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -4990,9 +4935,8 @@
                             ~ $ &list:nth pair 2
                           &field-match-internal ~value $ ~@ (&list:rest body)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic)
         |&tag-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &tag-match-internal (value t & body)
@@ -5025,9 +4969,8 @@
                             &tag-match-internal ~value ~t $ ~@ (&list:rest body)
                       if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: :macro
+            {} $ :args ([] :dynamic :dynamic)
         |normalize-trait-type $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn normalize-trait-type (t0)
