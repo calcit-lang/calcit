@@ -505,7 +505,13 @@ pub fn assert_type(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
   }
 
   let value = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
-  let expected = CalcitTypeAnnotation::parse_type_annotation_form(&expr[1]);
+  let context_label = call_stack
+    .0
+    .first()
+    .map(|frame| format!("{}/{}", frame.ns, frame.def))
+    .unwrap_or_else(|| format!("{file_ns}/assert-type"));
+  let expected =
+    calcit::with_type_annotation_warning_context(context_label, || CalcitTypeAnnotation::parse_type_annotation_form(&expr[1]));
 
   if !calcit::value_matches_type_annotation(&value, expected.as_ref()) {
     return Err(CalcitErr::use_msg_stack_location(

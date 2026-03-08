@@ -38,6 +38,49 @@ fn map_key_path_segment(key: &Edn) -> String {
   }
 }
 
+fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
+  match text.trim_start_matches(':') {
+    "kind" => Some("kind"),
+    "args" => Some("args"),
+    "return" => Some("return"),
+    "rest" => Some("rest"),
+    "generics" => Some("generics"),
+    _ => None,
+  }
+}
+
+fn canonical_schema_kind_name(text: &str) -> Option<&'static str> {
+  match text.trim_start_matches(':') {
+    "fn" => Some("fn"),
+    "macro" => Some("macro"),
+    _ => None,
+  }
+}
+
+fn normalize_schema_map(map: &EdnMapView) -> EdnMapView {
+  let mut normalized = EdnMapView::default();
+
+  for (key, value) in map.0.iter() {
+    let normalized_key = match key {
+      Edn::Tag(tag) => Edn::tag(tag.ref_str()),
+      Edn::Str(text) => canonical_schema_field_name(text).map(Edn::tag).unwrap_or_else(|| key.clone()),
+      Edn::Symbol(text) => canonical_schema_field_name(text).map(Edn::tag).unwrap_or_else(|| key.clone()),
+      _ => key.clone(),
+    };
+
+    let normalized_value = match (&normalized_key, value) {
+      (Edn::Tag(tag), Edn::Str(text)) | (Edn::Tag(tag), Edn::Symbol(text)) if tag.ref_str() == "kind" => {
+        canonical_schema_kind_name(text).map(Edn::tag).unwrap_or_else(|| value.clone())
+      }
+      _ => value.clone(),
+    };
+
+    normalized.insert(normalized_key, normalized_value);
+  }
+
+  normalized
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotConfigs {
   #[serde(rename = "init-fn")]
@@ -138,11 +181,35 @@ mod schema_serde {
     let opt = Option::<Edn>::deserialize(d)?;
     Ok(match opt {
       None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
-      Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
-        .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-        .unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+      Some(v) => parse_loaded_schema_annotation(&v, "CodeEntry.schema").map_err(serde::de::Error::custom)?,
     })
   }
+}
+
+fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
+  if matches!(value, Edn::Nil) {
+    return Ok(DYNAMIC_TYPE.clone());
+  }
+
+  let normalized =
+    normalize_schema_edn(value).map_err(|e| format!("failed to normalize {owner}: {e}; schema={}", format_edn_preview(value)))?;
+  let schema_cirru = parse_schema_cirru_from_edn(&normalized).map_err(|e| {
+    format!(
+      "failed to convert {owner} into Cirru: {e}; schema={}",
+      format_edn_preview(&normalized)
+    )
+  })?;
+  parse_schema_data(&schema_cirru)
+    .map_err(|e| format!("failed to validate {owner}: {e}; schema={}", format_edn_preview(&normalized)))?;
+
+  CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized)
+    .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+    .ok_or_else(|| {
+      format!(
+        "failed to parse {owner} as function schema after normalization; schema={}",
+        format_edn_preview(&normalized)
+      )
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,23 +245,7 @@ impl TryFrom<Edn> for CodeEntry {
             }
             "schema" => {
               if !matches!(value, Edn::Nil) {
-                let normalized = normalize_schema_edn(value)
-                  .map_err(|e| format!("failed to normalize CodeEntry.schema: {e}; schema={}", format_edn_preview(value)))?;
-                let schema_cirru = parse_schema_cirru_from_edn(&normalized).map_err(|e| {
-                  format!(
-                    "failed to convert CodeEntry.schema into Cirru: {e}; schema={}",
-                    format_edn_preview(&normalized)
-                  )
-                })?;
-                parse_schema_data(&schema_cirru).map_err(|e| {
-                  format!(
-                    "failed to validate CodeEntry.schema: {e}; schema={}",
-                    format_edn_preview(&normalized)
-                  )
-                })?;
-                schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized)
-                  .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
               }
             }
             _ => {}
@@ -214,23 +265,7 @@ impl TryFrom<Edn> for CodeEntry {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("schema")))
           && !matches!(value, Edn::Nil)
         {
-          let normalized = normalize_schema_edn(value)
-            .map_err(|e| format!("failed to normalize CodeEntry.schema: {e}; schema={}", format_edn_preview(value)))?;
-          let schema_cirru = parse_schema_cirru_from_edn(&normalized).map_err(|e| {
-            format!(
-              "failed to convert CodeEntry.schema into Cirru: {e}; schema={}",
-              format_edn_preview(&normalized)
-            )
-          })?;
-          parse_schema_data(&schema_cirru).map_err(|e| {
-            format!(
-              "failed to validate CodeEntry.schema: {e}; schema={}",
-              format_edn_preview(&normalized)
-            )
-          })?;
-          schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized)
-            .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-            .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+          schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
         }
       }
       other => {
@@ -255,15 +290,17 @@ impl TryFrom<Edn> for CodeEntry {
 /// Direct map format is returned as-is.
 fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
   if matches!(value, Edn::Map(_)) {
-    validate_schema_edn_no_legacy_quotes(value)?;
-    return Ok(value.clone());
+    let Edn::Map(map) = value else { unreachable!() };
+    let normalized = Edn::Map(normalize_schema_map(map));
+    validate_schema_edn_no_legacy_quotes(&normalized)?;
+    return Ok(normalized);
   }
 
   if let Edn::Tuple(view) = value
     && matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
     && let Some(Edn::Map(map)) = view.extra.first()
   {
-    let mut normalized_map = map.to_owned();
+    let mut normalized_map = normalize_schema_map(map);
     if normalized_map.tag_get("kind").is_none() && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro") {
       normalized_map.insert_key("kind", Edn::tag("macro"));
     }
@@ -1626,6 +1663,28 @@ mod tests {
   }
 
   #[test]
+  fn test_normalize_schema_canonicalizes_string_keys_and_kind_values() {
+    let wrapped = Edn::tuple(
+      Edn::tag("fn"),
+      vec![Edn::Map(EdnMapView::from(HashMap::from([
+        (Edn::Str(Arc::from(":args")), Edn::List(EdnListView(vec![Edn::tag("set")]))),
+        (Edn::Str(Arc::from(":return")), Edn::tag("bool")),
+        (Edn::Str(Arc::from(":kind")), Edn::Str(Arc::from(":fn"))),
+      ])))],
+    );
+
+    let normalized = normalize_schema_edn(&wrapped).expect("string-key schema should normalize");
+    let Edn::Map(map) = normalized else {
+      panic!("normalized schema should be a map");
+    };
+
+    assert!(matches!(map.tag_get("args"), Some(Edn::List(_))));
+    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "bool"));
+    assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "fn"));
+    assert!(CalcitTypeAnnotation::parse_fn_schema_from_edn(&Edn::Map(map)).is_some());
+  }
+
+  #[test]
   fn test_macro_schema_full_file_round_trip() {
     use crate::calcit::SchemaKind;
     // Simulate saving + loading via the actual file format:
@@ -1847,6 +1906,80 @@ mod tests {
     );
     let fn_schema3 = fn_schema3.unwrap();
     assert_eq!(fn_schema3.fn_kind, SchemaKind::Macro, "normalized: fn_kind must be Macro");
+  }
+
+  #[test]
+  fn test_load_snapshot_preserves_selected_real_world_schemas() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+
+    let core_file = snapshot.files.get("calcit.core").expect("calcit.core file should exist");
+
+    for def_name in [
+      "&+",
+      "%{}",
+      "deftrait",
+      "[,]",
+      "not",
+      "not=",
+      "noted",
+      "nth",
+      "number?",
+      "option:map",
+      "optionally",
+    ] {
+      let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
+      assert!(
+        matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Fn(_)),
+        "schema for {def_name} should stay fn-like after load, got {:?}",
+        entry.schema
+      );
+    }
+  }
+
+  #[test]
+  fn test_save_snapshot_round_trip_keeps_real_world_schema_markers() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+
+    let temp_path = std::env::temp_dir().join(format!("calcit-schema-roundtrip-{}.cirru", std::process::id()));
+
+    save_snapshot_to_file(&temp_path, &snapshot).expect("round-trip save should succeed");
+    let saved = fs::read_to_string(&temp_path).expect("should read saved snapshot");
+    let saved_edn = cirru_edn::parse(&saved).expect("saved snapshot should remain valid EDN");
+    let saved_snapshot =
+      load_snapshot_data(&saved_edn, temp_path.to_str().expect("temp path should be utf-8")).expect("saved snapshot should load again");
+
+    let source_core_file = snapshot.files.get("calcit.core").expect("source calcit.core file should exist");
+    let saved_core_file = saved_snapshot
+      .files
+      .get("calcit.core")
+      .expect("saved calcit.core file should exist");
+
+    for def_name in ["&+", "%{}", "not", "not=", "noted", "nth", "number?", "option:map", "optionally"] {
+      let source_entry = source_core_file
+        .defs
+        .get(def_name)
+        .unwrap_or_else(|| panic!("missing source def: {def_name}"));
+      let saved_entry = saved_core_file
+        .defs
+        .get(def_name)
+        .unwrap_or_else(|| panic!("missing saved def: {def_name}"));
+      assert_eq!(saved_entry.schema, source_entry.schema, "schema should round-trip for {def_name}");
+    }
+
+    let _ = fs::remove_file(&temp_path);
+
+    assert!(
+      saved.contains("|&+ $ %{} :CodeEntry") && saved.contains(":schema $ :: :fn"),
+      "saved snapshot should retain wrapped fn schemas"
+    );
+    assert!(
+      saved.contains("|%{} $ %{} :CodeEntry") && saved.contains(":schema $ :: :macro"),
+      "saved snapshot should retain wrapped macro schemas"
+    );
   }
 
   #[test]

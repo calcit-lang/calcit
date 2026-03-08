@@ -13,14 +13,12 @@
                   f1 identity
                   f2 &+
                   _ $ assert-type f1
-                    :: :fn
-                      {} (:return 'T)
-                        :generics $ [] 'T
-                        :args $ [] 'T
+                    :: :fn $ {} (:return 'T)
+                      :generics $ [] 'T
+                      :args $ [] 'T
                   _ $ assert-type f2
-                    :: :fn
-                      {} (:return :number)
-                        :args $ [] :number :number
+                    :: :fn $ {} (:return :number)
+                      :args $ [] :number :number
                 assert= 1 $ f1 1
                 assert= 3 $ f2 1 2
                 assert= 3 $ apply f2 ([] 1 2)

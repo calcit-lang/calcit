@@ -1185,6 +1185,10 @@ fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &Calci
     _ => {}
   }
 
+  if code_kind == "defmacro" {
+    return issues;
+  }
+
   // Arity check
   let (required_count, has_rest) = analyze_param_arity(xs.get(2));
   let schema_required = fn_annot.arg_types.len();
@@ -1685,6 +1689,7 @@ fn infer_data_type(node: &Cirru) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::fs;
 
   fn leaf(text: &str) -> Cirru {
     Cirru::Leaf(Arc::from(text))
@@ -1806,6 +1811,14 @@ mod tests {
   }
 
   #[test]
+  fn validate_macro_arity_is_ignored() {
+    let schema = fn_schema_annotation(SchemaKind::Macro, 1, false);
+    let code = defmacro_code(&["a", "b"]);
+    let issues = validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(issues.is_empty(), "macro arity differences should not be reported: {issues:?}");
+  }
+
+  #[test]
   fn validate_arity_mismatch_detected() {
     let schema = fn_schema_annotation(SchemaKind::Fn, 3, false); // schema expects 3 args
     let code = defn_code(&["a", "b"], false); // code has 2
@@ -1839,5 +1852,21 @@ mod tests {
     let (req, rest) = analyze_param_arity(Some(&args));
     assert_eq!(req, 1);
     assert!(rest);
+  }
+
+  #[test]
+  fn validate_core_include_schema_matches_code() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = snapshot::load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+    let core_file = snapshot.files.get("calcit.core").expect("calcit.core file should exist");
+    let entry = core_file.defs.get("include").expect("include should exist");
+
+    let issues = validate_def_vs_schema("calcit.core", "include", &entry.code, &entry.schema);
+    assert!(
+      issues.is_empty(),
+      "include schema should match code: {issues:?}; code={:?}",
+      entry.code
+    );
   }
 }

@@ -24,6 +24,9 @@ use std::sync::{LazyLock, OnceLock};
 type LookupFn = fn(&str, &str) -> Option<Calcit>;
 static LOOKUP_EVALED_DEF: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
+thread_local! {
+  static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = RefCell::new(vec![]);
+}
 
 /// Register program-level lookup functions.  Must be called once at startup
 /// (e.g. from `program::extract_program_data`) before any type-annotation
@@ -31,6 +34,27 @@ static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
 pub fn register_program_lookups(evaled_lookup: LookupFn, code_lookup: LookupFn) {
   let _ = LOOKUP_EVALED_DEF.set(evaled_lookup);
   let _ = LOOKUP_DEF_CODE.set(code_lookup);
+}
+
+pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: impl FnOnce() -> T) -> T {
+  TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow_mut().push(label.into()));
+  let result = f();
+  TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| {
+    stack.borrow_mut().pop();
+  });
+  result
+}
+
+fn current_type_annotation_warning_context() -> Option<Arc<str>> {
+  TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
+}
+
+fn emit_legacy_fn_type_syntax_warning(schema_hint: &str) {
+  if let Some(label) = current_type_annotation_warning_context() {
+    eprintln!("[Warn] legacy fn type syntax is no longer supported at {label}, use `{schema_hint}` schema map form instead");
+  } else {
+    eprintln!("[Warn] legacy fn type syntax is no longer supported, use `{schema_hint}` schema map form instead");
+  }
 }
 
 fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
@@ -939,7 +963,7 @@ impl CalcitTypeAnnotation {
           if tuple.extra.is_empty() {
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
-          eprintln!("[Warn] legacy fn type syntax is no longer supported, use `:: :fn {{}}` schema map form instead");
+          emit_legacy_fn_type_syntax_warning(":: :fn {}");
           return Arc::new(CalcitTypeAnnotation::DynFn);
         }
       }
@@ -1015,7 +1039,7 @@ impl CalcitTypeAnnotation {
           if xs.len() == 1 {
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
-          eprintln!("[Warn] legacy fn type syntax is no longer supported, use `(:fn {{}} ...)` schema map form instead");
+          emit_legacy_fn_type_syntax_warning("(:fn {} ...)");
           return Arc::new(CalcitTypeAnnotation::DynFn);
         }
       }
@@ -1093,7 +1117,7 @@ impl CalcitTypeAnnotation {
             if xs.len() == 2 {
               return Arc::new(CalcitTypeAnnotation::DynFn);
             }
-            eprintln!("[Warn] legacy fn type syntax is no longer supported, use `:: :fn {{}}` schema map form instead");
+            emit_legacy_fn_type_syntax_warning(":: :fn {}");
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
         }

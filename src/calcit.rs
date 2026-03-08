@@ -45,7 +45,7 @@ pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, brief_type_of_value, register_program_lookups,
-  value_matches_type_annotation,
+  value_matches_type_annotation, with_type_annotation_warning_context,
 };
 
 use compare::{

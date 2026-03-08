@@ -94,7 +94,10 @@ pub fn preprocess_ns_def(
           let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
           let mut scope_types = ScopeTypes::new();
-          let resolved_code = preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)?;
+          let context_label = format!("{ns}/{def}");
+          let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
+            preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+          })?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
             runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns, &next_stack)?
@@ -3638,10 +3641,19 @@ pub fn preprocess_assert_traits(
 fn analyze_def_schema_param_arity(args: &CalcitList) -> (usize, bool) {
   let mut required_count = 0;
   let mut has_rest = false;
+  let mut skip_rest_binding = false;
 
   for item in args {
     if matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
       has_rest = true;
+      skip_rest_binding = true;
+      continue;
+    }
+    if matches!(item, Calcit::Syntax(CalcitSyntax::ArgOptional, _)) {
+      continue;
+    }
+    if skip_rest_binding {
+      skip_rest_binding = false;
       continue;
     }
     required_count += 1;
@@ -3677,6 +3689,10 @@ fn validate_def_schema_during_preprocess(
       issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses defn"));
     }
     _ => {}
+  }
+
+  if code_kind == "defmacro" {
+    return issues;
   }
 
   let (required_count, has_rest) = analyze_def_schema_param_arity(args);
@@ -5017,5 +5033,118 @@ mod tests {
 
     assert_eq!(issues.len(), 1, "expected 1 issue, got: {issues:?}");
     assert!(issues[0].contains("schema :kind is :macro but code uses defn"));
+  }
+
+  #[test]
+  fn validate_def_schema_skips_rest_binding_name() {
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("calcit.core"),
+      at_def: Arc::from("include"),
+    });
+    let args = CalcitList::from(&[
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("base")),
+        sym: Arc::from("base"),
+        info: info.clone(),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+      Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("test")),
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("xs")),
+        sym: Arc::from("xs"),
+        info,
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+    ] as &[Calcit]);
+    let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
+    }));
+
+    let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defn, "calcit.core", "include", &args, &schema);
+    assert!(issues.is_empty(), "rest binding should not count as a required arg: {issues:?}");
+  }
+
+  #[test]
+  fn validate_def_schema_ignores_macro_arity_details() {
+    let args = CalcitList::from(&[
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("args")),
+        sym: Arc::from("args"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("calcit.core"),
+          at_def: Arc::from("fn"),
+        }),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+      Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("test")),
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("body")),
+        sym: Arc::from("body"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("calcit.core"),
+          at_def: Arc::from("fn"),
+        }),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+    ] as &[Calcit]);
+    let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      fn_kind: SchemaKind::Macro,
+      rest_type: None,
+    }));
+
+    let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defmacro, "calcit.core", "fn", &args, &schema);
+    assert!(issues.is_empty(), "macro arity differences should be ignored: {issues:?}");
+  }
+
+  #[test]
+  fn validate_def_schema_skips_optional_marker() {
+    let args = CalcitList::from(&[
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("xs")),
+        sym: Arc::from("xs"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("calcit.core"),
+          at_def: Arc::from("slice"),
+        }),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("n")),
+        sym: Arc::from("n"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("calcit.core"),
+          at_def: Arc::from("slice"),
+        }),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+      Calcit::Syntax(CalcitSyntax::ArgOptional, Arc::from("test")),
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from("m")),
+        sym: Arc::from("m"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("calcit.core"),
+          at_def: Arc::from("slice"),
+        }),
+        location: None,
+        type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+      }),
+    ] as &[Calcit]);
+
+    let (required_count, has_rest) = analyze_def_schema_param_arity(&args);
+    assert_eq!(required_count, 3, "optional marker should not count as its own arg");
+    assert!(!has_rest);
   }
 }

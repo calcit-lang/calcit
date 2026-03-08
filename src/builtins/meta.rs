@@ -638,7 +638,10 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               _ => type_form.to_owned(),
             };
             let type_form_value = normalize_type_form(&type_form_value);
-            let method_type = CalcitTypeAnnotation::parse_type_annotation_form(&type_form_value);
+            let context_label = format!("&trait::new:{}", name.ref_str());
+            let method_type = calcit::with_type_annotation_warning_context(context_label, || {
+              CalcitTypeAnnotation::parse_type_annotation_form(&type_form_value)
+            });
             if matches!(method_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
               return CalcitErr::err_str(
                 CalcitErrKind::Type,
