@@ -1,209 +1,162 @@
-# RFC: 函数定义字段拆分与类型 DSL 数据化（纯数据迁移）
+# 函数 schema 现状说明（已按当前实现收敛）
 
-## 背景
+## 状态
 
-当前 `CodeEntry` 以 `:code` 承载执行体，类型信息主要来自函数体内提示（例如 `hint-fn`、`assert-type`）。
+这个话题已经不再是“未来 RFC”，而是当前实现约定。
 
-这会带来几个问题：
+为避免继续传播旧语法，本文件只保留**当前可直接照抄**的写法，不再保留早期过渡方案。
 
-- 类型分析依赖 body 逆向提取，受宏展开/重排影响；
-- query/edit/tree 缺乏统一签名数据入口；
-- 文档与覆盖率统计重复解析 `:code`，耦合较高。
+## 当前结论
 
-## 目标
+- 顶层 `defn` / `defmacro` 的函数签名信息，优先写在 `CodeEntry.:schema`；
+- `:schema` 是普通数据，不再使用 `quote` 包裹；
+- snapshot/compact 文件中的 canonical 写法是 wrapped `:: :fn` / `:: :macro`；
+- 顶层函数 schema 不再推荐在 payload 里写 `:kind :fn`；
+- 局部函数、匿名函数、临时闭包没有独立 `CodeEntry` 时，仍可保留 `hint-fn`；
+- 历史上的 body-hint 返回值声明、异步 hint 旧写法、quoted schema 包裹写法，都不应继续作为新文档示例。
 
-- 保留 `:code` 作为执行真源；
-- 新增与 `:code` 平级的 `:schema` 字段；
-- `:schema` 只使用 Calcit 现有数据结构（map/list/tag/symbol），不引入新语法；
-- 类型检查和工具链逐步转为 `schema` 优先。
-
-## 非目标
-
-- 不改 `defn/defmacro` 执行语义；
-- 不要求一次性补全历史 schema；
-- 逐步迁移 `hint-fn/assert-type`。
-
-## 数据模型提案
-
-`CodeEntry` 中新增可选 `:schema`：
+## `CodeEntry` 当前推荐形态
 
 ```cirru
 %{} :CodeEntry
   :doc |...
-  :examples $ []
   :code $ quote ...
-  :schema $ quote $ {}
-    :kind :fn
-    :generics $ [] 'T 'U
-    :args $ [] 'T :number
-    :rest :number
-    :return $ :: :tuple :ok 'U
-    :where $ []
-      :: 'Eq 'T
+  :examples $ []
+  :schema $ :: :fn
+    {}
+      :generics $ [] 'T 'U
+      :args $ [] 'T :number
+      :rest :number
+      :return $ :: :tuple :ok 'U
+      :where $ []
+        :: 'Eq 'T
 ```
 
 说明：
 
-- `:schema` 可选，缺失时回退 body 抽取；
-- `:schema` 与 `:code` 并存；
-- schema 中不再要求 `:name`，函数名需要时可从 `:code` 提取；
-- 字段值全部为现有 Calcit 数据结构；
-- 支持以 `:optional` 开头包裹 schema，用于渐进迁移；
-- `:rest` 支持元素类型短写（如 `:rest :number`），工具链按 `:: :list :number` 解释；
-- schema 中未设置的字段按 `:dynamic` 语义处理；
-- 可扩展 `:kind :macro/:proc`。
+- `:schema` 缺失时，工具链仍可能回退到旧的 body 提示提取；
+- 但**新内容不要再依赖这种回退**；
+- 顶层 wrapped `:: :fn` 已经表达 kind，payload 内不再重复写 `:kind :fn`；
+- `:name` 不属于 schema；
+- `:rest :number` 仍表示“剩余参数元素类型为 `:number`”；
+- 未填写的字段按动态语义处理。
 
-## 类型 DSL（纯数据表达）
-
-类型值沿用现有表达：`:number`、`:: :list 'T`、`:: :fn ([] 'A 'B) (:: 'A) 'B`。
-
-约定：`[]` 用于同构集合（如 generics 列表、args 列表）；`::` 用于固定结构且元素类型可不同的元组（如参数条目、约束条目、函数参数类型组）。
-
-### 语法校验要求（强制）
-
-- 所有 schema 示例必须通过 `cr` 解析校验；
-- 命令使用 `cr demos/compact.cirru cirru parse-edn "..."`；
-- PR 前至少校验改动过的 schema 示例。
-
-说明：切换到 Cirru EDN 后，schema map 统一使用 `{}` 的 pair 写法。
-
-主示例 parse 校验命令：
-
-```bash
-cr demos/compact.cirru cirru parse-edn "{} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))"
-```
-
-可选包裹示例（迁移期推荐）：
-
-```bash
-cr demos/compact.cirru cirru parse-edn "{} (:optional ({} (:kind :fn) (:args ([] :dynamic)) (:return :dynamic)))"
-```
-
-### 运行时数据验证（`cr eval` + `println`）
-
-```bash
-cr demos/compact.cirru eval "let ((schema ({} (:kind :fn) (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))) (println schema) (println (type-of schema)) , schema"
-```
-
-预期：`println (type-of schema)` 输出 `:map`，证明 schema 在运行时是普通数据。
+## 当前类型 DSL
 
 ### 基础类型
 
-- `:number` `:string` `:bool` `:dynamic` ...
-- 泛型变量：`'T`（推荐）
+- `:number`
+- `:string`
+- `:bool`
+- `:dynamic`
+- 泛型变量：`'T`
 
 ### 复合类型
 
-- 列表：`:: :list T`
-- 集合：`:: :set T`
-- 映射：`:: :map K V`
-- 元组/变体：`:: :tuple :tag T1 T2`
-- 函数：`:: :fn ([] generics...) (:: args...) return`
+- 列表：`:: :list 'T`
+- 集合：`:: :set 'T`
+- 映射：`:: :map 'K 'V`
+- 元组/变体：`:: :tuple :tag 'T`
+- 函数：`:: :fn $ {} ...`
 
-### 约束表示
+注意：函数类型现在也统一成 hashmap payload，不再推荐旧的 positional 形式。
 
-约束统一放在 `:where`，每条约束是一个 tuple：`:: Trait TypeVar`。
+正确示例：
 
-单变量多个约束：
+```cirru
+:: :fn $ {}
+  :generics $ [] 'A 'B 'C
+  :args $ [] 'A 'B
+  :return 'C
+```
+
+更常见的嵌套场景：
+
+```cirru
+:: :fn $ {}
+  :args $ []
+    :: :fn $ {}
+      :args $ [] 'A
+      :return 'B
+  :return 'B
+```
+
+## `:where` 约束
+
+约束统一放在 `:where`，每条约束是一条 tuple：
 
 ```cirru
 []
   :: 'Eq 'T
   :: 'Show 'T
+  :: 'Ord 'U
 ```
 
-多个变量各自约束：
+约定：
+
+- 同一变量多条约束表示“且”；
+- 顺序不影响语义；
+- 若当前没有约束，直接写 `:where $ []`。
+
+## parse 校验示例
+
+文档里保留的 schema 示例应至少能被 `cr` 解析。
+
+主示例：
+
+```bash
+cr demos/compact.cirru cirru parse-edn "(:: :fn ({} (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))"
+```
+
+运行时数据验证：
+
+```bash
+cr demos/compact.cirru eval "let ((schema (:: :fn ({} (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T))))))) (println schema) (println (type-of schema)) , schema"
+```
+
+## 顶层定义与局部定义的分工
+
+### 顶层定义
+
+优先写 `:schema`：
 
 ```cirru
-[]
-  :: 'Eq 'T
-  :: 'Ord 'T
-  :: 'Show 'U
+%{} :CodeEntry
+  :code $ quote
+    defn %err (message)
+      %:: Result :err message
+  :examples $ []
+  :schema $ :: :fn
+    {}
+      :args $ [] :dynamic
+      :return :tuple
 ```
 
-说明：
+### 局部函数
 
-- 同一个变量出现多条约束时表示“且”关系（必须同时满足）；
-- 约束顺序不影响语义，但建议按变量分组，便于 review；
-- 迁移期如暂不表达约束，可用 `:where $ []`；
-- 若未来引入复杂约束组合，建议保持 tuple 结构并新增显式 tag，而不是复用字符串。
+仍可使用 `hint-fn`，因为它们没有独立的 `CodeEntry`：
 
 ```cirru
-:: Eq 'T
-:: Show 'T
+fn (x)
+  hint-fn $ {} (:return :number)
+  inc x
 ```
 
-### 完整示例
+## 不再推荐保留的旧内容
 
-```cirru
-{}
-  :kind :fn
-  :generics $ [] 'A 'B 'C
-  :args $ []
-    :: :fn
-      [] 'A 'B 'C
-      :: 'A 'B
-      'C
-    :: :list 'A
-    :: :list 'B
-  :return $ :: :list 'C
-  :where $ [] (:: 'Eq 'A)
-```
+以下内容不要再出现在新文档里：
 
-## 一致性规则
+- 顶层函数继续依赖旧 body-hint 返回值声明
+- 旧的异步 hint 形式
+- quoted schema 包裹写法
+- 顶层 schema payload 继续写 `:kind :fn`
+- 旧的 positional `fn` 类型形式
+- 任何把 schema 当作“未来提案”而非“当前约定”的表述
 
-- schema 与 `hint-fn/assert-type` 同时存在时，schema 优先；
-- 对两者做一致性检查，不一致先 warning（后续可升 error）；
-- 只有 body 提示时保持现有行为；
-- 两者都没有时按动态类型策略。
+## 文档整理原则
 
-## 实施分期
+后续若继续整理 drafts：
 
-### Phase 1（MVP）
-
-1. 扩展 `CodeEntry` 可选 `:schema`；
-2. `snapshot` 兼容读写（无 schema 不报错）；
-3. 新增 `parse_schema_data`，校验字段结构合法性；
-4. query/type-coverage 优先读取 schema。
-
-### Phase 2
-
-1. `preprocess` 增加 schema/body 一致性检查；
-2. `docs check-md` 增加“缺 schema/冲突”提示；
-3. 优先补 core 高频函数 schema。
-
-### Phase 3
-
-1. 类型推断默认 schema 优先；
-2. `hint-fn/assert-type` 逐步转为补充约束；
-3. 评估新定义模板默认生成 schema。
-
-## 与当前片段的关系（`hint-fn/assert-type`）
-
-现有代码：
-
-```cirru
-defn %err (message)
-  hint-fn $ return-type :tuple
-  assert-type message :dynamic
-  %:: Result :err message
-```
-
-对应 schema（持久化时使用 quote 包裹）：
-
-```cirru
-quote $ {}
-  :kind :fn
-  :generics $ []
-  :args $ [] :dynamic
-  :return :tuple
-  :where $ []
-```
-
-## 验收标准（MVP）
-
-- `snapshot` 兼容旧数据；
-- 新增 schema 不影响运行与宏展开；
-- `query`/类型覆盖可读 schema 并回退；
-- RFC 示例可被 `cr ... cirru parse-edn` 成功解析；
-- `cargo test` 与 `yarn check-all` 通过。
+- 只保留当前代码还能直接对照的写法；
+- 已经完成迁移的讨论，优先删除而不是保留过时阶段描述；
+- 历史背景放在 `editing-history/`，不要继续堆在 drafts 里。
