@@ -86,8 +86,9 @@
                 (:dyn x y z) 4
                 _ :many
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-tuple.main $ :require

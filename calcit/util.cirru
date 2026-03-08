@@ -14,10 +14,9 @@
                 quasiquote $ do (println "|env: eval") ~@body
                 quasiquote $ do (println "|env: not eval. tests skipped")
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :macro)
+          :schema $ :: :fn
+            {} (:kind :macro) (:rest :dynamic) (:return :dynamic)
               :args $ [] :dynamic
-              :return :dynamic
         |inside-js: $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro inside-js: (& body)
@@ -26,34 +25,30 @@
                 quasiquote $ do (println "|env: js") ~@body
                 quasiquote $ do (println "|env: not js. tests skipped")
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :macro)
+          :schema $ :: :fn
+            {} (:kind :macro) (:rest :dynamic) (:return :dynamic)
               :args $ [] :dynamic
-              :return :dynamic
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ [] :dynamic
-              :return :dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ :: :unit
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns util.core $ :require

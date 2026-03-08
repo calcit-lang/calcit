@@ -19,8 +19,9 @@
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (:ns test-gynienic.lib)
         :examples $ []

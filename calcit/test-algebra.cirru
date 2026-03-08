@@ -60,18 +60,16 @@
           :code $ quote
             defn main! () (log-title "|Testing algebra") (; "\"Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-apply () $ let
@@ -84,10 +82,9 @@
                   b2 $ .apply b1 bf
                 assert= 12 $ :value b2
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-bind $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-bind () $ let
@@ -99,10 +96,9 @@
                       %{} AlgebraBox $ :value (+ x 20)
                 assert= 25 $ :value b2
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-map () $ let
@@ -113,10 +109,9 @@
                     fn (x) (+ x 10)
                 assert= 12 $ :value b2
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-mappend $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-mappend () $ let
@@ -128,10 +123,9 @@
                   b3 $ .mappend b1 b2
                 assert= 7 $ :value b3
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-algebra $ :require

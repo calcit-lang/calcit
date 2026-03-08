@@ -22,8 +22,9 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)

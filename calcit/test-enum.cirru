@@ -22,14 +22,16 @@
           :code $ quote
             defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-tag-match-validation) (println "|All tests passed!")
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :unit)
-            :args $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ println |Reloaded
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :unit)
-            :args $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ []
         |test-enum-creation $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-enum-creation () $ do (println "|Testing enum tuple creation...") (; Valid tuple creation)
@@ -57,8 +59,9 @@
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :unit)
-            :args $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ []
         |test-tag-match-validation $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag-match-validation () $ do (println "|Testing tag-match runtime validation...")
@@ -71,8 +74,9 @@
                 assert= :ok v
               println "|✓ Tag-match validation passed"
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :unit)
-            :args $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ []
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-enum.main)
         :examples $ []

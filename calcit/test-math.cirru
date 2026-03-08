@@ -10,8 +10,9 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing numbers") (test-numbers) (log-title "|Testing math") (test-math) (log-title "|Testing compare") (test-compare) (test-hex) (test-integer) (test-methods) (test-bit-math) (do true)

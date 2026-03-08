@@ -247,15 +247,49 @@ impl TryFrom<Edn> for CodeEntry {
   }
 }
 
-/// Normalize a schema Edn value: old Quote-wrapped format is converted to direct map Edn.
+/// Normalize a schema Edn value.
+/// Old Quote-wrapped formats and wrapped `(:: :fn ({} ...))` forms are converted to a direct map Edn.
 /// New direct map format is returned as-is.
 fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
-  // Old format stored as Edn::Quote — convert via Cirru → Edn map
-  if let Ok(cirru) = from_edn::<Cirru>(value.to_owned()) {
-    let normalized = schema_cirru_to_edn(cirru);
+  fn unwrap_legacy_schema_cirru(cirru: &Cirru) -> Cirru {
+    match cirru {
+      Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote") => {
+        unwrap_legacy_schema_cirru(&items[1])
+      }
+      Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "[]") => {
+        unwrap_legacy_schema_cirru(&items[1])
+      }
+      _ => cirru.to_owned(),
+    }
+  }
+
+  if matches!(value, Edn::Map(_)) {
+    validate_schema_edn_no_legacy_quotes(value)?;
+    return Ok(value.clone());
+  }
+
+  if let Edn::Tuple(view) = value
+    && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "fn")
+    && let Some(Edn::Map(map)) = view.extra.first()
+  {
+    let normalized = Edn::Map(map.to_owned());
     validate_schema_edn_no_legacy_quotes(&normalized)?;
     return Ok(normalized);
   }
+
+  // Old format stored as Edn::Quote — convert via Cirru → Edn map.
+  if let Edn::Quote(cirru) = value {
+    let normalized = schema_cirru_to_edn(unwrap_legacy_schema_cirru(cirru));
+    validate_schema_edn_no_legacy_quotes(&normalized)?;
+    return Ok(normalized);
+  }
+
+  if let Ok(cirru) = from_edn::<Cirru>(value.to_owned()) {
+    let normalized = schema_cirru_to_edn(unwrap_legacy_schema_cirru(&cirru));
+    validate_schema_edn_no_legacy_quotes(&normalized)?;
+    return Ok(normalized);
+  }
+
   validate_schema_edn_no_legacy_quotes(value)?;
   Ok(value.clone())
 }
@@ -387,7 +421,7 @@ fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnota
     return Ok(());
   };
 
-  let schema_edn = fn_annot.to_schema_edn();
+  let schema_edn = fn_annot.to_wrapped_schema_edn();
   let schema_text =
     cirru_edn::format(&schema_edn, true).map_err(|e| format!("{owner}: failed to format `:schema` for snapshot write: {e}"))?;
   let schema_nodes = cirru_parser::parse(&schema_text)
@@ -538,17 +572,43 @@ fn parse_generics_vars(node: &Cirru) -> HashSet<String> {
 }
 
 /// Strict validation for schemas submitted via `cr edit schema`.
-/// Ensures the schema is a `{}` map, has a recognised `:kind`, and contains
+/// Ensures the schema is a `{}` map or wrapped `(:: :fn ({} ...))` form, has a recognised `:kind`, and contains
 /// only permitted fields.  Loading (read-only) only requires the weaker
 /// `parse_schema_data` check.
 pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
-  let Cirru::List(items) = schema else {
-    let leaf = if let Cirru::Leaf(s) = schema {
-      s.to_string()
-    } else {
-      "(unexpected)".to_owned()
-    };
-    return Err(format!("Schema must be a `{{}}` map expression, got leaf: `{leaf}`"));
+  let mut wrapped_kind: Option<&str> = None;
+  let raw_items = match schema {
+    Cirru::List(items) => items,
+    _ => {
+      let leaf = if let Cirru::Leaf(s) = schema {
+        s.to_string()
+      } else {
+        "(unexpected)".to_owned()
+      };
+      return Err(format!(
+        "Schema must be a `{{}}` map expression or `(:: :fn ({{}} ...))`, got leaf: `{leaf}`"
+      ));
+    }
+  };
+
+  let items: &[Cirru] = if matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::") {
+    if raw_items.len() != 3 {
+      return Err("Wrapped schema `(:: :fn schema-map)` expects exactly 3 items".to_owned());
+    }
+    match (&raw_items[1], &raw_items[2]) {
+      (Cirru::Leaf(tag), Cirru::List(inner_items)) if tag.as_ref() == ":fn" => {
+        wrapped_kind = Some(":fn");
+        inner_items
+      }
+      (Cirru::Leaf(tag), _) => {
+        return Err(format!(
+          "Wrapped schema tag must be `:fn`, got: `{tag}`. Example: `(:: :fn ({{}} (:kind :fn) ...))`"
+        ));
+      }
+      _ => return Err("Wrapped schema second item must be `:fn` and third item must be a `{}` map".to_owned()),
+    }
+  } else {
+    raw_items
   };
 
   let Some(Cirru::Leaf(head)) = items.first() else {
@@ -557,8 +617,8 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
   if head.as_ref() != "{}" {
     return Err(format!(
-      "Schema top-level must start with `{{}}`, got: `{head}`. \
-       Example: `{{}} (:kind :fn) (:args ([] :string)) (:return :bool)`"
+      "Schema top-level must start with `{{}}` or be wrapped as `(:: :fn ({{}} ...))`, got: `{head}`. \
+       Example: `(:: :fn ({{}} (:kind :fn) (:args ([] :string)) (:return :bool)))`"
     ));
   }
 
@@ -572,7 +632,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   check_no_excess_quotes(schema)?;
 
   // Field-level validation
-  let mut has_kind = false;
+  let mut has_kind = wrapped_kind.is_some();
   for pair in items.iter().skip(1) {
     let Cirru::List(xs) = pair else {
       let text = cirru_parser::format(&[pair.clone()], true.into()).unwrap_or_else(|_| format!("{pair:?}"));
@@ -690,7 +750,7 @@ impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
     let schema_edn: Edn = match data.schema.as_ref() {
       CalcitTypeAnnotation::Dynamic => Edn::Nil,
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
+      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
       _ => Edn::Nil,
     };
     Edn::record_from_pairs(
@@ -709,7 +769,7 @@ impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
     let schema_edn: Edn = match data.schema.as_ref() {
       CalcitTypeAnnotation::Dynamic => Edn::Nil,
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
+      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
       _ => Edn::Nil,
     };
     Edn::record_from_pairs(
@@ -1106,6 +1166,8 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::calcit::CalcitFnTypeAnnotation;
+  use cirru_edn::EdnListView;
 
   use std::fs;
 
@@ -1480,6 +1542,44 @@ mod tests {
   }
 
   #[test]
+  fn test_normalize_schema_unwraps_quoted_singleton_list() {
+    let quoted = Edn::Quote(Cirru::List(vec![
+      Cirru::leaf("[]"),
+      Cirru::List(vec![
+        Cirru::leaf("{}"),
+        Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
+        Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
+        Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":dynamic")]),
+      ]),
+    ]));
+
+    let normalized = normalize_schema_edn(&quoted).expect("legacy quoted schema should normalize");
+    let Edn::Map(map) = normalized else {
+      panic!("normalized schema should be a map");
+    };
+    assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "fn"));
+    assert!(matches!(map.tag_get("args"), Some(Edn::List(xs)) if xs.0.is_empty()));
+  }
+
+  #[test]
+  fn test_normalize_schema_unwraps_wrapped_fn_tuple() {
+    let wrapped = Edn::tuple(
+      Edn::tag("fn"),
+      vec![Edn::Map(EdnMapView::from(HashMap::from([
+        (Edn::tag("kind"), Edn::tag("fn")),
+        (Edn::tag("args"), Edn::List(EdnListView(vec![]))),
+        (Edn::tag("return"), Edn::tag("dynamic")),
+      ])))],
+    );
+
+    let normalized = normalize_schema_edn(&wrapped).expect("wrapped schema should normalize");
+    let Edn::Map(map) = normalized else {
+      panic!("normalized schema should be a map");
+    };
+    assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "fn"));
+  }
+
+  #[test]
   fn test_macro_schema_full_file_round_trip() {
     use crate::calcit::SchemaKind;
     // Simulate saving + loading via the actual file format:
@@ -1530,6 +1630,85 @@ mod tests {
       }
       other => panic!("schema must be Fn after round-trip, got {other:?}; cirru_text: {cirru_text:?}"),
     }
+  }
+
+  #[test]
+  fn test_code_entry_serializes_schema_as_wrapped_fn() {
+    use crate::calcit::SchemaKind;
+
+    let entry = CodeEntry {
+      doc: "wrapped schema".to_owned(),
+      examples: vec![],
+      code: vec!["defn", "wrapped", "()", "nil"].into(),
+      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+        generics: std::sync::Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+      }))),
+    };
+
+    let entry_edn: Edn = Edn::from(&entry);
+    let schema = match entry_edn {
+      Edn::Record(record) => record
+        .pairs
+        .iter()
+        .find(|(k, _)| k.arc_str().as_ref() == "schema")
+        .map(|(_, v)| v.to_owned())
+        .expect("schema field should exist"),
+      _ => panic!("expected record edn"),
+    };
+
+    let Edn::Tuple(view) = schema else {
+      panic!("top-level schema should serialize as wrapped fn tuple");
+    };
+    assert!(matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "fn"));
+    let Some(Edn::Map(map)) = view.extra.first() else {
+      panic!("wrapped schema payload should be a map");
+    };
+    assert!(
+      map.tag_get("kind").is_none(),
+      "wrapped plain fn schema should omit redundant :kind :fn"
+    );
+  }
+
+  #[test]
+  fn test_code_entry_serializes_macro_rest_schema_without_losing_rest() {
+    use crate::calcit::SchemaKind;
+
+    let entry = CodeEntry {
+      doc: "wrapped macro schema".to_owned(),
+      examples: vec![],
+      code: vec!["defmacro", "wrapped", "(& body)", "nil"].into(),
+      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+        generics: std::sync::Arc::new(vec![]),
+        arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+        return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+        fn_kind: SchemaKind::Macro,
+        rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
+      }))),
+    };
+
+    let entry_edn: Edn = Edn::from(&entry);
+    let schema = match entry_edn {
+      Edn::Record(record) => record
+        .pairs
+        .iter()
+        .find(|(k, _)| k.arc_str().as_ref() == "schema")
+        .map(|(_, v)| v.to_owned())
+        .expect("schema field should exist"),
+      _ => panic!("expected record edn"),
+    };
+
+    let Edn::Tuple(view) = schema else {
+      panic!("top-level schema should serialize as wrapped fn tuple");
+    };
+    let Some(Edn::Map(map)) = view.extra.first() else {
+      panic!("wrapped schema payload should be a map");
+    };
+    assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "macro"));
+    assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
   }
 
   #[test]

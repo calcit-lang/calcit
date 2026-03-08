@@ -648,7 +648,9 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             if !matches!(method_type.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
               return CalcitErr::err_str(
                 CalcitErrKind::Type,
-                format!("&trait::new expects method type to be :fn or (:: :fn ...), but received: {type_form_value}"),
+                format!(
+                  "&trait::new expects method type to be :fn or a typed fn schema like (:: :fn ({{}} (:args ...) (:return ...))), but received: {type_form_value}"
+                ),
               );
             }
             if matches!(method_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && contains_dynamic(method_type.as_ref()) {

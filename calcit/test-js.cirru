@@ -15,8 +15,9 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)

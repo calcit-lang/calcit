@@ -10,10 +10,9 @@
           :code $ quote
             defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-diff $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing diff")
@@ -36,10 +35,9 @@
                 &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
                 #{} :a
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-get $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing get")
@@ -60,10 +58,9 @@
                   fn (acc pair)
                     let[] (k v) pair $ &+ acc v
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing keys")
@@ -74,10 +71,9 @@
                 keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
                 #{} :a :b
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-map-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing {,}")
@@ -88,10 +84,9 @@
               assert= ({,} :a 1 :b 2 :c 3)
                 {} (:a 1) (:b 2) (:c 3)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-maps $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-maps ()
@@ -158,10 +153,9 @@
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing map methods")
@@ -279,10 +273,9 @@
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-native-map-syntax $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-native-map-syntax () $ inside-eval:
@@ -291,10 +284,9 @@
                   {} $ :a 1
                 quote $ &{} :a 1
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-pairs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -331,10 +323,9 @@
                   fn (k v) (&> v 2)
                 {} (:c 3) (:d 4)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-select $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing select")
@@ -359,10 +350,9 @@
                   [] :c :d
                 {} (:a 1) (:b 2)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-shorthand $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing shorthand")
@@ -370,10 +360,9 @@
                   dict $ {} (:a 1)
                 assert= 1 dict.:a
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-map.main $ :require

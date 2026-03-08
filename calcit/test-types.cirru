@@ -39,8 +39,9 @@
           :code $ quote
             defn add-numbers (a b) (&+ a b)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number :number
         |chained-return-type $ %{} :CodeEntry (:doc "|Uses return-type hinting more than once")
           :code $ quote
             defn chained-return-type (base extra)
@@ -50,14 +51,16 @@
                 hint-fn $ {} (:return :number)
                 add-numbers first-sum 5
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number :number
         |describe-typed $ %{} :CodeEntry (:doc "|Combines typed label and number")
           :code $ quote
             defn describe-typed (label value) (str label "|: " value)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :string)
-            :args $ [] :string :number
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :string :number
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (println "|Testing types...")
@@ -96,8 +99,9 @@
           :code $ quote
             defn process-string (s) (str s |!!!)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :string)
-            :args $ [] :string
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :string
         |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () nil
@@ -106,14 +110,16 @@
           :code $ quote
             defn show-type-info (x) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number
         |slice-as-string $ %{} :CodeEntry (:doc "|Guarded dynamic .slice call")
           :code $ quote
             defn slice-as-string (text) (.slice text 1 4)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :string)
-            :args $ [] :string
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :string
         |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning") (:schema nil)
           :code $ quote
             defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
@@ -145,8 +151,9 @@
                 assert-type final-result :number
                 &+ final-result 5
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number :number
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples") (:schema nil)
           :code $ quote
             defn test-defstruct-defenum ()
@@ -183,10 +190,13 @@
           :code $ quote
             defn test-fn-type (f x) (f x)
           :examples $ []
-          :schema $ {} (:kind :fn)
-            :args $ [] (:: :fn ([] :number) 'T) :number
-            :generics $ [] 'T
-            :return 'T
+          :schema $ :: :fn
+            {} (:return 'T)
+              :args $ []
+                :: :fn $ {} (:return 'T)
+                  :args $ [] :number
+                , :number
+              :generics $ [] 'T
         |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects") (:schema nil)
           :code $ quote
             defn test-list-methods () (; Create a list and annotate its type)
@@ -261,8 +271,12 @@
           :code $ quote
             defn test-proc-type (p x y) (p x y)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] (:: :fn ([] :number :number) :number) :number :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ []
+                :: :fn $ {} (:return :number)
+                  :args $ [] :number :number
+                , :number :number
         |test-proc-type-warnings $ %{} :CodeEntry (:doc "|Test that should generate type warnings - disabled by default") (:schema nil)
           :code $ quote
             defn test-proc-type-warnings () (; This function intentionally contains type errors for testing) (; It is not called in normal tests to avoid blocking execution) (println "|Warning: This test contains intentional type errors")
@@ -311,8 +325,9 @@
             defn test-threading-types (text) (; "使用" -> "串联：text" "先经过" str "拼接，再经过" process-string) (; "最终结果应该保留" :string "类型（从" process-string "的" return-type "推断）")
               -> text (str |prefix:) (process-string)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :string)
-            :args $ [] :string
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :string
         |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns") (:schema nil)
           :code $ quote
             defn test-typed-method-access () (; "当对象有类型标注时，方法调用会检查该类型支持的方法")
@@ -345,8 +360,9 @@
           :code $ quote
             defn typed-only (a) (&+ 1 0)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns test-types.main)
         :examples $ []

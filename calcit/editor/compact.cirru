@@ -1,67 +1,67 @@
 
-{} (:package |app)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
     :modules $ []
   :entries $ {}
   :files $ {}
     |app.lib $ %{} :FileEntry
       :defs $ {}
-        |f2 $ %{} :CodeEntry (:doc |)
+        |f2 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn f2 () $ println "\"f2 in lib"
           :examples $ []
-        |f3 $ %{} :CodeEntry (:doc |)
+        |f3 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn f3 (x) (println "\"f3 in lib") (println "\"v:" x)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns app.lib)
         :examples $ []
     |app.macro $ %{} :FileEntry
       :defs $ {}
-        |add-by-1 $ %{} :CodeEntry (:doc |)
+        |add-by-1 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro add-by-1 (x)
               quasiquote $ &+ ~x 1
           :examples $ []
-        |add-by-2 $ %{} :CodeEntry (:doc |)
+        |add-by-2 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro add-by-2 (x)
               quasiquote $ &+ 2 (add-by-1 ~x)
           :examples $ []
-        |add-num $ %{} :CodeEntry (:doc |)
+        |add-num $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro add-num (a b)
               quasiquote $ &let ()
                 &+ (~ a) (~ b)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (ns app.macro)
         :examples $ []
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |add-more $ %{} :CodeEntry (:doc |)
+        |add-more $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro add-more (acc x times)
               if (&< times 1) acc $ recur
                 quasiquote $ &+ (~ x) (~ acc)
                 , x (&- times 1)
           :examples $ []
-        |call-3 $ %{} :CodeEntry (:doc |)
+        |call-3 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn call-3 (a b c) (println "\"a is:" a) (println "\"b is:" b) (println "\"c is:" c)
           :examples $ []
-        |call-macro $ %{} :CodeEntry (:doc |)
+        |call-macro $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro call-macro (x0 & xs)
               quasiquote $ &{} :a (~ x0) :b
                 [] $ ~@ xs
           :examples $ []
-        |call-many $ %{} :CodeEntry (:doc |)
+        |call-many $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn call-many (x0 & xs) (println "\"many...") (println "\"x0" x0) (println "\"xs" xs)
           :examples $ []
-        |demos $ %{} :CodeEntry (:doc |)
+        |demos $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn demos () (println "\"demo")
               println $ &+ 2 2
@@ -99,39 +99,39 @@
               ; println $ macroexpand (assert= 1 2)
               test-args
           :examples $ []
-        |f1 $ %{} :CodeEntry (:doc |)
+        |f1 $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn f1 () $ println "|Hello with leaf!"
           :examples $ []
-        |fib $ %{} :CodeEntry (:doc |)
+        |fib $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn fib (n)
               if (< n 2) 1 $ +
                 fib $ - n 1
                 fib $ - n 2
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (demos) (; fib 10) (try-method) (; show-data)
           :examples $ []
-        |rec-sum $ %{} :CodeEntry (:doc |)
+        |rec-sum $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn rec-sum (acc xs)
               if (empty? xs) acc $ recur
                 &+ acc $ nth xs 0
                 rest xs
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn reload! () (println "\"reloaded 2") (; fib 40) (try-method)
           :examples $ []
-        |show-data $ %{} :CodeEntry (:doc |)
+        |show-data $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn show-data () (load-console-formatter!)
               js/console.log $ defrecord! :Demo (:a 1)
                 :b $ {} (:a 1)
           :examples $ []
-        |test-args $ %{} :CodeEntry (:doc |)
+        |test-args $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-args ()
               call-3 & $ [] 1 2 3
@@ -140,12 +140,12 @@
               call-many 1 2 3
               println $ macroexpand (call-macro 11 12 13)
           :examples $ []
-        |try-method $ %{} :CodeEntry (:doc |)
+        |try-method $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn try-method () $ println
               .count $ range 11
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns app.main $ :require (app.lib :as lib)
             app.lib :refer $ [] f3

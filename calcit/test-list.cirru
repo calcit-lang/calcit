@@ -13,37 +13,33 @@
           :code $ quote
             defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-alias $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-apply ()
               assert= 10 $ apply + ([] 1 2 3 4)
               assert= 10 $ + & ([] 1 2 3 4)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
             assert= ([] 1 2 3 4) ([,] 1 2 3 4)
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-doseq $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing doseq")
@@ -67,10 +63,9 @@
               assert= 10 $ deref *counted
               assert= 10 @*counted
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-every $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-every ()
@@ -87,10 +82,9 @@
               assert-detect some? 1
               assert-detect not $ some? nil
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-foldl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-foldl ()
@@ -113,10 +107,9 @@
                 reduce ([] 3 4 5) 2 +
                 , 14
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-groups $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-groups ()
@@ -140,10 +133,9 @@
                 section-by ([]) 2
                 []
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-join $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -155,10 +147,9 @@
               assert= ([])
                 join ([]) 10
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-let[] $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing let[]")
@@ -168,10 +159,9 @@
               let[] (a b c & d) ([] 1 2 3 4 5) (assert= 1 a) (assert= 2 b) (assert= 3 c)
                 assert= ([] 4 5) d
           :examples $ []
-          :schema $ quote
-            [] $ {} (:kind :fn)
+          :schema $ :: :fn
+            {} (:return :dynamic)
               :args $ []
-              :return :dynamic
         |test-list $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-list () $ let

@@ -15,8 +15,9 @@
                 quasiquote $ do (println "\"c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
-          :schema $ {} (:kind :macro) (:return :dynamic)
-            :args $ [] :dynamic :dynamic
+          :schema $ :: :fn
+            {} (:kind :macro) (:return :dynamic)
+              :args $ [] :dynamic :dynamic
         |add-11-safe $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-11-safe (a b)
@@ -25,14 +26,16 @@
                   &let (~c 11)
                     [] (~ a) (~ b) ~c
           :examples $ []
-          :schema $ {} (:kind :macro) (:return :dynamic)
-            :args $ [] :dynamic :dynamic
+          :schema $ :: :fn
+            {} (:kind :macro) (:return :dynamic)
+              :args $ [] :dynamic :dynamic
         |add-2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote (:ns test-hygienic.lib)
         :examples $ []
@@ -42,8 +45,9 @@
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :unit)
-            :args $ []
+          :schema $ :: :fn
+            {} (:return :bool)
+              :args $ []
         |try-hygienic $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-hygienic () (println "|Testing hygienic")
@@ -53,8 +57,9 @@
                 assert= (add-11-safe 1 2) ([] 1 2 11)
                 , true
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :unit)
-            :args $ []
+          :schema $ :: :fn
+            {} (:return :bool)
+              :args $ []
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-hygienic.main $ :require

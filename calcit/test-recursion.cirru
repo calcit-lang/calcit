@@ -32,14 +32,16 @@
                             &* 2 $ hole-series (&+ unit 1)
                             hole-series unit
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :number)
-            :args $ [] :number
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :number
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ {} (:kind :fn) (:return :dynamic)
-            :args $ [] :dynamic
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
