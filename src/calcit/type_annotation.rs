@@ -25,7 +25,7 @@ type LookupFn = fn(&str, &str) -> Option<Calcit>;
 static LOOKUP_EVALED_DEF: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
 thread_local! {
-  static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = RefCell::new(vec![]);
+  static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
 }
 
 /// Register program-level lookup functions.  Must be called once at startup
@@ -49,11 +49,24 @@ fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
 }
 
-fn emit_legacy_fn_type_syntax_warning(schema_hint: &str) {
-  if let Some(label) = current_type_annotation_warning_context() {
-    eprintln!("[Warn] legacy fn type syntax is no longer supported at {label}, use `{schema_hint}` schema map form instead");
+fn truncate_type_form_preview(raw: &str) -> String {
+  const LIMIT: usize = 160;
+  if raw.chars().count() > LIMIT {
+    let truncated = raw.chars().take(LIMIT).collect::<String>();
+    format!("{truncated}…")
   } else {
-    eprintln!("[Warn] legacy fn type syntax is no longer supported, use `{schema_hint}` schema map form instead");
+    raw.to_owned()
+  }
+}
+
+fn emit_legacy_fn_type_syntax_warning(schema_hint: &str, form: &Calcit) {
+  let preview = truncate_type_form_preview(&form.turn_string());
+  if let Some(label) = current_type_annotation_warning_context() {
+    eprintln!(
+      "[Warn] legacy fn type syntax is no longer supported at {label} for `{preview}`, use `{schema_hint}` schema map form instead"
+    );
+  } else {
+    eprintln!("[Warn] legacy fn type syntax is no longer supported for `{preview}`, use `{schema_hint}` schema map form instead");
   }
 }
 
@@ -398,6 +411,46 @@ impl CalcitTypeAnnotation {
       .collect()
   }
 
+  fn collect_malformed_fn_schema_values(form: &Calcit) -> Vec<&Calcit> {
+    match form {
+      Calcit::Map(xs) => xs
+        .iter()
+        .filter_map(|(key, value)| if matches!(key, Calcit::Nil) { Some(value) } else { None })
+        .collect(),
+      Calcit::List(xs) if matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) => xs
+        .iter()
+        .skip(1)
+        .filter_map(|entry| {
+          let Calcit::List(pair) = entry else {
+            return None;
+          };
+          match (pair.get(0), pair.get(1)) {
+            (Some(Calcit::Nil), Some(value)) => Some(value),
+            _ => None,
+          }
+        })
+        .collect(),
+      _ => vec![],
+    }
+  }
+
+  fn infer_malformed_fn_schema(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Option<Arc<CalcitTypeAnnotation>> {
+    let anonymous_values = Self::collect_malformed_fn_schema_values(form);
+
+    if anonymous_values.is_empty() {
+      return match form {
+        Calcit::Map(xs) if xs.is_empty() => Some(Arc::new(CalcitTypeAnnotation::DynFn)),
+        Calcit::List(xs) if matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) && xs.len() == 1 => {
+          Some(Arc::new(CalcitTypeAnnotation::DynFn))
+        }
+        _ => None,
+      };
+    }
+
+    let _ = (generics, strict_named_refs);
+    Some(Arc::new(CalcitTypeAnnotation::DynFn))
+  }
+
   fn parse_fn_annotation_from_schema_form(
     form: &Calcit,
     generics: &[Arc<str>],
@@ -407,7 +460,7 @@ impl CalcitTypeAnnotation {
       .iter()
       .any(|key| Self::extract_schema_value(form, &[*key]).is_some());
     if !has_schema_fields {
-      return None;
+      return Self::infer_malformed_fn_schema(form, generics, strict_named_refs);
     }
 
     let local_generics = Self::extract_schema_value(form, &["generics"])
@@ -963,7 +1016,7 @@ impl CalcitTypeAnnotation {
           if tuple.extra.is_empty() {
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
-          emit_legacy_fn_type_syntax_warning(":: :fn {}");
+          emit_legacy_fn_type_syntax_warning(":: :fn $ {} ...", form);
           return Arc::new(CalcitTypeAnnotation::DynFn);
         }
       }
@@ -1039,7 +1092,7 @@ impl CalcitTypeAnnotation {
           if xs.len() == 1 {
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
-          emit_legacy_fn_type_syntax_warning("(:fn {} ...)");
+          emit_legacy_fn_type_syntax_warning("(:fn {} ...)", form);
           return Arc::new(CalcitTypeAnnotation::DynFn);
         }
       }
@@ -1117,7 +1170,7 @@ impl CalcitTypeAnnotation {
             if xs.len() == 2 {
               return Arc::new(CalcitTypeAnnotation::DynFn);
             }
-            emit_legacy_fn_type_syntax_warning(":: :fn {}");
+            emit_legacy_fn_type_syntax_warning(":: :fn $ {} ...", form);
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
         }
@@ -2300,6 +2353,54 @@ mod tests {
       ]
       .as_slice(),
     )));
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&form);
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::DynFn));
+  }
+
+  #[test]
+  fn malformed_nested_fn_schema_falls_back_to_dynfn_on_return_only_payload() {
+    let payload = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::Nil, Calcit::Tag(EdnTag::from("bool"))]))),
+    ])));
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::Tag(EdnTag::from("fn")),
+      payload,
+    ])));
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&form);
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::DynFn));
+  }
+
+  #[test]
+  fn malformed_nested_fn_schema_falls_back_to_dynfn_on_args_only_payload() {
+    let payload = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Nil,
+        Calcit::List(Arc::new(CalcitList::from(&[symbol("[]"), Calcit::Tag(EdnTag::from("number"))]))),
+      ]))),
+    ])));
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::Tag(EdnTag::from("fn")),
+      payload,
+    ])));
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&form);
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::DynFn));
+  }
+
+  #[test]
+  fn malformed_empty_nested_fn_schema_becomes_dynfn() {
+    let payload = Calcit::List(Arc::new(CalcitList::from(vec![symbol("{}")].as_slice())));
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::Tag(EdnTag::from("fn")),
+      payload,
+    ])));
 
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&form);
     assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::DynFn));

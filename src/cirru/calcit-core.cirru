@@ -343,7 +343,7 @@
                 :: :fn $ {} (:return :dynamic)
                   :args $ []
               :generics $ [] 'A 'B 'C
-              (:return :fn)
+              :return :fn
         |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
           :code $ quote
             defn &fn:bind (m f)
@@ -358,7 +358,7 @@
                 :: :fn $ {} (:return :dynamic)
                   :args $ []
               :generics $ [] 'A 'B 'C
-              (:return :fn)
+              :return :fn
         |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote
             defn &fn:map (f g)
@@ -373,7 +373,7 @@
                 :: :fn $ {} (:return :dynamic)
                   :args $ []
               :generics $ [] 'A 'B 'C
-              (:return :fn)
+              :return :fn
         |&fn:mappend $ %{} :CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote
             defn &fn:mappend (f g)
@@ -2528,7 +2528,7 @@
             quote $ defstruct Person (:name :string) (:age :number)
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
+        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn $ {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
             defmacro deftrait (name & methods)
               assert "|deftrait expects (method type) pairs" $ every? methods list?

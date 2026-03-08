@@ -28,7 +28,7 @@ use crate::util::string::strip_shebang;
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   // load core libs
   let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
-  let mut snapshot: snapshot::Snapshot = rmp_serde::from_slice(bytes).map_err(|e| {
+  let mut snapshot = snapshot::decode_binary_snapshot(bytes).map_err(|e| {
     eprintln!("\n{e}");
     "Failed to deserialize core snapshot".to_string()
   })?;

@@ -6,7 +6,7 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind};
+use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "file is generated - never edit directly; learn cr edit/tree workflows before changing";
 
@@ -97,6 +97,73 @@ pub struct SnapshotConfigs {
 pub struct FileInSnapShot {
   pub ns: CodeEntry,
   pub defs: HashMap<String, CodeEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RawCodeEntry {
+  pub doc: String,
+  #[serde(default)]
+  pub examples: Vec<Cirru>,
+  pub code: Cirru,
+  #[serde(default)]
+  pub schema: Option<Edn>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RawFileInSnapShot {
+  pub ns: RawCodeEntry,
+  pub defs: HashMap<String, RawCodeEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RawSnapshot {
+  pub package: String,
+  pub about: Option<String>,
+  pub configs: SnapshotConfigs,
+  pub entries: HashMap<String, SnapshotConfigs>,
+  pub files: HashMap<String, RawFileInSnapShot>,
+}
+
+impl RawCodeEntry {
+  fn into_code_entry(self, owner: &str) -> Result<CodeEntry, String> {
+    let schema = match self.schema {
+      None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
+      Some(value) => with_type_annotation_warning_context(owner.to_owned(), || parse_loaded_schema_annotation(&value, owner))?,
+    };
+
+    Ok(CodeEntry {
+      doc: self.doc,
+      examples: self.examples,
+      code: self.code,
+      schema,
+    })
+  }
+}
+
+pub fn decode_binary_snapshot(bytes: &[u8]) -> Result<Snapshot, String> {
+  let raw: RawSnapshot = rmp_serde::from_slice(bytes).map_err(|e| e.to_string())?;
+  let mut files: HashMap<String, FileInSnapShot> = HashMap::with_capacity(raw.files.len());
+
+  for (file_name, raw_file) in raw.files {
+    let ns_owner = format!("{file_name}/:ns");
+    let ns = raw_file.ns.into_code_entry(&ns_owner)?;
+    let mut defs: HashMap<String, CodeEntry> = HashMap::with_capacity(raw_file.defs.len());
+
+    for (def_name, raw_entry) in raw_file.defs {
+      let owner = format!("{file_name}/{def_name}");
+      defs.insert(def_name, raw_entry.into_code_entry(&owner)?);
+    }
+
+    files.insert(file_name, FileInSnapShot { ns, defs });
+  }
+
+  Ok(Snapshot {
+    package: raw.package,
+    about: raw.about,
+    configs: raw.configs,
+    entries: raw.entries,
+    files,
+  })
 }
 
 impl From<&FileInSnapShot> for Edn {
@@ -890,12 +957,37 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
 }
 
 fn parse_code_entry_with_context(data: Edn, owner: &str) -> Result<CodeEntry, String> {
-  data.try_into().map_err(|e| format!("{owner}: {e}"))
+  with_type_annotation_warning_context(owner.to_owned(), || data.try_into()).map_err(|e| format!("{owner}: {e}"))
 }
 
 fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<FileInSnapShot, String> {
   match data {
-    Edn::Map(_) => data.try_into().map_err(|e| format!("{file_name}: {e}")),
+    Edn::Map(map) => {
+      let ns_value = map
+        .get(&Edn::tag("ns"))
+        .ok_or_else(|| format!("{file_name}: missing `:ns` field in FileEntry"))?;
+      let defs_value = map
+        .get(&Edn::tag("defs"))
+        .ok_or_else(|| format!("{file_name}: missing `:defs` field in FileEntry"))?;
+
+      let ns = parse_code_entry_with_context(ns_value.to_owned(), &format!("{file_name}/:ns"))?;
+      let defs_map = defs_value.view_map().map_err(|e| {
+        format!(
+          "{file_name}: failed to parse `:defs` as map: {e}; got {}",
+          format_edn_preview(defs_value)
+        )
+      })?;
+
+      let mut defs = HashMap::with_capacity(defs_map.0.len());
+      for (def_key, def_value) in defs_map.0.iter() {
+        let def_name: String = from_edn(def_key.to_owned())
+          .map_err(|e| format!("{file_name}: failed to parse def name: {e}; got {}", format_edn_preview(def_key)))?;
+        let owner = format!("{file_name}/{def_name}");
+        defs.insert(def_name, parse_code_entry_with_context(def_value.to_owned(), &owner)?);
+      }
+
+      Ok(FileInSnapShot { ns, defs })
+    }
     Edn::Record(record) => {
       let mut ns = None;
       let mut defs = HashMap::new();
