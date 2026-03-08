@@ -382,6 +382,77 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
   }
 }
 
+fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnotation>) -> Result<(), String> {
+  let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref() else {
+    return Ok(());
+  };
+
+  let schema_edn = fn_annot.to_schema_edn();
+  let schema_text =
+    cirru_edn::format(&schema_edn, true).map_err(|e| format!("{owner}: failed to format `:schema` for snapshot write: {e}"))?;
+  let schema_nodes = cirru_parser::parse(&schema_text)
+    .map_err(|e| format!("{owner}: failed to parse serialized `:schema` during snapshot write validation: {e}"))?;
+
+  if schema_nodes.len() != 1 {
+    return Err(format!(
+      "{owner}: serialized `:schema` should produce exactly 1 Cirru expression, got {}",
+      schema_nodes.len()
+    ));
+  }
+
+  validate_schema_for_write(&schema_nodes[0])
+    .map_err(|e| format!("{owner}: serialized `:schema` becomes invalid during snapshot write: {e}; schema={schema_text}"))
+}
+
+fn validate_snapshot_schemas_for_write(snapshot: &Snapshot) -> Result<(), String> {
+  for (ns_name, file_data) in &snapshot.files {
+    if ns_name.ends_with(".$meta") {
+      continue;
+    }
+
+    validate_schema_for_snapshot_write(&format!("{ns_name}/:ns"), &file_data.ns.schema)?;
+
+    for (def_name, code_entry) in &file_data.defs {
+      validate_schema_for_snapshot_write(&format!("{ns_name}/{def_name}"), &code_entry.schema)?;
+    }
+  }
+
+  Ok(())
+}
+
+fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
+  fn walk(node: &Cirru, path: &mut Vec<usize>) -> Result<(), String> {
+    if let Cirru::List(items) = node {
+      if let Some(Cirru::Leaf(head)) = items.first()
+        && &**head == ":schema"
+        && let Some(schema_node) = items.get(1)
+      {
+        if matches!(schema_node, Cirru::Leaf(s) if s.as_ref() == "nil") {
+          return Ok(());
+        }
+        return validate_schema_for_write(schema_node)
+          .map_err(|e| format!("serialized snapshot has invalid `:schema` at {path:?}: {e}"));
+      }
+
+      for (idx, item) in items.iter().enumerate() {
+        path.push(idx);
+        walk(item, path)?;
+        path.pop();
+      }
+    }
+    Ok(())
+  }
+
+  let nodes = cirru_parser::parse(content).map_err(|e| format!("Failed to parse serialized snapshot content: {e}"))?;
+  let mut path = vec![];
+  for (idx, node) in nodes.iter().enumerate() {
+    path.push(idx);
+    walk(node, &mut path)?;
+    path.pop();
+  }
+  Ok(())
+}
+
 /// Valid top-level field names accepted in a schema map.
 pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics"];
 
@@ -964,6 +1035,8 @@ impl TryFrom<ChangesDict> for Edn {
 /// Save snapshot to compact.cirru file
 /// This is a shared utility function used by CLI edit commands
 pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &Snapshot) -> Result<(), String> {
+  validate_snapshot_schemas_for_write(snapshot)?;
+
   // Build root level Edn mapping
   let mut edn_map = EdnMapView::default();
 
@@ -1021,6 +1094,8 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
 
   // Format Edn as Cirru string
   let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
+
+  validate_serialized_snapshot_content(&content)?;
 
   // Write to file
   std::fs::write(compact_cirru_path, content).map_err(|e| format!("Failed to write compact.cirru: {e}"))?;
@@ -1472,5 +1547,28 @@ mod tests {
     );
     let fn_schema3 = fn_schema3.unwrap();
     assert_eq!(fn_schema3.fn_kind, SchemaKind::Macro, "normalized: fn_kind must be Macro");
+  }
+
+  #[test]
+  fn test_validate_serialized_snapshot_content_rejects_double_quoted_generics() {
+    let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
+  :files $ {}
+    |mini $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn main! (x) x)
+          :examples $ []
+          :schema $ {} (:kind :fn) (:args $ [] :dynamic) (:generics $ [] ''T) (:return :dynamic)
+"#;
+
+    let err = validate_serialized_snapshot_content(content).expect_err("serialized snapshot should reject double-quoted generics");
+    assert!(
+      err.contains("serialized snapshot has invalid `:schema`") && err.contains("excess leading quotes"),
+      "unexpected error: {err}"
+    );
   }
 }
