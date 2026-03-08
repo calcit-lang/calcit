@@ -46,7 +46,10 @@
                   do x
                 n $ id2 1
                 s $ id2 |hi
-              assert-type id $ :: :fn $ {} (:return 'T) (:generics $ [] 'T) (:args $ [] 'T)
+              assert-type id $ :: :fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] 'T
               assert-type n :number
               assert-type s :string
               &inspect-type id

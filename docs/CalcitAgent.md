@@ -37,7 +37,6 @@ cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶
 
 以下文件**严格禁止使用文本替换或直接编辑**：
 
-- **`calcit.cirru`** - 这是 calcit-editor 结构化编辑器的专用格式，包含完整的编辑器元数据
 - **`compact.cirru`** - 这是 Calcit 程序的紧凑快照格式，必须使用 `cr edit` 相关命令进行修改
 
 这两个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用下面文档中的 CLI 命令进行代码查询和修改。
@@ -50,7 +49,7 @@ cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶
 
 **具体体现：**
 
-- `compact.cirru` 和 `calcit.cirru` 是用 Cirru 格式存储的 Calcit 程序
+- `compact.cirru` 使用 Cirru 语法存储, 尽量用 `cr edit` 和 `cr tree` 命令修改
 - `cr cirru` 工具用于 Cirru 语法与 JSON 的转换（帮助理解和生成代码）
 - Cirru 语法特点：
   - 用缩进代替括号（类似 Python/YAML）
@@ -498,7 +497,9 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 **定义操作：**
 
-- `cr edit format` - 不修改语义，按当前快照序列化逻辑重写目标 snapshot 文件（用于刷新格式）
+- `cr edit format` - 不修改语义，按当前快照序列化逻辑重写 **snapshot 文件**（用于刷新格式）
+  - 适用：普通 `compact.cirru` / 项目 snapshot 文件
+  - 不适用：calcit-editor 专用的 `calcit.cirru` 结构文件
 - `cr edit def <namespace/definition>` - 添加新定义（默认若已存在会报错；加 `--overwrite` 可强制覆盖）
 - `cr edit rename <namespace/definition> <new-name>` - 在当前命名空间内重命名定义（不可覆盖）
 - `cr edit mv-def <source> <target>` - 将定义移动到另一个命名空间（跨命名空间移动）
@@ -508,7 +509,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
 - `cr edit schema <namespace/definition>` - 更新定义 schema（写入前会校验 schema 结构）
-  - 常用输入：`-e '{} (:kind :fn) (:return :number) (:args ([] :number :number))'`
+  - 常用输入：`-e '{} (:kind :fn) (:args $ [] :number :number) (:return :number)'`
   - 也支持 `-f <file>` / `-j '<json>'` / `-J` / `--leaf`
   - `--clear`：清空 schema，恢复为 `nil`
   - 写入后会保存为直接 map 形式；后续运行与 preprocess 会用它做 `defn` / `defmacro` 一致性校验
