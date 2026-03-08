@@ -54,6 +54,35 @@ fn format_edn_preview(value: &Edn) -> String {
   }
 }
 
+fn truncate_preview(raw: &str, limit: usize) -> String {
+  if raw.chars().count() > limit {
+    let truncated = raw.chars().take(limit).collect::<String>();
+    format!("{truncated}…")
+  } else {
+    raw.to_owned()
+  }
+}
+
+fn truncate_edn_error_nodes(message: &str) -> String {
+  const NODE_LIMIT: usize = 200;
+
+  message
+    .lines()
+    .map(|line| {
+      if let Some((prefix, preview)) = line.split_once("Node: ") {
+        format!("{prefix}Node: {}", truncate_preview(preview, NODE_LIMIT))
+      } else {
+        line.to_owned()
+      }
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+fn format_edn_error<E: std::fmt::Display>(error: E) -> String {
+  truncate_edn_error_nodes(&error.to_string())
+}
+
 fn schema_path_label(path: &[String]) -> String {
   if path.is_empty() { "<root>".to_owned() } else { path.join("") }
 }
@@ -72,9 +101,14 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
   // Old format: Edn::Quote wrapping Cirru — convert to direct map Edn
   if let Ok(cirru) = from_edn::<Cirru>(value.clone()) {
     let text = cirru_parser::format(&[cirru], true.into())
-      .map_err(|e| format!("{owner}: failed to format quoted schema before validation: {e}"))?;
-    let parsed =
-      cirru_edn::parse(&text).map_err(|e| format!("{owner}: failed to parse quoted schema after formatting: {e}; schema={text}"))?;
+      .map_err(|e| format!("{owner}: failed to format quoted schema before validation: {}", format_edn_error(e)))?;
+    let parsed = cirru_edn::parse(&text).map_err(|e| {
+      format!(
+        "{owner}: failed to parse quoted schema after formatting: {}; schema={}",
+        format_edn_error(e),
+        truncate_preview(&text, 200)
+      )
+    })?;
     validate_schema_edn_no_legacy_quotes(&parsed, owner)?;
     return Ok(parsed);
   }
@@ -227,8 +261,8 @@ fn main() {
 
   let core_content =
     fs::read_to_string("src/cirru/calcit-core.cirru").unwrap_or_else(|e| panic!("failed to read src/cirru/calcit-core.cirru: {e}"));
-  let core_data =
-    cirru_edn::parse(&core_content).unwrap_or_else(|e| panic!("failed to parse src/cirru/calcit-core.cirru as Cirru EDN: {e}"));
+  let core_data = cirru_edn::parse(&core_content)
+    .unwrap_or_else(|e| panic!("failed to parse src/cirru/calcit-core.cirru as Cirru EDN: {}", format_edn_error(e)));
 
   // Minimal logic to convert Edn to Snapshot as in src/snapshot.rs
   let data = core_data

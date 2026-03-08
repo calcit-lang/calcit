@@ -133,9 +133,10 @@
           :code $ quote
             fn () (log-title "|Testing arguments")
               let
-                  f1 $ fn (a ? b c) (assert-type a :tag)
-                    assert-type b $ :: :optional :tag
-                    assert-type c $ :: :optional :tag
+                  f1 $ fn (a ? b c)
+                    hint-fn $ {}
+                      :args $ [] :tag (:: :optional :tag) (:: :optional :tag)
+                      :return $ :: :list (:: :optional :tag)
                     [] a b c
                 assert= (f1 :a) ([] :a nil nil)
                 assert= (f1 :a :b) ([] :a :b nil)

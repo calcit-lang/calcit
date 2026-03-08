@@ -189,7 +189,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
             }
           };
-          let field_type = CalcitTypeAnnotation::parse_type_annotation_form(type_expr);
+          let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_expr, generics.as_slice());
           fields.push((field_name, field_type));
         }
         (Some(_), None, _) => {

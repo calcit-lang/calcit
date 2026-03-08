@@ -11,9 +11,10 @@
         |f2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f2 (a ? b)
-              assert-type a :number
-              assert-type b $ :: :optional :number
-              (:: :unit)
+              hint-fn $ {}
+                :args $ [] :number (:: :optional :number)
+                :return :tuple
+              :: :unit
         |f3 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f3 (a & b) (:: :unit)

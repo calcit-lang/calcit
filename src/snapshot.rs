@@ -1421,6 +1421,36 @@ mod tests {
   }
 
   #[test]
+  fn test_schema_named_type_refs_round_trip_without_becoming_type_vars() {
+    let schema_text = "{} (:kind :fn) (:generics ([] 'T 'E)) (:args ([] 'T)) (:return (:: 'Result 'T 'E))";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+
+    let schema_edn = schema_cirru_to_edn(schema_cirru);
+    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).expect("must parse named ref schema");
+
+    assert!(
+      matches!(fn_schema.arg_types.first().map(|t| t.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T")
+    );
+    assert!(
+      matches!(fn_schema.return_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Result" && args.len() == 2)
+    );
+
+    let saved_text = cirru_parser::format(
+      &[schema_edn_to_cirru(&fn_schema.to_schema_edn()).expect("schema edn to cirru")],
+      true.into(),
+    )
+    .expect("format schema");
+    assert!(
+      saved_text.contains(":return $ :: 'Result 'T 'E"),
+      "saved schema should keep named type reference syntax: {saved_text}"
+    );
+  }
+
+  #[test]
   fn test_normalize_schema_rejects_legacy_quoted_generic_symbol() {
     let schema = Edn::Map(EdnMapView::from(HashMap::from([
       (Edn::tag("kind"), Edn::tag("fn")),
@@ -1433,7 +1463,7 @@ mod tests {
     ])));
 
     let err = normalize_schema_edn(&schema).expect_err("legacy quoted generic symbol should fail on load");
-    assert!(err.contains("Legacy schema generic symbol"), "unexpected error: {err}");
+    assert!(err.contains("invalid schema generic symbol"), "unexpected error: {err}");
   }
 
   #[test]

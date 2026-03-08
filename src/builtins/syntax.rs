@@ -36,7 +36,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
       let mut arg_types = body_items
         .iter()
         .find_map(|f| CalcitTypeAnnotation::extract_arg_types_from_hint_form(f, &param_symbols))
-        .unwrap_or_else(|| CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &param_symbols));
+        .unwrap_or_else(|| CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &param_symbols, generics.as_ref()));
       // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
       // extract types from Local nodes in the preprocessed args list
       if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {

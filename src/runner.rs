@@ -14,6 +14,45 @@ use crate::data::cirru;
 use crate::program;
 use crate::util::string::has_ns_part;
 
+fn format_fn_arg_labels(args: &CalcitFnArgs) -> String {
+  match args {
+    CalcitFnArgs::Args(xs) => xs
+      .iter()
+      .map(|idx| CalcitLocal::read_name(*idx).to_string())
+      .collect::<Vec<_>>()
+      .join(" "),
+    CalcitFnArgs::MarkedArgs(xs) => xs.iter().map(ToString::to_string).collect::<Vec<_>>().join(" "),
+  }
+}
+
+fn format_runtime_values(values: &[Calcit]) -> String {
+  if values.is_empty() {
+    "[]".to_owned()
+  } else {
+    format!("{}", CalcitList::from(values))
+  }
+}
+
+fn build_fn_arity_mismatch_error(info: &CalcitFn, values: &[Calcit], call_stack: &CallStackList, phase: &str) -> CalcitErr {
+  let expected = info.args.param_len();
+  let actual = values.len();
+  let def_ref = info
+    .def_ref
+    .as_ref()
+    .map(|r| format!("{}/{}", r.def_ns, r.def_name))
+    .unwrap_or_else(|| format!("{}/{}", info.def_ns, info.name));
+  let msg = format!(
+    "function arity mismatch during {phase}: `{}` expected {expected} argument(s), got {actual}\n  params: ({})\n  values: {}\n  fn-namespace: {}\n  fn-name: {}\n  def-ref: {}",
+    info.name,
+    format_fn_arg_labels(info.args.as_ref()),
+    format_runtime_values(values),
+    info.def_ns,
+    info.name,
+    def_ref,
+  );
+  CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, msg, call_stack)
+}
+
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
   use Calcit::*;
@@ -449,7 +488,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
   match &*info.args {
     CalcitFnArgs::Args(args) => {
       if args.len() != values.len() {
-        unreachable!("args length mismatch")
+        return Err(build_fn_arity_mismatch_error(info, values, call_stack, "call"));
       }
       for (idx, v) in args.iter().enumerate() {
         body_scope.insert_mut(*v, values[idx].to_owned());
@@ -466,7 +505,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
-            unreachable!("args length mismatch in recur")
+            return Err(build_fn_arity_mismatch_error(info, &current_values, call_stack, "recur"));
           }
           for (idx, v) in args.iter().enumerate() {
             body_scope.insert_mut(*v, current_values[idx].to_owned());
@@ -490,7 +529,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
   match &*info.args {
     CalcitFnArgs::Args(args) => {
       if args.len() != values.len() {
-        unreachable!("args length mismatch")
+        return Err(build_fn_arity_mismatch_error(info, &values, call_stack, "call"));
       }
       for (idx, v) in values.into_iter().enumerate() {
         body_scope.insert_mut(args[idx], v);
@@ -507,7 +546,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
-            unreachable!("args length mismatch in recur")
+            return Err(build_fn_arity_mismatch_error(info, &current_values, call_stack, "recur"));
           }
           for (idx, v) in current_values.into_iter().enumerate() {
             body_scope.insert_mut(args[idx], v);

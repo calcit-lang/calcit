@@ -91,6 +91,12 @@ pub enum CalcitTypeAnnotation {
   Enum(Arc<CalcitEnum>, Arc<Vec<Arc<CalcitTypeAnnotation>>>),
   /// Generic type variable, e.g. 'T
   TypeVar(Arc<str>),
+  /// Named type reference kept as source-level syntax, e.g. `'Result` or `(:: 'Result 'T 'E)`.
+  ///
+  /// This is used when a schema references another named definition but the annotation should
+  /// remain a symbolic reference instead of collapsing into a generic variable or eagerly
+  /// resolving into a concrete struct/enum definition.
+  TypeRef(Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>),
   /// Trait type annotation for trait objects
   Trait(Arc<CalcitTrait>),
   /// Multiple trait constraints recorded in order
@@ -176,6 +182,43 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  fn generics_contains(generics: &[Arc<str>], name: &str) -> bool {
+    let stripped = name.trim_start_matches('\'');
+    generics.iter().any(|g| g.as_ref() == stripped)
+  }
+
+  fn extend_generics_scope(outer: &[Arc<str>], inner: &[Arc<str>]) -> Vec<Arc<str>> {
+    let mut scope = outer.to_vec();
+    for item in inner {
+      if !scope.iter().any(|existing| existing.as_ref() == item.as_ref()) {
+        scope.push(item.to_owned());
+      }
+    }
+    scope
+  }
+
+  fn normalize_type_ref_name(name: &str) -> Arc<str> {
+    Arc::from(name.trim_start_matches('\''))
+  }
+
+  fn extract_type_ref_name(form: &Calcit) -> Option<Arc<str>> {
+    if let Some(name) = Self::parse_type_var_form(form) {
+      return Some(name);
+    }
+
+    match form {
+      Calcit::Symbol { sym, .. } => Some(Self::normalize_type_ref_name(sym)),
+      Calcit::Import(import) => Some(Arc::from(format!("{}/{}", import.ns, import.def))),
+      _ => None,
+    }
+  }
+
+  fn type_ref_name_matches(name: &str, target: &str) -> bool {
+    let left = name.trim_start_matches('\'').trim_start_matches(':');
+    let right = target.trim_start_matches(':');
+    left == right || left.rsplit('/').next().is_some_and(|segment| segment == right)
+  }
+
   fn is_hint_fn_form(list: &CalcitList) -> bool {
     match list.first() {
       Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
@@ -253,10 +296,14 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
     for item in items.iter() {
       if let Some(type_expr) = Self::extract_schema_value(item, &["return"]) {
-        return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
+        return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
+          type_expr,
+          generics.as_slice(),
+        ));
       }
     }
     None
@@ -287,7 +334,7 @@ impl CalcitTypeAnnotation {
   /// Parse a schema `:args` value into a positional vec of type annotations.
   ///
   /// The `:args` form looks like `([] :type1 :type2 ...)` where `[]` is the list constructor head.
-  fn parse_schema_args_types(form: &Calcit, count: usize) -> Vec<Arc<CalcitTypeAnnotation>> {
+  fn parse_schema_args_types(form: &Calcit, count: usize, generics: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
     let mut result = vec![DYNAMIC_TYPE.clone(); count];
 
     let Calcit::List(xs) = form else {
@@ -305,7 +352,7 @@ impl CalcitTypeAnnotation {
       if idx >= count {
         break;
       }
-      result[idx] = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
+      result[idx] = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, generics);
     }
     result
   }
@@ -315,10 +362,11 @@ impl CalcitTypeAnnotation {
   /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
   /// the highest-priority source for `CalcitFn.arg_types` (before `assert-type` body scanning).
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+    let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
     for item in items.iter() {
       if let Some(args_form) = Self::extract_schema_value(item, &["args"]) {
-        let types = Self::parse_schema_args_types(args_form, params.len());
+        let types = Self::parse_schema_args_types(args_form, params.len(), generics.as_slice());
         return Some(types);
       }
     }
@@ -364,22 +412,6 @@ impl CalcitTypeAnnotation {
       return None;
     };
 
-    let arg_types: Vec<Arc<CalcitTypeAnnotation>> = map
-      .tag_get("args")
-      .and_then(|v| if let Edn::List(xs) = v { Some(xs) } else { None })
-      .map(|xs| {
-        xs.0
-          .iter()
-          .map(|x| Self::parse_type_annotation_form(&Self::edn_type_to_calcit(x)))
-          .collect()
-      })
-      .unwrap_or_default();
-
-    let return_type = map
-      .tag_get("return")
-      .map(|v| Self::parse_type_annotation_form(&Self::edn_type_to_calcit(v)))
-      .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
-
     let generics: Vec<Arc<str>> = map
       .tag_get("generics")
       .and_then(|v| if let Edn::List(xs) = v { Some(xs) } else { None })
@@ -405,6 +437,22 @@ impl CalcitTypeAnnotation {
       })
       .unwrap_or_default();
 
+    let arg_types: Vec<Arc<CalcitTypeAnnotation>> = map
+      .tag_get("args")
+      .and_then(|v| if let Edn::List(xs) = v { Some(xs) } else { None })
+      .map(|xs| {
+        xs.0
+          .iter()
+          .map(|x| Self::parse_type_annotation_form_with_generics(&Self::edn_type_to_calcit(x), generics.as_slice()))
+          .collect()
+      })
+      .unwrap_or_default();
+
+    let return_type = map
+      .tag_get("return")
+      .map(|v| Self::parse_type_annotation_form_with_generics(&Self::edn_type_to_calcit(v), generics.as_slice()))
+      .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
+
     if arg_types.is_empty() && matches!(*return_type, CalcitTypeAnnotation::Dynamic) && generics.is_empty() {
       None
     } else {
@@ -414,7 +462,7 @@ impl CalcitTypeAnnotation {
       };
       let rest_type = map
         .tag_get("rest")
-        .map(|v| Self::parse_type_annotation_form(&Self::edn_type_to_calcit(v)));
+        .map(|v| Self::parse_type_annotation_form_with_generics(&Self::edn_type_to_calcit(v), generics.as_slice()));
       Some(CalcitFnTypeAnnotation {
         generics: Arc::new(generics),
         arg_types,
@@ -512,12 +560,17 @@ impl CalcitTypeAnnotation {
         }
       }
 
+      for i in 3..list.len() {
+        if let Some(form) = list.get(i)
+          && let Some(g) = Self::extract_generics_from_hint_form(form)
+        {
+          generics = g;
+        }
+      }
+
       // Scan body forms for available hints only; do not expand macros.
       for i in 3..list.len() {
         if let Some(form) = list.get(i) {
-          if let Some(g) = Self::extract_generics_from_hint_form(form) {
-            generics = g;
-          }
           if let Some(ret) = Self::extract_return_type_from_hint_form(form) {
             return_type = ret;
           }
@@ -529,7 +582,7 @@ impl CalcitTypeAnnotation {
             };
             if is_assert && inner.len() == 3 {
               if let (Some(Calcit::Symbol { sym, .. }), Some(type_form)) = (inner.get(1), inner.get(2)) {
-                let t = Self::parse_type_annotation_form(type_form);
+                let t = Self::parse_type_annotation_form_with_generics(type_form, generics.as_slice());
                 arg_types.insert(sym.to_owned(), t);
               }
             }
@@ -561,23 +614,16 @@ impl CalcitTypeAnnotation {
     None
   }
 
-  fn parse_struct_annotation_from_tuple(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
-    let struct_form = xs.get(1)?;
-    let resolved = resolve_calcit_value(struct_form)?;
-    let Calcit::Struct(struct_def) = resolved else {
-      return None;
-    };
-
-    let args = xs.iter().skip(2).map(Self::parse_type_annotation_form).collect::<Vec<_>>();
-    Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(args))))
-  }
-
   /// Collect arg type hints for function parameters by scanning `assert-type` in body forms.
   ///
   /// This is intentionally different from return-type handling: return-type uses `hint-fn`, while
   /// arg types are sourced from `assert-type` inside function bodies. If no `assert-type` is found,
   /// the parameter stays `dynamic` and no checking occurs.
-  pub fn collect_arg_type_hints_from_body(body_items: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
+  pub fn collect_arg_type_hints_from_body(
+    body_items: &[Calcit],
+    params: &[Arc<str>],
+    generics: &[Arc<str>],
+  ) -> Vec<Arc<CalcitTypeAnnotation>> {
     let mut arg_types = vec![DYNAMIC_TYPE.clone(); params.len()];
     if params.is_empty() {
       return arg_types;
@@ -589,7 +635,7 @@ impl CalcitTypeAnnotation {
     }
 
     for form in body_items {
-      Self::scan_body_for_arg_types(form, &param_index, &mut arg_types);
+      Self::scan_body_for_arg_types(form, &param_index, generics, &mut arg_types);
     }
 
     arg_types
@@ -601,6 +647,7 @@ impl CalcitTypeAnnotation {
   fn scan_body_for_arg_types(
     form: &Calcit,
     param_index: &std::collections::HashMap<Arc<str>, usize>,
+    generics: &[Arc<str>],
     arg_types: &mut [Arc<CalcitTypeAnnotation>],
   ) {
     fn is_trait_annotation(ann: &CalcitTypeAnnotation) -> bool {
@@ -636,7 +683,7 @@ impl CalcitTypeAnnotation {
         let mut traits: Vec<Arc<CalcitTrait>> = vec![];
         let mut non_trait: Option<Arc<CalcitTypeAnnotation>> = None;
         for form in trait_forms {
-          let parsed = CalcitTypeAnnotation::parse_type_annotation_form(form);
+          let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, generics);
           match parsed.as_ref() {
             CalcitTypeAnnotation::Trait(trait_def) => traits.push(trait_def.to_owned()),
             _ => {
@@ -668,7 +715,7 @@ impl CalcitTypeAnnotation {
       };
 
       if let Some(&idx) = param_index.get(&sym) {
-        arg_types[idx] = CalcitTypeAnnotation::parse_type_annotation_form(type_expr);
+        arg_types[idx] = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_expr, generics);
       }
       return;
     }
@@ -682,7 +729,7 @@ impl CalcitTypeAnnotation {
     }
 
     for item in list.iter() {
-      Self::scan_body_for_arg_types(item, param_index, arg_types);
+      Self::scan_body_for_arg_types(item, param_index, generics, arg_types);
     }
   }
 
@@ -721,22 +768,34 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn parse_type_annotation_form(form: &Calcit) -> Arc<CalcitTypeAnnotation> {
+    Self::parse_type_annotation_form_inner(form, &[], false)
+  }
+
+  pub(crate) fn parse_type_annotation_form_with_generics(form: &Calcit, generics: &[Arc<str>]) -> Arc<CalcitTypeAnnotation> {
+    Self::parse_type_annotation_form_inner(form, generics, true)
+  }
+
+  fn parse_type_annotation_form_inner(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Arc<CalcitTypeAnnotation> {
     let is_optional_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "optional";
     let is_list_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "list";
     let is_map_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "map";
     let is_set_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "set";
     let is_ref_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "ref";
 
+    let parse_nested = |item: &Calcit| Self::parse_type_annotation_form_inner(item, generics, strict_named_refs);
+
     if matches!(form, Calcit::Nil) {
       return DYNAMIC_TYPE.clone();
     }
 
-    if let Some(type_var) = Self::parse_type_var_form(form) {
-      return Arc::new(CalcitTypeAnnotation::TypeVar(type_var));
+    if let Some(name) = Self::parse_type_var_form(form) {
+      return if strict_named_refs && !Self::generics_contains(generics, &name) {
+        Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])))
+      } else {
+        Arc::new(CalcitTypeAnnotation::TypeVar(name))
+      };
     }
 
-    // EDN-serialized type variables come as `Calcit::Symbol { sym: "'T" }` (leading quote in the
-    // symbol name). Recognize them as TypeVar and strip the quote. Reject excess quotes (``''T``).
     if let Calcit::Symbol { sym, .. } = form {
       if sym.starts_with('\'') {
         let stripped = sym.trim_start_matches('\'');
@@ -744,13 +803,20 @@ impl CalcitTypeAnnotation {
         if n_quotes > 1 {
           eprintln!("[Error] Type variable `{sym}` has excess leading quotes — expected a single-quoted uppercase symbol like `'T`");
         }
-        return Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)));
+        return if strict_named_refs && !Self::generics_contains(generics, stripped) {
+          Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(stripped), Arc::new(vec![])))
+        } else {
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)))
+        };
+      }
+      if strict_named_refs && Self::generics_contains(generics, sym) {
+        return Arc::new(CalcitTypeAnnotation::TypeVar(sym.to_owned()));
       }
     }
 
     if let Calcit::Tuple(tuple) = form {
       if let Some(struct_def) = resolve_struct_def(tuple.tag.as_ref()) {
-        let args = tuple.extra.iter().map(Self::parse_type_annotation_form).collect::<Vec<_>>();
+        let args = tuple.extra.iter().map(parse_nested).collect::<Vec<_>>();
         return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(args)));
       }
       if let Calcit::Tag(tag) = tuple.tag.as_ref() {
@@ -759,36 +825,24 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :optional expects 1 argument, got {}", tuple.extra.len());
           }
           if let Some(inner_form) = tuple.extra.first() {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::Optional(inner));
+            return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
           }
         }
-        // Check for list type: (:list :type)
         if is_list_tag(tag) {
           if tuple.extra.len() > 1 {
             eprintln!("[Warn] :list expects at most 1 argument, got {}", tuple.extra.len());
           }
           if let Some(inner_form) = tuple.extra.first() {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::List(inner));
+            return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
           }
-          // No element type specified, use Dynamic
           return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
         }
         if is_map_tag(tag) {
           if tuple.extra.len() > 2 {
             eprintln!("[Warn] :map expects at most 2 arguments, got {}", tuple.extra.len());
           }
-          let key_type = tuple
-            .extra
-            .first()
-            .map(Self::parse_type_annotation_form)
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
-          let val_type = tuple
-            .extra
-            .get(1)
-            .map(Self::parse_type_annotation_form)
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let key_type = tuple.extra.first().map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let val_type = tuple.extra.get(1).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
           return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
         }
         if is_set_tag(tag) {
@@ -796,8 +850,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :set expects at most 1 argument, got {}", tuple.extra.len());
           }
           if let Some(inner_form) = tuple.extra.first() {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::Set(inner));
+            return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
         }
@@ -806,40 +859,59 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :ref expects at most 1 argument, got {}", tuple.extra.len());
           }
           if let Some(inner_form) = tuple.extra.first() {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::Ref(inner));
+            return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
         if tag.ref_str().trim_start_matches(':') == "fn" {
-          let mut generics: Vec<Arc<str>> = vec![];
+          let mut local_generics: Vec<Arc<str>> = vec![];
           let (args_form, return_form) = if let Some(generic_vars) = tuple.extra.first().and_then(Self::parse_generics_list) {
-            generics = generic_vars;
+            local_generics = generic_vars;
             (tuple.extra.get(1).unwrap_or(&Calcit::Nil), tuple.extra.get(2))
           } else {
             (tuple.extra.first().unwrap_or(&Calcit::Nil), tuple.extra.get(1))
           };
+          let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
           let arg_types = if let Calcit::List(args) = args_form {
             let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
               1
             } else {
               0
             };
-            args.iter().skip(start).map(Self::parse_type_annotation_form).collect()
+            args
+              .iter()
+              .skip(start)
+              .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
+              .collect()
           } else {
             vec![]
           };
           let return_type = return_form
-            .map(Self::parse_type_annotation_form)
+            .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
             .unwrap_or_else(|| Arc::new(Self::Dynamic));
           return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-            generics: Arc::new(generics),
+            generics: Arc::new(local_generics),
             arg_types,
             return_type,
             fn_kind: SchemaKind::Fn,
             rest_type: None,
           })));
         }
+      }
+
+      let base = Self::parse_type_annotation_form_inner(tuple.tag.as_ref(), generics, strict_named_refs);
+      let args = tuple.extra.iter().map(parse_nested).collect::<Vec<_>>();
+      match base.as_ref() {
+        CalcitTypeAnnotation::Struct(struct_def, _) => {
+          return Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(args)));
+        }
+        CalcitTypeAnnotation::Enum(enum_def, _) => {
+          return Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(args)));
+        }
+        CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs => {
+          return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(args)));
+        }
+        _ => {}
       }
     }
 
@@ -851,8 +923,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 1);
           }
           if let Some(inner_form) = xs.get(1) {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::Optional(inner));
+            return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
           }
         }
         if is_list_tag(tag) {
@@ -860,8 +931,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :list expects at most 1 argument, got {}", xs.len() as i64 - 1);
           }
           if let Some(inner_form) = xs.get(1) {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::List(inner));
+            return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
         }
@@ -869,14 +939,8 @@ impl CalcitTypeAnnotation {
           if xs.len() > 3 {
             eprintln!("[Warn] :map expects at most 2 arguments, got {}", xs.len() as i64 - 1);
           }
-          let key_type = xs
-            .get(1)
-            .map(Self::parse_type_annotation_form)
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
-          let val_type = xs
-            .get(2)
-            .map(Self::parse_type_annotation_form)
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let key_type = xs.get(1).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let val_type = xs.get(2).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
           return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
         }
         if is_set_tag(tag) {
@@ -884,8 +948,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :set expects at most 1 argument, got {}", xs.len() as i64 - 1);
           }
           if let Some(inner_form) = xs.get(1) {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::Set(inner));
+            return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
         }
@@ -894,35 +957,38 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :ref expects at most 1 argument, got {}", xs.len() as i64 - 1);
           }
           if let Some(inner_form) = xs.get(1) {
-            let inner = Self::parse_type_annotation_form(inner_form);
-            return Arc::new(CalcitTypeAnnotation::Ref(inner));
+            return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
         if tag_name == "fn" {
-          let mut generics: Vec<Arc<str>> = vec![];
+          let mut local_generics: Vec<Arc<str>> = vec![];
           let (args_form, return_form) = if let Some(generic_vars) = xs.get(1).and_then(Self::parse_generics_list) {
-            generics = generic_vars;
+            local_generics = generic_vars;
             (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
           } else {
             (xs.get(1).unwrap_or(&Calcit::Nil), xs.get(2))
           };
-
+          let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
           let arg_types = if let Calcit::List(args) = args_form {
             let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
               1
             } else {
               0
             };
-            args.iter().skip(start).map(Self::parse_type_annotation_form).collect()
+            args
+              .iter()
+              .skip(start)
+              .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
+              .collect()
           } else {
             vec![]
           };
           let return_type = return_form
-            .map(Self::parse_type_annotation_form)
+            .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
             .unwrap_or_else(|| Arc::new(Self::Dynamic));
           return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-            generics: Arc::new(generics),
+            generics: Arc::new(local_generics),
             arg_types,
             return_type,
             fn_kind: SchemaKind::Fn,
@@ -938,25 +1004,20 @@ impl CalcitTypeAnnotation {
       };
 
       if is_tuple_constructor {
-        // Check for variadic type: (:: :& :type)
-        if xs.len() == 3 {
-          if let (Some(Calcit::Tag(marker)), Some(inner_form)) = (xs.get(1), xs.get(2)) {
-            if marker.ref_str().trim_start_matches(':') == "&" {
-              let inner = Self::parse_type_annotation_form(inner_form);
-              return Arc::new(CalcitTypeAnnotation::Variadic(inner));
-            }
-          }
+        if xs.len() == 3
+          && let (Some(Calcit::Tag(marker)), Some(inner_form)) = (xs.get(1), xs.get(2))
+          && marker.ref_str().trim_start_matches(':') == "&"
+        {
+          return Arc::new(CalcitTypeAnnotation::Variadic(parse_nested(inner_form)));
         }
 
-        // Check for optional: (:: :optional :type)
         if let Some(Calcit::Tag(tag)) = xs.get(1) {
           if is_optional_tag(tag) {
             if xs.len() != 3 {
               eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 2);
             }
             if let Some(inner_form) = xs.get(2) {
-              let inner = Self::parse_type_annotation_form(inner_form);
-              return Arc::new(CalcitTypeAnnotation::Optional(inner));
+              return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
             }
           }
         }
@@ -979,59 +1040,55 @@ impl CalcitTypeAnnotation {
           }
           if tag_name == "list" {
             if let Some(inner_form) = xs.get(2) {
-              let inner = Self::parse_type_annotation_form(inner_form);
-              return Arc::new(CalcitTypeAnnotation::List(inner));
+              return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
             }
             return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
           }
           if tag_name == "map" {
-            let key_type = xs
-              .get(2)
-              .map(Self::parse_type_annotation_form)
-              .unwrap_or_else(|| Arc::new(Self::Dynamic));
-            let val_type = xs
-              .get(3)
-              .map(Self::parse_type_annotation_form)
-              .unwrap_or_else(|| Arc::new(Self::Dynamic));
+            let key_type = xs.get(2).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+            let val_type = xs.get(3).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
             return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
           }
           if tag_name == "set" {
             if let Some(inner_form) = xs.get(2) {
-              let inner = Self::parse_type_annotation_form(inner_form);
-              return Arc::new(CalcitTypeAnnotation::Set(inner));
+              return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
             }
             return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
           }
           if tag_name == "ref" {
             if let Some(inner_form) = xs.get(2) {
-              let inner = Self::parse_type_annotation_form(inner_form);
-              return Arc::new(CalcitTypeAnnotation::Ref(inner));
+              return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
             }
             return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
           }
           if tag_name == "fn" {
-            let mut generics: Vec<Arc<str>> = vec![];
+            let mut local_generics: Vec<Arc<str>> = vec![];
             let (args_form, return_form) = if let Some(generic_vars) = xs.get(2).and_then(Self::parse_generics_list) {
-              generics = generic_vars;
+              local_generics = generic_vars;
               (xs.get(3).unwrap_or(&Calcit::Nil), xs.get(4))
             } else {
               (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
             };
+            let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
             let arg_types = if let Calcit::List(args) = args_form {
               let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
                 1
               } else {
                 0
               };
-              args.iter().skip(start).map(Self::parse_type_annotation_form).collect()
+              args
+                .iter()
+                .skip(start)
+                .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
+                .collect()
             } else {
               vec![]
             };
             let return_type = return_form
-              .map(Self::parse_type_annotation_form)
+              .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
               .unwrap_or_else(|| Arc::new(Self::Dynamic));
             return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-              generics: Arc::new(generics),
+              generics: Arc::new(local_generics),
               arg_types,
               return_type,
               fn_kind: SchemaKind::Fn,
@@ -1040,20 +1097,44 @@ impl CalcitTypeAnnotation {
           }
         }
 
-        if let Some(struct_annotation) = Self::parse_struct_annotation_from_tuple(xs) {
-          return struct_annotation;
+        if let Some(base_form) = xs.get(1) {
+          let base = Self::parse_type_annotation_form_inner(base_form, generics, strict_named_refs);
+          let args = xs
+            .iter()
+            .skip(2)
+            .map(|item| Self::parse_type_annotation_form_inner(item, generics, strict_named_refs))
+            .collect::<Vec<_>>();
+          match base.as_ref() {
+            CalcitTypeAnnotation::Struct(struct_def, _) => {
+              return Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(args)));
+            }
+            CalcitTypeAnnotation::Enum(enum_def, _) => {
+              return Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(args)));
+            }
+            CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs => {
+              return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(args)));
+            }
+            _ => {}
+          }
         }
       }
     }
 
-    // Resolve symbols or imports to struct/enum/trait definitions for type annotations.
     if let Some(resolved) = resolve_calcit_value(form) {
       match resolved {
-        Calcit::Struct(struct_def) => return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![]))),
-        Calcit::Enum(enum_def) => return Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(vec![]))),
         Calcit::Trait(trait_def) => return Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def))),
+        Calcit::Struct(struct_def) if !strict_named_refs => {
+          return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![])));
+        }
+        Calcit::Enum(enum_def) if !strict_named_refs => {
+          return Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(vec![])));
+        }
         _ => {}
       }
+    }
+
+    if strict_named_refs && let Some(name) = Self::extract_type_ref_name(form) {
+      return Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])));
     }
 
     Arc::new(CalcitTypeAnnotation::from_calcit(form))
@@ -1088,6 +1169,14 @@ impl CalcitTypeAnnotation {
         format!("traits {rendered}")
       }
       Self::TypeVar(name) => format!("'{name}"),
+      Self::TypeRef(name, args) => {
+        if args.is_empty() {
+          format!("'{name}")
+        } else {
+          let rendered = args.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(", ");
+          format!("'{name}<{rendered}>")
+        }
+      }
       Self::Enum(enum_def, args) => {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
@@ -1108,6 +1197,10 @@ impl CalcitTypeAnnotation {
   pub fn substitute_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
     match self {
       Self::TypeVar(name) => bindings.get(name).cloned().unwrap_or_else(|| Arc::new(self.clone())),
+      Self::TypeRef(name, args) => {
+        let new_args: Vec<_> = args.iter().map(|a| a.substitute_type_vars(bindings)).collect();
+        Arc::new(Self::TypeRef(name.clone(), Arc::new(new_args)))
+      }
       Self::List(inner) => Arc::new(Self::List(inner.substitute_type_vars(bindings))),
       Self::Map(k, v) => Arc::new(Self::Map(k.substitute_type_vars(bindings), v.substitute_type_vars(bindings))),
       Self::Set(inner) => Arc::new(Self::Set(inner.substitute_type_vars(bindings))),
@@ -1143,6 +1236,7 @@ impl CalcitTypeAnnotation {
   pub fn contains_type_var(&self) -> bool {
     match self {
       Self::TypeVar(_) => true,
+      Self::TypeRef(_, args) => args.iter().any(|a| a.contains_type_var()),
       Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Optional(inner) | Self::Variadic(inner) => {
         inner.contains_type_var()
       }
@@ -1195,10 +1289,51 @@ impl CalcitTypeAnnotation {
           true
         }
       },
+      (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
+        if !Self::type_ref_name_matches(a_name, b_name) && !Self::type_ref_name_matches(b_name, a_name) {
+          return false;
+        }
+        if a_args.is_empty() || b_args.is_empty() {
+          return true;
+        }
+        a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
+      }
       (Self::List(a), Self::List(b)) => a.matches_with_bindings(b, bindings),
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.matches_with_bindings(bk, bindings) && av.matches_with_bindings(bv, bindings),
       (Self::Set(a), Self::Set(b)) => a.matches_with_bindings(b, bindings),
       (Self::Ref(a), Self::Ref(b)) => a.matches_with_bindings(b, bindings),
+      (Self::TypeRef(name, args), Self::Struct(base, other_args)) | (Self::Struct(base, other_args), Self::TypeRef(name, args)) => {
+        if !Self::type_ref_name_matches(name, base.name.ref_str()) {
+          return false;
+        }
+        if args.is_empty() || other_args.is_empty() {
+          return true;
+        }
+        args.len() == other_args.len()
+          && args
+            .iter()
+            .zip(other_args.iter())
+            .all(|(x, y)| x.matches_with_bindings(y, bindings))
+      }
+      (Self::TypeRef(name, args), Self::Enum(base, other_args)) | (Self::Enum(base, other_args), Self::TypeRef(name, args)) => {
+        if !Self::type_ref_name_matches(name, base.name().ref_str()) {
+          return false;
+        }
+        if args.is_empty() || other_args.is_empty() {
+          return true;
+        }
+        args.len() == other_args.len()
+          && args
+            .iter()
+            .zip(other_args.iter())
+            .all(|(x, y)| x.matches_with_bindings(y, bindings))
+      }
+      (Self::TypeRef(name, _), Self::Record(base)) | (Self::Record(base), Self::TypeRef(name, _)) => {
+        Self::type_ref_name_matches(name, base.name.ref_str())
+      }
+      (Self::TypeRef(name, _), Self::Tuple(base)) | (Self::Tuple(base), Self::TypeRef(name, _)) => {
+        Self::type_ref_name_matches(name, base.name().ref_str())
+      }
       (Self::Struct(a, a_args), Self::Struct(b, b_args)) => {
         if a.name != b.name {
           return false;
@@ -1436,6 +1571,19 @@ impl CalcitTypeAnnotation {
         }
       }
       Self::TypeVar(name) => Self::quote_symbol(name),
+      Self::TypeRef(name, args) => {
+        if args.is_empty() {
+          Self::quote_symbol(name)
+        } else {
+          let mut items = Vec::with_capacity(args.len() + 2);
+          items.push(Self::make_symbol("::"));
+          items.push(Self::quote_symbol(name));
+          for arg in args.iter() {
+            items.push(arg.to_calcit());
+          }
+          Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
+        }
+      }
       Self::Enum(enum_def, _) => Calcit::Enum((**enum_def).clone()),
       Self::Trait(trait_def) => Calcit::Trait((**trait_def).clone()),
       Self::TraitSet(_) => Calcit::Nil,
@@ -1462,6 +1610,16 @@ impl CalcitTypeAnnotation {
       Self::CirruQuote => Edn::tag("cirru-quote"),
       // TypeVar: source syntax uses `'T`, while Cirru EDN stores that as `Edn::Symbol("T")`.
       Self::TypeVar(name) => Edn::Symbol(Arc::from(name.trim_start_matches('\''))),
+      Self::TypeRef(name, args) => {
+        if args.is_empty() {
+          Edn::Symbol(Arc::from(name.trim_start_matches('\'')))
+        } else {
+          Edn::tuple(
+            Edn::Symbol(Arc::from(name.trim_start_matches('\''))),
+            args.iter().map(|arg| arg.to_type_edn()).collect(),
+          )
+        }
+      }
       // Parameterized builtins – keep inner type if non-dynamic
       Self::List(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
@@ -1607,6 +1765,14 @@ impl CalcitTypeAnnotation {
         }
       }
       Self::TypeVar(name) => format!("'{name}"),
+      Self::TypeRef(name, args) => {
+        if args.is_empty() {
+          format!("type {name}")
+        } else {
+          let rendered = args.iter().map(|t| t.describe()).collect::<Vec<_>>().join(", ");
+          format!("type {name}<{rendered}>")
+        }
+      }
       Self::Enum(enum_def, args) => {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
@@ -1645,11 +1811,12 @@ impl CalcitTypeAnnotation {
       Self::Optional(_) => 19,
       Self::Dynamic => 20,
       Self::TypeVar(_) => 21,
-      Self::Struct(_, _) => 22,
-      Self::Enum(_, _) => 23,
-      Self::Trait(_) => 24,
-      Self::TraitSet(_) => 25,
-      Self::Unit => 26,
+      Self::TypeRef(_, _) => 22,
+      Self::Struct(_, _) => 23,
+      Self::Enum(_, _) => 24,
+      Self::Trait(_) => 25,
+      Self::TraitSet(_) => 26,
+      Self::Unit => 27,
     }
   }
 }
@@ -1805,7 +1972,7 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStruct> {
       _ => return None,
     };
     let field_name = parse_type_name(field_name_form)?;
-    let field_type = CalcitTypeAnnotation::parse_type_annotation_form(field_type_form);
+    let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(field_type_form, generics.as_slice());
     fields.push((field_name, field_type));
   }
 
@@ -1941,7 +2108,7 @@ mod tests {
     ])))];
 
     let params = vec![Arc::from("a")];
-    let arg_types = CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &params);
+    let arg_types = CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &params, &[]);
 
     assert!(matches!(arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
   }
@@ -1980,6 +2147,39 @@ mod tests {
 
     let vars = CalcitTypeAnnotation::extract_generics_from_hint_form(&hint_form).expect("generics from schema");
     assert_eq!(vars, vec![Arc::from("T"), Arc::from("U")]);
+  }
+
+  #[test]
+  fn scoped_parser_distinguishes_type_var_and_named_ref() {
+    let generics = vec![Arc::from("T")];
+
+    let generic = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&symbol("T"), generics.as_slice());
+    assert!(matches!(generic.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T"));
+
+    let quoted_result = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
+      symbol("Result"),
+    ])));
+    let named = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&quoted_result, generics.as_slice());
+    assert!(matches!(named.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Result" && args.is_empty()));
+  }
+
+  #[test]
+  fn scoped_parser_keeps_named_type_applications() {
+    let generics = vec![Arc::from("T"), Arc::from("E")];
+    let items = vec![
+      symbol("::"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
+        symbol("Result"),
+      ]))),
+      symbol("T"),
+      symbol("E"),
+    ];
+    let form = Calcit::List(Arc::new(CalcitList::from(items.as_slice())));
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&form, generics.as_slice());
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Result" && args.len() == 2));
   }
 
   #[test]
@@ -2078,6 +2278,11 @@ impl Hash for CalcitTypeAnnotation {
         "typevar".hash(state);
         name.hash(state);
       }
+      Self::TypeRef(name, args) => {
+        "typeref".hash(state);
+        name.hash(state);
+        args.hash(state);
+      }
       Self::Enum(enum_def, args) => {
         "enum".hash(state);
         enum_def.name().hash(state);
@@ -2135,6 +2340,8 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
       (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
+      (Self::TypeVar(a), Self::TypeVar(b)) => a.cmp(b),
+      (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => a_name.cmp(b_name).then_with(|| a_args.cmp(b_args)),
       (Self::Struct(a, _), Self::Struct(b, _)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
       (Self::Enum(a, _), Self::Enum(b, _)) => a.name().cmp(b.name()),
       (Self::Trait(a), Self::Trait(b)) => a.name.cmp(&b.name),
@@ -2279,6 +2486,16 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::Enum(expected_enum, _) => match value {
       Calcit::Enum(e) => e.name() == expected_enum.name(),
       Calcit::Tuple(t) => t.sum_type.as_ref().is_some_and(|st| st.name() == expected_enum.name()),
+      _ => false,
+    },
+    CalcitTypeAnnotation::TypeRef(expected_name, _) => match value {
+      Calcit::Struct(s) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, s.name.ref_str()),
+      Calcit::Record(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),
+      Calcit::Enum(e) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, e.name().ref_str()),
+      Calcit::Tuple(t) => t
+        .sum_type
+        .as_ref()
+        .is_some_and(|st| CalcitTypeAnnotation::type_ref_name_matches(expected_name, st.name().ref_str())),
       _ => false,
     },
     CalcitTypeAnnotation::Record(expected_struct) => match value {

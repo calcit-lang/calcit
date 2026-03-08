@@ -385,6 +385,20 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       (Edn::tag("type"), Edn::tag("type-var")),
       (Edn::tag("value"), Edn::Str(name.clone())),
     ]),
+    CalcitTypeAnnotation::TypeRef(name, args) => {
+      let mut entries = vec![
+        (Edn::tag("type"), Edn::tag("type-ref")),
+        (Edn::tag("value"), Edn::Str(name.clone())),
+      ];
+      if !args.is_empty() {
+        let mut args_edn = EdnListView::default();
+        for arg in args.iter() {
+          args_edn.push(dump_type_annotation(arg.as_ref()));
+        }
+        entries.push((Edn::tag("args"), args_edn.into()));
+      }
+      Edn::map_from_iter(entries)
+    }
     CalcitTypeAnnotation::Struct(struct_def, args) => {
       let mut entries = vec![(Edn::tag("type"), Edn::tag("struct"))];
       entries.push((Edn::tag("value"), dump_struct_code(struct_def.as_ref())));
