@@ -1594,42 +1594,66 @@
         |Add $ %{} :CodeEntry (:doc "|Core trait: Add") (:schema nil)
           :code $ quote
             deftrait Add $ .add
-              :: :fn ('T) ('T 'T) 'T
+              :: :fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] 'T 'T
           :examples $ []
         |Contains $ %{} :CodeEntry (:doc "|Core trait: Contains") (:schema nil)
           :code $ quote
             deftrait Contains $ .contains?
-              :: :fn ('T) ('T :dynamic) :bool
+              :: :fn
+                {} (:return :bool)
+                  :generics $ [] 'T
+                  :args $ [] 'T :dynamic
           :examples $ []
         |Countable $ %{} :CodeEntry (:doc "|Core trait: Countable") (:schema nil)
           :code $ quote
             deftrait Countable $ .count
-              :: :fn ('T) ('T) :number
+              :: :fn
+                {} (:return :number)
+                  :generics $ [] 'T
+                  :args $ [] 'T
           :examples $ []
         |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize") (:schema nil)
           :code $ quote
             deftrait Deserialize $ .deserialize
-              :: :fn ('T) (:string) 'T
+              :: :fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] :string
           :examples $ []
         |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq") (:schema nil)
           :code $ quote
             deftrait Eq $ .eq?
-              :: :fn ('T) ('T 'T) :bool
+              :: :fn
+                {} (:return :bool)
+                  :generics $ [] 'T
+                  :args $ [] 'T 'T
           :examples $ []
         |Len $ %{} :CodeEntry (:doc "|Core trait: Len") (:schema nil)
           :code $ quote
             deftrait Len $ .len
-              :: :fn ('T) ('T) :number
+              :: :fn
+                {} (:return :number)
+                  :generics $ [] 'T
+                  :args $ [] 'T
           :examples $ []
         |Mappable $ %{} :CodeEntry (:doc "|Core trait: Mappable") (:schema nil)
           :code $ quote
             deftrait Mappable $ .map
-              :: :fn ('T) ('T :fn) 'T
+              :: :fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] 'T :fn
           :examples $ []
         |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply") (:schema nil)
           :code $ quote
             deftrait Multiply $ .multiply
-              :: :fn ('T) ('T 'T) 'T
+              :: :fn
+                {} (:return 'T)
+                  :generics $ [] 'T
+                  :args $ [] 'T 'T
           :examples $ []
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum") (:schema nil)
           :code $ quote
@@ -1654,12 +1678,18 @@
         |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize") (:schema nil)
           :code $ quote
             deftrait Serialize $ .serialize
-              :: :fn ('T) ('T) :string
+              :: :fn
+                {} (:return :string)
+                  :generics $ [] 'T
+                  :args $ [] 'T
           :examples $ []
         |Show $ %{} :CodeEntry (:doc "|Core trait: Show") (:schema nil)
           :code $ quote
             deftrait Show $ .show
-              :: :fn ('T) ('T) :string
+              :: :fn
+                {} (:return :string)
+                  :generics $ [] 'T
+                  :args $ [] 'T
           :examples $ []
         |[,] $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -2510,7 +2540,7 @@
             quote $ defstruct Person (:name :string) (:age :number)
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn (args...) return)) ...), legacy :method is also accepted\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
+        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
             defmacro deftrait (name & methods)
               assert "|deftrait expects (method type) pairs" $ every? methods list?

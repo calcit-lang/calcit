@@ -251,21 +251,9 @@ impl TryFrom<Edn> for CodeEntry {
 }
 
 /// Normalize a schema Edn value.
-/// Old Quote-wrapped formats and wrapped `(:: :fn ({} ...))` forms are converted to a direct map Edn.
-/// New direct map format is returned as-is.
+/// Wrapped `(:: :fn ({} ...))` / `(:: :macro ({} ...))` forms are converted to a direct map Edn.
+/// Direct map format is returned as-is.
 fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
-  fn unwrap_legacy_schema_cirru(cirru: &Cirru) -> Cirru {
-    match cirru {
-      Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote") => {
-        unwrap_legacy_schema_cirru(&items[1])
-      }
-      Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "[]") => {
-        unwrap_legacy_schema_cirru(&items[1])
-      }
-      _ => cirru.to_owned(),
-    }
-  }
-
   if matches!(value, Edn::Map(_)) {
     validate_schema_edn_no_legacy_quotes(value)?;
     return Ok(value.clone());
@@ -284,21 +272,10 @@ fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
     return Ok(normalized);
   }
 
-  // Old format stored as Edn::Quote — convert via Cirru → Edn map.
-  if let Edn::Quote(cirru) = value {
-    let normalized = schema_cirru_to_edn(unwrap_legacy_schema_cirru(cirru));
-    validate_schema_edn_no_legacy_quotes(&normalized)?;
-    return Ok(normalized);
-  }
-
-  if let Ok(cirru) = from_edn::<Cirru>(value.to_owned()) {
-    let normalized = schema_cirru_to_edn(unwrap_legacy_schema_cirru(&cirru));
-    validate_schema_edn_no_legacy_quotes(&normalized)?;
-    return Ok(normalized);
-  }
-
-  validate_schema_edn_no_legacy_quotes(value)?;
-  Ok(value.clone())
+  Err(format!(
+    "invalid schema format: expected wrapped `(:: :fn ({{}} ...))` / `(:: :macro ({{}} ...))` or a normalized schema map, got {}",
+    format_edn_preview(value)
+  ))
 }
 
 fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
@@ -1598,7 +1575,7 @@ mod tests {
   }
 
   #[test]
-  fn test_normalize_schema_unwraps_quoted_singleton_list() {
+  fn test_normalize_schema_rejects_quoted_singleton_list() {
     let quoted = Edn::Quote(Cirru::List(vec![
       Cirru::leaf("[]"),
       Cirru::List(vec![
@@ -1609,12 +1586,8 @@ mod tests {
       ]),
     ]));
 
-    let normalized = normalize_schema_edn(&quoted).expect("legacy quoted schema should normalize");
-    let Edn::Map(map) = normalized else {
-      panic!("normalized schema should be a map");
-    };
-    assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "fn"));
-    assert!(matches!(map.tag_get("args"), Some(Edn::List(xs)) if xs.0.is_empty()));
+    let err = normalize_schema_edn(&quoted).expect_err("legacy quoted schema should be rejected");
+    assert!(err.contains("invalid schema"), "unexpected error: {err}");
   }
 
   #[test]

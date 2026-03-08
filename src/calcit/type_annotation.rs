@@ -495,30 +495,18 @@ impl CalcitTypeAnnotation {
       return None;
     }
 
-    let generics: Vec<Arc<str>> = map
-      .tag_get("generics")
-      .and_then(|v| if let Edn::List(xs) = v { Some(xs) } else { None })
-      .map(|xs| {
-        xs.0
-          .iter()
-          .filter_map(|x| {
-            if let Edn::Symbol(s) = x {
-              // Cirru EDN stores a quoted symbol `'T` as `Edn::Symbol("T")`.
-              // Older buggy snapshots may contain `Edn::Symbol("'T")`; keep reading
-              // them by stripping leading quotes, but warn so they can be normalized.
-              let stripped = s.trim_start_matches('\'');
-              let n_quotes = s.len() - stripped.len();
-              if n_quotes > 0 {
-                eprintln!("[Warn] Generic type variable `{s}` contains legacy leading quotes — expected a single-quoted source form like `'T`, which should be stored as symbol `T` in EDN");
-              }
-              Some(Arc::from(stripped))
-            } else {
-              None
-            }
-          })
-          .collect()
-      })
-      .unwrap_or_default();
+    let generics: Vec<Arc<str>> = match map.tag_get("generics") {
+      None => vec![],
+      Some(Edn::List(xs)) => xs
+        .0
+        .iter()
+        .map(|x| match x {
+          Edn::Symbol(s) if !s.starts_with('\'') => Some(Arc::from(s.as_ref())),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?,
+      Some(_) => return None,
+    };
 
     let arg_types: Vec<Arc<CalcitTypeAnnotation>> = map
       .tag_get("args")
@@ -948,43 +936,11 @@ impl CalcitTypeAnnotation {
           {
             return parsed;
           }
-
-          let mut local_generics: Vec<Arc<str>> = vec![];
-          let (args_form, return_form) = if tuple.extra.len() >= 3 {
-            if let Some(generic_vars) = tuple.extra.first().and_then(Self::parse_generics_list) {
-              local_generics = generic_vars;
-              (tuple.extra.get(1).unwrap_or(&Calcit::Nil), tuple.extra.get(2))
-            } else {
-              (tuple.extra.first().unwrap_or(&Calcit::Nil), tuple.extra.get(1))
-            }
-          } else {
-            (tuple.extra.first().unwrap_or(&Calcit::Nil), tuple.extra.get(1))
-          };
-          let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
-          let arg_types = if let Calcit::List(args) = args_form {
-            let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
-              1
-            } else {
-              0
-            };
-            args
-              .iter()
-              .skip(start)
-              .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
-              .collect()
-          } else {
-            vec![]
-          };
-          let return_type = return_form
-            .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
-          return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-            generics: Arc::new(local_generics),
-            arg_types,
-            return_type,
-            fn_kind: SchemaKind::Fn,
-            rest_type: None,
-          })));
+          if tuple.extra.is_empty() {
+            return Arc::new(CalcitTypeAnnotation::DynFn);
+          }
+          eprintln!("[Warn] legacy fn type syntax is no longer supported, use `:: :fn {{}}` schema map form instead");
+          return Arc::new(CalcitTypeAnnotation::DynFn);
         }
       }
 
@@ -1056,43 +1012,11 @@ impl CalcitTypeAnnotation {
           {
             return parsed;
           }
-
-          let mut local_generics: Vec<Arc<str>> = vec![];
-          let (args_form, return_form) = if xs.len() >= 4 {
-            if let Some(generic_vars) = xs.get(1).and_then(Self::parse_generics_list) {
-              local_generics = generic_vars;
-              (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
-            } else {
-              (xs.get(1).unwrap_or(&Calcit::Nil), xs.get(2))
-            }
-          } else {
-            (xs.get(1).unwrap_or(&Calcit::Nil), xs.get(2))
-          };
-          let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
-          let arg_types = if let Calcit::List(args) = args_form {
-            let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
-              1
-            } else {
-              0
-            };
-            args
-              .iter()
-              .skip(start)
-              .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
-              .collect()
-          } else {
-            vec![]
-          };
-          let return_type = return_form
-            .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
-            .unwrap_or_else(|| Arc::new(Self::Dynamic));
-          return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-            generics: Arc::new(local_generics),
-            arg_types,
-            return_type,
-            fn_kind: SchemaKind::Fn,
-            rest_type: None,
-          })));
+          if xs.len() == 1 {
+            return Arc::new(CalcitTypeAnnotation::DynFn);
+          }
+          eprintln!("[Warn] legacy fn type syntax is no longer supported, use `(:fn {{}} ...)` schema map form instead");
+          return Arc::new(CalcitTypeAnnotation::DynFn);
         }
       }
 
@@ -1166,43 +1090,11 @@ impl CalcitTypeAnnotation {
             {
               return parsed;
             }
-
-            let mut local_generics: Vec<Arc<str>> = vec![];
-            let (args_form, return_form) = if xs.len() >= 5 {
-              if let Some(generic_vars) = xs.get(2).and_then(Self::parse_generics_list) {
-                local_generics = generic_vars;
-                (xs.get(3).unwrap_or(&Calcit::Nil), xs.get(4))
-              } else {
-                (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
-              }
-            } else {
-              (xs.get(2).unwrap_or(&Calcit::Nil), xs.get(3))
-            };
-            let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
-            let arg_types = if let Calcit::List(args) = args_form {
-              let start = if args.first().map(Self::is_args_list_head).unwrap_or(false) {
-                1
-              } else {
-                0
-              };
-              args
-                .iter()
-                .skip(start)
-                .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
-                .collect()
-            } else {
-              vec![]
-            };
-            let return_type = return_form
-              .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
-              .unwrap_or_else(|| Arc::new(Self::Dynamic));
-            return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-              generics: Arc::new(local_generics),
-              arg_types,
-              return_type,
-              fn_kind: SchemaKind::Fn,
-              rest_type: None,
-            })));
+            if xs.len() == 2 {
+              return Arc::new(CalcitTypeAnnotation::DynFn);
+            }
+            eprintln!("[Warn] legacy fn type syntax is no longer supported, use `:: :fn {{}}` schema map form instead");
+            return Arc::new(CalcitTypeAnnotation::DynFn);
           }
         }
 
@@ -2366,7 +2258,7 @@ mod tests {
   }
 
   #[test]
-  fn legacy_positional_fn_syntax_preserves_args_and_return() {
+  fn legacy_positional_fn_syntax_falls_back_to_dynamic_fn() {
     let type_var_a = Calcit::List(Arc::new(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
       symbol("A"),
@@ -2386,80 +2278,7 @@ mod tests {
     )));
 
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&form);
-    let CalcitTypeAnnotation::Fn(fn_annot) = parsed.as_ref() else {
-      panic!("expected fn annotation, got {parsed:?}");
-    };
-    assert!(fn_annot.generics.is_empty(), "legacy arg list should not be treated as generics");
-    assert!(
-      matches!(fn_annot.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "A"))
-    );
-    assert!(matches!(fn_annot.return_type.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "B"));
-  }
-
-  #[test]
-  fn parse_fn_schema_preserves_nested_legacy_positional_fn() {
-    let schema = Edn::Map(EdnMapView::from(HashMap::from([
-      (Edn::tag("kind"), Edn::tag("fn")),
-      (
-        Edn::tag("args"),
-        Edn::List(EdnListView(vec![Edn::tuple(
-          Edn::tag("fn"),
-          vec![
-            Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("A"))])),
-            Edn::Symbol(Arc::from("B")),
-          ],
-        )])),
-      ),
-      (
-        Edn::tag("generics"),
-        Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("A")), Edn::Symbol(Arc::from("B"))])),
-      ),
-      (Edn::tag("return"), Edn::tag("dynamic")),
-    ])));
-
-    let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema).expect("schema should parse");
-    let Some(nested) = parsed.arg_types.first() else {
-      panic!("expected nested fn arg");
-    };
-    let CalcitTypeAnnotation::Fn(nested) = nested.as_ref() else {
-      panic!("expected nested fn type, got {nested:?}");
-    };
-    assert!(nested.generics.is_empty());
-    assert!(
-      matches!(nested.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "A"))
-    );
-    assert!(matches!(nested.return_type.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "B"));
-  }
-
-  #[test]
-  fn parse_fn_schema_from_text_preserves_nested_legacy_positional_fn() {
-    let schema_text = "{} (:kind :fn) (:args ([] (:: :fn ([] 'A) 'B))) (:generics ([] 'A 'B)) (:return (:: :fn ([] 'A) 'B))";
-    let schema_cirru = cirru_parser::parse(schema_text)
-      .expect("should parse")
-      .into_iter()
-      .next()
-      .expect("should have one node");
-    let schema_edn = crate::snapshot::schema_cirru_to_edn(schema_cirru);
-    let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).expect("schema should parse");
-
-    let Some(arg0) = parsed.arg_types.first() else {
-      panic!("expected nested fn arg");
-    };
-    let CalcitTypeAnnotation::Fn(arg0) = arg0.as_ref() else {
-      panic!("expected nested fn type, got {arg0:?}");
-    };
-    assert!(
-      matches!(arg0.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "A"))
-    );
-    assert!(matches!(arg0.return_type.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "B"));
-
-    let CalcitTypeAnnotation::Fn(ret) = parsed.return_type.as_ref() else {
-      panic!("expected nested fn return");
-    };
-    assert!(
-      matches!(ret.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "A"))
-    );
-    assert!(matches!(ret.return_type.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "B"));
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::DynFn));
   }
 
   #[test]
@@ -2510,6 +2329,21 @@ mod tests {
     let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema).expect("wrapped schema should parse");
     assert!(matches!(parsed.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(parsed.return_type.as_ref(), CalcitTypeAnnotation::String));
+  }
+
+  #[test]
+  fn parse_fn_schema_rejects_legacy_quoted_generic_symbol() {
+    let schema = Edn::Map(EdnMapView::from(HashMap::from([
+      (Edn::tag("kind"), Edn::tag("fn")),
+      (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("number")]))),
+      (Edn::tag("generics"), Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("'T"))]))),
+      (Edn::tag("return"), Edn::tag("number")),
+    ])));
+
+    assert!(
+      CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema).is_none(),
+      "legacy quoted generic symbol should be rejected"
+    );
   }
 
   #[test]
