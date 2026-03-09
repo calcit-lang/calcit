@@ -132,7 +132,7 @@ Calcit 程序使用 `cr` 命令：
 - `cr query schema <namespace/definition> [-j] [--no-tips]` - 读取定义当前的 schema
   - 默认输出：Definition 标识 + schema 的 Cirru one-liner 预览
   - `-j` / `--json`：输出 schema 对应的 Cirru EDN 结构；无 schema 时输出 `nil`
-  - 适合在修改前确认 `:kind` / `:args` / `:return` / `:rest` 当前值
+  - 适合在修改前确认 `:args` / `:return` / `:rest` 当前值
 - `cr query examples <namespace/definition>` - 读取定义的示例代码
   - 输出：每个 example 的 Cirru 格式和 JSON 格式
 
@@ -509,7 +509,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
 - `cr edit schema <namespace/definition>` - 更新定义 schema（写入前会校验 schema 结构）
-  - 常用输入：`-e '{} (:kind :fn) (:args $ [] :number :number) (:return :number)'`
+  - 常用输入：`-e ':: :fn $ {} (:args $ [] :number :number) (:return :number)'`
   - 也支持 `-f <file>` / `-j '<json>'` / `-J` / `--leaf`
   - `--clear`：清空 schema，恢复为 `nil`
   - 写入后会保存为直接 map 形式；后续运行与 preprocess 会用它做 `defn` / `defmacro` 一致性校验
@@ -750,8 +750,8 @@ let
 
 如果定义带有 `:schema`，现在不仅 `cr analyze check-types` 会检查，普通运行路径也会在 **preprocess 阶段** 直接校验：
 
-- `:kind :fn` 必须对应 `defn`
-- `:kind :macro` 必须对应 `defmacro`
+- `:: :fn` 必须对应 `defn`
+- `:: :macro` 必须对应 `defmacro`
 - `:args` 的必选参数个数必须和实际参数列表一致
 - `:rest` 必须和代码里的 `&` rest 参数一致
 
@@ -782,13 +782,13 @@ let
                   , x0
                 , xss false
   :examples $ []
-  :schema $ {} (:kind :fn) (:return :string)
+  :schema $ :: :fn $ {} (:return :string)
     :args $ [] :list :string
 ```
 
 这个例子里，schema 与代码是完全对齐的：
 
-- `:kind :fn` 对应 `defn`
+- `:: :fn` 对应 `defn`
 - `:args` 里 2 个必选参数，对应 `(xs0 sep)`
 - `:return :string` 对应整个 `join-str` 的返回值
 - 内部辅助函数 `%join-str` 不是顶层定义，所以继续用 `hint-fn`
@@ -800,7 +800,7 @@ let
 cr query schema calcit.core/join-str
 
 # 再仿照它给自己的定义写 schema
-cr edit schema app.main/my-fn -e '{} (:kind :fn) (:args $ [] :list :string) (:return :string)'
+cr edit schema app.main/my-fn -e ':: :fn $ {} (:args $ [] :list :string) (:return :string)'
 
 # 最后验证
 cr --check-only
