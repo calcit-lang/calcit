@@ -60,8 +60,9 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
-      return CalcitErr::err_str(failure.kind, failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return CalcitErr::err_str(failure.kind, headline);
     }
   }
 
@@ -70,6 +71,7 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
     return Err(CalcitErr {
       kind: CalcitErrKind::Unexpected,
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
+      code: None,
       warnings: warnings.to_owned(),
       stack: CallStackList::default(),
       location: None,

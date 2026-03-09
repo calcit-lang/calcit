@@ -821,9 +821,24 @@ fn gen_check_warning(message: String, file_ns: &str, check_warnings: &RefCell<Ve
   gen_check_warning_with_location(message, loc, check_warnings);
 }
 
+fn gen_check_warning_code(message: String, code: &'static str, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
+  gen_check_warning_with_location_code(message, code, loc, check_warnings);
+}
+
 fn gen_check_warning_with_location(message: String, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   let mut warnings = check_warnings.borrow_mut();
   warnings.push(LocatedWarning::new(message, location));
+}
+
+fn gen_check_warning_with_location_code(
+  message: String,
+  code: &'static str,
+  location: NodeLocation,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let mut warnings = check_warnings.borrow_mut();
+  warnings.push(LocatedWarning::new_with_detail(message, location, Some(code.to_string()), None));
 }
 
 /// Check recur arity in function body
@@ -1257,12 +1272,13 @@ fn check_proc_arg_types(
       if !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings) {
         let expected_str = base_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning(
+        gen_check_warning_code(
           format!(
             "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             proc.as_ref(),
             idx + 1
           ),
+          "W_PROC_ARG_TYPE_MISMATCH",
           file_ns,
           check_warnings,
         );
@@ -1303,12 +1319,13 @@ fn check_core_fn_arg_types(
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning(
+        gen_check_warning_code(
           format!(
             "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             fn_info.name,
             idx + 1
           ),
+          "W_CORE_FN_ARG_TYPE_MISMATCH",
           file_ns,
           check_warnings,
         );
@@ -1354,13 +1371,14 @@ fn check_user_fn_arg_types(
           if !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings) {
             let expected_str = inner_type.as_ref().to_brief_string();
             let actual_str = actual_type.as_ref().to_brief_string();
-            gen_check_warning(
+            gen_check_warning_code(
               format!(
                 "[Warn] Function `{}/{}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
                 fn_info.def_ns,
                 fn_info.name,
                 idx + rest_idx + 1
               ),
+              "W_FN_ARG_TYPE_MISMATCH",
               file_ns,
               check_warnings,
             );
@@ -1376,13 +1394,14 @@ fn check_user_fn_arg_types(
       if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
         let expected_str = expected_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning(
+        gen_check_warning_code(
           format!(
             "[Warn] Function `{}/{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             fn_info.def_ns,
             fn_info.name,
             idx + 1
           ),
+          "W_FN_ARG_TYPE_MISMATCH",
           file_ns,
           check_warnings,
         );
@@ -1445,8 +1464,9 @@ fn check_function_return_type(
   if !actual_type.as_ref().matches_annotation(declared_return_type.as_ref()) {
     let expected_str = declared_return_type.as_ref().to_brief_string();
     let actual_str = actual_type.as_ref().to_brief_string();
-    gen_check_warning(
+    gen_check_warning_code(
       format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
+      "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
       check_warnings,
     );
@@ -3134,9 +3154,10 @@ pub fn preprocess_defn(
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
       if !schema_issues.is_empty() {
         let details = schema_issues.join("\n  - ");
-        return Err(CalcitErr::use_msg_stack_location(
+        return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
           format!("schema mismatch while preprocessing definition:\n  - {details}"),
+          "E_SCHEMA_DEF_MISMATCH",
           ctx.call_stack,
           Some(NodeLocation::new(
             info.at_ns.to_owned(),

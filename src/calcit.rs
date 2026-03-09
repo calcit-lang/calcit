@@ -868,6 +868,7 @@ impl fmt::Display for CalcitErrKind {
 pub struct CalcitErr {
   pub kind: CalcitErrKind,
   pub msg: String,
+  pub code: Option<String>,
   pub warnings: Vec<LocatedWarning>,
   pub location: Option<Arc<NodeLocation>>,
   pub stack: CallStackList,
@@ -877,7 +878,7 @@ pub struct CalcitErr {
 
 impl fmt::Display for CalcitErr {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "[{} Error] {}", self.kind, self.msg)?;
+    write!(f, "[{} Error] {}", self.kind, self.headline())?;
     if let Some(location) = &self.location {
       write!(f, "\n  at {location}")?;
     }
@@ -898,6 +899,7 @@ impl From<String> for CalcitErr {
     CalcitErr {
       kind: CalcitErrKind::Unexpected,
       msg,
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
@@ -911,6 +913,7 @@ impl CalcitErr {
     CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
@@ -922,6 +925,7 @@ impl CalcitErr {
     Err(CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
@@ -933,6 +937,7 @@ impl CalcitErr {
     Err(CalcitErr {
       kind,
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
@@ -944,6 +949,7 @@ impl CalcitErr {
     Err(CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location,
@@ -954,6 +960,7 @@ impl CalcitErr {
     CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: stack.to_owned(),
       location: None,
@@ -969,6 +976,7 @@ impl CalcitErr {
     CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: stack.to_owned(),
       location: location.map(Arc::new),
@@ -986,10 +994,29 @@ impl CalcitErr {
     CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: stack.to_owned(),
       location: location.map(Arc::new),
       hint: Some(hint.into()),
+    }
+  }
+
+  pub fn use_msg_stack_location_with_code<T: Into<String>, C: Into<String>>(
+    kind: CalcitErrKind,
+    msg: T,
+    code: C,
+    stack: &CallStackList,
+    location: Option<NodeLocation>,
+  ) -> Self {
+    CalcitErr {
+      kind,
+      msg: msg.into(),
+      code: Some(code.into()),
+      warnings: vec![],
+      stack: stack.to_owned(),
+      location: location.map(Arc::new),
+      hint: None,
     }
   }
 
@@ -998,6 +1025,7 @@ impl CalcitErr {
     Err(CalcitErr {
       kind,
       msg: msg.into(),
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
@@ -1015,11 +1043,24 @@ impl CalcitErr {
     Err(CalcitErr {
       kind,
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
+      code: None,
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
       hint: Some(hint.into()),
     })
+  }
+
+  pub fn headline(&self) -> String {
+    if let Some(code) = &self.code {
+      format!("[{code}] {}", self.msg)
+    } else {
+      self.msg.clone()
+    }
+  }
+
+  pub fn code(&self) -> Option<&str> {
+    self.code.as_deref()
   }
 }
 

@@ -13,6 +13,10 @@ mod injection;
 
 mod cli_handlers;
 
+#[cfg(test)]
+#[path = "cr_tests/type_fail.rs"]
+mod cr_type_fail_tests;
+
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit};
@@ -450,8 +454,9 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing init_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
-      return Err(failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
     }
   }
 
@@ -462,8 +467,9 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing reload_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
-      return Err(failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
     }
   }
 
@@ -510,16 +516,14 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
 
       let _ = fs::write(
         &js_file_path,
-        format!(
-          "export default \"Preprocessing failed:\\n{}\";",
-          failure.msg.trim().escape_default()
-        ),
+        format!("export default \"Preprocessing failed:\\n{}\";", headline.trim().escape_default()),
       );
-      return Err(failure.msg);
+      return Err(headline);
     }
   }
 
@@ -528,8 +532,9 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
-      return Err(failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
     }
   }
 

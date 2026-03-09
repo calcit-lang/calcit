@@ -14,6 +14,7 @@
     "fmt-rs": "cargo fmt --all",
     "lint-rs": "cargo clippy --all-targets -- -D warnings",
     "test-rs": "cargo test -q",
+    "test-fail": "cargo test -q --bin cr type_fail_",
     "test-snippets": "cargo test -q snippets::tests",
     "bench-recur-smoke": "cargo run --bin cr -- calcit/test.cirru -1 js && node --input-type=module -e \"import { test_loop } from './js-out/test-recursion.main.mjs'; const n=3000; const t0=process.hrtime.bigint(); for(let i=0;i<n;i++) test_loop(); const dt=Number(process.hrtime.bigint()-t0)/1e6; console.log('test_loop_ms='+dt.toFixed(3));\"",
     "check-smooth": "yarn fmt-rs && yarn lint-rs && yarn test-rs && yarn check-all",
