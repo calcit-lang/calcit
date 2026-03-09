@@ -170,7 +170,7 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn builtin_tag_name(&self) -> Option<&'static str> {
+  pub(crate) fn builtin_tag_name(&self) -> Option<&'static str> {
     match self {
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),

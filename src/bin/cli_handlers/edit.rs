@@ -682,6 +682,21 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   let schema_payload = strip_name_field_from_schema(schema_payload);
 
   validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
+
+  // Primitive type tag leaf (e.g. --leaf -e ':string') — store directly without going through fn-schema parsing.
+  if let Cirru::Leaf(tag) = &schema_payload {
+    let tag_name = tag.trim_start_matches(':');
+    code_entry.schema = Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name));
+    save_snapshot(&snapshot, snapshot_file)?;
+    println!(
+      "{} Updated schema for '{}' in namespace '{}'",
+      "✓".green(),
+      definition.cyan(),
+      namespace
+    );
+    return Ok(());
+  }
+
   snapshot::parse_schema_data(&schema_payload)?;
   let schema_edn = snapshot::schema_cirru_to_edn(schema_payload);
   code_entry.schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)

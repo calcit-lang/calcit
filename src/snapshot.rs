@@ -258,6 +258,18 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     return Ok(DYNAMIC_TYPE.clone());
   }
 
+  // Primitive type tag stored as a plain EDN tag (e.g. :string, :number).
+  if let Edn::Tag(tag) = value {
+    let tag_name = tag.ref_str();
+    if PRIMITIVE_SCHEMA_TAGS.contains(&tag_name) {
+      return Ok(Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name)));
+    }
+    return Err(format!(
+      "unknown primitive schema tag `:{tag_name}` in {owner}; valid tags: {}",
+      PRIMITIVE_SCHEMA_TAGS.join(", ")
+    ));
+  }
+
   let normalized =
     normalize_schema_edn(value).map_err(|e| format!("failed to normalize {owner}: {e}; schema={}", format_edn_preview(value)))?;
   let schema_cirru = parse_schema_cirru_from_edn(&normalized).map_err(|e| {
@@ -659,6 +671,11 @@ fn parse_generics_vars(node: &Cirru) -> HashSet<String> {
   vars
 }
 
+/// Allowed primitive tag types usable as a bare leaf schema (e.g. `:string`, `:number`).
+pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
+  "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit",
+];
+
 /// Strict validation for schemas submitted via `cr edit schema`.
 /// Ensures the schema is a `{}` map or wrapped `(:: :fn ({} ...))` form, has a recognised `:kind`, and contains
 /// only permitted fields.  Loading (read-only) only requires the weaker
@@ -667,14 +684,15 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut wrapped_kind: Option<&str> = None;
   let raw_items = match schema {
     Cirru::List(items) => items,
-    _ => {
-      let leaf = if let Cirru::Leaf(s) = schema {
-        s.to_string()
-      } else {
-        "(unexpected)".to_owned()
-      };
+    Cirru::Leaf(s) => {
+      // Allow known primitive type tags as a bare leaf schema (e.g. :string, :number).
+      let tag_name = s.trim_start_matches(':');
+      if PRIMITIVE_SCHEMA_TAGS.contains(&tag_name) {
+        return Ok(());
+      }
       return Err(format!(
-        "Schema must be a `{{}}` map expression or `(:: :fn ({{}} ...))` / `(:: :macro ({{}} ...))`, got leaf: `{leaf}`"
+        "Schema must be a `{{}}` map or `(:: :fn ({{}} ...))` / `(:: :macro ({{}} ...))`, got leaf: `{s}`. \
+         Primitive type tags (e.g. `:string`, `:number`, `:bool`) are accepted."
       ));
     }
   };
@@ -848,7 +866,10 @@ impl From<CodeEntry> for Edn {
     let schema_edn: Edn = match schema.as_ref() {
       CalcitTypeAnnotation::Dynamic => Edn::Nil,
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-      _ => Edn::Nil,
+      other => {
+        // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
+        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::Nil)
+      }
     };
     Edn::record_from_pairs(
       "CodeEntry".into(),
@@ -868,7 +889,10 @@ impl From<&CodeEntry> for Edn {
     let schema_edn: Edn = match schema.as_ref() {
       CalcitTypeAnnotation::Dynamic => Edn::Nil,
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-      _ => Edn::Nil,
+      other => {
+        // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
+        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::Nil)
+      }
     };
     Edn::record_from_pairs(
       "CodeEntry".into(),
@@ -1502,9 +1526,17 @@ mod tests {
     ]);
     assert!(validate_schema_for_write(&bad_kind).is_err(), "bad :kind value should fail");
 
-    // Leaf (not a map form)
-    let leaf = Cirru::Leaf(Arc::from(":fn"));
-    assert!(validate_schema_for_write(&leaf).is_err(), "leaf should fail");
+    // Primitive type tag leaves are now accepted.
+    let leaf_string = Cirru::Leaf(Arc::from(":string"));
+    assert!(validate_schema_for_write(&leaf_string).is_ok(), ":string leaf should pass");
+    let leaf_fn = Cirru::Leaf(Arc::from(":fn"));
+    assert!(validate_schema_for_write(&leaf_fn).is_ok(), ":fn leaf should pass");
+    let leaf_number = Cirru::Leaf(Arc::from(":number"));
+    assert!(validate_schema_for_write(&leaf_number).is_ok(), ":number leaf should pass");
+
+    // Unknown leaf (not a known primitive type) must still fail.
+    let leaf_unknown = Cirru::Leaf(Arc::from(":not-a-type"));
+    assert!(validate_schema_for_write(&leaf_unknown).is_err(), "unknown leaf should fail");
 
     // Wrong head (still quote-wrapped - must be unwrapped by caller first)
     let quote_wrapped = Cirru::List(vec![
