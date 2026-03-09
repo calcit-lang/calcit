@@ -18,9 +18,11 @@ cr edit schema 'some.ns/my-flag' --leaf -e ':bool'
 ## 改动文件
 
 ### `src/calcit/type_annotation.rs`
+
 - `builtin_tag_name` 改为 `pub(crate)`，供 snapshot 序列化侧调用。
 
 ### `src/snapshot.rs`
+
 - 新增常量 `PRIMITIVE_SCHEMA_TAGS`：列出允许作为 leaf schema 的原始类型。
 - `validate_schema_for_write`：对 `Cirru::Leaf` 先检查是否在允许列表，允许则直接 Ok；否则给出提示信息。
 - `parse_loaded_schema_annotation`：新增对 `Edn::Tag` 的处理，返回对应 `CalcitTypeAnnotation`。
@@ -28,6 +30,7 @@ cr edit schema 'some.ns/my-flag' --leaf -e ':bool'
 - 测试 `test_validate_schema_for_write`：更新为测试原始类型 leaf 通过、未知 leaf 拒绝。
 
 ### `src/bin/cli_handlers/edit.rs`
+
 - `handle_schema`：`validate_schema_for_write` 通过后，若 `schema_payload` 是 `Cirru::Leaf`，用 `CalcitTypeAnnotation::from_tag_name` 直接设置 schema 并返回，不走函数 schema 解析路径。
 
 ## 完整数据流（以 `:string` 为例）
