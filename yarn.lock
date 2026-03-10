@@ -10,7 +10,7 @@ __metadata:
   resolution: "@calcit/procs@workspace:."
   dependencies:
     "@calcit/ternary-tree": "npm:0.0.25"
-    "@cirru/parser.ts": "npm:^0.0.8"
+    "@cirru/parser.ts": "npm:^0.0.9"
     "@cirru/writer.ts": "npm:^0.1.7"
     "@types/node": "npm:^25.0.9"
     typescript: "npm:^5.9.3"
@@ -24,10 +24,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cirru/parser.ts@npm:^0.0.8":
-  version: 0.0.8
-  resolution: "@cirru/parser.ts@npm:0.0.8"
-  checksum: 10c0/a722a1ae31503cd602d4bb868f9831f7cf0a3d457cde40fc363120271ebb1320c5cabdf051393b5b10ef3e29452c6e25ab8c2b0d981605299312391f528957b6
+"@cirru/parser.ts@npm:^0.0.9":
+  version: 0.0.9
+  resolution: "@cirru/parser.ts@npm:0.0.9"
+  checksum: 10c0/3b13623b8f627ac81adae0cb6a4e3664f0da09115a997ca9b78b8d5d0b0f9b9b18c1ad847e068831cb1052c7da2a00329d2af04421b1024a004eef0ddca5fd7a
   languageName: node
   linkType: hard
 
