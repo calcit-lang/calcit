@@ -1,27 +1,45 @@
 
-{} (:package |test-list)
-  :configs $ {} (:init-fn |test-list.main/main!) (:reload-fn |test-list.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-list)
+  :configs $ {} (:init-fn |test-list.main/main!) (:reload-fn |test-list.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
+  :entries $ {}
   :files $ {}
     |test-list.main $ %{} :FileEntry
       :defs $ {}
-        |*counted $ %{} :CodeEntry (:doc |)
+        |*counted $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote (defatom *counted 0)
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-alias $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-apply ()
               assert= 10 $ apply + ([] 1 2 3 4)
               assert= 10 $ + & ([] 1 2 3 4)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
-            assert= ([] 1 2 3 4) ([,] 1 , 2 , 3 , 4)
+            assert= ([] 1 2 3 4) ([,] 1 2 3 4)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-doseq $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing doseq")
@@ -44,6 +62,10 @@
                 swap! *counted &+ n
               assert= 10 $ deref *counted
               assert= 10 @*counted
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-every $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-every ()
@@ -59,6 +81,10 @@
                   fn (x) (&> x 4)
               assert-detect some? 1
               assert-detect not $ some? nil
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-foldl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-foldl ()
@@ -80,11 +106,16 @@
               assert=
                 reduce ([] 3 4 5) 2 +
                 , 14
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-groups $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-groups ()
               assert=
-                group-by (range 10) (\ .rem % 3)
+                group-by (range 10)
+                  fn (x) (assert-type x :number) (.rem x 3)
                 {}
                   0 $ [] 0 3 6 9
                   1 $ [] 1 4 7
@@ -101,6 +132,10 @@
               assert=
                 section-by ([]) 2
                 []
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-join $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -111,6 +146,10 @@
                 join ([] 1 2 3 4) 10
               assert= ([])
                 join ([]) 10
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-let[] $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing let[]")
@@ -119,7 +158,11 @@
                   quote $ let[] (a b c & d) ([] 1 2 3 4 5) (println a) (println b) (println c) (println d)
               let[] (a b c & d) ([] 1 2 3 4 5) (assert= 1 a) (assert= 2 b) (assert= 3 c)
                 assert= ([] 4 5) d
-        |test-list $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
+        |test-list $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-list () $ let
                 a $ [] 1 2 3
@@ -269,7 +312,8 @@
                   take ([] 1 2 3 4 5 6) 1
                   , 0
                 , 0
-        |test-match $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-match $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing list match")
               assert= :empty $ list-match ([])
@@ -292,7 +336,8 @@
                 list-match ([] 1 2 3)
                   () nil
                   (l0 ls) (println "|...effect in match") ([] l0 ls)
-        |test-methods $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing list methods")
               assert= true $ .any? ([] 1 2 3 4)
@@ -366,7 +411,7 @@
                   2 $ [] 2
                   0 $ [] 3
                 .group-by ([] 1 2 3 4)
-                  fn (x) (.rem x 3)
+                  fn (x) (assert-type x :number) (.rem x 3)
               assert= 0 $ .index-of ([] :a :b :c :d) :a
               assert= nil $ .index-of ([] :a :b :c :d) :e
               assert= ([] 1 :sep 2 :sep 3 :sep 4 :sep 5)
@@ -382,7 +427,6 @@
                   fn (idx x) ([] idx x)
               assert= 4 $ .max ([] 1 2 3 4)
               assert= 1 $ .min ([] 1 2 3 4)
-              assert= |1 $ .min ([] |1 |2 |3 |4)
               assert= :b $ .nth ([] :a :b :c :d) 1
               assert= nil $ .nth ([] :a :b :c :d) 5
               assert= ([] 4 3 2 1)
@@ -427,14 +471,16 @@
                 .dissoc ([] :a :b :c) 2
               assert= ([] 1 2 3)
                 distinct $ [] 1 2 3 1 2
-        |test-methods-shorthand $ %{} :CodeEntry (:doc "|test shorthand")
+          :examples $ []
+        |test-methods-shorthand $ %{} :CodeEntry (:doc "|test shorthand") (:schema nil)
           :code $ quote
-            fn ()
-              &let
-                xs $ [] 1 2 3 4
-                assert= 1 $ xs.get 0
-                assert= true $ xs.any? $ fn (x) (&> x 3)
-        |test-pair $ %{} :CodeEntry (:doc |)
+            fn () $ &let
+              xs $ [] 1 2 3 4
+              assert= 1 $ xs.get 0
+              assert= true $ xs.any?
+                fn (x) (&> x 3)
+          :examples $ []
+        |test-pair $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               assert=
@@ -448,7 +494,8 @@
                 .filter-pair
                   [] ([] :a 2) ([] :b 12) ([] :b 112)
                   fn (k n) (> n 10)
-        |test-repeat $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-repeat $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               assert= (repeat :a 5) ([] :a :a :a :a :a)
@@ -457,12 +504,19 @@
                 [] :a 1 :b 2 :c 3 :d 4
               assert= ([] :a 1 :b 2 :c 3 :d 4)
                 interleave ([] :a :b :c :d) ([] 1 2 3 4)
-        |test-sort $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-sort $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            fn () $ assert=
-              sort ([] 4 3 2 1) (\ &- % %2)
-              [] 1 2 3 4
-      :ns $ %{} :CodeEntry (:doc |)
+            fn ()
+              assert=
+                sort $ [] 4 3 2 1
+                [] 1 2 3 4
+              assert=
+                sort ([] 4 3 2 1) (\ &- % %2)
+                [] 1 2 3 4
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-list.main $ :require
             util.core :refer $ log-title inside-eval:
+        :examples $ []

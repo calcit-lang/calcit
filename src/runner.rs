@@ -4,14 +4,54 @@ pub mod track;
 use std::sync::Arc;
 use std::vec;
 
-use crate::builtins::{self, IMPORTED_PROCS};
+use crate::builtins;
 use crate::calcit::{
   CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
   CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
+use crate::data::cirru;
 use crate::program;
 use crate::util::string::has_ns_part;
+
+fn format_fn_arg_labels(args: &CalcitFnArgs) -> String {
+  match args {
+    CalcitFnArgs::Args(xs) => xs
+      .iter()
+      .map(|idx| CalcitLocal::read_name(*idx).to_string())
+      .collect::<Vec<_>>()
+      .join(" "),
+    CalcitFnArgs::MarkedArgs(xs) => xs.iter().map(ToString::to_string).collect::<Vec<_>>().join(" "),
+  }
+}
+
+fn format_runtime_values(values: &[Calcit]) -> String {
+  if values.is_empty() {
+    "[]".to_owned()
+  } else {
+    format!("{}", CalcitList::from(values))
+  }
+}
+
+fn build_fn_arity_mismatch_error(info: &CalcitFn, values: &[Calcit], call_stack: &CallStackList, phase: &str) -> CalcitErr {
+  let expected = info.args.param_len();
+  let actual = values.len();
+  let def_ref = info
+    .def_ref
+    .as_ref()
+    .map(|r| format!("{}/{}", r.def_ns, r.def_name))
+    .unwrap_or_else(|| format!("{}/{}", info.def_ns, info.name));
+  let msg = format!(
+    "function arity mismatch during {phase}: `{}` expected {expected} argument(s), got {actual}\n  params: ({})\n  values: {}\n  fn-namespace: {}\n  fn-name: {}\n  def-ref: {}",
+    info.name,
+    format_fn_arg_labels(info.args.as_ref()),
+    format_runtime_values(values),
+    info.def_ns,
+    info.name,
+    def_ref,
+  );
+  CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, msg, call_stack)
+}
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
@@ -31,6 +71,10 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Proc(_)
     | Macro { .. }
     | Fn { .. }
+    | Struct { .. }
+    | Enum { .. }
+    | Trait { .. }
+    | Impl { .. }
     | Syntax(_, _)
     | Method(..)
     | AnyRef(..) => Ok(expr.to_owned()),
@@ -43,10 +87,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
     Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
     List(xs) => match xs.first() {
-      None => Err(CalcitErr::use_msg_stack(
+      None => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Arity,
         format!("cannot evaluate empty expr: {expr}"),
         call_stack,
+        expr.get_location(),
       )),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
@@ -62,20 +107,23 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     },
     Recur(_) => unreachable!("recur not expected to be from symbol"),
     RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
-    Set(_) => Err(CalcitErr::use_msg_stack(
+    Set(_) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected set for expr",
       call_stack,
+      expr.get_location(),
     )),
-    Map(_) => Err(CalcitErr::use_msg_stack(
+    Map(_) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected map for expr",
       call_stack,
+      expr.get_location(),
     )),
-    Record { .. } => Err(CalcitErr::use_msg_stack(
+    Record { .. } => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected record for expr",
       call_stack,
+      expr.get_location(),
     )),
   }
 }
@@ -138,21 +186,39 @@ pub fn call_expr(
               None => Ok(Calcit::Nil),
             }
           } else {
-            Err(CalcitErr::use_msg_stack(
+            Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Type,
               format!("expected a hashmap, got: {obj}"),
               call_stack,
+              obj.get_location(),
             ))
           }
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Arity,
             format!("tag-accessor takes only 1 argument, {xs}"),
             call_stack,
+            xs.first().and_then(|node| node.get_location()),
           ))
         }
       } else {
-        CalcitErr::err_str(CalcitErrKind::Unexpected, format!("unknown method for rust runtime: {kind}"))
+        Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Unexpected,
+          format!(
+            "method kind `{kind}` (`.{prefix}{name}`) is only available in JS codegen, not supported in Rust runtime. \
+             Use `cr js` to compile to JS, or avoid `.!` / `.-` syntax in server-side code. \
+             Expression: {xs}",
+            prefix = match kind {
+              MethodKind::InvokeNative => "!",
+              MethodKind::InvokeNativeOptional => "?!",
+              MethodKind::Access => "-",
+              MethodKind::AccessOptional => "?-",
+              _ => "?",
+            },
+          ),
+          call_stack,
+          xs.first().and_then(|node| node.get_location()),
+        ))
       }
     }
     Calcit::Fn { info, .. } => {
@@ -212,47 +278,72 @@ pub fn call_expr(
             None => Ok(Calcit::Nil),
           }
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected a hashmap, got: {v}"),
             call_stack,
+            v.get_location(),
           ))
         }
       } else {
-        Err(CalcitErr::use_msg_stack(
+        Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Arity,
           format!("tag only takes 1 argument, got: {rest_nodes}"),
           call_stack,
+          xs.first().and_then(|node| node.get_location()),
         ))
       }
     }
     Calcit::Registered(alias) => {
-      // call directly to reduce clone
-      let ps = IMPORTED_PROCS.read().expect("read procs");
-      match ps.get(alias) {
-        Some(f) => {
-          let values = if spreading {
-            evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
-          } else {
-            evaluate_args(rest_nodes, scope, file_ns, call_stack)?
-          };
-          // weird, but it's faster to pass `values` than passing `&values`
-          // also println slows down code a bit. could't figure out, didn't read asm either
-          f(values, call_stack)
+      let values = if spreading {
+        evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
+      } else {
+        evaluate_args(rest_nodes, scope, file_ns, call_stack)?
+      };
+      builtins::call_registered_proc(alias, values, call_stack).map_err(|e| {
+        if e.kind == CalcitErrKind::Var {
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Var,
+            format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
+            call_stack,
+            xs.first().and_then(|node| node.get_location()),
+          )
+        } else {
+          e
         }
-        None => Err(CalcitErr::use_msg_stack(
-          CalcitErrKind::Var,
-          format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
-          call_stack,
-        )),
-      }
+      })
     }
-    a => Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Type,
-      format!("cannot be used as operator: {a:?} in {xs}"),
-      call_stack,
-      a.get_location(),
-    )),
+    a => {
+      let location = xs
+        .first()
+        .and_then(|node| node.get_location())
+        .or_else(|| a.get_location())
+        .or_else(|| xs.drop_left().first().and_then(|node| node.get_location()));
+      let expr_one_liner = {
+        let expr = Calcit::from(xs.to_owned());
+        match cirru::calcit_to_cirru(&expr) {
+          Ok(v) => match cirru_parser::format_expr_one_liner(&v) {
+            Ok(s) => s,
+            Err(_) => expr.lisp_str(),
+          },
+          Err(_) => expr.lisp_str(),
+        }
+      };
+      let operator_desc = match cirru::calcit_to_cirru(a) {
+        Ok(v) => match cirru_parser::format_expr_one_liner(&v) {
+          Ok(s) => s,
+          Err(_) => a.lisp_str(),
+        },
+        Err(_) => a.lisp_str(),
+      };
+      Err(CalcitErr::use_msg_stack_location_with_hint(
+        CalcitErrKind::Type,
+        format!("cannot be used as operator: {operator_desc} in {expr_one_liner}"),
+        call_stack,
+        location,
+        "Possible: check if a leading `,` is needed to prevent a single-line call of Cirru syntax.",
+      ))
+    }
   }
 }
 
@@ -289,6 +380,8 @@ pub fn evaluate_symbol(
         Ok(v.to_owned())
       } else if let Ok(p) = sym.parse::<CalcitProc>() {
         Ok(Calcit::Proc(p))
+      } else if builtins::is_registered_proc(sym) {
+        Ok(Calcit::Registered(sym.into()))
       } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
         Ok(v)
       } else if let Some(v) = eval_symbol_from_program(sym, file_ns, call_stack)? {
@@ -395,7 +488,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
   match &*info.args {
     CalcitFnArgs::Args(args) => {
       if args.len() != values.len() {
-        unreachable!("args length mismatch")
+        return Err(build_fn_arity_mismatch_error(info, values, call_stack, "call"));
       }
       for (idx, v) in args.iter().enumerate() {
         body_scope.insert_mut(*v, values[idx].to_owned());
@@ -412,7 +505,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
-            unreachable!("args length mismatch in recur")
+            return Err(build_fn_arity_mismatch_error(info, &current_values, call_stack, "recur"));
           }
           for (idx, v) in args.iter().enumerate() {
             body_scope.insert_mut(*v, current_values[idx].to_owned());
@@ -436,7 +529,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
   match &*info.args {
     CalcitFnArgs::Args(args) => {
       if args.len() != values.len() {
-        unreachable!("args length mismatch")
+        return Err(build_fn_arity_mismatch_error(info, &values, call_stack, "call"));
       }
       for (idx, v) in values.into_iter().enumerate() {
         body_scope.insert_mut(args[idx], v);
@@ -453,7 +546,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
-            unreachable!("args length mismatch in recur")
+            return Err(build_fn_arity_mismatch_error(info, &current_values, call_stack, "recur"));
           }
           for (idx, v) in current_values.into_iter().enumerate() {
             body_scope.insert_mut(args[idx], v);
@@ -512,7 +605,7 @@ pub fn bind_marked_args(
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               CalcitErrKind::Arity,
-              format!("extra args `{args:?}` after spreading in `{args:?}`",),
+              format!("invalid argument declaration after `&` in signature `{}`", render_marked_args(args)),
               call_stack,
             ));
           }
@@ -520,7 +613,7 @@ pub fn bind_marked_args(
         _ => {
           return Err(CalcitErr::use_msg_stack(
             CalcitErrKind::Arity,
-            format!("invalid control insode spreading mode: {args:?}"),
+            format!("invalid argument declaration after `&` in signature `{}`", render_marked_args(args)),
             call_stack,
           ));
         }
@@ -539,7 +632,11 @@ pub fn bind_marked_args(
             } else {
               return Err(CalcitErr::use_msg_stack(
                 CalcitErrKind::Arity,
-                format!("too few values `{values:?}` passed to args `{args:?}`"),
+                format!(
+                  "too few values `{values:?}` for arguments `{}`; missing required argument `{}`",
+                  render_marked_args(args),
+                  CalcitLocal::read_name(*idx)
+                ),
                 call_stack,
               ));
             }
@@ -552,12 +649,29 @@ pub fn bind_marked_args(
   if pop_values_idx.0 >= values.len() {
     Ok(())
   } else {
+    let extra_count = values.len() - pop_values_idx.0;
     Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
-      format!("extra args `{args:?}` not handled while passing values `{values:?}` to args `{args:?}`",),
+      format!(
+        "too many values `{values:?}` for arguments `{}`; {} extra value(s) are not handled",
+        render_marked_args(args),
+        extra_count
+      ),
       call_stack,
     ))
   }
+}
+
+fn render_marked_args(args: &[CalcitArgLabel]) -> String {
+  let mut parts: Vec<String> = vec![];
+  for arg in args {
+    match arg {
+      CalcitArgLabel::RestMark => parts.push("&".to_owned()),
+      CalcitArgLabel::OptionalMark => parts.push("?".to_owned()),
+      CalcitArgLabel::Idx(idx) => parts.push(CalcitLocal::read_name(*idx).to_string()),
+    }
+  }
+  format!("({})", parts.join(" "))
 }
 
 pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -622,10 +736,11 @@ pub fn evaluate_spreaded_args(
               spreading = false;
               Ok(())
             }
-            a => Err(CalcitErr::use_msg_stack(
+            a => Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Arity,
               format!("expected list for spreading, got: {a}"),
               call_stack,
+              a.get_location(),
             )),
           }
         } else {
@@ -644,10 +759,11 @@ pub fn evaluate_spreaded_args(
               spreading = false;
               Ok(())
             }
-            a => Err(CalcitErr::use_msg_stack(
+            a => Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Arity,
               format!("expected list for spreading, got: {a}"),
               call_stack,
+              a.get_location(),
             )),
           }
         } else {

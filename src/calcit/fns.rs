@@ -42,9 +42,9 @@ impl CalcitFnArgs {
     }
   }
 
-  /// Produce a Vec<Option<...>> aligned with current parameter arity for storing type hints.
-  pub fn empty_arg_types(&self) -> Vec<Option<Arc<CalcitTypeAnnotation>>> {
-    vec![None; self.param_len()]
+  /// Produce a Vec<Arc<...>> aligned with current parameter arity for storing type hints.
+  pub fn empty_arg_types(&self) -> Vec<Arc<CalcitTypeAnnotation>> {
+    vec![super::DYNAMIC_TYPE.clone(); self.param_len()]
   }
 }
 
@@ -53,13 +53,45 @@ pub struct CalcitFn {
   pub name: Arc<str>,
   /// where it was defined
   pub def_ns: Arc<str>,
+  /// reference to a top-level defn when available
+  pub def_ref: Option<CalcitFnDefRef>,
+  /// usage metadata for codegen and diagnostics
+  pub usage: CalcitFnUsageMeta,
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
   pub body: Vec<Calcit>,
+  /// generics declared by hint-fn
+  pub generics: Arc<Vec<Arc<str>>>,
   /// return type declared by hint-fn
-  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
+  pub return_type: Arc<CalcitTypeAnnotation>,
   /// argument types declared by assert-type
-  pub arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
+  pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CalcitFnDefRef {
+  pub def_ns: Arc<str>,
+  pub def_name: Arc<str>,
+  pub coord: Option<(u16, u16)>,
+  pub is_defn: bool,
+  pub is_macro_gen: bool,
+}
+
+impl Default for CalcitFnDefRef {
+  fn default() -> Self {
+    CalcitFnDefRef {
+      def_ns: Arc::from(""),
+      def_name: Arc::from(""),
+      coord: None,
+      is_defn: false,
+      is_macro_gen: false,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CalcitFnUsageMeta {
+  pub used_in_impl: bool,
 }
 
 #[cfg(test)]
@@ -71,7 +103,12 @@ mod tests {
     let args = CalcitFnArgs::Args(vec![1, 2, 3]);
     assert_eq!(args.param_len(), 3);
     assert_eq!(args.empty_arg_types().len(), 3);
-    assert!(args.empty_arg_types().iter().all(|item| item.is_none()));
+    assert!(
+      args
+        .empty_arg_types()
+        .iter()
+        .all(|item| matches!(**item, CalcitTypeAnnotation::Dynamic))
+    );
   }
 
   #[test]
@@ -84,7 +121,12 @@ mod tests {
     ]);
     assert_eq!(args.param_len(), 2, "only locals should be counted toward arity");
     assert_eq!(args.empty_arg_types().len(), 2);
-    assert!(args.empty_arg_types().iter().all(|item| item.is_none()));
+    assert!(
+      args
+        .empty_arg_types()
+        .iter()
+        .all(|item| matches!(**item, CalcitTypeAnnotation::Dynamic))
+    );
   }
 }
 

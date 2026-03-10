@@ -14,8 +14,8 @@ pub struct CalcitLocal {
   pub sym: Arc<str>,
   pub info: Arc<CalcitSymbolInfo>,
   pub location: Option<Arc<Vec<u16>>>,
-  /// optional type annotation gathered during preprocessing
-  pub type_info: Option<Arc<CalcitTypeAnnotation>>,
+  /// type annotation gathered during preprocessing, defaults to Dynamic
+  pub type_info: Arc<CalcitTypeAnnotation>,
 }
 
 impl CalcitLocal {
@@ -33,8 +33,10 @@ impl CalcitLocal {
 
   pub fn read_name(idx: u16) -> String {
     let locals = LOCAL_NAMES.read().expect("read local names");
-    let (_, s) = locals.load(idx);
-    s.to_string()
+    match locals.load(idx) {
+      Ok((_, s)) => s.to_string(),
+      Err(_) => format!("<local:{idx}>"),
+    }
   }
 
   /// display local variables from numbers
@@ -58,7 +60,6 @@ impl CalcitLocal {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use cirru_edn::EdnTag;
 
   #[test]
   fn tracks_symbols_and_displays_args() {
@@ -79,13 +80,8 @@ mod tests {
       sym: Arc::from("typed-var"),
       info,
       location: None,
-      type_info: Some(type_hint),
+      type_info: type_hint,
     };
-    let stored_tag = local
-      .type_info
-      .as_ref()
-      .and_then(|ann| ann.as_tag())
-      .expect("tag annotation should be stored");
-    assert_eq!(stored_tag, &EdnTag::from("sample/type"));
+    assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Tag));
   }
 }

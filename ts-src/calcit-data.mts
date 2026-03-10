@@ -4,12 +4,16 @@ import { overwriteMapComparator } from "./js-map.mjs";
 import { disableListStructureCheck } from "@calcit/ternary-tree";
 
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
+import { CalcitStruct } from "./js-struct.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
 import { CalcitRef } from "./js-ref.mjs";
@@ -79,6 +83,9 @@ export let isNestedCalcitData = (x: CalcitValue): boolean => {
   if (x instanceof CalcitRecord) {
     return x.fields.length > 0;
   }
+  if (x instanceof CalcitImpl) {
+    return x.fields.length > 0;
+  }
   if (x instanceof CalcitSet) {
     return false;
   }
@@ -94,6 +101,9 @@ export let tipNestedCalcitData = (x: CalcitValue): string => {
   }
   if (x instanceof CalcitRecord) {
     return "'%{}...";
+  }
+  if (x instanceof CalcitImpl) {
+    return "'%impl...";
   }
   if (x instanceof CalcitSet) {
     return "'#{}...";
@@ -158,6 +168,12 @@ export let castTag = (x: CalcitValue): CalcitTag => {
   if (x instanceof CalcitSymbol) {
     return newTag(x.value);
   }
+  if (typeof x === "function") {
+    const methodName = (x as { __calcitMethodName?: unknown }).__calcitMethodName;
+    if (typeof methodName === "string") {
+      return newTag(methodName);
+    }
+  }
   throw new Error(`Cannot cast this to tag: ${x}`);
 };
 
@@ -177,6 +193,9 @@ let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
 let defaultHash_record = valueHash("record:");
+let defaultHash_impl = valueHash("impl:");
+let defaultHash_struct = valueHash("struct:");
+let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
 
 let defaultHash_unknown = valueHash("unknown:");
@@ -304,6 +323,41 @@ export let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
+  if (x instanceof CalcitImpl) {
+    let base = defaultHash_impl;
+    base = mergeValueHash(base, hashFunction(x.name));
+    if (x.origin != null) {
+      base = mergeValueHash(base, hashFunction(x.origin));
+    }
+    for (let idx = 0; idx < x.fields.length; idx++) {
+      base = mergeValueHash(base, hashFunction(x.fields[idx]));
+      base = mergeValueHash(base, hashFunction(x.values[idx]));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitStruct) {
+    let base = defaultHash_struct;
+    base = mergeValueHash(base, hashFunction(x.name));
+    for (let idx = 0; idx < x.fields.length; idx++) {
+      base = mergeValueHash(base, hashFunction(x.fields[idx]));
+      base = mergeValueHash(base, hashFunction(x.fieldTypes[idx]));
+    }
+    for (let impl of x.impls) {
+      base = mergeValueHash(base, hashFunction(impl));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitEnum) {
+    let base = defaultHash_enum;
+    base = mergeValueHash(base, hashFunction(x.prototype));
+    for (let impl of x.impls) {
+      base = mergeValueHash(base, hashFunction(impl));
+    }
+    x.cachedHash = base;
+    return base;
+  }
   if (x instanceof CalcitCirruQuote) {
     let base = defaultHash_cirru_quote;
     base = hashCirru(base, x.value);
@@ -376,6 +430,18 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRecord) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitImpl) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitStruct) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitEnum) {
+    return x.toString();
+  }
+  if (x instanceof CalcitTrait) {
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRef) {
@@ -643,6 +709,50 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
         }
       }
       return true;
+    }
+    return false;
+  }
+  if (x instanceof CalcitImpl) {
+    if (y instanceof CalcitImpl) {
+      if (x.name !== y.name) {
+        return false;
+      }
+      if ((x.origin == null) !== (y.origin == null)) {
+        return false;
+      }
+      if (x.origin != null && y.origin != null && x.origin.name.value !== y.origin.name.value) {
+        return false;
+      }
+      if (!fieldsEqual(x.fields, y.fields)) {
+        return false;
+      }
+      if (x.values.length !== y.values.length) {
+        return false;
+      }
+      for (let idx = 0; idx < x.fields.length; idx++) {
+        if (!_$n__$e_(x.values[idx], y.values[idx])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+  if (x instanceof CalcitStruct) {
+    if (y instanceof CalcitStruct) {
+      return x.name === y.name && fieldsEqual(x.fields, y.fields);
+    }
+    return false;
+  }
+  if (x instanceof CalcitEnum) {
+    if (y instanceof CalcitEnum) {
+      return x.name === y.name;
+    }
+    return false;
+  }
+  if (x instanceof CalcitTrait) {
+    if (y instanceof CalcitTrait) {
+      return x.name === y.name;
     }
     return false;
   }

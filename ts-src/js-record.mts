@@ -1,16 +1,19 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 import { newTag, castTag, toString, CalcitTag, getStringName, findInFields } from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
+
+import { CalcitStruct } from "./js-struct.mjs";
 
 export class CalcitRecord {
   name: CalcitTag;
   fields: Array<CalcitTag>;
   values: Array<CalcitValue>;
-  klass: CalcitValue;
+  structRef: CalcitStruct;
   cachedHash: Hash;
-  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, klass?: CalcitValue) {
+  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, structRef?: CalcitStruct) {
     this.name = name;
     let fieldNames = fields.map(castTag);
     this.fields = fields;
@@ -23,7 +26,7 @@ export class CalcitRecord {
       this.values = new Array(fieldNames.length);
     }
     this.cachedHash = null;
-    this.klass = klass;
+    this.structRef = structRef || new CalcitStruct(name, fields, new Array(fields.length).fill(null));
   }
   get(k: CalcitValue) {
     let field = castTag(k);
@@ -53,7 +56,7 @@ export class CalcitRecord {
         values[idx] = this.values[idx];
       }
     }
-    return new CalcitRecord(this.name, this.fields, values, this.klass);
+    return new CalcitRecord(this.name, this.fields, values, this.structRef);
   }
   /** return -1 for missing */
   findIndex(k: CalcitValue) {
@@ -74,12 +77,17 @@ export class CalcitRecord {
     parts.push(")");
     return parts.join("");
   }
-  withClass(klass: CalcitValue): CalcitRecord {
-    if (klass instanceof CalcitRecord) {
-      return new CalcitRecord(this.name, this.fields, this.values, klass);
+  withImpls(impl: CalcitValue | CalcitImpl[]): CalcitRecord {
+    let nextImpls: CalcitImpl[];
+    if (impl instanceof CalcitImpl) {
+      nextImpls = [impl];
+    } else if (Array.isArray(impl)) {
+      nextImpls = impl;
     } else {
-      throw new Error("Expected a record");
+      throw new Error("Expected an impl or array of impls");
     }
+    let nextStruct = new CalcitStruct(this.name, this.fields, this.structRef.fieldTypes, this.structRef.impls.concat(nextImpls));
+    return new CalcitRecord(this.name, this.fields, this.values, nextStruct);
   }
 }
 
@@ -96,7 +104,7 @@ export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): Calc
   return new CalcitRecord(castTag(name), fieldNames);
 };
 
-export let new_class_record = (klass: CalcitRecord, name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
+export let new_impl_record = (impl: CalcitImpl, name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
   let fieldNames = fields.map(castTag).sort((x, y) => {
     if (x.idx < y.idx) {
       return -1;
@@ -106,7 +114,9 @@ export let new_class_record = (klass: CalcitRecord, name: CalcitValue, ...fields
       throw new Error(`Unexpected duplication in record fields: ${x.toString()}`);
     }
   });
-  return new CalcitRecord(castTag(name), fieldNames, undefined, klass);
+  let nameTag = castTag(name);
+  let structRef = new CalcitStruct(nameTag, fieldNames, new Array(fieldNames.length).fill(null), [impl]);
+  return new CalcitRecord(nameTag, fieldNames, undefined, structRef);
 };
 
 export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean => {
@@ -125,20 +135,28 @@ export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean =
 };
 
 export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+  let recordProto: CalcitRecord;
   if (proto instanceof CalcitRecord) {
+    recordProto = proto;
+  } else if (proto instanceof CalcitStruct) {
+    recordProto = new CalcitRecord(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
+  } else {
+    throw new Error("Expected prototype to be a record");
+  }
+  {
     if (xs.length % 2 !== 0) {
       throw new Error("Expected even number of key/value");
     }
-    if (xs.length !== proto.fields.length * 2) {
+    if (xs.length !== recordProto.fields.length * 2) {
       throw new Error("fields size does not match");
     }
 
-    let values = new Array(proto.fields.length);
+    let values = new Array(recordProto.fields.length);
 
-    for (let i = 0; i < proto.fields.length; i++) {
+    for (let i = 0; i < recordProto.fields.length; i++) {
       let idx = -1;
-      let k = proto.fields[i];
-      for (let j = 0; j < proto.fields.length; j++) {
+      let k = recordProto.fields[i];
+      for (let j = 0; j < recordProto.fields.length; j++) {
         if (k === castTag(xs[j * 2])) {
           idx = j;
           break;
@@ -154,10 +172,39 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       values[i] = xs[idx * 2 + 1];
     }
 
-    return new CalcitRecord(proto.name, proto.fields, values, proto.klass);
-  } else {
-    throw new Error("Expected prototype to be a record");
+    return new CalcitRecord(recordProto.name, recordProto.fields, values, recordProto.structRef);
   }
+};
+
+export let _$n__PCT__$M__$q_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+  let recordProto: CalcitRecord;
+  let values: Array<CalcitValue>;
+  if (proto instanceof CalcitStruct) {
+    recordProto = new CalcitRecord(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
+    values = recordProto.values.slice();
+  } else {
+    throw new Error("Expected prototype to be a struct");
+  }
+
+  if (xs.length % 2 !== 0) {
+    throw new Error("Expected even number of key/value");
+  }
+
+  let touched = new Set<number>();
+  for (let i = 0; i < xs.length; i += 2) {
+    let k = castTag(xs[i]);
+    let idx = findInFields(recordProto.fields, k);
+    if (idx < 0) {
+      throw new Error(`Cannot find field ${k} among ${recordProto.fields}`);
+    }
+    if (touched.has(idx)) {
+      throw new Error(`record field already has value, probably duplicated key: ${k}`);
+    }
+    touched.add(idx);
+    values[idx] = xs[i + 1];
+  }
+
+  return new CalcitRecord(recordProto.name, recordProto.fields, values, recordProto.structRef);
 };
 
 /// update record with new values
@@ -176,13 +223,13 @@ export let _$n_record_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>):
       }
       values[idx] = v;
     }
-    return new CalcitRecord(proto.name, proto.fields, values, proto.klass);
+    return new CalcitRecord(proto.name, proto.fields, values, proto.structRef);
   } else {
     throw new Error("Expected prototype to be a record");
   }
 };
 
-export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitTag => {
+export let _$n_record_$o_get_name = (x: CalcitValue): CalcitTag => {
   if (x instanceof CalcitRecord) {
     return x.name;
   } else {
@@ -190,23 +237,36 @@ export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitTag => {
   }
 };
 
+export let _$n_record_$o_struct = (x: CalcitValue): CalcitValue => {
+  if (x instanceof CalcitRecord) {
+    return x.structRef ?? null;
+  } else {
+    throw new Error("Expected a record");
+  }
+};
+
 export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
-  if (!(proto instanceof CalcitRecord)) throw new Error("Expected prototype to be record");
+  let recordProto: CalcitRecord;
+  if (proto instanceof CalcitStruct) {
+    recordProto = new CalcitRecord(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
+  } else {
+    throw new Error("Expected prototype to be struct");
+  }
 
   if (data instanceof CalcitRecord) {
-    if (fieldsEqual(proto.fields, data.fields)) {
-      return new CalcitRecord(proto.name, proto.fields, data.values);
+    if (fieldsEqual(recordProto.fields, data.fields)) {
+      return new CalcitRecord(recordProto.name, recordProto.fields, data.values, recordProto.structRef);
     } else {
       let values: Array<CalcitValue> = [];
-      for (let i = 0; i < proto.fields.length; i++) {
-        let field = proto.fields[i];
+      for (let i = 0; i < recordProto.fields.length; i++) {
+        let field = recordProto.fields[i];
         let idx = findInFields(data.fields, field);
         if (idx < 0) {
           throw new Error(`Cannot find field ${field} among ${data.fields}`);
         }
         values.push(data.values[idx]);
       }
-      return new CalcitRecord(proto.name, proto.fields, values);
+      return new CalcitRecord(recordProto.name, recordProto.fields, values, recordProto.structRef);
     }
   } else if (data instanceof CalcitMap || data instanceof CalcitSliceMap) {
     let pairs_buffer: Array<[CalcitTag, CalcitValue]> = [];
@@ -220,8 +280,8 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
     pairs_buffer.sort((pair1, pair2) => pair1[0].cmp(pair2[0]));
 
     let values: Array<CalcitValue> = [];
-    outerLoop: for (let i = 0; i < proto.fields.length; i++) {
-      let field = proto.fields[i];
+    outerLoop: for (let i = 0; i < recordProto.fields.length; i++) {
+      let field = recordProto.fields[i];
       for (let idx = 0; idx < pairs_buffer.length; idx++) {
         let pair = pairs_buffer[idx];
         if (pair[0] === field) {
@@ -231,7 +291,7 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       }
       throw new Error(`Cannot find field ${field} among ${pairs_buffer}`);
     }
-    return new CalcitRecord(proto.name, proto.fields, values);
+    return new CalcitRecord(recordProto.name, recordProto.fields, values, recordProto.structRef);
   } else {
     throw new Error("Expected record or data for making a record");
   }
@@ -250,17 +310,23 @@ export let _$n_record_$o_to_map = (x: CalcitValue): CalcitValue => {
 };
 
 export let _$n_record_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean => {
-  if (!(x instanceof CalcitRecord)) {
-    throw new Error("Expected first argument to be record");
-  }
-  if (!(y instanceof CalcitRecord)) {
-    throw new Error("Expected second argument to be record");
+  let targetStruct: CalcitStruct;
+  if (y instanceof CalcitRecord) {
+    targetStruct = y.structRef;
+  } else if (y instanceof CalcitStruct) {
+    targetStruct = y;
+  } else {
+    throw new Error("Expected second argument to be record or struct");
   }
 
-  if (x.name !== y.name) {
-    return false;
+  if (x instanceof CalcitRecord) {
+    if (x.name !== targetStruct.name) {
+      return false;
+    }
+    return fieldsEqual(x.fields, targetStruct.fields);
+  } else {
+    throw new Error("Expected first argument to be record");
   }
-  return fieldsEqual(x.fields, y.fields);
 };
 
 export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue, new_key: CalcitValue, new_value: CalcitValue) {

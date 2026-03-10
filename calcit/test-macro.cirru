@@ -1,19 +1,22 @@
 
-{} (:package |test-macro)
-  :configs $ {} (:init-fn |test-macro.main/main!) (:reload-fn |test-macro.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-macro)
+  :configs $ {} (:init-fn |test-macro.main/main!) (:reload-fn |test-macro.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
+  :entries $ {}
   :files $ {}
     |test-macro.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-cond) (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (do true)
-        |test-assert $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-assert $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Assert in different order")
               assert (= 1 1) |string
               assert |string $ = 1 1
-        |test-case $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-case $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-case () (log-title "|Testing case")
               let
@@ -26,10 +29,11 @@
                 assert=
                   macroexpand-all $ quote
                     case (+ 1 2) (1 |one) (2 |two) (3 |three)
-                  quasiquote $ ~&let
-                    v__1 $ + 1 2
-                    ~if (~&= v__1 1) |one $ ~if (~&= v__1 2) |two
-                      ~if (~&= v__1 3) |three nil
+                  macroexpand-all $ quote
+                    &let
+                      v__1 $ calcit.core/+ 1 2
+                      if (&= v__1 1) |one $ if (&= v__1 2) |two
+                        if (&= v__1 3) |three nil
                 assert=
                   macroexpand $ quote
                     case (+ 1 2) (1 |one) (2 |two) (3 |three)
@@ -41,7 +45,8 @@
                     &case v__2 nil (1 |one) (2 |two) (3 |three)
                   quote $ if (&= v__2 1) |one
                     &case v__2 nil (2 |two) (3 |three)
-        |test-cond $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-cond $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -54,7 +59,8 @@
               assert= (compare-x 10) |>5
               assert= (compare-x 6) |>5
               assert= (compare-x 4) |<=5
-        |test-detector $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-detector $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Detector function")
               inside-eval: (&reset-gensym-index!)
@@ -72,7 +78,8 @@
                           , "| <--------"
                       eprintln "|  value is:" v__1
                       raise "|Not satisfied in assertion!"
-        |test-expr-in-case $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-expr-in-case $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-expr-in-case () $ assert= |5
               case (+ 1 4)
@@ -82,7 +89,8 @@
                 (+ 2 2) |4
                 (+ 2 3) |5
                 (+ 2 4) |6
-        |test-extract $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-extract $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Extract map via tags")
               inside-eval: (&reset-gensym-index!)
@@ -111,46 +119,52 @@
                 assert=
                   macroexpand-all $ quote
                     let[] (a b) ([] 1 2) (+ a b)
-                  quasiquote $ ~&let
-                    v__1 $ ~[] 1 2
-                    ~&let
-                      a $ ~&list:nth v__1 0
-                      ~&let
-                        b $ ~&list:nth v__1 1
-                        + a b
+                  macroexpand-all $ quote
+                    &let
+                      v__1 $ [] 1 2
+                      &let
+                        a $ &list:nth v__1 0
+                        &let
+                          b $ &list:nth v__1 1
+                          calcit.core/+ a b
                 assert=
                   macroexpand-all $ quote
                     let[] (a b) xs $ + a b
-                  quasiquote $ ~&let
-                    a $ ~&list:nth xs 0
-                    ~&let
-                      b $ ~&list:nth xs 1
-                      + a b
+                  macroexpand-all $ quote
+                    &let
+                      a $ &list:nth xs 0
+                      &let
+                        b $ &list:nth xs 1
+                        calcit.core/+ a b
                 assert=
                   macroexpand-all $ quote
                     cond
                         = a 1
                         , |one
                       true |other
-                  quasiquote $ ~if (= a 1) |one |other
+                  macroexpand-all $ quote
+                    if (= a 1) |one |other
               assert= ([] 3 4 5 6)
                 let-sugar
                       [] a b
                       [] 3 4
                     ({} c d) ({,} :c 5 :d 6)
                   [] a b c d
-        |test-flipped $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-flipped $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title |flipped)
               assert=
                 flipped [] 1 2 $ + 3 4
                 [] 7 2 1
-        |test-gensym $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-gensym $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () $ inside-eval: (log-title "|Testing gensym") (&reset-gensym-index!)
               assert= (gensym) 'G__1
               assert= (gensym |a) 'a__2
-        |test-if-let $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-if-let $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|if let")
               assert= 6 $ if-let
@@ -162,7 +176,8 @@
               assert= 2 $ if-let (a nil) 1 2
               assert= nil $ when-let (a nil) 1 2
               assert= 2 $ when-let (a 10) 1 2
-        |test-lambda $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-lambda $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing lambda macro")
               inside-eval:
@@ -182,16 +197,19 @@
               inside-eval:
                 assert=
                   macroexpand-all $ quote (\ + 2 %)
-                  quasiquote $ ~defn %\ (? % %2) (+ 2 %)
+                  macroexpand-all $ quote
+                    defn %\ (? % %2) (calcit.core/+ 2 %)
                 ; assert=
                   macroexpand-all $ quote (\ x)
                   quasiquote $ ~defn %\ (? % %2) (x)
                 assert=
                   macroexpand-all $ quote (\ + x %)
-                  quasiquote $ ~defn %\ (? % %2) (+ x %)
+                  macroexpand-all $ quote
+                    defn %\ (? % %2) (calcit.core/+ x %)
                 assert=
                   macroexpand-all $ quote (\ + x % %2)
-                  quasiquote $ ~defn %\ (? % %2) (+ x % %2)
+                  macroexpand-all $ quote
+                    defn %\ (? % %2) (calcit.core/+ x % %2)
                 assert=
                   macroexpand $ quote (\. x x)
                   quasiquote $ defn f_x (x) x
@@ -217,12 +235,14 @@
                   \. x,y (println "|inside lambda alias" x y) x
                   , 2
                 , 3
-        |test-misc $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-misc $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title |misc)
               assert= (noted nothing 1) 1
               inside-eval: $ println (&extract-code-into-edn 'code)
-        |test-thread-macros $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-thread-macros $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-thread-macros () (log-title "|Testing thread macros")
               inside-eval:
@@ -237,6 +257,15 @@
                   macroexpand $ quote
                     -> a $ b c
                   quote $ b a c
+                assert=
+                  macroexpand $ quote (-> event .-target .-checked)
+                  quote $ .-checked (.-target event)
+                assert=
+                  macroexpand $ quote (-> files &map:to-list)
+                  quote $ &map:to-list files
+                assert=
+                  macroexpand $ quote (-> files :defs)
+                  quote $ :defs files
                 assert=
                   macroexpand $ quote
                     -> a (b c) (d e f)
@@ -260,6 +289,12 @@
                   macroexpand $ quote
                     ->> a $ b c
                   quote $ b c a
+                assert=
+                  macroexpand $ quote (->> files &map:to-list)
+                  quote $ &map:to-list files
+                assert=
+                  macroexpand $ quote (->> files :defs)
+                  quote $ :defs files
                 assert=
                   macroexpand $ quote
                     ->> a (b c) (d e f)
@@ -285,7 +320,8 @@
               assert= 35 $ ->% 3 (+ % 4) (* % 5)
               assert= 36 $ ->% 3 (+ % %) (* % %)
               assert= 18 $ %<- (+ % %) (* % %) 3
-        |test-w-log $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-w-log $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing w-log") (&reset-gensym-index!)
               inside-eval: $ assert=
@@ -327,7 +363,8 @@
                 assert= 7 $ f2 3 4
                 assert= 11 $ f2 & ([] 5 6)
                 assert= 7 $ f3 3 4
-        |test-with-cpu-time $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-with-cpu-time $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing with-cpu-time")
               inside-eval: (&reset-gensym-index!)
@@ -351,7 +388,9 @@
               assert=
                 with-cpu-time $ &+ 1 2
                 , 3
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-macro.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
+        :examples $ []

@@ -1,29 +1,38 @@
 {
   "name": "@calcit/procs",
-  "version": "0.10.8",
+  "version": "0.12.1",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
-    "@types/node": "^25.0.6",
+    "@types/node": "^25.0.9",
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "compile": "rm -rfv lib/* && tsc",
-    "procs-link": "ln -s ../../ node_modules/@calcit/procs",
+    "compile": "rm -rf lib && tsc",
+    "procs-link": "ln -sfn ../../ node_modules/@calcit/procs",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
     "eval": "cargo run --bin cr -- eval",
+    "fmt-rs": "cargo fmt --all",
+    "lint-rs": "cargo clippy --all-targets -- -D warnings",
+    "test-rs": "cargo test -q",
+    "test-fail": "cargo test -q --bin cr type_fail_",
+    "test-snippets": "cargo test -q snippets::tests",
+    "bench-recur-smoke": "cargo run --bin cr -- calcit/test.cirru -1 js && node --input-type=module -e \"import { test_loop } from './js-out/test-recursion.main.mjs'; const n=3000; const t0=process.hrtime.bigint(); for(let i=0;i<n;i++) test_loop(); const dt=Number(process.hrtime.bigint()-t0)/1e6; console.log('test_loop_ms='+dt.toFixed(3));\"",
+    "check-smooth": "yarn fmt-rs && yarn lint-rs && yarn test-rs && yarn check-all",
     "check-all": "yarn compile && yarn try-rs && yarn try-js && yarn try-ir",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
+    "warn-dyn-method": "cargo run --bin cr -- calcit/test.cirru -1 --warn-dyn-method",
     "try-js-brk": "cargo run --bin cr -- calcit/test.cirru -1 js && node --inspect-brk js-out/main.mjs",
     "try-js": "cargo run --bin cr -- calcit/test.cirru -1 js && node js-out/main.mjs",
     "try-ir": "cargo run --bin cr -- calcit/test.cirru -1 js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/calcit-lang/calcit"
+    "url": "git+https://github.com/calcit-lang/calcit.git"
   },
   "dependencies": {
     "@calcit/ternary-tree": "0.0.25",
-    "@cirru/parser.ts": "^0.0.7",
+    "@cirru/parser.ts": "^0.0.8",
     "@cirru/writer.ts": "^0.1.7"
-  }
+  },
+  "packageManager": "yarn@4.12.0"
 }

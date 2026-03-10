@@ -18,3 +18,9 @@ Cargo.toml
 builds
 tsconfig.json
 docs/
+Agents.md
+
+rust-toolchain.toml
+demos/
+.rustfmt.toml
+drafts/

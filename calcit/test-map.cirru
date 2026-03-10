@@ -1,13 +1,18 @@
 
-{} (:package |test-map)
-  :configs $ {} (:init-fn |test-map.main/main!) (:reload-fn |test-map.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-map)
+  :configs $ {} (:init-fn |test-map.main/main!) (:reload-fn |test-map.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
+  :entries $ {}
   :files $ {}
     |test-map.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-diff $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing diff")
@@ -29,6 +34,10 @@
               assert=
                 &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
                 #{} :a
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-get $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing get")
@@ -48,6 +57,10 @@
                 assert= 10 $ foldl m 0
                   fn (acc pair)
                     let[] (k v) pair $ &+ acc v
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing keys")
@@ -57,15 +70,23 @@
               assert=
                 keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
                 #{} :a :b
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-map-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing {,}")
               inside-eval: $ assert=
-                macroexpand $ quote ({,} :a 1 , :b 2 , :c 3)
+                macroexpand $ quote ({,} :a 1 :b 2 :c 3)
                 quote $ pairs-map
                   section-by ([] :a 1 :b 2 :c 3) 2
-              assert= ({,} :a 1 , :b 2 , :c 3)
+              assert= ({,} :a 1 :b 2 :c 3)
                 {} (:a 1) (:b 2) (:c 3)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-maps $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-maps ()
@@ -103,7 +124,7 @@
                   data $ &{} :a 1
                   .!turnMap data
                   assert= (assoc data :b 2 :c 3) (&{} :a 1 :b 2 :c 3)
-                assert= (dissoc dict :a) ({,} :b 2 , :c 3 , :d 5)
+                assert= (dissoc dict :a) ({,} :b 2 :c 3 :d 5)
                 assert= dict $ dissoc dict :h
                 assert= (dissoc dict :a :b :c) (&{} :d 5)
                 assert=
@@ -113,11 +134,11 @@
                     {} $ :d 4
                   {} (:a 1) (:b 2) (:c 3) (:d 4)
                 assert=
-                  merge ({,} :a 1 , :b 2 , :c 3) ({,} :a nil , :b 12) ({,} :c nil , :d 14)
-                  {,} :a nil , :b 12 , :c nil , :d 14
+                  merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+                  {,} :a nil :b 12 :c nil :d 14
                 assert=
-                  merge-non-nil ({,} :a 1 , :b 2 , :c 3) ({,} :a nil , :b 12) ({,} :c nil , :d 14)
-                  {,} :a 1 , :b 12 , :c 3 , :d 14
+                  merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+                  {,} :a 1 :b 12 :c 3 :d 14
                 assert=
                   merge
                     {} (:a true) (:b false) (:c true) (:d false)
@@ -131,6 +152,10 @@
                 assert=
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing map methods")
@@ -140,8 +165,12 @@
                 .assoc (&{} :a 1) :b 2
               assert= true $ .contains? (&{} :a 1) :a
               assert= false $ .contains? (&{} :a 1) :b
-              assert= 2 $ .count
-                {} (:a 1) (:b 2)
+              let
+                  m $ {} (:a 1) (:b 2)
+                inside-eval:
+                  assert= m $ assert-traits m calcit.core/Len
+                  assert= 2 $ .len m
+                inside-js: $ assert= 2 (.count m)
               assert= (&{} :a 1)
                 .dissoc (&{} :a 1 :b 2) :b
               assert= (&{} :a 1)
@@ -170,14 +199,15 @@
                     [] (first entry)
                       + 10 $ last entry
               ; "not so stable, :bbbb is rare so it could be larger"
-              assert=
-                [] ([] :a 11) ([] :bbbb 12)
-                .sort-by
-                  .map-list (&{} :a 1 :bbbb 2)
+              let
+                  mapped $ .map-list (&{} :a 1 :bbbb 2)
                     fn (entry)
                       [] (first entry)
                         + 10 $ last entry
-                  , first
+                  _ $ assert-type mapped :list
+                assert=
+                  [] ([] :a 11) ([] :bbbb 12)
+                  .sort-by mapped first
               assert=
                 {} $ :a 11
                 .map-kv
@@ -199,10 +229,20 @@
               assert=
                 [] $ [] :a 1
                 .to-list $ {} (:a 1)
-              assert= 2 $ .count
-                .to-list $ {} (:a 1) (:b 2)
-              assert= 2 $ .count
-                .to-pairs $ {} (:a 1) (:b 2)
+              let
+                  pairs $ .to-list
+                    {} (:a 1) (:b 2)
+                inside-eval:
+                  assert= pairs $ assert-traits pairs calcit.core/Len
+                  assert= 2 $ .len pairs
+                inside-js: $ assert= 2 (.count pairs)
+              let
+                  pairs $ .to-pairs
+                    {} (:a 1) (:b 2)
+                inside-eval:
+                  assert= pairs $ assert-traits pairs calcit.core/Len
+                  assert= 2 $ .len pairs
+                inside-js: $ assert= 2 (.count pairs)
               assert= (&{} :a 1 :b 2)
                 unselect-keys (&{} :a 1 :b 2 :c 3) ([] :c)
               assert= (#{} 1 2 3)
@@ -222,7 +262,7 @@
                   , 2
               assert= 3 $ count
                 .destruct $ &{} :a 1 :b 2 :c 3
-              assert= 2 $ .count
+              assert= 2 $ count
                 last $ .destruct (&{} :a 1 :b 2 :c 3)
               assert= (&{} :c 3)
                 .diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
@@ -232,6 +272,10 @@
                 .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-native-map-syntax $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-native-map-syntax () $ inside-eval:
@@ -239,6 +283,10 @@
                 macroexpand $ quote
                   {} $ :a 1
                 quote $ &{} :a 1
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-pairs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -274,6 +322,10 @@
                   {} (:a 1) (:b 2) (:c 3) (:d 4)
                   fn (k v) (&> v 2)
                 {} (:c 3) (:d 4)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-select $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing select")
@@ -297,13 +349,22 @@
                   {} (:a 1) (:b 2) (:c 3)
                   [] :c :d
                 {} (:a 1) (:b 2)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-shorthand $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing shorthand")
               let
                   dict $ {} (:a 1)
                 assert= 1 dict.:a
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-map.main $ :require
             [] util.core :refer $ [] log-title inside-eval: inside-js:
+        :examples $ []

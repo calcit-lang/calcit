@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,9 +13,13 @@ mod injection;
 
 mod cli_handlers;
 
+#[cfg(test)]
+#[path = "cr_tests/type_fail.rs"]
+mod cr_type_fail_tests;
+
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CountCallsCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -22,8 +28,12 @@ use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
 
 use calcit::{
-  ProgramEntries, builtins, call_stack, cli_args, codegen, codegen::COMPILE_ERRORS_FILE, codegen::emit_js::gen_stack, program, runner,
-  snapshot, util,
+  ProgramEntries, builtins,
+  calcit::{CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SchemaKind, SyntaxTypeSignature},
+  call_stack, cli_args, codegen,
+  codegen::COMPILE_ERRORS_FILE,
+  codegen::emit_js::gen_stack,
+  program, runner, snapshot, util,
 };
 use cirru_parser::Cirru;
 
@@ -31,6 +41,10 @@ fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
   let cli_args: ToplevelCalcit = argh::from_env();
+
+  if cli_args.no_tips {
+    cli_handlers::suppress_tips();
+  }
 
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
@@ -59,8 +73,11 @@ fn main() -> Result<(), String> {
   let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
-  println!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
+  if !cli_args.version {
+    eprintln!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
+  }
   if cli_args.version {
+    println!("{}", cli_args::CALCIT_VERSION);
     return Ok(());
   }
 
@@ -75,7 +92,7 @@ fn main() -> Result<(), String> {
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
-  println!(
+  eprintln!(
     "{}",
     format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
   );
@@ -101,6 +118,9 @@ fn main() -> Result<(), String> {
     for module_path in &command.dep {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
+        if snapshot.files.contains_key(k) {
+          return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+        }
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
@@ -137,6 +157,9 @@ fn main() -> Result<(), String> {
     for module_path in &snapshot.configs.modules {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
+        if snapshot.files.contains_key(k) {
+          return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+        }
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
@@ -169,10 +192,12 @@ fn main() -> Result<(), String> {
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
+  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
+
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
     calcit::calcit::CORE_NS,
-    calcit::calcit::BUILTIN_CLASSES_ENTRY,
+    calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
     &CallStackList::default(),
   )
@@ -192,8 +217,12 @@ fn main() -> Result<(), String> {
   let task = if check_only {
     run_check_only(&entries)
   } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
+    if !js_options.watch {
+      // `cr js` defaults to once mode; use --watch/-w to keep watching
+      eval_once = true;
+    }
     if js_options.once {
-      // redundant config, during watching mode, emit once
+      // kept for compatibility, force once mode
       eval_once = true;
     }
     if cli_args.skip_arity_check {
@@ -201,8 +230,12 @@ fn main() -> Result<(), String> {
     }
     run_codegen(&entries, &cli_args.emit_path, false)
   } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
+    if !ir_options.watch {
+      // `cr ir` defaults to once mode; use --watch/-w to keep watching
+      eval_once = true;
+    }
     if ir_options.once {
-      // redundant config, during watching mode, emit once
+      // kept for compatibility, force once mode
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
@@ -212,8 +245,13 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
+      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
     }
   } else {
+    if !cli_args.watch {
+      // direct run defaults to once mode; use --watch/-w to keep watching
+      eval_once = true;
+    }
     let started_time = Instant::now();
 
     let v = calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
@@ -407,7 +445,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  println!("{}", "Check-only mode: validating code...".dimmed());
+  eprintln!("{}", "Check-only mode: validating code...".dimmed());
 
   // preprocess init_fn
   match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
@@ -416,8 +454,9 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing init_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
-      return Err(failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
     }
   }
 
@@ -428,15 +467,16 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing reload_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
-      return Err(failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
     }
   }
 
   // Report warnings
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
-    println!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
     LocatedWarning::print_list(&warnings);
     return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
@@ -476,16 +516,14 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
 
       let _ = fs::write(
         &js_file_path,
-        format!(
-          "export default \"Preprocessing failed:\\n{}\";",
-          failure.msg.trim().escape_default()
-        ),
+        format!("export default \"Preprocessing failed:\\n{}\";", headline.trim().escape_default()),
       );
-      return Err(failure.msg);
+      return Err(headline);
     }
   }
 
@@ -494,8 +532,9 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
-      return Err(failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
     }
   }
 
@@ -513,7 +552,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
     }
@@ -523,7 +562,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
     }
@@ -647,6 +686,7 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
         doc: "Generated function to check all examples in this namespace".to_string(),
         examples: Vec::new(),
         code: check_function_code,
+        schema: calcit::calcit::DYNAMIC_TYPE.clone(),
       },
     );
   }
@@ -773,4 +813,1065 @@ fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Res
   }
 
   Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DefKind {
+  Data,
+  Fn,
+  Macro,
+  Proc,
+  Syntax,
+  Other,
+}
+
+impl DefKind {
+  fn as_str(self) -> &'static str {
+    match self {
+      DefKind::Data => "data",
+      DefKind::Fn => "fn",
+      DefKind::Macro => "macro",
+      DefKind::Proc => "proc",
+      DefKind::Syntax => "syntax",
+      DefKind::Other => "other",
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CoverageLevel {
+  None,
+  Partial,
+  Full,
+}
+
+impl CoverageLevel {
+  fn as_str(self) -> &'static str {
+    match self {
+      CoverageLevel::None => "none",
+      CoverageLevel::Partial => "partial",
+      CoverageLevel::Full => "full",
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+struct TypeCoverageRow {
+  ns: String,
+  def: String,
+  kind: DefKind,
+  level: CoverageLevel,
+  params: Vec<String>,
+  param_annotations: BTreeMap<String, Vec<String>>,
+  return_type_hints: Vec<String>,
+  data_type: Option<String>,
+  /// Schema-vs-definition mismatch warnings (kind, arity, rest).
+  schema_issues: Vec<String>,
+}
+
+fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  if let Some(ns) = &options.ns
+    && !snapshot.files.contains_key(ns)
+  {
+    return Err(format!("Namespace not found: {ns}"));
+  }
+
+  let mut rows: Vec<TypeCoverageRow> = Vec::new();
+  let pkg = snapshot.package.as_str();
+
+  for (ns, file) in &snapshot.files {
+    if let Some(exact) = &options.ns
+      && ns != exact
+    {
+      continue;
+    }
+    if let Some(prefix) = &options.ns_prefix
+      && !ns.starts_with(prefix)
+    {
+      continue;
+    }
+    if !(options.deps || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
+      continue;
+    }
+
+    for (def_name, entry) in &file.defs {
+      rows.push(analyze_code_entry(ns, def_name, entry));
+    }
+  }
+
+  if let Some(raw) = &options.only {
+    let selected = parse_coverage_levels(raw)?;
+    rows.retain(|row| selected.contains(&row.level));
+  }
+
+  rows.sort_by(|a, b| {
+    a.ns
+      .cmp(&b.ns)
+      .then(a.level.cmp(&b.level))
+      .then(a.kind.as_str().cmp(b.kind.as_str()))
+      .then(a.def.cmp(&b.def))
+  });
+
+  if rows.is_empty() {
+    println!("No definitions found in selected namespace scope.");
+    return Ok(());
+  }
+
+  let mut level_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut ns_set: BTreeSet<String> = BTreeSet::new();
+
+  for row in &rows {
+    *level_count.entry(row.level.as_str()).or_insert(0) += 1;
+    *kind_count.entry(row.kind.as_str()).or_insert(0) += 1;
+    ns_set.insert(row.ns.clone());
+  }
+
+  println!("Type coverage check");
+  println!("- namespaces: {}", ns_set.len());
+  println!("- defs: {}", rows.len());
+  if let Some(raw) = &options.only {
+    println!("- only: {raw}");
+  }
+  println!(
+    "- levels: full={} partial={} none={}",
+    level_count.get("full").copied().unwrap_or(0),
+    level_count.get("partial").copied().unwrap_or(0),
+    level_count.get("none").copied().unwrap_or(0)
+  );
+  println!(
+    "- kinds: fn={} macro={} proc={} syntax={} data={} other={}",
+    kind_count.get("fn").copied().unwrap_or(0),
+    kind_count.get("macro").copied().unwrap_or(0),
+    kind_count.get("proc").copied().unwrap_or(0),
+    kind_count.get("syntax").copied().unwrap_or(0),
+    kind_count.get("data").copied().unwrap_or(0),
+    kind_count.get("other").copied().unwrap_or(0)
+  );
+  println!();
+
+  let mut current_ns: Option<&str> = None;
+
+  for row in &rows {
+    let typed_params = count_typed_params(&row.params, &row.param_annotations);
+    let total_params = row.params.len();
+
+    if current_ns != Some(row.ns.as_str()) {
+      println!("namespace: {}", row.ns);
+      current_ns = Some(row.ns.as_str());
+    }
+
+    println!("- def: {}", row.def);
+    println!("  kind: {}", row.kind.as_str());
+    println!("  coverage: {}", row.level.as_str());
+
+    match row.kind {
+      DefKind::Data => {
+        println!("  data-type: {}", row.data_type.clone().unwrap_or_else(|| "unknown".to_string()));
+      }
+      DefKind::Fn => {
+        if row.return_type_hints.is_empty() {
+          println!("  return: (no hint)");
+        } else {
+          println!("  return:");
+          for item in &row.return_type_hints {
+            println!("    - {item}");
+          }
+        }
+
+        println!("  params ({typed_params}/{total_params}):");
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {name} => (no assert-type)"),
+            }
+          }
+        }
+      }
+      DefKind::Macro => {
+        println!("  params ({typed_params}/{total_params}):");
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {name} => (no assert-type)"),
+            }
+          }
+        }
+      }
+      DefKind::Proc => {
+        if row.return_type_hints.is_empty() {
+          println!("  return: (no hint)");
+        } else {
+          println!("  return:");
+          for item in &row.return_type_hints {
+            println!("    - {item}");
+          }
+        }
+
+        println!("  params ({typed_params}/{total_params}):");
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {name} => (no assert-type)"),
+            }
+          }
+        }
+      }
+      DefKind::Syntax => {
+        if row.return_type_hints.is_empty() {
+          println!("  return: (no hint)");
+        } else {
+          println!("  return:");
+          for item in &row.return_type_hints {
+            println!("    - {item}");
+          }
+        }
+
+        println!("  params ({typed_params}/{total_params}):");
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {name} => (no assert-type)"),
+            }
+          }
+        }
+      }
+      DefKind::Other => {
+        println!("  details: no type pattern recognized");
+      }
+    }
+
+    if !row.schema_issues.is_empty() {
+      println!("  schema-issues:");
+      for issue in &row.schema_issues {
+        println!("    - {issue}");
+      }
+    }
+
+    println!();
+  }
+
+  Ok(())
+}
+
+fn analyze_builtin_syntax(def_name: &str, sig: &SyntaxTypeSignature) -> TypeCoverageRow {
+  let params: Vec<String> = sig.param_names.iter().map(|s| s.to_string()).collect();
+
+  let param_annotations: BTreeMap<String, Vec<String>> = sig
+    .param_types
+    .iter()
+    .zip(sig.param_names.iter())
+    .map(|(t, name)| {
+      let type_str = t.describe();
+      (name.to_string(), vec![type_str])
+    })
+    .collect();
+
+  let return_type_hints = vec![sig.return_type.describe()];
+
+  let typed_count = param_annotations.values().filter(|v| !v.is_empty()).count();
+  let level = if params.is_empty() || typed_count == params.len() {
+    CoverageLevel::Full
+  } else if typed_count > 0 {
+    CoverageLevel::Partial
+  } else {
+    CoverageLevel::None
+  };
+
+  TypeCoverageRow {
+    ns: calcit::calcit::CORE_NS.to_owned(),
+    def: def_name.to_owned(),
+    kind: DefKind::Syntax,
+    level,
+    params,
+    param_annotations,
+    return_type_hints,
+    data_type: None,
+    schema_issues: vec![],
+  }
+}
+
+fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverageRow {
+  let params: Vec<String> = sig.arg_types.iter().enumerate().map(|(i, _)| format!("arg{i}")).collect();
+
+  let param_annotations: BTreeMap<String, Vec<String>> = sig
+    .arg_types
+    .iter()
+    .enumerate()
+    .map(|(i, t)| {
+      let name = format!("arg{i}");
+      let type_str = t.describe();
+      (name, vec![type_str])
+    })
+    .collect();
+
+  let return_type_hints = vec![sig.return_type.describe()];
+
+  let typed_count = param_annotations.values().filter(|v| !v.is_empty()).count();
+  let level = if params.is_empty() || typed_count == params.len() {
+    CoverageLevel::Full
+  } else if typed_count > 0 {
+    CoverageLevel::Partial
+  } else {
+    CoverageLevel::None
+  };
+
+  TypeCoverageRow {
+    ns: calcit::calcit::CORE_NS.to_owned(),
+    def: def_name.to_owned(),
+    kind: DefKind::Proc,
+    level,
+    params,
+    param_annotations,
+    return_type_hints,
+    data_type: None,
+    schema_issues: vec![],
+  }
+}
+
+/// Validate that a code entry matches its schema (kind, arity, rest param presence).
+/// Returns a list of warning/error messages. Empty means no issues.
+/// - `&runtime-inplementation` = builtin proc/syntax → always skipped.
+/// - Schema `:kind :fn`   → code must use `defn`.
+/// - Schema `:kind :macro` → code must use `defmacro`.
+/// - Schema `:args` length must match required param count in code.
+/// - Schema `:rest` presence must match `&` rest param in code.
+fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &CalcitTypeAnnotation) -> Vec<String> {
+  // builtin proc/syntax — skip structural checks
+  if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-inplementation") {
+    return vec![];
+  }
+
+  let CalcitTypeAnnotation::Fn(fn_annot) = schema else {
+    // Non-Fn schema (Dynamic, etc.) has no structural constraints
+    return vec![];
+  };
+
+  let Cirru::List(xs) = code else {
+    return vec![];
+  };
+
+  let code_kind = match xs.first() {
+    Some(Cirru::Leaf(s)) if s.as_ref() == "defn" => "defn",
+    Some(Cirru::Leaf(s)) if s.as_ref() == "defmacro" => "defmacro",
+    _ => return vec![], // not a defn/defmacro form — skip
+  };
+
+  let mut issues: Vec<String> = vec![];
+
+  // Kind mismatch
+  match (fn_annot.fn_kind, code_kind) {
+    (SchemaKind::Fn, "defmacro") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :fn but code uses defmacro"));
+    }
+    (SchemaKind::Macro, "defn") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses defn"));
+    }
+    _ => {}
+  }
+
+  if code_kind == "defmacro" {
+    return issues;
+  }
+
+  // Arity check
+  let (required_count, has_rest) = analyze_param_arity(xs.get(2));
+  let schema_required = fn_annot.arg_types.len();
+  let schema_has_rest = fn_annot.rest_type.is_some();
+
+  if required_count != schema_required {
+    issues.push(format!(
+      "{ns}/{def_name}: schema has {schema_required} required arg(s) but code has {required_count}"
+    ));
+  }
+  if has_rest != schema_has_rest {
+    if has_rest {
+      issues.push(format!("{ns}/{def_name}: code has & rest param but schema has no :rest"));
+    } else {
+      issues.push(format!("{ns}/{def_name}: schema has :rest but code has no & param"));
+    }
+  }
+
+  issues
+}
+
+/// Count required params and detect rest param from a defn/defmacro args form.
+fn analyze_param_arity(args: Option<&Cirru>) -> (usize, bool) {
+  let Some(Cirru::List(xs)) = args else {
+    return (0, false);
+  };
+  let mut required = 0usize;
+  let mut has_rest = false;
+  let mut after_amp = false;
+  for item in xs.iter() {
+    match item {
+      Cirru::Leaf(s) => {
+        let s = s.as_ref();
+        if s == "&" {
+          after_amp = true;
+        } else if s == "[]" || s == "," || s == "?" {
+          // skip structural markers
+        } else if after_amp {
+          has_rest = true;
+        } else if !s.starts_with(':') && !s.starts_with('|') && !s.chars().all(|c| c.is_ascii_digit()) {
+          required += 1;
+        }
+      }
+      Cirru::List(_) => {
+        if !after_amp {
+          required += 1;
+        }
+      }
+    }
+  }
+  (required, has_rest)
+}
+
+fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> TypeCoverageRow {
+  // First check if this is a builtin proc in calcit.core
+  if ns == calcit::calcit::CORE_NS {
+    if let Ok(proc) = (*def_name).parse::<CalcitProc>() {
+      if let Some(sig) = proc.get_type_signature() {
+        return analyze_builtin_proc(def_name, &sig);
+      }
+    }
+    // Then check if this is a builtin syntax
+    if let Ok(syntax) = (*def_name).parse::<CalcitSyntax>() {
+      if let Some(sig) = syntax.get_type_signature() {
+        return analyze_builtin_syntax(def_name, &sig);
+      }
+    }
+  }
+
+  let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
+    Cirru::List(xs) => match xs.first() {
+      Some(Cirru::Leaf(head)) if &**head == "defn" => {
+        if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref()
+          && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+          && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(&schema)
+        {
+          return TypeCoverageRow {
+            ns: ns.to_owned(),
+            def: def_name.to_owned(),
+            kind: DefKind::Fn,
+            level,
+            params,
+            param_annotations,
+            return_type_hints,
+            data_type: None,
+            schema_issues: validate_def_vs_schema(ns, def_name, &entry.code, &entry.schema),
+          };
+        }
+        if std::env::var("CR_DEBUG_SCHEMA").is_ok() {
+          let schema_kind = match entry.schema.as_ref() {
+            CalcitTypeAnnotation::Fn(fn_annot) => match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+              Ok(schema) => match extract_fn_schema_hints(&schema) {
+                Some(_) => "Fn/schema-hints-ok".to_owned(),
+                None => "Fn/schema-hints-none".to_owned(),
+              },
+              Err(e) => format!("Fn/edn-to-cirru-err:{e}"),
+            },
+            other => format!("non-fn:{other:?}"),
+          };
+          eprintln!("[debug] {ns}/{def_name}: schema={schema_kind}");
+        }
+
+        let args = xs.get(2);
+        let body = &xs[3..];
+        let params = extract_param_symbols(args);
+        let param_annotations = extract_assert_type_annotations(body);
+        let return_type_hints = extract_return_type_hints(body);
+        let typed_count = count_typed_params(&params, &param_annotations);
+        let ret_typed = !return_type_hints.is_empty();
+        let level = if ret_typed && (params.is_empty() || typed_count == params.len()) {
+          CoverageLevel::Full
+        } else if ret_typed || typed_count > 0 {
+          CoverageLevel::Partial
+        } else {
+          CoverageLevel::None
+        };
+        (DefKind::Fn, params, param_annotations, return_type_hints, None, level)
+      }
+      Some(Cirru::Leaf(head)) if &**head == "defmacro" => {
+        let args = xs.get(2);
+        let body = &xs[3..];
+        let params = extract_param_symbols(args);
+        let param_annotations = extract_assert_type_annotations(body);
+        (DefKind::Macro, params, param_annotations, Vec::new(), None, CoverageLevel::Full)
+      }
+      Some(Cirru::Leaf(head)) if &**head == "def" => {
+        let inferred = xs.get(2).and_then(infer_data_type);
+        let level = CoverageLevel::Full;
+        (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), inferred, level)
+      }
+      _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::Full),
+    },
+    _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::Full),
+  };
+
+  TypeCoverageRow {
+    ns: ns.to_owned(),
+    def: def_name.to_owned(),
+    kind,
+    level,
+    params,
+    param_annotations,
+    return_type_hints,
+    data_type,
+    schema_issues: validate_def_vs_schema(ns, def_name, &entry.code, &entry.schema),
+  }
+}
+
+fn unwrap_optional_schema(schema: &Cirru) -> &Cirru {
+  match schema {
+    Cirru::List(items) => {
+      if let Some(Cirru::Leaf(head)) = items.first() {
+        if &**head == ":optional" && items.len() == 2 {
+          return &items[1];
+        }
+        if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+          return &items[2];
+        }
+      }
+      schema
+    }
+    _ => schema,
+  }
+}
+
+fn schema_to_map(schema: &Cirru) -> Option<BTreeMap<&str, &Cirru>> {
+  let schema = unwrap_optional_schema(schema);
+  let Cirru::List(items) = schema else {
+    return None;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return None;
+  };
+
+  let mut data = BTreeMap::new();
+  match &**head {
+    "&{}" => {
+      if (items.len() - 1) % 2 != 0 {
+        return None;
+      }
+      for idx in (1..items.len()).step_by(2) {
+        let key = match &items[idx] {
+          Cirru::Leaf(s) if s.starts_with(':') => s.as_ref(),
+          _ => return None,
+        };
+        data.insert(key, &items[idx + 1]);
+      }
+    }
+    "{}" => {
+      for pair in items.iter().skip(1) {
+        let Cirru::List(xs) = pair else {
+          return None;
+        };
+        if xs.len() != 2 {
+          return None;
+        }
+        let key = match &xs[0] {
+          Cirru::Leaf(s) if s.starts_with(':') => s.as_ref(),
+          _ => return None,
+        };
+        data.insert(key, &xs[1]);
+      }
+    }
+    _ => return None,
+  }
+  Some(data)
+}
+
+fn is_schema_list_annotation(node: &Cirru) -> bool {
+  match node {
+    Cirru::Leaf(s) => s.as_ref() == ":list",
+    Cirru::List(xs) => {
+      matches!(xs.first(), Some(Cirru::Leaf(head)) if &**head == "::")
+        && matches!(xs.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":list")
+    }
+  }
+}
+
+fn render_schema_param_type(ty_node: Option<&Cirru>, wrap_rest_as_list: bool) -> String {
+  let Some(ty_node) = ty_node else {
+    return ":dynamic".to_owned();
+  };
+
+  let rendered = render_cirru_inline(ty_node);
+  if !wrap_rest_as_list || rendered == ":dynamic" || is_schema_list_annotation(ty_node) {
+    rendered
+  } else {
+    format!(":: :list {rendered}")
+  }
+}
+
+fn read_schema_param_tuple(item: &Cirru, default_name: &str, wrap_rest_as_list: bool) -> Option<(String, String)> {
+  match item {
+    Cirru::Leaf(_) => Some((default_name.to_owned(), render_schema_param_type(Some(item), wrap_rest_as_list))),
+    Cirru::List(xs) => {
+      let Some(Cirru::Leaf(head)) = xs.first() else {
+        return None;
+      };
+      if &**head != "[]" && &**head != "::" {
+        return None;
+      }
+
+      match xs.len() {
+        2 => {
+          let ty = render_schema_param_type(xs.get(1), wrap_rest_as_list);
+          Some((default_name.to_owned(), ty))
+        }
+        3 => {
+          let ty_node = match xs.get(1) {
+            Some(Cirru::Leaf(name)) if name.starts_with('\'') => xs.get(2),
+            _ => Some(item),
+          };
+          let ty = render_schema_param_type(ty_node, wrap_rest_as_list);
+          Some((default_name.to_owned(), ty))
+        }
+        _ => None,
+      }
+    }
+  }
+}
+
+type FnSchemaHints = (Vec<String>, BTreeMap<String, Vec<String>>, Vec<String>, CoverageLevel);
+
+fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
+  let schema = schema_to_map(schema)?;
+
+  let mut params: Vec<String> = Vec::new();
+  let mut param_annotations: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+  if let Some(args_node) = schema.get(":args")
+    && let Cirru::List(items) = args_node
+    && matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]")
+  {
+    for (idx, item) in items.iter().skip(1).enumerate() {
+      if let Some((name, ty)) = read_schema_param_tuple(item, &format!("arg{idx}"), false) {
+        params.push(name.clone());
+        param_annotations.entry(name).or_default().push(ty);
+      }
+    }
+  }
+
+  if let Some(rest_node) = schema.get(":rest")
+    && let Some((name, ty)) = read_schema_param_tuple(rest_node, "rest", true)
+  {
+    params.push(name.clone());
+    param_annotations.entry(name).or_default().push(ty);
+  }
+
+  let return_type_hints = vec![
+    schema
+      .get(":return")
+      .map_or_else(|| ":dynamic".to_owned(), |v| render_cirru_inline(v)),
+  ];
+
+  let typed_count = params
+    .iter()
+    .filter(|name| {
+      param_annotations
+        .get(*name)
+        .is_some_and(|hints| hints.iter().any(|hint| hint != ":dynamic"))
+    })
+    .count();
+
+  let ret_typed = return_type_hints.iter().any(|hint| hint != ":dynamic");
+  let level = if ret_typed && (params.is_empty() || typed_count == params.len()) {
+    CoverageLevel::Full
+  } else if ret_typed || typed_count > 0 {
+    CoverageLevel::Partial
+  } else {
+    CoverageLevel::None
+  };
+
+  Some((params, param_annotations, return_type_hints, level))
+}
+
+fn extract_param_symbols(args: Option<&Cirru>) -> Vec<String> {
+  let mut out: Vec<String> = vec![];
+  if let Some(node) = args {
+    collect_param_symbols(node, &mut out);
+  }
+  dedup_keep_order(out)
+}
+
+fn collect_param_symbols(node: &Cirru, out: &mut Vec<String>) {
+  match node {
+    Cirru::Leaf(s) => {
+      let name = s.as_ref();
+      if name == "&" || name == "?" || name == "[]" || name == "," {
+        return;
+      }
+      if name.starts_with('|') || name.starts_with(':') || name.chars().all(|c| c.is_ascii_digit()) {
+        return;
+      }
+      out.push(name.to_string());
+    }
+    Cirru::List(xs) => {
+      for x in xs {
+        collect_param_symbols(x, out);
+      }
+    }
+  }
+}
+
+fn extract_assert_type_annotations(nodes: &[Cirru]) -> BTreeMap<String, Vec<String>> {
+  let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+  for node in nodes {
+    collect_assert_type_annotations(node, &mut out);
+  }
+
+  for items in out.values_mut() {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    items.retain(|v| seen.insert(v.to_owned()));
+  }
+
+  out
+}
+
+fn collect_assert_type_annotations(node: &Cirru, out: &mut BTreeMap<String, Vec<String>>) {
+  match node {
+    Cirru::Leaf(_) => {}
+    Cirru::List(xs) => {
+      if let Some(Cirru::Leaf(head)) = xs.first()
+        && &**head == "assert-type"
+        && let Some(Cirru::Leaf(symbol)) = xs.get(1)
+        && let Some(ty_node) = xs.get(2)
+      {
+        out.entry(symbol.to_string()).or_default().push(render_cirru_inline(ty_node));
+      }
+
+      for x in xs {
+        collect_assert_type_annotations(x, out);
+      }
+    }
+  }
+}
+
+fn extract_return_type_hints(nodes: &[Cirru]) -> Vec<String> {
+  let mut out: Vec<String> = Vec::new();
+  for node in nodes {
+    collect_return_type_hints(node, &mut out);
+  }
+
+  let mut seen: BTreeSet<String> = BTreeSet::new();
+  out.retain(|v| seen.insert(v.to_owned()));
+  out
+}
+
+fn collect_return_type_hints(node: &Cirru, out: &mut Vec<String>) {
+  match node {
+    Cirru::Leaf(_) => {}
+    Cirru::List(xs) => {
+      if let Some(Cirru::Leaf(head)) = xs.first()
+        && &**head == "return-type"
+        && let Some(ty_node) = xs.get(1)
+      {
+        out.push(render_cirru_inline(ty_node));
+      }
+
+      for x in xs {
+        collect_return_type_hints(x, out);
+      }
+    }
+  }
+}
+
+fn count_typed_params(params: &[String], annotations: &BTreeMap<String, Vec<String>>) -> usize {
+  params
+    .iter()
+    .filter(|name| annotations.get(*name).is_some_and(|items| !items.is_empty()))
+    .count()
+}
+
+fn dedup_keep_order(items: Vec<String>) -> Vec<String> {
+  let mut seen: BTreeSet<String> = BTreeSet::new();
+  let mut out: Vec<String> = Vec::new();
+  for item in items {
+    if seen.insert(item.to_owned()) {
+      out.push(item);
+    }
+  }
+  out
+}
+
+fn render_cirru_inline(node: &Cirru) -> String {
+  match node {
+    Cirru::Leaf(s) => s.to_string(),
+    Cirru::List(xs) => {
+      let parts = xs.iter().map(render_cirru_inline).collect::<Vec<_>>().join(" ");
+      format!("({parts})")
+    }
+  }
+}
+
+fn parse_coverage_levels(raw: &str) -> Result<BTreeSet<CoverageLevel>, String> {
+  let mut selected: BTreeSet<CoverageLevel> = BTreeSet::new();
+
+  for part in raw.split(',') {
+    let token = part.trim().to_ascii_lowercase();
+    if token.is_empty() {
+      continue;
+    }
+
+    match token.as_str() {
+      "none" => {
+        selected.insert(CoverageLevel::None);
+      }
+      "partial" => {
+        selected.insert(CoverageLevel::Partial);
+      }
+      "full" => {
+        selected.insert(CoverageLevel::Full);
+      }
+      _ => {
+        return Err(format!(
+          "Unknown coverage level `{token}` in --only. Expected comma-separated values from: none,partial,full"
+        ));
+      }
+    }
+  }
+
+  if selected.is_empty() {
+    return Err("`--only` is empty. Use one or more of: none,partial,full".to_string());
+  }
+
+  Ok(selected)
+}
+
+fn infer_data_type(node: &Cirru) -> Option<String> {
+  match node {
+    Cirru::Leaf(s) => {
+      let raw = s.as_ref();
+      if raw == "nil" {
+        Some("nil".to_string())
+      } else if raw == "true" || raw == "false" {
+        Some("bool".to_string())
+      } else if raw.starts_with('|') {
+        Some("string".to_string())
+      } else if raw.starts_with(':') {
+        Some("tag".to_string())
+      } else if raw.parse::<f64>().is_ok() {
+        Some("number".to_string())
+      } else {
+        None
+      }
+    }
+    Cirru::List(xs) => match xs.first() {
+      Some(Cirru::Leaf(head)) if &**head == "[]" => Some("list".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "{}" || &**head == "&{}" => Some("map".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "#{}" => Some("set".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "::" => Some("tuple".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "defn" || &**head == "fn" => Some("fn".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "defmacro" => Some("macro".to_string()),
+      _ => None,
+    },
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::fs;
+
+  fn leaf(text: &str) -> Cirru {
+    Cirru::Leaf(Arc::from(text))
+  }
+
+  fn list(items: Vec<Cirru>) -> Cirru {
+    Cirru::List(items)
+  }
+
+  fn schema_with_rest(rest: Cirru) -> Cirru {
+    list(vec![
+      leaf("{}"),
+      list(vec![leaf(":kind"), leaf(":fn")]),
+      list(vec![leaf(":args"), list(vec![leaf("[]")])]),
+      list(vec![leaf(":rest"), rest]),
+      list(vec![leaf(":return"), leaf(":dynamic")]),
+    ])
+  }
+
+  #[test]
+  fn schema_rest_shorthand_normalizes_to_list_annotation() {
+    let schema = schema_with_rest(leaf(":number"));
+    let (_, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
+
+    assert_eq!(param_annotations.get("rest"), Some(&vec![":: :list :number".to_owned()]));
+  }
+
+  #[test]
+  fn schema_rest_explicit_list_keeps_default_name() {
+    let schema = schema_with_rest(list(vec![leaf("::"), leaf(":list"), leaf(":number")]));
+    let (params, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
+
+    assert_eq!(params, vec!["rest".to_owned()]);
+    assert_eq!(param_annotations.get("rest"), Some(&vec!["(:: :list :number)".to_owned()]));
+    assert!(!param_annotations.contains_key(":list"));
+  }
+
+  #[test]
+  fn schema_rest_named_tuple_is_treated_as_type_only() {
+    let schema = schema_with_rest(list(vec![leaf("::"), leaf("'ys"), leaf(":number")]));
+    let (params, param_annotations, _, _) = extract_fn_schema_hints(&schema).expect("schema should parse");
+
+    assert_eq!(params, vec!["rest".to_owned()]);
+    assert_eq!(param_annotations.get("rest"), Some(&vec![":: :list :number".to_owned()]));
+  }
+
+  // --- validate_def_vs_schema tests ---
+
+  fn fn_schema_annotation(kind: SchemaKind, arg_count: usize, has_rest: bool) -> CalcitTypeAnnotation {
+    let arg_types = vec![calcit::calcit::DYNAMIC_TYPE.clone(); arg_count];
+    let rest_type = if has_rest {
+      Some(calcit::calcit::DYNAMIC_TYPE.clone())
+    } else {
+      None
+    };
+    CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types,
+      return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+      fn_kind: kind,
+      rest_type,
+    }))
+  }
+
+  fn defn_code(param_names: &[&str], has_rest: bool) -> Cirru {
+    let mut params: Vec<Cirru> = param_names.iter().map(|n| leaf(n)).collect();
+    if has_rest {
+      params.push(leaf("&"));
+      params.push(leaf("rest"));
+    }
+    list(vec![leaf("defn"), leaf("test-fn"), list(params), leaf("nil")])
+  }
+
+  fn defmacro_code(param_names: &[&str]) -> Cirru {
+    let params: Vec<Cirru> = param_names.iter().map(|n| leaf(n)).collect();
+    list(vec![leaf("defmacro"), leaf("test-macro"), list(params), leaf("nil")])
+  }
+
+  #[test]
+  fn validate_runtime_impl_is_skipped() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
+    let code = Cirru::Leaf(Arc::from("&runtime-inplementation"));
+    let issues = validate_def_vs_schema("calcit.core", "some-proc", &code, &schema);
+    assert!(issues.is_empty(), "runtime-inplementation should be skipped: {issues:?}");
+  }
+
+  #[test]
+  fn validate_correct_defn_no_issues() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
+    let code = defn_code(&["a", "b"], false);
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(issues.is_empty(), "correct defn should have no issues: {issues:?}");
+  }
+
+  #[test]
+  fn validate_correct_defn_with_rest_no_issues() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 1, true);
+    let code = defn_code(&["a"], true);
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(issues.is_empty(), "correct defn with rest should have no issues: {issues:?}");
+  }
+
+  #[test]
+  fn validate_kind_mismatch_fn_vs_defmacro() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 1, false);
+    let code = defmacro_code(&["a"]);
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(!issues.is_empty(), "kind mismatch fn/defmacro should be detected");
+    assert!(issues[0].contains(":fn") && issues[0].contains("defmacro"), "issue: {}", issues[0]);
+  }
+
+  #[test]
+  fn validate_kind_mismatch_macro_vs_defn() {
+    let schema = fn_schema_annotation(SchemaKind::Macro, 1, false);
+    let code = defn_code(&["a"], false);
+    let issues = validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(!issues.is_empty(), "kind mismatch macro/defn should be detected");
+    assert!(issues[0].contains(":macro") && issues[0].contains("defn"), "issue: {}", issues[0]);
+  }
+
+  #[test]
+  fn validate_macro_arity_is_ignored() {
+    let schema = fn_schema_annotation(SchemaKind::Macro, 1, false);
+    let code = defmacro_code(&["a", "b"]);
+    let issues = validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(issues.is_empty(), "macro arity differences should not be reported: {issues:?}");
+  }
+
+  #[test]
+  fn validate_arity_mismatch_detected() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 3, false); // schema expects 3 args
+    let code = defn_code(&["a", "b"], false); // code has 2
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(!issues.is_empty(), "arity mismatch should be detected");
+    assert!(issues.iter().any(|i| i.contains("3") && i.contains("2")), "issues: {issues:?}");
+  }
+
+  #[test]
+  fn validate_rest_mismatch_schema_has_rest_code_does_not() {
+    let schema = fn_schema_annotation(SchemaKind::Fn, 1, true); // schema has rest
+    let code = defn_code(&["a"], false); // code has no rest
+    let issues = validate_def_vs_schema("myns", "my-fn", &code, &schema);
+    assert!(!issues.is_empty(), "rest mismatch should be detected");
+    assert!(issues.iter().any(|i| i.contains(":rest")), "issues: {issues:?}");
+  }
+
+  #[test]
+  fn analyze_param_arity_basic() {
+    // ([] a b c)
+    let args = list(vec![leaf("[]"), leaf("a"), leaf("b"), leaf("c")]);
+    let (req, rest) = analyze_param_arity(Some(&args));
+    assert_eq!(req, 3);
+    assert!(!rest);
+  }
+
+  #[test]
+  fn analyze_param_arity_with_rest() {
+    // ([] a & xs)
+    let args = list(vec![leaf("[]"), leaf("a"), leaf("&"), leaf("xs")]);
+    let (req, rest) = analyze_param_arity(Some(&args));
+    assert_eq!(req, 1);
+    assert!(rest);
+  }
+
+  #[test]
+  fn validate_core_include_schema_matches_code() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = snapshot::load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+    let core_file = snapshot.files.get("calcit.core").expect("calcit.core file should exist");
+    let entry = core_file.defs.get("include").expect("include should exist");
+
+    let issues = validate_def_vs_schema("calcit.core", "include", &entry.code, &entry.schema);
+    assert!(
+      issues.is_empty(),
+      "include schema should match code: {issues:?}; code={:?}",
+      entry.code
+    );
+  }
 }

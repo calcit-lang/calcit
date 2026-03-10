@@ -1,4 +1,5 @@
 use core::cmp::Ordering;
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use rpds::HashTrieSet;
@@ -16,20 +17,39 @@ pub fn new_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:count expected 1 argument, but received:", xs);
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&list:count requires exactly 1 argument (a list), but received:",
+      xs,
+    );
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Number(ys.len() as f64)),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:count expected a list, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&list:count requires a list as argument, but received a value of type: {}",
+        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::NativeListCount).unwrap_or_else(|| {
+        String::from(
+          "💡 Hint: Use `count` function which works on multiple types including lists, or ensure you're passing a list to &list:count",
+        )
+      });
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
 pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&list:nth expected 2 arguments, but received: {}", CalcitList::from(xs)),
+    let msg = format!(
+      "&list:nth requires exactly 2 arguments (list and index), but received {} arguments",
+      xs.len()
     );
+    let hint = String::from(
+      "💡 Correct usage: `&list:nth ([] 1 2 3) 0` => 1\n  First argument: a list\n  Second argument: numeric index (0-based)",
+    );
+    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, msg, xs, hint);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(ys), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -37,12 +57,21 @@ pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Some(v) => Ok((*v).to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:nth expected a valid index, {e}")),
+      Err(e) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&list:nth requires a valid non-negative integer index, {e}"),
+      ),
     },
-    (_, _) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&list:nth expected a list and an index, but received: {}", CalcitList::from(xs)),
-    ),
+    (_, _) => {
+      let msg = format!(
+        "&list:nth requires (list, number) but received: ({}, {})",
+        crate::builtins::meta::type_of(&[xs[0].clone()])?.lisp_str(),
+        crate::builtins::meta::type_of(&[xs[1].clone()])?.lisp_str()
+      );
+      let hint =
+        String::from("💡 Correct usage: `&list:nth ([] 1 2 3) 0` => 1\n  Or use higher-level `nth` which works on multiple types");
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -99,7 +128,13 @@ pub fn prepend(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:rest expected a list, but received:", xs);
+    let hint = String::from("💡 Usage: `&list:rest ([] 1 2 3)` => ([] 2 3)\n  Returns all elements except the first one");
+    return CalcitErr::err_nodes_with_hint(
+      CalcitErrKind::Arity,
+      "&list:rest requires exactly 1 argument (a list), but received:",
+      xs,
+      hint,
+    );
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -109,7 +144,16 @@ pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(Arc::new(ys.drop_left())))
       }
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:rest expected a list, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&list:rest requires a list as argument, but received: {}",
+        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+      );
+      let hint = String::from(
+        "💡 Hint: Use the higher-level `rest` function which works on multiple types,\n  or ensure you're passing a list to &list:rest",
+      );
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -512,65 +556,80 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
 }
 
 pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  if xs.len() == 2 {
-    match (&xs[0], &xs[1]) {
-      // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn { info, .. }) => {
-        let mut xs2: Vec<Calcit> = xs.to_vec(); // Use existing to_vec()
-        xs2.sort_by(|a, b| -> Ordering {
-          let v = runner::run_fn(&[(*a).to_owned(), (*b).to_owned()], info, call_stack);
-          match v {
-            Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
-            Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
-            Ok(Calcit::Number(_)) => Ordering::Equal,
-            Ok(a) => {
-              eprintln!("&list:sort comparator must return a number, but received: {a}");
-              panic!("failed to sort")
-            }
-            Err(e) => {
-              eprintln!("&list:sort failed: {e}");
-              panic!("failed to sort")
-            }
-          }
-        });
-        Ok(Calcit::List(Arc::new(CalcitList::Vector(xs2))))
+  let comparator_result_to_ordering = |result: Result<Calcit, CalcitErr>, error_slot: &RefCell<Option<CalcitErr>>| -> Ordering {
+    match result {
+      Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
+      Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+      Ok(Calcit::Number(_)) => Ordering::Equal,
+      Ok(v) => {
+        *error_slot.borrow_mut() = Some(CalcitErr::use_msg_stack(
+          CalcitErrKind::Type,
+          format!("&list:sort comparator must return a number, but received: {v}"),
+          call_stack,
+        ));
+        Ordering::Equal
       }
-      (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut xs2: Vec<Calcit> = xs.to_vec(); // Use existing to_vec()
-        xs2.sort_by(|a, b| -> Ordering {
-          let v = builtins::handle_proc(*proc, &[(*a).to_owned(), (*b).to_owned()], call_stack);
-          match v {
-            Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
-            Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
-            Ok(Calcit::Number(_)) => Ordering::Equal,
-            Ok(a) => {
-              eprintln!("&list:sort comparator must return a number, but received: {a}");
-              panic!("failed to sort")
-            }
-            Err(e) => {
-              eprintln!("&list:sort failed: {e}");
-              panic!("failed to sort")
-            }
-          }
-        });
-        Ok(Calcit::List(Arc::new(CalcitList::Vector(xs2)))) // Directly create from Vec
+      Err(e) => {
+        *error_slot.borrow_mut() = Some(CalcitErr::use_msg_stack(
+          CalcitErrKind::Unexpected,
+          format!("&list:sort failed: {e}"),
+          call_stack,
+        ));
+        Ordering::Equal
       }
-      (a, b) => Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!("&list:sort expected a list and a function, but received: {a} {b}"),
-        call_stack,
-        a.get_location().or_else(|| b.get_location()),
-      )),
     }
-  } else {
-    Err(CalcitErr::use_msg_stack(
+  };
+
+  match xs {
+    [Calcit::List(values)] => {
+      let mut next_values: Vec<Calcit> = values.to_vec();
+      next_values.sort();
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(next_values))))
+    }
+    [Calcit::List(values), Calcit::Fn { info, .. }] => {
+      let mut next_values: Vec<Calcit> = values.to_vec();
+      let sorting_error: RefCell<Option<CalcitErr>> = RefCell::new(None);
+      next_values.sort_by(|a, b| -> Ordering {
+        if sorting_error.borrow().is_some() {
+          return Ordering::Equal;
+        }
+        let result = runner::run_fn(&[(*a).to_owned(), (*b).to_owned()], info, call_stack);
+        comparator_result_to_ordering(result, &sorting_error)
+      });
+      if let Some(e) = sorting_error.into_inner() {
+        return Err(e);
+      }
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(next_values))))
+    }
+    [Calcit::List(values), Calcit::Proc(proc)] => {
+      let mut next_values: Vec<Calcit> = values.to_vec();
+      let sorting_error: RefCell<Option<CalcitErr>> = RefCell::new(None);
+      next_values.sort_by(|a, b| -> Ordering {
+        if sorting_error.borrow().is_some() {
+          return Ordering::Equal;
+        }
+        let result = builtins::handle_proc(*proc, &[(*a).to_owned(), (*b).to_owned()], call_stack);
+        comparator_result_to_ordering(result, &sorting_error)
+      });
+      if let Some(e) = sorting_error.into_inner() {
+        return Err(e);
+      }
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(next_values))))
+    }
+    [a, b] => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("&list:sort expected a list and a function, but received: {a} {b}"),
+      call_stack,
+      a.get_location().or_else(|| b.get_location()),
+    )),
+    _ => Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
       format!(
-        "&list:sort expected 2 arguments, but received: {}",
+        "&list:sort expected 1 or 2 arguments, but received: {}",
         Calcit::List(Arc::new(xs.into()))
       ),
       call_stack,
-    ))
+    )),
   }
 }
 
@@ -745,5 +804,31 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::from(CalcitList::List(zs)))
     }
     a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:distinct expected a list, but received: {a}")),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::CalcitProc;
+
+  #[test]
+  fn sort_returns_error_when_comparator_not_number() {
+    let values = Calcit::from(vec![Calcit::Number(3.0), Calcit::Number(1.0), Calcit::Number(2.0)]);
+    let comparator = Calcit::Proc(CalcitProc::Not);
+
+    let result = sort(&[values, comparator], &CallStackList::default());
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn sort_accepts_single_argument_natural_order() {
+    let values = Calcit::from(vec![Calcit::Number(3.0), Calcit::Number(1.0), Calcit::Number(2.0)]);
+
+    let result = sort(&[values], &CallStackList::default()).expect("sort should support single list argument");
+    assert_eq!(
+      result,
+      Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(3.0)])
+    );
   }
 }

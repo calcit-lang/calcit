@@ -242,7 +242,14 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
           match (ys.first(), ys.get(1)) {
             (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
               let x0 = &**x0;
-              if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
+              if x0 == "def"
+                || x0 == "defn"
+                || x0 == "defmacro"
+                || x0 == "defatom"
+                || x0 == "defstruct"
+                || x0 == "defenum"
+                || x0.starts_with("def")
+              {
                 defs.insert(Edn::str((*x1).to_owned()), CodeEntry::from_code(line.to_owned()).into());
               } else {
                 return Err(io_err(format!("invalid def op: {x0}")));

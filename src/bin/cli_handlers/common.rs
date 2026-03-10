@@ -1,17 +1,16 @@
 //! Common utilities shared between CLI handlers
 
+use super::cirru_validator;
 use cirru_parser::Cirru;
 use std::fs;
-use std::io::{self, Read};
 use std::sync::Arc;
 
 // Error message constants
-pub const ERR_MULTIPLE_INPUT_SOURCES: &str =
-  "Multiple input sources provided. Use only one of: --stdin/-s, --file/-f, --code/-e, or --json/-j.";
+pub const ERR_MULTIPLE_INPUT_SOURCES: &str = "Multiple input sources provided. Use only one of: --file/-f, --code/-e, or --json/-j.";
 
 pub const ERR_CONFLICTING_INPUT_FLAGS: &str = "Conflicting input flags: --leaf cannot be used with --json-input.";
 
-pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code, --json, or --stdin";
+pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code, or --json";
 
 pub const ERR_JSON_OBJECTS_NOT_SUPPORTED: &str = "JSON objects not supported, use arrays";
 
@@ -78,27 +77,21 @@ pub fn validate_input_flags(leaf_input: bool, json_input: bool) -> Result<(), St
   Ok(())
 }
 
-/// Read code input from file, inline code, json option, or stdin.
+/// Read code input from file, inline code, or json option.
 /// Exactly one input source should be used.
-pub fn read_code_input(
-  file: &Option<String>,
-  code: &Option<String>,
-  json: &Option<String>,
-  stdin: bool,
-) -> Result<Option<String>, String> {
-  let sources = [stdin, file.is_some(), code.is_some(), json.is_some()];
+pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>) -> Result<Option<String>, String> {
+  let sources = [file.is_some(), code.is_some(), json.is_some()];
   validate_input_sources(&sources)?;
 
-  if stdin {
-    let mut buffer = String::new();
-    io::stdin()
-      .read_to_string(&mut buffer)
-      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    Ok(Some(buffer.trim().to_string()))
-  } else if let Some(path) = file {
+  if let Some(path) = file {
     let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))?;
     Ok(Some(content.trim().to_string()))
   } else if let Some(s) = code {
+    if s.contains('\n') {
+      eprintln!("\n⚠️  Note: Inline code contains newlines. Multi-line code in shell can be error-prone.");
+      eprintln!("   Consider writing to a temporary file and using --file/-f instead.");
+      eprintln!();
+    }
     Ok(Some(s.trim().to_string()))
   } else if let Some(j) = json {
     Ok(Some(j.clone()))
@@ -122,6 +115,19 @@ pub fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
   }
 }
 
+/// Warn when a Cirru one-liner input is wrapped by parentheses and emit a JSON validation payload
+fn warn_if_wrapped_by_parentheses(raw: &str, node: &Cirru) {
+  let t = raw.trim();
+  if t.starts_with('(') && t.ends_with(')') {
+    eprintln!("\n⚠️  Warning: One-liner input appears wrapped by top-level parentheses.");
+    eprintln!("   Cirru typically avoids wrapping the entire top-level expression with '()'.");
+    eprintln!("   This extra layer changes call semantics. Prefer removing the outer parentheses.\n");
+    eprintln!("   JSON echo:");
+    eprintln!("{}", cirru_to_json(node));
+    eprintln!();
+  }
+}
+
 /// Determine input mode and parse raw input string into a `Cirru` node.
 /// Precedence (highest to lowest):
 /// - `--json <string>` (inline JSON)
@@ -140,6 +146,11 @@ pub fn parse_input_to_cirru(
 
   // If inline JSON provided, use it (takes precedence)
   if let Some(j) = inline_json {
+    if j.len() > 2000 {
+      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", j.len());
+      eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+      eprintln!();
+    }
     let node = json_to_cirru(j)?;
     if leaf {
       match node {
@@ -153,6 +164,11 @@ pub fn parse_input_to_cirru(
     // --leaf: automatically treat raw input as a Cirru leaf node
     Ok(Cirru::Leaf(Arc::from(raw)))
   } else if json_input {
+    if raw.len() > 2000 {
+      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", raw.len());
+      eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+      eprintln!();
+    }
     json_to_cirru(raw)
   } else {
     // If input comes from inline `--code/-e`, it's typically single-line.
@@ -170,6 +186,11 @@ pub fn parse_input_to_cirru(
       // Do NOT fall back to Cirru one-liner on JSON parse failure, otherwise invalid JSON
       // can be silently accepted as a Cirru expression.
       if looks_like_json_array || looks_like_json_string {
+        if trimmed.len() > 2000 {
+          eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", trimmed.len());
+          eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+          eprintln!();
+        }
         return json_to_cirru(trimmed).map_err(|e| format!("Failed to parse JSON from -e/--code: {e}"));
       }
 
@@ -186,8 +207,17 @@ pub fn parse_input_to_cirru(
         );
       }
 
+      if raw.len() > 1000 {
+        eprintln!("\n⚠️  Note: Cirru one-liner input is very large ({} chars).", raw.len());
+        eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+        eprintln!();
+      }
+
       let result = cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
+      warn_if_wrapped_by_parentheses(raw, &result);
       warn_if_single_string_expression(&result, raw);
+      // Validate basic Cirru syntax
+      cirru_validator::validate_cirru_syntax(&result)?;
       return Ok(result);
     }
 
@@ -220,7 +250,7 @@ pub fn parse_input_to_cirru(
          If you want to use JSON input, use one of:\n\
          - inline JSON: cr edit def ns/name -j '[\"defn\", ...]'\n\
          - inline code: cr edit def ns/name -e '[\"defn\", ...]'\n\
-         - file/stdin JSON: add -J or --json-input (e.g. -f code.json -J, or -s -J).\n\
+         - file JSON: add -J or --json-input (e.g. -f code.json -J).\n\
          Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is different and will be parsed correctly."
             .to_string(),
         );
@@ -256,10 +286,16 @@ pub fn parse_input_to_cirru(
     if parsed.len() == 1 {
       let result = parsed.into_iter().next().unwrap();
       warn_if_single_string_expression(&result, raw);
+      // Validate basic Cirru syntax
+      cirru_validator::validate_cirru_syntax(&result)?;
       Ok(result)
     } else if parsed.is_empty() {
       Err("Input parsed as an empty Cirru structure.".to_string())
     } else {
+      // Validate basic Cirru syntax for each node
+      for node in &parsed {
+        cirru_validator::validate_cirru_syntax(node)?;
+      }
       Ok(Cirru::List(parsed))
     }
   }

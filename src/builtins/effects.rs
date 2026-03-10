@@ -6,7 +6,8 @@ use std::sync::RwLock;
 use std::time::Instant;
 
 use crate::{
-  calcit::{Calcit, CalcitErr, CalcitErrKind},
+  builtins::meta::type_of,
+  calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint},
   util::number::f64_to_i32,
 };
 
@@ -81,7 +82,14 @@ pub fn quit(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(code) => exit(code),
       Err(e) => unreachable!("quit failed to get code from f64, {}", e),
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("quit expected i32 value, got: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "quit requires an i32 number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Quit).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "quit expected a code, got nothing"),
   }
 }
@@ -107,7 +115,14 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
       },
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("get-env expected a string, got: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "get-env requires a string (environment variable name), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::GetEnv).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "get-env expected an argument, got nothing"),
   }
 }
@@ -118,7 +133,14 @@ pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(content) => Ok(Calcit::Str(content.into())),
       Err(e) => CalcitErr::err_str(CalcitErrKind::Effect, format!("read-file failed at {}: {e}", &**s)),
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("read-file expected a string, got: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "read-file requires a string (file path), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::ReadFile).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "read-file expected a filename, got nothing"),
   }
 }
@@ -129,7 +151,28 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(_) => Ok(Calcit::Nil),
       Err(e) => CalcitErr::err_str(CalcitErrKind::Effect, format!("write-file failed, {e}")),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("write-file expected 2 strings, got: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("write-file expected 2 strings, got: {a:?} {b:?}")),
+    (Some(a), Some(b)) => {
+      let msg = format!(
+        "write-file requires 2 strings (path and content), but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::WriteFile).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (a, b) => {
+      let msg = format!(
+        "write-file requires 2 arguments (path and content), but received: {} arguments",
+        if a.is_none() {
+          0
+        } else if b.is_none() {
+          1
+        } else {
+          2
+        }
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::WriteFile).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
+    }
   }
 }

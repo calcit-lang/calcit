@@ -10,7 +10,7 @@ mod sets;
 mod strings;
 pub mod syntax;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
@@ -22,7 +22,76 @@ pub(crate) use refs::{ValueAndListeners, quick_build_atom};
 pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegisteredProcPlatform {
+  Native,
+  Wasm,
+  Wasi,
+  Js,
+}
+
+impl std::fmt::Display for RegisteredProcPlatform {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      RegisteredProcPlatform::Native => write!(f, "native"),
+      RegisteredProcPlatform::Wasm => write!(f, "wasm"),
+      RegisteredProcPlatform::Wasi => write!(f, "wasi"),
+      RegisteredProcPlatform::Js => write!(f, "js"),
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegisteredProcStability {
+  Public,
+  Experimental,
+  Internal,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisteredProcDescriptor {
+  pub arity_min: usize,
+  pub arity_max: Option<usize>,
+  pub platforms: Vec<RegisteredProcPlatform>,
+  pub stability: RegisteredProcStability,
+  pub docs_hint: Option<Arc<str>>,
+  pub callback_last: bool,
+}
+
+impl Default for RegisteredProcDescriptor {
+  fn default() -> Self {
+    RegisteredProcDescriptor {
+      arity_min: 0,
+      arity_max: None,
+      platforms: vec![
+        RegisteredProcPlatform::Native,
+        RegisteredProcPlatform::Wasm,
+        RegisteredProcPlatform::Wasi,
+        RegisteredProcPlatform::Js,
+      ],
+      stability: RegisteredProcStability::Public,
+      docs_hint: None,
+      callback_last: false,
+    }
+  }
+}
+
 pub(crate) static IMPORTED_PROCS: LazyLock<RwLock<HashMap<Arc<str>, FnType>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
+pub(crate) static IMPORTED_PROC_DESCRIPTORS: LazyLock<RwLock<HashMap<Arc<str>, RegisteredProcDescriptor>>> =
+  LazyLock::new(|| RwLock::new(HashMap::new()));
+pub(crate) static WARNED_REGISTERED_PROCS: LazyLock<RwLock<HashSet<Arc<str>>>> = LazyLock::new(|| RwLock::new(HashSet::new()));
+
+pub(crate) fn err_arity<T: Into<String>>(msg: T, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_nodes(CalcitErrKind::Arity, msg, xs)
+}
+
+pub(crate) fn err_arity_with_hint<T: Into<String>, H: Into<String>>(msg: T, xs: &[Calcit], hint: H) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, msg, xs, hint)
+}
+
+pub(crate) fn err_type_with_hint<T: Into<String>, H: Into<String>>(msg: T, hint: H) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+}
 
 pub fn is_proc_name(s: &str) -> bool {
   let builtin = s.parse::<CalcitProc>();
@@ -34,8 +103,190 @@ pub fn is_registered_proc(s: &str) -> bool {
   ps.contains_key(s)
 }
 
+fn detect_current_platform() -> RegisteredProcPlatform {
+  if cfg!(target_arch = "wasm32") {
+    RegisteredProcPlatform::Wasm
+  } else if cfg!(target_os = "wasi") {
+    RegisteredProcPlatform::Wasi
+  } else {
+    RegisteredProcPlatform::Native
+  }
+}
+
+fn validate_registered_proc_call(alias: &str, args: &[Calcit]) -> Result<(), CalcitErr> {
+  let descriptors = IMPORTED_PROC_DESCRIPTORS.read().expect("read proc descriptors");
+  let Some(descriptor) = descriptors.get(alias) else {
+    return Ok(());
+  };
+
+  let current = detect_current_platform();
+  if !descriptor.platforms.is_empty() && !descriptor.platforms.contains(&current) {
+    let expected = descriptor.platforms.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+    let hint = descriptor
+      .docs_hint
+      .as_ref()
+      .map(|s| s.to_string())
+      .unwrap_or_else(|| "Fix: use a capability that supports this runtime platform.".to_owned());
+    return CalcitErr::err_str_with_hint(
+      CalcitErrKind::Type,
+      format!("registered proc `{alias}` is not available on current platform. Expected: {expected}; Actual: {current}"),
+      hint,
+    )
+    .map(|_| ());
+  }
+
+  let arity = args.len();
+  match descriptor.arity_max {
+    Some(max) => {
+      if arity < descriptor.arity_min || arity > max {
+        let expected = if descriptor.arity_min == max {
+          format!("{}", descriptor.arity_min)
+        } else {
+          format!("{}~{}", descriptor.arity_min, max)
+        };
+        let hint = descriptor
+          .docs_hint
+          .as_ref()
+          .map(|s| s.to_string())
+          .unwrap_or_else(|| "Fix: check proc argument count and call contract.".to_owned());
+        return CalcitErr::err_str_with_hint(
+          CalcitErrKind::Arity,
+          format!("registered proc `{alias}` expects {expected} args, but got {arity}"),
+          hint,
+        )
+        .map(|_| ());
+      }
+    }
+    None => {
+      if arity < descriptor.arity_min {
+        let hint = descriptor
+          .docs_hint
+          .as_ref()
+          .map(|s| s.to_string())
+          .unwrap_or_else(|| "Fix: check proc argument count and call contract.".to_owned());
+        return CalcitErr::err_str_with_hint(
+          CalcitErrKind::Arity,
+          format!(
+            "registered proc `{alias}` expects at least {} args, but got {arity}",
+            descriptor.arity_min
+          ),
+          hint,
+        )
+        .map(|_| ());
+      }
+    }
+  }
+
+  if descriptor.callback_last {
+    match args.last() {
+      Some(Calcit::Fn { .. }) => {}
+      Some(v) => {
+        return CalcitErr::err_str_with_hint(
+          CalcitErrKind::Type,
+          format!("registered proc `{alias}` expects callback function as last argument, but got: {v}"),
+          descriptor
+            .docs_hint
+            .as_ref()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "Fix: put callback function at the last argument position.".to_owned()),
+        )
+        .map(|_| ());
+      }
+      None => {
+        return CalcitErr::err_str_with_hint(
+          CalcitErrKind::Arity,
+          format!("registered proc `{alias}` expects callback function as last argument"),
+          descriptor
+            .docs_hint
+            .as_ref()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "Fix: pass callback function as last argument.".to_owned()),
+        )
+        .map(|_| ());
+      }
+    }
+  }
+
+  Ok(())
+}
+
+fn emit_registered_proc_stability_warning(alias: &str) {
+  let descriptors = IMPORTED_PROC_DESCRIPTORS.read().expect("read proc descriptors");
+  let Some(descriptor) = descriptors.get(alias) else {
+    return;
+  };
+
+  let warning_tag = match descriptor.stability {
+    RegisteredProcStability::Public => return,
+    RegisteredProcStability::Experimental => "experimental",
+    RegisteredProcStability::Internal => "internal",
+  };
+
+  let mut warned = WARNED_REGISTERED_PROCS.write().expect("open warned proc names");
+  if !warned.insert(Arc::from(alias)) {
+    return;
+  }
+  drop(warned);
+
+  let hint = descriptor
+    .docs_hint
+    .as_ref()
+    .map(|s| s.to_string())
+    .unwrap_or_else(|| "Fix: check docs for migration guidance and stable alternatives.".to_owned());
+  eprintln!("[Warn] registered proc `{alias}` is marked as {warning_tag}. {hint}");
+}
+
+pub fn call_registered_proc(alias: &str, args: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  validate_registered_proc_call(alias, &args)?;
+  emit_registered_proc_stability_warning(alias);
+  let ps = IMPORTED_PROCS.read().expect("read procs");
+  match ps.get(alias) {
+    Some(f) => f(args, call_stack),
+    None => CalcitErr::err_str(CalcitErrKind::Var, format!("cannot find registered proc: {alias}")),
+  }
+}
+
+fn check_proc_arity(name: CalcitProc, args: &[Calcit]) -> Result<(), CalcitErr> {
+  let Some(signature) = name.get_type_signature() else {
+    return Ok(());
+  };
+
+  let arity = signature.arity();
+  let actual_count = args.len();
+  if let Some(max_count) = arity.max {
+    if actual_count < arity.min || actual_count > max_count {
+      let expected_str = if arity.min == max_count {
+        format!("{}", arity.min)
+      } else {
+        format!("{}~{}", arity.min, max_count)
+      };
+      let hint = crate::calcit::format_proc_examples_hint(&name).unwrap_or_default();
+      return CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        format!("Proc `{name}` expects {expected_str} args, but received:"),
+        args,
+        hint,
+      )
+      .map(|_| ());
+    }
+  } else if actual_count < arity.min {
+    let hint = crate::calcit::format_proc_examples_hint(&name).unwrap_or_default();
+    return CalcitErr::err_nodes_with_hint(
+      CalcitErrKind::Arity,
+      format!("Proc `{name}` expects at least {} args, but received:", arity.min),
+      args,
+      hint,
+    )
+    .map(|_| ());
+  }
+
+  Ok(())
+}
+
 /// make sure that stack information attached in errors from procs
 pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  check_proc_arity(name, args)?;
+
   if using_stack() {
     handle_proc_internal(name, args, call_stack).map_err(|e| {
       if e.stack.is_empty() {
@@ -77,24 +328,39 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     IsSpreadingMark => meta::is_spreading_mark(args),
     // tuple
     NativeTuple => meta::new_tuple(args), // unstable solution for the name
-    NativeClassTuple => meta::new_class_tuple(args),
-    NativeEnumTuple => meta::new_enum_tuple(args),
+    NativeEnumTupleNew => meta::new_enum_tuple_no_class(args),
     NativeTupleNth => meta::tuple_nth(args),
     NativeTupleAssoc => meta::assoc(args),
     NativeTupleCount => meta::tuple_count(args),
-    NativeTupleClass => meta::tuple_class(args),
+    NativeTupleImpls => meta::tuple_impls(args),
     NativeTupleParams => meta::tuple_params(args),
-    NativeTupleWithClass => meta::tuple_with_class(args),
     NativeTupleEnum => meta::tuple_enum(args),
+    NativeStructNew => records::new_struct(args),
+    NativeEnumNew => records::new_enum(args),
+    NativeTraitNew => meta::trait_new(args),
+    NativeImplNew => records::new_impl(args),
+    NativeImplOrigin => meta::impl_origin(args),
+    NativeRecordImplTraits => meta::record_impl_traits(args),
+    NativeTupleImplTraits => meta::tuple_impl_traits(args),
+    NativeStructImplTraits => meta::struct_impl_traits(args),
+    NativeEnumImplTraits => meta::enum_impl_traits(args),
     NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
     NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
     NativeTupleValidateEnum => meta::tuple_validate_enum(args),
+    NativeImplGet => meta::impl_get(args),
+    NativeImplNth => meta::impl_nth(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
+    NativeMethodsOf => meta::methods_of(args, call_stack),
+    NativeInspectMethods => meta::inspect_methods(args, call_stack),
+    NativeTraitCall => meta::trait_call(args, call_stack),
+    NativeInspectType => Ok(Calcit::Nil), // Handled in preprocessing phase
+    NativeAssertTraits => meta::assert_traits(args, call_stack),
     Raise => effects::raise(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),
     NativeGetCalcitBackend => effects::call_get_calcit_backend(args),
+    RegisterCalcitBuiltinImpls => meta::register_calcit_builtin_impls(args),
     ReadFile => effects::read_file(args),
     WriteFile => effects::write_file(args),
     // external data format
@@ -226,14 +492,13 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     AddWatch => refs::add_watch(args),
     RemoveWatch => refs::remove_watch(args),
     // records
-    NewRecord => records::new_record(args),
-    NewClassRecord => records::new_class_record(args),
     NativeRecord => records::call_record(args),
+    NativeRecordPartial => records::call_record_partial(args),
     NativeRecordWith => records::record_with(args),
-    NativeRecordClass => records::get_class(args),
-    NativeRecordWithClass => records::with_class(args),
+    NativeRecordImpls => records::get_impls(args),
     NativeRecordFromMap => records::record_from_map(args),
     NativeRecordGetName => records::get_record_name(args),
+    NativeRecordStruct => records::get_record_struct(args),
     NativeRecordToMap => records::turn_map(args),
     NativeRecordMatches => records::matches(args),
     NativeRecordCount => records::count(args),
@@ -246,8 +511,20 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
 
 /// inject into procs
 pub fn register_import_proc(name: &str, f: FnType) {
+  register_import_proc_with_descriptor(name, f, RegisteredProcDescriptor::default());
+}
+
+pub fn register_import_proc_with_descriptor(name: &str, f: FnType, descriptor: RegisteredProcDescriptor) {
+  let ps = IMPORTED_PROCS.read().expect("read procs");
+  assert!(!ps.contains_key(name), "duplicate registered proc: {name}");
+  drop(ps);
+
   let mut ps = IMPORTED_PROCS.write().expect("open procs");
   (*ps).insert(Arc::from(name), f);
+  drop(ps);
+
+  let mut descriptors = IMPORTED_PROC_DESCRIPTORS.write().expect("open proc descriptors");
+  descriptors.insert(Arc::from(name), descriptor);
 }
 
 pub fn handle_syntax(
@@ -281,11 +558,8 @@ pub fn handle_syntax(
     ArgOptional => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolate => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
-    AssertType => CalcitErr::err_nodes(
-      CalcitErrKind::Unimplemented,
-      "`assert-type` is not supported at runtime yet",
-      &nodes.to_vec(),
-    ),
+    AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),
+    AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
   }
 }
 
@@ -317,4 +591,159 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "&raw-code"
       | "js-for-await"
   )
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::sync::atomic::{AtomicUsize, Ordering};
+
+  static TEST_PROC_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+  fn unique_name(prefix: &str) -> String {
+    let id = TEST_PROC_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{prefix}-{id}")
+  }
+
+  fn dummy_proc(_xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+    Ok(Calcit::Nil)
+  }
+
+  #[test]
+  fn registered_proc_default_descriptor_works() {
+    let name = unique_name("test-default-registered-proc");
+    register_import_proc(&name, dummy_proc);
+
+    let result = call_registered_proc(&name, vec![], &CallStackList::default());
+    assert!(result.is_ok());
+  }
+
+  #[test]
+  fn registered_proc_namespaced_key_works() {
+    let name = unique_name("calcit.ffi/test-registered-proc");
+    register_import_proc_with_descriptor(
+      &name,
+      dummy_proc,
+      RegisteredProcDescriptor {
+        arity_min: 0,
+        arity_max: None,
+        platforms: vec![RegisteredProcPlatform::Native],
+        stability: RegisteredProcStability::Public,
+        docs_hint: None,
+        callback_last: false,
+      },
+    );
+
+    assert!(is_registered_proc(&name));
+    let result = call_registered_proc(&name, vec![], &CallStackList::default());
+    assert!(result.is_ok());
+  }
+
+  #[test]
+  fn registered_proc_checks_platform() {
+    let name = unique_name("test-platform-registered-proc");
+    register_import_proc_with_descriptor(
+      &name,
+      dummy_proc,
+      RegisteredProcDescriptor {
+        arity_min: 0,
+        arity_max: None,
+        platforms: vec![RegisteredProcPlatform::Js],
+        stability: RegisteredProcStability::Public,
+        docs_hint: Some(Arc::from("Fix: switch to JS runtime or use native alternative.")),
+        callback_last: false,
+      },
+    );
+
+    let error = call_registered_proc(&name, vec![], &CallStackList::default()).expect_err("expected platform mismatch");
+    assert_eq!(error.kind, CalcitErrKind::Type);
+  }
+
+  #[test]
+  fn registered_proc_checks_arity() {
+    let name = unique_name("test-arity-registered-proc");
+    register_import_proc_with_descriptor(
+      &name,
+      dummy_proc,
+      RegisteredProcDescriptor {
+        arity_min: 2,
+        arity_max: Some(2),
+        platforms: vec![RegisteredProcPlatform::Native],
+        stability: RegisteredProcStability::Public,
+        docs_hint: Some(Arc::from("Fix: pass exactly 2 arguments.")),
+        callback_last: false,
+      },
+    );
+
+    let args = vec![Calcit::Number(1.0)];
+    let error = call_registered_proc(&name, args, &CallStackList::default()).expect_err("expected arity mismatch");
+    assert_eq!(error.kind, CalcitErrKind::Arity);
+  }
+
+  #[test]
+  fn registered_proc_checks_callback_last() {
+    let name = unique_name("test-callback-registered-proc");
+    register_import_proc_with_descriptor(
+      &name,
+      dummy_proc,
+      RegisteredProcDescriptor {
+        arity_min: 1,
+        arity_max: None,
+        platforms: vec![RegisteredProcPlatform::Native],
+        stability: RegisteredProcStability::Experimental,
+        docs_hint: Some(Arc::from("Fix: place callback function at the last argument.")),
+        callback_last: true,
+      },
+    );
+
+    let args = vec![Calcit::Number(1.0)];
+    let error = call_registered_proc(&name, args, &CallStackList::default()).expect_err("expected callback type mismatch");
+    assert_eq!(error.kind, CalcitErrKind::Type);
+  }
+
+  #[test]
+  fn registered_proc_rejects_duplicate_without_replace() {
+    let name = unique_name("test-dup-registered-proc");
+    register_import_proc(&name, dummy_proc);
+
+    let panicked = std::panic::catch_unwind(|| {
+      register_import_proc_with_descriptor(
+        &name,
+        dummy_proc,
+        RegisteredProcDescriptor {
+          arity_min: 0,
+          arity_max: None,
+          platforms: vec![RegisteredProcPlatform::Native],
+          stability: RegisteredProcStability::Public,
+          docs_hint: None,
+          callback_last: false,
+        },
+      );
+    });
+
+    assert!(panicked.is_err());
+  }
+
+  #[test]
+  fn registered_proc_warns_once_for_experimental() {
+    let name = unique_name("test-warning-registered-proc");
+    register_import_proc_with_descriptor(
+      &name,
+      dummy_proc,
+      RegisteredProcDescriptor {
+        arity_min: 0,
+        arity_max: None,
+        platforms: vec![RegisteredProcPlatform::Native],
+        stability: RegisteredProcStability::Experimental,
+        docs_hint: None,
+        callback_last: false,
+      },
+    );
+
+    let _ = call_registered_proc(&name, vec![], &CallStackList::default()).expect("first call should pass");
+    let _ = call_registered_proc(&name, vec![], &CallStackList::default()).expect("second call should pass");
+
+    let warned = WARNED_REGISTERED_PROCS.read().expect("read warned proc names");
+    assert!(warned.contains(name.as_str()));
+  }
 }

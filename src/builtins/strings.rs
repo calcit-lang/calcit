@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList};
+use crate::builtins::meta::type_of;
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -19,10 +20,11 @@ pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       s.push_str(&b.turn_string());
       Ok(Calcit::Str(s.into()))
     }
-    (_, _) => CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&str:concat expected 2 arguments, but received: {}", CalcitList::from(xs)),
-    ),
+    (_, _) => {
+      let msg = format!("&str:concat requires 2 arguments, but received: {}", xs.len());
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStrConcat).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
+    }
   }
 }
 
@@ -34,13 +36,20 @@ pub fn trim(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let c: char = p.chars().next().expect("first char");
         Ok(Calcit::Str(s.trim_matches(c).to_owned().into()))
       } else {
-        CalcitErr::err_str(
-          CalcitErrKind::Type,
-          format!("trim expected a single character pattern, but received: {p}"),
-        )
+        let msg = format!("trim requires single character pattern, but received string of length: {}", p.len());
+        let hint = format_proc_examples_hint(&CalcitProc::Trim).unwrap_or_default();
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("trim expected 2 strings, but received: {a} {b}")),
+    (Some(a), Some(b)) => {
+      let msg = format!(
+        "trim requires strings, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Trim).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (_, _) => CalcitErr::err_str(
       CalcitErrKind::Arity,
       format!("trim expected 1 or 2 arguments, but received: {}", CalcitList::from(xs)),
@@ -52,7 +61,14 @@ pub fn trim(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn call_str(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(a) => Ok(Calcit::Str(a.turn_string().into())),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "&str expected 1 argument, but received none"),
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStr).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "&str requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -64,8 +80,19 @@ pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Tag(s)) => Ok(Calcit::Str(s.arc_str())),
     Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("turn-string cannot convert to string: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "turn-string expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!("turn-string cannot convert to string: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::TurnString).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::TurnString).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "turn-string requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -79,8 +106,19 @@ pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         .collect::<Vec<Calcit>>();
       Ok(Calcit::from(pieces))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("split expected 2 strings, but received: {a} {b}")),
-    (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "split expected 2 arguments, but received none"),
+    (Some(a), Some(b)) => {
+      let msg = format!(
+        "split requires 2 strings, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Split).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (_, _) => {
+      let hint = format_proc_examples_hint(&CalcitProc::Split).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Arity, "split requires 2 arguments".to_string(), hint)
+    }
   }
 }
 

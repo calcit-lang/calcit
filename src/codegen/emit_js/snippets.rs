@@ -1,4 +1,6 @@
-use crate::{builtins::meta::js_gensym, codegen::emit_js::get_proc_prefix};
+use crate::builtins::meta::js_gensym;
+
+use super::runtime::get_proc_prefix;
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -20,27 +22,28 @@ pub fn tmpl_fn_wrapper(body: String) -> String {
   )
 }
 
-pub fn tmpl_args_fewer_than(args_count: usize) -> String {
-  format!(
-    "
-if (arguments.length < {args_count}) throw new Error('too few arguments');"
-  )
+pub fn tmpl_args_fewer_than(name: &str, args_count: usize, at_ns: &str) -> String {
+  if args_count == 0 {
+    return String::new();
+  }
+  let proc_ns = get_proc_prefix(at_ns);
+  let escaped_name = name.escape_default();
+  format!("if (arguments.length < {args_count}) throw {proc_ns}_args_fewer_throw('{escaped_name}', {args_count}, arguments.length);")
 }
 
-pub fn tmpl_args_between(a: usize, b: usize) -> String {
+pub fn tmpl_args_between(name: &str, a: usize, b: usize, at_ns: &str) -> String {
+  let proc_ns = get_proc_prefix(at_ns);
+  let escaped_name = name.escape_default();
   format!(
-    "
-if (arguments.length < {a}) throw new Error('too few arguments');
-if (arguments.length > {b}) throw new Error('too many arguments');"
+    "if (arguments.length < {a}) throw {proc_ns}_args_between_throw('{escaped_name}', {a}, {b}, arguments.length);
+if (arguments.length > {b}) throw {proc_ns}_args_between_throw('{escaped_name}', {a}, {b}, arguments.length);"
   )
 }
 
 pub fn tmpl_args_exact(name: &str, args_count: usize, at_ns: &str) -> String {
   let proc_ns = get_proc_prefix(at_ns);
-  format!(
-    "
-  if (arguments.length !== {args_count}) throw {proc_ns}_args_throw('{name}', {args_count}, arguments.length);"
-  )
+  let escaped_name = name.escape_default();
+  format!("if (arguments.length !== {args_count}) throw {proc_ns}_args_throw('{escaped_name}', {args_count}, arguments.length);")
 }
 
 pub struct RecurPrefixes {
@@ -54,6 +57,7 @@ pub fn tmpl_tail_recursion(
   args_code: String,
   check_args: String,
   spreading_code: String,
+  recur_assign_code_template: String,
   body0: String,
   prefixes: RecurPrefixes,
 ) -> String {
@@ -63,6 +67,7 @@ pub fn tmpl_tail_recursion(
   let ret_var = js_gensym("ret");
   let times_var = js_gensym("times");
   let body = body0.replace(return_mark, &ret_var); // dirty trick for injection
+  let recur_assign_code = recur_assign_code_template.replace("{ret_var}", &ret_var);
 
   let check_recur_args = check_args.replace("arguments.length", &format!("{ret_var}.args.length"));
 
@@ -73,11 +78,11 @@ pub fn tmpl_tail_recursion(
   let {times_var} = 0;
   while(true) {{ /* Tail Recursion */
     let {ret_var} = null;
-    if ({times_var} > 10000000) throw new Error('tail recursion not finished after 10M iterations');
+    if ((({times_var} & 1023) === 0) && {times_var} > 10000000) throw new Error('tail recursion not finished after 10M iterations');
     {body}
     if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
       {check_recur_args}
-      [ {args_code} ] = {ret_var}.args;
+      {recur_assign_code}
       {spreading_code}
       {times_var} += 1;
       continue;
@@ -93,7 +98,7 @@ pub fn tmpl_tail_recursion(
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{newTag, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {name};
+import {{init_tags, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {name};
 import * as $procs from {name};
 export * from {name};
 ",
@@ -103,14 +108,13 @@ export * from {name};
 pub fn tmpl_classes_registering() -> String {
   format!(
     "
-$procs.register_calcit_builtin_classes({{
-  list: _$n_core_list_class,
-  map: _$n_core_map_class,
-  number: _$n_core_number_class,
-  set: _$n_core_set_class,
-  string: _$n_core_string_class,
-  nil: _$n_core_nil_class,
-  fn: _$n_core_fn_class,
+$procs.register_calcit_builtin_impls({{
+  list: _$n_core_list_methods,
+  map: _$n_core_map_methods,
+  number: _$n_core_number_methods,
+  set: _$n_core_set_methods,
+  string: _$n_core_string_methods,
+  fn: _$n_core_fn_methods,
 }});
 
 let runtimeVersion = $procs.calcit_version;
@@ -124,11 +128,50 @@ if (runtimeVersion !== cli_version) {{
 }
 
 pub fn tmpl_tags_init(arr: &str, prefix: &str) -> String {
-  format!(
-    "
-{arr}.forEach(x => {{
-  _tag[x] = {prefix}newTag(x);
-}});
-"
-  )
+  format!("\nconst _t_ = {prefix}init_tags({arr});\n")
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn import_procs_includes_init_tags() {
+    let code = tmpl_import_procs("\"@calcit/procs\"".to_owned());
+    assert!(code.contains("init_tags"));
+  }
+
+  #[test]
+  fn tags_init_uses_runtime_helper() {
+    let code = tmpl_tags_init("[\"a\",\"b\"]", "$clt.");
+    assert!(code.contains("const _t_ = $clt.init_tags([\"a\",\"b\"]);"));
+  }
+
+  #[test]
+  fn args_fewer_than_zero_arity_returns_empty() {
+    let code = tmpl_args_fewer_than("f%", 0, "app.main");
+    assert!(code.is_empty());
+  }
+
+  #[test]
+  fn tail_recursion_uses_periodic_watchdog_and_replaced_assign_template() {
+    let code = tmpl_tail_recursion(
+      "f".to_owned(),
+      "a, b".to_owned(),
+      "if (arguments.length !== 2) throw new Error('x');".to_owned(),
+      "".to_owned(),
+      "a = {ret_var}.args[0];\nb = {ret_var}.args[1];".to_owned(),
+      "%%ret%% = 1;".to_owned(),
+      RecurPrefixes {
+        var_prefix: "$clt.".to_owned(),
+        async_prefix: "".to_owned(),
+        return_mark: "%%ret%%".to_owned(),
+      },
+    );
+
+    assert!(code.contains("& 1023"));
+    assert!(code.contains("args.length"));
+    assert!(code.contains("args[0]"));
+    assert!(!code.contains("{ret_var}"));
+  }
 }

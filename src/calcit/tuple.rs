@@ -2,14 +2,22 @@ use std::sync::Arc;
 
 use crate::Calcit;
 
-use super::{CalcitEnum, CalcitRecord};
+use super::{CalcitEnum, CalcitImpl};
 
 #[derive(Debug, Clone)]
 pub struct CalcitTuple {
   pub tag: Arc<Calcit>,
   pub extra: Vec<Calcit>,
-  pub class: Option<Arc<CalcitRecord>>,
   pub sum_type: Option<Arc<CalcitEnum>>,
+}
+
+impl CalcitTuple {
+  pub fn impls(&self) -> &[Arc<CalcitImpl>] {
+    match &self.sum_type {
+      Some(s) => s.impls(),
+      None => &[],
+    }
+  }
 }
 
 impl PartialEq for CalcitTuple {

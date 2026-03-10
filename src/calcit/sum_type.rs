@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitRecord, CalcitTypeAnnotation};
+use crate::calcit::{Calcit, CalcitImpl, CalcitList, CalcitRecord, CalcitStruct, CalcitTypeAnnotation};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
   pub tag: EdnTag,
   pub payload_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
@@ -21,33 +21,74 @@ impl EnumVariant {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitEnum {
-  prototype: Arc<CalcitRecord>,
+  name: EdnTag,
   variants: Arc<Vec<EnumVariant>>,
+  /// Trait implementations attached to this enum (multiple allowed for composition)
+  pub impls: Vec<Arc<CalcitImpl>>,
+  /// Precomputed index for O(1) lookup by tag name; avoids linear scans on frequent queries.
   variant_index: Arc<HashMap<String, usize>>,
 }
 
 impl CalcitEnum {
+  /// Create from a `CalcitRecord` using the old-style enum definition format.
+  /// The record's fields are variant tags and values are payload type lists.
   pub fn from_record(record: CalcitRecord) -> Result<Self, String> {
     Self::from_arc(Arc::new(record))
   }
 
   pub fn from_arc(record: Arc<CalcitRecord>) -> Result<Self, String> {
     let (variants, variant_index) = Self::collect_variants(&record)?;
+    let name = record.name().to_owned();
+    let impls = record.struct_ref.impls.clone();
     Ok(Self {
-      prototype: record,
+      name,
       variants: Arc::new(variants),
+      impls,
       variant_index: Arc::new(variant_index),
     })
   }
 
   pub fn name(&self) -> &EdnTag {
-    &self.prototype.name
+    &self.name
   }
 
-  pub fn prototype(&self) -> &CalcitRecord {
-    &self.prototype
+  /// Reconstruct a `CalcitRecord` prototype from the enum's data.
+  /// Used for serialization and backwards-compatibility paths that expect a record.
+  pub fn to_record_prototype(&self) -> CalcitRecord {
+    let fields: Vec<EdnTag> = self.variants.iter().map(|v| v.tag.clone()).collect();
+    let values: Vec<Calcit> = self
+      .variants
+      .iter()
+      .map(|v| {
+        if v.payload_types.is_empty() {
+          Calcit::Nil
+        } else {
+          let items: Vec<Calcit> = v.payload_types.iter().map(|t| t.to_calcit()).collect();
+          Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
+        }
+      })
+      .collect();
+    let struct_def = CalcitStruct {
+      name: self.name.clone(),
+      fields: Arc::new(fields),
+      field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
+      generics: Arc::new(vec![]),
+      impls: self.impls.clone(),
+    };
+    CalcitRecord {
+      struct_ref: Arc::new(struct_def),
+      values: Arc::new(values),
+    }
+  }
+
+  pub fn impls(&self) -> &[Arc<CalcitImpl>] {
+    &self.impls
+  }
+
+  pub fn set_impls(&mut self, impls: Vec<Arc<CalcitImpl>>) {
+    self.impls = impls;
   }
 
   pub fn variants(&self) -> &[EnumVariant] {
@@ -63,21 +104,21 @@ impl CalcitEnum {
   }
 
   fn collect_variants(record: &CalcitRecord) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
-    let mut variants: Vec<EnumVariant> = Vec::with_capacity(record.fields.len());
-    let mut index: HashMap<String, usize> = HashMap::with_capacity(record.fields.len());
+    let mut variants: Vec<EnumVariant> = Vec::with_capacity(record.fields().len());
+    let mut index: HashMap<String, usize> = HashMap::with_capacity(record.fields().len());
 
-    for (idx, tag) in record.fields.iter().enumerate() {
+    for (idx, tag) in record.fields().iter().enumerate() {
       let payloads = Self::parse_payloads(
         record
           .values
           .get(idx)
-          .ok_or_else(|| format!("enum `{}` is missing payload description for variant `{}`", record.name, tag))?,
+          .ok_or_else(|| format!("enum `{}` is missing payload description for variant `{}`", record.name(), tag))?,
         tag,
       )?;
 
       let key = tag.ref_str().to_owned();
       if index.contains_key(&key) {
-        return Err(format!("duplicated enum variant `{}` in `{}`", tag, record.name));
+        return Err(format!("duplicated enum variant `{}` in `{}`", tag, record.name()));
       }
 
       let variant = EnumVariant {
@@ -96,7 +137,7 @@ impl CalcitEnum {
       Calcit::List(items) => {
         let mut payloads: Vec<Arc<CalcitTypeAnnotation>> = Vec::with_capacity(items.len());
         for item in items.iter() {
-          payloads.push(Arc::new(CalcitTypeAnnotation::from_calcit(item)));
+          payloads.push(CalcitTypeAnnotation::parse_type_annotation_form(item));
         }
         Ok(payloads)
       }
@@ -111,7 +152,7 @@ impl CalcitEnum {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitList, CalcitTypeAnnotation};
+  use crate::calcit::{CalcitList, CalcitStruct, CalcitTypeAnnotation};
 
   fn empty_list() -> Calcit {
     Calcit::List(Arc::new(CalcitList::Vector(vec![])))
@@ -123,10 +164,11 @@ mod tests {
 
   fn sample_enum_record() -> CalcitRecord {
     CalcitRecord {
-      name: EdnTag::new("Result"),
-      fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::new("Result"),
+        vec![EdnTag::new("err"), EdnTag::new("ok")],
+      )),
       values: Arc::new(vec![list_from(vec![Calcit::tag("string")]), empty_list()]),
-      class: None,
     }
   }
 
@@ -139,9 +181,7 @@ mod tests {
     let err_variant = enum_proto.find_variant_by_name("err").expect("err variant");
     assert_eq!(err_variant.arity(), 1);
     match err_variant.payload_types().first().map(|t| t.as_ref()) {
-      Some(CalcitTypeAnnotation::Tag(tag)) => {
-        assert_eq!(tag.ref_str().trim_start_matches(':'), "string");
-      }
+      Some(CalcitTypeAnnotation::String) => {}
       other => panic!("unexpected payload annotation: {other:?}"),
     }
     assert_eq!(enum_proto.find_variant_by_name("ok").unwrap().arity(), 0);

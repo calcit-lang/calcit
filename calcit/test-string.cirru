@@ -1,16 +1,23 @@
 
-{} (:package |test-string)
-  :configs $ {} (:init-fn |test-string.main/main!) (:reload-fn |test-string.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-string)
+  :configs $ {} (:init-fn |test-string.main/main!) (:reload-fn |test-string.main/reload!) (:version |0.0.0)
+    :modules $ []
+  :entries $ {}
   :files $ {}
     |test-string.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-        |main! $ %{} :CodeEntry (:doc |)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
-        |test-bitwise $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-bitwise $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               assert= (bit-and 15 7) 7
@@ -24,7 +31,8 @@
               assert= |0b10001 $ &number:display-by 17 2
               assert= |0o21 $ &number:display-by 17 8
               assert= |0x11 $ &number:display-by 17 16
-        |test-char $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-char $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Test char")
               assert= 97 $ .get-char-code |a
@@ -36,7 +44,8 @@
               assert= |c $ last |abc
               assert= nil $ first |
               assert= nil $ last |
-        |test-format $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-format $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing format")
               assert= |1.2346 $ .format 1.23456789 4
@@ -59,7 +68,8 @@
                 assert= (.escape "|\t") "|\"\\t\""
                 assert= (.escape |a) "|\"a\""
               println |hashing: $ &hash 1
-        |test-includes $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-includes $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Testing includes")
               assert= true $ includes? |abc |abc
@@ -81,7 +91,8 @@
               assert= |0abc $ strip-prefix |0abc |ab
               assert= |aba $ strip-suffix |ababc |bc
               assert= |abc0 $ strip-suffix |abc0 |bc
-        |test-lisp-style $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-lisp-style $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Test lisp style")
               assert=
@@ -108,14 +119,15 @@
                 , "|defn (a b)\n  + a b"
               ; test format-cirru-one-liner
               assert=
-                format-cirru-one-liner
-                  [] |defn ([] |add ([] |a |b)) ([] |+ |a |b)
+                format-cirru-one-liner $ [] |defn
+                  [] |add $ [] |a |b
+                  [] |+ |a |b
                 , "|defn (add (a b)) $ + a b"
               assert=
-                format-cirru-one-liner
-                  [] |+ |1 |2
+                format-cirru-one-liner $ [] |+ |1 |2
                 , "|+ 1 2"
-        |test-methods $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-methods () (log-title "|Testing string methods")
               assert= true $ .blank? |
@@ -161,10 +173,12 @@
               assert= |a00000 $ .pad-right |a 6 |0
               assert= |12312a $ .pad-left |a 6 |123
               assert= |a12312 $ .pad-right |a 6 |123
-        |test-parse $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-parse $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () $ assert= 0 (parse-float |0)
-        |test-str $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-str $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn test-str ()
               assert= (&str:concat |a |b) |ab
@@ -175,8 +189,7 @@
               assert= (str-spaced nil nil |c 12) "|c 12"
               assert= (str-spaced |a nil |c 12 nil) "|a c 12"
               assert= (str 1 2 3) |123
-              assert= "|(:: :a |世界 \"|海 洋\")"
-                str $ :: :a |世界 "|海 洋"
+              assert= "|(:: :a |世界 \"|海 洋\")" $ str (:: :a "|世界" "|海 洋")
               assert=
                 type-of $ &str 1
                 , :string
@@ -192,10 +205,11 @@
               assert= -1 $ &str:compare |a |b
               assert= 1 $ &str:compare |b |a
               assert= 0 $ &str:compare |a |a
-              assert-detect identity $ < |a |b
-              assert-detect identity $ < |aa |ab
-              assert-detect not $ > |aa |ab
-        |test-trim $ %{} :CodeEntry (:doc |)
+              assert= -1 $ &compare |a |b
+              assert= 1 $ &compare |b |a
+              assert= 0 $ &compare |a |a
+          :examples $ []
+        |test-trim $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn ()
               assert= | $ trim "|    "
@@ -203,7 +217,8 @@
               assert= |1 $ trim "|\n1\n"
               assert= | $ trim |______ |_
               assert= |1 $ trim |__1__ |_
-        |test-whitespace $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |test-whitespace $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             fn () (log-title "|Test blank?")
               assert-detect identity $ blank? |
@@ -215,7 +230,9 @@
               assert-detect not $ blank? |1
               assert-detect not $ blank? "| 1"
               assert-detect not $ blank? "|1 "
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns test-string.main $ :require
             [] util.core :refer $ [] inside-eval:
+        :examples $ []

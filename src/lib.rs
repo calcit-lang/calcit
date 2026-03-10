@@ -19,19 +19,23 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use calcit::{Calcit, CalcitErr, CalcitFnTypeAnnotation, CalcitTypeAnnotation};
+pub use calcit::{
+  Calcit, CalcitErr, CalcitFnTypeAnnotation, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SyntaxTypeSignature,
+};
 
 use crate::util::string::strip_shebang;
 
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   // load core libs
-  let bytes = include_bytes!("./cirru/calcit-core.cirru");
-  let core_content = String::from_utf8_lossy(bytes).to_string();
-  let core_data = cirru_edn::parse(&core_content).map_err(|e| {
+  let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
+  let mut snapshot = snapshot::decode_binary_snapshot(bytes).map_err(|e| {
     eprintln!("\n{e}");
-    "Failed to parse core snapshot".to_string()
+    "Failed to deserialize core snapshot".to_string()
   })?;
-  snapshot::load_snapshot_data(&core_data, "calcit-internal://calcit-core.cirru")
+  let path = "calcit-internal://calcit-core.cirru";
+  let meta_ns = format!("{}.$meta", snapshot.package);
+  snapshot.files.insert(meta_ns.to_owned(), snapshot::gen_meta_ns(&meta_ns, path));
+  Ok(snapshot)
 }
 
 #[derive(Clone, Debug)]
@@ -56,8 +60,9 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
-      return CalcitErr::err_str(failure.kind, failure.msg);
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return CalcitErr::err_str(failure.kind, headline);
     }
   }
 
@@ -66,9 +71,11 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
     return Err(CalcitErr {
       kind: CalcitErrKind::Unexpected,
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
-      warnings: warnings.to_owned(),
+      code: None,
+      warnings: Box::new(warnings.to_owned()),
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
@@ -79,7 +86,7 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {
-            call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+            call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
             Err(failure)
           }
         }
@@ -103,7 +110,19 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
     module_folder.join(&file_path).as_path().to_owned()
   };
 
-  println!("loading: {}", file_path.as_str());
+  let display_path = if file_path.starts_with("./") {
+    file_path.clone()
+  } else if file_path.starts_with('/') {
+    if let Ok(stripped) = Path::new(&file_path).strip_prefix(module_folder) {
+      format!("<mods>/{}", stripped.display())
+    } else {
+      file_path.clone()
+    }
+  } else {
+    format!("<mods>/{file_path}")
+  };
+
+  println!("loading: {display_path}");
 
   let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
   strip_shebang(&mut content);

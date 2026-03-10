@@ -1,11 +1,12 @@
 
-{} (:package |debug-overflow)
-  :configs $ {} (:init-fn |debug-overflow.main/main!) (:reload-fn |debug-overflow.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |debug-overflow)
+  :configs $ {} (:init-fn |debug-overflow.main/main!) (:reload-fn |debug-overflow.main/reload!) (:version |0.0.0)
     :modules $ []
+  :entries $ {}
   :files $ {}
     |debug-overflow.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () (println |TODO) (; rec 1 2 3 4 5 6 7 8 9)
               println $ my-cond
@@ -13,7 +14,8 @@
                   , 1
                 (&> 3 2) 2
                 true 0
-        |my-cond $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |my-cond $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro my-cond (pair & else)
               &let
@@ -25,7 +27,8 @@
                       quasiquote $ my-cond
                         ~ $ nth else 0
                         ~@ $ rest else
-        |rec $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |rec $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defmacro rec (x0 & xs)
               quasiquote $ if (&> ~x0 10) "|Too large"
@@ -33,7 +36,9 @@
                   ~ $ empty? xs
                   , ~x0 $ &+ ~x0
                     rec $ ~@ xs
-      :ns $ %{} :CodeEntry (:doc |)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
           ns debug-overflow.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
+        :examples $ []

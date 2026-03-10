@@ -50,11 +50,11 @@ cr eval 'thread-first 100 range (map $ \ * % %)'
 Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/main/compact.cirru):
 
 ```bash
-cr compact.cirru -1 # run only once
+cr compact.cirru # run once (default)
 
-cr -1 # by default, it picks `compact.cirru`
+cr # by default, it picks `compact.cirru`
 
-cr # watch mode enabled by default
+cr -w # watch mode (explicit flag required)
 ```
 
 By default Calcit reads `:init-fn` and `:reload-fn` inside `compact.cirru` configs. You may also specify functions,

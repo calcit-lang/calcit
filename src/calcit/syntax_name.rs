@@ -1,4 +1,15 @@
+use std::sync::Arc;
+
 use strum_macros::{AsRefStr, EnumString};
+
+use crate::calcit::CalcitTypeAnnotation;
+
+#[derive(Debug, Clone)]
+pub struct SyntaxTypeSignature {
+  pub param_names: Vec<&'static str>,
+  pub param_types: Vec<Arc<CalcitTypeAnnotation>>,
+  pub return_type: Arc<CalcitTypeAnnotation>,
+}
 
 /// core syntax inside Calcit
 #[derive(Debug, Clone, PartialEq, EnumString, strum_macros::Display, AsRefStr, PartialOrd, Eq, Ord)]
@@ -61,11 +72,94 @@ pub enum CalcitSyntax {
   /// placeholder for upcoming local type annotations
   #[strum(serialize = "assert-type")]
   AssertType,
+  /// placeholder for trait requirement assertions
+  #[strum(serialize = "assert-traits")]
+  AssertTraits,
 }
 
 impl CalcitSyntax {
   /// check is given name is a syntax name
   pub fn is_valid(s: &str) -> bool {
     s.parse::<CalcitSyntax>().is_ok()
+  }
+
+  pub fn get_type_signature(&self) -> Option<SyntaxTypeSignature> {
+    use CalcitSyntax::*;
+    let dyn_t = Arc::new(CalcitTypeAnnotation::Dynamic);
+    let bool_t = Arc::new(CalcitTypeAnnotation::Bool);
+    let symbol_t = Arc::new(CalcitTypeAnnotation::Symbol);
+    let tag_t = Arc::new(CalcitTypeAnnotation::Tag);
+    let cirru_quote_t = Arc::new(CalcitTypeAnnotation::CirruQuote);
+    let list_dyn = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic)));
+    let ref_dyn = Arc::new(CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Dynamic)));
+
+    match self {
+      If => Some(SyntaxTypeSignature {
+        param_names: vec!["condition", "then-expr", "else-expr"],
+        param_types: vec![bool_t.clone(), dyn_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      Quote | Quasiquote => Some(SyntaxTypeSignature {
+        param_names: vec!["expr"],
+        param_types: vec![dyn_t.clone()],
+        return_type: cirru_quote_t.clone(),
+      }),
+      Gensym => Some(SyntaxTypeSignature {
+        param_names: vec!["name"],
+        param_types: vec![symbol_t.clone()],
+        return_type: symbol_t.clone(),
+      }),
+      Eval => Some(SyntaxTypeSignature {
+        param_names: vec!["expr"],
+        param_types: vec![cirru_quote_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      Macroexpand | Macroexpand1 | MacroexpandAll => Some(SyntaxTypeSignature {
+        param_names: vec!["expr"],
+        param_types: vec![cirru_quote_t.clone()],
+        return_type: cirru_quote_t.clone(),
+      }),
+      Try => Some(SyntaxTypeSignature {
+        param_names: vec!["expr", "err", "catch-expr"],
+        param_types: vec![dyn_t.clone(), symbol_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      Defatom => Some(SyntaxTypeSignature {
+        param_names: vec!["name", "init"],
+        param_types: vec![symbol_t.clone(), dyn_t.clone()],
+        return_type: symbol_t.clone(),
+      }),
+      Reset => Some(SyntaxTypeSignature {
+        param_names: vec!["atom", "value"],
+        param_types: vec![ref_dyn.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      HintFn => Some(SyntaxTypeSignature {
+        param_names: vec!["hint", "f"],
+        param_types: vec![tag_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      AssertType => Some(SyntaxTypeSignature {
+        param_names: vec!["expr", "type"],
+        param_types: vec![dyn_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      AssertTraits => Some(SyntaxTypeSignature {
+        param_names: vec!["expr", "trait"],
+        param_types: vec![dyn_t.clone(), tag_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      CoreLet => Some(SyntaxTypeSignature {
+        param_names: vec!["binding", "body"],
+        param_types: vec![list_dyn.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      CallSpread => Some(SyntaxTypeSignature {
+        param_names: vec!["f", "args"],
+        param_types: vec![dyn_t.clone(), list_dyn.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      Defn | Defmacro | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
+    }
   }
 }

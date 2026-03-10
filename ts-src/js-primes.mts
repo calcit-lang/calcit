@@ -2,10 +2,14 @@ import { CalcitTag, CalcitSymbol, CalcitFn, CalcitRecur } from "./calcit-data.mj
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
+import { CalcitStruct } from "./js-struct.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 
 export type CalcitValue =
   | string
@@ -23,6 +27,10 @@ export type CalcitValue =
   | CalcitFn
   | CalcitRecur // should not be exposed to function
   | CalcitRecord
+  | CalcitImpl
+  | CalcitTrait
+  | CalcitStruct
+  | CalcitEnum
   | CalcitCirruQuote
   | null;
 
@@ -50,6 +58,9 @@ enum PseudoTypeIndex {
   set,
   map,
   record,
+  impl,
+  struct,
+  enum_type,
   fn,
   cirru_quote,
 }
@@ -70,6 +81,9 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return PseudoTypeIndex.map;
   if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
+  if (x instanceof CalcitImpl) return PseudoTypeIndex.impl;
+  if (x instanceof CalcitStruct) return PseudoTypeIndex.struct;
+  if (x instanceof CalcitEnum) return PseudoTypeIndex.enum_type;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;
