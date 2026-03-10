@@ -1331,7 +1331,7 @@ impl TryFrom<ChangesDict> for Edn {
 
 /// Save snapshot to compact.cirru file
 /// This is a shared utility function used by CLI edit commands
-pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &Snapshot) -> Result<(), String> {
+pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   validate_snapshot_schemas_for_write(snapshot)?;
 
   // Build root level Edn mapping
@@ -1393,6 +1393,14 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
   let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
 
   validate_serialized_snapshot_content(&content)?;
+
+  Ok(content)
+}
+
+/// Save snapshot to compact.cirru file
+/// This is a shared utility function used by CLI edit commands
+pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &Snapshot) -> Result<(), String> {
+  let content = render_snapshot_content(snapshot)?;
 
   // Write to file
   std::fs::write(compact_cirru_path, content).map_err(|e| format!("Failed to write compact.cirru: {e}"))?;

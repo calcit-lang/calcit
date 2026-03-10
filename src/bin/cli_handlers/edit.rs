@@ -16,7 +16,8 @@ use calcit::cli_args::{
   EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{
-  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, save_snapshot_to_file, validate_schema_for_write,
+  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
+  validate_schema_for_write,
 };
 use cirru_parser::Cirru;
 use colored::Colorize;
@@ -85,10 +86,18 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
 }
 
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
+  let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let snapshot = load_snapshot(snapshot_file)?;
-  save_snapshot(&snapshot, snapshot_file)?;
+  let formatted_content = render_snapshot_content(&snapshot)?;
 
-  println!("{} Refreshed snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  if formatted_content == original_content {
+    println!("{} No formatting changes for '{}'", "·".dimmed(), snapshot_file.dimmed());
+    return Ok(());
+  }
+
+  fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
+
+  println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
   Ok(())
 }
 
