@@ -258,7 +258,6 @@
               assert= |a?b $ turn-string :a?b
               assert= |ab! $ turn-string :ab!
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)
-        :examples $ []

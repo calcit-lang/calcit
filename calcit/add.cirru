@@ -10,7 +10,6 @@
           :code $ quote
             defn main! () $ + 1 2
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require
-        :examples $ []

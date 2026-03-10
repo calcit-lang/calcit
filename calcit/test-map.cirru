@@ -363,8 +363,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-map.main $ :require
             [] util.core :refer $ [] log-title inside-eval: inside-js:
-        :examples $ []

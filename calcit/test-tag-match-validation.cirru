@@ -81,6 +81,5 @@
                       do (println "|  ✗ Unexpected error type")
                         raise $ str "|Unexpected error:" e
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-tag-match-validation.main)
-        :examples $ []

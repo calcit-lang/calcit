@@ -12,7 +12,6 @@
                 f1 "|local function"
               println check/f1
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require ([] check-args.main :as check)
-        :examples $ []

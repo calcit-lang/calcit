@@ -30,6 +30,5 @@
           :code $ quote
             defn reload! () nil
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-invalid-tag.main)
-        :examples $ []

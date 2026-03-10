@@ -46,6 +46,5 @@
               ; "合法的" list "方法"
               .first xs
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)
-        :examples $ []

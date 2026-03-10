@@ -34,9 +34,8 @@
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (:ns test-hygienic.lib)
-        :examples $ []
     |test-hygienic.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
@@ -58,8 +57,7 @@
           :schema $ :: :fn
             {} (:return :bool)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-hygienic.main $ :require
             test-hygienic.lib :refer $ add-11 add-11-safe
-        :examples $ []

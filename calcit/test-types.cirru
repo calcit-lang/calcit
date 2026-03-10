@@ -363,6 +363,5 @@
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-types.main)
-        :examples $ []

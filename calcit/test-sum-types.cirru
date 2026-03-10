@@ -71,6 +71,5 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-sum-types.main)
-        :examples $ []

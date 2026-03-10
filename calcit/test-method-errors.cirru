@@ -21,6 +21,5 @@
                 by-set $ .to-set (vals src)
               .map by-set $ fn (x) false
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc "|Namespace for standalone repro") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|Namespace for standalone repro")
         :code $ quote (ns test-method-errors.main)
-        :examples $ []

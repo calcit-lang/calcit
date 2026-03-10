@@ -4857,10 +4857,9 @@
         |~@ $ %{} :CodeEntry (:doc "|internal syntax for spreading interpolate value in macro\nSyntax: (~@ list-expr) inside quasiquote\nParams: list-expr (expression that evaluates to list)\nReturns: spliced list elements\nUnquotes and splices list elements inside quasiquote") (:schema nil)
           :code $ quote &runtime-inplementation
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc "|built-in function and macros in `calcit.core`") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|built-in function and macros in `calcit.core`")
         :code $ quote
           ns calcit.core $ :require (calcit.internal :as internal)
-        :examples $ []
     |calcit.internal $ %{} :FileEntry
       :defs $ {}
         |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list") (:schema nil)
@@ -5009,7 +5008,6 @@
                                   , t0
                 , t0
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc "|internal function and macros for `calcit.core`") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|internal function and macros for `calcit.core`")
         :code $ quote
           ns calcit.internal $ :require
-        :examples $ []

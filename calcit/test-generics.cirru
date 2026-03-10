@@ -69,6 +69,5 @@
               &inspect-type b
               &inspect-type h
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-generics.main)
-        :examples $ []

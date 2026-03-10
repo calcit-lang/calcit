@@ -146,8 +146,7 @@
                   code $ quote (+ 1 2)
                 assert= code $ eval (&data-to-code code)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-edn.main $ :require
             [] util.core :refer $ [] inside-eval:
-        :examples $ []

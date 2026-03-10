@@ -77,7 +77,6 @@
                     recur $ dec x
               assert= 6 @*count-effects
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-recursion.main $ :require
-        :examples $ []

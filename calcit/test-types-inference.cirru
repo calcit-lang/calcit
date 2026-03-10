@@ -145,6 +145,5 @@
                 &inspect-type wrapped
                 &inspect-type outcome
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-types-inference.main)
-        :examples $ []

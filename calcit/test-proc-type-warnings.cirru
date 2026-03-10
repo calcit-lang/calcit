@@ -26,6 +26,5 @@
                 println "|Testing type mismatch..."
                 &+ text 10
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)
-        :examples $ []

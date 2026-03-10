@@ -43,7 +43,6 @@
             defn try-prime () $ println
               sieve-primes ([] 2 3 5 7 11 13) 17 400
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require
-        :examples $ []

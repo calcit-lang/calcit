@@ -16,7 +16,7 @@ use calcit::cli_args::{
   EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{
-  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file, validate_schema_for_write,
+  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, save_snapshot_to_file, validate_schema_for_write,
 };
 use cirru_parser::Cirru;
 use colored::Colorize;
@@ -1074,7 +1074,10 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   };
 
   let file_entry = FileInSnapShot {
-    ns: CodeEntry::from_code(ns_code),
+    ns: NsEntry {
+      doc: String::new(),
+      code: ns_code,
+    },
     defs: HashMap::new(),
   };
 

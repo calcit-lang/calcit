@@ -14,9 +14,8 @@
           :code $ quote
             defn f3 (x) (println "\"f3 in lib") (println "\"v:" x)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.lib)
-        :examples $ []
     |app.macro $ %{} :FileEntry
       :defs $ {}
         |add-by-1 $ %{} :CodeEntry (:doc |) (:schema nil)
@@ -35,9 +34,8 @@
               quasiquote $ &let ()
                 &+ (~ a) (~ b)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.macro)
-        :examples $ []
     |app.main $ %{} :FileEntry
       :defs $ {}
         |add-more $ %{} :CodeEntry (:doc |) (:schema nil)
@@ -145,9 +143,8 @@
             defn try-method () $ println
               .count $ range 11
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require (app.lib :as lib)
             app.lib :refer $ [] f3
             app.macro :refer $ [] add-num add-by-2
-        :examples $ []

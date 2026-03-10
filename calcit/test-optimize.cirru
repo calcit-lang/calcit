@@ -57,7 +57,6 @@
                 assert-traits lp ShowTrait
                 println $ .show lp
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-optimize.main $ :require
-        :examples $ []

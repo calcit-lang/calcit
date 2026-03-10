@@ -14,8 +14,7 @@
               assert= nil $ .map nil inc
               assert= nil $ .filter nil inc
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-nil.main $ :require
             util.core :refer $ log-title
-        :examples $ []

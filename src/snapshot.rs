@@ -94,8 +94,14 @@ pub struct SnapshotConfigs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NsEntry {
+  pub doc: String,
+  pub code: Cirru,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInSnapShot {
-  pub ns: CodeEntry,
+  pub ns: NsEntry,
   pub defs: HashMap<String, CodeEntry>,
 }
 
@@ -111,7 +117,7 @@ struct RawCodeEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct RawFileInSnapShot {
-  pub ns: RawCodeEntry,
+  pub ns: NsEntry,
   pub defs: HashMap<String, RawCodeEntry>,
 }
 
@@ -145,8 +151,7 @@ pub fn decode_binary_snapshot(bytes: &[u8]) -> Result<Snapshot, String> {
   let mut files: HashMap<String, FileInSnapShot> = HashMap::with_capacity(raw.files.len());
 
   for (file_name, raw_file) in raw.files {
-    let ns_owner = format!("{file_name}/:ns");
-    let ns = raw_file.ns.into_code_entry(&ns_owner)?;
+    let ns = raw_file.ns;
     let mut defs: HashMap<String, CodeEntry> = HashMap::with_capacity(raw_file.defs.len());
 
     for (def_name, raw_entry) in raw_file.defs {
@@ -216,6 +221,67 @@ impl From<FileInSnapShot> for Edn {
       defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
     }
     Edn::map_from_iter([("defs".into(), Edn::from(defs_map)), ("ns".into(), data.ns.into())])
+  }
+}
+
+impl TryFrom<Edn> for NsEntry {
+  type Error = String;
+  fn try_from(data: Edn) -> Result<Self, String> {
+    let mut doc = String::new();
+    let mut code: Option<Cirru> = None;
+
+    match data {
+      Edn::Record(record) => {
+        for (key, value) in &record.pairs {
+          match key.arc_str().as_ref() {
+            "doc" => {
+              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+            }
+            "code" => {
+              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+            }
+            _ => {}
+          }
+        }
+      }
+      Edn::Map(map) => {
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
+          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
+          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+        }
+      }
+      other => {
+        return Err(format!("failed to parse NsEntry: expected record/map, got: {other:?}"));
+      }
+    }
+
+    Ok(NsEntry {
+      doc,
+      code: code.ok_or_else(|| "failed to parse NsEntry: missing code field".to_owned())?,
+    })
+  }
+}
+
+impl From<NsEntry> for Edn {
+  fn from(data: NsEntry) -> Self {
+    Edn::record_from_pairs(
+      "NsEntry".into(),
+      &[("doc".into(), data.doc.into()), ("code".into(), data.code.into())],
+    )
+  }
+}
+
+impl From<&NsEntry> for Edn {
+  fn from(data: &NsEntry) -> Self {
+    Edn::record_from_pairs(
+      "NsEntry".into(),
+      &[
+        ("doc".into(), data.doc.to_owned().into()),
+        ("code".into(), data.code.to_owned().into()),
+      ],
+    )
   }
 }
 
@@ -543,8 +609,6 @@ fn validate_snapshot_schemas_for_write(snapshot: &Snapshot) -> Result<(), String
     if ns_name.ends_with(".$meta") {
       continue;
     }
-
-    validate_schema_for_snapshot_write(&format!("{ns_name}/:ns"), &file_data.ns.schema)?;
 
     for (def_name, code_entry) in &file_data.defs {
       validate_schema_for_snapshot_write(&format!("{ns_name}/{def_name}"), &code_entry.schema)?;
@@ -994,7 +1058,10 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
         .get(&Edn::tag("defs"))
         .ok_or_else(|| format!("{file_name}: missing `:defs` field in FileEntry"))?;
 
-      let ns = parse_code_entry_with_context(ns_value.to_owned(), &format!("{file_name}/:ns"))?;
+      let ns: NsEntry = ns_value
+        .to_owned()
+        .try_into()
+        .map_err(|e: String| format!("{file_name}/:ns: {e}"))?;
       let defs_map = defs_value.view_map().map_err(|e| {
         format!(
           "{file_name}: failed to parse `:defs` as map: {e}; got {}",
@@ -1013,13 +1080,13 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
       Ok(FileInSnapShot { ns, defs })
     }
     Edn::Record(record) => {
-      let mut ns = None;
+      let mut ns: Option<NsEntry> = None;
       let mut defs = HashMap::new();
 
       for (key, value) in record.pairs.iter() {
         match key.arc_str().as_ref() {
           "ns" => {
-            ns = Some(parse_code_entry_with_context(value.to_owned(), &format!("{file_name}/:ns"))?);
+            ns = Some(value.to_owned().try_into().map_err(|e: String| format!("{file_name}/:ns: {e}"))?);
           }
           "defs" => {
             let defs_map = value.view_map().map_err(|e| {
@@ -1084,11 +1151,9 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   ]);
 
   FileInSnapShot {
-    ns: CodeEntry {
+    ns: NsEntry {
       doc: "".to_owned(),
-      examples: vec![],
       code: vec!["ns", ns].into(),
-      schema: DYNAMIC_TYPE.clone(),
     },
     defs: def_dict,
   }
@@ -1140,7 +1205,10 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()),
       );
       Ok(FileInSnapShot {
-        ns: CodeEntry::from_code(ns_code),
+        ns: NsEntry {
+          doc: "".to_owned(),
+          code: ns_code,
+        },
         defs: def_dict,
       })
     }

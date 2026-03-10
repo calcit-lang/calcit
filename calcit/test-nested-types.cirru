@@ -34,6 +34,5 @@
                     ; "最终返回" "d，类型应该是" :number
                     d
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)
-        :examples $ []

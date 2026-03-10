@@ -432,8 +432,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke)
             util.core :refer $ log-title inside-eval: inside-js:
-        :examples $ []

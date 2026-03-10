@@ -49,7 +49,6 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns util.core $ :require
-        :examples $ []

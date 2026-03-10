@@ -498,6 +498,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 **定义操作：**
 
 - `cr edit format` - 不修改语义，按当前快照序列化逻辑重写 **snapshot 文件**（用于刷新格式）
+  - 也会把旧的 namespace `CodeEntry` 写法收敛成当前的 `NsEntry` 结构
   - 适用：普通 `compact.cirru` / 项目 snapshot 文件
   - 不适用：calcit-editor 专用的 `calcit.cirru` 结构文件
 - `cr edit def <namespace/definition>` - 添加新定义（默认若已存在会报错；加 `--overwrite` 可强制覆盖）

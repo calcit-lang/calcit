@@ -29,8 +29,14 @@ pub struct CodeEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NsEntry {
+  pub doc: String,
+  pub code: Cirru,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInSnapShot {
-  pub ns: CodeEntry,
+  pub ns: NsEntry,
   pub defs: HashMap<String, CodeEntry>,
 }
 
@@ -204,6 +210,31 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   })
 }
 
+fn parse_ns_entry(edn: Edn, owner: &str) -> Result<NsEntry, String> {
+  let record: EdnRecordView = match edn {
+    Edn::Record(r) => r,
+    other => {
+      return Err(format!(
+        "{owner}: expected NsEntry/CodeEntry record, got {}",
+        format_edn_preview(&other)
+      ));
+    }
+  };
+  let mut doc = String::new();
+  let mut code: Option<Cirru> = None;
+  for (key, value) in &record.pairs {
+    match key.arc_str().as_ref() {
+      "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
+      "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
+      _ => {}
+    }
+  }
+  Ok(NsEntry {
+    doc,
+    code: code.ok_or_else(|| format!("{owner}: missing `:code` field in NsEntry"))?,
+  })
+}
+
 fn parse_file_in_snapshot(edn: Edn, file_name: &str) -> Result<FileInSnapShot, String> {
   let record: EdnRecordView = match edn {
     Edn::Record(r) => r,
@@ -214,11 +245,11 @@ fn parse_file_in_snapshot(edn: Edn, file_name: &str) -> Result<FileInSnapShot, S
       ));
     }
   };
-  let mut ns: Option<CodeEntry> = None;
+  let mut ns: Option<NsEntry> = None;
   let mut defs: HashMap<String, CodeEntry> = HashMap::new();
   for (key, value) in &record.pairs {
     match key.arc_str().as_ref() {
-      "ns" => ns = Some(parse_code_entry(value.clone(), &format!("{file_name}/:ns"))?),
+      "ns" => ns = Some(parse_ns_entry(value.clone(), &format!("{file_name}/:ns"))?),
       "defs" => {
         let map = match value {
           Edn::Map(m) => m,

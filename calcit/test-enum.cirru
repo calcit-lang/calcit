@@ -77,6 +77,5 @@
           :schema $ :: :fn
             {} (:return :unit)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-enum.main)
-        :examples $ []

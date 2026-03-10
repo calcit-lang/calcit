@@ -515,8 +515,7 @@
                 sort ([] 4 3 2 1) (\ &- % %2)
                 [] 1 2 3 4
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-list.main $ :require
             util.core :refer $ log-title inside-eval:
-        :examples $ []

@@ -44,6 +44,5 @@
                 println result
                 println nested
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)
-        :examples $ []

@@ -113,7 +113,6 @@
                 :: :a :b $ [] 1 2 3
                 [] 2 2
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-lens.main $ :require
-        :examples $ []

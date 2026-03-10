@@ -116,7 +116,6 @@
               assert-detect empty? $ []
               do true
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-math.main $ :require
-        :examples $ []

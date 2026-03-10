@@ -389,8 +389,7 @@
                 with-cpu-time $ &+ 1 2
                 , 3
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-macro.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
-        :examples $ []

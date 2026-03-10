@@ -22,9 +22,8 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (:ns test-gynienic.lib)
-        :examples $ []
     |test-gynienic.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
@@ -39,8 +38,7 @@
                 assert= (add-11 1 2) ([] 1 2 4 11 10)
                 , true
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-gynienic.main $ :require
             [] test-gynienic.lib :refer $ [] add-11
-        :examples $ []

@@ -165,8 +165,7 @@
               assert= 1 $ when-not false 1
               assert= 1 $ when-not false 2 1
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-cond.main $ :require
             [] util.core :refer $ [] inside-eval:
-        :examples $ []

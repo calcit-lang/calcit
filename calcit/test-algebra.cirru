@@ -126,8 +126,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-algebra $ :require
             util.core :refer $ log-title inside-eval:
-        :examples $ []

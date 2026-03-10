@@ -75,8 +75,7 @@
               assert= DocTrait $ &impl:origin DotImpl
               assert= "|native-dot Bob" $ .label p
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-doc-smoke.main $ :require
             util.core :refer $ inside-eval:
-        :examples $ []

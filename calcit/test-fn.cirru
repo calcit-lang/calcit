@@ -23,8 +23,7 @@
                 assert= 3 $ f2 1 2
                 assert= 3 $ apply f2 ([] 1 2)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-fn.main $ :require
             util.core :refer $ log-title
-        :examples $ []
