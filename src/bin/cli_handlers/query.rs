@@ -469,7 +469,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
 
   println!("\n{}", "Schema:".bold());
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+    let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
       Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
       Err(e) => format!("(schema error: {e})"),
     };
@@ -621,7 +621,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   println!("{} {}", "Examples:".bold(), code_entry.examples.len());
 
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+    let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
       Ok(c) => c.format_one_liner()?,
       Err(e) => format!("(schema error: {e})"),
     };
@@ -673,7 +673,7 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
   println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())?;
+    let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn())?;
     println!("{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
   } else {
     println!("{} -", "Schema:".bold());

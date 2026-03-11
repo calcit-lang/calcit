@@ -4651,12 +4651,12 @@
             defn vals (x)
               map (to-pairs x) last
           :examples $ []
-            quote $ assert= ([] 1 2)
+            quote $ assert= (#{} 1 2)
               vals $ {} (:a 1) (:b 2)
-            quote $ assert= ([])
+            quote $ assert= (#{})
               vals $ {}
           :schema $ :: :fn
-            {} (:return :list)
+            {} (:return :set)
               :args $ [] :map
         |w-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
