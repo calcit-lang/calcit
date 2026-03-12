@@ -271,6 +271,21 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       }
       Edn::map_from_iter(entries)
     }
+    Calcit::Map(xs) => {
+      // Map literals can appear as hint-fn schema data injected during preprocessing.
+      let mut pairs = EdnListView::default();
+      for (k, v) in xs.iter() {
+        pairs.push(Edn::from(vec![dump_code(k), dump_code(v)]));
+      }
+      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("map")), (Edn::tag("pairs"), pairs.into())])
+    }
+    Calcit::Set(xs) => {
+      let mut items = EdnListView::default();
+      for x in xs.iter() {
+        items.push(dump_code(x));
+      }
+      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("set")), (Edn::tag("items"), items.into())])
+    }
     Calcit::RawCode(_, code) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("raw-code")),
       (Edn::tag("code"), Edn::Str(code.to_owned())),
