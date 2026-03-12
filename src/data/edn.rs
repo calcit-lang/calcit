@@ -150,6 +150,18 @@ pub fn sanitize_edn_for_format(e: &Edn) -> Edn {
       }
       ys.into()
     }
+    Edn::Tuple(EdnTupleView { tag, extra, enum_tag }) => Edn::Tuple(EdnTupleView {
+      tag: Arc::new(sanitize_edn_for_format(tag)),
+      extra: extra.iter().map(sanitize_edn_for_format).collect(),
+      enum_tag: enum_tag.as_ref().map(|x| Arc::new(sanitize_edn_for_format(x))),
+    }),
+    Edn::Record(EdnRecordView { tag, pairs }) => {
+      let mut ys = EdnRecordView::new(tag.to_owned());
+      for (k, v) in pairs.iter() {
+        ys.insert(k.to_owned(), sanitize_edn_for_format(v));
+      }
+      ys.into()
+    }
     Edn::Atom(inner) => Edn::Atom(Box::new(sanitize_edn_for_format(inner))),
     other => other.clone(),
   }
