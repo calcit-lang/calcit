@@ -83,6 +83,8 @@ fn main() -> Result<(), String> {
 
   // get dirty functions injected
   #[cfg(not(target_arch = "wasm32"))]
+  injection::set_trace_ffi(cli_args.trace_ffi);
+  #[cfg(not(target_arch = "wasm32"))]
   injection::inject_platform_apis();
 
   let core_snapshot = calcit::load_core_snapshot()?;

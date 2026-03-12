@@ -25,6 +25,9 @@ pub struct ToplevelCalcit {
   /// warn on dynamic method calls that cannot be monomorphized
   #[argh(switch)]
   pub warn_dyn_method: bool,
+  /// print FFI dylib calls and callbacks for debugging native crashes
+  #[argh(switch)]
+  pub trace_ffi: bool,
   /// entry file path, defaults to "js-out/"
   #[argh(option, default = "String::from(\"js-out/\")")]
   pub emit_path: String,
