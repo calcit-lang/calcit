@@ -168,7 +168,8 @@ pub fn display_stack_with_docs(
   for s in &stack.0 {
     let mut args = EdnListView::default();
     for v in s.args.iter() {
-      args.push(edn::calcit_to_edn(v)?);
+      let edn_val = edn::calcit_to_edn(v)?;
+      args.push(edn::sanitize_edn_for_format(&edn_val));
     }
     let stack_location = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit));
     let mut info_map = vec![

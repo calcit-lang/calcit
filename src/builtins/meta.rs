@@ -307,7 +307,10 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn format_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
+    Some(a) => {
+      let raw = edn::calcit_to_edn(a)?;
+      Ok(Calcit::Str(cirru_edn::format(&edn::sanitize_edn_for_format(&raw), true)?.into()))
+    }
     None => {
       let hint = format_proc_examples_hint(&CalcitProc::FormatCirruEdn).unwrap_or_default();
       CalcitErr::err_str_with_hint(
