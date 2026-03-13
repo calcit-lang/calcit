@@ -190,6 +190,14 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             }
           };
           let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_expr, generics.as_slice());
+          if let Err(e) = field_type.validate_applied_type_args() {
+            let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
+            return CalcitErr::err_str_with_hint(
+              CalcitErrKind::Type,
+              format!("&struct::new field `{field_name}` has invalid type annotation: {e}"),
+              hint,
+            );
+          }
           fields.push((field_name, field_type));
         }
         (Some(_), None, _) => {

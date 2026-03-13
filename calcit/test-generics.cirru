@@ -21,7 +21,7 @@
         |Wrapped $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defenum Wrapped
-              :pair $ :: Pair :number :string
+              :pair Pair
               :none
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)

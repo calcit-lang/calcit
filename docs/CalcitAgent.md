@@ -662,7 +662,7 @@ let
 有两种方式标注函数返回类型：
 
 - **紧凑模式（推荐）**：紧跟在参数列表后的类型标签。
-- **正式模式**：使用 `hint-fn`（通常放在函数体开头）。
+- **正式模式**：局部 `fn` 使用 `hint-fn`（通常放在函数体开头）；顶层 `defn` / `defmacro` 使用 `:schema`。
   - 泛型变量：`hint-fn $ {} (:generics $ [] 'T 'S)`
   - 旧 clause 写法（如 `(hint-fn (return-type ...))` / `(generics ...)` / `(type-vars ...)`）已不再支持，会直接报错。
 
@@ -727,18 +727,18 @@ cr eval 'foldl (list 1 2 3) 0 &+'
 let
     ; 可选参数
     greet $ fn (name)
-      assert-type name $ :: :optional :string
+      hint-fn $ {} (:args $ [] (:: :optional :string)) (:return :string)
       str "|Hello " (or name "|Guest")
 
     ; 变长参数
     sum $ fn (& xs)
-      assert-type xs $ :: :& :number
+      hint-fn $ {} (:rest :number) (:return :number)
       reduce xs 0 &+
 
     ; Record 约束 (使用 defstruct 定义结构体)
     User $ defstruct User (:name :string)
     get-name $ fn (u)
-      assert-type u User
+      hint-fn $ {} (:args $ [] (:: :record User)) (:return :string)
       get u :name
   println $ greet |Alice
   println $ sum 1 2 3
@@ -793,6 +793,8 @@ let
 - `:args` 里 2 个必选参数，对应 `(xs0 sep)`
 - `:return :string` 对应整个 `join-str` 的返回值
 - 内部辅助函数 `%join-str` 不是顶层定义，所以继续用 `hint-fn`
+
+可以简单记忆为：**namespace 上的定义看 `:schema`，函数体内部的辅助函数看 `hint-fn`。**
 
 推荐工作流：
 
@@ -1456,20 +1458,20 @@ cr eval 'let ((x 1)) (+ x 2)'
 
 ### 错误信息对照表
 
-| 错误信息                                         | 原因                                              | 解决方法                                                       |
-| ------------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
-| `Path index X out of bounds`                     | 路径索引已过期（操作后变化）                      | 重新运行 `cr query search` 获取最新路径                        |
-| `tag-match expected tuple`                       | 传入 vector 而非 tuple                            | 改用 `::` 语法，如 `:: :event-name data`                       |
-| `unknown symbol: xxx`                            | 符号未定义或未 import                             | `cr query find xxx` 确认位置，`cr edit add-import` 引入        |
-| `expects pairs in list for let`                  | `let` 绑定语法错误                                | 改为 `let ((x val)) body`（双层括号）                          |
-| `cannot be used as operator`                     | 末尾符号被当作函数调用                            | 改用 `, acc` 前缀传递值，或用函数包裹                          |
-| `unknown data for foldl-shortcut`                | 参数顺序错误（Calcit vs Clojure 差异）            | Calcit 集合在第一位：`map data fn`                             |
-| `Do not include ':require' as prefix`            | `cr edit imports` 格式错误                        | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`             |
-| `Namespace name mismatch`                        | `add-ns -e` 名称不一致                            | ns 表达式名称必须与位置参数完全一致                            |
-| 字符串被拆分成多个 token                         | 没有用 `\|` 或 `"` 包裹                           | 使用 `\|complete string` 或 `"complete string`                 |
-| `unexpected format`                              | Cirru 语法错误                                    | 用 `cr cirru parse '<code>'` 验证语法                          |
-| `Type warning` 导致 eval 失败                    | 类型不匹配（阻断执行）                            | 检查参数类型标注，或用 `assert-type` 确认预期类型              |
-| `schema mismatch while preprocessing definition` | `:schema` 与 `defn` / `defmacro` / 参数个数不一致 | 修正 `:kind`、`:args`、`:rest`，或让代码定义与 schema 保持一致 |
+| 错误信息                                         | 原因                                              | 解决方法                                                                 |
+| ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------ |
+| `Path index X out of bounds`                     | 路径索引已过期（操作后变化）                      | 重新运行 `cr query search` 获取最新路径                                  |
+| `tag-match expected tuple`                       | 传入 vector 而非 tuple                            | 改用 `::` 语法，如 `:: :event-name data`                                 |
+| `unknown symbol: xxx`                            | 符号未定义或未 import                             | `cr query find xxx` 确认位置，`cr edit add-import` 引入                  |
+| `expects pairs in list for let`                  | `let` 绑定语法错误                                | 改为 `let ((x val)) body`（双层括号）                                    |
+| `cannot be used as operator`                     | 末尾符号被当作函数调用                            | 改用 `, acc` 前缀传递值，或用函数包裹                                    |
+| `unknown data for foldl-shortcut`                | 参数顺序错误（Calcit vs Clojure 差异）            | Calcit 集合在第一位：`map data fn`                                       |
+| `Do not include ':require' as prefix`            | `cr edit imports` 格式错误                        | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`                       |
+| `Namespace name mismatch`                        | `add-ns -e` 名称不一致                            | ns 表达式名称必须与位置参数完全一致                                      |
+| 字符串被拆分成多个 token                         | 没有用 `\|` 或 `"` 包裹                           | 使用 `\|complete string` 或 `"complete string`                           |
+| `unexpected format`                              | Cirru 语法错误                                    | 用 `cr cirru parse '<code>'` 验证语法                                    |
+| `Type warning` 导致 eval 失败                    | 类型不匹配（阻断执行）                            | 优先检查 `:schema` / `hint-fn` 的参数标注；局部值再用 `assert-type` 复核 |
+| `schema mismatch while preprocessing definition` | `:schema` 与 `defn` / `defmacro` / 参数个数不一致 | 修正 `:kind`、`:args`、`:rest`，或让代码定义与 schema 保持一致           |
 
 ### 调试常用命令
 

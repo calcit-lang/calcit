@@ -143,6 +143,76 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
+    match self {
+      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Variadic(inner) | Self::Optional(inner) => {
+        inner.validate_applied_type_args()
+      }
+      Self::Map(key, value) => {
+        key.validate_applied_type_args()?;
+        value.validate_applied_type_args()
+      }
+      Self::Fn(signature) => signature.validate_applied_type_args(),
+      Self::Struct(base, args) => {
+        for arg in args.iter() {
+          arg.validate_applied_type_args()?;
+        }
+
+        let expected = base.generics.len();
+        let actual = args.len();
+        if expected == 0 {
+          if actual > 0 {
+            return Err(format!(
+              "struct `{}` is not generic but received {actual} type argument(s)",
+              base.name
+            ));
+          }
+        } else if actual != expected {
+          return Err(format!(
+            "struct `{}` expects {expected} type argument(s), but received {actual}",
+            base.name
+          ));
+        }
+
+        Ok(())
+      }
+      Self::Enum(enum_def, args) => {
+        for arg in args.iter() {
+          arg.validate_applied_type_args()?;
+        }
+
+        if !args.is_empty() {
+          return Err(format!(
+            "enum `{}` is not generic but received {} type argument(s)",
+            enum_def.name(),
+            args.len()
+          ));
+        }
+
+        Ok(())
+      }
+      Self::TypeRef(_, args) => {
+        for arg in args.iter() {
+          arg.validate_applied_type_args()?;
+        }
+        Ok(())
+      }
+      Self::Record(_) | Self::Tuple(_) | Self::Trait(_) | Self::TraitSet(_) | Self::Custom(_) => Ok(()),
+      Self::Bool
+      | Self::Number
+      | Self::String
+      | Self::Symbol
+      | Self::Tag
+      | Self::DynTuple
+      | Self::DynFn
+      | Self::Buffer
+      | Self::CirruQuote
+      | Self::Dynamic
+      | Self::TypeVar(_)
+      | Self::Unit => Ok(()),
+    }
+  }
+
   fn custom_keyword_matches(custom: &Calcit, keyword: &str) -> bool {
     match custom {
       Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == keyword,
@@ -2545,6 +2615,46 @@ mod tests {
       CalcitTypeAnnotation::Dynamic
     ));
   }
+
+  #[test]
+  fn rejects_type_args_on_non_generic_struct_annotation() {
+    let pair = CalcitStruct {
+      name: EdnTag::new("Pair"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![]),
+      impls: vec![],
+    };
+    let annotation = CalcitTypeAnnotation::Struct(
+      Arc::new(pair),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+
+    let err = annotation
+      .validate_applied_type_args()
+      .expect_err("non-generic struct should reject type args");
+    assert!(err.contains("struct `Pair` is not generic"), "unexpected error: {err}");
+  }
+
+  #[test]
+  fn rejects_wrong_arity_on_generic_struct_annotation() {
+    let pair = CalcitStruct {
+      name: EdnTag::new("Pair"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![Arc::from("A"), Arc::from("B")]),
+      impls: vec![],
+    };
+    let annotation = CalcitTypeAnnotation::Struct(Arc::new(pair), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+
+    let err = annotation
+      .validate_applied_type_args()
+      .expect_err("generic struct should enforce arity");
+    assert!(
+      err.contains("expects 2 type argument(s), but received 1"),
+      "unexpected error: {err}"
+    );
+  }
 }
 
 impl fmt::Display for CalcitTypeAnnotation {
@@ -2715,6 +2825,17 @@ pub struct CalcitFnTypeAnnotation {
 }
 
 impl CalcitFnTypeAnnotation {
+  pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
+    for arg in &self.arg_types {
+      arg.validate_applied_type_args()?;
+    }
+    self.return_type.validate_applied_type_args()?;
+    if let Some(rest) = &self.rest_type {
+      rest.validate_applied_type_args()?;
+    }
+    Ok(())
+  }
+
   fn to_inline_type_schema_edn(&self) -> Edn {
     let args: Vec<Edn> = self.arg_types.iter().map(|t| t.to_type_edn()).collect();
     let mut map = EdnMapView::default();

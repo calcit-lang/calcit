@@ -87,6 +87,7 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
   }
 }
 
+
 #[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
   let _guard = lock_fixture_tests();
