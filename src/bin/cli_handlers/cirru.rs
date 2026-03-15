@@ -129,7 +129,7 @@ fn handle_parse_edn(edn_str: &str) -> Result<(), String> {
 
 fn handle_show_guide() -> Result<(), String> {
   let home_dir = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
-  let guide_path = format!("{home_dir}/.config/calcit/guidebook-repo/docs/cirru-syntax.md");
+  let guide_path = format!("{home_dir}/.config/calcit/docs/cirru-syntax.md");
 
   match std::fs::read_to_string(&guide_path) {
     Ok(content) => {
@@ -138,7 +138,7 @@ fn handle_show_guide() -> Result<(), String> {
     }
     Err(_) => Err(format!(
       "Cirru syntax guide not found at: {guide_path}\n\
-       Please ensure the guidebook repository is cloned to ~/.config/calcit/guidebook-repo/"
+       Please ensure the docs folder is links to ~/.config/calcit/docs"
     )),
   }
 }

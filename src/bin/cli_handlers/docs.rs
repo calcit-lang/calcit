@@ -138,13 +138,13 @@ fn find_doc_by_filename<'a>(guide_docs: &'a HashMap<String, GuideDoc>, filename:
 
 fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
   let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable")?;
-  let docs_dir = Path::new(&home_dir).join(".config/calcit/guidebook-repo/docs");
+  let docs_dir = Path::new(&home_dir).join(".config/calcit/docs");
 
   if !docs_dir.exists() {
     return Err(format!(
       "Guidebook documentation directory not found: {docs_dir:?}\n\n\
        To set up guidebook documentation, please run:\n\
-       git clone https://github.com/calcit-lang/guidebook-repo.git ~/.config/calcit/guidebook-repo"
+       git clone https://github.com/calcit-lang/calcit.git && ln -s ~/.config/calcit/calcit/docs ~/.config/calcit/docs"
     ));
   }
 
