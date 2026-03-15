@@ -370,6 +370,11 @@ fn handle_error() -> Result<(), String> {
     println!("{}", "✓ Error file is empty (no recent errors).".green());
     println!();
     println!("{}", "Your code compiled successfully!".dimmed());
+    println!(
+      "{}",
+      "Note: this only reflects recent Calcit parsing/preprocess/runtime status; still validate browser rendering, CSS values, and external side effects separately."
+        .dimmed()
+    );
   } else {
     println!("{}", "Last error stack trace:".bold().red());
     println!("{content}");
@@ -380,6 +385,11 @@ fn handle_error() -> Result<(), String> {
     println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
     println!();
     println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
+    println!(
+      "{}",
+      "Note: even when this clears, non-Calcit issues like CSS strings, DOM behavior, and external integrations can still be wrong."
+        .dimmed()
+    );
   }
 
   Ok(())

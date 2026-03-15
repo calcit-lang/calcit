@@ -4,6 +4,10 @@
 
 ## 🚀 快速开始（新 LLM 必读）
 
+**硬前置步骤：在执行任何 `cr edit` / `cr tree` 修改前，必须先运行一次 `cr docs agents --full`。**
+
+这不是建议项，而是进入实际修改前的检查项。跳过这一步，往往会直接沿用旧用法假设，尤其容易误判 `cr tree replace -p ''`、imports 输入格式和 watcher 验收边界。
+
 **核心原则：用命令行工具（不要直接编辑文件），用 search 定位（比逐层导航快 10 倍）**
 
 ### 标准流程
@@ -274,6 +278,7 @@ cr query modules
 **核心概念：**
 
 - 路径格式：逗号分隔的索引（如 `"3,2,1"`），空字符串 `""` 表示根节点
+- `-p ''` 仅表示“根节点”，**不等于推荐的整定义重写方案**；要整体替换定义时，优先使用 `cr edit def --overwrite -f <file>`
 - 每个命令都有 `--help` 查看详细参数
 - 命令执行后会显示 "Next steps" 提示下一步操作
 
@@ -284,6 +289,7 @@ cr query modules
   - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
   - 推荐：直接查看 Cirru 格式即可，通常不需要 JSON
 - `cr tree replace` - 替换节点
+  - 适合局部节点替换；若目标是**整条定义**，优先改用 `cr edit def --overwrite -f <file>`，比 `cr tree replace -p ''` 更可预期
 - `cr tree replace-leaf` - 查找并替换所有匹配的 leaf 节点（无需指定路径）
   - `--pattern <pattern>` - 要搜索的模式（精确匹配 leaf 节点）
   - 使用 `-e, -f, -j` 等通用参数提供替换内容
@@ -312,6 +318,12 @@ cr query modules
 - `-j '<json>'` / `-f <file>`
 
 简单更新尽量用结构化的 API 操作. 多行或者带特殊符号的表达式, 可以在 `.calcit-snippets/` 创建临时文件, 然后用 `cr cirru parse` 验证语法, 最后用 `-f <file>` 提交, 从而减少错误率. 复杂表达式建议分段, 然后搭配 `cr tree target-replace` 命令来完成多阶段提交.
+
+**整体替换定义的经验规则：**
+
+- 局部节点修改：继续使用 `cr tree replace -p '<path>'`
+- 整条定义重写：优先使用 `cr edit def <ns/def> --overwrite -f <file>`
+- 只有在你明确知道根节点替换后的结构，并且能立刻验证完整定义时，才考虑 `cr tree replace -p ''`
 
 **推荐工作流（高效定位 ⭐⭐⭐）：**
 
@@ -373,6 +385,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 - **路径格式**：`"3,2,1"` 表示第3个子节点 → 第2个子节点 → 第1个子节点
 - **批量修改自动提示**：搜索找到多处时，自动显示路径排序和批量替换命令
 - **路径动态变化**：删除/插入后，同级后续索引会变化，按提示从后往前操作
+- **批量执行不要用 `&&` 粘成一行**：尤其当 `-e` 内容里有引号、`|` 字符串或复杂表达式时，优先逐条执行，或写入 `-f <file>` 避免 shell 进入未闭合引号状态
 - 所有命令都会显示 Next steps 和操作提示
 
 **结构化变更示例：**
@@ -502,6 +515,8 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
   - 适用：普通 `compact.cirru` / 项目 snapshot 文件
   - 不适用：calcit-editor 专用的 `calcit.cirru` 结构文件
 - `cr edit def <namespace/definition>` - 添加新定义（默认若已存在会报错；加 `--overwrite` 可强制覆盖）
+  - 经验语义：**不带 `--overwrite` = create-only；带 `--overwrite` = replace existing definition**
+  - 若当前输出文案仍显示 `Created definition`，以你的调用方式和目标是否已存在为准理解，不要把该提示字面理解为“必然新增成功”
 - `cr edit rename <namespace/definition> <new-name>` - 在当前命名空间内重命名定义（不可覆盖）
 - `cr edit mv-def <source> <target>` - 将定义移动到另一个命名空间（跨命名空间移动）
 - `cr edit cp <ns/def> --from <path> -p <path> [--at <pos>]` - 在定义内复制 AST 节点到另一位置
@@ -718,7 +733,7 @@ cr eval 'foldl (list 1 2 3) 0 &+'
 #### 4. 复杂类型标注
 
 - **可选类型**：`:: :optional :string` (可以是 string 或 nil)
-- **变长参数**：`:: :& :number` (参数列表剩余部分均为 number)
+- **变长参数**：在 Schema 中使用 `:rest :number` (参数列表剩余部分均为 number)
 - **结构体/枚举**：使用 `defstruct` 或 `defenum` 定义的名字
 
 验证示例 (使用 `let` 封装多表达式以支持 `cr eval` 验证)：
@@ -904,6 +919,8 @@ cr edit inc \
 cr query error  # 命令会显示详细的错误信息或成功状态
 ```
 
+`cr query error` 只能告诉你最近一次 Calcit 语义链路里有没有报错，例如解析、预处理、运行期异常；它**不能**证明浏览器 CSS、HTML 属性值、业务数据内容或外部系统配置是“合理的”。像 `|max(...)` 被误写成 `"|max(...)` 这类在 Cirru 层面仍合法的字符串，就可能通过 `cr query error`，但在浏览器渲染阶段失效。
+
 **何时使用全量操作：**
 
 ```bash
@@ -937,7 +954,7 @@ cr        # 或 cr js
 - `cr query usages <ns/def>` - 查找定义的使用位置
 - `cr query search <pattern> [-f <ns/def>]` - 搜索叶子节点
 - `cr query search-expr <pattern> [-f <ns/def>]` - 搜索结构表达式
-- `cr query error` - 查看最近的错误堆栈
+- `cr query error` - 查看最近的错误堆栈（仅覆盖 Calcit 语义与运行链路，不覆盖 CSS/DOM/业务值合理性）
 
 ---
 
@@ -956,8 +973,8 @@ cr edit def app.core/multiply -e 'defn multiply (x y) (* x y)'
 # 添加新函数（命令会提示 Next steps）
 cr edit def 'app.core/multiply' -e 'defn multiply (x y) (* x y)'
 
-# 替换整个定义（-p '' 表示根路径）
-cr tree replace 'app.core/multiply' -p '' -e 'defn multiply (x y z) (* x y z)'
+# 替换整个定义（推荐用 overwrite，避免依赖根路径替换）
+cr edit def 'app.core/multiply' --overwrite -f /tmp/multiply.cirru
 
 # 更新文档和示例
 cr edit doc 'app.core/multiply' '乘法函数，返回两个数的积'
@@ -981,6 +998,7 @@ cr tree replace 'ns/def' -p '<path>' --leaf -e '<value>'
 
 # 4. 检查结果
 cr query error
+# 若改动涉及 CSS / DOM / 浏览器行为，继续做实际渲染验证，不要把 query error 当最终验收
 # 添加命名空间（推荐：先创建空 ns，再逐条 add-import）
 cr edit add-ns app.util
 cr edit add-import app.util -e 'calcit.core :refer $ echo'
@@ -1122,9 +1140,19 @@ cr tree replace-leaf 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
 
 - **从后往前操作**（推荐）：先删大索引，再删小索引
 - **单次操作后重新搜索**：每次修改立即用 `cr query search` 更新路径
-- **整体重写**：用 `cr tree replace -p ''` 替换整个定义
+- **整体重写**：优先用 `cr edit def --overwrite -f <file>`；`cr tree replace -p ''` 只保留给明确需要根节点级别改写的场景
 
 命令会在路径错误时提示最长有效路径和可用子节点。
+
+### 1.5 根路径整体替换的边界 ⭐⭐⭐
+
+`cr tree replace -p ''` 在语义上确实是替换根节点，但在实际操作里，它更像“根 AST 节点替换”，而不是“整条定义安全重写”。当你需要完整替换一个定义体时：
+
+- 更推荐 `cr edit def <ns/def> --overwrite -f <file>`
+- 先在文件里组织完整定义，再一次性覆盖，验证也更直接
+- 如果你已经用 `-p ''` 替换成功，仍应立刻执行 `cr query def <ns/def>` 或完整运行，确认写回后的定义结构符合预期
+
+经验上，`-p ''` 更适合你已经非常确定根节点结构时的精细 AST 操作，不适合作为默认“全量改写定义”的模板。
 
 ### 2. 输入格式参数使用速查 ⭐⭐⭐
 
@@ -1315,6 +1343,19 @@ cr eval 'thread-first x (+ 1) (* 2)'  # 用 thread-first 代替 ->
 
 **建议：** 命令行中优先使用英文名称（`thread-first` 而非 `->`），更清晰且无需转义。
 
+### 8. 多命令 `&&` 链式调用风险 ⭐⭐⭐
+
+把多个 `cr tree replace`、`cr edit def -e ...` 或其他带内联代码的命令用 `&&` 串起来，在 bash/zsh 中风险很高：
+
+- 只要某一段 `-e` 内容里出现未正确转义的引号，shell 就会进入“继续等待补全输入”的状态，看起来像终端卡死
+- 前一条命令如果已经改写了内容，后一条命令即使没执行，你也可能以为整批操作已完成
+
+更稳妥的做法：
+
+- 批量修改时逐条执行
+- 多行或含引号内容改用 `-f <file>`
+- 需要批量脚本化时，放到独立 shell script，并先用最小样例验证 quoting
+
 ---
 
 ## 🔄 完整功能开发示例
@@ -1398,6 +1439,8 @@ cr query error
 cr --check-only
 ```
 
+如果这次改动涉及样式、浏览器属性、字符串模板或外部接口，`cr query error` 和 `cr --check-only` 通过后，仍要继续做目标环境里的真实验收。
+
 ### 常见失误快速修复
 
 ```bash
@@ -1472,6 +1515,7 @@ cr eval 'let ((x 1)) (+ x 2)'
 | `unexpected format`                              | Cirru 语法错误                                    | 用 `cr cirru parse '<code>'` 验证语法                                    |
 | `Type warning` 导致 eval 失败                    | 类型不匹配（阻断执行）                            | 优先检查 `:schema` / `hint-fn` 的参数标注；局部值再用 `assert-type` 复核 |
 | `schema mismatch while preprocessing definition` | `:schema` 与 `defn` / `defmacro` / 参数个数不一致 | 修正 `:kind`、`:args`、`:rest`，或让代码定义与 schema 保持一致           |
+| `cr query error` 无报错但页面仍异常              | 问题不在 Calcit 语义链路，而在 CSS/DOM/业务值     | 到真实运行环境核对渲染结果、属性值和外部依赖，而不是只看 `query error`   |
 
 ### 调试常用命令
 

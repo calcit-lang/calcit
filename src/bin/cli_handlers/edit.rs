@@ -159,7 +159,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   if exists && !opts.overwrite {
     return Err(format!(
       "Definition '{definition}' already exists in namespace '{namespace}'.\n\
-       Use --overwrite to replace it, or use: cr tree replace {namespace}/{definition} -p '' -e '<code>'"
+       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{definition} --overwrite -f <file>"
     ));
   }
 
@@ -169,15 +169,19 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
 
   save_snapshot(&snapshot, snapshot_file)?;
 
+  let action_label = if exists { "Updated" } else { "Created" };
+
   println!(
-    "{} Created definition '{}' in namespace '{}'",
+    "{} {} definition '{}' in namespace '{}'",
     "✓".green(),
+    action_label,
     definition.cyan(),
     namespace
   );
   println!();
   println!("{}", "Next steps:".blue().bold());
   println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+  println!("  • Check errors: {}", "cr query error".cyan());
   println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
   println!(
     "  • Add to imports: {} <target-ns> '{}' --refer '{}'",

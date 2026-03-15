@@ -61,7 +61,10 @@ pub fn tip_prefer_oneliner_json(show_json: bool) -> Vec<String> {
 /// Tip for discouraging root-level edits when path is empty during editing
 pub fn tip_root_edit(path_is_empty: bool) -> Option<String> {
   if path_is_empty {
-    Some("Editing root path; prefer local updates to avoid unintended changes".to_string())
+    Some(
+      "Editing root path; prefer cr edit def --overwrite -f <file> for whole-definition rewrites, and keep tree replace for intentional root-node surgery"
+        .to_string(),
+    )
   } else {
     None
   }
