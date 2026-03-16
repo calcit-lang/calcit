@@ -163,7 +163,6 @@ impl fmt::Display for Calcit {
       } // TODO, escaping choices
       Thunk(thunk) => match thunk {
         CalcitThunk::Code { code, .. } => f.write_str(&format!("(&thunk _ {code})")),
-        CalcitThunk::Evaled { code, value } => f.write_str(&format!("(&thunk {value} {code})")),
       },
       CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
@@ -1389,7 +1388,7 @@ mod tests {
         at_def: Arc::from("demo"),
         at_ns: Arc::from("app.main"),
       }),
-      coord: None,
+      def_id: None,
     });
 
     assert_ne!(symbol, local);

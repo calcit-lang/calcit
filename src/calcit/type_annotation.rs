@@ -22,7 +22,7 @@ use std::sync::{LazyLock, OnceLock};
 // to avoid a circular dependency: type_annotation → program → snapshot → calcit.
 // ---------------------------------------------------------------------------
 type LookupFn = fn(&str, &str) -> Option<Calcit>;
-static LOOKUP_EVALED_DEF: OnceLock<LookupFn> = OnceLock::new();
+static LOOKUP_RUNTIME_READY_DEF: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
@@ -31,8 +31,8 @@ thread_local! {
 /// Register program-level lookup functions.  Must be called once at startup
 /// (e.g. from `program::extract_program_data`) before any type-annotation
 /// resolution that needs import-chain traversal.
-pub fn register_program_lookups(evaled_lookup: LookupFn, code_lookup: LookupFn) {
-  let _ = LOOKUP_EVALED_DEF.set(evaled_lookup);
+pub fn register_program_lookups(runtime_ready_lookup: LookupFn, code_lookup: LookupFn) {
+  let _ = LOOKUP_RUNTIME_READY_DEF.set(runtime_ready_lookup);
   let _ = LOOKUP_DEF_CODE.set(code_lookup);
 }
 
@@ -70,8 +70,8 @@ fn emit_legacy_fn_type_syntax_warning(schema_hint: &str, form: &Calcit) {
   }
 }
 
-fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
-  LOOKUP_EVALED_DEF.get().and_then(|f| f(ns, def))
+fn lookup_runtime_ready_registered(ns: &str, def: &str) -> Option<Calcit> {
+  LOOKUP_RUNTIME_READY_DEF.get().and_then(|f| f(ns, def))
 }
 
 fn lookup_def_code_registered(ns: &str, def: &str) -> Option<Calcit> {
@@ -1647,7 +1647,7 @@ impl CalcitTypeAnnotation {
       return None;
     }
 
-    let resolved = lookup_evaled_def(import.ns.as_ref(), import.def.as_ref())
+    let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
       .or_else(|| lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref()))
       .map(|value| CalcitTypeAnnotation::from_calcit(&value));
 
@@ -2199,7 +2199,7 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
         return None;
       }
 
-      let resolved = lookup_evaled_def(import.ns.as_ref(), import.def.as_ref())
+      let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
         .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
         .or_else(|| {
           lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref())
@@ -2215,7 +2215,7 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
 
       resolved
     }
-    Calcit::Symbol { sym, info, .. } => lookup_evaled_def(info.at_ns.as_ref(), sym)
+    Calcit::Symbol { sym, info, .. } => lookup_runtime_ready_registered(info.at_ns.as_ref(), sym)
       .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
       .or_else(|| {
         lookup_def_code_registered(info.at_ns.as_ref(), sym).map(|value| resolve_type_def_from_code(&value).unwrap_or(value))

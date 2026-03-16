@@ -345,7 +345,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
 
   // Steps:
   // 1. load changes file, and patch to program_code
-  // 2. clears evaled states, gensym counter
+  // 2. clears runtime caches, gensym counter
   // 3. rerun program, and catch error
 
   let data = cirru_edn::parse(content).map_err(|e| {
@@ -394,10 +394,10 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   program::apply_code_changes(&changes)?;
   println!("{} Changes applied to program", "✓".green());
 
-  // clear data in evaled states
-  program::clear_all_program_evaled_defs(entries.init_ns.to_owned(), entries.reload_ns.to_owned(), settings.reload_libs)?;
+  // clear invalidated runtime cache entries
+  program::clear_runtime_caches_for_changes(&changes, settings.reload_libs)?;
   builtins::meta::force_reset_gensym_index()?;
-  println!("cleared evaled states and reset gensym index.");
+  println!("cleared runtime caches and reset gensym index.");
 
   // Create a minimal snapshot for documentation lookup during incremental updates
   // In practice, this could be enhanced to maintain documentation state

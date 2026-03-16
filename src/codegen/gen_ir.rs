@@ -35,7 +35,7 @@ fn extract_import_type_info(ns: &str, def: &str) -> Edn {
     return Edn::Nil;
   }
 
-  let result = match program::lookup_evaled_def(ns, def) {
+  let result = match program::lookup_runtime_ready(ns, def) {
     Some(value) => {
       let annotation = CalcitTypeAnnotation::from_calcit(&value);
       match annotation {
@@ -92,18 +92,18 @@ impl From<IrData> for Edn {
 }
 
 pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), String> {
-  let program_data = program::clone_evaled_program();
+  let program_data = program::clone_compiled_program_snapshot()?;
 
   let mut files: HashMap<Arc<str>, IrDataFile> = HashMap::new();
 
   for (ns, file_info) in program_data.iter() {
     let mut defs: HashMap<Arc<str>, Edn> = HashMap::new();
-    for (def, code) in file_info.iter() {
-      defs.insert(def, dump_code(code));
+    for (def, compiled) in &file_info.defs {
+      defs.insert(def.to_owned(), dump_code(&compiled.codegen_form));
     }
 
     let file = IrDataFile { defs };
-    files.insert(ns, file);
+    files.insert(Arc::clone(ns), file);
   }
 
   let data = IrData {

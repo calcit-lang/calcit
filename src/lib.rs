@@ -78,7 +78,7 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
       hint: None,
     });
   }
-  match program::lookup_evaled_def(&init_ns, &init_def) {
+  match program::lookup_runtime_ready(&init_ns, &init_def).or_else(|| program::lookup_compiled_runtime_value(&init_ns, &init_def)) {
     None => CalcitErr::err_str(CalcitErrKind::Var, format!("entry not initialized: {init_ns}/{init_def}")),
     Some(entry) => match entry {
       Calcit::Fn { info, .. } => {

@@ -30,7 +30,7 @@ use crate::codegen::skip_arity_check;
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 use args::{gen_args_code, gen_call_args_with_temps};
-use deps::{contains_symbol, sort_by_deps};
+use deps::{contains_symbol, sort_compiled_defs_by_deps};
 use helpers::{cirru_to_js, is_js_unavailable_procs, write_file_if_changed};
 use paths::{to_js_import_name, to_mjs_filename};
 use runtime::{get_proc_prefix, is_cirru_string};
@@ -1212,6 +1212,20 @@ fn hinted_async(xs: &CalcitList) -> bool {
   xs.iter().skip(1).any(schema_marks_async)
 }
 
+fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
+  let Calcit::List(items) = code else {
+    return Err(format!("expected preprocessed defn list, got: {code}"));
+  };
+
+  match (items.first(), items.get(1), items.get(2)) {
+    (Some(Calcit::Syntax(CalcitSyntax::Defn, _)), Some(Calcit::Symbol { .. }), Some(Calcit::List(args))) => {
+      let raw_args = get_raw_args_fn(args)?;
+      Ok((raw_args, items.drop_left().drop_left().drop_left().to_vec()))
+    }
+    _ => Err(format!("expected preprocessed defn form, got: {code}")),
+  }
+}
+
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let code_emit_path = Path::new(emit_path);
   if !code_emit_path.exists() {
@@ -1220,7 +1234,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
   let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
 
-  let program = program::clone_evaled_program();
+  let program = program::clone_compiled_program_snapshot()?;
   for (ns, file) in program.iter() {
     // println!("\nstart handling: {}\n", ns);
     // side-effects, reset tracking state
@@ -1259,7 +1273,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let mut direct_code = String::from(""); // dirty code to run directly
     let mut tags_code = String::new();
 
-    let mut import_code = if &*ns == "calcit.core" {
+    let mut import_code = if &**ns == "calcit.core" {
       snippets::tmpl_import_procs(wrap_js_str("@calcit/procs"))
     } else {
       format!("\nimport * as $clt from {core_lib};")
@@ -1272,11 +1286,11 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       def_names.insert(def.to_owned());
     }
 
-    let deps_in_order = sort_by_deps(&file.to_hashmap());
+    let deps_in_order = sort_compiled_defs_by_deps(file);
     // println!("deps order: {:?}", deps_in_order);
 
     for def in deps_in_order {
-      if &*ns == calcit::CORE_NS {
+      if &**ns == calcit::CORE_NS {
         // some defs from core can be replaced by calcit.procs
         if is_js_unavailable_procs(&def) {
           continue;
@@ -1287,58 +1301,54 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
 
-      let f = file.lookup(&def).unwrap().0.to_owned();
+      let compiled_def = file.get(&def).expect("compiled def for codegen");
 
-      match &f {
+      match &compiled_def.kind {
         // probably not work here
-        Calcit::Proc(..) => {
+        program::CompiledDefKind::Proc => {
           writeln!(defs_code, "\nvar {} = $procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
-        Calcit::Fn { info, .. } => {
-          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), &[]);
+        program::CompiledDefKind::Fn => {
+          let (raw_args, raw_body) = extract_preprocessed_fn_parts(&compiled_def.preprocessed_code)?;
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, compiled_def.preprocessed_code.to_owned(), &[]);
           let passed_defs = PassedDefs {
             ns: &ns,
             local_defs: &def_names,
             file_imports: &file_imports,
           };
-          defs_code.push_str(&gen_js_func(
-            &def,
-            &info.args,
-            &info.body,
-            &passed_defs,
-            true,
-            &collected_tags,
-            &ns,
-          )?);
+          defs_code.push_str(&gen_js_func(&def, &raw_args, &raw_body, &passed_defs, true, &collected_tags, &ns)?);
           gen_stack::pop_call_stack();
         }
-        Calcit::Thunk(thunk) => {
+        program::CompiledDefKind::LazyValue => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, thunk.get_code().to_owned(), &[]);
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, compiled_def.codegen_form.to_owned(), &[]);
           writeln!(
             vals_code,
             "\nexport var {} = {};",
             escape_var(&def),
-            to_js_code(thunk.get_code(), &ns, &def_names, &file_imports, &collected_tags, None)?
+            to_js_code(&compiled_def.codegen_form, &ns, &def_names, &file_imports, &collected_tags, None)?
           )
           .expect("write");
           gen_stack::pop_call_stack()
         }
         // macro are not traced in codegen since already expanded
-        Calcit::Macro { .. } => {}
-        Calcit::Syntax(_, _) => {
+        program::CompiledDefKind::Macro => {}
+        program::CompiledDefKind::Syntax => {
           // should he handled inside compiler
         }
-        Calcit::Bool(_) | Calcit::Number(_) => {
-          eprintln!("[Warn] expected thunk, got macro. skipped `{ns}/{def} {f}`")
+        program::CompiledDefKind::Value if matches!(&compiled_def.codegen_form, Calcit::Bool(_) | Calcit::Number(_)) => {
+          eprintln!(
+            "[Warn] expected thunk, got macro. skipped `{ns}/{def} {}`",
+            compiled_def.codegen_form
+          )
         }
-        _ => {
-          eprintln!("[Warn] expected thunk for js, skipped `{ns}/{def} {f}`")
+        program::CompiledDefKind::Value => {
+          eprintln!("[Warn] expected thunk for js, skipped `{ns}/{def} {}`", compiled_def.codegen_form)
         }
       }
     }
-    if &*ns == calcit::CORE_NS {
+    if &**ns == calcit::CORE_NS {
       // add at end of file to register builtin classes
       direct_code.push_str(&snippets::tmpl_classes_registering())
     }
@@ -1387,7 +1397,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       }
     }
 
-    let tag_prefix = if &*ns == "calcit.core" { "" } else { "$clt." };
+    let tag_prefix = if &**ns == "calcit.core" { "" } else { "$clt." };
     let mut tag_arr = String::from("[");
     let mut ordered_tags: Vec<EdnTag> = vec![];
     for k in collected_tags.borrow().iter() {

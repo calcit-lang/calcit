@@ -27,7 +27,7 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
   let (init_ns, init_def) = util::string::extract_ns_def(&config_init).expect("extract init ns/def");
   let (reload_ns, reload_def) = util::string::extract_ns_def(&config_reload).expect("extract reload ns/def");
 
-  program::clear_all_program_evaled_defs(init_ns.clone().into(), reload_ns.clone().into(), true).expect("clear evaled defs");
+  program::clear_runtime_caches_for_reload(init_ns.clone().into(), reload_ns.clone().into(), true).expect("clear runtime caches");
 
   let warmup_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
   runner::preprocess::preprocess_ns_def(

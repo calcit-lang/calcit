@@ -7,12 +7,32 @@ use std::vec;
 use crate::builtins;
 use crate::calcit::{
   CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-  CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
+  CalcitScope, CalcitSyntax, CalcitThunk, MethodKind, NodeLocation,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::data::cirru;
 use crate::program;
 use crate::util::string::has_ns_part;
+
+fn build_runtime_cell_error(ns: &str, def: &str, call_stack: &CallStackList, cell: program::RuntimeCell) -> CalcitErr {
+  match cell {
+    program::RuntimeCell::Resolving => CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      format!("definition is still resolving: {ns}/{def}"),
+      call_stack,
+    ),
+    program::RuntimeCell::Errored(message) => CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      format!("definition is in errored state: {ns}/{def}\n{message}"),
+      call_stack,
+    ),
+    program::RuntimeCell::Cold | program::RuntimeCell::Lazy { .. } | program::RuntimeCell::Ready(_) => CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      format!("unexpected runtime state for {ns}/{def}"),
+      call_stack,
+    ),
+  }
+}
 
 fn format_fn_arg_labels(args: &CalcitFnArgs) -> String {
   match args {
@@ -85,7 +105,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
     Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
-    Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
+    Import(CalcitImport { ns, def, def_id, .. }) => evaluate_symbol_from_program(def, ns, *def_id, call_stack),
     List(xs) => match xs.first() {
       None => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Arity,
@@ -423,13 +443,39 @@ pub fn evaluate_symbol_from_scope(idx: u16, scope: &CalcitScope) -> Result<Calci
 pub fn evaluate_symbol_from_program(
   sym: &str,
   file_ns: &str,
-  coord: Option<(u16, u16)>,
+  def_id: Option<u32>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let v0 = match coord {
-    Some((ns_idx, def_idx)) => program::load_by_index(ns_idx, file_ns, def_idx, sym),
-    None => None,
-  };
+  let runtime_def_id = def_id.map(program::DefId).or_else(|| program::lookup_def_id(file_ns, sym));
+
+  if let Some(def_id) = runtime_def_id {
+    if let Some(program::RuntimeCell::Cold) = program::lookup_runtime_cell_by_id(def_id) {
+      let _ = program::seed_runtime_lazy_from_compiled(file_ns, sym);
+    }
+
+    if let Some(cell) = program::lookup_runtime_cell_by_id(def_id) {
+      match cell {
+        program::RuntimeCell::Lazy { code, info } => {
+          return CalcitThunk::Code { code, info }.evaluated(&CalcitScope::default(), call_stack);
+        }
+        program::RuntimeCell::Ready(value) => {
+          return match value {
+            Calcit::Thunk(thunk) => thunk.evaluated(&CalcitScope::default(), call_stack),
+            _ => Ok(value),
+          };
+        }
+        program::RuntimeCell::Resolving | program::RuntimeCell::Errored(_) => {
+          return Err(build_runtime_cell_error(file_ns, sym, call_stack, cell));
+        }
+        program::RuntimeCell::Cold => {}
+      }
+    }
+  }
+
+  let v0 = runtime_def_id
+    .and_then(program::lookup_runtime_ready_by_id)
+    .or_else(|| program::lookup_compiled_runtime_value(file_ns, sym))
+    .or_else(|| program::lookup_def_id(file_ns, sym).and_then(|def_id| program::lookup_runtime_ready_by_id(def_id)));
   // if v0.is_none() {
   //   println!("slow path reading symbol: {}/{}", file_ns, sym)
   // }
@@ -470,15 +516,46 @@ pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
   }
 }
 
-/// without unfolding thunks
+/// resolve a program symbol to an available value for namespace lookup paths
 pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> Result<Option<Calcit>, CalcitErr> {
-  if let Some(v) = program::lookup_evaled_def(ns, sym) {
+  if let Some(def_id) = program::lookup_def_id(ns, sym) {
+    if let Some(program::RuntimeCell::Cold) = program::lookup_runtime_cell_by_id(def_id) {
+      let _ = program::seed_runtime_lazy_from_compiled(ns, sym);
+    }
+
+    if let Some(cell) = program::lookup_runtime_cell_by_id(def_id) {
+      match cell {
+        program::RuntimeCell::Lazy { code, info } => {
+          return CalcitThunk::Code { code, info }
+            .evaluated(&CalcitScope::default(), call_stack)
+            .map(Some);
+        }
+        program::RuntimeCell::Ready(v) => return Ok(Some(v)),
+        program::RuntimeCell::Resolving | program::RuntimeCell::Errored(_) => {
+          return Err(build_runtime_cell_error(ns, sym, call_stack, cell));
+        }
+        program::RuntimeCell::Cold => {}
+      }
+    }
+  }
+  if let Some(v) = program::lookup_compiled_runtime_value(ns, sym) {
     return Ok(Some(v));
   }
   if let Some(code) = program::lookup_def_code(ns, sym) {
-    let v = evaluate_expr(&code, &CalcitScope::default(), ns, call_stack)?;
-    program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
-    return Ok(Some(v));
+    match evaluate_expr(&code, &CalcitScope::default(), ns, call_stack) {
+      Ok(v) => {
+        program::write_runtime_ready(ns, sym, v.to_owned())
+          .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
+        return match v {
+          Calcit::Thunk(thunk) => thunk.evaluated(&CalcitScope::default(), call_stack).map(Some),
+          _ => Ok(Some(v)),
+        };
+      }
+      Err(e) => {
+        program::mark_runtime_def_errored(ns, sym, Arc::from(e.to_string()));
+        return Err(e);
+      }
+    }
   }
   Ok(None)
 }

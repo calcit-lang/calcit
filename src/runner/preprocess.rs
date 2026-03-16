@@ -2,8 +2,8 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitList,
-    CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo,
-    CalcitTrait, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
+    CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
+    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -66,6 +66,96 @@ impl<'a> PreprocessContext<'a> {
   }
 }
 
+fn lookup_preprocessed_ns_def_value(ns: &str, def: &str) -> Option<Calcit> {
+  if let Some(cell) = program::lookup_runtime_cell(ns, def) {
+    match cell {
+      program::RuntimeCell::Ready(v) => return Some(v),
+      program::RuntimeCell::Lazy { .. }
+      | program::RuntimeCell::Resolving
+      | program::RuntimeCell::Errored(_)
+      | program::RuntimeCell::Cold => {}
+    }
+  }
+
+  let _ = program::seed_runtime_lazy_from_compiled(ns, def);
+
+  program::lookup_compiled_runtime_value(ns, def)
+}
+
+fn ensure_ns_def_preprocessed(
+  raw_ns: &str,
+  raw_def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let ns = raw_ns;
+  let def = raw_def;
+  // println!("preprocessing def: {}/{}", ns, def);
+  if let Some(cell) = program::lookup_runtime_cell(ns, def) {
+    match cell {
+      program::RuntimeCell::Ready(_) | program::RuntimeCell::Lazy { .. } | program::RuntimeCell::Resolving => return Ok(()),
+      program::RuntimeCell::Errored(_) | program::RuntimeCell::Cold => {}
+    }
+  }
+
+  if lookup_preprocessed_ns_def_value(ns, def).is_some() {
+    return Ok(());
+  }
+
+  // println!("init for... {}/{}", ns, def);
+  match program::lookup_def_code(ns, def) {
+    Some(code) => {
+      // mark the def as resolving first to prevent dead loop during recursive preprocess.
+      program::mark_runtime_def_resolving(ns, def);
+
+      let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
+
+      let mut scope_types = ScopeTypes::new();
+      let context_label = format!("{ns}/{def}");
+      let resolved_code = match calcit::with_type_annotation_warning_context(context_label, || {
+        preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+      }) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+          program::mark_runtime_def_errored(ns, def, Arc::from(e.to_string()));
+          return Err(e);
+        }
+      };
+      // println!("\n resolve code to run: {:?}", resolved_code);
+      let preprocessed_code = resolved_code.to_owned();
+      let codegen_form = resolved_code.to_owned();
+      let deps = program::collect_compiled_deps(&codegen_form);
+      let type_summary = calcit::CalcitTypeAnnotation::summarize_code(&code).map(Arc::from);
+      program::store_compiled_output(
+        ns,
+        def,
+        0,
+        preprocessed_code,
+        codegen_form,
+        deps,
+        type_summary,
+        Some(code.to_owned()),
+        program::lookup_def_schema(ns, def),
+        program::lookup_def_doc(ns, def).map(Arc::from).unwrap_or_else(|| Arc::from("")),
+        program::lookup_def_examples(ns, def).unwrap_or_default(),
+      );
+      program::refresh_runtime_cell_from_preprocessed(ns, def, &resolved_code);
+
+      Ok(())
+    }
+    None if ns.starts_with('|') || ns.starts_with('"') => Ok(()),
+    None => {
+      let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
+      Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Var,
+        format!("unknown ns/def in program: {ns}/{def}"),
+        call_stack,
+        Some(loc),
+      ))
+    }
+  }
+}
+
 /// returns the resolved symbol(only functions and macros are used),
 /// if code related is not preprocessed, do it internally.
 pub fn preprocess_ns_def(
@@ -74,78 +164,8 @@ pub fn preprocess_ns_def(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
-  let ns = raw_ns;
-  let def = raw_def;
-  // println!("preprocessing def: {}/{}", ns, def);
-  match program::lookup_evaled_def(ns, def) {
-    Some(v) => {
-      // println!("{}/{} has inited", ns, def);
-      Ok(Some(v))
-    }
-    None => {
-      // println!("init for... {}/{}", ns, def);
-      match program::lookup_def_code(ns, def) {
-        Some(code) => {
-          // write a nil value first to prevent dead loop
-          let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
-          program::write_evaled_def(ns, def, Calcit::Nil)
-            .map_err(|e| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, e, call_stack, Some(loc)))?;
-
-          let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
-
-          let mut scope_types = ScopeTypes::new();
-          let context_label = format!("{ns}/{def}");
-          let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
-            preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
-          })?;
-          // println!("\n resolve code to run: {:?}", resolved_code);
-          let v = if is_fn_or_macro(&resolved_code) {
-            runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns, &next_stack)?
-          } else {
-            Calcit::Thunk(CalcitThunk::Code {
-              code: Arc::new(resolved_code),
-              info: Arc::new(CalcitThunkInfo {
-                ns: ns.into(),
-                def: def.into(),
-              }),
-            })
-          };
-          // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
-          program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| {
-            CalcitErr::use_msg_stack_location(
-              CalcitErrKind::Unexpected,
-              e,
-              call_stack,
-              Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]))),
-            )
-          })?;
-
-          Ok(Some(v))
-        }
-        None if ns.starts_with('|') || ns.starts_with('"') => Ok(None),
-        None => {
-          let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
-          Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Var,
-            format!("unknown ns/def in program: {ns}/{def}"),
-            call_stack,
-            Some(loc),
-          ))
-        }
-      }
-    }
-  }
-}
-
-fn is_fn_or_macro(code: &Calcit) -> bool {
-  match code {
-    Calcit::List(xs) => match xs.first() {
-      Some(Calcit::Symbol { sym, .. }) => &**sym == "defn" || &**sym == "defmacro",
-      Some(Calcit::Syntax(s, ..)) => s == &CalcitSyntax::Defn || s == &CalcitSyntax::Defmacro,
-      _ => false,
-    },
-    _ => false,
-  }
+  ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)?;
+  Ok(lookup_preprocessed_ns_def_value(raw_ns, raw_def))
 }
 
 pub fn preprocess_expr(
@@ -178,7 +198,7 @@ pub fn preprocess_expr(
                 at_def: info.at_def.to_owned(),
                 at_ns: ns_alias,
               }),
-              coord: program::tip_coord(&target_ns, &def_part),
+              def_id: Some(program::ensure_def_id(&target_ns, &def_part).0),
             });
             Ok(form)
           } else if program::has_def_code(&ns_alias, &def_part) {
@@ -194,7 +214,7 @@ pub fn preprocess_expr(
                 at_ns: info.at_ns.to_owned(),
                 at_def: info.at_def.to_owned(),
               }),
-              coord: program::tip_coord(&ns_alias, &def_part),
+              def_id: Some(program::ensure_def_id(&ns_alias, &def_part).0),
             });
 
             Ok(form)
@@ -248,7 +268,7 @@ pub fn preprocess_expr(
               info: Arc::new(ImportInfo::SameFile {
                 at_def: info.at_def.to_owned(),
               }),
-              coord: program::tip_coord(def_ns, def),
+              def_id: Some(program::ensure_def_id(def_ns, def).0),
             });
             Ok(form)
           } else if let Ok(p) = def.parse::<CalcitProc>() {
@@ -263,7 +283,7 @@ pub fn preprocess_expr(
               ns: calcit::CORE_NS.into(),
               def: def.to_owned(),
               info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
-              coord: program::tip_coord(calcit::CORE_NS, def),
+              def_id: Some(program::ensure_def_id(calcit::CORE_NS, def).0),
             });
             Ok(form)
           } else if program::has_def_code(def_ns, def) {
@@ -286,7 +306,7 @@ pub fn preprocess_expr(
                   at_def: at_def.to_owned(),
                 }
               }),
-              coord: program::tip_coord(def_ns, def),
+              def_id: Some(program::ensure_def_id(def_ns, def).0),
             });
             Ok(form)
           } else if is_registered_proc(def) {
@@ -308,7 +328,7 @@ pub fn preprocess_expr(
                     at_ns: def_ns.to_owned(),
                     at_def: at_def.to_owned(),
                   }),
-                  coord: program::tip_coord(&target_ns, def),
+                  def_id: Some(program::ensure_def_id(&target_ns, def).0),
                 });
                 Ok(form)
               }
@@ -324,7 +344,7 @@ pub fn preprocess_expr(
                       at_ns: file_ns.into(),
                       at_def: at_def.to_owned(),
                     }),
-                    coord: None,
+                    def_id: None,
                   }))
                 } else {
                   let mut names: Vec<Arc<str>> = Vec::with_capacity(scope_defs.len());
@@ -394,8 +414,8 @@ fn preprocess_list_call(
   //   "handling list call: {} {:?}, {}",
   //   primes::CrListWrap(xs.to_owned()),
   //   head_form,
-  //   if head_evaled.is_some() {
-  //     head_evaled.to_owned().expect("debug")
+  //   if head_runtime_value.is_some() {
+  //     head_runtime_value.to_owned().expect("debug")
   //   } else {
   //     Calcit::Nil
   //   }
@@ -481,7 +501,7 @@ fn preprocess_list_call(
             ns: calcit::CORE_NS.into(),
             def: "get".into(),
             info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-            coord: program::tip_coord(calcit::CORE_NS, "get"),
+            def_id: Some(program::ensure_def_id(calcit::CORE_NS, "get").0),
           });
 
           let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
@@ -2429,9 +2449,9 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               return Some(field_type);
             }
           }
-          // First check evaled definition (for Proc/Fn that have been evaluated)
-          if let Some(evaled) = program::lookup_evaled_def(ns, def) {
-            match evaled {
+          // First check the runtime-ready value for Proc/Fn defs that have already materialized.
+          if let Some(runtime_value) = program::lookup_runtime_ready(ns, def) {
+            match runtime_value {
               // For compiled functions, get return_type from info
               Calcit::Fn { info, .. } => {
                 // Try to resolve generic return type using call arguments
@@ -2670,39 +2690,25 @@ fn extract_field_name(field_arg: &Calcit) -> Option<&str> {
   }
 }
 
+fn resolve_program_value_for_preprocess(ns: &str, def: &str, def_id: Option<u32>) -> Option<Calcit> {
+  let call_stack = CallStackList::default();
+  runner::evaluate_symbol_from_program(def, ns, def_id, &call_stack).ok()
+}
+
 fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<CalcitEnum> {
   match target {
     Calcit::Enum(enum_def) => Some(enum_def.to_owned()),
     Calcit::Record(record) => CalcitEnum::from_record(record.to_owned()).ok(),
-    Calcit::Symbol { sym, info, .. } => match program::lookup_evaled_def(&info.at_ns, sym) {
+    Calcit::Symbol { sym, info, .. } => match resolve_program_value_for_preprocess(&info.at_ns, sym, None) {
       Some(Calcit::Enum(enum_def)) => Some(enum_def),
       Some(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
-      Some(Calcit::Thunk(thunk)) => {
-        let call_stack = CallStackList::default();
-        match thunk.evaluated(&CalcitScope::default(), &call_stack) {
-          Ok(Calcit::Enum(enum_def)) => Some(enum_def),
-          Ok(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
-          _ => None,
-        }
-      }
       _ => None,
     },
-    Calcit::Import(CalcitImport { ns, def, .. }) => {
-      match program::lookup_evaled_def(ns, def) {
-        Some(Calcit::Enum(enum_def)) => Some(enum_def),
-        Some(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
-        // Handle Thunk case: force evaluation to get the enum value
-        Some(Calcit::Thunk(thunk)) => {
-          let call_stack = CallStackList::default();
-          match thunk.evaluated(&CalcitScope::default(), &call_stack) {
-            Ok(Calcit::Enum(enum_def)) => Some(enum_def),
-            Ok(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
-            _ => None,
-          }
-        }
-        _ => None,
-      }
-    }
+    Calcit::Import(CalcitImport { ns, def, def_id, .. }) => match resolve_program_value_for_preprocess(ns, def, *def_id) {
+      Some(Calcit::Enum(enum_def)) => Some(enum_def),
+      Some(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
+      _ => None,
+    },
     _ => resolve_type_value(target, scope_types)
       .and_then(|t| t.as_struct().cloned())
       .and_then(|struct_def| {
@@ -2727,7 +2733,7 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
         values: Arc::new(values),
       })
     }
-    Calcit::Symbol { sym, info, .. } => match program::lookup_evaled_def(&info.at_ns, sym) {
+    Calcit::Symbol { sym, info, .. } => match resolve_program_value_for_preprocess(&info.at_ns, sym, None) {
       Some(Calcit::Record(record)) => Some(record),
       Some(Calcit::Enum(enum_def)) => Some(enum_def.to_record_prototype()),
       Some(Calcit::Struct(struct_def)) => {
@@ -2737,26 +2743,11 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
           values: Arc::new(values),
         })
       }
-      Some(Calcit::Thunk(thunk)) => {
-        let call_stack = CallStackList::default();
-        match thunk.evaluated(&CalcitScope::default(), &call_stack) {
-          Ok(Calcit::Record(record)) => Some(record),
-          Ok(Calcit::Enum(enum_def)) => Some(enum_def.to_record_prototype()),
-          Ok(Calcit::Struct(struct_def)) => {
-            let values = vec![Calcit::Nil; struct_def.fields.len()];
-            Some(CalcitRecord {
-              struct_ref: Arc::new(struct_def.to_owned()),
-              values: Arc::new(values),
-            })
-          }
-          _ => None,
-        }
-      }
       _ => None,
     },
-    Calcit::Import(CalcitImport { ns, def, .. }) => {
-      let evaled = program::lookup_evaled_def(ns, def);
-      match evaled {
+    Calcit::Import(CalcitImport { ns, def, def_id, .. }) => {
+      let runtime_value = resolve_program_value_for_preprocess(ns, def, *def_id);
+      match runtime_value {
         Some(Calcit::Record(record)) => Some(record),
         Some(Calcit::Enum(enum_def)) => Some(enum_def.to_record_prototype()),
         Some(Calcit::Struct(struct_def)) => {
@@ -2765,21 +2756,6 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
             struct_ref: Arc::new(struct_def.to_owned()),
             values: Arc::new(values),
           })
-        }
-        Some(Calcit::Thunk(thunk)) => {
-          let call_stack = CallStackList::default();
-          match thunk.evaluated(&CalcitScope::default(), &call_stack) {
-            Ok(Calcit::Record(record)) => Some(record),
-            Ok(Calcit::Enum(enum_def)) => Some(enum_def.to_record_prototype()),
-            Ok(Calcit::Struct(struct_def)) => {
-              let values = vec![Calcit::Nil; struct_def.fields.len()];
-              Some(CalcitRecord {
-                struct_ref: Arc::new(struct_def.to_owned()),
-                values: Arc::new(values),
-              })
-            }
-            _ => None,
-          }
         }
         _ => None,
       }
@@ -2801,7 +2777,7 @@ fn collect_impl_records_from_value(value: &Calcit, call_stack: &CallStackList) -
   let resolve_impl = |value: &Calcit| -> Option<CalcitImpl> {
     match value {
       Calcit::Impl(imp) => Some(imp.to_owned()),
-      Calcit::Import(import) => match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
+      Calcit::Import(import) => match runner::evaluate_symbol_from_program(&import.def, &import.ns, import.def_id, call_stack) {
         Ok(Calcit::Impl(imp)) => Some(imp),
         _ => None,
       },
@@ -2854,7 +2830,7 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
   if let CalcitTypeAnnotation::Custom(value) = type_value {
     match value.as_ref() {
       Calcit::Import(import) => {
-        return match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
+        return match runner::evaluate_symbol_from_program(&import.def, &import.ns, import.def_id, call_stack) {
           Ok(value) => collect_impl_records_from_value(&value, call_stack),
           Err(_) => None,
         };
@@ -4087,7 +4063,7 @@ mod tests {
       ns: Arc::from("tests.method.ns"),
       def: Arc::from("greet"),
       info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
-      coord: None,
+      def_id: None,
     });
 
     let method_impl = CalcitImpl {
@@ -4168,13 +4144,13 @@ mod tests {
 
     let record_ns = "tests.method.impls";
     let record_def = "&test-greeter-impls";
-    program::write_evaled_def(record_ns, record_def, Calcit::Record(impl_record)).expect("register record impls");
+    program::write_runtime_ready(record_ns, record_def, Calcit::Record(impl_record)).expect("register record impls");
 
     let record_import = Calcit::Import(CalcitImport {
       ns: Arc::from(record_ns),
       def: Arc::from(record_def),
       info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
-      coord: None,
+      def_id: None,
     });
     scope_types.insert(Arc::from("user"), CalcitTypeAnnotation::parse_type_annotation_form(&record_import));
 
