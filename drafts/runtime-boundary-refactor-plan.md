@@ -46,7 +46,7 @@
 
 ## 当前进度
 
-截至 2026-03-16，已经完成的不是“纯设计”，而是一部分边界已经落地：
+截至 2026-03-17，已经完成的不是“纯设计”，而是一部分边界已经落地：
 
 - `DefId` 已经引入，并建立了 `ns/def -> DefId` 稳定索引；
 - `CompiledDef` 已经存在，且开始承载 `preprocessed_code`、`codegen_form`、`deps`、`type_summary` 等编译期信息；
@@ -55,12 +55,32 @@
 - `CalcitImport` 已开始携带稳定 `def_id` 缓存，runtime lookup 已优先消费它；
 - import/runtime lookup 兼容路径里的旧 `coord -> EntryBook` 残余已经清掉，`CalcitImport.coord` 与相关 runner 参数已删除；
 - `RuntimeCell` 的最小状态机已经落下，包含 `Cold | Resolving | Ready | Errored`，且 preprocess 的循环保护已从“先写 `Nil`”切到显式 `Resolving`；
-- `yarn check-all` 已经作为当前重构的主验证门槛，并且需要先于 `cargo test` 跑通。
+- JS codegen 现在会显式跳过 core 中仅由 runtime 提供的 placeholder 定义，以及 `syntax`/`proc` 这类本就不应按普通顶层值发射的定义；这也移除了 `calcit.core.mjs` 中形如 `eval = &runtime-inplementation` 的伪导出；
+- `clone_compiled_program_snapshot()` 已开始按“仅收集缺口定义”的两阶段方式补齐 snapshot，而不是先整表 clone source/index/runtime 全局状态后再筛选；
+- runtime-derived snapshot fallback 现在进一步收窄为“仅对 runtime-only defs 生效”；只要 source-backed def 仍存在，就不会再因为旧 runtime 值而静默补出 snapshot entry；
+- runtime-only snapshot fallback 已不再携带 source/schema/doc/examples 这类 source 元数据，snapshot 填充任务本身也不再为 fallback 路径 clone 整个 `ProgramDefEntry`；
+- `seed_runtime_lazy_from_compiled()`、`lookup_compiled_runtime_value()`、`lookup_codegen_type_hint()` 已开始按需读取 compiled 字段，而不是在热路径上先 clone 整份 `CompiledDef`；
+- `runner`/`lib`/`preprocess` 主调用方已经迁到“先取 compiled executable payload，再按需求值”的边界；旧的 `lookup_compiled_runtime_value()` 兼容包装已删除。
+- IR/codegen type-hint 查询已不再通过执行 compiled payload 来补信息；metadata 查询现在只依赖 compiled/source schema 与现成 runtime 值。
+- runtime symbol lookup 已不再假设 compiled 执行会回填 runtime cache；执行后的二次 runtime reread 兼容分支已移除。
+- `preprocess` 读取已编译定义时，lazy def 现在优先经由 `RuntimeCell::Lazy` 求值，不再绕过 runtime 状态机直接执行 compiled payload。
+- `run_program_with_docs` 已直接复用 `preprocess_ns_def()` 返回的入口值，不再在入口初始化后额外单独走一次 compiled 执行桥接。
+- `runner` 内部两处“runtime cell -> compiled executable fallback”逻辑已合并到统一 helper，减少了边界复制和不一致分支。
+- `preprocess` 的宽松读取路径也已并到同一组 helper，不再单独复制一份 `RuntimeCell::Lazy`/compiled fallback 分支。
+- 默认 scope 下的 thunk 求值入口也已收敛到 `CalcitThunk::evaluated_default()`，减少 runtime/lazy 入口上的样板逻辑。
+- runtime cell 与 compiled executable fallback 的统一入口现已下沉到 `program` 层；`runner` 只保留 runtime state 到用户态错误的映射。
+- `evaluate_compiled_def()` 现已退回 `program` 内部私有 helper；compiled payload 执行不再作为跨模块公共入口暴露。
+- `preprocess` 的 lenient lookup 也已直接回到 `program` 层，不再经由 `runner` 做一次中转；compiled executable code lookup 同时收紧为 `program` 内部 helper。
+- compiled output 写入接口已改为 payload struct 传参，`program` 内部构造链不再依赖 11 参数长调用；现有 clippy `too_many_arguments` 噪音已被顺手收掉。
+- `resolve_runtime_or_compiled_def()` 现在只负责调度；runtime cell 求值与 compiled payload 执行已拆成独立私有 helper，内部边界更接近最终形态。
+- runtime-only 路径中的 `seed + lookup cell + resolve cell` 已继续收敛成单独 helper，`resolve_runtime_or_compiled_def()` 现在更明确地只做 `runtime or compiled` 两段调度。
+- compiled execution 热路径已改为直接借用 compiled payload；执行时不再额外 clone 一份 `preprocessed_code`，只有测试/显式查询 executable code 时才保留复制语义。
+- `yarn check-all` 已经作为当前重构的主验证门槛，并且当前门槛重新保持可通过。
 
 同时也要明确，当前还没有真正完成的部分是：
 
 - 旧的 `PROGRAM_EVALED_DATA_STATE` 与 `lookup_evaled_def*` 兼容路径已经删除，`preprocess` 成功路径也不再直接写 runtime cache；compiled fallback 现在只做“读 compiled value”，不再把 compiled payload 回填成 `RuntimeCell::Ready`；
-- 全局 `CompiledDef` 已不再携带 `runtime_value` 这类 runtime payload 字段；普通 preprocess 输出已经完全不构造 runtime payload，普通 compiled `Fn/Macro/Proc/Syntax/LazyValue` 都改为需要时从 `preprocessed_code` 临时 materialize；当前剩余耦合主要集中在 compiled/runtime 仍共享同一套 `Calcit` 值表示，以及 codegen snapshot 在 source-backed defs 缺 compiled metadata 时仍可能退回到 runtime-derived snapshot fallback entry；
+- 全局 `CompiledDef` 已不再携带 `runtime_value` 这类 runtime payload 字段；普通 preprocess 输出已经完全不构造 runtime payload，普通 compiled `Fn/Macro/Proc/Syntax/LazyValue` 都改为需要时从 `preprocessed_code` 临时 materialize；当前剩余耦合主要集中在 runtime 执行路径仍会把 compiled executable payload materialize 成公共 `Calcit` 值，而 metadata / codegen 查询已基本不再走这条路；snapshot fallback 已不再对 source-backed defs 静默兜底。
 - `Calcit::Thunk` 仍存在于公开值模型中，但 runtime 主路径已经不再依赖它作为缓存载体：lazy def 的待求值占位优先放进 `RuntimeCell::Lazy`，`Ready(Thunk)` 已被禁止写入 runtime store，preprocess 与普通 lookup 也不再把 runtime lazy cell 重新包装成公共 thunk；当前剩余问题主要转向 snapshot fallback 与少量兼容语义分支；
 - watch 模式已经开始利用 compiled deps 做 def 级 invalidation；当前 CLI incremental reload 不再默认按 package 整片清空，而是从 changed defs / ns 头部变更出发做依赖闭包清理。剩余缺口主要是 state slot 尚未引入，以及 watch/reload 回归覆盖还不够强。
 
@@ -339,7 +359,7 @@
 - 但 runtime 内部缓存与 lazy 状态优先放进 `RuntimeCell`；
 - 减少 thunk 对全局写回和 code 表示的承担。
 
-当前状态：主路径已基本收尾。thunk 仍是公开 `Calcit` 值模型的一部分，但 runtime store 已不再接受 `Ready(Thunk)` 这类形态；lazy def 的未求值占位优先放进 `RuntimeCell::Lazy`，raw fallback 若得到 `Calcit::Thunk(Code)` 也会立刻规范化回 lazy cell。`eval_symbol_from_program` 也不再把 lazy thunk 返回给调用方，preprocess 查值路径同样不再把 runtime lazy cell 重新包装成公共 thunk。当前剩余工作主要不再是 thunk 主路径，而是继续压缩 snapshot fallback compiled entry 的存在范围，清理少量旧命名/提示语残留，并补齐更直接的 watch/reload 回归测试。
+当前状态：主路径已基本收尾。thunk 仍是公开 `Calcit` 值模型的一部分，但 runtime store 已不再接受 `Ready(Thunk)` 这类形态；lazy def 的未求值占位优先放进 `RuntimeCell::Lazy`，raw fallback 若得到 `Calcit::Thunk(Code)` 也会立刻规范化回 lazy cell。`eval_symbol_from_program` 也不再把 lazy thunk 返回给调用方，preprocess 查值路径同样不再把 runtime lazy cell 重新包装成公共 thunk。JS codegen 还额外收掉了一层旧桥接：core 中由 runtime 提供的 placeholder 定义、以及 syntax/proc 名称，不再伪装成普通 JS 顶层导出。当前剩余工作主要不再是 thunk 主路径，而是继续压缩 snapshot fallback compiled entry 的存在范围，清理少量旧命名/提示语残留，并补齐更直接的 watch/reload 回归测试。
 
 #### Phase 3D: 删除旧 EntryBook 热路径依赖
 
@@ -379,7 +399,7 @@
 
 具体就是：
 
-1. 继续收缩 runtime-derived snapshot fallback entry 的存在范围，优先区分哪些定义只是 runtime-only 注入，哪些本应来自 source/compiled 数据；source-backed defs 则优先补成真正的 compiled def。
+1. 继续收缩 runtime-derived snapshot fallback entry 的存在范围，优先区分哪些定义只是 runtime-only 注入，哪些本应来自 source/compiled 数据；source-backed defs 则优先补成真正的 compiled def，并继续减少 remaining lookup 热路径上的 compiled clone / runtime-derived materialize。
 2. 给新的 compiled-deps reload invalidation 补更直接的 watch/reload 回归测试，并继续收缩仍需兜底的边界情况。
 3. 仅在确有必要时，再继续清理少数仍保留公开 thunk 语义的兼容分支；不要再把重点放回 runtime 主路径。
 4. 每一步都以 `cargo fmt && yarn check-all && cargo test -q` 为门槛，而不是只跑 Rust 单测。

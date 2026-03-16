@@ -27,3 +27,5 @@ demos/
 .yarn
 
 .calcit-snippets/
+
+.tmp-profiles/

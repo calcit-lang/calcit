@@ -93,6 +93,22 @@ impl CallStackList {
       self.to_owned()
     }
   }
+
+  /// create new entry when code and args are already owned, avoiding an extra clone of args
+  pub fn extend_owned(&self, ns: &str, def: &str, kind: StackKind, code: Calcit, args: Vec<Calcit>) -> CallStackList {
+    let b = TRACK_STACK.load(std::sync::atomic::Ordering::Relaxed);
+    if b {
+      self.push_left(CalcitStack {
+        ns: Arc::from(ns),
+        def: Arc::from(def),
+        code,
+        args,
+        kind,
+      })
+    } else {
+      self.to_owned()
+    }
+  }
 }
 
 // show simplified version of stack

@@ -35,16 +35,9 @@ fn extract_import_type_info(ns: &str, def: &str) -> Edn {
     return Edn::Nil;
   }
 
-  let result = match program::lookup_runtime_ready(ns, def) {
-    Some(value) => {
-      let annotation = CalcitTypeAnnotation::from_calcit(&value);
-      match annotation {
-        CalcitTypeAnnotation::Dynamic => Edn::Nil,
-        _ => dump_type_annotation(&annotation),
-      }
-    }
-    None => Edn::Nil,
-  };
+  let result = program::lookup_codegen_type_hint(ns, def)
+    .map(|annotation| dump_type_annotation(annotation.as_ref()))
+    .unwrap_or(Edn::Nil);
 
   if pushed {
     TYPE_INFO_STACK.with(|stack| {

@@ -1,7 +1,11 @@
-use strum_macros::{AsRefStr, EnumString};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock};
+
+use strum::IntoEnumIterator;
+use strum_macros::{AsRefStr, EnumIter, EnumString};
 
 /// represent builtin functions for performance reasons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, strum_macros::Display, AsRefStr)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, EnumIter, strum_macros::Display, AsRefStr)]
 pub enum CalcitProc {
   // meta
   #[strum(serialize = "type-of")]
@@ -390,7 +394,6 @@ pub enum CalcitProc {
 }
 
 use crate::CalcitTypeAnnotation;
-use std::sync::Arc;
 
 /// Type signature for a Proc (builtin function)
 #[derive(Debug, Clone)]
@@ -482,7 +485,11 @@ impl CalcitProc {
 
   /// Get the type signature for this proc if available
   /// Returns None for procs without type annotations
-  pub fn get_type_signature(&self) -> Option<ProcTypeSignature> {
+  pub fn get_type_signature(&self) -> Option<&'static ProcTypeSignature> {
+    PROC_TYPE_SIGNATURES.get(self)
+  }
+
+  fn build_type_signature(&self) -> Option<ProcTypeSignature> {
     use CalcitProc::*;
 
     match self {
@@ -1133,3 +1140,9 @@ impl CalcitProc {
     self.get_type_signature().is_some()
   }
 }
+
+static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = LazyLock::new(|| {
+  CalcitProc::iter()
+    .filter_map(|proc| proc.build_type_signature().map(|signature| (proc, signature)))
+    .collect()
+});

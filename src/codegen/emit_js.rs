@@ -89,6 +89,31 @@ fn is_preferred_js_proc(name: &str) -> bool {
   )
 }
 
+fn is_quote_head(value: &Calcit) -> bool {
+  matches!(value, Calcit::Syntax(CalcitSyntax::Quote, _))
+    || matches!(value, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+    || matches!(value, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "quote")
+}
+
+fn is_runtime_placeholder_form(value: &Calcit) -> bool {
+  matches!(value, Calcit::Symbol { sym, .. } if sym.as_ref() == "&runtime-inplementation")
+}
+
+fn is_runtime_placeholder_quote(value: &Calcit) -> bool {
+  let Calcit::List(items) = value else {
+    return false;
+  };
+  items.len() == 2 && items.first().is_some_and(is_quote_head) && items.get(1).is_some_and(is_runtime_placeholder_form)
+}
+
+fn should_skip_core_def_codegen(def: &str, compiled_def: &program::CompiledDef) -> bool {
+  if CalcitSyntax::is_valid(def) || is_proc_name(def) || is_js_syntax_procs(def) {
+    return true;
+  }
+
+  compiled_def.source_code.as_ref().is_some_and(is_runtime_placeholder_quote)
+}
+
 fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol { sym, .. } => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(sym))),
@@ -1251,7 +1276,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       let app_pkg_name = entry_ns.split('.').collect::<Vec<&str>>()[0];
       let pkg_name = ns.split('.').collect::<Vec<&str>>()[0]; // TODO simpler
       if app_pkg_name != pkg_name {
-        match internal_states::lookup_prev_ns_cache(&ns) {
+        match internal_states::lookup_prev_ns_cache(ns) {
           Some(v) if v == defs_in_current => {
             // same as last time, skip
             continue;
@@ -1261,7 +1286,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       }
     }
     // remember defs of each ns for comparing
-    internal_states::write_as_ns_cache(&ns, defs_in_current);
+    internal_states::write_as_ns_cache(ns, defs_in_current);
 
     // reset index each file
     reset_js_gensym_index();
@@ -1290,7 +1315,12 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // println!("deps order: {:?}", deps_in_order);
 
     for def in deps_in_order {
+      let compiled_def = file.get(&def).expect("compiled def for codegen");
+
       if &**ns == calcit::CORE_NS {
+        if should_skip_core_def_codegen(&def, compiled_def) {
+          continue;
+        }
         // some defs from core can be replaced by calcit.procs
         if is_js_unavailable_procs(&def) {
           continue;
@@ -1301,8 +1331,6 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
 
-      let compiled_def = file.get(&def).expect("compiled def for codegen");
-
       match &compiled_def.kind {
         // probably not work here
         program::CompiledDefKind::Proc => {
@@ -1310,24 +1338,24 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
         program::CompiledDefKind::Fn => {
           let (raw_args, raw_body) = extract_preprocessed_fn_parts(&compiled_def.preprocessed_code)?;
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, compiled_def.preprocessed_code.to_owned(), &[]);
+          gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.preprocessed_code.to_owned(), &[]);
           let passed_defs = PassedDefs {
-            ns: &ns,
+            ns,
             local_defs: &def_names,
             file_imports: &file_imports,
           };
-          defs_code.push_str(&gen_js_func(&def, &raw_args, &raw_body, &passed_defs, true, &collected_tags, &ns)?);
+          defs_code.push_str(&gen_js_func(&def, &raw_args, &raw_body, &passed_defs, true, &collected_tags, ns)?);
           gen_stack::pop_call_stack();
         }
         program::CompiledDefKind::LazyValue => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, compiled_def.codegen_form.to_owned(), &[]);
+          gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.codegen_form.to_owned(), &[]);
           writeln!(
             vals_code,
             "\nexport var {} = {};",
             escape_var(&def),
-            to_js_code(&compiled_def.codegen_form, &ns, &def_names, &file_imports, &collected_tags, None)?
+            to_js_code(&compiled_def.codegen_form, ns, &def_names, &file_imports, &collected_tags, None)?
           )
           .expect("write");
           gen_stack::pop_call_stack()
@@ -1413,7 +1441,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     tag_arr.push(']');
     tags_code.push_str(&snippets::tmpl_tags_init(&tag_arr, tag_prefix));
 
-    let js_file_path = code_emit_path.join(to_mjs_filename(&ns));
+    let js_file_path = code_emit_path.join(to_mjs_filename(ns));
     let wrote_new = write_file_if_changed(
       &js_file_path,
       &format!("{import_code}{tags_code}\n{defs_code}\n\n{vals_code}\n{direct_code}"),
@@ -1438,6 +1466,29 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
+
+  fn runtime_placeholder_quote() -> Calcit {
+    Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from(calcit::CORE_NS)),
+      symbol("&runtime-inplementation"),
+    ])))
+  }
+
+  fn compiled_def_for_codegen_test(kind: program::CompiledDefKind, source_code: Option<Calcit>) -> program::CompiledDef {
+    program::CompiledDef {
+      def_id: program::DefId(0),
+      version_id: 0,
+      kind,
+      preprocessed_code: Calcit::Nil,
+      codegen_form: Calcit::Nil,
+      deps: vec![],
+      type_summary: None,
+      source_code,
+      schema: calcit::DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+    }
+  }
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
@@ -1474,5 +1525,17 @@ mod tests {
     ])));
     let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
     assert!(!hinted_async(&hint));
+  }
+
+  #[test]
+  fn core_codegen_skips_runtime_placeholder_defs() {
+    let compiled = compiled_def_for_codegen_test(program::CompiledDefKind::LazyValue, Some(runtime_placeholder_quote()));
+    assert!(should_skip_core_def_codegen("range", &compiled));
+  }
+
+  #[test]
+  fn core_codegen_skips_syntax_names_even_without_runtime_placeholder_source() {
+    let compiled = compiled_def_for_codegen_test(program::CompiledDefKind::LazyValue, None);
+    assert!(should_skip_core_def_codegen("eval", &compiled));
   }
 }

@@ -67,19 +67,29 @@ impl<'a> PreprocessContext<'a> {
 }
 
 fn lookup_preprocessed_ns_def_value(ns: &str, def: &str) -> Option<Calcit> {
-  if let Some(cell) = program::lookup_runtime_cell(ns, def) {
-    match cell {
-      program::RuntimeCell::Ready(v) => return Some(v),
-      program::RuntimeCell::Lazy { .. }
-      | program::RuntimeCell::Resolving
-      | program::RuntimeCell::Errored(_)
-      | program::RuntimeCell::Cold => {}
-    }
-  }
+  program::lookup_runtime_or_compiled_def_lenient(ns, def)
+}
 
-  let _ = program::seed_runtime_lazy_from_compiled(ns, def);
-
-  program::lookup_compiled_runtime_value(ns, def)
+fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit, resolved_code: &Calcit) {
+  let preprocessed_code = resolved_code.to_owned();
+  let codegen_form = resolved_code.to_owned();
+  let deps = program::collect_compiled_deps(&codegen_form);
+  let type_summary = calcit::CalcitTypeAnnotation::summarize_code(source_code).map(Arc::from);
+  program::store_compiled_output(
+    ns,
+    def,
+    program::CompiledDefPayload {
+      version_id: 0,
+      preprocessed_code,
+      codegen_form,
+      deps,
+      type_summary,
+      source_code: Some(source_code.to_owned()),
+      schema: program::lookup_def_schema(ns, def),
+      doc: program::lookup_def_doc(ns, def).map(Arc::from).unwrap_or_else(|| Arc::from("")),
+      examples: program::lookup_def_examples(ns, def).unwrap_or_default(),
+    },
+  );
 }
 
 fn ensure_ns_def_preprocessed(
@@ -122,23 +132,7 @@ fn ensure_ns_def_preprocessed(
         }
       };
       // println!("\n resolve code to run: {:?}", resolved_code);
-      let preprocessed_code = resolved_code.to_owned();
-      let codegen_form = resolved_code.to_owned();
-      let deps = program::collect_compiled_deps(&codegen_form);
-      let type_summary = calcit::CalcitTypeAnnotation::summarize_code(&code).map(Arc::from);
-      program::store_compiled_output(
-        ns,
-        def,
-        0,
-        preprocessed_code,
-        codegen_form,
-        deps,
-        type_summary,
-        Some(code.to_owned()),
-        program::lookup_def_schema(ns, def),
-        program::lookup_def_doc(ns, def).map(Arc::from).unwrap_or_else(|| Arc::from("")),
-        program::lookup_def_examples(ns, def).unwrap_or_default(),
-      );
+      store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
       program::refresh_runtime_cell_from_preprocessed(ns, def, &resolved_code);
 
       Ok(())
@@ -166,6 +160,37 @@ pub fn preprocess_ns_def(
 ) -> Result<Option<Calcit>, CalcitErr> {
   ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)?;
   Ok(lookup_preprocessed_ns_def_value(raw_ns, raw_def))
+}
+
+pub fn compile_source_def_for_snapshot(
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if program::lookup_compiled_def(ns, def).is_some() {
+    return Ok(());
+  }
+
+  let Some(code) = program::lookup_def_code(ns, def) else {
+    let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Var,
+      format!("unknown ns/def in program: {ns}/{def}"),
+      call_stack,
+      Some(loc),
+    ));
+  };
+
+  let mut scope_types = ScopeTypes::new();
+  let context_label = format!("{ns}/{def}");
+  let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
+    preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+  })?;
+
+  store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+
+  Ok(())
 }
 
 pub fn preprocess_expr(
@@ -438,7 +463,7 @@ fn preprocess_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.to_vec());
+      let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
 
       let mut body_scope = CalcitScope::default();
 
@@ -2253,8 +2278,8 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
       .get_type_signature()
       .map(|signature| {
         Arc::new(CalcitTypeAnnotation::from_function_parts(
-          signature.arg_types,
-          signature.return_type,
+          signature.arg_types.clone(),
+          signature.return_type.clone(),
         ))
       })
       .or_else(|| Some(tag_annotation("fn"))),
@@ -2435,11 +2460,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               return Some(field_type);
             }
           }
-          if let Some(type_sig) = proc.get_type_signature() {
-            Some(type_sig.return_type.clone())
-          } else {
-            None
-          }
+          proc.get_type_signature().map(|type_sig| type_sig.return_type.clone())
         }
 
         // Import: could be a function, try to get its return type

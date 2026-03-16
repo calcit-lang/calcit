@@ -1254,7 +1254,7 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
   if ns == calcit::calcit::CORE_NS {
     if let Ok(proc) = (*def_name).parse::<CalcitProc>() {
       if let Some(sig) = proc.get_type_signature() {
-        return analyze_builtin_proc(def_name, &sig);
+        return analyze_builtin_proc(def_name, sig);
       }
     }
     // Then check if this is a builtin syntax

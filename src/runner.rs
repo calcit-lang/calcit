@@ -1,13 +1,14 @@
 pub mod preprocess;
 pub mod track;
 
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::vec;
 
 use crate::builtins;
 use crate::calcit::{
   CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-  CalcitScope, CalcitSyntax, CalcitThunk, MethodKind, NodeLocation,
+  CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::data::cirru;
@@ -32,6 +33,18 @@ fn build_runtime_cell_error(ns: &str, def: &str, call_stack: &CallStackList, cel
       call_stack,
     ),
   }
+}
+
+fn resolve_runtime_or_compiled_def(
+  ns: &str,
+  def: &str,
+  def_id: Option<program::DefId>,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  program::resolve_runtime_or_compiled_def(ns, def, def_id, program::RuntimeResolveMode::Strict, call_stack).map_err(|err| match err {
+    program::RuntimeResolveError::RuntimeCell(cell) => build_runtime_cell_error(ns, def, call_stack, cell),
+    program::RuntimeResolveError::Eval(failure) => failure,
+  })
 }
 
 fn format_fn_arg_labels(args: &CalcitFnArgs) -> String {
@@ -157,19 +170,19 @@ pub fn call_expr(
   spreading: bool,
 ) -> Result<Calcit, CalcitErr> {
   // println!("calling expr: {}", xs);
-  let rest_nodes = xs.drop_left();
   match v {
     Calcit::Proc(p) => {
       let values = if spreading {
-        evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
+        evaluate_spreaded_args_from(xs, 1, scope, file_ns, call_stack)?
       } else {
-        evaluate_args(rest_nodes, scope, file_ns, call_stack)?
+        evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
       };
       builtins::handle_proc(*p, &values, call_stack)
     }
     Calcit::Syntax(s, def_ns) => {
+      let rest_nodes = xs.skip(1).expect("expected syntax rest nodes");
       if using_stack() {
-        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.to_vec());
+        let next_stack = call_stack.extend_owned(def_ns, s.as_ref(), StackKind::Syntax, Calcit::from(xs), rest_nodes.to_vec());
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
@@ -186,9 +199,9 @@ pub fn call_expr(
     Calcit::Method(name, kind) => {
       if matches!(kind, MethodKind::Invoke(_)) {
         let values = if spreading {
-          evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
+          evaluate_spreaded_args_from(xs, 1, scope, file_ns, call_stack)?
         } else {
-          evaluate_args(rest_nodes, scope, file_ns, call_stack)?
+          evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
         };
         if using_stack() {
           let next_stack = call_stack.extend(file_ns, name, StackKind::Method, &Calcit::Nil, &values);
@@ -197,8 +210,8 @@ pub fn call_expr(
           builtins::meta::invoke_method(name, &values, call_stack)
         }
       } else if matches!(kind, MethodKind::TagAccess) {
-        if rest_nodes.len() == 1 {
-          let obj = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
+        if xs.len() == 2 {
+          let obj = evaluate_expr(&xs[1], scope, file_ns, call_stack)?;
           let tag = evaluate_expr(&Calcit::tag(name), scope, file_ns, call_stack)?;
           if let Calcit::Map(m) = obj {
             match m.get(&tag) {
@@ -243,9 +256,9 @@ pub fn call_expr(
     }
     Calcit::Fn { info, .. } => {
       let values = if spreading {
-        evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
+        evaluate_spreaded_args_from(xs, 1, scope, file_ns, call_stack)?
       } else {
-        evaluate_args(rest_nodes, scope, file_ns, call_stack)?
+        evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
       };
       if using_stack() {
         let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs), &values);
@@ -260,14 +273,15 @@ pub fn call_expr(
         &Calcit::from(xs.to_owned()).lisp_str()
       );
 
+      let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
+
       let next_stack = if using_stack() {
-        call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &Calcit::from(xs), &rest_nodes.to_vec())
+        call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, Calcit::from(xs), current_values.clone())
       } else {
         call_stack.to_owned()
       };
 
       // TODO moving to preprocess
-      let mut current_values: Vec<Calcit> = rest_nodes.to_vec();
       // println!("eval macro: {} {}", x, expr.lisp_str()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -276,7 +290,7 @@ pub fn call_expr(
       Ok(loop {
         // need to handle recursion
         bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-        let code = evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, &next_stack)?;
+        let code = evaluate_lines(info.body.as_ref().as_slice(), &body_scope, &info.def_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
@@ -289,8 +303,8 @@ pub fn call_expr(
       })
     }
     Calcit::Tag(k) => {
-      if rest_nodes.len() == 1 {
-        let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
+      if xs.len() == 2 {
+        let v = evaluate_expr(&xs[1], scope, file_ns, call_stack)?;
 
         if let Calcit::Map(m) = v {
           match m.get(&Calcit::Tag(k.to_owned())) {
@@ -308,7 +322,7 @@ pub fn call_expr(
       } else {
         Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Arity,
-          format!("tag only takes 1 argument, got: {rest_nodes}"),
+          format!("tag only takes 1 argument, got: {}", xs.len().saturating_sub(1)),
           call_stack,
           xs.first().and_then(|node| node.get_location()),
         ))
@@ -316,9 +330,9 @@ pub fn call_expr(
     }
     Calcit::Registered(alias) => {
       let values = if spreading {
-        evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
+        evaluate_spreaded_args_from(xs, 1, scope, file_ns, call_stack)?
       } else {
-        evaluate_args(rest_nodes, scope, file_ns, call_stack)?
+        evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
       };
       builtins::call_registered_proc(alias, values, call_stack).map_err(|e| {
         if e.kind == CalcitErrKind::Var {
@@ -446,36 +460,7 @@ pub fn evaluate_symbol_from_program(
   def_id: Option<u32>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let runtime_def_id = def_id.map(program::DefId).or_else(|| program::lookup_def_id(file_ns, sym));
-
-  if let Some(def_id) = runtime_def_id {
-    if let Some(program::RuntimeCell::Cold) = program::lookup_runtime_cell_by_id(def_id) {
-      let _ = program::seed_runtime_lazy_from_compiled(file_ns, sym);
-    }
-
-    if let Some(cell) = program::lookup_runtime_cell_by_id(def_id) {
-      match cell {
-        program::RuntimeCell::Lazy { code, info } => {
-          return CalcitThunk::Code { code, info }.evaluated(&CalcitScope::default(), call_stack);
-        }
-        program::RuntimeCell::Ready(value) => {
-          return match value {
-            Calcit::Thunk(thunk) => thunk.evaluated(&CalcitScope::default(), call_stack),
-            _ => Ok(value),
-          };
-        }
-        program::RuntimeCell::Resolving | program::RuntimeCell::Errored(_) => {
-          return Err(build_runtime_cell_error(file_ns, sym, call_stack, cell));
-        }
-        program::RuntimeCell::Cold => {}
-      }
-    }
-  }
-
-  let v0 = runtime_def_id
-    .and_then(program::lookup_runtime_ready_by_id)
-    .or_else(|| program::lookup_compiled_runtime_value(file_ns, sym))
-    .or_else(|| program::lookup_def_id(file_ns, sym).and_then(|def_id| program::lookup_runtime_ready_by_id(def_id)));
+  let v0 = resolve_runtime_or_compiled_def(file_ns, sym, def_id.map(program::DefId), call_stack)?;
   // if v0.is_none() {
   //   println!("slow path reading symbol: {}/{}", file_ns, sym)
   // }
@@ -494,10 +479,7 @@ pub fn evaluate_symbol_from_program(
   } else {
     unreachable!("expected symbol from path, this is a quick path, should succeed")
   };
-  match v {
-    Calcit::Thunk(thunk) => thunk.evaluated(&CalcitScope::default(), call_stack),
-    _ => Ok(v),
-  }
+  Ok(v)
 }
 
 pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
@@ -518,44 +500,12 @@ pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
 
 /// resolve a program symbol to an available value for namespace lookup paths
 pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> Result<Option<Calcit>, CalcitErr> {
-  if let Some(def_id) = program::lookup_def_id(ns, sym) {
-    if let Some(program::RuntimeCell::Cold) = program::lookup_runtime_cell_by_id(def_id) {
-      let _ = program::seed_runtime_lazy_from_compiled(ns, sym);
-    }
-
-    if let Some(cell) = program::lookup_runtime_cell_by_id(def_id) {
-      match cell {
-        program::RuntimeCell::Lazy { code, info } => {
-          return CalcitThunk::Code { code, info }
-            .evaluated(&CalcitScope::default(), call_stack)
-            .map(Some);
-        }
-        program::RuntimeCell::Ready(v) => return Ok(Some(v)),
-        program::RuntimeCell::Resolving | program::RuntimeCell::Errored(_) => {
-          return Err(build_runtime_cell_error(ns, sym, call_stack, cell));
-        }
-        program::RuntimeCell::Cold => {}
-      }
-    }
-  }
-  if let Some(v) = program::lookup_compiled_runtime_value(ns, sym) {
+  if let Some(v) = resolve_runtime_or_compiled_def(ns, sym, None, call_stack)? {
     return Ok(Some(v));
   }
-  if let Some(code) = program::lookup_def_code(ns, sym) {
-    match evaluate_expr(&code, &CalcitScope::default(), ns, call_stack) {
-      Ok(v) => {
-        program::write_runtime_ready(ns, sym, v.to_owned())
-          .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
-        return match v {
-          Calcit::Thunk(thunk) => thunk.evaluated(&CalcitScope::default(), call_stack).map(Some),
-          _ => Ok(Some(v)),
-        };
-      }
-      Err(e) => {
-        program::mark_runtime_def_errored(ns, sym, Arc::from(e.to_string()));
-        return Err(e);
-      }
-    }
+  if program::has_def_code(ns, sym) {
+    let warnings: RefCell<Vec<_>> = RefCell::new(vec![]);
+    return preprocess::preprocess_ns_def(ns, sym, &warnings, call_stack);
   }
   Ok(None)
 }
@@ -567,14 +517,14 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
       if args.len() != values.len() {
         return Err(build_fn_arity_mismatch_error(info, values, call_stack, "call"));
       }
-      for (idx, v) in args.iter().enumerate() {
-        body_scope.insert_mut(*v, values[idx].to_owned());
+      for (&arg, value) in args.iter().zip(values) {
+        body_scope.insert_mut(arg, value.to_owned());
       }
     }
     CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, values, call_stack)?,
   }
 
-  let v = evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
+  let v = evaluate_lines(info.body.as_slice(), &body_scope, &info.def_ns, call_stack)?;
 
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs.to_vec();
@@ -584,13 +534,13 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
           if args.len() != current_values.len() {
             return Err(build_fn_arity_mismatch_error(info, &current_values, call_stack, "recur"));
           }
-          for (idx, v) in args.iter().enumerate() {
-            body_scope.insert_mut(*v, current_values[idx].to_owned());
+          for (&arg, value) in args.iter().zip(&current_values) {
+            body_scope.insert_mut(arg, value.to_owned());
           }
         }
         CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
       }
-      let v = evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
+      let v = evaluate_lines(info.body.as_slice(), &body_scope, &info.def_ns, call_stack)?;
       match v {
         Calcit::Recur(xs) => current_values = xs.to_vec(),
         result => return Ok(result),
@@ -608,8 +558,8 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
       if args.len() != values.len() {
         return Err(build_fn_arity_mismatch_error(info, &values, call_stack, "call"));
       }
-      for (idx, v) in values.into_iter().enumerate() {
-        body_scope.insert_mut(args[idx], v);
+      for (&arg, value) in args.iter().zip(values) {
+        body_scope.insert_mut(arg, value);
       }
     }
     CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &values, call_stack)?,
@@ -625,8 +575,8 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
           if args.len() != current_values.len() {
             return Err(build_fn_arity_mismatch_error(info, &current_values, call_stack, "recur"));
           }
-          for (idx, v) in current_values.into_iter().enumerate() {
-            body_scope.insert_mut(args[idx], v);
+          for (&arg, value) in args.iter().zip(current_values) {
+            body_scope.insert_mut(arg, value);
           }
         }
         CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
@@ -674,10 +624,8 @@ pub fn bind_marked_args(
     if spreading {
       match arg {
         CalcitArgLabel::Idx(idx) => {
-          let mut chunk: Vec<Calcit> = vec![];
-          while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
-            chunk.push(v.to_owned());
-          }
+          let chunk = values[pop_values_idx.0..].to_vec();
+          pop_values_idx.0 = values.len();
           scope.insert_mut(*idx, Calcit::from(CalcitList::Vector(chunk)));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
@@ -769,19 +717,32 @@ pub fn evaluate_args(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
-  for item in &items {
-    // if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = item {
-    //   unreachable!("unexpected spread in args: {items}, should be handled before calling this")
-    // }
+  evaluate_args_from(&items, 0, scope, file_ns, call_stack)
+}
+
+pub fn evaluate_args_from(
+  items: &CalcitList,
+  start: usize,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Vec<Calcit>, CalcitErr> {
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len().saturating_sub(start));
+  let mut idx = 0;
+  items.traverse_result::<CalcitErr>(&mut |item| {
+    if idx < start {
+      idx += 1;
+      return Ok(());
+    }
+    idx += 1;
 
     if item.is_expr_evaluated() {
       ret.push(item.to_owned());
     } else {
-      let v = evaluate_expr(item, scope, file_ns, call_stack)?;
-      ret.push(v);
+      ret.push(evaluate_expr(item, scope, file_ns, call_stack)?);
     }
-  }
+    Ok(())
+  })?;
   // println!("Evaluated args: {}", ret);
   Ok(ret)
 }
@@ -794,61 +755,80 @@ pub fn evaluate_spreaded_args(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
+  evaluate_spreaded_args_from(&items, 0, scope, file_ns, call_stack)
+}
+
+pub fn evaluate_spreaded_args_from(
+  items: &CalcitList,
+  start: usize,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Vec<Calcit>, CalcitErr> {
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len().saturating_sub(start));
   let mut spreading = false;
 
-  items.traverse_result(&mut |item| match item {
-    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
-      spreading = true;
-      Ok(())
+  let mut idx = 0;
+  items.traverse_result::<CalcitErr>(&mut |item| {
+    if idx < start {
+      idx += 1;
+      return Ok(());
     }
-    _ => {
-      if item.is_expr_evaluated() {
-        if spreading {
-          match item {
-            Calcit::List(xs) => {
-              xs.traverse(&mut |x| {
-                ret.push(x.to_owned());
-              });
-              spreading = false;
-              Ok(())
-            }
-            a => Err(CalcitErr::use_msg_stack_location(
-              CalcitErrKind::Arity,
-              format!("expected list for spreading, got: {a}"),
-              call_stack,
-              a.get_location(),
-            )),
-          }
-        } else {
-          ret.push(item.to_owned());
-          Ok(())
-        }
-      } else {
-        let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+    idx += 1;
 
-        if spreading {
-          match v {
-            Calcit::List(xs) => {
-              xs.traverse(&mut |x| {
-                ret.push(x.to_owned());
-              });
-              spreading = false;
-              Ok(())
+    match item {
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+        spreading = true;
+      }
+      _ => {
+        if item.is_expr_evaluated() {
+          if spreading {
+            match item {
+              Calcit::List(xs) => {
+                xs.traverse(&mut |x| {
+                  ret.push(x.to_owned());
+                });
+                spreading = false;
+              }
+              a => {
+                return Err(CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Arity,
+                  format!("expected list for spreading, got: {a}"),
+                  call_stack,
+                  a.get_location(),
+                ));
+              }
             }
-            a => Err(CalcitErr::use_msg_stack_location(
-              CalcitErrKind::Arity,
-              format!("expected list for spreading, got: {a}"),
-              call_stack,
-              a.get_location(),
-            )),
+          } else {
+            ret.push(item.to_owned());
           }
         } else {
-          ret.push(v);
-          Ok(())
+          let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+
+          if spreading {
+            match v {
+              Calcit::List(xs) => {
+                xs.traverse(&mut |x| {
+                  ret.push(x.to_owned());
+                });
+                spreading = false;
+              }
+              a => {
+                return Err(CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Arity,
+                  format!("expected list for spreading, got: {a}"),
+                  call_stack,
+                  a.get_location(),
+                ));
+              }
+            }
+          } else {
+            ret.push(v);
+          }
         }
       }
     }
+    Ok(())
   })?;
   // println!("Evaluated args: {}", ret);
   Ok(ret)

@@ -187,7 +187,7 @@ impl CalcitScope {
 
   /// mutable insertiong of variable
   pub fn insert_mut(&mut self, key: u16, value: Calcit) {
-    self.0 = self.0.push(ScopePair { key, value })
+    self.0 = self.0.push_right(ScopePair { key, value })
   }
 
   pub fn get_names(&self) -> String {

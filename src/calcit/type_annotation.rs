@@ -335,23 +335,38 @@ impl CalcitTypeAnnotation {
   }
 
   /// If `form` is a `hint-fn` expression, return its argument items (everything after the head).
-  fn get_hint_fn_items(form: &Calcit) -> Option<CalcitList> {
+  fn get_hint_fn_items(form: &Calcit) -> Option<&CalcitList> {
     let Calcit::List(list) = form else { return None };
     if !Self::is_hint_fn_form(list) {
       return None;
     }
-    list.skip(1).ok()
+    Some(list)
   }
 
-  fn is_schema_key(form: &Calcit, name: &str) -> bool {
+  fn schema_key_name(form: &Calcit) -> Option<&str> {
     match form {
-      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == name,
+      Calcit::Tag(tag) => {
+        let raw = tag.ref_str();
+        Some(raw.strip_prefix(':').unwrap_or(raw))
+      }
       Calcit::Symbol { sym, .. } => {
         let raw = sym.as_ref();
-        raw == name || raw.trim_start_matches(':') == name
+        Some(raw.strip_prefix(':').unwrap_or(raw))
       }
-      Calcit::Str(text) => text.as_ref() == name,
-      _ => false,
+      Calcit::Str(text) => Some(text.as_ref()),
+      _ => None,
+    }
+  }
+
+  fn schema_key_matches_any(form: &Calcit, keys: &[&str]) -> bool {
+    let Some(key) = Self::schema_key_name(form) else {
+      return false;
+    };
+    match keys {
+      [first] => key == *first,
+      [first, second] => key == *first || key == *second,
+      [first, second, third] => key == *first || key == *second || key == *third,
+      _ => keys.contains(&key),
     }
   }
 
@@ -368,7 +383,7 @@ impl CalcitTypeAnnotation {
     match form {
       Calcit::Map(xs) => {
         for (key, value) in xs {
-          if keys.iter().any(|name| Self::is_schema_key(key, name)) {
+          if Self::schema_key_matches_any(key, keys) {
             return Some(value);
           }
         }
@@ -392,7 +407,7 @@ impl CalcitTypeAnnotation {
           let Some(value) = pair.get(1) else {
             continue;
           };
-          if keys.iter().any(|name| Self::is_schema_key(key, name)) {
+          if Self::schema_key_matches_any(key, keys) {
             return Some(value);
           }
         }
@@ -402,10 +417,28 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  fn schema_has_any_field(form: &Calcit, keys: &[&str]) -> bool {
+    match form {
+      Calcit::Map(xs) => xs.iter().any(|(key, _)| Self::schema_key_matches_any(key, keys)),
+      Calcit::List(xs) => {
+        if !matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) {
+          return false;
+        }
+        xs.iter().skip(1).any(|entry| {
+          let Calcit::List(pair) = entry else {
+            return false;
+          };
+          pair.first().is_some_and(|key| Self::schema_key_matches_any(key, keys))
+        })
+      }
+      _ => false,
+    }
+  }
+
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter() {
+    for item in items.iter().skip(1) {
       if let Some(type_expr) = Self::extract_schema_value(item, &["return"]) {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
           type_expr,
@@ -418,7 +451,7 @@ impl CalcitTypeAnnotation {
 
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter() {
+    for item in items.iter().skip(1) {
       if let Some(value) = Self::extract_schema_value(item, &["generics"]) {
         if let Some(vars) = Self::parse_generics_list(value) {
           return Some(vars);
@@ -526,9 +559,7 @@ impl CalcitTypeAnnotation {
     generics: &[Arc<str>],
     strict_named_refs: bool,
   ) -> Option<Arc<CalcitTypeAnnotation>> {
-    let has_schema_fields = ["args", "return", "generics", "rest", "kind"]
-      .iter()
-      .any(|key| Self::extract_schema_value(form, &[*key]).is_some());
+    let has_schema_fields = Self::schema_has_any_field(form, &["args", "return", "generics", "rest", "kind"]);
     if !has_schema_fields {
       return Self::infer_malformed_fn_schema(form, generics, strict_named_refs);
     }
@@ -567,7 +598,7 @@ impl CalcitTypeAnnotation {
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter() {
+    for item in items.iter().skip(1) {
       if let Some(args_form) = Self::extract_schema_value(item, &["args"]) {
         let types = Self::parse_schema_args_types(args_form, params.len(), generics.as_slice());
         return Some(types);
@@ -1590,7 +1621,7 @@ impl CalcitTypeAnnotation {
       Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
-          Self::from_function_parts(signature.arg_types, signature.return_type)
+          Self::from_function_parts(signature.arg_types.clone(), signature.return_type.clone())
         } else {
           Self::Dynamic
         }

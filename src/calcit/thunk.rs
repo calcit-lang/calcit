@@ -23,6 +23,10 @@ impl CalcitThunk {
     }
   }
 
+  pub fn evaluated_default(&self, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+    self.evaluated(&CalcitScope::default(), call_stack)
+  }
+
   /// evaluate the thunk, and write back to program state
   pub fn evaluated(&self, scope: &CalcitScope, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
     match self {

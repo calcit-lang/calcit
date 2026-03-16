@@ -1,5 +1,8 @@
 mod entry_book;
 
+#[cfg(test)]
+mod tests;
+
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -8,7 +11,7 @@ use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{self, Calcit, CalcitScope, CalcitThunk, CalcitThunkInfo, CalcitTypeAnnotation, DYNAMIC_TYPE};
+use crate::calcit::{self, Calcit, CalcitErr, CalcitScope, CalcitThunk, CalcitThunkInfo, CalcitTypeAnnotation, DYNAMIC_TYPE};
 use crate::call_stack::CallStackList;
 use crate::data::cirru::code_to_calcit;
 use crate::runner;
@@ -25,6 +28,18 @@ pub enum RuntimeCell {
   Lazy { code: Arc<Calcit>, info: Arc<CalcitThunkInfo> },
   Ready(Calcit),
   Errored(Arc<str>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeResolveMode {
+  Strict,
+  Lenient,
+}
+
+#[derive(Debug, Clone)]
+pub enum RuntimeResolveError {
+  RuntimeCell(RuntimeCell),
+  Eval(CalcitErr),
 }
 
 pub type ProgramRuntimeData = Vec<RuntimeCell>;
@@ -75,6 +90,18 @@ pub struct CompiledDef {
   pub def_id: DefId,
   pub version_id: u32,
   pub kind: CompiledDefKind,
+  pub preprocessed_code: Calcit,
+  pub codegen_form: Calcit,
+  pub deps: Vec<DefId>,
+  pub type_summary: Option<Arc<str>>,
+  pub source_code: Option<Calcit>,
+  pub schema: Arc<CalcitTypeAnnotation>,
+  pub doc: Arc<str>,
+  pub examples: Vec<Cirru>,
+}
+
+pub struct CompiledDefPayload {
+  pub version_id: u32,
   pub preprocessed_code: Calcit,
   pub codegen_form: Calcit,
   pub deps: Vec<DefId>,
@@ -229,20 +256,23 @@ pub fn refresh_runtime_cell_from_preprocessed(ns: &str, def: &str, preprocessed_
 }
 
 pub fn seed_runtime_lazy_from_compiled(ns: &str, def: &str) -> bool {
-  let Some(compiled) = lookup_compiled_def(ns, def) else {
+  let Some((def_id, preprocessed_code)) = with_compiled_def(ns, def, |compiled| {
+    if compiled.kind == CompiledDefKind::LazyValue {
+      Some((compiled.def_id, compiled.preprocessed_code.clone()))
+    } else {
+      None
+    }
+  })
+  .flatten() else {
     return false;
   };
 
-  if compiled.kind != CompiledDefKind::LazyValue {
-    return false;
-  }
-
-  match lookup_runtime_cell_by_id(compiled.def_id) {
+  match lookup_runtime_cell_by_id(def_id) {
     Some(RuntimeCell::Lazy { .. } | RuntimeCell::Ready(_) | RuntimeCell::Resolving | RuntimeCell::Errored(_)) => false,
     Some(RuntimeCell::Cold) | None => {
       write_runtime_lazy(
-        compiled.def_id,
-        Arc::new(compiled.preprocessed_code),
+        def_id,
+        Arc::new(preprocessed_code),
         Arc::new(CalcitThunkInfo {
           ns: Arc::from(ns),
           def: Arc::from(def),
@@ -323,42 +353,25 @@ pub fn collect_compiled_deps(code: &Calcit) -> Vec<DefId> {
   deps
 }
 
-fn build_compiled_def(
-  ns: &str,
-  def: &str,
-  version_id: u32,
-  preprocessed_code: Calcit,
-  codegen_form: Calcit,
-  deps: Vec<DefId>,
-  type_summary: Option<Arc<str>>,
-  source_code: Option<Calcit>,
-  schema: Arc<CalcitTypeAnnotation>,
-  doc: Arc<str>,
-  examples: Vec<Cirru>,
-) -> CompiledDef {
-  let kind = CompiledDefKind::from_preprocessed_code(&preprocessed_code);
+fn build_compiled_def(ns: &str, def: &str, payload: CompiledDefPayload) -> CompiledDef {
+  let kind = CompiledDefKind::from_preprocessed_code(&payload.preprocessed_code);
 
   CompiledDef {
     def_id: ensure_def_id(ns, def),
-    version_id,
+    version_id: payload.version_id,
     kind,
-    preprocessed_code,
-    codegen_form,
-    deps,
-    type_summary,
-    source_code,
-    schema,
-    doc,
-    examples,
+    preprocessed_code: payload.preprocessed_code,
+    codegen_form: payload.codegen_form,
+    deps: payload.deps,
+    type_summary: payload.type_summary,
+    source_code: payload.source_code,
+    schema: payload.schema,
+    doc: payload.doc,
+    examples: payload.examples,
   }
 }
 
-fn build_snapshot_fallback_compiled_def(
-  ns: &str,
-  def: &str,
-  runtime_value: Calcit,
-  source_entry: Option<&ProgramDefEntry>,
-) -> CompiledDef {
+fn build_runtime_only_snapshot_fallback_compiled_def(ns: &str, def: &str, runtime_value: Calcit) -> CompiledDef {
   let codegen_form = match &runtime_value {
     Calcit::Thunk(thunk) => thunk.get_code().to_owned(),
     _ => runtime_value.to_owned(),
@@ -373,15 +386,11 @@ fn build_snapshot_fallback_compiled_def(
     preprocessed_code: codegen_form.to_owned(),
     codegen_form,
     deps,
-    type_summary: source_entry
-      .and_then(|entry| calcit::CalcitTypeAnnotation::summarize_code(&entry.code))
-      .map(Arc::from),
-    source_code: source_entry.map(|entry| entry.code.to_owned()),
-    schema: source_entry
-      .map(|entry| entry.schema.clone())
-      .unwrap_or_else(|| DYNAMIC_TYPE.clone()),
-    doc: source_entry.map(|entry| entry.doc.clone()).unwrap_or_else(|| Arc::from("")),
-    examples: source_entry.map(|entry| entry.examples.clone()).unwrap_or_default(),
+    type_summary: None,
+    source_code: None,
+    schema: DYNAMIC_TYPE.clone(),
+    doc: Arc::from(""),
+    examples: vec![],
   }
 }
 
@@ -395,12 +404,7 @@ fn ensure_source_backed_compiled_def_for_snapshot(ns: &str, def: &str) -> Option
   }
 
   let warnings: RefCell<Vec<calcit::LocatedWarning>> = RefCell::new(vec![]);
-  if runner::preprocess::preprocess_ns_def(ns, def, &warnings, &CallStackList::default()).is_err() {
-    return None;
-  }
-
-  let warnings = warnings.borrow();
-  if !warnings.is_empty() {
+  if runner::preprocess::compile_source_def_for_snapshot(ns, def, &warnings, &CallStackList::default()).is_err() {
     return None;
   }
 
@@ -415,32 +419,8 @@ pub fn write_compiled_def(ns: &str, def: &str, compiled: CompiledDef) {
   file.defs.insert(Arc::from(def), compiled);
 }
 
-pub fn store_compiled_output(
-  ns: &str,
-  def: &str,
-  version_id: u32,
-  preprocessed_code: Calcit,
-  codegen_form: Calcit,
-  deps: Vec<DefId>,
-  type_summary: Option<Arc<str>>,
-  source_code: Option<Calcit>,
-  schema: Arc<CalcitTypeAnnotation>,
-  doc: Arc<str>,
-  examples: Vec<Cirru>,
-) {
-  let compiled = build_compiled_def(
-    ns,
-    def,
-    version_id,
-    preprocessed_code,
-    codegen_form,
-    deps,
-    type_summary,
-    source_code,
-    schema,
-    doc,
-    examples,
-  );
+pub fn store_compiled_output(ns: &str, def: &str, payload: CompiledDefPayload) {
+  let compiled = build_compiled_def(ns, def, payload);
   write_compiled_def(ns, def, compiled);
 }
 
@@ -450,16 +430,136 @@ pub fn lookup_compiled_def(ns: &str, def: &str) -> Option<CompiledDef> {
   file.defs.get(def).cloned()
 }
 
-pub fn lookup_compiled_runtime_value(ns: &str, def: &str) -> Option<Calcit> {
-  let compiled = lookup_compiled_def(ns, def)?;
+fn with_compiled_def<T>(ns: &str, def: &str, f: impl FnOnce(&CompiledDef) -> T) -> Option<T> {
+  let program = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data");
+  let file = program.get(ns)?;
+  let compiled = file.defs.get(def)?;
+  Some(f(compiled))
+}
 
-  match compiled.kind {
-    CompiledDefKind::Fn | CompiledDefKind::Macro | CompiledDefKind::Proc | CompiledDefKind::Syntax => {
-      runner::evaluate_expr(&compiled.preprocessed_code, &CalcitScope::default(), ns, &CallStackList::default()).ok()
+fn is_compiled_executable_kind(kind: &CompiledDefKind) -> bool {
+  matches!(
+    kind,
+    CompiledDefKind::Fn | CompiledDefKind::Macro | CompiledDefKind::Proc | CompiledDefKind::Syntax
+  )
+}
+
+fn with_compiled_executable_payload<T>(ns: &str, def: &str, f: impl FnOnce(&Calcit) -> T) -> Option<T> {
+  with_compiled_def(ns, def, |compiled| {
+    if is_compiled_executable_kind(&compiled.kind) {
+      Some(f(&compiled.preprocessed_code))
+    } else {
+      None
     }
-    CompiledDefKind::LazyValue => None,
-    _ => None,
+  })
+  .flatten()
+}
+
+#[cfg(test)]
+fn lookup_compiled_executable_code(ns: &str, def: &str) -> Option<Calcit> {
+  with_compiled_executable_payload(ns, def, Calcit::to_owned)
+}
+
+fn execute_compiled_executable_payload(ns: &str, def: &str) -> Option<Calcit> {
+  with_compiled_executable_payload(ns, def, |code| {
+    runner::evaluate_expr(code, &CalcitScope::default(), ns, &CallStackList::default()).ok()
+  })
+  .flatten()
+}
+
+fn resolve_runtime_ready_value(value: Calcit, call_stack: &CallStackList) -> Result<Calcit, RuntimeResolveError> {
+  match value {
+    Calcit::Thunk(thunk) => thunk.evaluated_default(call_stack).map_err(RuntimeResolveError::Eval),
+    _ => Ok(value),
   }
+}
+
+fn resolve_runtime_cell_value(
+  cell: RuntimeCell,
+  mode: RuntimeResolveMode,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, RuntimeResolveError> {
+  match cell {
+    RuntimeCell::Lazy { code, info } => CalcitThunk::Code { code, info }
+      .evaluated_default(call_stack)
+      .map(Some)
+      .map_err(RuntimeResolveError::Eval),
+    RuntimeCell::Ready(value) => resolve_runtime_ready_value(value, call_stack).map(Some),
+    RuntimeCell::Resolving | RuntimeCell::Errored(_) => {
+      if matches!(mode, RuntimeResolveMode::Strict) {
+        Err(RuntimeResolveError::RuntimeCell(cell))
+      } else {
+        Ok(None)
+      }
+    }
+    RuntimeCell::Cold => Ok(None),
+  }
+}
+
+fn resolve_runtime_def_value(
+  ns: &str,
+  def: &str,
+  def_id: Option<DefId>,
+  mode: RuntimeResolveMode,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, RuntimeResolveError> {
+  let runtime_def_id = def_id.or_else(|| lookup_def_id(ns, def));
+
+  if let Some(def_id) = runtime_def_id {
+    if let Some(RuntimeCell::Cold) = lookup_runtime_cell_by_id(def_id) {
+      let _ = seed_runtime_lazy_from_compiled(ns, def);
+    }
+
+    if let Some(cell) = lookup_runtime_cell_by_id(def_id) {
+      return resolve_runtime_cell_value(cell, mode, call_stack);
+    }
+  }
+
+  Ok(None)
+}
+
+pub fn resolve_runtime_or_compiled_def(
+  ns: &str,
+  def: &str,
+  def_id: Option<DefId>,
+  mode: RuntimeResolveMode,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, RuntimeResolveError> {
+  if let Some(value) = resolve_runtime_def_value(ns, def, def_id, mode, call_stack)? {
+    return Ok(Some(value));
+  }
+
+  Ok(execute_compiled_executable_payload(ns, def))
+}
+
+pub fn lookup_runtime_or_compiled_def_lenient(ns: &str, def: &str) -> Option<Calcit> {
+  resolve_runtime_or_compiled_def(ns, def, None, RuntimeResolveMode::Lenient, &CallStackList::default())
+    .ok()
+    .flatten()
+}
+
+fn annotation_from_value(value: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  let annotation = Arc::new(calcit::CalcitTypeAnnotation::from_calcit(value));
+  if matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    None
+  } else {
+    Some(annotation)
+  }
+}
+
+pub fn lookup_codegen_type_hint(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Some(schema) = with_compiled_def(ns, def, |compiled| compiled.schema.clone())
+    && !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+  {
+    return Some(schema);
+  }
+
+  let source_schema = lookup_def_schema(ns, def);
+  if !matches!(source_schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    return Some(source_schema);
+  }
+
+  lookup_runtime_ready(ns, def).as_ref().and_then(annotation_from_value)
 }
 
 fn remove_compiled_def(ns: &str, def: &str) {
@@ -767,38 +867,77 @@ pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), Str
   Ok(())
 }
 
-pub fn clone_compiled_program_snapshot() -> Result<CompiledProgram, String> {
-  let mut compiled: CompiledProgram = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").to_owned();
-  let program_code = PROGRAM_CODE_DATA.read().expect("read program code").to_owned();
-  let program_def_ids = PROGRAM_DEF_ID_INDEX.read().expect("read program def id index").by_ns.clone();
-  let runtime = PROGRAM_RUNTIME_DATA_STATE.read().expect("read runtime data").to_owned();
+#[derive(Debug, Clone)]
+struct SnapshotFillTask {
+  ns: Arc<str>,
+  def: Arc<str>,
+  source_backed: bool,
+  runtime_value: Option<Calcit>,
+}
 
-  for (ns, defs) in &program_def_ids {
+fn collect_snapshot_fill_tasks(compiled: &CompiledProgram) -> Vec<SnapshotFillTask> {
+  let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
+  let program_def_ids = PROGRAM_DEF_ID_INDEX.read().expect("read program def id index");
+  let runtime = PROGRAM_RUNTIME_DATA_STATE.read().expect("read runtime data");
+
+  let mut tasks = vec![];
+
+  for (ns, defs) in &program_def_ids.by_ns {
+    let existing_defs = compiled.get(ns).map(|file| &file.defs);
     let source_file = program_code.get(ns.as_ref());
-    let compiled_file = compiled
-      .entry(ns.to_owned())
-      .or_insert_with(|| CompiledFileData { defs: HashMap::new() });
 
     for (def, def_id) in defs {
-      if compiled_file.defs.contains_key(def.as_ref()) {
-        continue;
-      }
-      let source_entry = source_file.and_then(|data| data.defs.get(def.as_ref()));
-
-      if source_entry.is_some()
-        && let Some(compiled_def) = ensure_source_backed_compiled_def_for_snapshot(ns, def)
-      {
-        compiled_file.defs.insert(def.to_owned(), compiled_def);
+      if existing_defs.is_some_and(|defs| defs.contains_key(def.as_ref())) {
         continue;
       }
 
-      let Some(RuntimeCell::Ready(runtime_value)) = runtime.get(def_id.0 as usize).cloned() else {
+      let source_backed = source_file.is_some_and(|data| data.defs.contains_key(def.as_ref()));
+      let runtime_value = runtime.get(def_id.0 as usize).and_then(|cell| match cell {
+        RuntimeCell::Ready(value) => Some(value.to_owned()),
+        _ => None,
+      });
+
+      if !source_backed && runtime_value.is_none() {
         continue;
-      };
-      compiled_file.defs.insert(
-        def.to_owned(),
-        build_snapshot_fallback_compiled_def(ns, def, runtime_value, source_entry),
-      );
+      }
+
+      tasks.push(SnapshotFillTask {
+        ns: ns.to_owned(),
+        def: def.to_owned(),
+        source_backed,
+        runtime_value,
+      });
+    }
+  }
+
+  tasks
+}
+
+fn should_use_runtime_snapshot_fallback(task: &SnapshotFillTask) -> bool {
+  !task.source_backed && task.runtime_value.is_some()
+}
+
+pub fn clone_compiled_program_snapshot() -> Result<CompiledProgram, String> {
+  let mut compiled: CompiledProgram = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").to_owned();
+  let tasks = collect_snapshot_fill_tasks(&compiled);
+
+  for task in tasks {
+    let compiled_file = compiled
+      .entry(task.ns.clone())
+      .or_insert_with(|| CompiledFileData { defs: HashMap::new() });
+
+    if task.source_backed
+      && let Some(compiled_def) = ensure_source_backed_compiled_def_for_snapshot(task.ns.as_ref(), task.def.as_ref())
+    {
+      compiled_file.defs.insert(task.def.clone(), compiled_def);
+      continue;
+    }
+
+    if should_use_runtime_snapshot_fallback(&task)
+      && let Some(runtime_value) = task.runtime_value
+    {
+      let fallback = build_runtime_only_snapshot_fallback_compiled_def(task.ns.as_ref(), task.def.as_ref(), runtime_value);
+      compiled_file.defs.insert(task.def, fallback);
     }
   }
 
@@ -941,156 +1080,4 @@ pub fn clear_runtime_caches_for_changes(changes: &snapshot::ChangesDict, reload_
   compiled.retain(|_, file| !file.defs.is_empty());
 
   Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::calcit::{CalcitImport, ImportInfo};
-
-  fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {
-    CompiledDef {
-      def_id,
-      version_id: 0,
-      kind: CompiledDefKind::Value,
-      preprocessed_code: Calcit::Nil,
-      codegen_form: Calcit::Nil,
-      deps,
-      type_summary: None,
-      source_code: None,
-      schema: DYNAMIC_TYPE.clone(),
-      doc: Arc::from(""),
-      examples: vec![],
-    }
-  }
-
-  #[test]
-  fn reload_invalidation_collects_transitive_dependents() {
-    let mut compiled: ProgramCompiledData = HashMap::new();
-    compiled.insert(
-      Arc::from("app.main"),
-      CompiledFileData {
-        defs: HashMap::from([
-          (Arc::from("a"), compiled_def_for_test(DefId(1), vec![])),
-          (Arc::from("b"), compiled_def_for_test(DefId(2), vec![DefId(1)])),
-          (Arc::from("c"), compiled_def_for_test(DefId(3), vec![DefId(2)])),
-          (Arc::from("d"), compiled_def_for_test(DefId(4), vec![])),
-        ]),
-      },
-    );
-
-    let mut index = ProgramDefIdIndex::default();
-    index.by_ns.insert(
-      Arc::from("app.main"),
-      HashMap::from([
-        (Arc::from("a"), DefId(1)),
-        (Arc::from("b"), DefId(2)),
-        (Arc::from("c"), DefId(3)),
-        (Arc::from("d"), DefId(4)),
-      ]),
-    );
-
-    let mut changes = snapshot::ChangesDict::default();
-    changes.changed.insert(
-      Arc::from("app.main"),
-      snapshot::FileChangeInfo {
-        ns: None,
-        added_defs: HashMap::new(),
-        removed_defs: HashSet::new(),
-        changed_defs: HashMap::from([(String::from("a"), Cirru::Leaf(Arc::from("1")))]),
-      },
-    );
-
-    let affected = collect_reload_affected_def_ids(&changes, &compiled, &index);
-    assert_eq!(affected, HashSet::from([DefId(1), DefId(2), DefId(3)]));
-  }
-
-  #[test]
-  fn reload_invalidation_expands_namespace_header_changes() {
-    let compiled: ProgramCompiledData = HashMap::from([
-      (
-        Arc::from("app.main"),
-        CompiledFileData {
-          defs: HashMap::from([
-            (Arc::from("a"), compiled_def_for_test(DefId(1), vec![])),
-            (Arc::from("b"), compiled_def_for_test(DefId(2), vec![])),
-          ]),
-        },
-      ),
-      (
-        Arc::from("app.consumer"),
-        CompiledFileData {
-          defs: HashMap::from([(Arc::from("use-main"), compiled_def_for_test(DefId(3), vec![DefId(2)]))]),
-        },
-      ),
-    ]);
-
-    let mut index = ProgramDefIdIndex::default();
-    index.by_ns.insert(
-      Arc::from("app.main"),
-      HashMap::from([(Arc::from("a"), DefId(1)), (Arc::from("b"), DefId(2))]),
-    );
-    index
-      .by_ns
-      .insert(Arc::from("app.consumer"), HashMap::from([(Arc::from("use-main"), DefId(3))]));
-
-    let mut changes = snapshot::ChangesDict::default();
-    changes.changed.insert(
-      Arc::from("app.main"),
-      snapshot::FileChangeInfo {
-        ns: Some(Cirru::Leaf(Arc::from("ns"))),
-        added_defs: HashMap::new(),
-        removed_defs: HashSet::new(),
-        changed_defs: HashMap::new(),
-      },
-    );
-
-    let affected = collect_reload_affected_def_ids(&changes, &compiled, &index);
-    assert_eq!(affected, HashSet::from([DefId(1), DefId(2), DefId(3)]));
-  }
-
-  #[test]
-  fn snapshot_fallback_preserves_dependency_metadata() {
-    let dep_id = register_program_def_id("dep.ns", "value");
-    let _ = register_program_def_id("app.main", "dep");
-
-    let runtime_value = Calcit::from(vec![Calcit::Import(CalcitImport {
-      ns: Arc::from("dep.ns"),
-      def: Arc::from("value"),
-      info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("dep") }),
-      def_id: Some(dep_id.0),
-    })]);
-
-    let fallback = build_snapshot_fallback_compiled_def("app.main", "dep", runtime_value, None);
-    assert_eq!(fallback.deps, vec![dep_id]);
-  }
-
-  #[test]
-  fn write_runtime_ready_normalizes_thunk_into_lazy_cell() {
-    let thunk_ns = "tests.runtime";
-    let thunk_def = "lazy-demo";
-    let thunk_code = Arc::new(Calcit::Nil);
-    let thunk_info = Arc::new(CalcitThunkInfo {
-      ns: Arc::from(thunk_ns),
-      def: Arc::from(thunk_def),
-    });
-
-    write_runtime_ready(
-      thunk_ns,
-      thunk_def,
-      Calcit::Thunk(CalcitThunk::Code {
-        code: thunk_code.clone(),
-        info: thunk_info.clone(),
-      }),
-    )
-    .expect("write thunk into runtime");
-
-    match lookup_runtime_cell(thunk_ns, thunk_def) {
-      Some(RuntimeCell::Lazy { code, info }) => {
-        assert_eq!(code, thunk_code);
-        assert_eq!(info, thunk_info);
-      }
-      other => panic!("expected lazy runtime cell, got {other:?}"),
-    }
-  }
 }
