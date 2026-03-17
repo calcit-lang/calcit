@@ -785,12 +785,8 @@ fn preprocess_ns_def_materializes_compiled_function_without_backfilling_runtime(
   let warnings = RefCell::new(vec![]);
   crate::runner::preprocess::ensure_ns_def_compiled("app.preprocess", "callable", &warnings, &CallStackList::default())
     .expect("compiled function should materialize for preprocess");
-  let value = resolve_compiled_executable_def(
-    "app.preprocess",
-    "callable",
-    &CallStackList::default(),
-  )
-  .expect("lookup compiled function after ensure");
+  let value = resolve_compiled_executable_def("app.preprocess", "callable", &CallStackList::default())
+    .expect("lookup compiled function after ensure");
 
   assert!(matches!(value, Some(Calcit::Fn { .. })));
   assert_eq!(lookup_runtime_cell_by_id(def_id), Some(RuntimeCell::Cold));

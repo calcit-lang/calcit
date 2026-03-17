@@ -14,9 +14,9 @@
 
 ```bash
 # 搜索 → 修改 → 验证
-cr query search 'symbol' -f 'ns/def'                      # 1. 定位（输出：[3,2,1] in ...）
-cr tree replace 'ns/def' -p '3,2,1' --leaf -e 'new'     # 2. 修改
-cr tree show 'ns/def' -p '3,2,1'                          # 3. 验证（可选）
+cr query search 'symbol' -f 'ns/def'                      # 1. 定位（输出：[3.2.1] in ...）
+cr tree replace 'ns/def' -p '3.2.1' --leaf -e 'new'     # 2. 修改
+cr tree show 'ns/def' -p '3.2.1'                        # 3. 验证（可选）
 ```
 
 ### 三种搜索方式
@@ -160,7 +160,7 @@ Calcit 程序使用 `cr` 命令：
   - `-f <filter>` - 过滤到特定命名空间或定义（可缩小范围提升速度）
   - `-l / --loose`：宽松匹配，包含模式
   - `-d <max-depth>`：限制搜索深度
-  - `-p <start-path>`：从指定路径开始搜索（如 `"3,2,1"`）
+  - `-p <start-path>`：从指定路径开始搜索（如 `"3.2.1"`，也兼容 `"3,2,1"`）
   - 返回：完整路径 + 父级上下文，多个匹配时自动显示批量替换命令
   - 示例：
     - `cr query search 'println' -f app.main/main!` - 精确搜索（过滤到某定义）
@@ -180,7 +180,7 @@ Calcit 程序使用 `cr` 命令：
     - `cr query search-expr 'dispatch! (:: :states)' -l` - 匹配 `dispatch! (:: :states data)` 类型的表达式
     - `cr query search-expr 'memof1-call-by' -l` - 查找记忆化调用
 
-**搜索结果格式：** `[索引1,索引2,...] in 父级上下文`，可配合 `cr tree show <ns/def> -p '<path>'` 查看节点。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
+**搜索结果格式：** `[索引1.索引2...] in 父级上下文`，可配合 `cr tree show <ns/def> -p '<path>'` 查看节点。逗号路径仍兼容，但文档与输出优先使用点号。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
 
 ### LLM 辅助：动态方法提示
 
@@ -277,7 +277,7 @@ cr query modules
 
 **核心概念：**
 
-- 路径格式：逗号分隔的索引（如 `"3,2,1"`），空字符串 `""` 表示根节点
+- 路径格式：优先使用点号分隔的索引（如 `"3.2.1"`），逗号写法 `"3,2,1"` 仍兼容；空字符串 `""` 表示根节点
 - `-p ''` 仅表示“根节点”，**不等于推荐的整定义重写方案**；要整体替换定义时，优先使用 `cr edit def --overwrite -f <file>`
 - 每个命令都有 `--help` 查看详细参数
 - 命令执行后会显示 "Next steps" 提示下一步操作
@@ -332,13 +332,13 @@ cr query modules
 
 # 1. 快速定位目标节点（一步到位）
 cr query search 'target-symbol' -f namespace/def
-# 输出：[3,2,5,1] in (fn (x) target-symbol ...)
+# 输出：[3.2.5.1] in (fn (x) target-symbol ...)
 
 # 2. 直接修改（路径已知）
-cr tree replace namespace/def -p '3,2,5,1' --leaf -e 'new-symbol'
+cr tree replace namespace/def -p '3.2.5.1' --leaf -e 'new-symbol'
 
 # 3. 验证结果（可选）
-cr tree show namespace/def -p '3,2,5,1'
+cr tree show namespace/def -p '3.2.5.1'
 
 
 # ===== 方案 B：批量重命名（多处修改） =====
@@ -346,11 +346,11 @@ cr tree show namespace/def -p '3,2,5,1'
 # 1. 搜索所有匹配位置
 cr query search 'old-name' -f namespace/def
 # 自动显示：4 处匹配，已按路径从大到小排序
-# [3,2,5,8] [3,2,5,2] [3,1,0] [2,1]
+# [3.2.5.8] [3.2.5.2] [3.1.0] [2.1]
 
 # 2. 按提示从后往前修改（避免路径变化）
-cr tree replace namespace/def -p '3,2,5,8' --leaf -e 'new-name'
-cr tree replace namespace/def -p '3,2,5,2' --leaf -e 'new-name'
+cr tree replace namespace/def -p '3.2.5.8' --leaf -e 'new-name'
+cr tree replace namespace/def -p '3.2.5.2' --leaf -e 'new-name'
 # ... 继续按序修改
 
 # 或：一次性替换所有匹配项
@@ -370,19 +370,19 @@ cr tree target-replace namespace/def --pattern 'old-symbol' -e 'new-symbol' --le
 
 # 1. 搜索包含特定模式的表达式
 cr query search-expr "fn (task)" -f namespace/def -l
-# 输出：[3,2,2,5,2,4,1] in (map $ fn (task) ...)
+# 输出：[3.2.2.5.2.4.1] in (map $ fn (task) ...)
 
 # 2. 查看完整结构（可选）
-cr tree show namespace/def -p '3,2,2,5,2,4,1'
+cr tree show namespace/def -p '3.2.2.5.2.4.1'
 
 # 3. 修改整个表达式或子节点
-cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
+cr tree replace namespace/def -p '3.2.2.5.2.4.1.2' -e 'let ((x 1)) (+ x task)'
 ```
 
 **关键技巧：**
 
 - **优先使用 `search` 系列命令**：比逐层导航快 10+ 倍，一步直达目标
-- **路径格式**：`"3,2,1"` 表示第3个子节点 → 第2个子节点 → 第1个子节点
+- **路径格式**：`"3.2.1"` 表示第3个子节点 → 第2个子节点 → 第1个子节点；`"3,2,1"` 仍兼容
 - **批量修改自动提示**：搜索找到多处时，自动显示路径排序和批量替换命令
 - **路径动态变化**：删除/插入后，同级后续索引会变化，按提示从后往前操作
 - **批量执行不要用 `&&` 粘成一行**：尤其当 `-e` 内容里有引号、`|` 字符串或复杂表达式时，优先逐条执行，或写入 `-f <file>` 避免 shell 进入未闭合引号状态
@@ -447,26 +447,32 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 当需要构造非常复杂的嵌套结构（例如递归循环、多级 `let` 或 `if`）时，直接通过 `-e` 传入单行 Cirru 代码容易遇到 shell 转义、括号对齐或长度限制等问题。推荐使用**分段占位组装**策略：
 
+简单提示：
+
+- 占位符统一使用 `{{NAME}}` 风格，例如 `{{BODY}}`、`{{TRUE_BRANCH}}`；
+- 大表达式可以先用 `cr query def <ns/def>` 看整体分片，再用 `cr tree show <ns/def> -p '<path>'` 深入某个片段；
+- 真正填充时，优先用 `cr tree target-replace` 找占位符，不唯一时再退回路径替换。
+
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单 JSON 结构。
 
    ```bash
-   cr tree replace ns/def -p '4,0' -j '["let", [["x", "1"]], "BODY"]'
+   cr tree replace ns/def -p '4.0' -j '["let", [["x", "1"]], "{{BODY}}"]'
    ```
 
 2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
 
    ```bash
-   cr tree show ns/def -p '4,0'
-   # 输出显示 "BODY" 在索引 2，即路径 [4,0,2]
+   cr tree show ns/def -p '4.0'
+  # 输出显示 "{{BODY}}" 在索引 2，即路径 [4.0.2]
    ```
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
-   ```bash
-   cr tree replace ns/def -p '4,0,2' -j '["if", ["=", "x", "1"], "TRUE_BRANCH", "FALSE_BRANCH"]'
-   ```
+  ```bash
+  cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}", "{{FALSE_BRANCH}}"]'
+  ```
 
-4. **递归迭代**：重复上述步骤直到所有占位符（`TRUE_BRANCH`, `FALSE_BRANCH` 等）都被替换为最终逻辑。
+4. **递归迭代**：重复上述步骤直到所有占位符（如 `{{TRUE_BRANCH}}`、`{{FALSE_BRANCH}}`）都被替换为最终逻辑。
 
 **优势：**
 
@@ -1035,10 +1041,10 @@ cr edit config init-fn app.main/main!
 ```bash
 # 1. 搜索并定位目标子表达式
 cr query search-expr 'complex-call arg1' -f 'app.core/process-data' -l
-# 输出示例：[3,2,1] in (let ((x ...)) ...)
+# 输出示例：[3.2.1] in (let ((x ...)) ...)
 
 # 2. 提取为新定义（原位置自动替换为新名字 extracted-calc）
-cr edit split-def 'app.core/process-data' -p '3,2,1' -n extracted-calc
+cr edit split-def 'app.core/process-data' -p '3.2.1' -n extracted-calc
 
 # 3. 查看结果
 cr query def 'app.core/extracted-calc'   # 新定义
@@ -1234,7 +1240,9 @@ send-to-component! $ :: :clipboard/read text
 - **JSON 格式 (`-j / --json`, `-J`, `-e`)**: 字数上限 **2000**。
 
 **大资源处理建议：**
-如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符（如 `?PLACEHOLDER_FEATURE`, 注意避免重复），然后通过 `cr tree target-replace` 进行精准的分段替换.
+如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `cr tree target-replace` 或按路径的 `cr tree replace` 做精准的分段替换。
+
+补充提示：现在 `cr query def` 和 `cr tree show` 遇到大表达式时会自动输出分片结果。若你采用多阶段创建，建议从第一步就使用 `{{NAME}}` 风格占位符，这样后续在分片视图中更容易识别骨架、复制坐标并继续填充内容。
 
 ### 5. 命名空间操作陷阱 ⭐⭐⭐
 
@@ -1419,10 +1427,10 @@ cr edit add-import 'app.core' -e 'app.util :refer $ calculate-discount'
 
 # 在函数体中使用新定义（先定位插入位置）
 cr query search 'total-price' -f 'app.core/checkout'
-# 输出：[3,2,1] in (let ((total-price ...)) ...)
+# 输出：[3.2.1] in (let ((total-price ...)) ...)
 
 # 修改调用
-cr tree replace 'app.core/checkout' -p '3,2,1' -e 'calculate-discount total-price 0.1'
+cr tree replace 'app.core/checkout' -p '3.2.1' -e 'calculate-discount total-price 0.1'
 ```
 
 ### 步骤 5：触发热更新并验证
@@ -1452,7 +1460,7 @@ cr edit rename 'app.util/calculte-discount' 'calculate-discount'
 
 # 函数参数顺序传错 → 定位并修改调用
 cr query search 'calculate-discount' -f 'app.core/checkout'
-cr tree replace 'app.core/checkout' -p '3,2,1' --leaf -e 'calculate-discount'
+cr tree replace 'app.core/checkout' -p '3.2.1' --leaf -e 'calculate-discount'
 ```
 
 ---

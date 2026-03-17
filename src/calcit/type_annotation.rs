@@ -86,6 +86,16 @@ pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| 
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+#[derive(Default)]
+struct FnSchemaFields<'a> {
+  has_any: bool,
+  generics: Option<&'a Calcit>,
+  args: Option<&'a Calcit>,
+  returns: Option<&'a Calcit>,
+  rest: Option<&'a Calcit>,
+  kind: Option<&'a Calcit>,
+}
+
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcitTypeAnnotation {
@@ -409,22 +419,8 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn collect_fn_schema_fields<'a>(
-    form: &'a Calcit,
-  ) -> (
-    bool,
-    Option<&'a Calcit>,
-    Option<&'a Calcit>,
-    Option<&'a Calcit>,
-    Option<&'a Calcit>,
-    Option<&'a Calcit>,
-  ) {
-    let mut has_any = false;
-    let mut generics = None;
-    let mut args = None;
-    let mut returns = None;
-    let mut rest = None;
-    let mut kind = None;
+  fn collect_fn_schema_fields<'a>(form: &'a Calcit) -> FnSchemaFields<'a> {
+    let mut fields = FnSchemaFields::default();
 
     let mut visit_pair = |key: &'a Calcit, value: &'a Calcit| {
       let Some(key_name) = Self::schema_key_name(key) else {
@@ -432,33 +428,33 @@ impl CalcitTypeAnnotation {
       };
       match key_name {
         "generics" => {
-          has_any = true;
-          if generics.is_none() {
-            generics = Some(value);
+          fields.has_any = true;
+          if fields.generics.is_none() {
+            fields.generics = Some(value);
           }
         }
         "args" => {
-          has_any = true;
-          if args.is_none() {
-            args = Some(value);
+          fields.has_any = true;
+          if fields.args.is_none() {
+            fields.args = Some(value);
           }
         }
         "return" => {
-          has_any = true;
-          if returns.is_none() {
-            returns = Some(value);
+          fields.has_any = true;
+          if fields.returns.is_none() {
+            fields.returns = Some(value);
           }
         }
         "rest" => {
-          has_any = true;
-          if rest.is_none() {
-            rest = Some(value);
+          fields.has_any = true;
+          if fields.rest.is_none() {
+            fields.rest = Some(value);
           }
         }
         "kind" => {
-          has_any = true;
-          if kind.is_none() {
-            kind = Some(value);
+          fields.has_any = true;
+          if fields.kind.is_none() {
+            fields.kind = Some(value);
           }
         }
         _ => {}
@@ -473,7 +469,7 @@ impl CalcitTypeAnnotation {
       }
       Calcit::List(xs) => {
         if !matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) {
-          return (false, None, None, None, None, None);
+          return FnSchemaFields::default();
         }
         for entry in xs.iter().skip(1) {
           let Calcit::List(pair) = entry else {
@@ -488,10 +484,10 @@ impl CalcitTypeAnnotation {
           visit_pair(key, value);
         }
       }
-      _ => return (false, None, None, None, None, None),
+      _ => return FnSchemaFields::default(),
     }
 
-    (has_any, generics, args, returns, rest, kind)
+    fields
   }
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -618,21 +614,25 @@ impl CalcitTypeAnnotation {
     generics: &[Arc<str>],
     strict_named_refs: bool,
   ) -> Option<Arc<CalcitTypeAnnotation>> {
-    let (has_schema_fields, local_generics_form, args_form, return_form, rest_form, kind_form) = Self::collect_fn_schema_fields(form);
-    if !has_schema_fields {
+    let fields = Self::collect_fn_schema_fields(form);
+    if !fields.has_any {
       return Self::infer_malformed_fn_schema(form, generics, strict_named_refs);
     }
 
-    let local_generics = local_generics_form.and_then(Self::parse_generics_list).unwrap_or_default();
+    let local_generics = fields.generics.and_then(Self::parse_generics_list).unwrap_or_default();
     let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
-    let arg_types = args_form
+    let arg_types = fields
+      .args
       .map(|args_form| Self::parse_schema_args_list(args_form, scope.as_slice(), strict_named_refs))
       .unwrap_or_default();
-    let return_type = return_form
+    let return_type = fields
+      .returns
       .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
       .unwrap_or_else(|| Arc::new(Self::Dynamic));
-    let rest_type = rest_form.map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs));
-    let fn_kind = match kind_form {
+    let rest_type = fields
+      .rest
+      .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs));
+    let fn_kind = match fields.kind {
       Some(Calcit::Tag(tag)) if tag.ref_str() == "macro" => SchemaKind::Macro,
       Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), ":macro" | "macro") => SchemaKind::Macro,
       _ => SchemaKind::Fn,

@@ -2,9 +2,11 @@
 //!
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
+use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
+use super::common::{format_path_bracketed, parse_path};
 use super::tips::{Tips, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
 use calcit::CalcitTypeAnnotation;
-use calcit::cli_args::{QueryCommand, QuerySubcommand};
+use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -40,7 +42,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_def(input_path, ns, def, opts.json)
+      handle_def(input_path, ns, def, opts)
     }
     QuerySubcommand::Peek(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
@@ -444,7 +446,33 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bool) -> Result<(), String> {
+fn render_chunked_display(display: &ChunkedDisplay) {
+  println!("{}", "Chunked Cirru:".bold());
+  println!(
+    "{}",
+    format!(
+      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
+      display.total.nodes,
+      display.total.branches,
+      display.total.leaves,
+      display.total.max_depth,
+      display.fragments.len()
+    )
+    .dimmed()
+  );
+  println!();
+
+  for fragment in &display.fragments {
+    println!("{} {}", fragment.id.cyan().bold(), format!("at {}", fragment.coord).dimmed());
+    println!("{}", format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed());
+    for line in fragment.cirru.lines() {
+      println!("  {line}");
+    }
+    println!();
+  }
+}
+
+fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -473,10 +501,6 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     println!("\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
 
-  println!("\n{}", "Cirru:".bold());
-  let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-  println!("{cirru_str}");
-
   println!("\n{}", "Schema:".bold());
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
     let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
@@ -488,7 +512,29 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     println!("{}", "(none)".dimmed());
   }
 
-  if show_json {
+  if !opts.raw {
+    let chunk_options = ChunkDisplayOptions {
+      trigger_nodes: opts.chunk_trigger_nodes,
+      target_nodes: opts.chunk_target_nodes,
+      max_nodes: opts.chunk_max_nodes,
+      max_branches: 64,
+    };
+    if let Some(display) = maybe_chunk_node(&code_entry.code, &chunk_options)? {
+      println!();
+      render_chunked_display(&display);
+    } else {
+      println!("\n{}", "Cirru:".bold());
+      let cirru_str =
+        cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+      println!("{cirru_str}");
+    }
+  } else {
+    println!("\n{}", "Cirru:".bold());
+    let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+    println!("{cirru_str}");
+  }
+
+  if opts.json {
     println!("\n{}", "JSON:".bold());
     let json = code_entry_to_json(code_entry);
     println!("{}", serde_json::to_string(&json).unwrap());
@@ -499,12 +545,12 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     "Try `cr query search <leaf> -f '{namespace}/{definition}'` to find coordinates of a leaf node"
   ));
   tips.add(format!(
-    "Use `cr tree show {namespace}/{definition} -p '0'` to explore tree for editing"
+    "Use `cr tree show {namespace}/{definition} -p '0'` or `-p '0.1'` to explore tree for editing"
   ));
   if !code_entry.examples.is_empty() {
     tips.add(format!("Use `cr query examples {namespace}/{definition}` to view examples"));
   }
-  tips.append(tip_prefer_oneliner_json(show_json));
+  tips.append(tip_prefer_oneliner_json(opts.json));
   tips.print();
 
   Ok(())
@@ -1123,8 +1169,7 @@ fn handle_search_leaf(
     if path_str.is_empty() {
       Some(vec![])
     } else {
-      let path: Result<Vec<usize>, _> = path_str.split(',').map(|s| s.trim().parse::<usize>()).collect();
-      Some(path.map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
+      Some(parse_path(path_str).map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
     }
   } else {
     None
@@ -1147,11 +1192,7 @@ fn handle_search_leaf(
   }
 
   if let Some(ref path) = parsed_start_path {
-    let path_display = if path.is_empty() {
-      "root".to_string()
-    } else {
-      format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
-    };
+    let path_display = format_path_bracketed(path);
     println!("  {} {}", "Start path:".dimmed(), path_display.cyan());
   }
   println!();

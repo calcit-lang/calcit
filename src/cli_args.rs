@@ -331,6 +331,18 @@ pub struct QueryDefCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// preferred nodes per display fragment when large expressions are chunked
+  #[argh(option, default = "56")]
+  pub chunk_target_nodes: usize,
+  /// stop recursive chunk splitting once fragments fall below this node count
+  #[argh(option, default = "68")]
+  pub chunk_max_nodes: usize,
+  /// only enable chunked display when total expression nodes reach this threshold
+  #[argh(option, default = "88")]
+  pub chunk_trigger_nodes: usize,
+  /// force raw full-definition display without chunking
+  #[argh(switch)]
+  pub raw: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1108,7 +1120,7 @@ pub struct TreeShowCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated preferred, comma-separated also accepted; e.g. "2.1.0")
   #[argh(option, short = 'p')]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -1117,6 +1129,18 @@ pub struct TreeShowCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// preferred nodes per display fragment when large expressions are chunked
+  #[argh(option, default = "56")]
+  pub chunk_target_nodes: usize,
+  /// stop recursive chunk splitting once fragments fall below this node count
+  #[argh(option, default = "68")]
+  pub chunk_max_nodes: usize,
+  /// only enable chunked display when total expression nodes reach this threshold
+  #[argh(option, default = "88")]
+  pub chunk_trigger_nodes: usize,
+  /// force raw subtree display without chunking
+  #[argh(switch)]
+  pub raw: bool,
 }
 
 /// copy node from one path to another within a definition

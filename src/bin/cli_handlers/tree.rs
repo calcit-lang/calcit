@@ -1,7 +1,10 @@
 use cirru_parser::Cirru;
 use colored::Colorize;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
+use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
+use super::common::{
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, format_path, format_path_bracketed, parse_input_to_cirru, parse_path, read_code_input,
+};
 use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
@@ -151,7 +154,7 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
     "\n{}: {} at path [{}]\n",
     "Preview".blue().bold(),
     operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+    format_path(path)
   ));
   output.push('\n');
 
@@ -167,6 +170,32 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
   output.push('\n');
 
   output
+}
+
+fn render_chunked_display(display: &ChunkedDisplay) {
+  println!("{}", "Chunked preview".green().bold());
+  println!(
+    "{}",
+    format!(
+      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
+      display.total.nodes,
+      display.total.branches,
+      display.total.leaves,
+      display.total.max_depth,
+      display.fragments.len()
+    )
+    .dimmed()
+  );
+  println!();
+
+  for fragment in &display.fragments {
+    println!("{} {}", fragment.id.cyan().bold(), format!("at {}", fragment.coord).dimmed());
+    println!("{}", format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed());
+    for line in fragment.cirru.lines() {
+      println!("  {line}");
+    }
+    println!();
+  }
 }
 
 // ============================================================================
@@ -219,11 +248,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       let valid_node = navigate_to_path(&code_entry.code, valid_path).unwrap();
 
       // Format the valid path display
-      let valid_path_display = if valid_path.is_empty() {
-        "root".to_string()
-      } else {
-        format!("[{}]", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
-      };
+      let valid_path_display = format_path_bracketed(valid_path);
 
       // Get preview of the valid node
       let node_preview = match &valid_node {
@@ -254,12 +279,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!(
-              "cr tree show {} -p '{}'",
-              opts.target,
-              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-            )
-            .cyan()
+            format!("cr tree show {} -p '{}'", opts.target, format_path(valid_path)).cyan()
           );
         }
         Cirru::List(items) => {
@@ -272,12 +292,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!(
-              "cr tree show {} -p '{}'",
-              opts.target,
-              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-            )
-            .cyan()
+            format!("cr tree show {} -p '{}'", opts.target, format_path(valid_path)).cyan()
           );
 
           // Show first few children as hints
@@ -289,7 +304,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
               let child_path = if valid_path.is_empty() {
                 i.to_string()
               } else {
-                format!("{},{}", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","), i)
+                format!("{}.{}", format_path(valid_path), i)
               };
               eprintln!("  [{}] {} {} -p '{}'", i, child_preview.yellow(), "->".dimmed(), child_path);
             }
@@ -308,7 +323,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
   let path_display = if path.is_empty() {
     "(root)".to_string()
   } else {
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+    format_path(&path)
   };
   println!(
     "{}: {}  path: [{}]",
@@ -320,16 +335,28 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
   let node_type = match &node {
     Cirru::Leaf(_) => "leaf",
     Cirru::List(items) => {
+      let chunk_options = ChunkDisplayOptions {
+        trigger_nodes: opts.chunk_trigger_nodes,
+        target_nodes: opts.chunk_target_nodes,
+        max_nodes: opts.chunk_max_nodes,
+        max_branches: 64,
+      };
+      let chunked_display = if opts.raw { None } else { maybe_chunk_node(&node, &chunk_options)? };
+
       println!("{}: {} ({} items)", "Type".green().bold(), "list".yellow(), items.len());
       println!();
-      println!("{}:", "Cirru preview".green().bold());
-      println!("  ");
-      let cirru_str = cirru_parser::format(std::slice::from_ref(&node), cirru_parser::CirruWriterOptions { use_inline: true })
-        .map_err(|e| format!("Failed to format Cirru: {e}"))?;
-      for line in cirru_str.lines() {
-        println!("  {line}");
+      if let Some(display) = chunked_display {
+        render_chunked_display(&display);
+      } else {
+        println!("{}:", "Cirru preview".green().bold());
+        println!("  ");
+        let cirru_str = cirru_parser::format(std::slice::from_ref(&node), cirru_parser::CirruWriterOptions { use_inline: true })
+          .map_err(|e| format!("Failed to format Cirru: {e}"))?;
+        for line in cirru_str.lines() {
+          println!("  {line}");
+        }
+        println!();
       }
-      println!();
 
       if !items.is_empty() {
         println!("{}:", "Children".green().bold());
@@ -338,7 +365,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           let child_path = if opts.path.is_empty() {
             i.to_string()
           } else {
-            format!("{},{}", opts.path, i)
+            format!("{}.{}", format_path(&path), i)
           };
           println!("  [{}] {} {} -p '{}'", i, type_str.yellow(), "->".dimmed(), child_path);
         }
@@ -359,10 +386,15 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         "  • Replace: {} {} -p '{}' {}",
         "cr tree replace".cyan(),
         opts.target,
-        opts.path,
+        format_path(&path),
         "-e 'cirru one-liner'".dimmed()
       );
-      println!("  • Delete:  {} {} -p '{}'", "cr tree delete".cyan(), opts.target, opts.path);
+      println!(
+        "  • Delete:  {} {} -p '{}'",
+        "cr tree delete".cyan(),
+        opts.target,
+        format_path(&path)
+      );
       println!();
       let mut tips = Tips::new();
       tips.append(tip_prefer_oneliner_json(show_json));
@@ -382,12 +414,12 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         "  • Replace: {} {} -p '{}' --leaf -e '<value>'",
         "cr tree replace".cyan(),
         opts.target,
-        opts.path
+        format_path(&path)
       );
       if !path.is_empty() {
         // Show parent path for context
         let parent_path = &path[..path.len() - 1];
-        let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        let parent_path_str = format_path(parent_path);
         println!(
           "  • View parent: {} {} -p '{}'",
           "cr tree show".cyan(),

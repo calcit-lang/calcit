@@ -2,6 +2,7 @@
 //!
 //! These handlers implement: query, docs, cirru, libs, edit, tree subcommands
 
+mod chunk_display;
 mod cirru;
 mod cirru_validator;
 mod common;
