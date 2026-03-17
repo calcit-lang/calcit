@@ -578,7 +578,7 @@ fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSn
   }
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-  runner::preprocess::preprocess_ns_def(
+  runner::preprocess::ensure_ns_def_compiled(
     calcit::calcit::CORE_NS,
     calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
@@ -592,10 +592,10 @@ fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSn
 fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
+  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
     .map_err(|failure| failure.msg)?;
 
-  runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
+  runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
     .map_err(|failure| failure.msg)?;
 
   let warnings = check_warnings.borrow();

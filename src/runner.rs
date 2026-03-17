@@ -503,7 +503,8 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   }
   if program::has_def_code(ns, sym) {
     let warnings: RefCell<Vec<_>> = RefCell::new(vec![]);
-    return preprocess::preprocess_ns_def(ns, sym, &warnings, call_stack);
+    preprocess::ensure_ns_def_compiled(ns, sym, &warnings, call_stack)?;
+    return resolve_runtime_or_compiled_def(ns, sym, None, call_stack);
   }
   Ok(None)
 }

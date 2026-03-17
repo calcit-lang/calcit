@@ -197,7 +197,7 @@ fn main() -> Result<(), String> {
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
 
   // make sure builtin classes are touched
-  runner::preprocess::preprocess_ns_def(
+  runner::preprocess::ensure_ns_def_compiled(
     calcit::calcit::CORE_NS,
     calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
@@ -415,7 +415,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
       if let Err(e) =
-        runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
       {
         return Err(e.to_string());
       }
@@ -450,7 +450,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   eprintln!("{}", "Check-only mode: validating code...".dimmed());
 
   // preprocess init_fn
-  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => {
       println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
     }
@@ -463,7 +463,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   }
 
   // preprocess reload_fn
-  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => {
       println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());
     }
@@ -514,7 +514,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
@@ -530,7 +530,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");

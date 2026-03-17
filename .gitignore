@@ -29,3 +29,5 @@ demos/
 .calcit-snippets/
 
 .tmp-profiles/
+
+profiling/*.gz

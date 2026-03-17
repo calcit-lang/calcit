@@ -30,7 +30,7 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
   program::clear_runtime_caches_for_reload(init_ns.clone().into(), reload_ns.clone().into(), true).expect("clear runtime caches");
 
   let warmup_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-  runner::preprocess::preprocess_ns_def(
+  runner::preprocess::ensure_ns_def_compiled(
     calcit::calcit::CORE_NS,
     calcit::calcit::BUILTIN_IMPLS_ENTRY,
     &warmup_warnings,
@@ -93,7 +93,7 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
   let entries = load_fixture_entries("calcit/type-fail/schema-call-arg-type-mismatch.cirru");
   let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
-  runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
     .expect("call-arg fixture should preprocess with warnings, not hard errors");
 
   let warnings = warnings.borrow();

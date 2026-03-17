@@ -1,6 +1,8 @@
 use super::*;
 use crate::calcit::{CalcitImport, ImportInfo};
+use crate::call_stack::CallStackList;
 use crate::data::cirru::code_to_calcit;
+use crate::run_program_with_docs;
 use std::sync::{LazyLock, Mutex};
 
 static PROGRAM_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -33,91 +35,6 @@ fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {
 }
 
 #[test]
-fn reload_invalidation_collects_transitive_dependents() {
-  let mut compiled: ProgramCompiledData = HashMap::new();
-  compiled.insert(
-    Arc::from("app.main"),
-    CompiledFileData {
-      defs: HashMap::from([
-        (Arc::from("a"), compiled_def_for_test(DefId(1), vec![])),
-        (Arc::from("b"), compiled_def_for_test(DefId(2), vec![DefId(1)])),
-        (Arc::from("c"), compiled_def_for_test(DefId(3), vec![DefId(2)])),
-        (Arc::from("d"), compiled_def_for_test(DefId(4), vec![])),
-      ]),
-    },
-  );
-
-  let mut index = ProgramDefIdIndex::default();
-  index.by_ns.insert(
-    Arc::from("app.main"),
-    HashMap::from([
-      (Arc::from("a"), DefId(1)),
-      (Arc::from("b"), DefId(2)),
-      (Arc::from("c"), DefId(3)),
-      (Arc::from("d"), DefId(4)),
-    ]),
-  );
-
-  let mut changes = snapshot::ChangesDict::default();
-  changes.changed.insert(
-    Arc::from("app.main"),
-    snapshot::FileChangeInfo {
-      ns: None,
-      added_defs: HashMap::new(),
-      removed_defs: HashSet::new(),
-      changed_defs: HashMap::from([(String::from("a"), Cirru::Leaf(Arc::from("1")))]),
-    },
-  );
-
-  let affected = collect_reload_affected_def_ids(&changes, &compiled, &index);
-  assert_eq!(affected, HashSet::from([DefId(1), DefId(2), DefId(3)]));
-}
-
-#[test]
-fn reload_invalidation_expands_namespace_header_changes() {
-  let compiled: ProgramCompiledData = HashMap::from([
-    (
-      Arc::from("app.main"),
-      CompiledFileData {
-        defs: HashMap::from([
-          (Arc::from("a"), compiled_def_for_test(DefId(1), vec![])),
-          (Arc::from("b"), compiled_def_for_test(DefId(2), vec![])),
-        ]),
-      },
-    ),
-    (
-      Arc::from("app.consumer"),
-      CompiledFileData {
-        defs: HashMap::from([(Arc::from("use-main"), compiled_def_for_test(DefId(3), vec![DefId(2)]))]),
-      },
-    ),
-  ]);
-
-  let mut index = ProgramDefIdIndex::default();
-  index.by_ns.insert(
-    Arc::from("app.main"),
-    HashMap::from([(Arc::from("a"), DefId(1)), (Arc::from("b"), DefId(2))]),
-  );
-  index
-    .by_ns
-    .insert(Arc::from("app.consumer"), HashMap::from([(Arc::from("use-main"), DefId(3))]));
-
-  let mut changes = snapshot::ChangesDict::default();
-  changes.changed.insert(
-    Arc::from("app.main"),
-    snapshot::FileChangeInfo {
-      ns: Some(Cirru::Leaf(Arc::from("ns"))),
-      added_defs: HashMap::new(),
-      removed_defs: HashSet::new(),
-      changed_defs: HashMap::new(),
-    },
-  );
-
-  let affected = collect_reload_affected_def_ids(&changes, &compiled, &index);
-  assert_eq!(affected, HashSet::from([DefId(1), DefId(2), DefId(3)]));
-}
-
-#[test]
 fn snapshot_fallback_preserves_dependency_metadata() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
@@ -132,7 +49,8 @@ fn snapshot_fallback_preserves_dependency_metadata() {
     def_id: Some(dep_id.0),
   })]);
 
-  let fallback = build_runtime_only_snapshot_fallback_compiled_def("app.main", "dep", runtime_value);
+  let fallback = build_runtime_only_snapshot_fallback_compiled_def("app.main", "dep", runtime_value)
+    .expect("runtime-only fallback should serialize import-based value");
   assert_eq!(fallback.deps, vec![dep_id]);
 }
 
@@ -290,13 +208,14 @@ fn clear_runtime_caches_for_changes_expands_namespace_header_invalidation() {
 }
 
 #[test]
-fn clear_runtime_caches_for_reload_clears_selected_packages_only() {
+fn clear_runtime_caches_for_reload_clears_selected_packages_and_dependents() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
 
   let app_main = ensure_def_id("app.main", "entry");
   let app_extra = ensure_def_id("app.extra", "helper");
   let demo_reload = ensure_def_id("demo.feature", "reload");
+  let util_consumer = ensure_def_id("util.consumer", "use-app");
   let util_keep = ensure_def_id("util.keep", "value");
 
   {
@@ -320,6 +239,12 @@ fn clear_runtime_caches_for_reload_clears_selected_packages_only() {
       },
     );
     compiled.insert(
+      Arc::from("util.consumer"),
+      CompiledFileData {
+        defs: HashMap::from([(Arc::from("use-app"), compiled_def_for_test(util_consumer, vec![app_main]))]),
+      },
+    );
+    compiled.insert(
       Arc::from("util.keep"),
       CompiledFileData {
         defs: HashMap::from([(Arc::from("value"), compiled_def_for_test(util_keep, vec![]))]),
@@ -330,6 +255,7 @@ fn clear_runtime_caches_for_reload_clears_selected_packages_only() {
   write_runtime_ready("app.main", "entry", Calcit::Number(1.0)).expect("seed runtime app.main/entry");
   write_runtime_ready("app.extra", "helper", Calcit::Number(2.0)).expect("seed runtime app.extra/helper");
   write_runtime_ready("demo.feature", "reload", Calcit::Number(3.0)).expect("seed runtime demo.feature/reload");
+  write_runtime_ready("util.consumer", "use-app", Calcit::Number(4.0)).expect("seed runtime util.consumer/use-app");
   write_runtime_ready("util.keep", "value", Calcit::Number(9.0)).expect("seed runtime util.keep/value");
 
   clear_runtime_caches_for_reload(Arc::from("app.main"), Arc::from("demo.feature"), false)
@@ -338,12 +264,14 @@ fn clear_runtime_caches_for_reload_clears_selected_packages_only() {
   assert_eq!(lookup_runtime_cell("app.main", "entry"), Some(RuntimeCell::Cold));
   assert_eq!(lookup_runtime_cell("app.extra", "helper"), Some(RuntimeCell::Cold));
   assert_eq!(lookup_runtime_cell("demo.feature", "reload"), Some(RuntimeCell::Cold));
+  assert_eq!(lookup_runtime_cell("util.consumer", "use-app"), Some(RuntimeCell::Cold));
   assert_eq!(lookup_runtime_ready("util.keep", "value"), Some(Calcit::Number(9.0)));
 
   let compiled = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled data");
   assert!(!compiled.contains_key("app.main"));
   assert!(!compiled.contains_key("app.extra"));
   assert!(!compiled.contains_key("demo.feature"));
+  assert!(!compiled.get("util.consumer").is_some_and(|file| file.defs.contains_key("use-app")));
   assert!(compiled.get("util.keep").is_some_and(|file| file.defs.contains_key("value")));
 }
 
@@ -455,6 +383,134 @@ fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
 }
 
 #[test]
+fn removed_source_def_changes_still_invalidate_transitive_dependents() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let shared_code =
+    code_to_calcit(&Cirru::Leaf(Arc::from("1")), "app.main", "shared", vec![]).expect("build shared source-backed code");
+  let consumer_code =
+    code_to_calcit(&Cirru::Leaf(Arc::from("2")), "app.consumer", "use-shared", vec![]).expect("build consumer source-backed code");
+  let helper_code =
+    code_to_calcit(&Cirru::Leaf(Arc::from("3")), "app.helper", "keep", vec![]).expect("build helper source-backed code");
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").extend(HashMap::from([
+    (
+      Arc::from("app.main"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("shared"),
+          ProgramDefEntry {
+            code: shared_code,
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    ),
+    (
+      Arc::from("app.consumer"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("use-shared"),
+          ProgramDefEntry {
+            code: consumer_code,
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    ),
+    (
+      Arc::from("app.helper"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("keep"),
+          ProgramDefEntry {
+            code: helper_code,
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    ),
+  ]));
+
+  let shared_def = ensure_def_id("app.main", "shared");
+  let consumer_def = ensure_def_id("app.consumer", "use-shared");
+  let helper_def = ensure_def_id("app.helper", "keep");
+
+  {
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
+    compiled.extend(HashMap::from([
+      (
+        Arc::from("app.main"),
+        CompiledFileData {
+          defs: HashMap::from([(Arc::from("shared"), compiled_def_for_test(shared_def, vec![]))]),
+        },
+      ),
+      (
+        Arc::from("app.consumer"),
+        CompiledFileData {
+          defs: HashMap::from([(Arc::from("use-shared"), compiled_def_for_test(consumer_def, vec![shared_def]))]),
+        },
+      ),
+      (
+        Arc::from("app.helper"),
+        CompiledFileData {
+          defs: HashMap::from([(Arc::from("keep"), compiled_def_for_test(helper_def, vec![]))]),
+        },
+      ),
+    ]));
+  }
+
+  write_runtime_ready("app.main", "shared", Calcit::Number(1.0)).expect("seed runtime shared");
+  write_runtime_ready("app.consumer", "use-shared", Calcit::Number(2.0)).expect("seed runtime use-shared");
+  write_runtime_ready("app.helper", "keep", Calcit::Number(3.0)).expect("seed runtime keep");
+
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.main"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::new(),
+      removed_defs: HashSet::from([String::from("shared")]),
+      changed_defs: HashMap::new(),
+    },
+  );
+
+  apply_code_changes(&changes).expect("apply removed source changes");
+  clear_runtime_caches_for_changes(&changes, false).expect("clear runtime caches for removed source change");
+
+  assert!(
+    PROGRAM_CODE_DATA
+      .read()
+      .expect("read program code")
+      .get("app.main")
+      .is_some_and(|file| !file.defs.contains_key("shared"))
+  );
+
+  assert_eq!(lookup_runtime_cell("app.main", "shared"), Some(RuntimeCell::Cold));
+  assert_eq!(lookup_runtime_cell("app.consumer", "use-shared"), Some(RuntimeCell::Cold));
+  assert_eq!(lookup_runtime_ready("app.helper", "keep"), Some(Calcit::Number(3.0)));
+
+  let compiled = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled data");
+  assert!(!compiled.get("app.main").is_some_and(|file| file.defs.contains_key("shared")));
+  assert!(
+    !compiled
+      .get("app.consumer")
+      .is_some_and(|file| file.defs.contains_key("use-shared"))
+  );
+  assert!(compiled.get("app.helper").is_some_and(|file| file.defs.contains_key("keep")));
+}
+
+#[test]
 fn snapshot_prefers_source_backed_compiled_def_even_with_warnings() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
@@ -493,22 +549,115 @@ fn snapshot_prefers_source_backed_compiled_def_even_with_warnings() {
 }
 
 #[test]
-fn runtime_snapshot_fallback_only_allows_runtime_only_defs() {
-  let runtime_only = SnapshotFillTask {
-    ns: Arc::from("app.runtime"),
-    def: Arc::from("demo"),
-    source_backed: false,
-    runtime_value: Some(Calcit::Number(42.0)),
-  };
-  assert!(should_use_runtime_snapshot_fallback(&runtime_only));
+fn snapshot_skips_empty_namespace_when_source_backed_rebuild_fails() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
 
-  let source_backed = SnapshotFillTask {
-    ns: Arc::from("app.source"),
-    def: Arc::from("demo"),
-    source_backed: true,
-    runtime_value: Some(Calcit::Number(42.0)),
-  };
-  assert!(!should_use_runtime_snapshot_fallback(&source_backed));
+  let failing_code = code_to_calcit(
+    &Cirru::List(vec![
+      Cirru::leaf("if"),
+      Cirru::leaf("true"),
+      Cirru::leaf("1"),
+      Cirru::leaf("2"),
+      Cirru::leaf("3"),
+    ]),
+    "app.fail",
+    "broken",
+    vec![],
+  )
+  .expect("build failing source-backed code");
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.fail"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([(
+        Arc::from("broken"),
+        ProgramDefEntry {
+          code: failing_code,
+          schema: DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+        },
+      )]),
+    },
+  );
+  let _ = ensure_def_id("app.fail", "broken");
+
+  let snapshot = clone_compiled_program_snapshot().expect("clone compiled snapshot");
+
+  assert!(!snapshot.contains_key("app.fail"));
+}
+
+#[test]
+fn snapshot_skips_unreferenced_runtime_only_defs() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let _ = ensure_def_id("app.runtime", "unused");
+  write_runtime_ready("app.runtime", "unused", Calcit::Number(42.0)).expect("seed unreferenced runtime-only value");
+
+  let snapshot = clone_compiled_program_snapshot().expect("clone compiled snapshot");
+  assert!(!snapshot.contains_key("app.runtime"));
+}
+
+#[test]
+fn snapshot_keeps_referenced_runtime_only_defs() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let runtime_def = ensure_def_id("app.runtime", "shared");
+  let consumer_def = ensure_def_id("app.consumer", "use-shared");
+
+  {
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
+    compiled.insert(
+      Arc::from("app.consumer"),
+      CompiledFileData {
+        defs: HashMap::from([(Arc::from("use-shared"), compiled_def_for_test(consumer_def, vec![runtime_def]))]),
+      },
+    );
+  }
+
+  write_runtime_ready("app.runtime", "shared", Calcit::Number(42.0)).expect("seed referenced runtime-only value");
+
+  let snapshot = clone_compiled_program_snapshot().expect("clone compiled snapshot");
+  let compiled = snapshot
+    .get("app.runtime")
+    .and_then(|file| file.defs.get("shared"))
+    .expect("referenced runtime-only def should be preserved in snapshot");
+
+  assert_eq!(compiled.codegen_form, Calcit::Number(42.0));
+  assert_eq!(compiled.source_code, None);
+}
+
+#[test]
+fn snapshot_skips_unserializable_referenced_runtime_only_defs() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let runtime_def = ensure_def_id("app.runtime", "shared-atom");
+  let consumer_def = ensure_def_id("app.consumer", "use-shared-atom");
+
+  {
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
+    compiled.insert(
+      Arc::from("app.consumer"),
+      CompiledFileData {
+        defs: HashMap::from([(Arc::from("use-shared-atom"), compiled_def_for_test(consumer_def, vec![runtime_def]))]),
+      },
+    );
+  }
+
+  write_runtime_ready(
+    "app.runtime",
+    "shared-atom",
+    crate::builtins::quick_build_atom(Calcit::Number(42.0)),
+  )
+  .expect("seed referenced runtime-only atom");
+
+  let snapshot = clone_compiled_program_snapshot().expect("clone compiled snapshot");
+  assert!(!snapshot.contains_key("app.runtime"));
 }
 
 #[test]
@@ -584,9 +733,143 @@ fn lenient_compiled_fallback_does_not_backfill_runtime_cache() {
       .kind = CompiledDefKind::Fn;
   }
 
-  let value = lookup_runtime_or_compiled_def_lenient("app.compiled", "callable");
+  let value = resolve_runtime_or_compiled_def(
+    "app.compiled",
+    "callable",
+    None,
+    RuntimeResolveMode::Lenient,
+    &CallStackList::default(),
+  )
+  .expect("lenient compiled fallback should succeed");
   assert_eq!(value, Some(Calcit::Number(7.0)));
   assert_eq!(lookup_runtime_cell("app.compiled", "callable"), Some(RuntimeCell::Cold));
+}
+
+#[test]
+fn preprocess_ns_def_materializes_compiled_function_without_backfilling_runtime() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let fn_code = code_to_calcit(
+    &Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("callable"),
+      Cirru::List(vec![Cirru::leaf("x")]),
+      Cirru::leaf("x"),
+    ]),
+    "app.preprocess",
+    "callable",
+    vec![],
+  )
+  .expect("parse fn payload");
+
+  let def_id = ensure_def_id("app.preprocess", "callable");
+  store_compiled_output(
+    "app.preprocess",
+    "callable",
+    CompiledDefPayload {
+      version_id: 0,
+      preprocessed_code: fn_code,
+      codegen_form: Calcit::Nil,
+      deps: vec![],
+      type_summary: None,
+      source_code: None,
+      schema: DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+    },
+  );
+  write_runtime_ready("app.preprocess", "callable", Calcit::Number(0.0)).expect("seed runtime slot");
+  mark_runtime_def_cold("app.preprocess", "callable");
+
+  let warnings = RefCell::new(vec![]);
+  crate::runner::preprocess::ensure_ns_def_compiled("app.preprocess", "callable", &warnings, &CallStackList::default())
+    .expect("compiled function should materialize for preprocess");
+  let value = resolve_compiled_executable_def(
+    "app.preprocess",
+    "callable",
+    &CallStackList::default(),
+  )
+  .expect("lookup compiled function after ensure");
+
+  assert!(matches!(value, Some(Calcit::Fn { .. })));
+  assert_eq!(lookup_runtime_cell_by_id(def_id), Some(RuntimeCell::Cold));
+}
+
+#[test]
+fn lazy_runtime_resolution_seeds_from_compiled_when_runtime_slot_is_missing() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let def_id = ensure_def_id("app.preprocess", "lazy-value");
+  store_compiled_output(
+    "app.preprocess",
+    "lazy-value",
+    CompiledDefPayload {
+      version_id: 0,
+      preprocessed_code: Calcit::Number(7.0),
+      codegen_form: Calcit::Number(7.0),
+      deps: vec![],
+      type_summary: None,
+      source_code: None,
+      schema: DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+    },
+  );
+
+  let value = resolve_runtime_or_compiled_def(
+    "app.preprocess",
+    "lazy-value",
+    None,
+    RuntimeResolveMode::Lenient,
+    &CallStackList::default(),
+  )
+  .expect("resolve compiled lazy value");
+
+  assert_eq!(value, Some(Calcit::Number(7.0)));
+  assert_eq!(lookup_runtime_cell_by_id(def_id), Some(RuntimeCell::Ready(Calcit::Number(7.0))));
+}
+
+#[test]
+fn run_program_compiles_then_executes_without_runtime_backfill() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let fn_code = code_to_calcit(
+    &Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("main"),
+      Cirru::List(vec![]),
+      Cirru::leaf("7"),
+    ]),
+    "app.main",
+    "main",
+    vec![],
+  )
+  .expect("parse main fn");
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.main"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([(
+        Arc::from("main"),
+        ProgramDefEntry {
+          code: fn_code,
+          schema: DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+        },
+      )]),
+    },
+  );
+
+  let result = run_program_with_docs(Arc::from("app.main"), Arc::from("main"), &[]).expect("run compiled main");
+
+  assert_eq!(result, Calcit::Number(7.0));
+  assert!(lookup_compiled_def("app.main", "main").is_some());
+  assert_eq!(lookup_runtime_cell("app.main", "main"), None);
 }
 
 #[test]

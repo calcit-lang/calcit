@@ -417,22 +417,80 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn schema_has_any_field(form: &Calcit, keys: &[&str]) -> bool {
+  fn collect_fn_schema_fields<'a>(form: &'a Calcit) -> (bool, Option<&'a Calcit>, Option<&'a Calcit>, Option<&'a Calcit>, Option<&'a Calcit>, Option<&'a Calcit>) {
+    let mut has_any = false;
+    let mut generics = None;
+    let mut args = None;
+    let mut returns = None;
+    let mut rest = None;
+    let mut kind = None;
+
+    let mut visit_pair = |key: &'a Calcit, value: &'a Calcit| {
+      let Some(key_name) = Self::schema_key_name(key) else {
+        return;
+      };
+      match key_name {
+        "generics" => {
+          has_any = true;
+          if generics.is_none() {
+            generics = Some(value);
+          }
+        }
+        "args" => {
+          has_any = true;
+          if args.is_none() {
+            args = Some(value);
+          }
+        }
+        "return" => {
+          has_any = true;
+          if returns.is_none() {
+            returns = Some(value);
+          }
+        }
+        "rest" => {
+          has_any = true;
+          if rest.is_none() {
+            rest = Some(value);
+          }
+        }
+        "kind" => {
+          has_any = true;
+          if kind.is_none() {
+            kind = Some(value);
+          }
+        }
+        _ => {}
+      }
+    };
+
     match form {
-      Calcit::Map(xs) => xs.iter().any(|(key, _)| Self::schema_key_matches_any(key, keys)),
+      Calcit::Map(xs) => {
+        for (key, value) in xs {
+          visit_pair(key, value);
+        }
+      }
       Calcit::List(xs) => {
         if !matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) {
-          return false;
+          return (false, None, None, None, None, None);
         }
-        xs.iter().skip(1).any(|entry| {
+        for entry in xs.iter().skip(1) {
           let Calcit::List(pair) = entry else {
-            return false;
+            continue;
           };
-          pair.first().is_some_and(|key| Self::schema_key_matches_any(key, keys))
-        })
+          let Some(key) = pair.get(0) else {
+            continue;
+          };
+          let Some(value) = pair.get(1) else {
+            continue;
+          };
+          visit_pair(key, value);
+        }
       }
-      _ => false,
+      _ => return (false, None, None, None, None, None),
     }
+
+    (has_any, generics, args, returns, rest, kind)
   }
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -559,24 +617,24 @@ impl CalcitTypeAnnotation {
     generics: &[Arc<str>],
     strict_named_refs: bool,
   ) -> Option<Arc<CalcitTypeAnnotation>> {
-    let has_schema_fields = Self::schema_has_any_field(form, &["args", "return", "generics", "rest", "kind"]);
+    let (has_schema_fields, local_generics_form, args_form, return_form, rest_form, kind_form) = Self::collect_fn_schema_fields(form);
     if !has_schema_fields {
       return Self::infer_malformed_fn_schema(form, generics, strict_named_refs);
     }
 
-    let local_generics = Self::extract_schema_value(form, &["generics"])
+    let local_generics = local_generics_form
       .and_then(Self::parse_generics_list)
       .unwrap_or_default();
     let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
-    let arg_types = Self::extract_schema_value(form, &["args"])
+    let arg_types = args_form
       .map(|args_form| Self::parse_schema_args_list(args_form, scope.as_slice(), strict_named_refs))
       .unwrap_or_default();
-    let return_type = Self::extract_schema_value(form, &["return"])
+    let return_type = return_form
       .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
       .unwrap_or_else(|| Arc::new(Self::Dynamic));
-    let rest_type = Self::extract_schema_value(form, &["rest"])
+    let rest_type = rest_form
       .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs));
-    let fn_kind = match Self::extract_schema_value(form, &["kind"]) {
+    let fn_kind = match kind_form {
       Some(Calcit::Tag(tag)) if tag.ref_str() == "macro" => SchemaKind::Macro,
       Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), ":macro" | "macro") => SchemaKind::Macro,
       _ => SchemaKind::Fn,

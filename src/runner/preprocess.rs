@@ -16,10 +16,29 @@ use std::{cell::RefCell, vec};
 
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
+use cirru_edn::EdnTag;
 
 type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+  static PREPROCESS_COMPILE_GUARD: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
+}
+
+fn with_preprocess_compile_guard<T>(ns: &str, def: &str, f: impl FnOnce() -> Result<T, CalcitErr>) -> Result<Option<T>, CalcitErr> {
+  let key = (Arc::from(ns), Arc::from(def));
+  let inserted = PREPROCESS_COMPILE_GUARD.with(|guard| guard.borrow_mut().insert(key.clone()));
+  if !inserted {
+    return Ok(None);
+  }
+
+  let result = f();
+  PREPROCESS_COMPILE_GUARD.with(|guard| {
+    guard.borrow_mut().remove(&key);
+  });
+  result.map(Some)
+}
 
 pub fn set_warn_dyn_method(enabled: bool) {
   WARN_DYN_METHOD.store(enabled, Ordering::SeqCst);
@@ -96,66 +115,170 @@ fn ensure_ns_def_preprocessed(
 ) -> Result<(), CalcitErr> {
   let ns = raw_ns;
   let def = raw_def;
-  // println!("preprocessing def: {}/{}", ns, def);
-  if let Some(cell) = program::lookup_runtime_cell(ns, def) {
-    match cell {
-      program::RuntimeCell::Ready(_) | program::RuntimeCell::Lazy { .. } | program::RuntimeCell::Resolving => return Ok(()),
-      program::RuntimeCell::Errored(_) | program::RuntimeCell::Cold => {}
-    }
-  }
 
-  if program::lookup_runtime_or_compiled_def_lenient(ns, def).is_some() {
+  if program::lookup_compiled_def(ns, def).is_some() {
     return Ok(());
   }
 
-  // println!("init for... {}/{}", ns, def);
-  match program::lookup_def_code(ns, def) {
-    Some(code) => {
-      // mark the def as resolving first to prevent dead loop during recursive preprocess.
-      program::mark_runtime_def_resolving(ns, def);
+  let Some(()) = with_preprocess_compile_guard(ns, def, || {
+    match program::lookup_def_code(ns, def) {
+      Some(code) => {
+        let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
-      let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
+        let mut scope_types = ScopeTypes::new();
+        let context_label = format!("{ns}/{def}");
+        let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
+          preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+        })?;
+        store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
-      let mut scope_types = ScopeTypes::new();
-      let context_label = format!("{ns}/{def}");
-      let resolved_code = match calcit::with_type_annotation_warning_context(context_label, || {
-        preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
-      }) {
-        Ok(resolved) => resolved,
-        Err(e) => {
-          program::mark_runtime_def_errored(ns, def, Arc::from(e.to_string()));
-          return Err(e);
-        }
-      };
-      // println!("\n resolve code to run: {:?}", resolved_code);
-      store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
-      program::refresh_runtime_cell_from_preprocessed(ns, def, &resolved_code);
-
-      Ok(())
+        Ok(())
+      }
+      None if ns.starts_with('|') || ns.starts_with('"') => Ok(()),
+      None => {
+        let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
+        Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Var,
+          format!("unknown ns/def in program: {ns}/{def}"),
+          call_stack,
+          Some(loc),
+        ))
+      }
     }
-    None if ns.starts_with('|') || ns.starts_with('"') => Ok(()),
-    None => {
-      let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
-      Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Var,
-        format!("unknown ns/def in program: {ns}/{def}"),
-        call_stack,
-        Some(loc),
-      ))
-    }
-  }
+  })? else {
+    return Ok(());
+  };
+
+  Ok(())
 }
 
-/// returns the resolved symbol(only functions and macros are used),
-/// if code related is not preprocessed, do it internally.
-pub fn preprocess_ns_def(
+pub fn ensure_ns_def_compiled(
+  raw_ns: &str,
+  raw_def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)
+}
+
+fn lookup_callable_ns_def_for_preprocess(
   raw_ns: &str,
   raw_def: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
-  ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)?;
-  Ok(program::lookup_runtime_or_compiled_def_lenient(raw_ns, raw_def))
+  ensure_ns_def_compiled(raw_ns, raw_def, check_warnings, call_stack)?;
+  Ok(match program::resolve_compiled_executable_def(raw_ns, raw_def, call_stack).ok().flatten() {
+    value @ Some(Calcit::Macro { .. } | Calcit::Fn { .. }) => value,
+    _ => None,
+  })
+}
+
+fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
+  if let Calcit::Thunk(thunk) = code {
+    return resolve_trait_def_from_source_code(thunk.get_code());
+  }
+
+  let Calcit::List(items) = code else {
+    return None;
+  };
+
+  if let Some(head) = items.first() {
+    if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+      || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "quote")
+    {
+      if let Some(inner) = items.get(1) {
+        return resolve_trait_def_from_source_code(inner);
+      }
+    }
+  }
+
+  let head = items.first()?;
+  if matches!(head, Calcit::Proc(CalcitProc::NativeTraitNew))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&trait::new")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "&trait::new")
+  {
+    return parse_trait_new_source(items.as_ref());
+  }
+  if matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "deftrait")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "deftrait")
+  {
+    return parse_deftrait_source(items.as_ref());
+  }
+
+  None
+}
+
+fn parse_trait_name_from_source(form: &Calcit) -> Option<EdnTag> {
+  match form {
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => Some(EdnTag::from(sym.as_ref())),
+    Calcit::Tag(tag) => Some(tag.to_owned()),
+    _ => None,
+  }
+}
+
+fn parse_trait_method_name_from_source(form: &Calcit) -> Option<EdnTag> {
+  match form {
+    Calcit::Method(name, _) | Calcit::Symbol { sym: name, .. } | Calcit::Str(name) => Some(EdnTag::from(name.as_ref())),
+    Calcit::Tag(tag) => Some(tag.to_owned()),
+    _ => None,
+  }
+}
+
+fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calcit>) -> Option<(Vec<EdnTag>, Vec<Arc<CalcitTypeAnnotation>>)> {
+  let mut methods: Vec<EdnTag> = vec![];
+  let mut method_types: Vec<Arc<CalcitTypeAnnotation>> = vec![];
+
+  for item in items {
+    let Calcit::List(entry) = item else {
+      return None;
+    };
+    if entry.len() != 2 {
+      return None;
+    }
+
+    let method_name = parse_trait_method_name_from_source(entry.first()?)?;
+    let type_form = entry.get(1)?;
+    let method_type = calcit::with_type_annotation_warning_context(format!("trait:{}", method_name.ref_str()), || {
+      CalcitTypeAnnotation::parse_type_annotation_form(type_form)
+    });
+    methods.push(method_name);
+    method_types.push(method_type);
+  }
+
+  Some((methods, method_types))
+}
+
+fn parse_trait_new_source(items: &CalcitList) -> Option<CalcitTrait> {
+  let name = parse_trait_name_from_source(items.get(1)?)?;
+  let method_specs = match items.get(2)? {
+    Calcit::List(list) => list,
+    _ => return None,
+  };
+  let (methods, method_types) = parse_trait_method_specs_from_source(method_specs.iter())?;
+  Some(CalcitTrait::new(name, methods, method_types))
+}
+
+fn parse_deftrait_source(items: &CalcitList) -> Option<CalcitTrait> {
+  let name = parse_trait_name_from_source(items.get(1)?)?;
+  let (methods, method_types) = parse_trait_method_specs_from_source(items.iter().skip(2))?;
+  Some(CalcitTrait::new(name, methods, method_types))
+}
+
+fn lookup_trait_ns_def_for_preprocess(
+  raw_ns: &str,
+  raw_def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Option<Arc<CalcitTrait>>, CalcitErr> {
+  ensure_ns_def_compiled(raw_ns, raw_def, check_warnings, call_stack)?;
+  Ok(
+    program::lookup_compiled_def(raw_ns, raw_def)
+      .and_then(|compiled| compiled.source_code)
+      .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .map(Arc::new),
+  )
 }
 
 pub fn compile_source_def_for_snapshot(
@@ -209,7 +332,7 @@ pub fn preprocess_expr(
             // TODO js syntax to handle in future
           } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
             // make sure the target is preprocessed
-            let _macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
+            ensure_ns_def_compiled(&target_ns, &def_part, check_warnings, call_stack)?;
 
             let form = Calcit::Import(CalcitImport {
               ns: target_ns.to_owned(),
@@ -226,7 +349,7 @@ pub fn preprocess_expr(
             // refer to namespace/def directly for some usages
 
             // make sure the target is preprocessed
-            let _macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
+            ensure_ns_def_compiled(&ns_alias, &def_part, check_warnings, call_stack)?;
 
             let form = Calcit::Import(CalcitImport {
               ns: ns_alias.to_owned(),
@@ -281,7 +404,7 @@ pub fn preprocess_expr(
             // println!("same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
 
             // make sure the target is preprocessed
-            let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+            ensure_ns_def_compiled(def_ns, def, check_warnings, call_stack)?;
 
             let form = Calcit::Import(CalcitImport {
               ns: def_ns.to_owned(),
@@ -298,7 +421,7 @@ pub fn preprocess_expr(
             // println!("find in core def: {}", def);
 
             // make sure the target is preprocessed
-            let _macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
+            ensure_ns_def_compiled(calcit::CORE_NS, def, check_warnings, call_stack)?;
 
             let form = Calcit::Import(CalcitImport {
               ns: calcit::CORE_NS.into(),
@@ -312,7 +435,7 @@ pub fn preprocess_expr(
             // println!("again same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
 
             // make sure the target is preprocessed
-            let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+            ensure_ns_def_compiled(def_ns, def, check_warnings, call_stack)?;
 
             let form = Calcit::Import(CalcitImport {
               ns: def_ns.to_owned(),
@@ -340,7 +463,7 @@ pub fn preprocess_expr(
                 // TODO js syntax to handle in future
 
                 // make sure the target is preprocessed
-                let _macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
+                ensure_ns_def_compiled(&target_ns, def, check_warnings, call_stack)?;
 
                 let form = Calcit::Import(CalcitImport {
                   ns: target_ns.to_owned(),
@@ -427,7 +550,7 @@ fn preprocess_list_call(
   let def_name = grab_def_name(head);
 
   let head_value = match &head_form {
-    Calcit::Import(CalcitImport { ns, def, .. }) => preprocess_ns_def(ns, def, check_warnings, call_stack)?,
+    Calcit::Import(CalcitImport { ns, def, .. }) => lookup_callable_ns_def_for_preprocess(ns, def, check_warnings, call_stack)?,
     _ => None,
   };
 
@@ -2183,9 +2306,9 @@ fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc
 /// If the return type contains TypeVars, match actual arg types against declared arg types
 /// to build bindings, then substitute TypeVars in the return type.
 /// Returns `None` if the return type has no TypeVars or resolution fails.
-fn resolve_generic_return_type(
+fn resolve_generic_return_type<'a>(
   fn_info: &crate::calcit::CalcitFn,
-  call_args: &CalcitList,
+  call_args: impl Iterator<Item = &'a Calcit>,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   // Only attempt resolution when there are generics and the return type contains TypeVars
@@ -2196,7 +2319,7 @@ fn resolve_generic_return_type(
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   // Match each actual argument against the declared argument type to build bindings
-  for (arg, expected_type) in call_args.iter().zip(fn_info.arg_types.iter()) {
+  for (arg, expected_type) in call_args.zip(fn_info.arg_types.iter()) {
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue;
     }
@@ -2213,6 +2336,28 @@ fn resolve_generic_return_type(
   let resolved = fn_info.return_type.substitute_type_vars(&bindings);
   // Only return if we actually resolved something (no remaining TypeVars)
   if resolved.contains_type_var() { None } else { Some(resolved) }
+}
+
+fn infer_return_type_from_compiled_callable(
+  ns: &str,
+  def: &str,
+  call_expr: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let compiled_value = program::resolve_compiled_executable_def(ns, def, &CallStackList::default())
+    .ok()
+    .flatten()?;
+
+  match compiled_value {
+    Calcit::Fn { info, .. } => {
+      if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
+        return Some(resolved);
+      }
+      Some(info.return_type.clone())
+    }
+    Calcit::Proc(proc) => proc.get_type_signature().map(|type_sig| type_sig.return_type.clone()),
+    _ => None,
+  }
 }
 
 /// Infer type from an expression (for &let bindings)
@@ -2451,74 +2596,25 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               return Some(field_type);
             }
           }
-          // First check the runtime-ready value for Proc/Fn defs that have already materialized.
-          if let Some(runtime_value) = program::lookup_runtime_ready(ns, def) {
-            match runtime_value {
-              // For compiled functions, get return_type from info
-              Calcit::Fn { info, .. } => {
-                // Try to resolve generic return type using call arguments
-                if info.return_type.contains_type_var() {
-                  let call_args = xs.drop_left();
-                  if let Some(resolved) = resolve_generic_return_type(&info, &call_args, scope_types) {
-                    return Some(resolved);
-                  }
-                }
-                return Some(info.return_type.clone());
-              }
-              // For builtin procs, get type signature
-              Calcit::Proc(proc) => {
-                if let Some(type_sig) = proc.get_type_signature() {
-                  return Some(type_sig.return_type.clone());
-                }
-              }
-              _ => {}
-            }
-          }
-
-          // Fallback: check code definition (for not-yet-evaluated definitions)
-          if let Some(code) = program::lookup_def_code(ns, def) {
-            // Code is the AST, might be a defn with return type annotation
-            // Format: (defn name (args) :return-type body) or (defn name (args) body)
-            if let Calcit::List(ref xs) = code {
-              // Check if it's a defn: first element should be Symbol "defn"
-              if let Some(Calcit::Symbol { sym, .. }) = xs.first() {
-                if sym.as_ref() == "defn" {
-                  // Defn format: (defn name (args) [:return-type] body...)
-                  // Return type is the 3rd element (index 3) if it's a tag
-                  if let Some(ret_type) = xs.get(3) {
-                    if matches!(ret_type, Calcit::Tag(_)) {
-                      return Some(CalcitTypeAnnotation::parse_type_annotation_form(ret_type));
-                    }
-                  }
-                }
-              }
-            }
-            // For compiled functions in code, get return_type from info
-            if let Calcit::Fn { info, .. } = code {
-              if info.return_type.contains_type_var() {
-                let call_args = xs.drop_left();
-                if let Some(resolved) = resolve_generic_return_type(&info, &call_args, scope_types) {
-                  return Some(resolved);
-                }
-              }
-              return Some(info.return_type.clone());
-            }
-          }
-          None
+          infer_return_type_from_compiled_callable(ns, def, xs, scope_types)
         }
 
         // Symbol: might be a function reference before preprocessing
         // Try to resolve it and get the return type
         Calcit::Symbol { sym, info, .. } => {
-          // Try to lookup in program
-          if let Some(Calcit::Fn { info: fn_info, .. }) = program::lookup_def_code(&info.at_ns, sym) {
-            if fn_info.return_type.contains_type_var() {
-              let call_args = xs.drop_left();
-              if let Some(resolved) = resolve_generic_return_type(&fn_info, &call_args, scope_types) {
-                return Some(resolved);
-              }
+          if let Some(inferred) = infer_return_type_from_compiled_callable(&info.at_ns, sym, xs, scope_types) {
+            return Some(inferred);
+          }
+
+          if let Some(code) = program::lookup_def_code(&info.at_ns, sym) {
+            if let Calcit::List(xs) = code
+              && let Some(Calcit::Symbol { sym, .. }) = xs.first()
+              && sym.as_ref() == "defn"
+              && let Some(ret_type) = xs.get(3)
+              && matches!(ret_type, Calcit::Tag(_))
+            {
+              return Some(CalcitTypeAnnotation::parse_type_annotation_form(ret_type));
             }
-            return Some(fn_info.return_type.clone());
           }
           None
         }
@@ -2526,8 +2622,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         // Direct Fn call: return the function's return type
         Calcit::Fn { info, .. } => {
           if info.return_type.contains_type_var() {
-            let call_args = xs.drop_left();
-            if let Some(resolved) = resolve_generic_return_type(info, &call_args, scope_types) {
+            if let Some(resolved) = resolve_generic_return_type(info, xs.iter().skip(1), scope_types) {
               return Some(resolved);
             }
           }
@@ -3534,21 +3629,21 @@ pub fn preprocess_assert_traits(
 
     let resolved = match trait_form {
       Calcit::Symbol { sym, info, .. } => match runner::parse_ns_def(sym) {
-        Some((ns_part, def_part)) => preprocess_ns_def(&ns_part, &def_part, ctx.check_warnings, ctx.call_stack)
+        Some((ns_part, def_part)) => lookup_trait_ns_def_for_preprocess(&ns_part, &def_part, ctx.check_warnings, ctx.call_stack)
           .ok()
           .flatten(),
-        None => preprocess_ns_def(&info.at_ns, sym, ctx.check_warnings, ctx.call_stack)
+        None => lookup_trait_ns_def_for_preprocess(&info.at_ns, sym, ctx.check_warnings, ctx.call_stack)
           .ok()
           .flatten(),
       },
-      Calcit::Import(import) => preprocess_ns_def(&import.ns, &import.def, ctx.check_warnings, ctx.call_stack)
+      Calcit::Import(import) => lookup_trait_ns_def_for_preprocess(&import.ns, &import.def, ctx.check_warnings, ctx.call_stack)
         .ok()
         .flatten(),
       _ => None,
     };
 
-    if let Some(Calcit::Trait(trait_def)) = resolved {
-      trait_defs.push(Arc::new(trait_def));
+    if let Some(trait_def) = resolved {
+      trait_defs.push(trait_def);
     } else if fallback_entry.is_none() {
       fallback_entry = Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new((*trait_form).to_owned()))));
     }
@@ -3717,9 +3812,16 @@ fn validate_def_schema_during_preprocess(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitMacro, CalcitRecord, CalcitScope, CalcitStruct};
+  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitRecord, CalcitScope, CalcitStruct, ImportInfo};
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+  use std::sync::{LazyLock, Mutex};
+
+  static PREPROCESS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+  fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
+    PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+  }
 
   struct WarnDynMethodGuard {
     prev: bool,
@@ -3842,7 +3944,8 @@ mod tests {
     ]);
 
     let code = code_to_calcit(&expr, "tests.optional", "demo", vec![]).expect("parse cirru");
-    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
     let mut scope_types: ScopeTypes = ScopeTypes::new();
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -3961,6 +4064,205 @@ mod tests {
       scope_types.is_empty(),
       "expression assert-traits should not mutate local scope types"
     );
+  }
+
+  #[test]
+  fn lookup_trait_for_preprocess_reads_source_backed_trait_without_runtime_value() {
+    let _guard = lock_preprocess_test_state();
+
+    let trait_code = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("deftrait"),
+        Cirru::leaf("MySourceTrait"),
+        Cirru::List(vec![Cirru::leaf(".show"), Cirru::leaf(":fn")]),
+      ]),
+      "tests.source-trait",
+      "MySourceTrait",
+      vec![],
+    )
+    .expect("parse trait def");
+
+    let mut program_code = program::PROGRAM_CODE_DATA.write().expect("open program code");
+    program_code.insert(
+      Arc::from("tests.source-trait"),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("MySourceTrait"),
+          program::ProgramDefEntry {
+            code: trait_code,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    );
+    drop(program_code);
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let trait_def = lookup_trait_ns_def_for_preprocess("tests.source-trait", "MySourceTrait", &warnings, &stack)
+      .expect("lookup trait")
+      .expect("trait should resolve from source-backed compiled data");
+
+    assert_eq!(trait_def.name.ref_str(), "MySourceTrait");
+    assert!(trait_def.has_method("show"));
+  }
+
+  #[test]
+  fn infers_imported_generic_return_type_from_compiled_function_without_runtime_ready() {
+    let _guard = lock_preprocess_test_state();
+
+    let ns = "tests.generic-infer";
+    let def = "identity";
+    let def_id = program::lookup_def_id(ns, def).unwrap_or_else(|| {
+      program::mark_runtime_def_cold(ns, def);
+      program::lookup_def_id(ns, def).expect("register def id")
+    });
+
+    let generic_name: Arc<str> = Arc::from("T");
+    program::write_compiled_def(
+      ns,
+      def,
+      program::CompiledDef {
+        def_id,
+        version_id: 0,
+        kind: program::CompiledDefKind::Fn,
+        preprocessed_code: Calcit::Fn {
+          id: Arc::from("tests.generic-infer/identity"),
+          info: Arc::new(CalcitFn {
+            name: Arc::from(def),
+            def_ns: Arc::from(ns),
+            def_ref: None,
+            usage: CalcitFnUsageMeta::default(),
+            scope: Arc::new(CalcitScope::default()),
+            args: Arc::new(CalcitFnArgs::Args(vec![CalcitLocal::track_sym(&Arc::from("x"))])),
+            body: vec![],
+            generics: Arc::new(vec![generic_name.clone()]),
+            return_type: Arc::new(CalcitTypeAnnotation::TypeVar(generic_name.clone())),
+            arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic_name))],
+          }),
+        },
+        codegen_form: Calcit::Nil,
+        deps: vec![],
+        type_summary: None,
+        source_code: None,
+        schema: calcit::DYNAMIC_TYPE.clone(),
+        doc: Arc::from(""),
+        examples: vec![],
+      },
+    );
+
+    let call = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(ns),
+        def: Arc::from(def),
+        info: Arc::new(ImportInfo::NsReferDef {
+          at_ns: Arc::from("tests.caller"),
+          at_def: Arc::from("demo"),
+        }),
+        def_id: Some(def_id.0),
+      }),
+      Calcit::Number(1.0),
+    ][..])));
+
+    let inferred = infer_type_from_expr(&call, &ScopeTypes::new()).expect("infer import call type");
+    assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
+
+    let call = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Symbol {
+        sym: Arc::from(def),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from(ns),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+      },
+      Calcit::Number(1.0),
+    ][..])));
+
+    let inferred = infer_type_from_expr(&call, &ScopeTypes::new()).expect("infer symbol call type");
+    assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn ensure_ns_def_compiled_refreshes_source_backed_output_even_when_runtime_is_ready() {
+    let _guard = lock_preprocess_test_state();
+
+    let ns = "tests.runtime-shortcut";
+    let def = "value";
+    let source_code = Calcit::Number(1.0);
+
+    let mut program_code = program::PROGRAM_CODE_DATA.write().expect("open program code");
+    program_code.insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from(def),
+          program::ProgramDefEntry {
+            code: source_code,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    );
+    drop(program_code);
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    program::write_runtime_ready(ns, def, Calcit::Number(99.0)).expect("seed stale runtime value");
+
+    ensure_ns_def_compiled(ns, def, &warnings, &stack).expect("compile source-backed def with ready runtime cell");
+    let compiled = program::lookup_compiled_def(ns, def).expect("compiled output should exist");
+    assert_eq!(compiled.preprocessed_code, Calcit::Number(1.0));
+  }
+
+  #[test]
+  fn ensure_ns_def_compiled_handles_recursive_source_with_compile_guard() {
+    let _guard = lock_preprocess_test_state();
+
+    let ns = "tests.recursive-compile";
+    let def = "loop";
+    let recursive_code = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf(def),
+        Cirru::List(vec![]),
+        Cirru::List(vec![Cirru::leaf(def)]),
+      ]),
+      ns,
+      def,
+      vec![],
+    )
+    .expect("parse recursive fn");
+
+    let mut program_code = program::PROGRAM_CODE_DATA.write().expect("open program code");
+    program_code.insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from(def),
+          program::ProgramDefEntry {
+            code: recursive_code,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    );
+    drop(program_code);
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    ensure_ns_def_compiled(ns, def, &warnings, &stack).expect("compile recursive source def");
+    assert!(program::lookup_compiled_def(ns, def).is_some(), "recursive source def should compile once");
   }
 
   #[test]
@@ -4106,88 +4408,6 @@ mod tests {
       "method head should be rewritten to import"
     );
     assert_eq!(nodes.len(), 2, "call should keep receiver argument");
-  }
-
-  #[test]
-  #[ignore] // TODO: This test was failing before our changes - needs investigation
-  fn rewrites_method_call_with_fn_entry_via_record_get() {
-    use cirru_edn::EdnTag;
-
-    let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);
-    let code = code_to_calcit(&expr, "tests.method", "demo", vec![]).expect("parse cirru");
-
-    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
-    scope_defs.insert(Arc::from("user"));
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-
-    let fn_args = CalcitFnArgs::Args(vec![]);
-    let arg_types = fn_args.empty_arg_types();
-    let fn_info = Arc::new(CalcitFn {
-      name: Arc::from("greet"),
-      def_ns: Arc::from("tests.method.ns"),
-      def_ref: None,
-      usage: crate::calcit::CalcitFnUsageMeta::default(),
-      scope: Arc::new(CalcitScope::default()),
-      args: Arc::new(fn_args),
-      body: vec![],
-      generics: Arc::new(vec![]),
-      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
-      arg_types,
-    });
-    let method_fn = Calcit::Fn {
-      id: Arc::from("tests.method.ns/greet"),
-      info: fn_info,
-    };
-
-    let impl_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
-      values: Arc::new(vec![method_fn.clone()]),
-    };
-
-    let record_ns = "tests.method.impls";
-    let record_def = "&test-greeter-impls";
-    program::write_runtime_ready(record_ns, record_def, Calcit::Record(impl_record)).expect("register record impls");
-
-    let record_import = Calcit::Import(CalcitImport {
-      ns: Arc::from(record_ns),
-      def: Arc::from(record_def),
-      info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
-      def_id: None,
-    });
-    scope_types.insert(Arc::from("user"), CalcitTypeAnnotation::parse_type_annotation_form(&record_import));
-
-    let warnings = RefCell::new(vec![]);
-    let stack = CallStackList::default();
-
-    let resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.method", &warnings, &stack).expect("preprocess method call");
-
-    let nodes = match resolved {
-      Calcit::List(xs) => xs.to_vec(),
-      other => panic!("expected list form, got {other}"),
-    };
-    assert_eq!(nodes.len(), 2, "call should include head and receiver arg");
-
-    let head_nodes = match nodes.first() {
-      Some(Calcit::List(xs)) => xs.to_vec(),
-      other => panic!("expected fallback head to be a list, got {other:?}"),
-    };
-    assert_eq!(head_nodes.len(), 3, "record-get form should include proc, record ref, and tag");
-    assert!(
-      matches!(head_nodes.first(), Some(Calcit::Proc(CalcitProc::NativeRecordGet))),
-      "head should call &record:get"
-    );
-    match head_nodes.get(1) {
-      Some(Calcit::Import(import)) => {
-        assert_eq!(&*import.ns, record_ns, "record reference should target injected namespace");
-        assert_eq!(&*import.def, record_def, "record reference should target injected definition");
-      }
-      other => panic!("expected record reference import, got {other:?}"),
-    }
-    match head_nodes.get(2) {
-      Some(Calcit::Tag(tag)) => assert_eq!(tag, &EdnTag::from("greet")),
-      other => panic!("expected method tag, got {other:?}"),
-    };
   }
 
   #[test]

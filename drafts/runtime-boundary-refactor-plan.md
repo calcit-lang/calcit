@@ -55,6 +55,38 @@
 
 换句话说，当前阶段要继续的是“收尾”，不是“扩编”。
 
+## 当前唯一目标
+
+当前不再追求把文档里的四层模型一比一做完，真正执行时只守下面 4 条边界：
+
+1. `preprocess == compile`：只负责确保 `CompiledDef` 存在，不再承担“顺手返回一个可运行值”的通用职责。
+2. `run == runtime`：只负责从 `RuntimeCell`/compiled executable payload 取运行值，不再替 metadata/codegen 补结构。
+3. `reload == invalidation`：只负责 source change apply 与 `DefId` 依赖闭包失效，不再维护额外 package 级兼容语义。
+4. `codegen == compiled snapshot`：只读取 compiled snapshot；任何 runtime fallback 都视为过渡期兼容，而不是长期设计。
+
+这 4 条如果站稳，后续性能优化才会变得局部且可解释：
+
+- preprocess 的性能只看编译与依赖收集；
+- run 的性能只看 `DefId` 索引、runtime lock 和求值；
+- reload 的性能只看变更种子与反向依赖图；
+- codegen 的性能只看 compiled snapshot 构造与 emitter。
+
+## 当前不做
+
+为了保证进度，这一阶段明确不做：
+
+- 不引入新的长期层级实体来“补完”理论模型；
+- 不把 `PersistentStateLayer` / `StateSlotId` 推进成当前实现目标；
+- 不再扩张新的 compiled/runtime 双向桥接 helper；
+- 不为了照顾少量旧路径，继续保留“preprocess 顺手执行、runtime 顺手提供 codegen 结构”这种混合语义。
+
+## 当前收官清单
+
+- `[已基本完成]` 把 `preprocess` 公开入口收敛为 `ensure_ns_def_compiled()`，并把只需要 ensure 的调用点迁走。
+- `[进行中]` 继续缩小 runtime-derived snapshot fallback，直到它只剩明确、可解释的过渡语义，或者可以被完全删除。
+- `[待继续]` 补齐 watch/reload 回归测试，特别是 changed defs、ns header、removed defs、依赖闭包 invalidation。
+- `[待继续]` 清掉迁移期命名和重复 lookup helper，让 `program` 成为唯一边界聚合点。
+
 ## 当前进度
 
 截至 2026-03-17，已经完成的不是“纯设计”，而是一部分边界已经落地：
@@ -68,36 +100,52 @@
 - `RuntimeCell` 的最小状态机已经落下，包含 `Cold | Resolving | Ready | Errored`，且 preprocess 的循环保护已从“先写 `Nil`”切到显式 `Resolving`；
 - JS codegen 现在会显式跳过 core 中仅由 runtime 提供的 placeholder 定义，以及 `syntax`/`proc` 这类本就不应按普通顶层值发射的定义；这也移除了 `calcit.core.mjs` 中形如 `eval = &runtime-inplementation` 的伪导出；
 - `clone_compiled_program_snapshot()` 已开始按“仅收集缺口定义”的两阶段方式补齐 snapshot，而不是先整表 clone source/index/runtime 全局状态后再筛选；
-- runtime-derived snapshot fallback 现在进一步收窄为“仅对 runtime-only defs 生效”；只要 source-backed def 仍存在，就不会再因为旧 runtime 值而静默补出 snapshot entry；
+- runtime-derived snapshot fallback 现在进一步收窄为“仅对被现有 compiled graph 实际引用到的 runtime-only defs 生效”；只要 source-backed def 仍存在，或 runtime-only def 只是未被引用的残留 runtime 值，就不会再因为旧 runtime 值而静默补出 snapshot entry；
+- runtime-only snapshot fallback 也不再原样嵌入任意 `RuntimeCell::Ready` 值；当前会先把 runtime 值转成可快照的 Calcit 数据/代码形式，像 `ref` / `buffer` / `any-ref` / 运行时函数句柄这类本就不稳定的 runtime-only 值将直接被跳过；
 - runtime-only snapshot fallback 已不再携带 source/schema/doc/examples 这类 source 元数据，snapshot 填充任务本身也不再为 fallback 路径 clone 整个 `ProgramDefEntry`；
+- snapshot 补缺现在也只会在真正拿到 compiled def / runtime-only fallback 时才创建 namespace entry；source-backed rebuild 失败不再留下空壳 compiled file；
 - `seed_runtime_lazy_from_compiled()`、`lookup_compiled_runtime_value()`、`lookup_codegen_type_hint()` 已开始按需读取 compiled 字段，而不是在热路径上先 clone 整份 `CompiledDef`；
 - `runner`/`lib`/`preprocess` 主调用方已经迁到“先取 compiled executable payload，再按需求值”的边界；旧的 `lookup_compiled_runtime_value()` 兼容包装已删除。
 - IR/codegen type-hint 查询已不再通过执行 compiled payload 来补信息；metadata 查询现在只依赖 compiled/source schema 与现成 runtime 值。
 - runtime symbol lookup 已不再假设 compiled 执行会回填 runtime cache；执行后的二次 runtime reread 兼容分支已移除。
 - `preprocess` 读取已编译定义时，lazy def 现在优先经由 `RuntimeCell::Lazy` 求值，不再绕过 runtime 状态机直接执行 compiled payload。
-- `run_program_with_docs` 已直接复用 `preprocess_ns_def()` 返回的入口值，不再在入口初始化后额外单独走一次 compiled 执行桥接。
+- `run_program_with_docs` 已切到 `ensure_ns_def_compiled() + evaluate_symbol_from_program()`，不再依赖 `preprocess` 返回入口值。
 - `runner` 内部两处“runtime cell -> compiled executable fallback”逻辑已合并到统一 helper，减少了边界复制和不一致分支。
 - `preprocess` 的宽松读取路径也已并到同一组 helper，不再单独复制一份 `RuntimeCell::Lazy`/compiled fallback 分支。
 - 默认 scope 下的 thunk 求值入口也已收敛到 `CalcitThunk::evaluated_default()`，减少 runtime/lazy 入口上的样板逻辑。
 - runtime cell 与 compiled executable fallback 的统一入口现已下沉到 `program` 层；`runner` 只保留 runtime state 到用户态错误的映射。
 - `evaluate_compiled_def()` 现已退回 `program` 内部私有 helper；compiled payload 执行不再作为跨模块公共入口暴露。
-- `preprocess` 的 lenient lookup 也已直接回到 `program` 层，不再经由 `runner` 做一次中转；compiled executable code lookup 同时收紧为 `program` 内部 helper。
+- `preprocess` 已不再依赖 lenient runtime/compiled probe 作为前置判断；预处理阶段现在只检查 runtime cell / compiled metadata，读取已编译定义值则走专用 helper，不再复用通用 lookup 包装。
 - compiled output 写入接口已改为 payload struct 传参，`program` 内部构造链不再依赖 11 参数长调用；现有 clippy `too_many_arguments` 噪音已被顺手收掉。
 - `resolve_runtime_or_compiled_def()` 现在只负责调度；runtime cell 求值与 compiled payload 执行已拆成独立私有 helper，内部边界更接近最终形态。
 - runtime-only 路径中的 `seed + lookup cell + resolve cell` 已继续收敛成单独 helper，`resolve_runtime_or_compiled_def()` 现在更明确地只做 `runtime or compiled` 两段调度。
 - compiled execution 热路径已改为直接借用 compiled payload；执行时不再额外 clone 一份 `preprocessed_code`，只有测试/显式查询 executable code 时才保留复制语义。
+- 仅剩测试使用的 `lookup_runtime_or_compiled_def_lenient()` 兼容包装也已删除；lenient 语义现在直接通过 `resolve_runtime_or_compiled_def(..., RuntimeResolveMode::Lenient, ...)` 覆盖。
+- `clear_runtime_caches_for_reload()` 的兼容入口已改为先生成 package 范围的伪 `ns` 变更，再统一复用 `clear_runtime_caches_for_changes()` 的依赖闭包 invalidation，而不再维护独立的 package 扫描清理逻辑。
 - `yarn check-all` 已经作为当前重构的主验证门槛，并且当前门槛重新保持可通过。
+- 当前阶段的固定门槛 `cargo fmt && cargo test -q && yarn check-all` 已重新可通过。
 
 同时也要明确，当前还没有真正完成的部分是：
 
 - 旧的 `PROGRAM_EVALED_DATA_STATE` 与 `lookup_evaled_def*` 兼容路径已经删除，`preprocess` 成功路径也不再直接写 runtime cache；compiled fallback 现在只做“读 compiled value”，不再把 compiled payload 回填成 `RuntimeCell::Ready`；
-- 全局 `CompiledDef` 已不再携带 `runtime_value` 这类 runtime payload 字段；普通 preprocess 输出已经完全不构造 runtime payload，普通 compiled `Fn/Macro/Proc/Syntax/LazyValue` 都改为需要时从 `preprocessed_code` 临时 materialize；当前剩余耦合主要集中在 runtime 执行路径仍会把 compiled executable payload materialize 成公共 `Calcit` 值，而 metadata / codegen 查询已基本不再走这条路；snapshot fallback 已不再对 source-backed defs 静默兜底。
+- 全局 `CompiledDef` 已不再携带 `runtime_value` 这类 runtime payload 字段；普通 preprocess 输出已经完全不构造 runtime payload，普通 compiled `Fn/Macro/Proc/Syntax/LazyValue` 都改为需要时从 `preprocessed_code` 临时 materialize；当前剩余耦合主要集中在 runtime 执行路径仍会把 compiled executable payload materialize 成公共 `Calcit` 值，而 metadata / codegen 查询已基本不再走这条路；snapshot fallback 已不再对 source-backed defs 静默兜底，也不再为失败的 source-backed rebuild 保留空壳 namespace，未被 compiled graph 引用的 runtime-only 残留值不会再进入 snapshot，而且即便被引用，像 `ref` / `any-ref` 这类不可稳定序列化的 runtime-only 值也会被跳过。
 - `Calcit::Thunk` 仍存在于公开值模型中，但 runtime 主路径已经不再依赖它作为缓存载体：lazy def 的待求值占位优先放进 `RuntimeCell::Lazy`，`Ready(Thunk)` 已被禁止写入 runtime store，preprocess 与普通 lookup 也不再把 runtime lazy cell 重新包装成公共 thunk；当前剩余问题主要转向 snapshot fallback 与少量兼容语义分支；
-- watch 模式已经开始利用 compiled deps 做 def 级 invalidation；当前 CLI incremental reload 不再默认按 package 整片清空，而是从 changed defs / ns 头部变更出发做依赖闭包清理。剩余缺口主要是 state slot 尚未引入，以及 watch/reload 回归覆盖还不够强。
+- watch 模式已经开始利用 compiled deps 做 def 级 invalidation；CLI incremental reload 主路径与 reload 兼容入口现在都已统一复用 changes-based 依赖闭包清理，而不再维护一套独立 package 清理逻辑。剩余缺口主要是 state slot 尚未引入，以及 watch/reload 回归覆盖还可以继续加密。
 
 这意味着当前状态更准确的表述是：
 
 **Phase 1 和 Phase 2 已经实装，Phase 3A/3B 已经稳定运行，Phase 3D 的主路径删除也已完成；剩余重点转向 3C 以及 preprocess/runtime 的最终拆边。**
+
+## 基于最近 samply 的现状补充（2026-03-17）
+
+已使用 `profiling/samply-once.sh` 对 `calcit/test.cirru` 与 `calcit/fibo.cirru` 进行 release 采样，当前热点特征：
+
+- `program::materialize_compiled_executable_payload` 仍在热路径出现，说明 runtime 对 compiled payload 的过渡 materialize 仍有收缩空间；
+- `CalcitTypeAnnotation::extract_schema_value/schema_key_matches_any` 频繁命中，说明 hint/schema 解析与匹配仍是可优化热点；
+- `CallStackList::extend_owned` 在 fibo 采样中有可见占比，说明运行态栈构造仍可能偏积极；
+- 采样中可见 `serde_json` 热点，主要来自 profiling/输出链路，不应直接等同于 steady-state runtime 核心开销。
+
+结论：边界拆分方向正确，但“runtime materialize 收缩 + type annotation 热点收敛”已经进入可以直接动手优化的阶段。
 
 ## 目标边界模型
 
@@ -294,7 +342,7 @@
 
 这里需要特别澄清一件事：
 
-当前 `preprocess` 已经开始产出 compiled metadata，成功路径也已经不再直接写 runtime cache；runtime 也不再在 `Cold` 状态下把 compiled payload 回填成 `RuntimeCell::Ready`。对于 lazy def，当前只会先把 compiled metadata 重新播种成 `RuntimeCell::Lazy`，而不是直接伪装成 ready runtime value。这说明边界已经继续前进一步，但还没有完全完成去同构。最终目标依然是：
+当前 `preprocess` 已经开始产出 compiled metadata，成功路径也已经不再直接写 runtime cache；预处理前置检查也不再通过 lenient runtime/compiled probe 侧向触发执行路径。runtime 也不再在 `Cold` 状态下把 compiled payload 回填成 `RuntimeCell::Ready`。对于 lazy def，当前只会先把 compiled metadata 重新播种成 `RuntimeCell::Lazy`，而不是直接伪装成 ready runtime value。这说明边界已经继续前进一步，但还没有完全完成去同构。最终目标依然是：
 
 - `preprocess` 负责产出 `CompiledDef`；
 - runtime 在真正需要值时，才从 compiled payload 驱动求值；
@@ -396,7 +444,7 @@
 - 但 runtime 内部缓存与 lazy 状态优先放进 `RuntimeCell`；
 - 减少 thunk 对全局写回和 code 表示的承担。
 
-当前状态：主路径已基本收尾。thunk 仍是公开 `Calcit` 值模型的一部分，但 runtime store 已不再接受 `Ready(Thunk)` 这类形态；lazy def 的未求值占位优先放进 `RuntimeCell::Lazy`，raw fallback 若得到 `Calcit::Thunk(Code)` 也会立刻规范化回 lazy cell。`eval_symbol_from_program` 也不再把 lazy thunk 返回给调用方，preprocess 查值路径同样不再把 runtime lazy cell 重新包装成公共 thunk。JS codegen 还额外收掉了一层旧桥接：core 中由 runtime 提供的 placeholder 定义、以及 syntax/proc 名称，不再伪装成普通 JS 顶层导出。当前剩余工作主要不再是 thunk 主路径，而是继续压缩 snapshot fallback compiled entry 的存在范围，清理少量旧命名/提示语残留，并补齐更直接的 watch/reload 回归测试。
+当前状态：主路径已基本收尾。thunk 仍是公开 `Calcit` 值模型的一部分，但 runtime store 已不再接受 `Ready(Thunk)` 这类形态；lazy def 的未求值占位优先放进 `RuntimeCell::Lazy`，raw fallback 若得到 `Calcit::Thunk(Code)` 也会立刻规范化回 lazy cell。`eval_symbol_from_program` 也不再把 lazy thunk 返回给调用方，preprocess 查值路径同样不再把 runtime lazy cell 重新包装成公共 thunk，且预处理前置检查已不再通过 lenient lookup 间接复用执行路径。JS codegen 还额外收掉了一层旧桥接：core 中由 runtime 提供的 placeholder 定义、以及 syntax/proc 名称，不再伪装成普通 JS 顶层导出。当前剩余工作主要不再是 thunk 主路径，而是继续压缩 snapshot fallback compiled entry 的存在范围，并视需要继续补 watch/reload 回归测试。
 
 #### Phase 3D: 删除旧 EntryBook 热路径依赖
 
@@ -404,7 +452,7 @@
 - `PROGRAM_EVALED_DATA_STATE` 从主 runtime store 降级为兼容层或被删除；
 - watch/reload 改为直接操作 runtime cell table。
 
-当前状态：主体已完成。`coord -> EntryBook` 主快路径已经删除，`PROGRAM_EVALED_DATA_STATE` 也已删除；watch/reload 也已经开始直接基于 `DefId` 与 compiled deps 做依赖闭包失效。剩余问题不再是“还停留在 package 级清理”，而是要把剩余边界情况和回归测试补齐，并继续把状态保留语义从值缓存里彻底拆出去。
+当前状态：主体已完成。`coord -> EntryBook` 主快路径已经删除，`PROGRAM_EVALED_DATA_STATE` 也已删除；watch/reload 主路径与兼容 reload 入口也都已经统一基于 `DefId` 与 compiled deps 做依赖闭包失效。剩余问题不再是“还停留在 package 级清理”，而是要把剩余边界情况和回归测试补齐，并继续把状态保留语义从值缓存里彻底拆出去。
 
 ### Phase 4: 引入 `PersistentStateLayer`
 
@@ -438,10 +486,11 @@
 
 下一步不再是“补完大设计”，而是按下面顺序收官：
 
-1. 继续收缩 runtime-derived snapshot fallback，只保留真正 runtime-only defs 需要的兜底；source-backed defs 一律优先走 compiled/source 数据。
-2. 补齐 watch/reload 回归测试，重点覆盖 changed defs、ns header、依赖闭包 invalidation，以及 snapshot fallback 不误补 source-backed defs。
-3. 清理还停留在迁移期的 helper、命名和双份 lookup 分支，让 `program` 成为唯一边界聚合点。
-4. 在上述三步稳定之后，再重新评估是否还需要继续压缩公开 thunk 语义，或是否真的存在引入 state slot 的必要。
+1. 先做热点导向减法：继续收缩 `materialize_compiled_executable_payload` 的热路径触发频率，减少 runtime 侧重复 materialize。
+2. 再收敛类型系统热路径：优先减少 `hint/schema` 解析与匹配的重复工作（缓存、去重分支、减少中间分配）。
+3. 继续收缩 runtime-derived snapshot fallback，只保留真正 runtime-only defs 需要的兜底；source-backed defs 一律优先走 compiled/source 数据。
+4. 补齐 watch/reload 回归测试，重点覆盖 changed defs、ns header、removed defs、依赖闭包 invalidation，以及 snapshot fallback 不误补 source-backed defs。
+5. 清理还停留在迁移期的 helper、命名和双份 lookup 分支，让 `program` 成为唯一边界聚合点。
 
 换句话说，下一步的目标是：
 
@@ -478,13 +527,13 @@
 
 如果只做一个高 ROI 的下一步动作，建议先做：
 
-**先补强 watch/reload 回归测试，并用这些测试倒逼继续收缩 snapshot/runtime fallback。**
+**先基于 samply 热点收缩 runtime materialize 触发频率，并配套保留 `yarn check-all` + `cargo test` 的语义门槛。**
 
 理由：
 
-- 这是当前最能验证边界是否真的站稳的手段；
-- 这会直接暴露哪些 fallback 仍然只是迁移期补丁；
-- 这比继续设计新层更符合“结构清晰优先”的目标。
+- 这是当前最直接、可量化的性能收益来源；
+- 这与“run == runtime”边界固化目标一致，不会引入新实体；
+- 在现有测试门槛下可快速验证语义不回退。
 
 ## 最终判断
 

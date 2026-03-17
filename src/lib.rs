@@ -55,9 +55,8 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
 pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
-  // preprocess to init
-  let init_entry = match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &check_warnings, &CallStackList::default()) {
-    Ok(entry) => entry,
+  match runner::preprocess::ensure_ns_def_compiled(&init_ns, &init_def, &check_warnings, &CallStackList::default()) {
+    Ok(()) => {}
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
       let headline = failure.headline();
@@ -78,9 +77,9 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
       hint: None,
     });
   }
-  match init_entry.or_else(|| program::lookup_runtime_ready(&init_ns, &init_def)) {
-    None => CalcitErr::err_str(CalcitErrKind::Var, format!("entry not initialized: {init_ns}/{init_def}")),
-    Some(entry) => match entry {
+
+  match runner::evaluate_symbol_from_program(&init_def, &init_ns, None, &CallStackList::default()) {
+    Ok(entry) => match entry {
       Calcit::Fn { info, .. } => {
         let result = runner::run_fn(params, &info, &CallStackList::default());
         match result {
@@ -93,6 +92,10 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
       }
       _ => CalcitErr::err_str(CalcitErrKind::Type, format!("expected function entry, got: {entry}")),
     },
+    Err(failure) => {
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      Err(failure)
+    }
   }
 }
 
