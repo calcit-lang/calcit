@@ -66,10 +66,6 @@ impl<'a> PreprocessContext<'a> {
   }
 }
 
-fn lookup_preprocessed_ns_def_value(ns: &str, def: &str) -> Option<Calcit> {
-  program::lookup_runtime_or_compiled_def_lenient(ns, def)
-}
-
 fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit, resolved_code: &Calcit) {
   let preprocessed_code = resolved_code.to_owned();
   let codegen_form = resolved_code.to_owned();
@@ -108,7 +104,7 @@ fn ensure_ns_def_preprocessed(
     }
   }
 
-  if lookup_preprocessed_ns_def_value(ns, def).is_some() {
+  if program::lookup_runtime_or_compiled_def_lenient(ns, def).is_some() {
     return Ok(());
   }
 
@@ -159,7 +155,7 @@ pub fn preprocess_ns_def(
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
   ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)?;
-  Ok(lookup_preprocessed_ns_def_value(raw_ns, raw_def))
+  Ok(program::lookup_runtime_or_compiled_def_lenient(raw_ns, raw_def))
 }
 
 pub fn compile_source_def_for_snapshot(
@@ -659,15 +655,7 @@ fn preprocess_list_call(
 
         if let Some(call_head) = ys.first() {
           warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-          warn_on_method_name_conflict(
-            call_head,
-            &processed_args,
-            scope_types,
-            file_ns,
-            def_name.as_ref(),
-            check_warnings,
-            call_stack,
-          );
+          warn_on_method_name_conflict(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         }
 
         // Check Proc argument types if available
@@ -728,7 +716,7 @@ fn preprocess_list_call(
 
         if !has_spread {
           if let Some(call_head) = ys.first() {
-            if let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, call_stack, file_ns) {
+            if let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns) {
               return Ok(optimized_call);
             }
           }
@@ -1596,7 +1584,7 @@ fn check_record_method_args(
   }
 
   // Get impl records for the type
-  let Some(impl_records) = get_impl_records_from_type(&type_value, &CallStackList::default()) else {
+  let Some(impl_records) = get_impl_records_from_type(&type_value) else {
     return; // No impl record, skip check
   };
 
@@ -1817,7 +1805,6 @@ fn warn_on_method_name_conflict(
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
 ) {
   if file_ns == calcit::CORE_NS {
     return;
@@ -1839,7 +1826,7 @@ fn warn_on_method_name_conflict(
     return;
   };
 
-  let Some(impl_records) = get_impl_records_from_type(type_value.as_ref(), call_stack) else {
+  let Some(impl_records) = get_impl_records_from_type(type_value.as_ref()) else {
     return;
   };
 
@@ -1902,13 +1889,7 @@ fn warn_on_method_name_conflict(
   }
 }
 
-fn try_inline_method_call(
-  head: &Calcit,
-  args: &CalcitList,
-  scope_types: &ScopeTypes,
-  call_stack: &CallStackList,
-  file_ns: &str,
-) -> Option<Calcit> {
+fn try_inline_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) -> Option<Calcit> {
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
       let mut resolved_type = type_value.clone();
@@ -1925,7 +1906,7 @@ fn try_inline_method_call(
         return None;
       }
       let type_ref = resolved_type.as_ref();
-      let impl_records = get_impl_records_from_type(type_ref, call_stack)?;
+      let impl_records = get_impl_records_from_type(type_ref)?;
       let (_impl_index, _impl_record, method_entry) = find_method_entry_with_impl(type_ref, &impl_records, method_name.as_ref())?;
 
       if let Some(callable_head) = pick_callable_from_method_entry(method_entry, file_ns) {
@@ -2027,7 +2008,7 @@ fn validate_method_call(
   }
 
   // Get impl records for the type
-  let Some(impl_records) = get_impl_records_from_type(&type_value, call_stack) else {
+  let Some(impl_records) = get_impl_records_from_type(&type_value) else {
     return Ok(()); // No impl record, skip validation
   };
 
@@ -2794,16 +2775,16 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
 /// - If type_value is already a Record, use it directly
 /// - If type_value is a Tag, map to corresponding core impl list
 /// - Otherwise return None
-fn collect_impl_records_from_value(value: &Calcit, call_stack: &CallStackList) -> Option<Vec<Arc<CalcitImpl>>> {
+fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>>> {
   let resolve_impl = |value: &Calcit| -> Option<CalcitImpl> {
     match value {
       Calcit::Impl(imp) => Some(imp.to_owned()),
-      Calcit::Import(import) => match runner::evaluate_symbol_from_program(&import.def, &import.ns, import.def_id, call_stack) {
-        Ok(Calcit::Impl(imp)) => Some(imp),
+      Calcit::Import(import) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+        Some(Calcit::Impl(imp)) => Some(imp),
         _ => None,
       },
-      Calcit::Symbol { sym, info, .. } => match runner::evaluate_symbol_from_program(sym, &info.at_ns, None, call_stack) {
-        Ok(Calcit::Impl(imp)) => Some(imp),
+      Calcit::Symbol { sym, info, .. } => match resolve_program_value_for_preprocess(&info.at_ns, sym, None) {
+        Some(Calcit::Impl(imp)) => Some(imp),
         _ => None,
       },
       _ => None,
@@ -2824,7 +2805,7 @@ fn collect_impl_records_from_value(value: &Calcit, call_stack: &CallStackList) -
   }
 }
 
-fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Vec<Arc<CalcitImpl>>> {
+fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
   if let Some(struct_def) = type_value.as_struct() {
     return Some(struct_def.impls.to_owned());
   }
@@ -2842,18 +2823,18 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
   }
 
   if let Some(class_symbol) = core_impl_list_symbol_from_type_annotation(type_value) {
-    return match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
-      Ok(value) => collect_impl_records_from_value(&value, call_stack),
-      Err(_) => None,
+    return match resolve_program_value_for_preprocess(calcit::CORE_NS, class_symbol, None) {
+      Some(value) => collect_impl_records_from_value(&value),
+      None => None,
     };
   }
 
   if let CalcitTypeAnnotation::Custom(value) = type_value {
     match value.as_ref() {
       Calcit::Import(import) => {
-        return match runner::evaluate_symbol_from_program(&import.def, &import.ns, import.def_id, call_stack) {
-          Ok(value) => collect_impl_records_from_value(&value, call_stack),
-          Err(_) => None,
+        return match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+          Some(value) => collect_impl_records_from_value(&value),
+          None => None,
         };
       }
       Calcit::Symbol { sym, info, .. } => {
@@ -2861,9 +2842,9 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
           Some((ns_part, def_part)) => (ns_part, def_part),
           None => (info.at_ns.to_owned(), sym.to_owned()),
         };
-        return match runner::evaluate_symbol_from_program(&target_def, &target_ns, None, call_stack) {
-          Ok(value) => collect_impl_records_from_value(&value, call_stack),
-          Err(_) => None,
+        return match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
+          Some(value) => collect_impl_records_from_value(&value),
+          None => None,
         };
       }
       _ => {}

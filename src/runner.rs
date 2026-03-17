@@ -35,6 +35,20 @@ fn build_runtime_cell_error(ns: &str, def: &str, call_stack: &CallStackList, cel
   }
 }
 
+fn require_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  eval_symbol_from_program(sym, ns, call_stack).map(|value| value.expect("value"))
+}
+
+fn lookup_symbol_in_program_namespaces(sym: &str, file_ns: &str, call_stack: &CallStackList) -> Result<Option<Calcit>, CalcitErr> {
+  if let Some(value) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
+    Ok(Some(value))
+  } else if let Some(value) = eval_symbol_from_program(sym, file_ns, call_stack)? {
+    Ok(Some(value))
+  } else {
+    Ok(None)
+  }
+}
+
 fn resolve_runtime_or_compiled_def(
   ns: &str,
   def: &str,
@@ -391,10 +405,7 @@ pub fn evaluate_symbol(
 ) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
-      Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
-        Ok(v) => Ok(v.expect("value")),
-        Err(e) => Err(e),
-      },
+      Some(target_ns) => require_symbol_from_program(&def_part, &target_ns, call_stack),
       None => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Var,
         format!("unknown ns target: {ns_part}/{def_part}"),
@@ -416,12 +427,10 @@ pub fn evaluate_symbol(
         Ok(Calcit::Proc(p))
       } else if builtins::is_registered_proc(sym) {
         Ok(Calcit::Registered(sym.into()))
-      } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
-        Ok(v)
-      } else if let Some(v) = eval_symbol_from_program(sym, file_ns, call_stack)? {
+      } else if let Some(v) = lookup_symbol_in_program_namespaces(sym, file_ns, call_stack)? {
         Ok(v)
       } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, sym) {
-        eval_symbol_from_program(sym, &target_ns, call_stack).map(|v| v.expect("value"))
+        require_symbol_from_program(sym, &target_ns, call_stack)
       } else {
         let vars = scope.get_names();
         Err(CalcitErr::use_msg_stack_location(
@@ -461,20 +470,9 @@ pub fn evaluate_symbol_from_program(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v0 = resolve_runtime_or_compiled_def(file_ns, sym, def_id.map(program::DefId), call_stack)?;
-  // if v0.is_none() {
-  //   println!("slow path reading symbol: {}/{}", file_ns, sym)
-  // }
   let v = if let Some(v) = v0 {
     v
-  } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
-    v
-  } else if file_ns == CORE_NS {
-    if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
-      v
-    } else {
-      unreachable!("expected symbol from path, this is a quick path, should succeed")
-    }
-  } else if let Some(v) = eval_symbol_from_program(sym, file_ns, call_stack)? {
+  } else if let Some(v) = lookup_symbol_in_program_namespaces(sym, file_ns, call_stack)? {
     v
   } else {
     unreachable!("expected symbol from path, this is a quick path, should succeed")

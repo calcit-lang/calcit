@@ -1,6 +1,6 @@
 # Runtime Boundary Refactor Plan
 
-> 目标：在**保留 watch 模式热更新**与**保留 JS codegen 依赖原始代码结构**两项能力的前提下，重构 runtime / preprocess / codegen 边界，降低热路径上的 lookup、clone、thunk 污染与全局状态耦合。
+> 调整后的目标排序：先把 **compiled/runtime 边界站稳并让结构清晰**，其次争取 **热路径性能收益**，再次才考虑 **减少实体与语义收口**。watch 热更新与 JS codegen 继续保留，但不再作为继续扩张新层的理由。
 
 ## 为什么现在做
 
@@ -43,6 +43,17 @@
 - 三者不再复用一份“既像代码又像值”的对象。
 
 这不是语言语义变化，而是实现层面的去同构。
+
+## 调整后的判断
+
+这份方案到现在仍然有意义，但它的意义已经变化：
+
+- 这不再是一份适合继续扩张的“四层重构蓝图”；
+- 更准确的定位，是一份 **compiled/runtime 拆边收官计划**；
+- 继续推进的目标，是把已经落地的边界收紧、补齐回归测试、删除迁移期桥接；
+- 暂时不继续推进的目标，是引入更多长期实体来追求理论完备。
+
+换句话说，当前阶段要继续的是“收尾”，不是“扩编”。
 
 ## 当前进度
 
@@ -90,7 +101,7 @@
 
 ## 目标边界模型
 
-建议把当前系统拆成 4 层。
+建议保留这套分层模型作为**分析框架**，而不是要求实现层面继续一比一落四层实体。
 
 ### 1. Source Layer
 
@@ -181,6 +192,8 @@
 
 - “保留状态”不再等于“保留整个 def 的 evaled value”
 - `Ref` / atom / runtime resource 迁移到显式 state slot 体系
+
+当前判断：这一层保留为后续方向，但**不作为当前阶段的执行目标**。只有在 watch/reload 语义已经被现有 compiled/runtime 边界稳定支撑、且确实遇到状态保留表达不足时，才值得继续引入。
 
 ## 两项关键能力如何保留
 
@@ -304,6 +317,30 @@
 - steady-state runtime 尽量只做整数索引；
 - 热路径避免 `Arc<str>` 比较和容器扫描。
 
+## 当前执行面
+
+不再把后续工作定义成“继续推进到完整四层”，而是改成下面三个收官面：
+
+### A. 站稳 compiled/runtime 边界
+
+- 继续删除仍停留在迁移期的桥接 helper 与兜底分支；
+- 保证 metadata/codegen 查询不再借 runtime 执行补信息；
+- 保证 runtime lookup 不再假设 compiled 执行会隐式回填缓存；
+- 把 `program` 维持为边界聚合点，避免 `runner`/`preprocess` 再各自复制一份 fallback 逻辑。
+
+### B. 补齐 watch/reload 回归测试
+
+- 直接覆盖 changed def、namespace header 变更、依赖闭包失效；
+- 验证 source-backed def 不会被 runtime-derived snapshot 静默复活；
+- 验证 lazy/runtime-only def 的 fallback 仍符合当前保留语义；
+- 把 `cargo fmt && yarn check-all && cargo test -q` 作为固定门槛。
+
+### C. 做减法而不是加层
+
+- 优先合并过渡期命名、兼容包装、重复 helper；
+- 暂不引入 `PersistentStateLayer` / `StateSlotId` 这类新实体；
+- 只有在现有模型无法表达真实需求时，才新增一层概念。
+
 ## 迁移阶段
 
 ### Phase 0: 约束冻结
@@ -380,6 +417,8 @@
 - reload invalidation 规则已经以 `DefId` 为主；
 - 不再把“值缓存是否保留”误当成“状态是否保留”。
 
+当前判断：**暂停**。这一步不是当前瓶颈，也不符合“先让结构更清晰、再减少实体”的目标排序。除非后续出现无法用现有 compiled/runtime 边界解释的 reload state 问题，否则不进入实现。
+
 ### Phase 5: 删除旧耦合路径
 
 - 删除 codegen 对 evaled program 的依赖
@@ -393,20 +432,20 @@
 - runtime cycle detection 已完全基于 `RuntimeCell` 状态机；
 - watch reload 可以基于 compiled deps + stable identity 做解释得通的失效。
 
+当前判断：保留为**收尾检查表**，不再视为一个需要继续扩展设计面的阶段。
+
 ## 接下来应该怎么做
 
-如果目标是继续往前推进，同时不让风险失控，下一步不应该直接去碰 state slot，也不需要再把重点放回 Phase 3B；更合理的是继续收尾 Phase 3C，并收缩 snapshot/codegen-only fallback。
+下一步不再是“补完大设计”，而是按下面顺序收官：
 
-具体就是：
+1. 继续收缩 runtime-derived snapshot fallback，只保留真正 runtime-only defs 需要的兜底；source-backed defs 一律优先走 compiled/source 数据。
+2. 补齐 watch/reload 回归测试，重点覆盖 changed defs、ns header、依赖闭包 invalidation，以及 snapshot fallback 不误补 source-backed defs。
+3. 清理还停留在迁移期的 helper、命名和双份 lookup 分支，让 `program` 成为唯一边界聚合点。
+4. 在上述三步稳定之后，再重新评估是否还需要继续压缩公开 thunk 语义，或是否真的存在引入 state slot 的必要。
 
-1. 继续收缩 runtime-derived snapshot fallback entry 的存在范围，优先区分哪些定义只是 runtime-only 注入，哪些本应来自 source/compiled 数据；source-backed defs 则优先补成真正的 compiled def，并继续减少 remaining lookup 热路径上的 compiled clone / runtime-derived materialize。
-2. 给新的 compiled-deps reload invalidation 补更直接的 watch/reload 回归测试，并继续收缩仍需兜底的边界情况。
-3. 仅在确有必要时，再继续清理少数仍保留公开 thunk 语义的兼容分支；不要再把重点放回 runtime 主路径。
-4. 每一步都以 `cargo fmt && yarn check-all && cargo test -q` 为门槛，而不是只跑 Rust 单测。
+换句话说，下一步的目标是：
 
-换句话说，下一步的目标不是“再引入一个新层”，也不是回头重复 3B，而是：
-
-**把已经接进去的 runtime state machine 和 snapshot/codegen 边界，从“只剩最后几座桥”继续推进到真正职责清晰、桥接范围可解释。**
+**把已经接进去的 runtime state machine 和 snapshot/codegen 边界，推进到职责清晰、测试充足、且不再继续引入新实体。**
 
 ## 预期收益
 
@@ -435,24 +474,24 @@
 3. 宏与 preprocess 若隐式依赖 runtime 当前行为，需要在阶段 2 前先全面梳理。
 4. 调试输出会暂时退化，因为 call stack / source mapping 需要重新挂接到 `CompiledDef`。
 
-## 建议的第一步实现
+## 当前建议的第一步
 
-如果只做一个高 ROI 起步动作，建议先做：
+如果只做一个高 ROI 的下一步动作，建议先做：
 
-**先引入 `DefId + CompiledDef`，并把 JS codegen 从 evaled program 上拆下来。**
+**先补强 watch/reload 回归测试，并用这些测试倒逼继续收缩 snapshot/runtime fallback。**
 
 理由：
 
-- 这是最容易与现有 runtime 并存的一步；
-- 能立刻切断“为了 JS 保留 thunk”这一层耦合；
-- 一旦 codegen 不再依赖 runtime value，后续 runtime/state 分层会简单很多。
+- 这是当前最能验证边界是否真的站稳的手段；
+- 这会直接暴露哪些 fallback 仍然只是迁移期补丁；
+- 这比继续设计新层更符合“结构清晰优先”的目标。
 
 ## 最终判断
 
-在保留 watch 模式与 JS codegen 的前提下，Calcit 仍然可以做激进重构，而且值得做。
+在保留 watch 模式与 JS codegen 的前提下，这条线仍值得继续，但应该以“收官和减法”为主，而不是继续做激进扩层。
 
-真正需要放弃的不是功能，而是这件事：
+真正需要继续放弃的不是功能，而是这件事：
 
 **“同一个 runtime 值对象同时承载源码、预处理结果、惰性求值状态、热更新身份与 codegen 输入。”**
 
-只要不再坚持这件事，边界就能重新变清晰。
+只要不再坚持这件事，并且不再为它继续引入额外层级，边界就能重新变清晰，而且实现会更可控。
