@@ -14,9 +14,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cell::RefCell, vec};
 
+use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
-use cirru_edn::EdnTag;
 
 type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
@@ -120,32 +120,31 @@ fn ensure_ns_def_preprocessed(
     return Ok(());
   }
 
-  let Some(()) = with_preprocess_compile_guard(ns, def, || {
-    match program::lookup_def_code(ns, def) {
-      Some(code) => {
-        let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
+  let Some(()) = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
+    Some(code) => {
+      let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
-        let mut scope_types = ScopeTypes::new();
-        let context_label = format!("{ns}/{def}");
-        let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
-          preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
-        })?;
-        store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+      let mut scope_types = ScopeTypes::new();
+      let context_label = format!("{ns}/{def}");
+      let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
+        preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+      })?;
+      store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
-        Ok(())
-      }
-      None if ns.starts_with('|') || ns.starts_with('"') => Ok(()),
-      None => {
-        let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
-        Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Var,
-          format!("unknown ns/def in program: {ns}/{def}"),
-          call_stack,
-          Some(loc),
-        ))
-      }
+      Ok(())
     }
-  })? else {
+    None if ns.starts_with('|') || ns.starts_with('"') => Ok(()),
+    None => {
+      let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
+      Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Var,
+        format!("unknown ns/def in program: {ns}/{def}"),
+        call_stack,
+        Some(loc),
+      ))
+    }
+  })?
+  else {
     return Ok(());
   };
 
@@ -168,10 +167,12 @@ fn lookup_callable_ns_def_for_preprocess(
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
   ensure_ns_def_compiled(raw_ns, raw_def, check_warnings, call_stack)?;
-  Ok(match program::resolve_compiled_executable_def(raw_ns, raw_def, call_stack).ok().flatten() {
-    value @ Some(Calcit::Macro { .. } | Calcit::Fn { .. }) => value,
-    _ => None,
-  })
+  Ok(
+    match program::resolve_compiled_executable_def(raw_ns, raw_def, call_stack).ok().flatten() {
+      value @ Some(Calcit::Macro { .. } | Calcit::Fn { .. }) => value,
+      _ => None,
+    },
+  )
 }
 
 fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
@@ -226,7 +227,9 @@ fn parse_trait_method_name_from_source(form: &Calcit) -> Option<EdnTag> {
   }
 }
 
-fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calcit>) -> Option<(Vec<EdnTag>, Vec<Arc<CalcitTypeAnnotation>>)> {
+fn parse_trait_method_specs_from_source<'a>(
+  items: impl Iterator<Item = &'a Calcit>,
+) -> Option<(Vec<EdnTag>, Vec<Arc<CalcitTypeAnnotation>>)> {
   let mut methods: Vec<EdnTag> = vec![];
   let mut method_types: Vec<Arc<CalcitTypeAnnotation>> = vec![];
 
@@ -3812,7 +3815,9 @@ fn validate_def_schema_during_preprocess(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitRecord, CalcitScope, CalcitStruct, ImportInfo};
+  use crate::calcit::{
+    CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitRecord, CalcitScope, CalcitStruct, ImportInfo,
+  };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
   use std::sync::{LazyLock, Mutex};
@@ -4155,33 +4160,37 @@ mod tests {
       },
     );
 
-    let call = Calcit::List(Arc::new(CalcitList::from(&[
-      Calcit::Import(CalcitImport {
-        ns: Arc::from(ns),
-        def: Arc::from(def),
-        info: Arc::new(ImportInfo::NsReferDef {
-          at_ns: Arc::from("tests.caller"),
-          at_def: Arc::from("demo"),
+    let call = Calcit::List(Arc::new(CalcitList::from(
+      &[
+        Calcit::Import(CalcitImport {
+          ns: Arc::from(ns),
+          def: Arc::from(def),
+          info: Arc::new(ImportInfo::NsReferDef {
+            at_ns: Arc::from("tests.caller"),
+            at_def: Arc::from("demo"),
+          }),
+          def_id: Some(def_id.0),
         }),
-        def_id: Some(def_id.0),
-      }),
-      Calcit::Number(1.0),
-    ][..])));
+        Calcit::Number(1.0),
+      ][..],
+    )));
 
     let inferred = infer_type_from_expr(&call, &ScopeTypes::new()).expect("infer import call type");
     assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
 
-    let call = Calcit::List(Arc::new(CalcitList::from(&[
-      Calcit::Symbol {
-        sym: Arc::from(def),
-        info: Arc::new(CalcitSymbolInfo {
-          at_ns: Arc::from(ns),
-          at_def: Arc::from("demo"),
-        }),
-        location: None,
-      },
-      Calcit::Number(1.0),
-    ][..])));
+    let call = Calcit::List(Arc::new(CalcitList::from(
+      &[
+        Calcit::Symbol {
+          sym: Arc::from(def),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from(ns),
+            at_def: Arc::from("demo"),
+          }),
+          location: None,
+        },
+        Calcit::Number(1.0),
+      ][..],
+    )));
 
     let inferred = infer_type_from_expr(&call, &ScopeTypes::new()).expect("infer symbol call type");
     assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
@@ -4262,7 +4271,10 @@ mod tests {
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
     ensure_ns_def_compiled(ns, def, &warnings, &stack).expect("compile recursive source def");
-    assert!(program::lookup_compiled_def(ns, def).is_some(), "recursive source def should compile once");
+    assert!(
+      program::lookup_compiled_def(ns, def).is_some(),
+      "recursive source def should compile once"
+    );
   }
 
   #[test]

@@ -358,16 +358,8 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn schema_key_matches_any(form: &Calcit, keys: &[&str]) -> bool {
-    let Some(key) = Self::schema_key_name(form) else {
-      return false;
-    };
-    match keys {
-      [first] => key == *first,
-      [first, second] => key == *first || key == *second,
-      [first, second, third] => key == *first || key == *second || key == *third,
-      _ => keys.contains(&key),
-    }
+  fn schema_key_matches(form: &Calcit, key: &str) -> bool {
+    matches!(Self::schema_key_name(form), Some(name) if name == key)
   }
 
   fn is_schema_map_literal_head(form: &Calcit) -> bool {
@@ -379,11 +371,11 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn extract_schema_value<'a>(form: &'a Calcit, keys: &[&str]) -> Option<&'a Calcit> {
+  fn extract_schema_value_single<'a>(form: &'a Calcit, key: &str) -> Option<&'a Calcit> {
     match form {
       Calcit::Map(xs) => {
-        for (key, value) in xs {
-          if Self::schema_key_matches_any(key, keys) {
+        for (entry_key, value) in xs {
+          if Self::schema_key_matches(entry_key, key) {
             return Some(value);
           }
         }
@@ -401,13 +393,13 @@ impl CalcitTypeAnnotation {
           if pair.len() < 2 {
             continue;
           }
-          let Some(key) = pair.get(0) else {
+          let Some(entry_key) = pair.get(0) else {
             continue;
           };
           let Some(value) = pair.get(1) else {
             continue;
           };
-          if Self::schema_key_matches_any(key, keys) {
+          if Self::schema_key_matches(entry_key, key) {
             return Some(value);
           }
         }
@@ -417,7 +409,16 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn collect_fn_schema_fields<'a>(form: &'a Calcit) -> (bool, Option<&'a Calcit>, Option<&'a Calcit>, Option<&'a Calcit>, Option<&'a Calcit>, Option<&'a Calcit>) {
+  fn collect_fn_schema_fields<'a>(
+    form: &'a Calcit,
+  ) -> (
+    bool,
+    Option<&'a Calcit>,
+    Option<&'a Calcit>,
+    Option<&'a Calcit>,
+    Option<&'a Calcit>,
+    Option<&'a Calcit>,
+  ) {
     let mut has_any = false;
     let mut generics = None;
     let mut args = None;
@@ -497,7 +498,7 @@ impl CalcitTypeAnnotation {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
-      if let Some(type_expr) = Self::extract_schema_value(item, &["return"]) {
+      if let Some(type_expr) = Self::extract_schema_value_single(item, "return") {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
           type_expr,
           generics.as_slice(),
@@ -510,7 +511,7 @@ impl CalcitTypeAnnotation {
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
     let items = Self::get_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
-      if let Some(value) = Self::extract_schema_value(item, &["generics"]) {
+      if let Some(value) = Self::extract_schema_value_single(item, "generics") {
         if let Some(vars) = Self::parse_generics_list(value) {
           return Some(vars);
         }
@@ -622,9 +623,7 @@ impl CalcitTypeAnnotation {
       return Self::infer_malformed_fn_schema(form, generics, strict_named_refs);
     }
 
-    let local_generics = local_generics_form
-      .and_then(Self::parse_generics_list)
-      .unwrap_or_default();
+    let local_generics = local_generics_form.and_then(Self::parse_generics_list).unwrap_or_default();
     let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
     let arg_types = args_form
       .map(|args_form| Self::parse_schema_args_list(args_form, scope.as_slice(), strict_named_refs))
@@ -632,8 +631,7 @@ impl CalcitTypeAnnotation {
     let return_type = return_form
       .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
       .unwrap_or_else(|| Arc::new(Self::Dynamic));
-    let rest_type = rest_form
-      .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs));
+    let rest_type = rest_form.map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs));
     let fn_kind = match kind_form {
       Some(Calcit::Tag(tag)) if tag.ref_str() == "macro" => SchemaKind::Macro,
       Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), ":macro" | "macro") => SchemaKind::Macro,
@@ -657,7 +655,7 @@ impl CalcitTypeAnnotation {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
-      if let Some(args_form) = Self::extract_schema_value(item, &["args"]) {
+      if let Some(args_form) = Self::extract_schema_value_single(item, "args") {
         let types = Self::parse_schema_args_types(args_form, params.len(), generics.as_slice());
         return Some(types);
       }

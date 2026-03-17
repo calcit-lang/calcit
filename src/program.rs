@@ -450,9 +450,12 @@ fn materialize_compiled_executable_payload(
 
     match compiled.kind {
       CompiledDefKind::Proc | CompiledDefKind::Syntax => Some(Ok(compiled.preprocessed_code.to_owned())),
-      CompiledDefKind::Fn | CompiledDefKind::Macro => {
-        Some(runner::evaluate_expr(&compiled.preprocessed_code, &CalcitScope::default(), ns, call_stack))
-      }
+      CompiledDefKind::Fn | CompiledDefKind::Macro => Some(runner::evaluate_expr(
+        &compiled.preprocessed_code,
+        &CalcitScope::default(),
+        ns,
+        call_stack,
+      )),
       CompiledDefKind::LazyValue | CompiledDefKind::Value => None,
     }
   })
@@ -463,11 +466,7 @@ fn materialize_compiled_executable_payload(
   result.map(Some).map_err(RuntimeResolveError::Eval)
 }
 
-pub fn resolve_compiled_executable_def(
-  ns: &str,
-  def: &str,
-  call_stack: &CallStackList,
-) -> Result<Option<Calcit>, RuntimeResolveError> {
+pub fn resolve_compiled_executable_def(ns: &str, def: &str, call_stack: &CallStackList) -> Result<Option<Calcit>, RuntimeResolveError> {
   materialize_compiled_executable_payload(ns, def, call_stack)
 }
 

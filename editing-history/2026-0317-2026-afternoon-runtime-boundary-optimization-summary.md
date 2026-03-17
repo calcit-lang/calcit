@@ -1,8 +1,8 @@
-# 2026-03-17 下午至晚间改动总结（1739-2023）
+# 2026-03-17 下午至晚间改动总结（1739-2031）
 
 ## 总览
 
-- 时间段：`2026-0317-1739` 至 `2026-0317-2023`
+- 时间段：`2026-0317-1739` 至 `2026-0317-2031`
 - 主要改动：测试减法、program/preprocess 架构减法、类型注解热路径优化、samply 验证、计划文档同步
 
 ## 关键变更（按时间顺序）
@@ -52,6 +52,20 @@
 - 在 `parse_fn_annotation_from_schema_form` 中引入 `collect_fn_schema_fields`，由多次 key 扫描改为一次遍历收集。
 - 删除无用 helper：`schema_has_any_field`。
 
+### 7) schema key 热路径进一步减法（2031）
+
+- 文件：`src/calcit/type_annotation.rs`
+- 新增单 key 快路径：
+  - `schema_key_matches(...)`
+  - `extract_schema_value_single(...)`
+- 将常见单 key 查询点改为快路径：
+  - `extract_return_type_from_hint_form`
+  - `extract_generics_from_hint_form`
+  - `extract_arg_types_from_hint_form`
+- 清理过渡遗留 helper：
+  - `schema_key_matches_any(...)`
+  - `extract_schema_value(...)`
+
 ## 验证汇总
 
 - 多轮定向测试均通过：
@@ -65,7 +79,7 @@
 
 - 使用既有流程：`profiling/samply-once.sh` + `profiling/samply-summary.py`
 - 在 materialize 目标链路过滤中，样本权重由 14 降至 7（单轮观测，方向符合预期）。
-- `type_annotation::*` 热点仍可见，后续应继续压缩 schema key 匹配/提取路径分配与分支成本。
+- 在 schema-key 相关过滤中，基线 `fibo-release-iter5-20260317.samply` 为 21，本轮新采样 `fibo-release-20260317-203129.samply` 为 5，方向上显著下降。
 
 ## 本轮经验
 
