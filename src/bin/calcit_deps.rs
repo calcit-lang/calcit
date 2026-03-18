@@ -95,8 +95,8 @@ pub fn main() -> Result<(), String> {
     }
 
     match &cli_args.subcommand {
-      Some(SubCommand::Outdated(_)) => {
-        let updated = outdated_tags(deps.dependencies, &cli_args.input)?;
+      Some(SubCommand::Outdated(opts)) => {
+        let updated = outdated_tags(deps.dependencies, &cli_args.input, opts.yes)?;
         if updated {
           // Re-read deps.cirru and download updated dependencies
           println!("\nDownloading updated dependencies...");
@@ -329,7 +329,11 @@ enum SubCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// show outdated versions
 #[argh(subcommand, name = "outdated")]
-struct OutdatedCaps {}
+struct OutdatedCaps {
+  /// update deps.cirru directly without interactive confirmation
+  #[argh(switch, short = 'y', long = "yes")]
+  yes: bool,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// download named packages with org/repo@branch
@@ -456,7 +460,7 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
 /// also git fetch to read latest tag from remote,
 /// then we can compare, get outdated version printed
 /// Returns true if deps.cirru was updated
-fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<bool, String> {
+fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str, auto_yes: bool) -> Result<bool, String> {
   print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
   println!();
 
@@ -486,6 +490,12 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<b
   }
 
   if !outdated_packages.is_empty() {
+    if auto_yes {
+      update_deps_file(&outdated_packages, deps_file)?;
+      println!("deps.cirru updated successfully!");
+      return Ok(true);
+    }
+
     println!();
     print!("Found {} outdated package(s). Update deps.cirru? (y/N): ", outdated_packages.len());
     std::io::stdout().flush().map_err(|e| e.to_string())?;

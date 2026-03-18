@@ -40,6 +40,7 @@ cr ir
 - [Hot Swapping](./run/hot-swapping.md)
 - [Bundle Mode](./run/bundle-mode.md)
 - [Entries](./run/entries.md)
+- [Project Upgrade Playbook](./run/upgrade.md)
 
 ## Quick find by keyword
 

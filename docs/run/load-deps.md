@@ -33,6 +33,12 @@ To check outdated modules, run:
 caps outdated
 ```
 
+To update `deps.cirru` directly without confirmation:
+
+```bash
+caps outdated --yes
+```
+
 ### CLI Options
 
 ```
