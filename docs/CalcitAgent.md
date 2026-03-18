@@ -97,10 +97,11 @@ cr docs agents --full
   - 从大索引往前改，或
   - 每次修改后重新 `query search` 避免路径漂移。
 - Tips 需要但应可控：
-  - 默认最多一条（快速扫读）
-  - 支持“全部/静默”模式切换（建议使用 `--tips-level` 统一控制）
+  - 默认只在高优先级场景展示最多一条（快速扫读）
+  - 需要全部提示时主动加 `--tips`
+  - 需要精细控制时使用 `--tips-level`
 
-> 说明：当前 CLI 已支持 `--no-tips`。`--tips-level` 作为统一分级开关建议保留在后续实现中。
+> 说明：默认不加参数即 `minimal`（仅高优先级提示，最多 1 条）；`--tips` 等价于 `full`。也支持显式 `--tips-level minimal|full|none`。
 
 ---
 
@@ -204,7 +205,9 @@ cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
 - 先 `query def` 看大轮廓，再 `search` + `tree show` 看局部。
 - 搜索结果过多时，不要连续盲改路径；每次改后重搜一次更稳。
 - 复杂多行表达式优先 `-f <file>`，减少 shell 转义错误。
-- 若需要最安静输出，可使用 `--no-tips`。
+- 默认模式通常不显示 tips；仅在高优先级场景显示 1 条。
+- 若要看全部提示请加 `--tips`。
+- 若要完全静默可用 `--tips-level none`。
 
 ### `Invalid path` 快速恢复模板（固定 3 步）
 
@@ -223,14 +226,17 @@ cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
 
 ```bash
 # 1) 先轻看，避免大段输出
-cr --no-tips query peek <ns/def>
+cr query peek <ns/def>
 
 # 2) 必要时才看完整定义（默认 Cirru）
-cr --no-tips query def <ns/def>
+cr query def <ns/def>
 
 # 3) 用 search 定位后再 show 局部
-cr --no-tips query search '<keyword>' -f <ns/def>
-cr --no-tips tree show <ns/def> -p '<path>'
+cr query search '<keyword>' -f <ns/def>
+cr tree show <ns/def> -p '<path>'
+
+# 4) 需要完整提示再打开
+cr --tips query def <ns/def>
 ```
 
 仅在需要程序化处理时再加 `-j`，否则保持 Cirru 输出即可。

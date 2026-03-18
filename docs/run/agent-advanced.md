@@ -37,9 +37,9 @@ cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶
 
 ---
 
-## Tips 输出分级（设计草案）
+## Tips 输出分级（已实现）
 
-当前已有 `--no-tips`，但在 Agent 场景下建议补充统一分级参数：`--tips-level`。
+当前 CLI 已支持统一分级参数：`--tips-level`。
 
 ### 目标
 
@@ -52,19 +52,19 @@ cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶
   - 每次命令最多输出 1 条 tips（优先“下一步动作”）。
 - `--tips-level full`
   - 输出全部 tips（教学/排障模式）。
+  - 等价快捷参数：`--tips`
 - `--tips-level none`
-  - 等价 `--no-tips`（脚本/Agent 静默模式）。
+  - 关闭 tips（脚本/Agent 静默模式）。
 
-### 兼容建议
+### 使用建议
 
-- 继续保留 `--no-tips`，内部映射到 `--tips-level none`。
 - 文档示例默认使用 `minimal` 心智模型，进阶示例再展示 `full/none`。
 
-### 迁移建议
+### 落地说明
 
 1. 先在 query/tree 相关子命令接入统一解析。
 2. 统一 Tips 渲染入口，避免各 handler 自行拼装。
-3. 补充回归：默认输出条数、`--no-tips` 等价行为、`full` 全量展示。
+3. 补充回归：默认输出条数、`full` 全量展示、`none` 静默行为。
 
 ---
 
@@ -119,8 +119,8 @@ Calcit 程序使用 `cr` 命令：
   - 用于 CI/CD 或快速验证代码修改
 - `cr js -1` - 检查代码正确性，生成 JavaScript(兼容参数，默认已是单次)
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
-- `cr --no-tips <subcommand> ...` - 隐藏所有编辑/查询命令输出的 "Tips:" 提示行（适合脚本/Agent 使用）
-  - 示例：`cr --no-tips demos/compact.cirru query def calcit.core/foldl`
+- `cr --tips <subcommand> ...` - 主动显示完整 tips（教学/排障时）
+  - 示例：`cr --tips demos/compact.cirru query def calcit.core/foldl`
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
   - **不需要**项目 `compact.cirru`：core 内置函数（`range`、`+`、`map` 等）直接可用
   - 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块
@@ -164,7 +164,7 @@ Calcit 程序使用 `cr` 命令：
   - 默认输出：Doc、Examples 数量、Cirru 格式代码
   - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
   - 推荐：LLM 直接读取 Cirru 格式即可，通常不需要 JSON
-- `cr query schema <namespace/definition> [-j] [--no-tips]` - 读取定义当前的 schema
+- `cr query schema <namespace/definition> [-j]` - 读取定义当前的 schema
   - 默认输出：Definition 标识 + schema 的 Cirru one-liner 预览
   - `-j` / `--json`：输出 schema 对应的 Cirru EDN 结构；无 schema 时输出 `nil`
   - 适合在修改前确认 `:args` / `:return` / `:rest` 当前值
@@ -494,14 +494,17 @@ cr tree replace namespace/def -p '3.2.2.5.2.4.1.2' -e 'let ((x 1)) (+ x task)'
 
    ```bash
    cr tree show ns/def -p '4.0'
-  # 输出显示 "{{BODY}}" 在索引 2，即路径 [4.0.2]
    ```
+
+# 输出显示 "{{BODY}}" 在索引 2，即路径 [4.0.2]
+
+````
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
-  ```bash
-  cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}", "{{FALSE_BRANCH}}"]'
-  ```
+```bash
+cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}", "{{FALSE_BRANCH}}"]'
+````
 
 4. **递归迭代**：重复上述步骤直到所有占位符（如 `{{TRUE_BRANCH}}`、`{{FALSE_BRANCH}}`）都被替换为最终逻辑。
 

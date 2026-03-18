@@ -163,8 +163,19 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     ));
   }
 
-  // Create definition
-  let code_entry = CodeEntry::from_code(syntax_tree);
+  // Create or overwrite definition.
+  // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
+  let code_entry = if exists {
+    if let Some(previous_entry) = file_data.defs.get(definition).cloned() {
+      let mut updated_entry = previous_entry;
+      updated_entry.code = syntax_tree;
+      updated_entry
+    } else {
+      CodeEntry::from_code(syntax_tree)
+    }
+  } else {
+    CodeEntry::from_code(syntax_tree)
+  };
   file_data.defs.insert(definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;

@@ -42,8 +42,12 @@ fn main() -> Result<(), String> {
 
   let cli_args: ToplevelCalcit = argh::from_env();
 
-  if cli_args.no_tips {
-    cli_handlers::suppress_tips();
+  if let Some(level) = cli_args.tips_level.as_deref() {
+    cli_handlers::set_tips_level(level)?;
+  }
+
+  if cli_args.tips {
+    cli_handlers::set_tips_level("full")?;
   }
 
   // Handle standalone commands that don't need full program loading

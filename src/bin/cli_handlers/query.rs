@@ -83,7 +83,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     ),
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_schema(input_path, ns, def, opts.json, opts.no_tips)
+      handle_schema(input_path, ns, def, opts.json)
     }
   }
 }
@@ -691,19 +691,19 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     println!("{} -", "Schema:".bold());
   }
 
-  // Tips - show relevant next steps
-  println!("\n{}", "Tips:".bold());
-  println!("  {} cr query def {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr query schema {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  let mut tips = Tips::new();
+  tips.add(format!("cr query def {namespace}/{definition}"));
+  tips.add(format!("cr query examples {namespace}/{definition}"));
+  tips.add(format!("cr query usages {namespace}/{definition}"));
+  tips.add(format!("cr query schema {namespace}/{definition}"));
+  tips.add(format!("cr edit doc {namespace}/{definition} '<doc>'"));
+  tips.print();
 
   Ok(())
 }
 
 /// Show definition schema
-fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool, no_tips: bool) -> Result<(), String> {
+fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -735,12 +735,10 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
     println!("{} -", "Schema:".bold());
   }
 
-  if !no_tips {
-    // Tips
-    println!("\n{}", "Tips:".bold());
-    println!("  {} cr query peek {}/{}", "-".dimmed(), namespace, definition);
-    println!("  {} cr edit schema {}/{} -e '{{}} ...'", "-".dimmed(), namespace, definition);
-  }
+  let mut tips = Tips::new();
+  tips.add(format!("cr query peek {namespace}/{definition}"));
+  tips.add(format!("cr edit schema {namespace}/{definition} -e '{{}} ...'"));
+  tips.print();
 
   Ok(())
 }

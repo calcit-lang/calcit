@@ -19,6 +19,6 @@ pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
 pub use libs::handle_libs_command;
 pub use query::handle_query_command;
-pub use tips::suppress_tips;
+pub use tips::set_tips_level;
 pub use tree::handle_tree_command;
 // Re-export when needed by other modules; keep internal for now to avoid unused-import warnings

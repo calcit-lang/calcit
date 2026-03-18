@@ -5,7 +5,7 @@ use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, format_path, format_path_bracketed, parse_input_to_cirru, parse_path, read_code_input,
 };
-use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
+use super::tips::{TipPriority, Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
@@ -471,7 +471,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -547,7 +547,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -847,7 +847,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -1101,7 +1101,7 @@ fn generic_insert_handler<T: InsertOperation>(
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -1269,7 +1269,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
   println!("{}:", "Parent after swap".green().bold());
