@@ -23,7 +23,7 @@ cr tree show 'ns/def' -p '3.2.1'                        # 3. 验证（可选）
 
 ```bash
 cr query search 'target' -f 'ns/def'                      # 搜索符号/字符串
-cr query search-expr 'fn (x)' -f 'ns/def' -l              # 搜索代码结构
+cr query search-expr 'fn (x)' -f 'ns/def'                 # 搜索代码结构
 cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶子节点
 ```
 
@@ -185,31 +185,35 @@ Calcit 程序使用 `cr` 命令：
 
 **代码模式搜索（快速定位 ⭐⭐⭐）：**
 
-- `cr query search <pattern> [-f <filter>] [-l]` - 搜索叶子节点（符号/字符串），比逐层导航快 10 倍
+- `cr query search <pattern> [-f <filter>] [--exact]` - 搜索叶子节点（符号/字符串），比逐层导航快 10 倍
   - **搜索范围**：默认包含项目代码、全部 modules 依赖和 calcit.core 内置函数（无需 `--deps` 标志）
   - `--entry <name>`：额外加载 `entries.<name>.modules` 里的依赖（用于 entry 级依赖场景）
   - `-f <filter>` - 过滤到特定命名空间或定义（可缩小范围提升速度）
-  - `-l / --loose`：宽松匹配，包含模式
+  - 默认即为 contains / fuzzy 匹配
+  - `--exact`：仅匹配完全相等的叶子节点
   - `-d <max-depth>`：限制搜索深度
   - `-p <start-path>`：从指定路径开始搜索（如 `"3.2.1"`，也兼容 `"3,2,1"`）
   - 返回：完整路径 + 父级上下文，多个匹配时自动显示批量替换命令
   - 示例：
-    - `cr query search 'println' -f app.main/main!` - 精确搜索（过滤到某定义）
-    - `cr query search 'comp-' -f app.ui/layout -l` - 模糊搜索（所有 comp- 开头）
+    - `cr query search 'println' -f app.main/main!` - 默认 contains 匹配（过滤到某定义）
+    - `cr query search --exact 'println' -f app.main/main!` - 精确搜索
+    - `cr query search 'comp-' -f app.ui/layout` - 模糊搜索（所有 comp- 开头）
     - `cr query search 'task-id'` - 全项目搜索（含 modules）
 
 **高级结构搜索（搜索代码结构 ⭐⭐⭐）：**
 
-- `cr query search-expr <pattern> [-f <filter>] [-l] [-j]` - 搜索结构表达式（List）
+- `cr query search-expr <pattern> [-f <filter>] [--exact] [-j]` - 搜索结构表达式（List）
   - **搜索范围**：同 `search`，默认包含全部依赖和 calcit.core
   - `--entry <name>`：同上，额外加载指定 entry 的 modules
-  - `-l / --loose`：宽松匹配，从头部开始的前缀匹配（嵌套表达式也支持前缀）
+  - 默认即为 prefix / contains 匹配（嵌套表达式也支持前缀）
+  - `--exact`：仅匹配结构完全一致的表达式
   - `-j / --json`：将模式解析为 JSON 数组
   - 示例：
-    - `cr query search-expr 'fn (x)' -f app.main/process -l` - 查找函数定义
-    - `cr query search-expr '>> state task-id' -l` - 查找状态访问（匹配 `>> state task-id ...` 或 `>> state`）
-    - `cr query search-expr 'dispatch! (:: :states)' -l` - 匹配 `dispatch! (:: :states data)` 类型的表达式
-    - `cr query search-expr 'memof1-call-by' -l` - 查找记忆化调用
+    - `cr query search-expr 'fn (x)' -f app.main/process` - 查找函数定义
+    - `cr query search-expr --exact 'fn (x)' -f app.main/process` - 仅匹配结构完全一致的表达式
+    - `cr query search-expr '>> state task-id'` - 查找状态访问（匹配 `>> state task-id ...` 或 `>> state`）
+    - `cr query search-expr 'dispatch! (:: :states)'` - 匹配 `dispatch! (:: :states data)` 类型的表达式
+    - `cr query search-expr 'memof1-call-by'` - 查找记忆化调用
 
 **搜索结果格式：** `[索引1.索引2...] in 父级上下文`，可配合 `cr tree show <ns/def> -p '<path>'` 查看节点。逗号路径仍兼容，但文档与输出优先使用点号。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
 
@@ -400,7 +404,7 @@ cr tree target-replace namespace/def --pattern 'old-symbol' -e 'new-symbol' --le
 # ===== 方案 D：结构搜索（查找表达式） =====
 
 # 1. 搜索包含特定模式的表达式
-cr query search-expr "fn (task)" -f namespace/def -l
+cr query search-expr "fn (task)" -f namespace/def
 # 输出：[3.2.2.5.2.4.1] in (map $ fn (task) ...)
 
 # 2. 查看完整结构（可选）
@@ -1028,7 +1032,7 @@ cr edit mv 'app.core/multiply' 'app.util/multiply-numbers'
 
 ```bash
 # 1. 搜索定位
-cr query search '<pattern>' -f 'ns/def' -l
+cr query search '<pattern>' -f 'ns/def'
 
 # 2. 查看节点（输出会显示索引和操作提示）
 cr tree show 'ns/def' -p '<path>'
@@ -1074,7 +1078,7 @@ cr edit config init-fn app.main/main!
 
 ```bash
 # 1. 搜索并定位目标子表达式
-cr query search-expr 'complex-call arg1' -f 'app.core/process-data' -l
+cr query search-expr 'complex-call arg1' -f 'app.core/process-data'
 # 输出示例：[3.2.1] in (let ((x ...)) ...)
 
 # 2. 提取为新定义（原位置自动替换为新名字 extracted-calc）
@@ -1127,7 +1131,7 @@ cr edit inc --removed 'app.core/helper-fn' --added 'app.util/helper-fn'
 
 ```bash
 # 定位节点
-cr query search-expr 'process item' -f 'app.core/main-fn' -l
+cr query search-expr 'process item' -f 'app.core/main-fn'
 # 输出：[3,1,2]
 
 # 移动（原位置消失）
@@ -1351,7 +1355,7 @@ cr edit add-import my.ns -e 'respo.util.format :refer $ hsl'
 
 ```bash
 # 1. 快速定位（比逐层导航快10倍）
-cr query search 'target' -f 'ns/def'           # 或 search-expr 'fn (x)' -l 搜索结构
+cr query search 'target' -f 'ns/def'           # 或 search-expr 'fn (x)' 搜索结构
 
 # 2. 执行修改（会显示 diff 和验证命令）
 cr tree replace 'ns/def' -p '<path>' --leaf -e '<value>'
