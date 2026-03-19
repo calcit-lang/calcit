@@ -2,6 +2,18 @@
 
 本文档面向 Agent/LLM 的高频工作流，目标是**更快定位、最小改动、低噪音验证**。
 
+本文定位为“查询与局部编辑速查表”：聚焦高频命令、路径定位和最小改动模板。执行前置约束与完整边界规则以 Agents 文档为准。
+
+### 查询导航（先用这个）
+
+- 看某个定义的大致结构：`cr query peek <ns/def>`
+- 看某个定义的完整实现：`cr query def <ns/def>`
+- 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
+- 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
+- 看进阶手册全文：`cr docs read agent-advanced.md --full`
+
+补充：仓库文件路径是 `docs/run/agent-advanced.md`，用 `cr docs read` 查询时文件名参数写 `agent-advanced.md`。
+
 ## Cirru 语法速览（先看这个）
 
 结构化编辑依赖“树 + 路径”。先能读懂 Cirru，才能稳定算出路径坐标。
@@ -66,6 +78,80 @@ a
 - 在这组例子中，目标值 `d` 都是 `a` 的同级参数，通常可以视为同一坐标层级（只是写法不同）。
 - 如果把 `, d` 误写成单独一行 `d`，它可能被解析成“调用形态”，节点类型会变化，后续路径与搜索命中也可能随之变化。
 - 所以：`,` 本身通常不引入额外层级；它更多是在“换行写法”下保持你想要的 AST 形态。
+
+#### 先理解启动文件：`compact.cirru` 的 EDN 结构（Agent 快速模型）
+
+Agent 切到新窗口时，优先把 `compact.cirru` 看成一个“可执行项目快照”，其顶层 EDN 结构通常是：
+
+```cirru
+{}
+  :package |my-app
+  :configs $ {}
+    :init-fn |app.main/main!
+    :reload-fn |app.main/reload!
+    :modules $ [] |lilac/ |memof/
+  :entries $ {}
+    :test $ {}
+      :init-fn |app.test/main!
+      :reload-fn |app.test/reload!
+      :modules $ [] |calcit-test/
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry ...
+      :defs $ {}
+        |main! $ %{} :CodeEntry ...
+```
+
+字段职责可以快速记成：
+
+- `:package`：包名边界（影响哪些 namespace 允许被 `cr edit` 修改）。
+- `:configs`：默认运行入口（`cr` / `cr js` / `cr ir` 不指定 `--entry` 时使用）。
+- `:entries`：命名入口集合（`cr --entry <name>` 走这里）。
+- `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
+- `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `compact.cirru`）。
+
+启动解析顺序（实操最常用）：
+
+1. `cr`：使用 `:configs` 的 `:init-fn` / `:reload-fn` / `:modules`。
+2. `cr --entry test`：切到 `:entries.test` 的配置运行。
+3. `cr --init-fn xxx`：覆盖入口函数（常用于测试链路临时指定）。
+
+建议每次开工先跑 3 条，建立项目运行心智：
+
+```bash
+cr query config
+cr query ns <target-ns>
+cr query defs <target-ns>
+```
+
+#### `deps.cirru` 与 `compact.cirru` 的关系（简版）
+
+给 Agent 一个最小心智就够：
+
+- `deps.cirru`：声明“要下载哪些外部模块 + 期望的 calcit 版本”。
+- `compact.cirru`：声明“运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）”。
+
+常见升级动作（最少命令）：
+
+```bash
+# 1) 看本机 CLI 版本
+cr --version
+
+# 2) 看依赖是否有更新
+caps --ci outdated
+
+# 3) 直接更新 deps.cirru（无交互）
+caps --ci outdated --yes
+
+# 4) 下载/同步模块后再编译验证
+caps --ci
+cr js
+```
+
+实践里优先保证两件事一致：
+
+- `deps.cirru` 的 `:calcit-version` 与当前 `cr --version` 不要偏差太大；
+- `package.json` 的 `@calcit/procs` 与当前 Calcit 版本链路保持同一代。
 
 #### 实操规则（最稳）
 
@@ -267,15 +353,15 @@ cr js
 
 ---
 
-## 7) 进阶内容（已下沉）
+## 7) 进阶入口（按需跳转）
 
-本文件只保留高频流程。低频/进阶内容请查：
+本文件不重复收录低频内容，遇到下列场景再跳转：
 
-- 完整进阶版 Agent 指南（从旧版完整迁移）：`docs/run/agent-advanced.md`
+- 复杂重构 / 大规模替换 / rewrite 组合：`cr docs read agent-advanced.md rewrite`
+- 命名空间导入、输入格式与路径漂移陷阱：`cr docs read agent-advanced.md 命名空间`、`cr docs read agent-advanced.md 输入格式`
 - 运行模式、eval 细节、CLI 约束：`Agents.md`
-- 语言手册与章节阅读：`cr docs list` / `cr docs read <file>`
-- Cirru 语法细节：`cr cirru show-guide`
-- traits 与运行期方法调试：`cr docs search 'trait-call'`
+- 浏览所有可查文档：`cr docs list`
+- 语言章节与 Cirru 语法细节：`cr docs read <file>` / `cr cirru show-guide`
 
 ---
 

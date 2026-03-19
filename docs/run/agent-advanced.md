@@ -2,6 +2,8 @@
 
 本文档为 AI Agent 提供 Calcit 项目的操作指南。
 
+本文定位为 Agents 约束与完整操作手册：覆盖硬前置步骤、命令边界、复杂重构与系统化排障。`docs/CalcitAgent.md` 用于查询与局部编辑速查，不替代本文中的约束规则。
+
 ## 🚀 快速开始（新 LLM 必读）
 
 **硬前置步骤：在执行任何 `cr edit` / `cr tree` 修改前，必须先运行一次 `cr docs agents --full`。**
