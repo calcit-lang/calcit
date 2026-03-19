@@ -1560,6 +1560,93 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
   }
 };
 
+const json_to_calcit = (value: any): CalcitValue => {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    return new CalcitSliceList(value.map(json_to_calcit));
+  }
+  if (typeof value === "object") {
+    const entries: CalcitValue[] = [];
+    for (const key of Object.keys(value)) {
+      entries.push(newTag(key), json_to_calcit(value[key]));
+    }
+    return new CalcitSliceMap(entries);
+  }
+  throw new Error(`Unsupported JSON value: ${value}`);
+};
+
+const calcit_json_key = (value: CalcitValue): string => {
+  if (value instanceof CalcitTag) return value.value;
+  if (typeof value === "string") return value;
+  throw new Error(`json-stringify expected object keys to be tags or strings, got: ${toString(value, true)}`);
+};
+
+const cirru_quote_to_json = (value: ICirruNode): any => {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(cirru_quote_to_json);
+  throw new Error(`Unsupported cirru quote node: ${value}`);
+};
+
+const calcit_to_json = (value: CalcitValue): any => {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return value;
+    throw new Error(`json-stringify cannot encode number: ${value}`);
+  }
+  if (typeof value === "boolean") return value;
+  if (value instanceof CalcitTag) return value.value;
+  if (value instanceof CalcitSymbol) return value.value;
+  if (value instanceof CalcitList || value instanceof CalcitSliceList) {
+    return Array.from(value.items()).map(calcit_to_json);
+  }
+  if (value instanceof CalcitSet) {
+    return value.values().map(calcit_to_json);
+  }
+  if (value instanceof CalcitMap || value instanceof CalcitSliceMap) {
+    const result: Record<string, any> = {};
+    for (const [key, item] of value.pairs()) {
+      result[calcit_json_key(key)] = calcit_to_json(item);
+    }
+    return result;
+  }
+  if (value instanceof CalcitTuple) {
+    return [calcit_to_json(value.tag), ...value.extra.map(calcit_to_json)];
+  }
+  if (value instanceof CalcitCirruQuote) {
+    return cirru_quote_to_json(value.value as ICirruNode);
+  }
+  if (value instanceof CalcitRecord) {
+    const result: Record<string, any> = {};
+    for (let idx = 0; idx < value.fields.length; idx++) {
+      result[value.fields[idx].value] = calcit_to_json(value.values[idx]);
+    }
+    return result;
+  }
+  throw new Error(`json-stringify cannot encode value: ${toString(value, true)}`);
+};
+
+export let json_parse = function (code: CalcitValue): CalcitValue {
+  if (arguments.length !== 1) throw new Error("json-parse expected 1 argument");
+  if (typeof code !== "string") {
+    throw new Error(`json-parse expected a string, got: ${toString(code, true)}`);
+  }
+  return json_to_calcit(JSON.parse(code));
+};
+
+export let json_stringify = function (value: CalcitValue): string {
+  if (arguments.length !== 1) throw new Error("json-stringify expected 1 argument");
+  return JSON.stringify(calcit_to_json(value));
+};
+
+export let json_pretty = function (value: CalcitValue): string {
+  if (arguments.length !== 1) throw new Error("json-pretty expected 1 argument");
+  return JSON.stringify(calcit_to_json(value), null, 2);
+};
+
 export let format_to_lisp = (x: CalcitValue): string => {
   if (x == null) {
     return "nil";

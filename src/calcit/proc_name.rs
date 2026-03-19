@@ -130,6 +130,12 @@ pub enum CalcitProc {
   ParseCirruEdn,
   #[strum(serialize = "format-cirru-edn")]
   FormatCirruEdn,
+  #[strum(serialize = "json-parse")]
+  JsonParse,
+  #[strum(serialize = "json-stringify")]
+  JsonStringify,
+  #[strum(serialize = "json-pretty")]
+  JsonPretty,
   #[strum(serialize = "&cirru-quote:to-list")]
   NativeCirruQuoteToList,
   // time
@@ -1097,6 +1103,14 @@ impl CalcitProc {
       ParseCirruEdn => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string"), optional_dynamic()],
+      }),
+      JsonParse => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("string")],
+      }),
+      JsonStringify | JsonPretty => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![dynamic_tag()],
       }),
       FormatCirru | FormatCirruEdn => Some(ProcTypeSignature {
         return_type: some_tag("string"),

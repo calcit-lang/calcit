@@ -1157,14 +1157,14 @@ fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverage
 
 /// Validate that a code entry matches its schema (kind, arity, rest param presence).
 /// Returns a list of warning/error messages. Empty means no issues.
-/// - `&runtime-inplementation` = builtin proc/syntax → always skipped.
+/// - `&runtime-implementation` = builtin proc/syntax → always skipped.
 /// - Schema `:kind :fn`   → code must use `defn`.
 /// - Schema `:kind :macro` → code must use `defmacro`.
 /// - Schema `:args` length must match required param count in code.
 /// - Schema `:rest` presence must match `&` rest param in code.
 fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &CalcitTypeAnnotation) -> Vec<String> {
   // builtin proc/syntax — skip structural checks
-  if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-inplementation") {
+  if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-implementation") {
     return vec![];
   }
 
@@ -1782,9 +1782,9 @@ mod tests {
   #[test]
   fn validate_runtime_impl_is_skipped() {
     let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
-    let code = Cirru::Leaf(Arc::from("&runtime-inplementation"));
+    let code = Cirru::Leaf(Arc::from("&runtime-implementation"));
     let issues = validate_def_vs_schema("calcit.core", "some-proc", &code, &schema);
-    assert!(issues.is_empty(), "runtime-inplementation should be skipped: {issues:?}");
+    assert!(issues.is_empty(), "runtime-implementation should be skipped: {issues:?}");
   }
 
   #[test]

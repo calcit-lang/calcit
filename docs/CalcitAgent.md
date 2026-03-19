@@ -232,7 +232,16 @@ cr js
 
 - `cr tree replace <ns/def> -p '<path>' -e '<code>'`：替换指定节点。
 - `cr tree target-replace <ns/def> --pattern '<leaf>' -e '<code>' --leaf`：按内容唯一定位替换（优先）。
+- `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
 - `cr edit inc --changed <ns/def>`：增量编译当前修改定义。
+
+`edit format` 用法例子：
+
+```bash
+cr src/cirru/calcit-core.cirru edit format
+```
+
+说明：`edit format` 作用于“当前输入 snapshot 文件”，在这个仓库里不要直接假设根目录有 `compact.cirru`。
 
 ### 小改动优先 `cr tree`（避免整段重置）
 

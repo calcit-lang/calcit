@@ -96,7 +96,7 @@ fn is_quote_head(value: &Calcit) -> bool {
 }
 
 fn is_runtime_placeholder_form(value: &Calcit) -> bool {
-  matches!(value, Calcit::Symbol { sym, .. } if sym.as_ref() == "&runtime-inplementation")
+  matches!(value, Calcit::Symbol { sym, .. } if sym.as_ref() == "&runtime-implementation")
 }
 
 fn is_runtime_placeholder_quote(value: &Calcit) -> bool {
@@ -1470,7 +1470,7 @@ mod tests {
   fn runtime_placeholder_quote() -> Calcit {
     Calcit::List(Arc::new(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::Quote, Arc::from(calcit::CORE_NS)),
-      symbol("&runtime-inplementation"),
+      symbol("&runtime-implementation"),
     ])))
   }
 

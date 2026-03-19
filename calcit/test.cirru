@@ -102,6 +102,7 @@
               test-set/main!
               test-string/main!
               test-edn/main!
+              test-json
               test-record/main!
               test-fn/main!
               test-tuple/main!
@@ -297,6 +298,27 @@
             fn () (log-title "|Testing if with nil")
               assert= (if false 1) (if nil 1)
               assert= (if false 1 2) (if nil 1 2)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
+        |test-json $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            fn () (log-title "|Testing JSON")
+              let
+                  parsed $ json-parse "|{\"name\":\"demo\",\"items\":[1,null,true],\"meta\":{\"flag\":false}}"
+                assert= |demo $ get parsed :name
+                assert= ([] 1 nil true) (get parsed :items)
+                assert= false $ get (get parsed :meta) :flag
+              assert=
+                json-parse $ json-stringify
+                  {} (:status |ok)
+                    :items $ [] 1 true nil
+                {} (:status |ok)
+                  :items $ [] 1 true nil
+              assert= "|\"ok\"" $ json-stringify :ok
+              assert= "|{\n  \"a\": 1\n}" $ json-pretty
+                {} $ :a 1
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
