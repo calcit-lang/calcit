@@ -234,6 +234,60 @@ cr js
 - `cr tree target-replace <ns/def> --pattern '<leaf>' -e '<code>' --leaf`：按内容唯一定位替换（优先）。
 - `cr edit inc --changed <ns/def>`：增量编译当前修改定义。
 
+### 小改动优先 `cr tree`（避免整段重置）
+
+当需求只是“改少量内容或局部结构”时，**不要**先写完整文件再 `cr edit def --overwrite -f ...`。这会放大 token 消耗，也更容易引入无关漂移。
+
+优先规则：
+
+- 只改 1~3 个节点：优先 `cr tree` 系列。
+- 仅改文本/叶子：优先 `target-replace` 或 `replace-leaf`。
+- 只调单层结构：优先 `insert-*` / `delete` / `swap-*` / `wrap` / `raise`。
+- 仅在“整段重写/新增定义/大范围重构”时，才用 `cr edit def --overwrite -f`。
+
+典型场景模板：
+
+1. 修改文本节点（leaf）
+
+```bash
+cr tree target-replace <ns/def> --pattern '|Old text' --leaf -e '|New text'
+# 或
+cr tree replace-leaf <ns/def> --from '|Old text' --to '|New text'
+```
+
+2. 删除节点
+
+```bash
+cr tree delete <ns/def> -p '<path>'
+```
+
+3. 一层表达式结构调整（同级顺序/包裹关系）
+
+```bash
+cr tree swap-next <ns/def> -p '<path>'
+cr tree swap-prev <ns/def> -p '<path>'
+cr tree wrap <ns/def> -p '<path>' -e 'when cond self'
+cr tree raise <ns/def> -p '<child-path>'
+```
+
+4. 补充节点（插入 sibling/child）
+
+```bash
+cr tree insert-before <ns/def> -p '<path>' -e '<node>'
+cr tree insert-after <ns/def> -p '<path>' -e '<node>'
+cr tree insert-child <ns/def> -p '<path>' -e '<node>'
+cr tree append-child <ns/def> -p '<path>' -e '<node>'
+```
+
+5. 每次小改后都做最小复核
+
+```bash
+cr tree show <ns/def> -p '<path>'
+cr edit inc --changed <ns/def>
+```
+
+一句话：**小改动走 `cr tree`，大改动才整段覆盖。**
+
 ### 结构化策略（常用 5 招）
 
 下面是“尽量不手写大段代码”的编辑策略，按风险从低到高使用。

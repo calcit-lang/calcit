@@ -54,7 +54,7 @@ cr eval "echo |done"
 ## Data Types
 
 - **Numbers**: `1`, `3.14`
-- **Strings**: `|text`, `"|with spaces"`, `"\"escaped"`
+- **Strings**: `|text`, `"|with spaces"`, `"\"escaped"`(old style)
 - **Tags**: `:keyword` (immutable strings, like Clojure keywords)
 - **Lists**: `[] 1 2 3`
 - **HashMaps**: `{} (:a 1) (:b 2)`

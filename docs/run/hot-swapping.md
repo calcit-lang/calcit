@@ -40,15 +40,15 @@ There's also a `js-out/calcit.build-errors.mjs` file for hot swapping when compi
 ```cirru.no-check
 ns app.main
   :require
-    "\"./calcit.build-errors" :default build-errors
-    "\"bottom-tip" :default hud!
+    "|./calcit.build-errors" :default build-errors
+    "|bottom-tip" :default hud!
 
 defn reload! () $ if (nil? build-errors)
   do (remove-watch *reel :changes) (clear-cache!)
     add-watch *reel :changes $ fn (reel prev) (render-app!)
     reset! *reel $ refresh-reel @*reel schema/store updater
-    hud! "\"ok~" "\"Ok"
-  hud! "\"error" build-errors
+    hud! "|ok~" "|Ok"
+  hud! "|error" build-errors
 ```
 
 One tricky thing to hot swap is macros. But you don't need to worry about that in newer versions.

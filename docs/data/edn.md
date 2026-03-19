@@ -52,7 +52,7 @@ do "|demo string"
 or use a single double quote for mark strings:
 
 ```cirru
-do "\"demo string"
+do "|demo string"
 ```
 
 `\n` `\t` `\"` `\\` are supported.

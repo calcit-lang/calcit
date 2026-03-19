@@ -57,19 +57,19 @@ pub fn edn_version() -> String {
 Rust code is compiled into dylibs, and then Calcit could call with:
 
 ```cirru.no-check
-&call-dylib-edn (get-dylib-path "\"/dylibs/libcalcit_std") "\"read_file" name
+&call-dylib-edn (get-dylib-path "|/dylibs/libcalcit_std") "|read_file" name
 ```
 
 first argument is the file path to that dylib. And multiple arguments are supported:
 
 ```cirru.no-check
-&call-dylib-edn (get-dylib-path "\"/dylibs/libcalcit_std") "\"add_duration" (nth date 1) n k
+&call-dylib-edn (get-dylib-path "|/dylibs/libcalcit_std") "|add_duration" (nth date 1) n k
 ```
 
 calling a function is special, we need another function, with last argument being the callback function:
 
 ```cirru.no-check
-&call-dylib-edn-fn (get-dylib-path "\"/dylibs/libcalcit_std") "\"set_timeout" t cb
+&call-dylib-edn-fn (get-dylib-path "|/dylibs/libcalcit_std") "|set_timeout" t cb
 ```
 
 Notice that both functions call dylibs and then library instances are cached, for better consistency and performance, with some cost in memory occupation. Linux and MacOS has different strategies loading dylibs while loaded repeatedly, so Calcit just cached them and only load once.
