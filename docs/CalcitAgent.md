@@ -9,6 +9,7 @@
 - 看某个定义的大致结构：`cr query peek <ns/def>`
 - 看某个定义的完整实现：`cr query def <ns/def>`
 - 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
+- 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
 - 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
 - 看进阶手册全文：`cr docs read agent-advanced.md --full`
 
@@ -21,7 +22,10 @@
 - Cirru 是缩进风格的 S-expression，缩进层级就是树层级。
 - 行内空格分隔节点；嵌套表达式是子节点。
 - 常见字面量：
-  - `|text` 或 `"|text"`：字符串, 两者等价, 区别是后者能处理好空格. 其中 `"|t"` 在老代码也会用 "\"t" 写.
+  - `|text`：最常用的字符串写法。
+  - 标准 one-liner 形式：`"|abc\nd"`（多行文本必须写成 `\n` 内嵌，不能直接跨行写字符串）。
+  - `"|text with spaces"`：当字符串里有空格/特殊字符时，使用双引号前缀包裹整段 one-liner。
+  - 双引号前缀不是通用替代：简单字符串优先 `|text`，只有在 `|...` 不够清晰时才用 `"|..."`。
   - `:tag`：tag
   - `[]` / `{}`：集合构造
 - 你在 `cr query search` 里看到的 `[5.5.1.3]`，本质是“第 5 个子节点的第 5 个子节点的第 1 个子节点的第 3 个子节点”。
@@ -186,6 +190,9 @@ cr docs agents --full
   - 默认只在高优先级场景展示最多一条（快速扫读）
   - 需要全部提示时主动加 `--tips`
   - 需要精细控制时使用 `--tips-level`
+- 涉及 `map/filter/reduce` 的改动，优先写成显式嵌套调用（`map xs f`、`filter xs pred`），再考虑 `->`，避免宏展开后参数位置误判。
+- `query find` 不要再写 `-f/--fuzzy`（旧参数）；当前默认 fuzzy，需要精确匹配时使用 `--exact`。
+- 在项目目录里用 `cr eval` 验证本项目定义时，默认不要加 `--dep ./`，避免重复加载本地模块导致 namespace 冲突。
 
 > 说明：默认不加参数即 `minimal`（仅高优先级提示，最多 1 条）；`--tips` 等价于 `full`。也支持显式 `--tips-level minimal|full|none`。
 
@@ -294,6 +301,19 @@ cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
 - 默认模式通常不显示 tips；仅在高优先级场景显示 1 条。
 - 若要看全部提示请加 `--tips`。
 - 若要完全静默可用 `--tips-level none`。
+
+### 本轮新增的稳定性约束（已验证）
+
+- `cr query find` 当前默认 fuzzy，不再使用 `--fuzzy` / `-f` 这类旧参数；精确匹配用 `--exact`。
+- Cirru 字符串统一按 one-liner 处理：多行文本用 `\n` 内嵌；含空格/特殊字符优先用 `"|text with spaces"`，简单字符串用 `|text`。
+- 条件分支末尾若直接返回值（尤其 `nil`）出现调用歧义时，优先改成稳定值结构（例如 sentinel map）再做过滤。
+- `cr query error` 提示旧错误堆栈时，先以本次 `cr js` / `cr --check-only` 结果为准，再决定是否继续追旧栈。
+
+### 命令参数对照（易混）
+
+- `cr query search <keyword> -f <ns/def>`：这里的 `-f` 是 `--filter`，用于限定搜索范围（有效）。
+- `cr query find <symbol>`：默认就是 fuzzy，不再使用 `-f/--fuzzy`（无效）；精确匹配用 `--exact`。
+- `cr edit def ... -f <file>`：这里的 `-f` 是“从文件读代码输入”（与 query 的 `-f` 含义不同）。
 
 ### `Invalid path` 快速恢复模板（固定 3 步）
 
