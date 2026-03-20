@@ -64,25 +64,20 @@ pub fn format_path_bracketed(path: &[usize]) -> String {
   }
 }
 
-/// Parse path string like "2,1,0" or "2.1.0" to Vec<usize>
+/// Parse path string like "2.1.0" to Vec<usize>
 pub fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
   if path_str.is_empty() {
     return Ok(vec![]);
   }
 
-  let has_comma = path_str.contains(',');
-  let has_dot = path_str.contains('.');
-
-  if has_comma && has_dot {
+  if path_str.contains(',') {
     return Err(format!(
-      "Invalid path '{path_str}': mixed separators are not allowed. Use either comma-separated or dot-separated coordinates."
+      "Invalid path '{path_str}': comma separator is no longer supported. Use dot-separated coordinates, e.g. '2.1.0'."
     ));
   }
 
-  let separator = if has_dot { '.' } else { ',' };
-
   path_str
-    .split(separator)
+    .split('.')
     .map(|s| s.trim().parse::<usize>().map_err(|e| format!("Invalid path index '{s}': {e}")))
     .collect()
 }

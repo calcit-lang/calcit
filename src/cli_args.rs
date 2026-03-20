@@ -379,6 +379,9 @@ pub struct QueryFindCommand {
   /// maximum number of results (default 20)
   #[argh(option, short = 'n', default = "20")]
   pub limit: usize,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -391,6 +394,9 @@ pub struct QueryUsagesCommand {
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -409,12 +415,15 @@ pub struct QuerySearchCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
-  /// start search from specific path (comma-separated indices, e.g. "2,1,0")
+  /// start search from specific path (dot-separated indices preferred, e.g. "2.1.0")
   #[argh(option, short = 'p', long = "start-path")]
   pub start_path: Option<String>,
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -439,6 +448,9 @@ pub struct QuerySearchExprCommand {
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
