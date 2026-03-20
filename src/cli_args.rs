@@ -69,7 +69,7 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
-  /// analyze code structure (call-graph, count-calls, check-examples)
+  /// analyze code structure and helpers (call-graph, count-calls, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -130,7 +130,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure (call-graph, count-calls, check-examples, check-types)
+/// analyze code structure and helpers (call-graph, count-calls, check-examples, check-types, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -147,6 +147,28 @@ pub enum AnalyzeSubcommand {
   CheckExamples(CheckExamplesCommand),
   /// check type-information coverage in namespace definitions
   CheckTypes(CheckTypesCommand),
+  /// escape a Calcit symbol into JavaScript-safe identifier form
+  JsEscape(JsEscapeCommand),
+  /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+  JsUnescape(JsUnescapeCommand),
+}
+
+/// escape a Calcit symbol into JavaScript-safe identifier form
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "js-escape")]
+pub struct JsEscapeCommand {
+  /// original Calcit symbol
+  #[argh(positional)]
+  pub symbol: String,
+}
+
+/// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "js-unescape")]
+pub struct JsUnescapeCommand {
+  /// escaped JavaScript identifier
+  #[argh(positional)]
+  pub symbol: String,
 }
 
 /// check type-information coverage in namespace definitions

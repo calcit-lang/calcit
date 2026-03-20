@@ -10,6 +10,7 @@
 - 看某个定义的完整实现：`cr query def <ns/def>`
 - 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
 - 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
+- 调试 JS 变量改名：`cr analyze js-escape '<symbol>'` / `cr analyze js-unescape '<escaped>'`（`js-unescape` 当前为 best-effort）
 - 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
 - 看进阶手册全文：`cr docs read agent-advanced.md --full`
 

@@ -36,6 +36,14 @@ use paths::{to_js_import_name, to_mjs_filename};
 use runtime::{get_proc_prefix, is_cirru_string};
 use symbols::{escape_cirru_str, escape_var};
 
+pub fn escape_symbol_for_js(name: &str) -> String {
+  escape_var(name)
+}
+
+pub fn unescape_symbol_from_js(name: &str) -> String {
+  symbols::unescape_var(name)
+}
+
 thread_local! {
   static INLINE_ALL_ARGS: Cell<bool> = const { Cell::new(false) };
 }

@@ -252,6 +252,8 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
+      AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
+      AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),
     }
   } else {
     if !cli_args.watch {
@@ -288,6 +290,18 @@ fn main() -> Result<(), String> {
     std::thread::spawn(move || watch_files(entries, args, assets_watch));
   }
   runner::track::exit_when_cleared();
+  Ok(())
+}
+
+fn run_js_escape(symbol: &str) -> Result<(), String> {
+  let escaped = calcit::codegen::emit_js::escape_symbol_for_js(symbol);
+  println!("{escaped}");
+  Ok(())
+}
+
+fn run_js_unescape(symbol: &str) -> Result<(), String> {
+  let restored = calcit::codegen::emit_js::unescape_symbol_from_js(symbol);
+  println!("{restored}");
   Ok(())
 }
 
