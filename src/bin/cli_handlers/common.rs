@@ -327,8 +327,9 @@ mod tests {
   use super::{format_path, format_path_bracketed, format_path_with_separator, parse_path};
 
   #[test]
-  fn parses_comma_separated_paths() {
-    assert_eq!(parse_path("3,2,1").unwrap(), vec![3, 2, 1]);
+  fn rejects_comma_separated_paths() {
+    let err = parse_path("3,2,1").unwrap_err();
+    assert!(err.contains("comma separator is no longer supported"));
   }
 
   #[test]
