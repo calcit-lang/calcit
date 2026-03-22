@@ -204,7 +204,7 @@ cr docs agents --full
 1. 定位目标定义：`cr query defs <ns>`
 2. 先轻看再全看：`cr query peek <ns/def>`，必要时再 `cr query def <ns/def>`
 3. 搜关键词拿路径：`cr query search <keyword> -f <ns/def>`
-4. 聚焦子树确认上下文：`cr tree show <ns/def> -p '<path>'`（复杂时加 `-j`）
+4. 聚焦子树确认上下文：`cr tree show <ns/def> -p '<path>'`（复杂时可加 `-j`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
 5. 修改并验证：`cr tree replace ...` 或 `cr edit inc --changed <ns/def>`，然后 `cr js`
 
 ### 示例（大函数）
@@ -227,7 +227,7 @@ cr js
 - `cr query defs <ns>`：列出命名空间定义。
 - `cr query def <ns/def>`：查看定义（默认 Cirru）。
 - `cr query search <pattern> -f <ns/def>`：按关键词拿路径。
-- `cr tree show <ns/def> -p '<path>'`：查看局部子树。
+- `cr tree show <ns/def> -p '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
 
 ### 编辑
 
@@ -250,7 +250,7 @@ cr src/cirru/calcit-core.cirru edit format
 
 优先规则：
 
-- 只改 1~3 个节点：优先 `cr tree` 系列。
+- 只改 1~10 个节点：优先 `cr tree` 系列。
 - 仅改文本/叶子：优先 `target-replace` 或 `replace-leaf`。
 - 只调单层结构：优先 `insert-*` / `delete` / `swap-*` / `wrap` / `raise`。
 - 仅在“整段重写/新增定义/大范围重构”时，才用 `cr edit def --overwrite -f`。

@@ -1,7 +1,7 @@
 use cirru_parser::Cirru;
 use colored::Colorize;
 
-use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
+use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, format_path, format_path_bracketed, parse_input_to_cirru, parse_path, read_code_input,
 };
@@ -172,7 +172,7 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
   output
 }
 
-fn render_chunked_display(display: &ChunkedDisplay) {
+fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -> usize {
   println!("{}", "Chunked preview".green().bold());
   println!(
     "{}",
@@ -188,7 +188,27 @@ fn render_chunked_display(display: &ChunkedDisplay) {
   );
   println!();
 
-  for fragment in &display.fragments {
+  let visible_fragments: Vec<_> = display
+    .fragments
+    .iter()
+    .filter(|fragment| fragment_nesting_level(fragment, &display.fragments) <= chunk_expand_depth)
+    .collect();
+
+  if visible_fragments.len() < display.fragments.len() {
+    println!(
+      "{}",
+      format!(
+        "showing {}/{} fragments; nested chunks beyond level {} are hidden",
+        visible_fragments.len(),
+        display.fragments.len(),
+        chunk_expand_depth
+      )
+      .dimmed()
+    );
+    println!();
+  }
+
+  for fragment in &visible_fragments {
     println!("{} {}", fragment.id.cyan().bold(), format!("at {}", fragment.coord).dimmed());
     println!("{}", format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed());
     for line in fragment.cirru.lines() {
@@ -196,6 +216,8 @@ fn render_chunked_display(display: &ChunkedDisplay) {
     }
     println!();
   }
+
+  visible_fragments.len()
 }
 
 // ============================================================================
@@ -345,8 +367,8 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
 
       println!("{}: {} ({} items)", "Type".green().bold(), "list".yellow(), items.len());
       println!();
-      if let Some(display) = chunked_display {
-        render_chunked_display(&display);
+      let shown_fragments = if let Some(display) = chunked_display {
+        Some((render_chunked_display(&display, opts.chunk_expand_depth), display.fragments.len()))
       } else {
         println!("{}:", "Cirru preview".green().bold());
         println!("  ");
@@ -356,21 +378,8 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           println!("  {line}");
         }
         println!();
-      }
-
-      if !items.is_empty() {
-        println!("{}:", "Children".green().bold());
-        for (i, item) in items.iter().enumerate() {
-          let type_str = format_child_preview(item);
-          let child_path = if opts.path.is_empty() {
-            i.to_string()
-          } else {
-            format!("{}.{}", format_path(&path), i)
-          };
-          println!("  [{}] {} {} -p '{}'", i, type_str.yellow(), "->".dimmed(), child_path);
-        }
-        println!();
-      }
+        None
+      };
 
       if show_json {
         println!("{}:", "JSON".green().bold());
@@ -397,6 +406,19 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       );
       println!();
       let mut tips = Tips::new();
+      if let Some((shown_fragments, total_fragments)) = shown_fragments {
+        if shown_fragments < total_fragments {
+          tips.add_with_priority(
+            TipPriority::High,
+            format!(
+              "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
+              opts.chunk_expand_depth,
+              format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
+              "--raw".yellow()
+            ),
+          );
+        }
+      }
       tips.append(tip_prefer_oneliner_json(show_json));
       tips.print();
 

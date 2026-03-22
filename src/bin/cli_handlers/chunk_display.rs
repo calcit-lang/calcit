@@ -66,6 +66,7 @@ pub struct ChunkedDisplay {
 pub struct RenderedFragment {
   pub id: String,
   pub coord: String,
+  pub path: Vec<usize>,
   pub nodes: usize,
   pub depth: usize,
   pub cirru: String,
@@ -180,6 +181,7 @@ fn build_ordered_decomposition(fragments: &[PendingFragment]) -> Result<Vec<Rend
       } else {
         format_path(&entry.path)
       },
+      path: entry.path.clone(),
       nodes: stats.nodes,
       depth: stats.max_depth,
       cirru: format_cirru_fragment(&entry.tree)?,
@@ -197,6 +199,19 @@ fn build_ordered_decomposition(fragments: &[PendingFragment]) -> Result<Vec<Rend
   let mut result = vec![root_fragment.ok_or_else(|| "Missing ROOT fragment".to_string())?];
   result.extend(non_root);
   Ok(result)
+}
+
+pub fn fragment_nesting_level(fragment: &RenderedFragment, fragments: &[RenderedFragment]) -> usize {
+  if fragment.path.is_empty() {
+    return 0;
+  }
+
+  1 + fragments
+    .iter()
+    .filter(|candidate| {
+      !candidate.path.is_empty() && candidate.path.len() < fragment.path.len() && fragment.path.starts_with(&candidate.path)
+    })
+    .count()
 }
 
 fn pick_best_semantic_cut(root: &Cirru, options: &ChunkDisplayOptions) -> Option<Candidate> {
@@ -510,10 +525,25 @@ fn format_cirru_fragment(node: &Cirru) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-  use super::{ChunkDisplayOptions, maybe_chunk_node};
+  use super::{ChunkDisplayOptions, RenderedFragment, fragment_nesting_level, maybe_chunk_node};
 
   fn parse_first(text: &str) -> cirru_parser::Cirru {
     cirru_parser::parse(text).unwrap().into_iter().next().unwrap()
+  }
+
+  fn fragment(id: &str, path: &[usize]) -> RenderedFragment {
+    RenderedFragment {
+      id: id.to_string(),
+      coord: if path.is_empty() {
+        "root".to_string()
+      } else {
+        path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(".")
+      },
+      path: path.to_vec(),
+      nodes: 1,
+      depth: 0,
+      cirru: id.to_string(),
+    }
   }
 
   #[test]
@@ -521,5 +551,34 @@ mod tests {
     let node = parse_first("defn add (a b) &+ a b");
     let options = ChunkDisplayOptions::default();
     assert!(maybe_chunk_node(&node, &options).unwrap().is_none());
+  }
+
+  #[test]
+  fn fragment_levels_hide_nested_chunks_by_default() {
+    let fragments = vec![
+      fragment("ROOT", &[]),
+      fragment("L1_A", &[3]),
+      fragment("L1_B", &[5]),
+      fragment("L2_A", &[3, 2]),
+      fragment("L3_A", &[3, 2, 1]),
+    ];
+
+    assert_eq!(fragment_nesting_level(&fragments[0], &fragments), 0);
+    assert_eq!(fragment_nesting_level(&fragments[1], &fragments), 1);
+    assert_eq!(fragment_nesting_level(&fragments[2], &fragments), 1);
+    assert_eq!(fragment_nesting_level(&fragments[3], &fragments), 2);
+    assert_eq!(fragment_nesting_level(&fragments[4], &fragments), 3);
+
+    let visible_default = fragments
+      .iter()
+      .filter(|fragment| fragment_nesting_level(fragment, &fragments) <= 1)
+      .count();
+    let visible_deeper = fragments
+      .iter()
+      .filter(|fragment| fragment_nesting_level(fragment, &fragments) <= 2)
+      .count();
+
+    assert_eq!(visible_default, 3);
+    assert_eq!(visible_deeper, 4);
   }
 }

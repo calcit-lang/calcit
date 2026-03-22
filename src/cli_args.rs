@@ -1172,6 +1172,9 @@ pub struct TreeShowCommand {
   /// only enable chunked display when total expression nodes reach this threshold
   #[argh(option, default = "88")]
   pub chunk_trigger_nodes: usize,
+  /// nested chunk layers to expand beyond ROOT (default 1 shows ROOT + direct chunks only)
+  #[argh(option, default = "1")]
+  pub chunk_expand_depth: usize,
   /// force raw subtree display without chunking
   #[argh(switch)]
   pub raw: bool,

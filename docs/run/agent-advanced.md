@@ -322,7 +322,8 @@ cr query modules
 **主要操作：**
 
 - `cr tree show <ns/def> -p '<path>' [-j]` - 查看节点
-  - 默认输出：节点类型、Cirru 预览、子节点索引列表、操作提示
+  - 默认输出：节点类型、Cirru 预览、操作提示
+  - 大表达式分片时默认只展开 ROOT 与直接 chunk；需要继续展开嵌套 chunk 时加 `--chunk-expand-depth <n>`
   - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
   - 推荐：直接查看 Cirru 格式即可，通常不需要 JSON
 - `cr tree replace` - 替换节点
@@ -1282,7 +1283,7 @@ send-to-component! $ :: :clipboard/read text
 **大资源处理建议：**
 如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `cr tree target-replace` 或按路径的 `cr tree replace` 做精准的分段替换。
 
-补充提示：现在 `cr query def` 和 `cr tree show` 遇到大表达式时会自动输出分片结果。若你采用多阶段创建，建议从第一步就使用 `{{NAME}}` 风格占位符，这样后续在分片视图中更容易识别骨架、复制坐标并继续填充内容。
+补充提示：现在 `cr query def` 和 `cr tree show` 遇到大表达式时会自动输出分片结果。`tree show` 默认只展开 ROOT 与一层 chunk；若需要继续查看 chunk 中的 chunk，可显式增加 `--chunk-expand-depth`。若你采用多阶段创建，建议从第一步就使用 `{{NAME}}` 风格占位符，这样后续在分片视图中更容易识别骨架、复制坐标并继续填充内容。
 
 ### 5. 命名空间操作陷阱 ⭐⭐⭐
 
