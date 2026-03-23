@@ -4,7 +4,7 @@
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{format_path, format_path_bracketed, parse_path};
-use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
+use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
@@ -413,10 +413,6 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
     println!("  {}", ns.cyan());
   }
 
-  let mut tips = Tips::new();
-  tips.append(tip_query_ns_list(include_deps));
-  tips.print();
-
   Ok(())
 }
 
@@ -440,13 +436,6 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
   println!("{}", ns_str.dimmed());
 
   println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
-
-  if command_guidance_enabled() {
-    println!(
-      "\n{}",
-      format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed()
-    );
-  }
 
   Ok(())
 }
@@ -483,10 +472,6 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
       println!("  {}{}", def.green(), schema_hint.dimmed());
     }
   }
-
-  let mut tips = Tips::new();
-  tips.append(tip_query_defs_list());
-  tips.print();
 
   Ok(())
 }
@@ -631,11 +616,6 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
     }
   }
 
-  // Unified tips output
-  let mut tips = Tips::new();
-  tips.append(tip_query_ns_list(false));
-  tips.print();
-
   Ok(())
 }
 
@@ -733,19 +713,6 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     println!("{}", serde_json::to_string(&json).unwrap());
   }
 
-  let mut tips = Tips::new();
-  tips.add(format!(
-    "Try `cr query search <leaf> -f '{namespace}/{definition}'` to find coordinates of a leaf node"
-  ));
-  tips.add(format!(
-    "Use `cr tree show {namespace}/{definition} -p '0'` or `-p '0.1'` to explore tree for editing"
-  ));
-  if !code_entry.examples.is_empty() {
-    tips.add(format!("Use `cr query examples {namespace}/{definition}` to view examples"));
-  }
-  tips.append(tip_prefer_oneliner_json(opts.json));
-  tips.print();
-
   Ok(())
 }
 
@@ -792,9 +759,6 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
 
   if code_entry.examples.is_empty() {
     println!("\n{}", "(no examples)".dimmed());
-    let mut tips = Tips::new();
-    tips.add(format!("Use `cr edit examples {namespace}/{definition}` to add examples."));
-    tips.print();
   } else {
     println!("{} example(s)\n", code_entry.examples.len());
 
@@ -812,10 +776,6 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
       println!("  {} {}", "JSON:".dimmed(), serde_json::to_string(&json).unwrap().dimmed());
       println!();
     }
-
-    let mut tips = Tips::new();
-    tips.add(format!("Use `cr edit examples {namespace}/{definition}` to modify examples."));
-    tips.print();
   }
 
   Ok(())
@@ -884,14 +844,6 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     println!("{} -", "Schema:".bold());
   }
 
-  let mut tips = Tips::new();
-  tips.add(format!("cr query def {namespace}/{definition}"));
-  tips.add(format!("cr query examples {namespace}/{definition}"));
-  tips.add(format!("cr query usages {namespace}/{definition}"));
-  tips.add(format!("cr query schema {namespace}/{definition}"));
-  tips.add(format!("cr edit doc {namespace}/{definition} '<doc>'"));
-  tips.print();
-
   Ok(())
 }
 
@@ -927,11 +879,6 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
   } else {
     println!("{} -", "Schema:".bold());
   }
-
-  let mut tips = Tips::new();
-  tips.add(format!("cr query peek {namespace}/{definition}"));
-  tips.add(format!("cr edit schema {namespace}/{definition} -e '{{}} ...'"));
-  tips.print();
 
   Ok(())
 }
@@ -1053,14 +1000,6 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset
 
   if found_definitions.is_empty() && references.is_empty() {
     println!("{}", "No matches found.".yellow());
-    let mut tips = Tips::new();
-    tips.add("Try `cr query ns` to see available namespaces.");
-    tips.print();
-  } else if !found_definitions.is_empty() {
-    let (first_ns, first_def) = &found_definitions[0];
-    let mut tips = Tips::new();
-    tips.add(format!("Use `cr query peek {first_ns}/{first_def}` to see signature."));
-    tips.print();
   }
 
   Ok(())

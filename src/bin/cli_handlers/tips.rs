@@ -142,19 +142,3 @@ pub fn tip_root_edit(path_is_empty: bool) -> Option<String> {
     None
   }
 }
-
-/// Tips for `cr query ns` when listing namespaces
-pub fn tip_query_ns_list(include_deps: bool) -> Vec<String> {
-  let mut tips = Vec::new();
-  tips.push("Use `cr query ns <namespace>` to show namespace details.".to_string());
-  tips.push("Use `cr query defs <namespace>` to list definitions.".to_string());
-  if !include_deps {
-    tips.push("Use `--deps` to include dependency and core namespaces.".to_string());
-  }
-  tips
-}
-
-/// Tips for `cr query defs` when showing definitions list
-pub fn tip_query_defs_list() -> Vec<String> {
-  vec!["Use `cr query peek <ns/def>` for signature, `cr query def <ns/def>` for full code.".to_string()]
-}

@@ -370,7 +370,7 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize) -> Resu
     let remaining = total_lines - end;
     println!(
       "{}",
-      format!("More content available ({remaining} lines remaining). Use -s {end} -n {lines_to_read} to continue reading.").yellow()
+      format!("More content available ({remaining} lines remaining). Next start line: {end}.").yellow()
     );
   } else {
     println!("{}", "End of document.".green());
