@@ -7,8 +7,8 @@ use std::sync::Arc;
 use cirru_edn::{Edn, EdnListView, format};
 
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitEnum, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitRecord, CalcitStruct,
-  CalcitTuple, CalcitTypeAnnotation, ImportInfo, MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnum, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitLocal, CalcitRecord,
+  CalcitStruct, CalcitTuple, CalcitTypeAnnotation, ImportInfo, MethodKind,
 };
 use crate::program;
 
@@ -249,6 +249,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Tuple(tuple) => dump_tuple_code(tuple),
     Calcit::Record(record) => dump_record_code(record),
+    Calcit::Impl(impl_def) => dump_impl_code(impl_def),
     Calcit::Struct(struct_def) => dump_struct_code(struct_def),
     Calcit::Enum(enum_def) => dump_enum_code(enum_def),
     Calcit::Method(method, kind) => {
@@ -493,6 +494,27 @@ fn dump_record_code(record: &CalcitRecord) -> Edn {
   Edn::map_from_iter(entries)
 }
 
+fn dump_impl_code(impl_def: &CalcitImpl) -> Edn {
+  let mut entries = vec![
+    (Edn::tag("kind"), Edn::tag("impl")),
+    (Edn::tag("name"), Edn::Str(impl_def.name.ref_str().into())),
+  ];
+  if let Some(trait_def) = impl_def.origin() {
+    entries.push((Edn::tag("trait"), Edn::Str(trait_def.name.ref_str().into())));
+  }
+
+  let mut fields = EdnListView::default();
+  for (field, value) in impl_def.fields.iter().zip(impl_def.values.iter()) {
+    fields.push(Edn::map_from_iter([
+      (Edn::tag("field"), Edn::Str(field.ref_str().into())),
+      (Edn::tag("value"), dump_code(value)),
+    ]));
+  }
+  entries.push((Edn::tag("fields"), fields.into()));
+  entries.push((Edn::tag("field-count"), Edn::Number(impl_def.fields.len() as f64)));
+  Edn::map_from_iter(entries)
+}
+
 fn dump_struct_code(struct_def: &CalcitStruct) -> Edn {
   let mut entries = vec![
     (Edn::tag("kind"), Edn::tag("struct")),
@@ -556,6 +578,50 @@ fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
   entries
+}
+
+#[cfg(test)]
+mod tests {
+  use super::dump_code;
+  use crate::calcit::{Calcit, CalcitImpl, CalcitProc};
+  use cirru_edn::{Edn, EdnTag};
+  use std::sync::Arc;
+
+  #[test]
+  fn dumps_impl_values_for_ir() {
+    let value = Calcit::Impl(CalcitImpl {
+      name: EdnTag::new("DemoImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Proc(CalcitProc::NativeStr)]),
+    });
+
+    let dumped = dump_code(&value);
+    let Edn::Map(entries) = dumped else {
+      panic!("expected impl to dump as map");
+    };
+
+    assert_eq!(entries.get(&Edn::tag("kind")), Some(&Edn::tag("impl")));
+    assert_eq!(entries.get(&Edn::tag("name")), Some(&Edn::str("DemoImpl")));
+    assert_eq!(entries.get(&Edn::tag("field-count")), Some(&Edn::Number(1.0)));
+
+    let Some(Edn::List(fields)) = entries.get(&Edn::tag("fields")) else {
+      panic!("expected impl fields list");
+    };
+    assert_eq!(fields.len(), 1);
+
+    let Some(Edn::Map(field_entry)) = fields.iter().next() else {
+      panic!("expected impl field entry to be a map");
+    };
+    assert_eq!(field_entry.get(&Edn::tag("field")), Some(&Edn::str("show")));
+
+    let Some(Edn::Map(proc_entry)) = field_entry.get(&Edn::tag("value")) else {
+      panic!("expected impl field value to be a map");
+    };
+    assert_eq!(proc_entry.get(&Edn::tag("kind")), Some(&Edn::tag("proc")));
+    assert_eq!(proc_entry.get(&Edn::tag("name")), Some(&Edn::str("&str")));
+    assert_eq!(proc_entry.get(&Edn::tag("builtin")), Some(&Edn::Bool(true)));
+  }
 }
 
 fn type_tag_map(type_name: &str) -> Edn {
