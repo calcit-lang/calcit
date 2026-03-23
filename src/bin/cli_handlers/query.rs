@@ -3,7 +3,7 @@
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
-use super::common::{format_path, format_path_bracketed, parse_path};
+use super::common::{format_path, parse_path};
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
@@ -425,8 +425,6 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  println!("{} {}", "Namespace:".bold(), namespace.cyan());
-
   if !file_data.ns.doc.is_empty() {
     println!("{} {}", "Doc:".bold(), file_data.ns.doc);
   }
@@ -451,7 +449,7 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   let mut defs: Vec<&String> = file_data.defs.keys().collect();
   defs.sort();
 
-  println!("{} {} ({} definitions)", "Namespace:".bold(), namespace.cyan(), defs.len());
+  println!("{} {}", "Definitions:".bold(), defs.len());
 
   for def in &defs {
     let entry = &file_data.defs[*def];
@@ -658,8 +656,6 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
-  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
-
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, definition, vec![]) {
     if let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
       println!("{} {}", "Type:".bold(), summary);
@@ -755,8 +751,6 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
-  println!("{} {}/{}", "Examples for:".bold(), namespace.cyan(), definition.green());
-
   if code_entry.examples.is_empty() {
     println!("\n{}", "(no examples)".dimmed());
   } else {
@@ -794,8 +788,6 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     .defs
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
-
-  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
   // Always show doc (even if empty)
   if code_entry.doc.is_empty() {
@@ -871,8 +863,6 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
     return Ok(());
   }
 
-  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
-
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
     let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn())?;
     println!("{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
@@ -934,9 +924,8 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset
 
   // Print summary
   println!(
-    "{} '{}' - {} definition(s), {} reference(s)\n",
-    "Symbol:".bold(),
-    symbol.yellow(),
+    "{} {} definition(s), {} reference(s)\n",
+    "Matches:".bold(),
     found_definitions.len(),
     found_references.len().saturating_sub(found_definitions.len())
   );
@@ -1079,13 +1068,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     }
   }
 
-  println!(
-    "{} {}/{}  ({} usages)",
-    "Usages of:".bold(),
-    target_ns.cyan(),
-    target_def.green(),
-    usages.len()
-  );
+  println!("{} {}", "Usages:".bold(), usages.len());
 
   if usages.is_empty() {
     println!(
@@ -1259,7 +1242,7 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
   let total = results.len();
   let displayed: Vec<_> = results.into_iter().take(limit).collect();
 
-  println!("{} {} results for pattern \"{}\"", "Search:".bold(), total, pattern.yellow());
+  println!("{} {} results", "Search:".bold(), total);
 
   if displayed.is_empty() {
     println!("  {}", "No matches found".dimmed());
@@ -1338,28 +1321,6 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
   } else {
     None
   };
-
-  println!("{} Searching for:", "Search:".bold());
-  if common_opts.loose {
-    println!("  {} (contains)", pattern.yellow());
-  } else {
-    println!("  {} (exact)", pattern.yellow());
-  }
-
-  if let Some(filter_str) = common_opts.filter {
-    println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
-  } else {
-    println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
-  }
-  if let Some(entry_name) = common_opts.entry {
-    println!("  {} {}", "Entry:".dimmed(), entry_name.cyan());
-  }
-
-  if let Some(ref path) = parsed_start_path {
-    let path_display = format_path_bracketed(path);
-    println!("  {} {}", "Start path:".dimmed(), path_display.cyan());
-  }
-  println!();
 
   let mut all_results: SearchResults = Vec::new();
 
@@ -1518,29 +1479,10 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
       .clone()
   };
 
-  println!("{} Searching for pattern:", "Search:".bold());
-
-  let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
   let highlight_target: Option<&str> = match &pattern_node {
     Cirru::Leaf(s) => Some(s.as_ref()),
     _ => None,
   };
-
-  if common_opts.loose {
-    println!("  {} (substring match for leaf patterns)", pattern_display.yellow());
-  } else {
-    println!("  {} (exact match)", pattern_display.yellow());
-  }
-
-  if let Some(filter_str) = common_opts.filter {
-    println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
-  } else {
-    println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
-  }
-  if let Some(entry_name) = common_opts.entry {
-    println!("  {} {}", "Entry:".dimmed(), entry_name.cyan());
-  }
-  println!();
 
   let mut all_results: SearchResults = Vec::new();
 

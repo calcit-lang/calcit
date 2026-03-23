@@ -504,25 +504,6 @@ fn module_folder() -> Result<PathBuf, String> {
   Ok(Path::new(&home).join(".config/calcit/modules/"))
 }
 
-fn display_path_with_default_modules(path: &str, default_modules: &Path) -> String {
-  if let Ok(stripped) = Path::new(path).strip_prefix(default_modules) {
-    format!("<mods>/{}", stripped.display())
-  } else {
-    path.to_owned()
-  }
-}
-
-fn display_path_for_check_md(path: &str, default_modules: &Path, cwd: Option<&Path>) -> String {
-  let raw = Path::new(path);
-  if raw.is_absolute()
-    && let Some(current_dir) = cwd
-    && let Ok(stripped) = raw.strip_prefix(current_dir)
-  {
-    return stripped.display().to_string();
-  }
-  display_path_with_default_modules(path, default_modules)
-}
-
 fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMap<String, snapshot::FileInSnapShot>, String> {
   ensure_runtime_initialized();
 
@@ -652,29 +633,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
 
   let shared_files = load_shared_files_for_check_md(entry, deps)?;
 
-  let default_modules = module_folder()?;
-  let current_dir = std::env::current_dir().ok();
-
-  let entry_preview = display_path_for_check_md(entry, &default_modules, current_dir.as_deref());
-
-  let deps_preview = if deps.is_empty() {
-    "none".dimmed().to_string()
-  } else {
-    deps
-      .iter()
-      .map(|dep| display_path_for_check_md(dep, &default_modules, current_dir.as_deref()))
-      .collect::<Vec<_>>()
-      .join(", ")
-      .dimmed()
-      .to_string()
-  };
-  println!(
-    "{} {} (entry: {}, deps: {})",
-    "Checking".bold(),
-    file_path.cyan(),
-    entry_preview.dimmed(),
-    deps_preview
-  );
+  println!("{} {}", "Checking".bold(), file_path.cyan());
   println!("{}", "-".repeat(60).dimmed());
 
   let mut passed = 0;

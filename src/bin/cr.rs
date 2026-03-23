@@ -52,6 +52,7 @@ fn main() -> Result<(), String> {
 
   if cli_handlers::should_echo_command(&cli_args) {
     cli_handlers::suppress_command_guidance();
+    calcit::set_quiet_tool_output(true);
     cli_handlers::print_command_echo(&cli_args);
   }
 
@@ -82,7 +83,7 @@ fn main() -> Result<(), String> {
   let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
-  if !cli_args.version {
+  if !cli_args.version && !calcit::quiet_tool_output() {
     eprintln!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
   }
   if cli_args.version {
@@ -103,14 +104,18 @@ fn main() -> Result<(), String> {
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
-  eprintln!(
-    "{}",
-    format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
-  );
+  if !calcit::quiet_tool_output() {
+    eprintln!(
+      "{}",
+      format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
+    );
+  }
 
   if cli_args.disable_stack {
     call_stack::set_using_stack(false);
-    println!("stack trace disabled.")
+    if !calcit::quiet_tool_output() {
+      println!("stack trace disabled.")
+    }
   }
 
   let input_path = PathBuf::from(&cli_args.input);
@@ -153,7 +158,9 @@ fn main() -> Result<(), String> {
     // config in entry will overwrite default configs
     if let Some(entry) = cli_args.entry.to_owned() {
       if snapshot.entries.contains_key(entry.as_str()) {
-        println!("running entry: {entry}");
+        if !calcit::quiet_tool_output() {
+          println!("running entry: {entry}");
+        }
         snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
       } else {
         return Err(format!(

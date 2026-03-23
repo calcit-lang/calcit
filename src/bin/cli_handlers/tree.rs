@@ -123,6 +123,19 @@ fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
   }
 }
 
+fn print_preview_block(label: &str, node: &Cirru, max_lines: usize, color: &str) {
+  let label_text = match color {
+    "yellow" => label.yellow().bold(),
+    "green" => label.green().bold(),
+    "cyan" => label.cyan().bold(),
+    _ => label.bold(),
+  };
+  println!("{label_text}:");
+  for line in format_preview_with_type(node, max_lines).lines() {
+    println!("  {line}");
+  }
+}
+
 /// Find the first leaf (preorder) and format for preview
 fn first_leaf_preview(node: &Cirru) -> Option<String> {
   match node {
@@ -147,15 +160,10 @@ fn format_child_preview(node: &Cirru) -> String {
 }
 
 /// Show a side-by-side diff preview of the change
-fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: &[usize]) -> String {
+fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str) -> String {
   let mut output = String::new();
 
-  output.push_str(&format!(
-    "\n{}: {} at path [{}]\n",
-    "Preview".blue().bold(),
-    operation,
-    format_path(path)
-  ));
+  output.push_str(&format!("\n{}: {}\n", "Preview".blue().bold(), operation));
   output.push('\n');
 
   // Show old and new side by side (simplified version)
@@ -341,19 +349,6 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     }
   };
 
-  // Print info
-  let path_display = if path.is_empty() {
-    "(root)".to_string()
-  } else {
-    format_path(&path)
-  };
-  println!(
-    "{}: {}  path: [{}]",
-    "Location".green().bold(),
-    format!("{namespace}/{definition}").cyan(),
-    path_display
-  );
-
   let node_type = match &node {
     Cirru::Leaf(_) => "leaf",
     Cirru::List(items) => {
@@ -390,23 +385,6 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         println!();
       }
 
-      if command_guidance_enabled() {
-        println!("{}: To modify this node:", "Next steps".blue().bold());
-        println!(
-          "  • Replace: {} {} -p '{}' {}",
-          "cr tree replace".cyan(),
-          opts.target,
-          format_path(&path),
-          "-e 'cirru one-liner'".dimmed()
-        );
-        println!(
-          "  • Delete:  {} {} -p '{}'",
-          "cr tree delete".cyan(),
-          opts.target,
-          format_path(&path)
-        );
-        println!();
-      }
       let mut tips = Tips::new();
       if let Some((shown_fragments, total_fragments)) = shown_fragments {
         if shown_fragments < total_fragments {
@@ -434,25 +412,6 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       println!("{}: {:?}", "Value".green().bold(), s.as_ref());
       println!();
       if command_guidance_enabled() {
-        println!("{}: To modify this leaf:", "Next steps".blue().bold());
-        println!(
-          "  • Replace: {} {} -p '{}' --leaf -e '<value>'",
-          "cr tree replace".cyan(),
-          opts.target,
-          format_path(&path)
-        );
-        if !path.is_empty() {
-          // Show parent path for context
-          let parent_path = &path[..path.len() - 1];
-          let parent_path_str = format_path(parent_path);
-          println!(
-            "  • View parent: {} {} -p '{}'",
-            "cr tree show".cyan(),
-            opts.target,
-            parent_path_str
-          );
-        }
-        println!();
         println!(
           "{}: Use {} for symbols, {} for strings",
           "Tip".blue().bold(),
@@ -491,9 +450,6 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   // Save original for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
-
-  // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &new_node, "replace", &path));
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
@@ -506,31 +462,25 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied 'replace' at path [{}] in '{}/{}'",
-    "✓".green(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  let replaced_node = navigate_to_path(&new_code, &path)?;
+
+  println!("{} Replaced node", "✓".green());
   println!();
-  println!("{}:", "From".yellow().bold());
-  println!("{}", format_preview_with_type(&old_node, 20));
+  println!("{}", "Changed node".blue().bold());
+  print_preview_block("Before", &old_node, 20, "yellow");
   println!();
-  println!("{}:", "To".green().bold());
-  let new_node = navigate_to_path(&new_code, &path)?;
-  println!("{}", format_preview_with_type(&new_node, 20));
-  println!();
-  if command_guidance_enabled() {
-    println!("{}", "Next steps:".blue().bold());
-    println!(
-      "  • Verify: {} '{}' -p '{}'",
-      "cr tree show".cyan(),
-      format_args!("{}/{}", namespace, definition),
-      path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-    );
-    println!("  • Check errors: {}", "cr query error".cyan());
-    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  print_preview_block("After", &replaced_node, 20, "green");
+
+  if !path.is_empty() {
+    let parent_path = &path[..path.len() - 1];
+    let parent_after = if parent_path.is_empty() {
+      new_code.clone()
+    } else {
+      navigate_to_path(&new_code, parent_path)?.clone()
+    };
+    println!();
+    println!("{}", "Containing expression".blue().bold());
+    print_preview_block("After", &parent_after, 12, "cyan");
   }
 
   Ok(())
@@ -571,7 +521,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let old_node = navigate_to_path(&code_entry.code, &path)?;
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite", &path));
+  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite"));
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
@@ -584,13 +534,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied 'rewrite' at path [{}] in '{}/{}'",
-    "✓".green(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Applied 'rewrite'", "✓".green());
   println!();
   println!("{}:", "From".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 20));
@@ -599,18 +543,6 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
   println!();
-  if command_guidance_enabled() {
-    println!("{}", "Next steps:".blue().bold());
-    println!(
-      "  • Verify: {} '{}' -p '{}'",
-      "cr tree show".cyan(),
-      format_args!("{}/{}", namespace, definition),
-      path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-    );
-    println!("  • Check errors: {}", "cr query error".cyan());
-    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-  }
-
   Ok(())
 }
 
@@ -643,14 +575,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     return Ok(());
   }
 
-  println!(
-    "{} Found {} match(es) for pattern '{}' in '{}/{}':",
-    "Search:".bold(),
-    matches.len(),
-    opts.pattern.yellow(),
-    namespace,
-    definition
-  );
+  println!("{} {} match(es):", "Search:".bold(), matches.len());
   println!();
 
   // Show preview of matches
@@ -693,13 +618,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   code_entry.code = new_code;
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Replaced {} occurrence(s) in '{}/{}'",
-    "✓".green(),
-    replaced_count,
-    namespace,
-    definition
-  );
+  println!("{} Replaced {} occurrence(s)", "✓".green(), replaced_count);
   println!();
   println!("{}:", "Replacement".green().bold());
   println!(
@@ -708,13 +627,6 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     format_preview_with_type(&replacement_node, 0)
   );
   println!();
-  if command_guidance_enabled() {
-    println!("{}", "Next steps:".blue().bold());
-    println!("  • Verify: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-    println!("  • Check errors: {}", "cr query error".cyan());
-    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-  }
-
   Ok(())
 }
 
@@ -743,21 +655,11 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
 
   if matches.is_empty() {
-    return Err(format!(
-      "No matches found for pattern '{}' in '{}/{}'",
-      opts.pattern, namespace, definition
-    ));
+    return Err("No matches found for target pattern".to_string());
   }
 
   if matches.len() > 1 {
-    println!(
-      "{} Found {} matches for pattern '{}' in '{}/{}'.",
-      "Notice:".yellow().bold(),
-      matches.len(),
-      opts.pattern.yellow(),
-      namespace,
-      definition
-    );
+    println!("{} Found {} matches.", "Notice:".yellow().bold(), matches.len());
     println!("Please use specific path to replace:");
     println!();
 
@@ -799,20 +701,14 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace", path));
+  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace"));
 
   let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&replacement_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Replaced unique occurrence in '{}/{}' at path [{}]",
-    "✓".green(),
-    namespace,
-    definition,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
+  println!("{} Replaced unique occurrence", "✓".green());
 
   Ok(())
 }
@@ -868,11 +764,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   };
 
   // Show diff preview with parent context
-  println!(
-    "\n{}: Deleting node at path [{}]",
-    "Preview".blue().bold(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
+  println!("\n{}: delete", "Preview".blue().bold());
   println!("{}:", "Node to delete".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 10));
   println!();
@@ -890,13 +782,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Deleted node at path [{}] in '{}/{}'",
-    "✓".green(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Deleted node", "✓".green());
   println!();
   println!("{}:", "Deleted node".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 20));
@@ -1121,12 +1007,7 @@ fn generic_insert_handler<T: InsertOperation>(
   };
 
   // Show diff preview
-  println!(
-    "\n{}: {} at path [{}]",
-    "Preview".blue().bold(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
+  println!("\n{}: {}", "Preview".blue().bold(), operation);
   println!("{}:", "Node to insert".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 8));
   println!();
@@ -1144,14 +1025,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied '{}' at path [{}] in '{}/{}'",
-    "✓".green(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Applied '{}'", "✓".green(), operation);
   println!();
   println!("{}:", "Inserted node".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 10));
@@ -1255,14 +1129,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied '{}' at path [{}] in '{}/{}'",
-    "✓".green(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Applied '{}'", "✓".green(), operation);
   println!();
 
   // Explain what was swapped
@@ -1385,15 +1252,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
     return Err(format!("Node at path [{}] has no children to splice", opts.path));
   }
 
-  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-  println!(
-    "\n{}: unwrap [{}] in '{}/{}', splicing {} children into parent",
-    "Preview".blue().bold(),
-    path_str,
-    namespace,
-    definition,
-    children.len()
-  );
+  println!("\n{}: unwrap {} child(ren)", "Preview".blue().bold(), children.len());
   println!("{}:", "Before".dimmed());
   println!("{}", format_preview_with_type(&node, opts.depth));
   println!("{} (spliced):", "After".cyan().bold());
@@ -1407,7 +1266,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Unwrapped node at [{}] in '{}/{}'", "✓".green(), path_str, namespace, definition);
+  println!("{} Unwrapped node", "✓".green());
 
   Ok(())
 }
@@ -1438,17 +1297,7 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
   let child_node = navigate_to_path(&code_entry.code, &path)?.clone();
   let parent_node = navigate_to_path(&code_entry.code, parent_path)?;
 
-  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-  let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-
-  println!(
-    "\n{}: raise [{}] in '{}/{}', replacing parent [{}]",
-    "Preview".blue().bold(),
-    path_str,
-    namespace,
-    definition,
-    if parent_path_str.is_empty() { "(root)" } else { &parent_path_str }
-  );
+  println!("\n{}: raise", "Preview".blue().bold());
   println!("{}:", "Before (parent)".dimmed());
   println!("{}", format_preview_with_type(&parent_node, opts.depth));
   println!("{}:", "After (raised child)".cyan().bold());
@@ -1460,14 +1309,7 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Raised node [{}] to replace parent [{}] in '{}/{}'",
-    "✓".green(),
-    path_str,
-    if parent_path_str.is_empty() { "(root)" } else { &parent_path_str },
-    namespace,
-    definition
-  );
+  println!("{} Raised node", "✓".green());
 
   Ok(())
 }
@@ -1501,14 +1343,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
   let new_node = process_node_with_references(&template, &references)?;
 
-  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-  println!(
-    "\n{}: wrap [{}] in '{}/{}'",
-    "Preview".blue().bold(),
-    path_str,
-    namespace,
-    definition
-  );
+  println!("\n{}: wrap", "Preview".blue().bold());
   println!("{}:", "Before".dimmed());
   println!("{}", format_preview_with_type(&original_node, opts.depth));
   println!("{}:", "After".cyan().bold());
@@ -1520,7 +1355,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Wrapped node at [{}] in '{}/{}'", "✓".green(), path_str, namespace, definition);
+  println!("{} Wrapped node", "✓".green());
 
   Ok(())
 }

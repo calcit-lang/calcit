@@ -191,7 +191,9 @@ pub fn inject_platform_apis() {
   );
   builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
   builtins::register_import_proc("on-control-c", on_ctrl_c);
-  eprintln!("{}", "registered platform APIs".dimmed());
+  if !calcit::quiet_tool_output() {
+    eprintln!("{}", "registered platform APIs".dimmed());
+  }
 }
 
 // &call-dylib-edn

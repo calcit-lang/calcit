@@ -42,7 +42,6 @@ cr --version
 ### Step C：检查并更新依赖
 
 ```bash
-caps outdated
 caps outdated --yes
 ```
 

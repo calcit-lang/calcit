@@ -35,7 +35,7 @@
 
 示例表达式（简化）：
 
-```cirru
+```cirru.no-check
 defn demo (state)
   let
       result $ collect! state
@@ -55,7 +55,7 @@ defn demo (state)
 
 `$` 用于把右侧表达式折叠成一个子结构，通常会让目标节点进入更深一层。
 
-```cirru
+```cirru.no-check
 ; "写法 A"
 result $ collect! state
 
@@ -70,7 +70,7 @@ result (collect! state)
 
 `,` 常用于告诉解析器“这里是值节点，不是再发起一次调用”。
 
-```cirru
+```cirru.no-check
 ; "写法 A"
 a (b c) d
 
@@ -88,7 +88,7 @@ a
 
 Agent 切到新窗口时，优先把 `compact.cirru` 看成一个“可执行项目快照”，其顶层 EDN 结构通常是：
 
-```cirru
+```cirru.no-check
 {}
   :package |my-app
   :configs $ {}

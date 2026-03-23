@@ -18,12 +18,23 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use calcit::{
   Calcit, CalcitErr, CalcitFnTypeAnnotation, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSignature, SyntaxTypeSignature,
 };
 
 use crate::util::string::strip_shebang;
+
+static QUIET_TOOL_OUTPUT: AtomicBool = AtomicBool::new(false);
+
+pub fn set_quiet_tool_output(v: bool) {
+  QUIET_TOOL_OUTPUT.store(v, Ordering::Relaxed);
+}
+
+pub fn quiet_tool_output() -> bool {
+  QUIET_TOOL_OUTPUT.load(Ordering::Relaxed)
+}
 
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   // load core libs
@@ -125,7 +136,9 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
     format!("<mods>/{file_path}")
   };
 
-  println!("loading: {display_path}");
+  if !quiet_tool_output() {
+    println!("loading: {display_path}");
+  }
 
   let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
   strip_shebang(&mut content);
