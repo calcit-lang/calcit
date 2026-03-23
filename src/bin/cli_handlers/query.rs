@@ -4,7 +4,7 @@
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{format_path, format_path_bracketed, parse_path};
-use super::tips::{TipPriority, Tips, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
+use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
 use calcit::CalcitTypeAnnotation;
 use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
@@ -441,10 +441,12 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
 
   println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
 
-  println!(
-    "\n{}",
-    format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed()
-  );
+  if command_guidance_enabled() {
+    println!(
+      "\n{}",
+      format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed()
+    );
+  }
 
   Ok(())
 }
@@ -532,10 +534,12 @@ fn handle_error() -> Result<(), String> {
 
   if !Path::new(error_file).exists() {
     println!("{}", "No .calcit-error.cirru file found.".yellow());
-    println!();
-    println!("{}", "Next steps:".blue().bold());
-    println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
-    println!("  • Run syntax check: {}", "cr --check-only".cyan());
+    if command_guidance_enabled() {
+      println!();
+      println!("{}", "Next steps:".blue().bold());
+      println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
+      println!("  • Run syntax check: {}", "cr --check-only".cyan());
+    }
     return Ok(());
   }
 
@@ -567,13 +571,15 @@ fn handle_error() -> Result<(), String> {
   } else {
     println!("{}", "Last error stack trace:".bold().red());
     println!("{content}");
-    println!();
-    println!("{}", "Next steps to fix:".blue().bold());
-    println!("  • Search for error location: {} '<symbol>'", "cr query search".cyan());
-    println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
-    println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
-    println!();
-    println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
+    if command_guidance_enabled() {
+      println!();
+      println!("{}", "Next steps to fix:".blue().bold());
+      println!("  • Search for error location: {} '<symbol>'", "cr query search".cyan());
+      println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
+      println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
+      println!();
+      println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
+    }
     println!(
       "{}",
       "Note: even when this clears, non-Calcit issues like CSS strings, DOM behavior, and external integrations can still be wrong."
@@ -1185,7 +1191,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
   }
 
   // Tip
-  if !usages.is_empty() {
+  if !usages.is_empty() && command_guidance_enabled() {
     println!("\n{}", "Tip: Modifying this definition may affect the above locations.".dimmed());
   }
 
@@ -1318,10 +1324,12 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
 
   if displayed.is_empty() {
     println!("  {}", "No matches found".dimmed());
-    println!(
-      "\n{}",
-      "Tip: Try a broader pattern, or add --deps to include core namespaces.".dimmed()
-    );
+    if command_guidance_enabled() {
+      println!(
+        "\n{}",
+        "Tip: Try a broader pattern, or add --deps to include core namespaces.".dimmed()
+      );
+    }
     return Ok(());
   }
 
@@ -1345,7 +1353,9 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
     println!("  ⋯ {} more results...", total - limit);
   }
 
-  println!("\n{}", "Tip: Use `query def <ns/def>` to view definition content.".dimmed());
+  if command_guidance_enabled() {
+    println!("\n{}", "Tip: Use `query def <ns/def>` to view definition content.".dimmed());
+  }
 
   Ok(())
 }

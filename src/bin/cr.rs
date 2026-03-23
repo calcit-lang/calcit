@@ -50,6 +50,11 @@ fn main() -> Result<(), String> {
     cli_handlers::set_tips_level("full")?;
   }
 
+  if cli_handlers::should_echo_command(&cli_args) {
+    cli_handlers::suppress_command_guidance();
+    cli_handlers::print_command_echo(&cli_args);
+  }
+
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
     Some(CalcitCommand::Query(query_cmd)) => {
@@ -800,12 +805,6 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
     println!("{json}");
   } else {
     println!("{}", calcit::call_tree::format_for_llm(&result));
-
-    // Helpful tips to guide follow-up commands (top 3)
-    println!("\n{}", "Tips".bold());
-    println!("- Focus by namespace: cr analyze call-graph --ns-prefix <ns>");
-    println!("- Quantify hotspots: cr analyze count-calls [--ns-prefix <ns>] [--include-core]");
-    println!("- Explore details: cr query peek <ns/def> | cr query def <ns/def>");
   }
 
   Ok(())

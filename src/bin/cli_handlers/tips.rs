@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static TIPS_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 static TIPS_FULL: AtomicBool = AtomicBool::new(false);
+static COMMAND_GUIDANCE_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TipsLevel {
@@ -32,6 +33,15 @@ impl TipsLevel {
 pub fn suppress_tips() {
   TIPS_SUPPRESSED.store(true, Ordering::Relaxed);
   TIPS_FULL.store(false, Ordering::Relaxed);
+}
+
+pub fn suppress_command_guidance() {
+  COMMAND_GUIDANCE_SUPPRESSED.store(true, Ordering::Relaxed);
+  suppress_tips();
+}
+
+pub fn command_guidance_enabled() -> bool {
+  !COMMAND_GUIDANCE_SUPPRESSED.load(Ordering::Relaxed)
 }
 
 pub fn set_tips_level(raw: &str) -> Result<(), String> {

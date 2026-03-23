@@ -21,6 +21,7 @@ use calcit::snapshot;
 use calcit::util;
 
 use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
+use super::tips::command_guidance_enabled;
 
 #[derive(Debug, Clone)]
 pub struct GuideDoc {
@@ -252,7 +253,7 @@ fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&s
 
   if !found_any {
     println!("{}", "No matching content found.".yellow());
-  } else {
+  } else if command_guidance_enabled() {
     println!(
       "{}",
       "Tip: Use -c <num> to show more context lines (e.g., 'cr docs search <keyword> -c 20')".dimmed()
@@ -375,10 +376,12 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize) -> Resu
     println!("{}", "End of document.".green());
   }
 
-  println!(
-    "{}",
-    "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read-lines file.md -s 20 -n 30')".dimmed()
-  );
+  if command_guidance_enabled() {
+    println!(
+      "{}",
+      "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read-lines file.md -s 20 -n 30')".dimmed()
+    );
+  }
 
   Ok(())
 }
@@ -402,16 +405,18 @@ fn handle_list() -> Result<(), String> {
   }
 
   println!("\n{} {} topics", "Total:".dimmed(), docs.len());
-  println!("{}", "Use 'cr docs read <filename>' to list headings in a document".dimmed());
-  println!(
-    "{}",
-    "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
-  );
-  println!(
-    "{}",
-    "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()
-  );
-  println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
+  if command_guidance_enabled() {
+    println!("{}", "Use 'cr docs read <filename>' to list headings in a document".dimmed());
+    println!(
+      "{}",
+      "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
+    );
+    println!(
+      "{}",
+      "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()
+    );
+    println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
+  }
 
   Ok(())
 }

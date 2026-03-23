@@ -5,7 +5,7 @@ use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, format_path, format_path_bracketed, parse_input_to_cirru, parse_path, read_code_input,
 };
-use super::tips::{TipPriority, Tips, tip_prefer_oneliner_json, tip_root_edit};
+use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
@@ -390,21 +390,23 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         println!();
       }
 
-      println!("{}: To modify this node:", "Next steps".blue().bold());
-      println!(
-        "  • Replace: {} {} -p '{}' {}",
-        "cr tree replace".cyan(),
-        opts.target,
-        format_path(&path),
-        "-e 'cirru one-liner'".dimmed()
-      );
-      println!(
-        "  • Delete:  {} {} -p '{}'",
-        "cr tree delete".cyan(),
-        opts.target,
-        format_path(&path)
-      );
-      println!();
+      if command_guidance_enabled() {
+        println!("{}: To modify this node:", "Next steps".blue().bold());
+        println!(
+          "  • Replace: {} {} -p '{}' {}",
+          "cr tree replace".cyan(),
+          opts.target,
+          format_path(&path),
+          "-e 'cirru one-liner'".dimmed()
+        );
+        println!(
+          "  • Delete:  {} {} -p '{}'",
+          "cr tree delete".cyan(),
+          opts.target,
+          format_path(&path)
+        );
+        println!();
+      }
       let mut tips = Tips::new();
       if let Some((shown_fragments, total_fragments)) = shown_fragments {
         if shown_fragments < total_fragments {
@@ -431,31 +433,33 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     if let Cirru::Leaf(s) = &node {
       println!("{}: {:?}", "Value".green().bold(), s.as_ref());
       println!();
-      println!("{}: To modify this leaf:", "Next steps".blue().bold());
-      println!(
-        "  • Replace: {} {} -p '{}' --leaf -e '<value>'",
-        "cr tree replace".cyan(),
-        opts.target,
-        format_path(&path)
-      );
-      if !path.is_empty() {
-        // Show parent path for context
-        let parent_path = &path[..path.len() - 1];
-        let parent_path_str = format_path(parent_path);
+      if command_guidance_enabled() {
+        println!("{}: To modify this leaf:", "Next steps".blue().bold());
         println!(
-          "  • View parent: {} {} -p '{}'",
-          "cr tree show".cyan(),
+          "  • Replace: {} {} -p '{}' --leaf -e '<value>'",
+          "cr tree replace".cyan(),
           opts.target,
-          parent_path_str
+          format_path(&path)
+        );
+        if !path.is_empty() {
+          // Show parent path for context
+          let parent_path = &path[..path.len() - 1];
+          let parent_path_str = format_path(parent_path);
+          println!(
+            "  • View parent: {} {} -p '{}'",
+            "cr tree show".cyan(),
+            opts.target,
+            parent_path_str
+          );
+        }
+        println!();
+        println!(
+          "{}: Use {} for symbols, {} for strings",
+          "Tip".blue().bold(),
+          "-e 'symbol'".yellow(),
+          "-e '|text'".yellow()
         );
       }
-      println!();
-      println!(
-        "{}: Use {} for symbols, {} for strings",
-        "Tip".blue().bold(),
-        "-e 'symbol'".yellow(),
-        "-e '|text'".yellow()
-      );
     }
   }
 
@@ -517,15 +521,17 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
   println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!(
-    "  • Verify: {} '{}' -p '{}'",
-    "cr tree show".cyan(),
-    format_args!("{}/{}", namespace, definition),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  if command_guidance_enabled() {
+    println!("{}", "Next steps:".blue().bold());
+    println!(
+      "  • Verify: {} '{}' -p '{}'",
+      "cr tree show".cyan(),
+      format_args!("{}/{}", namespace, definition),
+      path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+    );
+    println!("  • Check errors: {}", "cr query error".cyan());
+    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  }
 
   Ok(())
 }
@@ -593,15 +599,17 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
   println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!(
-    "  • Verify: {} '{}' -p '{}'",
-    "cr tree show".cyan(),
-    format_args!("{}/{}", namespace, definition),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  if command_guidance_enabled() {
+    println!("{}", "Next steps:".blue().bold());
+    println!(
+      "  • Verify: {} '{}' -p '{}'",
+      "cr tree show".cyan(),
+      format_args!("{}/{}", namespace, definition),
+      path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+    );
+    println!("  • Check errors: {}", "cr query error".cyan());
+    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  }
 
   Ok(())
 }
@@ -700,10 +708,12 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     format_preview_with_type(&replacement_node, 0)
   );
   println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • Verify: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  if command_guidance_enabled() {
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • Verify: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+    println!("  • Check errors: {}", "cr query error".cyan());
+    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  }
 
   Ok(())
 }
@@ -777,7 +787,9 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
       println!("  ... and {} more", matches.len() - 10);
     }
     println!();
-    println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+    if command_guidance_enabled() {
+      println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+    }
 
     return Err(String::new());
   }

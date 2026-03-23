@@ -26,7 +26,7 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, read_code_input};
-use super::tips::Tips;
+use super::tips::{Tips, command_guidance_enabled};
 
 /// Parse "namespace/definition" format into (namespace, definition)
 /// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
@@ -189,24 +189,26 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     definition.cyan(),
     namespace
   );
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-  println!(
-    "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
-    "cr edit add-import".cyan(),
-    namespace,
-    definition
-  );
-  println!();
-  let mut tips = Tips::new();
-  tips.add(format!(
-    "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
-  ));
-  tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
-  tips.print();
+  if command_guidance_enabled() {
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+    println!("  • Check errors: {}", "cr query error".cyan());
+    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+    println!(
+      "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
+      "cr edit add-import".cyan(),
+      namespace,
+      definition
+    );
+    println!();
+    let mut tips = Tips::new();
+    tips.add(format!(
+      "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
+    ));
+    tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
+    tips.print();
+  }
   Ok(())
 }
 
@@ -449,17 +451,19 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
     definition.cyan(),
     new_name.cyan()
   );
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
-  println!("  • Inspect source:   {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!(
-    "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
-    "cr tree replace".cyan(),
-    namespace,
-    new_name,
-    new_name
-  );
+  if command_guidance_enabled() {
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
+    println!("  • Inspect source:   {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+    println!(
+      "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
+      "cr tree replace".cyan(),
+      namespace,
+      new_name,
+      new_name
+    );
+  }
   Ok(())
 }
 
