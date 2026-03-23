@@ -15,6 +15,7 @@
   - `:entries`（额外入口）
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
+- 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
 
 ---
 
@@ -70,7 +71,7 @@ yarn install --immutable
 常见链路例如：
 
 ```bash
-caps --ci && yarn install --immutable
+caps && yarn install --immutable
 cr --entry <entry-name>
 cr --entry <entry-name> js
 cr js && yarn vite build --base=./
@@ -131,7 +132,7 @@ yarn <script-name>
 建议至少覆盖以下 6 项：
 
 1. `cr --version`
-2. `caps --ci outdated`（确认无遗漏项或已按预期处理）
+2. `caps outdated --yes`（确认无遗漏项或已按预期处理）
 3. `yarn install --immutable`
 4. `cr js`(如果是 js 项目)
 5. CI 中的入口/测试命令（`--entry` 或 `--init-fn` 链路）

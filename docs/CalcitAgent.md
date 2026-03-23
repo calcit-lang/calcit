@@ -207,6 +207,8 @@ cr docs agents --full
 4. 聚焦子树确认上下文：`cr tree show <ns/def> -p '<path>'`（复杂时可加 `-j`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
 5. 修改并验证：`cr tree replace ...` 或 `cr edit inc --changed <ns/def>`，然后 `cr js`
 
+> 修改时要求先考虑定位到坐标使用局部修改的方式, 或者结构化修改的方式, 若改动较大或不确定改动范围时再考虑整段覆盖式修改。
+
 ### 示例（大函数）
 
 ```bash

@@ -54,6 +54,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
     cli_args.subcommand,
     Some(CalcitCommand::Query(_))
       | Some(CalcitCommand::Docs(_))
+      | Some(CalcitCommand::Libs(_))
       | Some(CalcitCommand::Edit(_))
       | Some(CalcitCommand::Tree(_))
       | Some(CalcitCommand::Analyze(_))
@@ -74,6 +75,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let mut tokens = vec![match subcommand {
     CalcitCommand::Query(cmd) => format!("cr query {}", query_name(&cmd.subcommand)),
     CalcitCommand::Docs(cmd) => format!("cr docs {}", docs_name(&cmd.subcommand)),
+    CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("cr edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("cr tree {}", tree_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("cr analyze {}", analyze_name(&cmd.subcommand)),
@@ -84,6 +86,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   match subcommand {
     CalcitCommand::Query(cmd) => push_query(&mut tokens, cmd),
     CalcitCommand::Docs(cmd) => push_docs(&mut tokens, cmd),
+    CalcitCommand::Libs(cmd) => push_libs(&mut tokens, cmd.subcommand.as_ref()?),
     CalcitCommand::Edit(cmd) => push_edit(&mut tokens, cmd),
     CalcitCommand::Tree(cmd) => push_tree(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
@@ -184,6 +187,22 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
     DocsSubcommand::CheckMd(opts) => {
       echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "demos/compact.cirru", list "dep" => &opts.dep)
     }
+  }
+}
+
+fn push_libs(tokens: &mut Vec<String>, subcommand: &LibsSubcommand) {
+  match subcommand {
+    LibsSubcommand::Readme(opts) => echo_items!(
+      tokens,
+      pos "package" => &opts.package,
+      list "heading" => &opts.headings,
+      opt "file" => opts.file.as_deref(); default "none",
+      switch "no-subheadings" => opts.no_subheadings,
+      switch "full" => opts.full,
+      switch "with-lines" => opts.with_lines
+    ),
+    LibsSubcommand::Search(opts) => echo_items!(tokens, pos "keyword" => &opts.keyword),
+    LibsSubcommand::ScanMd(opts) => echo_items!(tokens, pos "module" => &opts.module),
   }
 }
 
@@ -486,6 +505,14 @@ fn docs_name(subcommand: &DocsSubcommand) -> &'static str {
     DocsSubcommand::ReadLines(_) => "read-lines",
     DocsSubcommand::List(_) => "list",
     DocsSubcommand::CheckMd(_) => "check-md",
+  }
+}
+
+fn libs_name(subcommand: &LibsSubcommand) -> &'static str {
+  match subcommand {
+    LibsSubcommand::Readme(_) => "readme",
+    LibsSubcommand::Search(_) => "search",
+    LibsSubcommand::ScanMd(_) => "scan-md",
   }
 }
 
