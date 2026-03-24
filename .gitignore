@@ -6,6 +6,7 @@ calcit/.compact-inc.cirru
 js-out/
 
 node_modules/
+.yarn/*.gz
 
 lib
 builds/

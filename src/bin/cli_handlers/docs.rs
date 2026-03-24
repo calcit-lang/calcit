@@ -142,10 +142,16 @@ fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
   let docs_dir = Path::new(&home_dir).join(".config/calcit/docs");
 
   if !docs_dir.exists() {
+    let calcit_repo_dir = Path::new(&home_dir).join(".config/calcit/calcit");
     return Err(format!(
       "Guidebook documentation directory not found: {docs_dir:?}\n\n\
-       To set up guidebook documentation, please run:\n\
-       git clone https://github.com/calcit-lang/calcit.git && ln -s ~/.config/calcit/calcit/docs ~/.config/calcit/docs"
+       Download the Calcit docs repo with git, then create a symlink for the docs directory:\n\
+       mkdir -p ~/.config/calcit\n\
+       git clone https://github.com/calcit-lang/calcit.git {}\n\
+       ln -s {}/docs {}",
+      calcit_repo_dir.display(),
+      calcit_repo_dir.display(),
+      docs_dir.display()
     ));
   }
 
