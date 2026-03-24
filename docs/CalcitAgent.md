@@ -20,6 +20,17 @@
 
 结构化编辑依赖“树 + 路径”。先能读懂 Cirru，才能稳定算出路径坐标。
 
+### Cirru 语法工具（`cr cirru`）
+
+用于 Cirru 语法和 JSON 之间的转换：
+
+- `cr cirru parse '<cirru_code>'` - 解析 Cirru 代码为 JSON
+- `cr cirru format '<json>'` - 格式化 JSON 为 Cirru 代码
+- `cr cirru parse-edn '<edn>'` - 解析 Cirru EDN 为 JSON
+- `cr cirru show-guide` - 显示 Cirru 语法指南（帮助生成正确的 Cirru 代码）
+
+**⚠️ 提示：如果你不确定某段缩进语法是否会被解析成预期结构，先运行一次 `cr cirru parse` 预检，再执行 `cr tree`/`cr edit` 修改。**
+
 - Cirru 是缩进风格的 S-expression，缩进层级就是树层级。
 - 行内空格分隔节点；嵌套表达式是子节点。
 - 常见字面量：

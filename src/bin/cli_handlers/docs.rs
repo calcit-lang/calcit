@@ -77,7 +77,7 @@ fn needs_agents_refresh(cache_path: &Path) -> bool {
 
   let now = SystemTime::now();
   match now.duration_since(modified) {
-    Ok(age) => age > Duration::from_secs(24 * 60 * 60),
+    Ok(age) => age > Duration::from_secs(1 * 60 * 60), // 1 hour
     Err(_) => true,
   }
 }

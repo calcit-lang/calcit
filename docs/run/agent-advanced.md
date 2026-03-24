@@ -255,24 +255,11 @@ Calcit 程序使用 `cr` 命令：
 - `cr docs agents [<heading> ...] [--full]` - 读取 Agent 指南（即本文档，优先本地缓存，按天自动刷新）
   - 不传标题时列出所有标题；传关键词时按标题模糊匹配输出对应章节
 
-### Cirru 语法工具 (`cr cirru`)
+### Cirru 语法工具
 
-用于 Cirru 语法和 JSON 之间的转换：
+`cr cirru parse/format/parse-edn/show-guide` 的高频命令已收敛到 `docs/CalcitAgent.md` 的「Cirru 语法速览」章节，便于在局部编辑工作流中直接查用。
 
-- `cr cirru parse '<cirru_code>'` - 解析 Cirru 代码为 JSON
-- `cr cirru format '<json>'` - 格式化 JSON 为 Cirru 代码
-- `cr cirru parse-edn '<edn>'` - 解析 Cirru EDN 为 JSON
-- `cr cirru show-guide` - 显示 Cirru 语法指南（帮助 LLM 生成正确的 Cirru 代码）
-
-**⚠️ 重要：生成 Cirru 代码前请先阅读语法指南**
-
-运行 `cr cirru show-guide` 获取完整的 Cirru 语法说明，包括：
-
-- `$` 操作符（单节点展开）
-- `|` 前缀（字符串字面量）, 这个是 Cirru 特殊的地方, 而不是直接用引号包裹
-- `,` 操作符（注释标记）
-- `~` 和 `~@`（宏展开）
-- 常见错误和避免方法
+若缩进结构不确定，先执行 `cr cirru parse '<cirru_code>'` 预检 AST/JSON，再继续 `cr tree` 或 `cr edit` 修改。
 
 ### 库管理 (`cr libs`)
 
