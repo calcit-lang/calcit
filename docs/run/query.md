@@ -99,11 +99,11 @@ let
     Point $ defstruct Point (:x :number) (:y :number)
     p (%{} Point (:x 1) (:y 2))
   do
-    ; Get all methods/traits implemented by a value
+    ; "Get all methods/traits implemented by a value"
     println $ &methods-of p
-    ; Get tag name of a record or enum
+    ; 'Get tag name of a record or enum'
     println $ &record:get-name p
-    ; Describe any value's internal type
+    ; "Describe any value's internal type"
     println $ &inspect-type p
 ```
 

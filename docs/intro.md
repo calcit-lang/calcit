@@ -25,8 +25,6 @@ Install Calcit via Cargo:
 
 ```bash
 cargo install calcit
-cargo install calcit-bundler  # For indentation syntax
-cargo install caps-cli        # For package management
 ```
 
 ## Design Philosophy
