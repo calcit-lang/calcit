@@ -29,7 +29,6 @@ cr eval "echo |done"
 ### CLI Options
 
 - `--watch` / `-w` - Watch files and rerun/rebuild on changes
-- `--once` / `-1` - Run once (compatibility flag; default is already once)
 - `--disable-stack` - Disable stack trace for errors
 - `--skip-arity-check` - Skip arity check in JS codegen
 - `--emit-path <path>` - Specify output path for JS (default: `js-out/`)

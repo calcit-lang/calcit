@@ -114,12 +114,10 @@ Calcit 程序使用 `cr` 命令：
 - `cr compact.cirru js -w` / `cr compact.cirru js --watch` - JS 监听编译模式
 - `cr compact.cirru ir` - 生成 program-ir.cirru（默认单次生成）
 - `cr compact.cirru ir -w` / `cr compact.cirru ir --watch` - IR 监听生成模式
-- `cr -1 <filepath>` - 执行一次然后退出（兼容参数，当前默认行为已是 once）
 - `cr --check-only` - 仅检查代码正确性，不执行程序
   - 对 init_fn 和 reload_fn 进行预处理验证
   - 输出：预处理进度、warnings、检查耗时
   - 用于 CI/CD 或快速验证代码修改
-- `cr js -1` - 检查代码正确性，生成 JavaScript(兼容参数，默认已是单次)
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
 - `cr --tips <subcommand> ...` - 主动显示完整 tips（教学/排障时）
   - 示例：`cr --tips demos/compact.cirru query def calcit.core/foldl`
@@ -959,8 +957,8 @@ cr query error  # 命令会显示详细的错误信息或成功状态
 
 ```bash
 # 极少数情况：增量更新不符合预期时
-cr -1 js           # 重新编译 JavaScript
-cr -1              # 重新执行程序
+cr js              # 重新编译 JavaScript
+cr                 # 重新执行程序
 
 # 或重启监听模式（Ctrl+C 停止后重启）
 cr        # 或 cr js

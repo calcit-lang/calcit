@@ -79,7 +79,7 @@ fn main() -> Result<(), String> {
     _ => {}
   }
 
-  let mut eval_once = cli_args.once;
+  let mut eval_once = false;
   let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
@@ -239,10 +239,6 @@ fn main() -> Result<(), String> {
       // `cr js` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
-    if js_options.once {
-      // kept for compatibility, force once mode
-      eval_once = true;
-    }
     if cli_args.skip_arity_check {
       codegen::set_code_gen_skip_arity_check(true);
     }
@@ -250,10 +246,6 @@ fn main() -> Result<(), String> {
   } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
     if !ir_options.watch {
       // `cr ir` defaults to once mode; use --watch/-w to keep watching
-      eval_once = true;
-    }
-    if ir_options.once {
-      // kept for compatibility, force once mode
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)

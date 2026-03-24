@@ -27,7 +27,6 @@ cr docs agents --full
 
 - `cr <entry>`、`cr <entry> js`、`cr <entry> ir` 现在默认都是**单次执行**（once）。
 - 需要监听时，显式传 `-w` 或 `--watch`（如 `cr -w <entry>`、`cr <entry> js -w`、`cr <entry> ir -w`）。
-- `-1/--once` 仍保留兼容，但在默认 once 行为下通常可省略。
 
 ### cr eval 基础与常见踩坑
 
