@@ -58,7 +58,7 @@
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing algebra") (; "\"Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
+            defn main! () (log-title "|Testing algebra") (; "|Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)

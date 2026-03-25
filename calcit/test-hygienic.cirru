@@ -11,8 +11,8 @@
             defmacro add-11 (a b)
               let
                   c 11
-                println "\"internal c:" a b c
-                quasiquote $ do (println "\"c is:" c)
+                println "|internal c:" a b c
+                quasiquote $ do (println "|c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
           :schema $ :: :macro

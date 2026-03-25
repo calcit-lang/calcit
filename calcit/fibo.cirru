@@ -17,7 +17,7 @@
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            defn main! () (println "\"Loaded program!") (try-fibo)
+            defn main! () (println "|Loaded program!") (try-fibo)
           :examples $ []
         |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
@@ -36,7 +36,7 @@
           :code $ quote
             defn try-fibo () $ let
                 n 22
-              println "\"fibo result:" n $ fibo n
+              println "|fibo result:" n $ fibo n
           :examples $ []
         |try-prime $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
