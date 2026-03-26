@@ -2347,11 +2347,11 @@ fn infer_return_type_from_compiled_callable(
   call_expr: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  let compiled_value = program::resolve_compiled_executable_def(ns, def, &CallStackList::default())
-    .ok()
-    .flatten()?;
+  let compiled = program::lookup_compiled_def(ns, def)?;
 
-  match compiled_value {
+  // Avoid evaluating compiled payloads during preprocess type inference.
+  // Evaluating function code here can recurse back into preprocess and overflow stack.
+  match compiled.preprocessed_code {
     Calcit::Fn { info, .. } => {
       if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
         return Some(resolved);

@@ -80,7 +80,7 @@ impl GuideDoc {
     let base_title = self.frontmatter.title.as_deref().unwrap_or(&self.filename);
     match &self.scope {
       GuideDocScope::Core => base_title.to_string(),
-      GuideDocScope::Module(module) => format!("{} [module:{}]", base_title, module),
+      GuideDocScope::Module(module) => format!("{base_title} [module:{module}]"),
     }
   }
 }
@@ -435,7 +435,7 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
     let agents_path = path.join("Agents.md");
     if agents_path.exists() {
       let raw_content = fs::read_to_string(&agents_path).map_err(|e| format!("Failed to read file {agents_path:?}: {e}"))?;
-      let agents_doc_path = format!("{}/Agents.md", module_name);
+      let agents_doc_path = format!("{module_name}/Agents.md");
       docs.push(parse_guide_doc(
         "Agents.md".to_string(),
         agents_doc_path,
@@ -453,8 +453,7 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
   if let Some(filter) = module_filter {
     if !seen_modules.contains(filter) {
       return Err(format!(
-        "Module '{filter}' not found under {:?}. Use 'cr libs scan-md <module>' or inspect ~/.config/calcit/modules/.",
-        modules_dir
+        "Module '{filter}' not found under {modules_dir:?}. Use 'cr libs scan-md <module>' or inspect ~/.config/calcit/modules/."
       ));
     }
   }
