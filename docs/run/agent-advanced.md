@@ -1,3 +1,18 @@
+---
+title: "Calcit 编程 Agent 指南"
+scope: "core"
+kind: "agent"
+category: "run"
+aliases:
+  - "agent advanced"
+  - "incremental edit"
+  - "batch rename"
+  - "agent playbook"
+entry_for:
+  - "cr query search"
+  - "cr tree replace-leaf"
+  - "cr edit inc"
+---
 # Calcit 编程 Agent 指南
 
 本文档为 AI Agent 提供 Calcit 项目的操作指南。

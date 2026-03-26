@@ -1,3 +1,25 @@
+---
+title: "Querying Definitions"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "query defs"
+  - "query ns"
+  - "query def"
+  - "usages"
+  - "find symbol"
+  - "search-expr"
+  - "search expr"
+entry_for:
+  - "cr query ns"
+  - "cr query defs"
+  - "cr query def"
+  - "cr query find"
+  - "cr query usages"
+  - "cr query search-expr"
+---
+
 # Querying Definitions
 
 Calcit provides a powerful `query` subcommand to inspect code, find definitions, and analyze usages directly from the command line.

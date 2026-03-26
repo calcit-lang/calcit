@@ -1,3 +1,17 @@
+---
+title: "Polymorphism"
+scope: "core"
+kind: "guide"
+category: "features"
+aliases:
+  - "trait dispatch"
+  - "method dispatch"
+  - "impl-traits"
+entry_for:
+  - "impl-traits"
+  - "trait-call"
+  - "assert-traits"
+---
 # Polymorphism
 
 Calcit models polymorphism with traits. Traits define method capabilities and can be attached to struct/enum definitions with `impl-traits`.

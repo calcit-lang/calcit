@@ -1,3 +1,19 @@
+---
+title: "Cirru Syntax Essentials"
+scope: "core"
+kind: "reference"
+category: "syntax"
+aliases:
+  - "cirru syntax"
+  - "dollar operator"
+  - "comma operator"
+  - "string literals"
+entry_for:
+  - "cr cirru parse"
+  - "cr cirru format"
+  - "cr cirru show-guide"
+---
+
 ## Cirru Syntax Essentials
 
 ### 1. Indentation = Nesting
@@ -89,12 +105,7 @@ defmacro when-not (cond & body)
 JSON equivalent:
 
 ```json
-[
-  "defmacro",
-  "when-not",
-  ["cond", "&", "body"],
-  ["quasiquote", ["if", ["not", "~cond"], ["do", "~@body"]]]
-]
+["defmacro", "when-not", ["cond", "&", "body"], ["quasiquote", ["if", ["not", "~cond"], ["do", "~@body"]]]]
 ```
 
 ## LLM Guidance & Optimization

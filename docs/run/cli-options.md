@@ -1,3 +1,24 @@
+---
+title: "CLI Options"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "watch mode"
+  - "watch"
+  - "once mode"
+  - "check-only"
+  - "reload-fn"
+  - "reload fn"
+  - "watch-dir"
+entry_for:
+  - "cr -w"
+  - "cr js -w"
+  - "cr ir -w"
+  - "cr --help"
+  - "cr --reload-fn"
+---
+
 # CLI Options
 
 ```bash

@@ -1,3 +1,14 @@
+---
+title: "JavaScript Interop"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "javascript interop"
+  - "js interop"
+  - "promise"
+  - "js-await"
+---
 # JavaScript Interop
 
 Calcit keeps JS interop syntax intentionally small. This page covers the existing core patterns:

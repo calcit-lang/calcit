@@ -1,3 +1,13 @@
+---
+title: "Features from Clojure"
+scope: "core"
+kind: "guide"
+category: "intro"
+aliases:
+  - "clojure dialect"
+  - "clojurescript dialect"
+  - "from clojure"
+---
 # Features from Clojure
 
 Calcit is mostly a ClojureScript dialect. So it should also be considered a Clojure dialect.

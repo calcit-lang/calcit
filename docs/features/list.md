@@ -1,3 +1,14 @@
+---
+title: "List"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "vector"
+  - "range"
+  - "append"
+  - "nth"
+---
 # List
 
 Calcit List is a persistent, immutable vector. In Rust it uses [ternary-tree](https://github.com/calcit-lang/ternary-tree.rs) (optimized 2-3 tree with finger-tree tricks). In JavaScript it uses a similar structure with a fast-path `CalcitSliceList` for append-heavy workloads.

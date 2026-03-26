@@ -1,3 +1,13 @@
+---
+title: "Introduction"
+scope: "core"
+kind: "hub"
+category: "intro"
+aliases:
+  - "introduction"
+  - "getting started"
+  - "language overview"
+---
 # Introduction
 
 Calcit is a scripting language that combines the power of Clojure-like functional programming with modern tooling and hot code swapping.

@@ -1,3 +1,14 @@
+---
+title: "Entries"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "entry points"
+  - "init-fn"
+  - "reload-fn"
+  - "config entries"
+---
 # Entries
 
 By default Calcit reads `:init-fn` and `:reload-fn` inside `compact.cirru` configs. You may also specify functions,

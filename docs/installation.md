@@ -1,3 +1,13 @@
+---
+title: "Installation"
+scope: "core"
+kind: "hub"
+category: "installation"
+aliases:
+  - "install calcit"
+  - "cargo install"
+  - "setup"
+---
 cargo install calcit
 
 # Installation

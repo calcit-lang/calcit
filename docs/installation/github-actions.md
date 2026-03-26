@@ -1,3 +1,13 @@
+---
+title: "GitHub Actions"
+scope: "core"
+kind: "reference"
+category: "installation"
+aliases:
+  - "github actions"
+  - "ci"
+  - "workflow"
+---
 # GitHub Actions
 
 To load Calcit `0.9.18` in a Ubuntu container:

@@ -1,3 +1,13 @@
+---
+title: "Persistent Data"
+scope: "core"
+kind: "reference"
+category: "data"
+aliases:
+  - "persistent collections"
+  - "immutable collections"
+  - "ternary tree"
+---
 # Persistent Data
 
 Calcit uses [rpds](https://github.com/orium/rpds) for HashMap and HashSet, and use [Ternary Tree](https://github.com/calcit-lang/ternary-tree.rs/) in Rust.

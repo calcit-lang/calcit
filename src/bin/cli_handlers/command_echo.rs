@@ -159,7 +159,9 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       tokens,
       pos "keyword" => &opts.keyword,
       value "context" => opts.context; default "5",
-      opt "filename" => opts.filename.as_deref(); default "none"
+      opt "filename" => opts.filename.as_deref(); default "none",
+      opt "scope" => opts.scope.as_deref(); default "none",
+      opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::Read(opts) => echo_items!(
       tokens,
@@ -167,7 +169,9 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       list "heading" => &opts.headings,
       switch "no-subheadings" => opts.no_subheadings,
       switch "full" => opts.full,
-      switch "with-lines" => opts.with_lines
+      switch "with-lines" => opts.with_lines,
+      opt "scope" => opts.scope.as_deref(); default "none",
+      opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::Agents(opts) => echo_items!(
       tokens,
@@ -181,7 +185,9 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       tokens,
       pos "filename" => &opts.filename,
       value "start" => opts.start; default "0",
-      value "lines" => opts.lines; default "80"
+      value "lines" => opts.lines; default "80",
+      opt "scope" => opts.scope.as_deref(); default "none",
+      opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::List(_) => {}
     DocsSubcommand::CheckMd(opts) => {

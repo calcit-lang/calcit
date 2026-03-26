@@ -1,3 +1,13 @@
+---
+title: "Common Patterns"
+scope: "core"
+kind: "guide"
+category: "features"
+aliases:
+  - "common recipes"
+  - "pattern examples"
+  - "common tasks"
+---
 # Common Patterns
 
 This document provides practical examples and patterns for common programming tasks in Calcit.

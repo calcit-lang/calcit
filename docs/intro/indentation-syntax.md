@@ -1,3 +1,20 @@
+---
+title: "Indentation-based Syntax"
+scope: "core"
+kind: "reference"
+category: "syntax"
+aliases:
+  - "indentation syntax"
+  - "indentation based syntax"
+  - "compact.cirru"
+  - "compact cirru"
+  - "bundle_calcit"
+  - "cirru edn"
+entry_for:
+  - "bundle_calcit"
+  - "compact.cirru"
+---
+
 ## Indentation Syntax in the MCP Server
 
 When using the MCP (Model Context Protocol) server, each documentation or code file is exposed as a key (the filename) with its content as the value. This means you can programmatically fetch, update, or analyze any file as a single value, making it easy for tools and agents to process Calcit code and documentation. Indentation-based syntax is preserved in the file content, so structure and meaning are maintained when accessed through the MCP server.

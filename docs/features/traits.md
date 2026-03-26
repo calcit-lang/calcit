@@ -1,3 +1,13 @@
+---
+title: "Traits"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "trait call"
+  - "trait impl"
+  - "assert-traits"
+---
 # Traits
 
 Calcit provides a lightweight trait system for attaching method implementations to struct/enum definitions (and using them from constructed instances and built-in types).

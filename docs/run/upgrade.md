@@ -1,3 +1,14 @@
+---
+title: "Calcit 项目升级手册（Respo / Lilac）"
+scope: "core"
+kind: "guide"
+category: "run"
+aliases:
+  - "upgrade"
+  - "dependency migration"
+  - "respo upgrade"
+  - "lilac upgrade"
+---
 # Calcit 项目升级手册（Respo / Lilac）
 
 本手册只关注**项目升级流程**，不展开开发实现细节。

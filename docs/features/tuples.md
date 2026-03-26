@@ -1,3 +1,13 @@
+---
+title: "Tuples"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "tuple"
+  - "tagged tuple"
+  - "tuple match"
+---
 # Tuples
 
 Tuples in Calcit are tagged unions that can hold multiple values with a tag. They are used for representing structured data and are the foundation for records and enums.

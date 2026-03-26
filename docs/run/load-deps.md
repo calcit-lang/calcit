@@ -1,3 +1,13 @@
+---
+title: "Load Dependencies"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "load dependencies"
+  - "deps.cirru"
+  - "caps"
+---
 # Load Dependencies
 
 `caps` command is used for downloading dependencies declared in `deps.cirru`. The name "caps" stands for "Calcit Dependencies".

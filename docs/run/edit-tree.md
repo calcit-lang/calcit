@@ -1,3 +1,19 @@
+---
+title: "CLI Code Editing (edit & tree)"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "edit tree"
+  - "target-replace"
+  - "add-import"
+  - "tree replace"
+  - "tree rewrite"
+entry_for:
+  - "cr tree target-replace"
+  - "cr edit add-import"
+  - "cr query search"
+---
 # CLI Code Editing (edit & tree)
 
 Calcit provides powerful CLI tools for modifying code directly without opening a text editor. These commands are optimized for both interactive use and automated scripts/agents.

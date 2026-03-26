@@ -1,3 +1,18 @@
+---
+title: "Run Calcit"
+scope: "core"
+kind: "hub"
+category: "run"
+aliases:
+  - "run calcit"
+  - "watch mode"
+  - "entry file"
+  - "hot reload"
+entry_for:
+  - "cr"
+  - "cr js"
+  - "cr ir"
+---
 # Run Calcit
 
 This page is a quick navigation hub. Detailed topics are split into dedicated chapters under `run/`.

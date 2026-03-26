@@ -1,3 +1,13 @@
+---
+title: "Enums (defenum)"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "defenum"
+  - "tagged union"
+  - "tagged unions"
+---
 # Enums (defenum)
 
 Calcit enums are tagged unions — each variant has a tag (keyword) and zero or more typed payload fields. Under the hood enums are represented as tuples with a class reference.

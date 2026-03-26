@@ -1,3 +1,17 @@
+---
+title: "Calcit Agent 快速实践（局部查看与编辑优先）"
+scope: "core"
+kind: "agent"
+category: "run"
+aliases:
+  - "agent workflow"
+  - "llm workflow"
+  - "local editing guide"
+  - "copilot workflow"
+entry_for:
+  - "cr docs agents"
+  - "cr docs read agent-advanced.md"
+---
 # Calcit Agent 快速实践（局部查看与编辑优先）
 
 本文档面向 Agent/LLM 的高频工作流，目标是**更快定位、最小改动、低噪音验证**。
@@ -187,13 +201,13 @@ cr js
 
 ## 0) 硬前置步骤
 
-在任何 `cr edit` / `cr tree` 修改前，先执行一次：
+在任何 `cr edit` / `cr tree` 修改前，如果没有命令行相关的记忆, 执行命令获取关键文档的内容：
 
 ```bash
 cr docs agents --full
 ```
 
-这一步不是建议项，用于避免沿用旧命令心智模型。
+这个文件默认存储在 `~/./config/calcit/Agents.md`, 后续步骤可以直接读取.
 
 ---
 

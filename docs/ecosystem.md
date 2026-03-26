@@ -1,3 +1,13 @@
+---
+title: "Ecosystem"
+scope: "core"
+kind: "guide"
+category: "ecosystem"
+aliases:
+  - "libraries"
+  - "modules"
+  - "packages"
+---
 # Ecosystem
 
 ### Libraries:

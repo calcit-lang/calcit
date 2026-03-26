@@ -1,3 +1,13 @@
+---
+title: "Records"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "record type"
+  - "field access"
+  - "struct fields"
+---
 # Records
 
 Calcit provides Records as a way to define structured data types with named fields, similar to structs in other languages. Records are defined with `defstruct` and instantiated with the `%{}` macro.

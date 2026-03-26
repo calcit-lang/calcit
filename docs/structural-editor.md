@@ -1,3 +1,14 @@
+---
+title: "Structural Editor"
+scope: "core"
+kind: "reference"
+category: "tools"
+aliases:
+  - "calcit editor"
+  - "tree editor"
+  - "deprecated editor"
+  - "structural editing"
+---
 # Structural Editor
 
 > **Deprecated:** As Calcit shifts toward LLM-generated code workflows, command-line operations and type annotations have become more important. The structural editor approach is no longer recommended. Agent interfaces are preferred over direct user interaction.

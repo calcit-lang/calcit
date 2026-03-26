@@ -1,3 +1,21 @@
+---
+title: "Documentation & Libraries"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "docs"
+  - "libs"
+  - "read-lines"
+  - "scan-md"
+  - "docs read"
+entry_for:
+  - "cr docs search"
+  - "cr docs read"
+  - "cr docs read-lines"
+  - "cr libs scan-md"
+---
+
 # Documentation & Libraries
 
 Calcit includes built-in commands to navigate the language guidebook and discover community libraries.
@@ -12,8 +30,15 @@ The `docs` subcommand allows you to read the language guidebook (like this one) 
 # List all chapters in the guidebook
 cr docs list
 
+# Read the local Agent guide (frontmatter, if present, is hidden automatically)
+cr docs agents
+
 # Read a specific file (fuzzy matching supported)
 cr docs read run.md
+
+# Read by title/alias instead of exact filename
+cr docs read target-replace
+cr docs read "CLI Code Editing"
 
 # List headings in a file (best first step before narrowing)
 cr docs read run.md
@@ -23,6 +48,9 @@ cr docs read run.md quick start
 
 # Search for keywords across all chapters
 cr docs search "polymorphism"
+
+# Search installed module docs only
+cr docs search render --module respo.calcit
 ```
 
 ### Advanced Navigation (`read`)
@@ -44,6 +72,12 @@ Use `read-lines` for large files where you need a specific range:
 ```bash
 # Read 50 lines starting from line 100 of common-patterns.md
 cr docs read-lines common-patterns.md --start 100 --lines 50
+
+# Resolve by alias/title first, then read a specific range
+cr docs read-lines target-replace --start 48 --lines 8
+
+# Read a module document by title/alias with the same resolver
+cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 
 ## Fast Navigation Patterns
@@ -60,6 +94,25 @@ cr docs read query.md usages
 ```bash
 cr docs search trait
 cr docs read traits.md
+```
+
+### Pattern 3: Search by documentation scope
+
+```bash
+# Search only the built-in guidebook
+cr docs search hot-swapping --scope core
+
+# Search installed modules
+cr docs search clear-cache --scope modules
+
+# Search one installed module directly
+cr docs search defstyle --module respo.calcit
+
+# Search module Agent/docs together and let ranking pick the better hit
+cr docs search render --module respo.calcit
+
+# Read one module document directly with the same resolver
+cr docs read Respo-Agent --module respo.calcit
 ```
 
 ## Library Discovery (`libs`)

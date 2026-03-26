@@ -1,3 +1,13 @@
+---
+title: "Error Handling"
+scope: "core"
+kind: "guide"
+category: "features"
+aliases:
+  - "try raise"
+  - "exception handling"
+  - "errors"
+---
 # Error Handling
 
 Calcit uses `try` / `raise` for exception-based error handling. Errors are string values (or tags) propagated up the call stack.

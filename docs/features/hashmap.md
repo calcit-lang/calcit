@@ -1,3 +1,13 @@
+---
+title: "HashMap"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "hash map"
+  - "map"
+  - "key value"
+---
 # HashMap
 
 Calcit HashMap is a persistent, immutable hash map. In Rust it uses [rpds::HashTrieMap](https://docs.rs/rpds/0.10.0/rpds/#hashtriemap). In JavaScript it is built on [ternary-tree](https://github.com/calcit-lang/ternary-tree.ts).

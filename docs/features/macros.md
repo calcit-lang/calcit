@@ -1,3 +1,13 @@
+---
+title: "Macros"
+scope: "core"
+kind: "guide"
+category: "features"
+aliases:
+  - "defmacro"
+  - "macro expansion"
+  - "quote"
+---
 # Macros
 
 Like Clojure, Calcit uses macros to support new syntax. And macros ared evaluated during building to expand syntax tree. A `defmacro` block returns list and symbols, as well as literals:

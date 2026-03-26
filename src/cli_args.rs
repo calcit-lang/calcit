@@ -508,6 +508,12 @@ pub struct DocsSearchCommand {
   /// filter by filename (optional)
   #[argh(option, short = 'f')]
   pub filename: Option<String>,
+  /// search scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// search docs for a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -529,6 +535,12 @@ pub struct DocsReadCommand {
   /// show line numbers in heading list and section titles
   #[argh(switch)]
   pub with_lines: bool,
+  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -565,6 +577,12 @@ pub struct DocsReadLinesCommand {
   /// number of lines to read (default: 80)
   #[argh(option, short = 'n', default = "80")]
   pub lines: usize,
+  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

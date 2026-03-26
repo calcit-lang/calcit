@@ -1,3 +1,13 @@
+---
+title: "Sets"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "hashset"
+  - "set operations"
+  - "unique values"
+---
 # Sets
 
 Calcit provides HashSet data structure for storing unordered unique elements. In Rust implementation, it uses `rpds::HashTrieSet`, while in JavaScript it uses a custom implementation based on ternary-tree.

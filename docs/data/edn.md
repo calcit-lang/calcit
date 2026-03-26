@@ -1,3 +1,15 @@
+---
+title: "Cirru Extensible Data Notation"
+scope: "core"
+kind: "reference"
+category: "data"
+aliases:
+  - "cirru edn"
+  - "edn notation"
+  - "data notation"
+entry_for:
+  - "cr cirru parse-edn"
+---
 # Cirru Extensible Data Notation
 
 > Data notation based on Cirru. Learnt from [Clojure EDN](https://github.com/edn-format/edn).

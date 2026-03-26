@@ -1,3 +1,16 @@
+---
+title: "Hot Swapping"
+scope: "core"
+kind: "guide"
+category: "run"
+aliases:
+  - "hot reload"
+  - "hot swapping"
+  - "compact-inc"
+  - "incremental compile"
+entry_for:
+  - "cr edit inc"
+---
 # Hot Swapping
 
 Since there are two platforms for running Calcit, soutions for hot swapping are implemented differently.

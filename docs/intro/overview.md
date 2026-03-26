@@ -1,3 +1,13 @@
+---
+title: "Overview"
+scope: "core"
+kind: "guide"
+category: "intro"
+aliases:
+  - "overview"
+  - "immutable data"
+  - "pattern matching"
+---
 # Overview
 
 - Immutable Data

@@ -1,3 +1,13 @@
+---
+title: "Rust bindings"
+scope: "core"
+kind: "reference"
+category: "installation"
+aliases:
+  - "ffi"
+  - "rust bindings"
+  - "native bindings"
+---
 # Rust bindings
 
 > API status: unstable.

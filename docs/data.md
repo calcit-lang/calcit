@@ -1,3 +1,13 @@
+---
+title: "Data Types"
+scope: "core"
+kind: "hub"
+category: "data"
+aliases:
+  - "data types"
+  - "persistent data"
+  - "immutable data"
+---
 # Data Types
 
 Calcit provides several core data types, all immutable by default for functional programming:

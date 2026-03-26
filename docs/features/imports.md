@@ -1,3 +1,21 @@
+---
+title: "Imports"
+scope: "core"
+kind: "reference"
+category: "features"
+aliases:
+  - "namespace imports"
+  - "require"
+  - "refer"
+  - "module imports"
+  - "add import"
+  - "edit imports"
+entry_for:
+  - "cr edit add-import"
+  - "cr edit imports"
+  - "ns :require"
+---
+
 # Imports
 
 Calcit loads namespaces from `compact.cirru` (the compiled representation of source files). Dependencies are tracked via `~/.config/calcit/modules/`.

@@ -1,3 +1,17 @@
+---
+title: "Quick Reference"
+scope: "core"
+kind: "reference"
+category: "reference"
+aliases:
+  - "cheatsheet"
+  - "cheat sheet"
+  - "quick commands"
+  - "quick reference"
+entry_for:
+  - "cr --version"
+  - "cargo run --bin cr -- -v"
+---
 # Quick Reference
 
 This page provides a quick overview of key Calcit concepts and commands for rapid lookup.

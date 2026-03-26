@@ -1,3 +1,13 @@
+---
+title: "Bundle Mode"
+scope: "core"
+kind: "guide"
+category: "run"
+aliases:
+  - "bundle mode"
+  - "single file deployment"
+  - "bundle"
+---
 # Bundle Mode
 
 Calcit programs are primarily designed to be written using the [calcit-editor](http://github.com/calcit-lang/editor), a structural editor.

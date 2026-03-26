@@ -1,3 +1,22 @@
+---
+title: "Run in Eval mode"
+scope: "core"
+kind: "reference"
+category: "run"
+aliases:
+  - "eval"
+  - "snippet"
+  - "repl"
+  - "type check"
+  - "eval dep"
+  - "eval module"
+  - "cr eval"
+entry_for:
+  - "cr eval"
+  - "cr eval --dep"
+  - "cr eval --check-only"
+---
+
 # Run in Eval mode
 
 Use `eval` command to evaluate code snippets from CLI:

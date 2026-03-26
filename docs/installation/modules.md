@@ -1,3 +1,17 @@
+---
+title: "Modules directory"
+scope: "core"
+kind: "reference"
+category: "installation"
+aliases:
+  - "modules directory"
+  - "installed modules"
+  - "module docs"
+  - "caps"
+entry_for:
+  - "caps install"
+  - "cr libs scan-md"
+---
 # Modules directory
 
 Packages are managed with `caps` command, which wraps `git clone` and `git pull` to manage modules.
