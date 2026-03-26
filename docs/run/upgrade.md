@@ -9,6 +9,7 @@ aliases:
   - "respo upgrade"
   - "lilac upgrade"
 ---
+
 # Calcit 项目升级手册（Respo / Lilac）
 
 本手册只关注**项目升级流程**，不展开开发实现细节。
@@ -27,12 +28,29 @@ aliases:
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
+- 结构化编辑优先使用 `cr edit` / `cr tree`；若直接改过 `compact.cirru`，提交前执行一次 `cr edit format`
 
 ---
 
 ## 2）标准升级流程（建议顺序）
 
 下面流程按“先确认版本，再对齐工具链，再更新依赖，最后按 CI 链路验证”的顺序执行。
+
+### 快速命令清单
+
+```bash
+cr --version
+caps outdated --yes
+caps
+corepack enable
+corepack prepare yarn@4.12.0 --activate
+yarn install
+yarn install --immutable
+cr js
+yarn vite build --base=./
+```
+
+说明：`yarn install` 只在 lockfile 迁移或依赖变更时需要；平时可直接从 `yarn install --immutable` 开始。
 
 ### Step A：确认 Calcit CLI 版本
 
@@ -50,7 +68,7 @@ cr --version
 - `package.json` 里的 `@calcit/procs`
 - `package.json` 里的 `packageManager`
 - `.yarnrc.yml` 是否需要 `nodeLinker: node-modules`
-- `.gitignore` 是否已忽略 `.yarn/*.gz`，避免 Yarn 生成的压缩状态文件入库
+- `.gitignore` 是否已忽略 `.yarn/*.gz`（避免 Yarn 压缩状态文件入库）
 
 先把这些基础版本与工具链约定对齐，再继续更新依赖，能减少后面重复改 lockfile 或 CI 的次数。
 
@@ -60,15 +78,7 @@ cr --version
 caps outdated --yes
 ```
 
-说明：
-
-- `caps outdated`：查看可更新项；
-- `caps outdated --yes`：直接更新 `deps.cirru`（无交互确认）。
-- `caps`：根据当前 `deps.cirru` 下载/同步模块内容。
-
-注意：`caps outdated --yes` 只负责更新 `deps.cirru`，不等于已经完成模块同步。
-
-若依赖是固定 tag/version，仍需先改 `deps.cirru` 再执行更新。
+说明：`caps outdated --yes` 用于更新 `deps.cirru`，不负责模块下载。
 
 ### Step D：同步模块内容
 
@@ -76,7 +86,7 @@ caps outdated --yes
 caps
 ```
 
-说明：这一步才是根据当前 `deps.cirru` 下载/同步模块内容。若跳过这一步，后面的编译与安装结果容易混入旧模块状态。
+说明：这一步才会按当前 `deps.cirru` 下载/同步模块内容。
 
 ### Step E：用 Yarn Berry 安装并校验
 
@@ -108,14 +118,14 @@ cr --entry <entry-name> js
 cr js && yarn vite build --base=./
 ```
 
-如果 `package.json` 里有与编译、构建、测试相关的脚本，也应本地执行一遍；如果没有额外脚本，这一步可以跳过。若项目直接通过 Vite 构建，也可直接执行：
+如果 `package.json` 里有编译、构建、测试相关脚本，也应本地执行一遍；没有额外脚本可跳过。若项目直接通过 Vite 构建，可执行：
 
 ```bash
 yarn up vite
 yarn vite build --base=./
 ```
 
-说明：最近 Vite 有大版本更新。若项目依赖 Vite，升级时建议显式执行一次 `yarn up vite`，并在更新后重新跑 `yarn vite build --base=./` 确认没有新的构建兼容性问题。
+说明：若项目依赖 Vite，升级时建议显式执行一次 `yarn up vite`，并重跑构建确认兼容性。
 
 例如还有：
 
