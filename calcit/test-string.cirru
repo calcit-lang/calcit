@@ -222,7 +222,7 @@
           :code $ quote
             fn () (log-title "|Test blank?")
               assert-detect identity $ blank? |
-              assert-detect identity $ blank? "\""
+              assert-detect identity $ blank? |
               assert-detect identity $ blank? "| "
               assert-detect identity $ blank? "|  "
               assert-detect identity $ blank? "|\n"

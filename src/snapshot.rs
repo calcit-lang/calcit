@@ -1389,63 +1389,27 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
 
   let edn_data = Edn::from(edn_map);
 
-  // Format Edn as Cirru string
-  let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
-  let content = normalize_pipe_prefixed_strings(&content);
+  // Normalize on AST directly, avoiding parse-after-format roundtrip.
+  let normalized = normalize_pipe_prefixed_leaf(edn_data.cirru());
+  let content = cirru_parser::format(std::slice::from_ref(&normalized), true.into())
+    .map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
 
   validate_serialized_snapshot_content(&content)?;
 
   Ok(content)
 }
 
-fn normalize_pipe_prefixed_strings(content: &str) -> String {
-  let mut out = String::with_capacity(content.len());
-  let bytes = content.as_bytes();
-  let mut i = 0;
-
-  while i < bytes.len() {
-    let ch = bytes[i] as char;
-    let at_token_start = i == 0 || is_leaf_boundary(bytes[i - 1] as char);
-
-    if at_token_start && ch == '"' {
-      let mut j = i + 1;
-      while j < bytes.len() {
-        let c = bytes[j] as char;
-        if c == '\n' || c == '\r' || c == ')' {
-          break;
-        }
-        j += 1;
-      }
-
-      let token = &content[i + 1..j];
-      if can_use_pipe_prefix(token) {
-        out.push('|');
-        out.push_str(token);
+fn normalize_pipe_prefixed_leaf(node: Cirru) -> Cirru {
+  match node {
+    Cirru::Leaf(token) => {
+      if let Some(rest) = token.strip_prefix('"') {
+        Cirru::leaf(format!("|{rest}"))
       } else {
-        out.push('"');
-        out.push_str(token);
+        Cirru::Leaf(token)
       }
-      i = j;
-      continue;
     }
-
-    out.push(ch);
-    i += 1;
+    Cirru::List(items) => Cirru::List(items.into_iter().map(normalize_pipe_prefixed_leaf).collect()),
   }
-
-  out
-}
-
-fn is_leaf_boundary(ch: char) -> bool {
-  ch.is_whitespace() || ch == '(' || ch == ')'
-}
-
-fn can_use_pipe_prefix(token: &str) -> bool {
-  !token.is_empty()
-    && !token.contains('\\')
-    && token
-      .chars()
-      .all(|c| !c.is_whitespace() && c != '(' && c != ')' && c != '"' && c != '\'')
 }
 
 /// Save snapshot to compact.cirru file
@@ -1469,16 +1433,40 @@ mod tests {
 
   #[test]
   fn normalizes_simple_quoted_tokens_to_pipe_prefix() {
-    let input = "{} (:a \"&) (:b \"56px) (:c \"hello-world)";
-    let output = normalize_pipe_prefixed_strings(input);
-    assert_eq!(output, "{} (:a |&) (:b |56px) (:c |hello-world)");
+    let input = "{} (:a \"|&\") (:b \"|56px\") (:c \"|hello-world\")";
+    let nodes = cirru_parser::parse(input).expect("input should parse");
+    let output_node = normalize_pipe_prefixed_leaf(nodes[0].to_owned());
+    let output = cirru_parser::format(std::slice::from_ref(&output_node), true.into()).expect("output should format");
+    assert_eq!(output.trim(), "{} (:a |&) (:b |56px) (:c |hello-world)");
   }
 
   #[test]
-  fn keeps_quoted_tokens_when_pipe_prefix_is_unsafe() {
-    let input = "{} (:a \"hello world) (:b \"line\\nfeed) (:c \"x(y))";
-    let output = normalize_pipe_prefixed_strings(input);
-    assert_eq!(output, input);
+  fn normalizes_all_quote_prefixed_leaves_from_ast() {
+    let input = "{} (:a \"|hello world\") (:b \"|line\\nfeed\") (:c \"|x(y)\")";
+    let nodes = cirru_parser::parse(input).expect("input should parse");
+    let output_node = normalize_pipe_prefixed_leaf(nodes[0].to_owned());
+    let output = cirru_parser::format(std::slice::from_ref(&output_node), true.into()).expect("output should format");
+
+    let nodes = cirru_parser::parse(&output).expect("normalized output should still be parseable");
+    let Cirru::List(root_items) = &nodes[0] else {
+      panic!("expected one root list");
+    };
+
+    for pair in root_items.iter().skip(1) {
+      let Cirru::List(pair_items) = pair else {
+        continue;
+      };
+      if pair_items.len() < 2 {
+        continue;
+      }
+      let Cirru::Leaf(value) = &pair_items[1] else {
+        continue;
+      };
+      assert!(
+        value.starts_with('|'),
+        "expected string leaf to be normalized to pipe-prefix in AST, got: {value}"
+      );
+    }
   }
 
   #[test]
