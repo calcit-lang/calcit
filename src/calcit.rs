@@ -1094,7 +1094,7 @@ impl fmt::Display for NodeLocation {
       "{}/{} [{}]",
       self.ns,
       self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
     )
   }
 }
@@ -1496,5 +1496,15 @@ mod tests {
       assert_eq!(value.cmp(&cloned), Equal);
       assert_eq!(calcit_hash(&value), calcit_hash(&cloned));
     }
+  }
+
+  #[test]
+  fn node_location_uses_dot_separator() {
+    let loc = NodeLocation::new(
+      Arc::from("app.comp.sidebar"),
+      Arc::from("comp-sidebar"),
+      Arc::from(vec![3, 2, 1, 0]),
+    );
+    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar [3.2.1.0]");
   }
 }

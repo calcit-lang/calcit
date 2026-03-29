@@ -154,6 +154,50 @@ pub fn display_stack_with_docs(
           .map(|s| Arc::new(NodeLocation::new(s.ns.to_owned(), s.def.to_owned(), Arc::new(vec![]))))
       })
   });
+  let mut stack_rows: Vec<(usize, &CalcitStack, Option<NodeLocation>)> = vec![];
+  for (idx, s) in stack.0.iter().enumerate() {
+    let stack_location = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit));
+    stack_rows.push((idx, s, stack_location));
+  }
+
+  let current_package = fallback_location
+    .as_deref()
+    .map(|l| root_ns(&l.ns).to_string())
+    .or_else(|| {
+      stack_rows.iter().find_map(|(_, _, loc)| {
+        loc
+          .as_ref()
+          .and_then(|l| (!is_calcit_ns(&l.ns)).then(|| root_ns(&l.ns).to_string()))
+      })
+    })
+    .or_else(|| {
+      stack_rows
+        .iter()
+        .find_map(|(_, s, _)| (!is_calcit_ns(&s.ns)).then(|| root_ns(&s.ns).to_string()))
+    })
+    .unwrap_or_else(|| String::from(crate::calcit::CORE_NS));
+
+  stack_rows.sort_by_key(|(idx, s, loc)| {
+    let ns_for_priority = loc.as_ref().map(|l| l.ns.as_ref()).unwrap_or(s.ns.as_ref());
+    let priority = if root_ns(ns_for_priority) == current_package {
+      0
+    } else if is_calcit_ns(ns_for_priority) {
+      2
+    } else {
+      1
+    };
+    (priority, *idx)
+  });
+
+  eprintln!("\nStack:");
+  for (_, s, stack_location) in &stack_rows {
+    let is_macro = s.kind == StackKind::Macro;
+    match stack_location {
+      Some(l) => eprintln!("  {}/{}{} @ {l}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
+      None => eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
+    }
+  }
+
   eprintln!("\nFailure: {failure}");
   if let Some(l) = fallback_location.as_deref() {
     eprintln!("  at {l}");
@@ -169,25 +213,14 @@ pub fn display_stack_with_docs(
       }
     }
   }
-  eprintln!("\ncall stack:");
-
-  for s in &stack.0 {
-    let is_macro = s.kind == StackKind::Macro;
-    let stack_location = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit));
-    match stack_location {
-      Some(l) => eprintln!("  {}/{}{} @ {l}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
-      None => eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
-    }
-  }
 
   let mut stack_list = EdnListView::default();
-  for s in &stack.0 {
+  for (_, s, stack_location) in &stack_rows {
     let mut args = EdnListView::default();
     for v in s.args.iter() {
       let edn_val = edn::calcit_to_edn(v)?;
       args.push(edn::sanitize_edn_for_format(&edn_val));
     }
-    let stack_location = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit));
     let mut info_map = vec![
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
       (Edn::tag("code"), cirru::calcit_to_cirru(&s.code)?.into()),
@@ -236,6 +269,14 @@ pub fn display_stack_with_docs(
   let _ = fs::write(ERROR_SNAPSHOT, content);
   eprintln!("\nrun `cat {ERROR_SNAPSHOT}` to read stack details.");
   Ok(())
+}
+
+fn root_ns(ns: &str) -> &str {
+  ns.split('.').next().unwrap_or(ns)
+}
+
+fn is_calcit_ns(ns: &str) -> bool {
+  ns == crate::calcit::CORE_NS || ns.starts_with("calcit.")
 }
 
 const ERROR_SNAPSHOT: &str = ".calcit-error.cirru";

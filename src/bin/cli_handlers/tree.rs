@@ -1138,7 +1138,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     let parent_display = if parent_path.is_empty() {
       "root".to_string()
     } else {
-      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
     };
 
     match operation {

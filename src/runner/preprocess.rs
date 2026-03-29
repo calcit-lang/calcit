@@ -806,7 +806,7 @@ fn preprocess_list_call(
 
             let loc = head.get_location().or_else(|| first_arg.get_location());
             if let Some(l) = loc {
-              let coord_repr = l.coord.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+              let coord_repr = l.coord.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(".");
               eprintln!(
                 "[&inspect-type] in {}/{} [{}]\n  {} => {}",
                 l.ns,
