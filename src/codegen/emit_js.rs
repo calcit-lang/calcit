@@ -199,6 +199,12 @@ fn indent_block(body: &str, indent: &str) -> String {
     .join("\n")
 }
 
+fn raw_syntax_codegen_error(syntax: &CalcitSyntax) -> String {
+  format!(
+    "invalid JS codegen: raw syntax node `{syntax}` cannot be emitted as a standalone JS value. LLM hint: special forms must start an expression, for example `(if cond a b)`, or appear at the beginning of a line / after `$`, instead of being left as a separate argument node."
+  )
+}
+
 fn to_js_code(
   xs: &Calcit,
   ns: &str,
@@ -294,10 +300,7 @@ fn to_js_code(
           info.def_ns, info.name, info.usage.used_in_impl
         ))
       }
-      Calcit::Syntax(s, ..) => {
-        let proc_prefix = get_proc_prefix(ns);
-        Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
-      }
+      Calcit::Syntax(s, ..) => Err(raw_syntax_codegen_error(s)),
       Calcit::Str(s) => Ok(escape_cirru_str(s)),
       Calcit::Bool(b) => Ok(b.to_string()),
       Calcit::Number(n) => Ok(n.to_string()),
@@ -419,10 +422,23 @@ fn gen_call_code(
           }
           (_, _) => Err(format!("try expected 2 nodes, got: {body}")),
         },
+        CalcitSyntax::Eval => {
+          let (prelude, args_code) =
+            gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
+          let call_code = format!("{proc_prefix}{}({args_code})", escape_var("eval"));
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
+        }
+        CalcitSyntax::Reset => {
+          let (prelude, args_code) =
+            gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
+          let call_code = format!("{proc_prefix}{}({args_code})", escape_var("reset!"));
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
+        }
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
+        CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
         _ => {
           let (prelude, args_code) =
             gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
@@ -1545,5 +1561,56 @@ mod tests {
   fn core_codegen_skips_syntax_names_even_without_runtime_placeholder_source() {
     let compiled = compiled_def_for_codegen_test(program::CompiledDefKind::LazyValue, None);
     assert!(should_skip_core_def_codegen("eval", &compiled));
+  }
+
+  #[test]
+  fn raw_syntax_nodes_fail_js_codegen_with_llm_hint() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let failure = to_js_code(
+      &Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.emit-js")),
+      "tests.emit-js",
+      &local_defs,
+      &file_imports,
+      &tags,
+      None,
+    )
+    .expect_err("raw syntax should be rejected in JS codegen");
+
+    assert!(failure.contains("raw syntax node `if`"), "unexpected error: {failure}");
+    assert!(failure.contains("LLM hint"), "unexpected error: {failure}");
+  }
+
+  #[test]
+  fn reset_syntax_call_codegen_uses_runtime_proc() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Reset, Arc::from("tests.emit-js")),
+      symbol("state"),
+      Calcit::Number(1.0),
+    ])));
+
+    let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("reset! should compile");
+
+    assert_eq!(code, "$clt.reset_$x_(state, 1)");
+  }
+
+  #[test]
+  fn eval_syntax_call_codegen_uses_runtime_proc() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Eval, Arc::from("tests.emit-js")),
+      symbol("code"),
+    ])));
+
+    let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("eval should compile");
+
+    assert_eq!(code, "$clt.eval(code)");
   }
 }

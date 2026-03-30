@@ -575,7 +575,6 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        eprintln!("\nfailed codegen, {failure}");
         call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
@@ -585,7 +584,6 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        eprintln!("\nfailed codegen, {failure}");
         call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }

@@ -509,7 +509,7 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
       changes.push(format!("{} outdated package(s)", outdated_packages.len()));
     }
     if let Some(version) = &calcit_version_upgrade {
-      changes.push(format!("calcit-version {} -> {}", version, CALCIT_VERSION));
+      changes.push(format!("calcit-version {version} -> {CALCIT_VERSION}"));
     }
     print!("Found {}. Update deps.cirru? (y/N): ", changes.join(", "));
     std::io::stdout().flush().map_err(|e| e.to_string())?;

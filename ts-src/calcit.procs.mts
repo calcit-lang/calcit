@@ -22,7 +22,7 @@ import {
 } from "./calcit-data.mjs";
 
 import { CalcitRef } from "./js-ref.mjs";
-import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
+import { CalcitRecord } from "./js-record.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStruct } from "./js-struct.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
