@@ -1157,6 +1157,11 @@ fn gen_js_func(
       if is_hint {
         if hinted_async(xs) {
           async_prefix = String::from("async ")
+        } else if xs.len() > 1 && !xs.iter().skip(1).any(is_schema_map_form) {
+          eprintln!(
+            "[Warn] hint-fn args not in recognized schema map form in {}/{name}; correct usage: `hint-fn $ {{}} (:async true)`",
+            passed_defs.ns
+          );
         }
         continue;
       }
@@ -1259,6 +1264,21 @@ fn hinted_async(xs: &CalcitList) -> bool {
   }
 
   xs.iter().skip(1).any(schema_marks_async)
+}
+
+/// Returns true when a value is in the schema map form recognised by hint-fn:
+/// either an already-evaluated `Calcit::Map` or a list-literal starting with
+/// `{}` / `NativeMap`.  Used to distinguish valid schema annotations (which
+/// should never warn) from malformed async hints.
+fn is_schema_map_form(form: &Calcit) -> bool {
+  match form {
+    Calcit::Map(_) => true,
+    Calcit::List(list) => {
+      matches!(list.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}")
+        || matches!(list.first(), Some(Calcit::Proc(CalcitProc::NativeMap)))
+    }
+    _ => false,
+  }
 }
 
 fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
