@@ -392,7 +392,7 @@ impl CalcitList {
     }
   }
 
-  pub fn iter(&self) -> CalcitListIterator {
+  pub fn iter(&self) -> CalcitListIterator<'_> {
     CalcitListIterator {
       value: self,
       index: 0,
