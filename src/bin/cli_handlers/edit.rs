@@ -1521,12 +1521,14 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
       // Validate semver-like format (x.y.z with optional pre-release suffix)
       let is_valid_semver = {
         let parts: Vec<&str> = v.splitn(4, '.').collect();
-        parts.len() >= 3 && parts.iter().take(3).all(|p| !p.is_empty() && p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+        parts.len() >= 3
+          && parts
+            .iter()
+            .take(3)
+            .all(|p| !p.is_empty() && p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
       };
       if !is_valid_semver {
-        return Err(format!(
-          "Invalid version '{v}': expected semver format, e.g. '0.0.17'"
-        ));
+        return Err(format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"));
       }
       snapshot.configs.version = opts.value.clone();
     }

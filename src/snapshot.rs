@@ -1016,8 +1016,69 @@ pub struct Snapshot {
 impl TryFrom<Edn> for SnapshotConfigs {
   type Error = String;
   fn try_from(data: Edn) -> Result<SnapshotConfigs, String> {
-    from_edn(data)
+    parse_snapshot_configs_with_context(data, "configs")
   }
+}
+
+fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str) -> Result<String, String> {
+  let value = data.get(&Edn::tag(key)).ok_or_else(|| format!("{owner}: missing `:{key}` field"))?;
+
+  let text: Arc<str> = value
+    .to_owned()
+    .try_into()
+    .map_err(|e| format!("{owner}.{key}: {e}; got {}", format_edn_preview(value)))?;
+
+  if key == "version" && text.trim().is_empty() {
+    return Err(format!(
+      "{owner}.version cannot be empty; check `:configs (:version ...)`; got {}",
+      format_edn_preview(value)
+    ));
+  }
+
+  Ok(text.to_string())
+}
+
+fn parse_snapshot_configs_with_context(data: Edn, owner: &str) -> Result<SnapshotConfigs, String> {
+  let data = data
+    .view_map()
+    .map_err(|e| format!("{owner}: failed to parse config map: {e}; got {}", format_edn_preview(&data)))?;
+
+  let init_fn = parse_snapshot_config_string_field(&data, "init-fn", owner)?;
+  let reload_fn = parse_snapshot_config_string_field(&data, "reload-fn", owner)?;
+
+  let version = match data.get(&Edn::tag("version")) {
+    Some(_) => parse_snapshot_config_string_field(&data, "version", owner)?,
+    None => default_version(),
+  };
+
+  let modules = match data.get(&Edn::tag("modules")) {
+    Some(value) => from_edn(value.to_owned()).map_err(|e| format!("{owner}.modules: {e}; got {}", format_edn_preview(value)))?,
+    None => Vec::new(),
+  };
+
+  Ok(SnapshotConfigs {
+    init_fn,
+    reload_fn,
+    modules,
+    version,
+  })
+}
+
+fn parse_entries_with_context(data: &Edn) -> Result<HashMap<String, SnapshotConfigs>, String> {
+  let entries_map = data
+    .view_map()
+    .map_err(|e| format!("entries: failed to parse entries map: {e}; got {}", format_edn_preview(data)))?;
+
+  let mut entries = HashMap::with_capacity(entries_map.0.len());
+  for (entry_key, entry_value) in entries_map.0.iter() {
+    let entry_name: String = from_edn(entry_key.to_owned())
+      .map_err(|e| format!("entries: failed to parse entry name: {e}; got {}", format_edn_preview(entry_key)))?;
+    let owner = format!("entries.{entry_name}");
+    let entry = parse_snapshot_configs_with_context(entry_value.to_owned(), &owner)?;
+    entries.insert(entry_name, entry);
+  }
+
+  Ok(entries)
 }
 
 /// parse snapshot
@@ -1037,8 +1098,8 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let s = Snapshot {
     package: pkg.to_string(),
     about,
-    configs: from_edn(data.get_or_nil("configs"))?,
-    entries: data.get_or_nil("entries").try_into()?,
+    configs: parse_snapshot_configs_with_context(data.get_or_nil("configs"), "configs")?,
+    entries: parse_entries_with_context(&data.get_or_nil("entries"))?,
     files,
   };
   Ok(s)
@@ -2254,6 +2315,32 @@ mod tests {
     let err = validate_serialized_snapshot_content(content).expect_err("serialized snapshot should reject double-quoted generics");
     assert!(
       err.contains("serialized snapshot has invalid `:schema`") && err.contains("excess leading quotes"),
+      "unexpected error: {err}"
+    );
+  }
+
+  #[test]
+  fn test_load_snapshot_reports_empty_configs_version_with_field_context() {
+    let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version ||)
+    :modules $ []
+  :entries $ {}
+  :files $ {}
+    |mini $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn main! () nil)
+          :examples $ []
+          :schema nil
+"#;
+
+    let edn_data = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
+    let err = load_snapshot_data(&edn_data, "mini.cirru").expect_err("empty configs.version should fail on load");
+
+    assert!(err.contains("configs.version cannot be empty"), "unexpected error: {err}");
+    assert!(
+      err.contains(":configs (:version ...)") || err.contains("got ||"),
       "unexpected error: {err}"
     );
   }
