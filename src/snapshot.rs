@@ -1028,7 +1028,7 @@ fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str)
     .try_into()
     .map_err(|e| format!("{owner}.{key}: {e}; got {}", format_edn_preview(value)))?;
 
-  if key == "version" && text.trim().is_empty() {
+  if key == "version" && (text.trim().is_empty() || text.as_ref() == "|") {
     return Err(format!(
       "{owner}.version cannot be empty; check `:configs (:version ...)`; got {}",
       format_edn_preview(value)
