@@ -1580,13 +1580,27 @@ fn try_rewrite_single_map_to_record(
     return None; // malformed map literal, skip
   }
 
-  // Validate all keys are tags (required for record construction)
+  // Validate all keys are tags AND are valid struct fields
+  let mut provided_fields: std::collections::HashMap<EdnTag, &Calcit> = std::collections::HashMap::new();
   for chunk in map_items.chunks(2) {
-    if !matches!(chunk[0], Calcit::Tag(_)) {
+    if let Calcit::Tag(key) = &chunk[0] {
+      // Check this key is a valid struct field
+      if !struct_def.fields.iter().any(|f| f == key) {
+        gen_check_warning(
+          format!(
+            "[Warn] map-to-record rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct, at {file_ns}/{def_name}",
+            arg_idx + 1,
+          ),
+          file_ns,
+          check_warnings,
+        );
+        return None;
+      }
+      provided_fields.insert(key.to_owned(), chunk[1]);
+    } else {
       gen_check_warning(
         format!(
-          "[Warn] map-to-record rewrite skipped for `{}/{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
-          fn_name,
+          "[Warn] map-to-record rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
           arg_idx + 1,
           chunk[0]
         ),
@@ -1618,15 +1632,21 @@ fn try_rewrite_single_map_to_record(
       def_id: None,
     })
   } else {
-    Calcit::Struct(struct_def)
+    Calcit::Struct(struct_def.clone())
   };
 
-  // Build the rewritten record literal: [NativeRecord, struct_ref, k1, v1, k2, v2, ...]
-  let mut record_items: Vec<Calcit> = Vec::with_capacity(map_items.len() + 2);
+  // Build the rewritten record literal with ALL struct fields in order.
+  // Fields not provided in the map get nil. Format: [NativeRecord, struct_ref, k1, v1, k2, v2, ...]
+  let mut record_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
   record_items.push(Calcit::Proc(CalcitProc::NativeRecord));
   record_items.push(struct_ref_node);
-  for item in map_items {
-    record_items.push(item.to_owned());
+  for field in struct_def.fields.iter() {
+    record_items.push(Calcit::Tag(field.to_owned()));
+    if let Some(value) = provided_fields.get(field) {
+      record_items.push((*value).to_owned());
+    } else {
+      record_items.push(Calcit::Nil);
+    }
   }
 
   Some(Calcit::from(record_items))
