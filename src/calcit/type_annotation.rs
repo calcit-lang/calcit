@@ -22,8 +22,10 @@ use std::sync::{LazyLock, OnceLock};
 // to avoid a circular dependency: type_annotation → program → snapshot → calcit.
 // ---------------------------------------------------------------------------
 type LookupFn = fn(&str, &str) -> Option<Calcit>;
+type SchemaLookupFn = fn(&str, &str) -> Arc<CalcitTypeAnnotation>;
 static LOOKUP_RUNTIME_READY_DEF: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
+static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
 }
@@ -31,9 +33,10 @@ thread_local! {
 /// Register program-level lookup functions.  Must be called once at startup
 /// (e.g. from `program::extract_program_data`) before any type-annotation
 /// resolution that needs import-chain traversal.
-pub fn register_program_lookups(runtime_ready_lookup: LookupFn, code_lookup: LookupFn) {
+pub fn register_program_lookups(runtime_ready_lookup: LookupFn, code_lookup: LookupFn, schema_lookup: SchemaLookupFn) {
   let _ = LOOKUP_RUNTIME_READY_DEF.set(runtime_ready_lookup);
   let _ = LOOKUP_DEF_CODE.set(code_lookup);
+  let _ = LOOKUP_DEF_SCHEMA.set(schema_lookup);
 }
 
 pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: impl FnOnce() -> T) -> T {
@@ -76,6 +79,24 @@ fn lookup_runtime_ready_registered(ns: &str, def: &str) -> Option<Calcit> {
 
 fn lookup_def_code_registered(ns: &str, def: &str) -> Option<Calcit> {
   LOOKUP_DEF_CODE.get().and_then(|f| f(ns, def))
+}
+
+/// Look up a definition's schema type annotation by namespace and definition name.
+/// Returns `None` if the lookup function is not registered, or the schema is `Dynamic`.
+fn lookup_schema_registered(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let schema = LOOKUP_DEF_SCHEMA.get().map(|f| f(ns, def))?;
+  if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    None
+  } else {
+    Some(schema)
+  }
+}
+
+/// Try to resolve a TypeRef name (formatted as "ns/def") as a schema-based type alias.
+/// This allows definitions with non-Dynamic schemas to serve as named type aliases.
+fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (ns, def) = name.split_once('/')?;
+  lookup_schema_registered(ns, def)
 }
 
 thread_local! {
@@ -1657,6 +1678,14 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(a), Self::Tuple(b)) => a.name() == b.name(),
       (Self::Tuple(a), Self::Enum(b, _)) => a.name() == b.name(),
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) => true,
+      // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
+      // try to resolve it as a type alias by looking up the definition's schema.
+      (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => {
+        if let Some(resolved) = resolve_type_ref_as_schema(name) {
+          return resolved.matches_with_bindings(other, bindings);
+        }
+        false
+      }
       _ => false,
     }
   }
