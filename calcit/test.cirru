@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |app)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.0)
     :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./util.cirru
   :entries $ {}

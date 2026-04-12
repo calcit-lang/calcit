@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-recur-arity)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-recur-arity)
   :configs $ {} (:init-fn |test-recur-arity.main/main!) (:reload-fn |test-recur-arity.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
   :entries $ {}

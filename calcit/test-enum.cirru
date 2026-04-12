@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-enum)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-enum)
   :configs $ {} (:init-fn |test-enum.main/main!) (:reload-fn |test-enum.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}

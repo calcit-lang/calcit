@@ -12,6 +12,7 @@ entry_for:
   - "cr docs agents"
   - "cr docs read agent-advanced.md"
 ---
+
 # Calcit Agent 快速实践（局部查看与编辑优先）
 
 本文档面向 Agent/LLM 的高频工作流，目标是**更快定位、最小改动、低噪音验证**。
@@ -386,6 +387,7 @@ cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
 
 ### 验证
 
+- `cr edit format`: 重整快照文件，验证数据语法并格式化写法。
 - `cr js`：快速验证当前改动可编译。
 - 全量语义回归建议：`yarn check-all`。
 

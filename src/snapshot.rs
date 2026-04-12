@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
 
-const SNAPSHOT_ABOUT_MESSAGE: &str = "file is generated - never edit directly; learn cr edit/tree workflows before changing";
+const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.";
 
 fn default_version() -> String {
   "0.0.0".to_owned()

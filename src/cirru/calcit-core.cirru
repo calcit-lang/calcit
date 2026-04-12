@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |calcit)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |calcit)
   :configs $ {} (:init-fn |calcit.core/println!) (:reload-fn |calcit.core/println!) (:version |0.0.0)
     :modules $ []
   :entries $ {}

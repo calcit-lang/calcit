@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-generics)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-generics)
   :configs $ {} (:init-fn |test-generics.main/main!) (:reload-fn |test-generics.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -20,9 +20,7 @@
           :examples $ []
         |Wrapped $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            defenum Wrapped
-              :pair Pair
-              :none
+            defenum Wrapped (:pair Pair) (:none)
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
