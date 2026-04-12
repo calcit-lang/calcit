@@ -630,8 +630,22 @@ fn preprocess_list_call(
       })?;
       if !has_spread {
         let processed_args = CalcitList::from(ys.drop_left());
-        check_core_fn_arg_types(info.as_ref(), &processed_args, scope_types, file_ns, &def_name, check_warnings);
-        check_user_fn_arg_types(info.as_ref(), &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        // Rewrite hashmap literal args to record literals when the expected type is a struct
+        let (final_args, ys_updated) = if let Some(rewritten) =
+          try_rewrite_map_args_to_records(info.as_ref(), &processed_args, file_ns, &def_name, check_warnings)
+        {
+          // Rebuild ys with the head + rewritten args
+          let mut new_ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
+          for item in rewritten.iter() {
+            new_ys = new_ys.push(item.to_owned());
+          }
+          (rewritten, new_ys)
+        } else {
+          (processed_args.clone(), ys.clone())
+        };
+        ys = ys_updated;
+        check_core_fn_arg_types(info.as_ref(), &final_args, scope_types, file_ns, &def_name, check_warnings);
+        check_user_fn_arg_types(info.as_ref(), &final_args, scope_types, file_ns, &def_name, check_warnings);
       }
       if has_spread {
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
@@ -1491,6 +1505,107 @@ fn check_core_fn_arg_types(
       }
     }
   }
+}
+
+/// Rewrite hashmap literal arguments to record literals when the expected parameter type
+/// is a struct. This enables users to write `{} (:field val)` at call sites while the
+/// function parameter is typed as a struct/record — the preprocessor upgrades the map
+/// to `%{} StructDef (:field val)` so that runtime produces a proper record with full
+/// type checking.
+///
+/// Returns a new CalcitList with rewritten args if any changes were made, or None.
+fn try_rewrite_map_args_to_records(
+  fn_info: &CalcitFn,
+  processed_args: &CalcitList,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<CalcitList> {
+  if fn_info.arg_types.is_empty() {
+    return None;
+  }
+
+  let mut rewritten = false;
+  let mut new_args: Vec<Calcit> = Vec::with_capacity(processed_args.len());
+
+  for (idx, arg) in processed_args.iter().enumerate() {
+    let expected_type = if idx < fn_info.arg_types.len() {
+      Some(&fn_info.arg_types[idx])
+    } else {
+      None
+    };
+
+    if let Some(expected) = expected_type {
+      if let Some(rewritten_arg) =
+        try_rewrite_single_map_to_record(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
+      {
+        new_args.push(rewritten_arg);
+        rewritten = true;
+        continue;
+      }
+    }
+    new_args.push(arg.to_owned());
+  }
+
+  if rewritten {
+    Some(CalcitList::from(new_args.as_slice()))
+  } else {
+    None
+  }
+}
+
+/// Try to rewrite a single hashmap literal to a record literal if the expected type is a struct.
+/// Returns Some(rewritten_expr) if rewritten, None otherwise.
+fn try_rewrite_single_map_to_record(
+  arg: &Calcit,
+  expected_type: &Arc<CalcitTypeAnnotation>,
+  file_ns: &str,
+  def_name: &str,
+  fn_name: &str,
+  arg_idx: usize,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<Calcit> {
+  // Only handle hashmap literals (lists starting with Proc(NativeMap))
+  let Calcit::List(arg_list) = arg else { return None };
+  let Some(Calcit::Proc(CalcitProc::NativeMap)) = arg_list.first() else {
+    return None;
+  };
+
+  // Resolve the expected type to a struct definition
+  let struct_def = expected_type.resolve_to_struct()?;
+
+  // Validate: the map literal has flat key-value pairs after the NativeMap head
+  let map_items: Vec<&Calcit> = arg_list.iter().skip(1).collect();
+  if map_items.len() % 2 != 0 {
+    return None; // malformed map literal, skip
+  }
+
+  // Validate all keys are tags (required for record construction)
+  for chunk in map_items.chunks(2) {
+    if !matches!(chunk[0], Calcit::Tag(_)) {
+      gen_check_warning(
+        format!(
+          "[Warn] map-to-record rewrite skipped for `{}/{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
+          fn_name,
+          arg_idx + 1,
+          chunk[0]
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return None;
+    }
+  }
+
+  // Build the rewritten record literal: [NativeRecord, Struct(struct_def), k1, v1, k2, v2, ...]
+  let mut record_items: Vec<Calcit> = Vec::with_capacity(map_items.len() + 2);
+  record_items.push(Calcit::Proc(CalcitProc::NativeRecord));
+  record_items.push(Calcit::Struct(struct_def));
+  for item in map_items {
+    record_items.push(item.to_owned());
+  }
+
+  Some(Calcit::from(record_items))
 }
 
 /// Check user-defined function argument types against type annotations

@@ -293,6 +293,33 @@ let
 ; => John
 ```
 
+## Automatic Map-to-Record Rewrite
+
+When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to record construction (`%{}`). This lets you write ergonomic hashmap syntax while still getting full record type checking at runtime.
+
+```cirru
+defstruct Point (:x :number) (:y :number)
+
+defn sum-point (p)
+  :: :fn $ {} (:return :number)
+    :args $ [] 'app.main/Point2D
+  &+ (:x p) (:y p)
+
+; Write a hashmap — preprocessor rewrites to record automatically:
+sum-point $ {} (:x 10) (:y 20)
+; Equivalent to:
+sum-point $ %{} Point (:x 10) (:y 20)
+```
+
+Requirements for the rewrite to trigger:
+
+- The function must have a schema with `:args` that references a struct type (via `TypeRef` like `'ns/StructName`, `Struct`, or `Record`)
+- The argument at the call site must be a hashmap literal (`{}` with tag keys)
+- All keys in the hashmap must be tags (`:field-name`)
+- The struct definition must be resolvable at preprocess time
+
+If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
+
 ## Performance Notes
 
 - Records are immutable — updates create new records

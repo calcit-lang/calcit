@@ -1482,6 +1482,27 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Try to resolve this type annotation to a concrete `CalcitStruct` definition.
+  /// Works for `Struct(def, _)`, `Record(def)`, and `TypeRef("ns/name", _)` that can be
+  /// looked up from the program registry.
+  pub fn resolve_to_struct(&self) -> Option<CalcitStruct> {
+    match self {
+      Self::Struct(base, _) => Some(base.as_ref().clone()),
+      Self::Record(base) => Some(base.as_ref().clone()),
+      Self::TypeRef(name, _) => {
+        // TypeRef name may be "ns/def" or just "def" — try to split on '/'
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        if let Some((ns, def)) = stripped.rsplit_once('/') {
+          resolve_struct_from_program(ns, def)
+        } else {
+          None
+        }
+      }
+      Self::Optional(inner) => inner.resolve_to_struct(),
+      _ => None,
+    }
+  }
+
   pub fn matches_annotation(&self, expected: &CalcitTypeAnnotation) -> bool {
     let mut bindings = TypeBindings::new();
     self.matches_with_bindings(expected, &mut bindings)
@@ -2075,6 +2096,27 @@ fn resolve_struct_def(form: &Calcit) -> Option<CalcitStruct> {
       _ => None,
     }),
   }
+}
+
+/// Resolve a struct definition by namespace and definition name from the program registry.
+/// Used by `CalcitTypeAnnotation::resolve_to_struct` to look up `TypeRef("ns/def")` at compile time.
+fn resolve_struct_from_program(ns: &str, def: &str) -> Option<CalcitStruct> {
+  lookup_runtime_ready_registered(ns, def)
+    .and_then(|value| match &value {
+      Calcit::Struct(s) => Some(s.to_owned()),
+      _ => resolve_type_def_from_code(&value).and_then(|resolved| match resolved {
+        Calcit::Struct(s) => Some(s),
+        _ => None,
+      }),
+    })
+    .or_else(|| {
+      lookup_def_code_registered(ns, def).and_then(|code| {
+        resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
+          Calcit::Struct(s) => Some(s),
+          _ => None,
+        })
+      })
+    })
 }
 
 fn resolve_enum_def(form: &Calcit) -> Option<CalcitEnum> {

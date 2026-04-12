@@ -6,71 +6,90 @@
   :files $ {}
     |test-record.main $ %{} :FileEntry
       :defs $ {}
-        |A $ %{} :CodeEntry (:doc |) (:schema nil)
+        |A $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct A $ :a :dynamic
           :examples $ []
-        |A0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |A0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct A0 $ :name :string
           :examples $ []
-        |B $ %{} :CodeEntry (:doc |) (:schema nil)
+        |B $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct B $ :b :dynamic
           :examples $ []
-        |BirdImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |BirdImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl BirdImpl BirdTrait
               .show $ fn (self)
                 println $ :name self
               .rename $ fn (self name) (assoc self :name name)
           :examples $ []
-        |BirdShape $ %{} :CodeEntry (:doc |) (:schema nil)
+        |BirdShape $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct BirdShape (:show :fn) (:rename :fn)
           :examples $ []
-        |BirdTrait $ %{} :CodeEntry (:doc |) (:schema nil)
+        |BirdTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait BirdTrait (.show :fn) (.rename :fn)
           :examples $ []
-        |C $ %{} :CodeEntry (:doc |) (:schema nil)
+        |C $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct C $ :c :dynamic
           :examples $ []
-        |Cat $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Cat $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct Cat (:name :string) (:color :tag)
           :examples $ []
-        |City $ %{} :CodeEntry (:doc |) (:schema nil)
+        |City $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct City (:name :string) (:province :string)
           :examples $ []
-        |Demo $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct Demo (:a :dynamic) (:b :dynamic) (:c :dynamic) (:d :dynamic)
           :examples $ []
-        |Lagopus $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Lagopus $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def Lagopus $ impl-traits Lagopus0 BirdImpl
           :examples $ []
-        |Lagopus0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Lagopus0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct Lagopus0 $ :name (:optional :string)
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Person $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct Person
               :name $ :optional :string
               :age $ :optional :number
               :position $ :optional :tag
           :examples $ []
+        |Point2D $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            defstruct Point2D (:x :number) (:y :number)
+          :examples $ []
+        |check-point-type $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn check-point-type (p) (record? p)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :bool)
+              :args $ [] 'test-record.main/Point2D
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (do true)
+            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-map-to-record) (do true)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+        |sum-point $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn sum-point (p)
+              &+ (:x p) (:y p)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] 'test-record.main/Point2D
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -96,6 +115,14 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+        |test-map-to-record $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            fn () (log-title "|Testing map-to-record rewrite")
+              assert= 30 $ sum-point
+                {} (:x 10) (:y 20)
+              assert= true $ check-point-type
+                {} (:x 10) (:y 20)
+          :examples $ []
         |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record match")

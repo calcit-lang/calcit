@@ -928,11 +928,11 @@ impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
     let schema = normalize_schema_for_code(&data.code, &data.schema);
     let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::Nil,
+      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
       other => {
         // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::Nil)
+        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
       }
     };
     Edn::record_from_pairs(
@@ -951,11 +951,11 @@ impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
     let schema = normalize_schema_for_code(&data.code, &data.schema);
     let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::Nil,
+      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
       other => {
         // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::Nil)
+        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
       }
     };
     Edn::record_from_pairs(
