@@ -1571,8 +1571,8 @@ fn try_rewrite_single_map_to_record(
     return None;
   };
 
-  // Resolve the expected type to a struct definition
-  let struct_def = expected_type.resolve_to_struct()?;
+  // Resolve the expected type to a struct definition + optional ns/def path
+  let (struct_def, ns_def_path) = expected_type.resolve_to_struct_with_ref()?;
 
   // Validate: the map literal has flat key-value pairs after the NativeMap head
   let map_items: Vec<&Calcit> = arg_list.iter().skip(1).collect();
@@ -1597,10 +1597,34 @@ fn try_rewrite_single_map_to_record(
     }
   }
 
-  // Build the rewritten record literal: [NativeRecord, Struct(struct_def), k1, v1, k2, v2, ...]
+  // Build the struct reference node:
+  // - If we have ns/def path (from TypeRef), emit an Import so JS codegen can emit a variable reference
+  // - Otherwise fall back to Calcit::Struct (works for interpreter, not for JS codegen)
+  let struct_ref_node = if let Some((ns, def)) = ns_def_path {
+    let import_info = if ns.as_ref() == file_ns {
+      ImportInfo::SameFile {
+        at_def: Arc::from(def_name),
+      }
+    } else {
+      ImportInfo::NsReferDef {
+        at_ns: Arc::from(file_ns),
+        at_def: Arc::from(def_name),
+      }
+    };
+    Calcit::Import(CalcitImport {
+      ns: ns.to_owned(),
+      def: def.to_owned(),
+      info: Arc::new(import_info),
+      def_id: None,
+    })
+  } else {
+    Calcit::Struct(struct_def)
+  };
+
+  // Build the rewritten record literal: [NativeRecord, struct_ref, k1, v1, k2, v2, ...]
   let mut record_items: Vec<Calcit> = Vec::with_capacity(map_items.len() + 2);
   record_items.push(Calcit::Proc(CalcitProc::NativeRecord));
-  record_items.push(Calcit::Struct(struct_def));
+  record_items.push(struct_ref_node);
   for item in map_items {
     record_items.push(item.to_owned());
   }

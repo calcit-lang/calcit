@@ -1486,19 +1486,25 @@ impl CalcitTypeAnnotation {
   /// Works for `Struct(def, _)`, `Record(def)`, and `TypeRef("ns/name", _)` that can be
   /// looked up from the program registry.
   pub fn resolve_to_struct(&self) -> Option<CalcitStruct> {
+    self.resolve_to_struct_with_ref().map(|(s, _)| s)
+  }
+
+  /// Resolve to struct, also returning the (ns, def) path when available from a TypeRef.
+  /// The path can be used to construct an Import reference for JS codegen compatibility.
+  pub fn resolve_to_struct_with_ref(&self) -> Option<(CalcitStruct, Option<(Arc<str>, Arc<str>)>)> {
     match self {
-      Self::Struct(base, _) => Some(base.as_ref().clone()),
-      Self::Record(base) => Some(base.as_ref().clone()),
+      Self::Struct(base, _) => Some((base.as_ref().clone(), None)),
+      Self::Record(base) => Some((base.as_ref().clone(), None)),
       Self::TypeRef(name, _) => {
         // TypeRef name may be "ns/def" or just "def" — try to split on '/'
         let stripped = name.trim_start_matches('\'').trim_start_matches(':');
         if let Some((ns, def)) = stripped.rsplit_once('/') {
-          resolve_struct_from_program(ns, def)
+          resolve_struct_from_program(ns, def).map(|s| (s, Some((Arc::from(ns), Arc::from(def)))))
         } else {
           None
         }
       }
-      Self::Optional(inner) => inner.resolve_to_struct(),
+      Self::Optional(inner) => inner.resolve_to_struct_with_ref(),
       _ => None,
     }
   }
