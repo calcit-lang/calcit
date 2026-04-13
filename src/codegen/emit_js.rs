@@ -468,6 +468,8 @@ fn gen_call_code(
         None => Err(format!("raise expected 1~2 arguments, got: {body}")),
       }
     }
+    // deftype-slot and bind-type are preprocessing-only; they have no JS runtime effect.
+    Calcit::Proc(CalcitProc::DeftypeSlot) | Calcit::Proc(CalcitProc::BindType) => Ok(format!("{return_code}null")),
     Calcit::Proc(_) => {
       let (prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
