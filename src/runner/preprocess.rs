@@ -4,7 +4,7 @@ use crate::{
     self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
     CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax,
     CalcitTrait, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
-    bind_type_slot, brief_type_of_value, register_type_slot,
+    bind_type_slot, brief_type_of_value, register_type_slot, resolve_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -29,6 +29,10 @@ thread_local! {
   /// function type to inject arg types into the fn body's scope_types.
   /// This enables type checking for callback parameters (e.g., `d!` in `:on-click $ fn (e d!) ...`).
   static EXPECTED_FN_TYPE: RefCell<Option<Arc<CalcitFnTypeAnnotation>>> = const { RefCell::new(None) };
+  /// When set, the hashmap literal preprocessor uses this struct definition to look up
+  /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
+  /// This enables type propagation through record literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
+  static EXPECTED_STRUCT_TYPE: RefCell<Option<CalcitStruct>> = const { RefCell::new(None) };
 }
 
 fn with_preprocess_compile_guard<T>(ns: &str, def: &str, f: impl FnOnce() -> Result<T, CalcitErr>) -> Result<Option<T>, CalcitErr> {
@@ -125,6 +129,12 @@ fn ensure_ns_def_preprocessed(
     return Ok(());
   }
 
+  // Save and clear EXPECTED_FN_TYPE to prevent leaking into nested def compilation.
+  // The calling context's fn type hint is only meant for the immediate expression being processed,
+  // not for defs compiled transitively during symbol resolution.
+  let saved_fn_type = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+  let saved_struct_type = EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().take());
+
   let Some(()) = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
@@ -150,8 +160,15 @@ fn ensure_ns_def_preprocessed(
     }
   })?
   else {
+    // Restore saved type hints (even when compilation was skipped by the guard)
+    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = saved_fn_type);
+    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = saved_struct_type);
     return Ok(());
   };
+
+  // Restore saved type hints after compilation
+  EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = saved_fn_type);
+  EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = saved_struct_type);
 
   Ok(())
 }
@@ -644,14 +661,26 @@ fn preprocess_list_call(
           None
         };
 
+        // Set expected struct type hint if this arg position has a struct-typed param
+        // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
+        let expected_struct = if arg_idx < info.arg_types.len() {
+          info.arg_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
+        } else {
+          None
+        };
+
         if let Some(fn_annot) = expected_fn {
           EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
+        }
+        if let Some(struct_def) = expected_struct {
+          EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
         }
 
         let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
 
-        // Always clear the hint after preprocessing, even on error
+        // Always clear the hints after preprocessing, even on error
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
+        EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
 
         let form = result?;
 
@@ -802,16 +831,61 @@ fn preprocess_list_call(
         let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
         let mut has_spread = false;
 
-        args.traverse_result::<CalcitErr>(&mut |a| {
-          if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
-            has_spread = true;
-            ys = ys.push(a.to_owned());
-            return Ok(());
+        // When the head is NativeMap and we have an expected struct type (from the calling context),
+        // use struct field types to inject EXPECTED_FN_TYPE for Fn-typed fields.
+        let struct_hint = if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap)) {
+          EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow().clone())
+        } else {
+          None
+        };
+
+        if let Some(ref struct_def) = struct_hint {
+          // Struct-aware hashmap preprocessing: iterate key-value pairs
+          let items: Vec<&Calcit> = args.iter().collect();
+          for (i, item) in items.iter().enumerate() {
+            if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = item {
+              has_spread = true;
+              ys = ys.push((*item).to_owned());
+              continue;
+            }
+
+            // For value positions (odd indices), look up the preceding key's field type.
+            // Set EXPECTED_FN_TYPE for Fn-typed fields so that inline fn literals get param type injection.
+            if i % 2 == 1 {
+              if let Some(Calcit::Tag(key_tag)) = items.get(i - 1) {
+                if let Some(field_idx) = struct_def.fields.iter().position(|f| f == key_tag) {
+                  if let Some(field_type) = struct_def.field_types.get(field_idx) {
+                    if let Some(fn_annot) = field_type.resolve_to_fn() {
+                      EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
+                    }
+                  }
+                }
+              }
+            }
+
+            let result = preprocess_expr(item, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+
+            // Clear fn type hint after processing a value
+            if i % 2 == 1 {
+              EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
+            }
+
+            let form = result?;
+
+            ys = ys.push(form);
           }
-          let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
-          ys = ys.push(form);
-          Ok(())
-        })?;
+        } else {
+          args.traverse_result::<CalcitErr>(&mut |a| {
+            if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+              has_spread = true;
+              ys = ys.push(a.to_owned());
+              return Ok(());
+            }
+            let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+            ys = ys.push(form);
+            Ok(())
+          })?;
+        }
 
         // Check for record field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
@@ -844,8 +918,37 @@ fn preprocess_list_call(
         }
 
         // Check Local function call argument types if the local has a known Fn type
+        // Also rewrite untyped tuple args to typed enum tuples when the local fn expects an enum type.
         if let Some(Calcit::Local(local)) = ys.first() {
-          check_local_fn_call_arg_types(local, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+          let local_sym = local.sym.clone();
+          let local_type_info = local.type_info.clone();
+          let local_type = if matches!(*local_type_info, CalcitTypeAnnotation::Dynamic) {
+            scope_types.get(&local_sym).cloned()
+          } else {
+            Some(local_type_info)
+          };
+
+          if let Some(ref ty) = local_type {
+            if let CalcitTypeAnnotation::Fn(fn_annot) = ty.as_ref() {
+              if let Some(rewritten) = try_rewrite_local_fn_tuple_args_to_enum_tuples(
+                fn_annot,
+                &local_sym,
+                &processed_args,
+                file_ns,
+                &def_name,
+                check_warnings,
+              ) {
+                ys = CalcitList::new_inner_from(&[ys.first().unwrap().to_owned()]);
+                for item in rewritten.iter() {
+                  ys = ys.push(item.to_owned());
+                }
+              }
+            }
+          }
+          if let Some(Calcit::Local(local)) = ys.first() {
+            let updated_args = CalcitList::from(ys.drop_left());
+            check_local_fn_call_arg_types(local, &updated_args, scope_types, file_ns, &def_name, check_warnings);
+          }
         }
 
         // Eagerly execute type-slot procs during preprocessing so that TypeSlot
@@ -879,6 +982,13 @@ fn preprocess_list_call(
               Calcit::Symbol { sym, info, .. } => resolve_program_value_for_preprocess(&info.at_ns, sym, None),
               other => Some(other.to_owned()),
             };
+            // When the type was resolved from an Import, preserve the ns/def path as a TypeRef
+            // so that downstream resolution (e.g., resolve_to_enum_with_ref) can produce Import nodes
+            // for JS codegen compatibility.
+            let import_path: Option<(Arc<str>, Arc<str>)> = match type_arg {
+              Calcit::Import(CalcitImport { ns, def, .. }) => Some((ns.clone(), def.clone())),
+              _ => None,
+            };
             let Some(resolved) = resolved else {
               return Err(CalcitErr::use_msg_stack_location(
                 CalcitErrKind::Unexpected,
@@ -887,31 +997,54 @@ fn preprocess_list_call(
                 head.get_location(),
               ));
             };
-            let type_annotation = match &resolved {
-              Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
-              Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-              Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
-              other => match infer_type_from_expr(other, scope_types) {
-                Some(inferred)
-                  if matches!(
-                    inferred.as_ref(),
-                    CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::Record(_)
-                  ) =>
-                {
-                  inferred
+            let type_annotation = if let Some((ns, def)) = &import_path {
+              // When bound from an import, use TypeRef to preserve ns/def for JS codegen
+              match &resolved {
+                Calcit::Enum(_) | Calcit::Struct(_) => {
+                  Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
                 }
-                _ => {
-                  return Err(CalcitErr::use_msg_stack_location(
-                    CalcitErrKind::Unexpected,
-                    format!(
-                      "bind-type expected an enum, struct, or record as type value, got: {}",
-                      brief_type_of_value(other)
-                    ),
-                    call_stack,
-                    head.get_location(),
-                  ));
-                }
-              },
+                _ => match &resolved {
+                  Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+                  _ => {
+                    return Err(CalcitErr::use_msg_stack_location(
+                      CalcitErrKind::Unexpected,
+                      format!(
+                        "bind-type expected an enum or struct import, got: {}",
+                        brief_type_of_value(&resolved)
+                      ),
+                      call_stack,
+                      head.get_location(),
+                    ));
+                  }
+                },
+              }
+            } else {
+              match &resolved {
+                Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
+                Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
+                Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+                other => match infer_type_from_expr(other, scope_types) {
+                  Some(inferred)
+                    if matches!(
+                      inferred.as_ref(),
+                      CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::Record(_)
+                    ) =>
+                  {
+                    inferred
+                  }
+                  _ => {
+                    return Err(CalcitErr::use_msg_stack_location(
+                      CalcitErrKind::Unexpected,
+                      format!(
+                        "bind-type expected an enum, struct, or record as type value, got: {}",
+                        brief_type_of_value(other)
+                      ),
+                      call_stack,
+                      head.get_location(),
+                    ));
+                  }
+                },
+              }
             };
             bind_type_slot(slot_name, type_annotation)
               .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location()))?;
@@ -1692,6 +1825,50 @@ fn check_local_fn_call_arg_types(
   }
 }
 
+/// Rewrite untyped tuple literal args to enum tuples for local function calls.
+/// Similar to `try_rewrite_tuple_args_to_enum_tuples` but works with `CalcitFnTypeAnnotation`
+/// from a local variable's type, rather than a `CalcitFn` definition.
+fn try_rewrite_local_fn_tuple_args_to_enum_tuples(
+  fn_annot: &CalcitFnTypeAnnotation,
+  local_name: &str,
+  processed_args: &CalcitList,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<CalcitList> {
+  if fn_annot.arg_types.is_empty() {
+    return None;
+  }
+
+  let mut rewritten = false;
+  let mut new_args: Vec<Calcit> = Vec::with_capacity(processed_args.len());
+
+  for (idx, arg) in processed_args.iter().enumerate() {
+    let expected_type = if idx < fn_annot.arg_types.len() {
+      Some(&fn_annot.arg_types[idx])
+    } else {
+      None
+    };
+
+    if let Some(expected) = expected_type {
+      if let Some(rewritten_arg) =
+        try_rewrite_single_tuple_to_enum_tuple(arg, expected, file_ns, def_name, local_name, idx, check_warnings)
+      {
+        new_args.push(rewritten_arg);
+        rewritten = true;
+        continue;
+      }
+    }
+    new_args.push(arg.to_owned());
+  }
+
+  if rewritten {
+    Some(CalcitList::from(new_args.as_slice()))
+  } else {
+    None
+  }
+}
+
 /// Rewrite hashmap literal arguments to record literals when the expected parameter type
 /// is a struct. This enables users to write `{} (:field val)` at call sites while the
 /// function parameter is typed as a struct/record — the preprocessor upgrades the map
@@ -1912,6 +2089,23 @@ fn try_rewrite_single_tuple_to_enum_tuple(
       check_warnings,
     );
     return None;
+  }
+
+  // Validate: check that the tag is a known variant of the enum
+  if let Some(Calcit::Tag(tag)) = arg_list.get(1) {
+    let tag_str = tag.ref_str();
+    let variants = enum_def.variants();
+    if !variants.iter().any(|v| v.tag.ref_str() == tag_str) {
+      let variant_names: Vec<&str> = variants.iter().map(|v| v.tag.ref_str()).collect();
+      gen_check_warning(
+        format!(
+          "[Warn] Enum `{}` does not have variant `:{tag_str}`. Available variants: {variant_names:?}, at {file_ns}/{def_name}",
+          enum_def.name(),
+        ),
+        file_ns,
+        check_warnings,
+      );
+    }
   }
 
   // Build the enum reference node (same strategy as map-to-record):
@@ -3267,6 +3461,10 @@ fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Calci
       _ => None,
     },
     _ => resolve_type_value(target, scope_types)
+      .and_then(|t| match t.as_ref() {
+        CalcitTypeAnnotation::TypeSlot(name) => resolve_type_slot(name),
+        _ => Some(t),
+      })
       .and_then(|t| t.as_struct().cloned())
       .and_then(|struct_def| {
         let len = struct_def.fields.len();

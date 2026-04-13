@@ -132,13 +132,10 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 fn type_fail_type_slot_fixtures_report_errors() {
   let _guard = lock_fixture_tests();
 
-  let fixtures = [
-    ("calcit/type-fail/type-slot-bind-unknown.cirru", "unknown type slot: payload"),
-    (
-      "calcit/type-fail/type-slot-bind-duplicate.cirru",
-      "type slot 'payload' already bound",
-    ),
-  ];
+  let fixtures = [(
+    "calcit/type-fail/type-slot-bind-duplicate.cirru",
+    "type slot 'payload' already bound",
+  )];
 
   for (path, expected_msg) in fixtures {
     let entries = load_fixture_entries(path);
@@ -146,6 +143,29 @@ fn type_fail_type_slot_fixtures_report_errors() {
 
     assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
   }
+}
+
+#[test]
+fn type_fail_type_slot_enum_invalid_variant() {
+  let _guard = lock_fixture_tests();
+
+  let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");
+  let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+    .expect("type-slot enum variant fixture should preprocess with warnings, not hard errors");
+
+  let warnings = warnings.borrow();
+  let matched: Vec<&LocatedWarning> = warnings
+    .iter()
+    .filter(|w| w.message().contains("does not have variant `:nonexistent`"))
+    .collect();
+  assert_eq!(matched.len(), 1, "expected exactly one invalid-variant warning, got: {warnings:?}");
+  assert!(
+    matched[0].message().contains("Enum `Action`"),
+    "warning should mention enum name, got: {}",
+    matched[0].message()
+  );
 }
 
 #[test]

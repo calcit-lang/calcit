@@ -71,7 +71,8 @@ pub fn register_type_slot(name: Arc<str>) -> Result<(), String> {
   })
 }
 
-/// Bind a concrete type to a declared slot. Returns Err if the slot is unknown or already bound.
+/// Bind a concrete type to a declared slot. Auto-registers the slot if not yet declared.
+/// Returns Err if the slot is already bound (double-bind).
 pub fn bind_type_slot(name: &str, ty: Arc<CalcitTypeAnnotation>) -> Result<(), String> {
   TYPE_SLOTS.with(|slots| {
     let mut map = slots.borrow_mut();
@@ -83,7 +84,11 @@ pub fn bind_type_slot(name: &str, ty: Arc<CalcitTypeAnnotation>) -> Result<(), S
         *slot = Some(ty);
         Ok(())
       }
-      None => Err(format!("unknown type slot: {name}")),
+      None => {
+        // Auto-register and bind in one step if the slot was never declared
+        map.insert(Arc::from(name), Some(ty));
+        Ok(())
+      }
     }
   })
 }
@@ -1613,6 +1618,21 @@ impl CalcitTypeAnnotation {
         }
       }
       Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_enum_with_ref()),
+      _ => None,
+    }
+  }
+
+  /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
+  pub fn resolve_to_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
+    match self {
+      Self::Fn(fn_annot) => Some(fn_annot.clone()),
+      Self::Optional(inner) => inner.resolve_to_fn(),
+      Self::TypeRef(name, _) => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        resolve_type_ref_as_schema(stripped).and_then(|schema| schema.resolve_to_fn())
+      }
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_fn()),
       _ => None,
     }
   }
@@ -1763,7 +1783,7 @@ impl CalcitTypeAnnotation {
       (Self::Record(a), Self::Struct(b, _)) => a.name == b.name,
       (Self::Record(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "record") => true,
       (Self::Tuple(a), Self::Tuple(b)) => a.name() == b.name(),
-      (Self::Tuple(a), Self::Enum(b, _)) => a.name() == b.name(),
+      (Self::Tuple(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::Tuple(a)) => a.name() == b.name(),
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) => true,
       // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
       // try to resolve it as a type alias by looking up the definition's schema.
