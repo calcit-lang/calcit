@@ -1,9 +1,10 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitList,
-    CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
-    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
+    self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
+    CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax,
+    CalcitTrait, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
+    bind_type_slot, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -24,6 +25,10 @@ static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
   static PREPROCESS_COMPILE_GUARD: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
+  /// When set, `preprocess_defn` for anonymous `fn` will use this as the expected
+  /// function type to inject arg types into the fn body's scope_types.
+  /// This enables type checking for callback parameters (e.g., `d!` in `:on-click $ fn (e d!) ...`).
+  static EXPECTED_FN_TYPE: RefCell<Option<Arc<CalcitFnTypeAnnotation>>> = const { RefCell::new(None) };
 }
 
 fn with_preprocess_compile_guard<T>(ns: &str, def: &str, f: impl FnOnce() -> Result<T, CalcitErr>) -> Result<Option<T>, CalcitErr> {
@@ -618,16 +623,40 @@ fn preprocess_list_call(
       let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
       let mut has_spread = false;
 
-      args.traverse_result::<CalcitErr>(&mut |a| {
+      // Process arguments with type-aware preprocessing for Fn-typed params.
+      // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
+      // preprocess_defn can inject arg types into anonymous fn params' scope_types.
+      for (arg_idx, a) in args.iter().enumerate() {
         if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
           has_spread = true;
           ys = ys.push(a.to_owned());
-          return Ok(());
+          continue;
         }
-        let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+
+        // Set expected fn type hint if this arg position has a Fn-typed param
+        let expected_fn = if arg_idx < info.arg_types.len() {
+          if let CalcitTypeAnnotation::Fn(fn_annot) = info.arg_types[arg_idx].as_ref() {
+            Some(fn_annot.clone())
+          } else {
+            None
+          }
+        } else {
+          None
+        };
+
+        if let Some(fn_annot) = expected_fn {
+          EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
+        }
+
+        let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+
+        // Always clear the hint after preprocessing, even on error
+        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
+
+        let form = result?;
+
         ys = ys.push(form);
-        Ok(())
-      })?;
+      }
       if !has_spread {
         let processed_args = CalcitList::from(ys.drop_left());
         // Rewrite hashmap literal args to record literals when the expected type is a struct
@@ -801,6 +830,36 @@ fn preprocess_list_call(
         // Check Proc argument types if available
         if let Some(Calcit::Proc(proc)) = ys.first() {
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        }
+
+        // Check Local function call argument types if the local has a known Fn type
+        if let Some(Calcit::Local(local)) = ys.first() {
+          check_local_fn_call_arg_types(local, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        }
+
+        // Eagerly execute type-slot procs during preprocessing so that TypeSlot
+        // annotations can be resolved by the type checker within the same compilation.
+        if let Some(Calcit::Proc(CalcitProc::DeftypeSlot)) = ys.first() {
+          if let Some(Calcit::Tag(tag)) = processed_args.first() {
+            let _ = register_type_slot(Arc::from(tag.ref_str()));
+          }
+        }
+        if let Some(Calcit::Proc(CalcitProc::BindType)) = ys.first() {
+          if let (Some(Calcit::Tag(tag)), Some(type_arg)) = (processed_args.first(), processed_args.get(1)) {
+            let resolved = match type_arg {
+              Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_program_value_for_preprocess(ns, def, *def_id),
+              Calcit::Symbol { sym, info, .. } => resolve_program_value_for_preprocess(&info.at_ns, sym, None),
+              other => Some(other.to_owned()),
+            };
+            let type_annotation = resolved.and_then(|v| match v {
+              Calcit::Enum(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(vec![])))),
+              Calcit::Struct(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![])))),
+              _ => None,
+            });
+            if let Some(ty) = type_annotation {
+              let _ = bind_type_slot(tag.ref_str(), ty);
+            }
+          }
         }
 
         // Handle &inspect-type: print type information for the given symbol
@@ -1499,6 +1558,76 @@ fn check_core_fn_arg_types(
             idx + 1
           ),
           "W_CORE_FN_ARG_TYPE_MISMATCH",
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+  }
+}
+
+/// Check argument types when calling a local variable that has a known Fn type.
+/// This enables type checking for callback calls like `d! $ %:: Op :clear`
+/// where `d!` has type `fn(*dispatch-op) -> unit` from the EventHandler schema.
+fn check_local_fn_call_arg_types(
+  local: &CalcitLocal,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Get the local's type: prefer scope_types, fall back to inline type_info
+  let local_type = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+    match scope_types.get(&local.sym) {
+      Some(t) => t.as_ref(),
+      None => return, // No type info, skip
+    }
+  } else {
+    &*local.type_info
+  };
+
+  // Only check if the local has a Fn type annotation
+  let CalcitTypeAnnotation::Fn(fn_annot) = local_type else {
+    return;
+  };
+
+  // Skip if no arg types or all Dynamic
+  if fn_annot.arg_types.is_empty()
+    || fn_annot
+      .arg_types
+      .iter()
+      .all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
+    return;
+  }
+
+  // Check if we have spreading args
+  for arg in args.iter() {
+    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      return; // Can't check with spread args
+    }
+  }
+
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+
+  // Check argument types
+  for (idx, (arg, expected_type)) in args.iter().zip(fn_annot.arg_types.iter()).enumerate() {
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      continue;
+    }
+
+    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
+        let expected_str = expected_type.as_ref().to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
+        gen_check_warning_code(
+          format!(
+            "[Warn] calling `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` at {file_ns}/{def_name}",
+            local.sym,
+            idx + 1
+          ),
+          "W_LOCAL_FN_ARG_TYPE_MISMATCH",
           file_ns,
           check_warnings,
         );
@@ -3400,6 +3529,25 @@ pub fn preprocess_defn(
             location.to_owned().unwrap_or_default(),
           )),
         ));
+      }
+
+      // Inject arg types into body_types for anonymous fn when the calling context
+      // provides an expected function type via EXPECTED_FN_TYPE.
+      // Named defn (where def_schema is Fn) already has call-site checking via check_user_fn_arg_types,
+      // so we skip injection to avoid false positives from internal runtime handling.
+      let effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = match def_schema.as_ref() {
+        CalcitTypeAnnotation::Dynamic => {
+          // Check if there's an expected fn type from the calling context (anonymous fn case)
+          EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone())
+        }
+        _ => None,
+      };
+      if let Some(fn_annot) = &effective_fn_schema {
+        for (param_sym, arg_type) in param_symbols.iter().zip(fn_annot.arg_types.iter()) {
+          if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+            body_types.insert(param_sym.to_owned(), arg_type.to_owned());
+          }
+        }
       }
 
       let mut to_skip = 2;

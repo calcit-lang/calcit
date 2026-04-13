@@ -458,6 +458,76 @@ Schema on the namespace definition:
 :: :fn $ {} (:args $ [] :map)
 ```
 
+## Type Slots (Cross-Package Type Injection)
+
+Type slots allow a **library** to declare a type placeholder that an **application** binds to a concrete type at startup. This bridges the gap where a library defines callback signatures but cannot know the application's specific enum/struct types.
+
+### Declaring a Type Slot (Library Side)
+
+Use `deftype-slot` in the library's schema namespace:
+
+```cirru.no-check
+deftype-slot :dispatch-op
+```
+
+Then reference the slot in type annotations with the `*name` syntax:
+
+```cirru.no-check
+;; EventHandler schema — dispatch callback accepts the slot type
+:: :fn $ {} (:return :unit)
+  :args $ [] '*dispatch-op
+```
+
+### Binding a Type Slot (Application Side)
+
+In the application's entry point (e.g. `main!`), bind a concrete type to the slot:
+
+```cirru.no-check
+defenum Op (:add :string) (:remove :tag) (:clear)
+
+defn main! ()
+  bind-type :dispatch-op Op
+  ;; subsequent code benefits from full type checking
+```
+
+### How It Works
+
+1. `deftype-slot :name` registers a placeholder in the global `TYPE_SLOTS` registry (value = `None`).
+2. `bind-type :name ConcreteType` sets the slot value to the given enum/struct/record type.
+3. Both operations execute during **preprocessing** (not runtime), so type checking in the same compilation pass immediately sees the binding.
+4. When type annotations encounter `*name`, the slot is resolved and standard type matching proceeds.
+
+### Constraints
+
+- Each slot can only be declared and bound **once** per program.
+- Only enum, struct, and record types can be bound to slots.
+- Unbound slots are treated as `:dynamic` (no type checking, no error).
+
+### Example: Detecting Wrong Dispatch Calls
+
+After binding `*dispatch-op` to `Op`, the preprocessor catches mistakes:
+
+```cirru.no-check
+;; ✅ Correct — compiles cleanly
+d! $ %:: Op :toggle (:id task)
+
+;; ❌ Wrong variant name
+;; Warning: "does not have variant :delete"
+d! $ %:: Op :delete (:id task)
+
+;; ❌ Wrong payload count
+;; Warning: "expects 0 payload(s), got 1"
+d! $ %:: Op :clear 42
+```
+
+### Cirru EDN Representation
+
+In serialized type annotations, type slots appear as `'*name` (EDN symbol with `*` prefix):
+
+```cirru.no-check
+:args $ [] '*dispatch-op
+```
+
 ## Limitations
 
 1. **Dynamic Code**: Type checks don't apply to dynamically generated code

@@ -3,7 +3,7 @@ use crate::{
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
-    brief_type_of_value, format_proc_examples_hint, gen_core_id, value_matches_type_annotation,
+    bind_type_slot, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -1791,4 +1791,63 @@ pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(Calcit::Bool(true)),
     _ => Ok(Calcit::Bool(false)),
   }
+}
+
+/// `deftype-slot` proc: declare a named type slot for late binding.
+/// Usage: `(deftype-slot :dispatch-op)`
+pub fn deftype_slot(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "deftype-slot expected 1 argument (tag name), but received:",
+      xs,
+    );
+  }
+  let name: Arc<str> = match &xs[0] {
+    Calcit::Tag(t) => Arc::from(t.ref_str()),
+    Calcit::Str(s) => Arc::from(s.as_ref()),
+    a => {
+      return CalcitErr::err_str(CalcitErrKind::Type, format!("deftype-slot expected a tag or string name, got: {a}"));
+    }
+  };
+  register_type_slot(name).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
+  Ok(Calcit::Nil)
+}
+
+/// `bind-type` proc: bind a concrete type (enum/struct) to a declared type slot.
+/// Usage: `(bind-type :dispatch-op Op)` where `Op` is a defenum definition.
+pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "bind-type expected 2 arguments (slot-name, type-value), but received:",
+      xs,
+    );
+  }
+  let name: &str = match &xs[0] {
+    Calcit::Tag(t) => t.ref_str(),
+    Calcit::Str(s) => s.as_ref(),
+    a => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("bind-type expected a tag or string as slot name, got: {a}"),
+      );
+    }
+  };
+  let ty: Arc<CalcitTypeAnnotation> = match &xs[1] {
+    Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
+    Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
+    Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+    a => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!(
+          "bind-type expected an enum, struct, or record as type value, got: {}",
+          brief_type_of_value(a)
+        ),
+      );
+    }
+  };
+  bind_type_slot(name, ty).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
+  Ok(Calcit::Nil)
 }

@@ -397,6 +397,11 @@ pub enum CalcitProc {
   NativeRecordAssoc,
   #[strum(serialize = "&record:extend-as")]
   NativeRecordExtendAs,
+  // type slots
+  #[strum(serialize = "deftype-slot")]
+  DeftypeSlot,
+  #[strum(serialize = "bind-type")]
+  BindType,
 }
 
 use crate::CalcitTypeAnnotation;
@@ -1146,6 +1151,16 @@ impl CalcitProc {
       // === Special forms and control flow ===
       // These typically don't have simple type signatures or are handled specially
       Recur => None,
+
+      // === Type slot operations ===
+      DeftypeSlot => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("tag")],
+      }),
+      BindType => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("tag"), dynamic_tag()],
+      }),
     }
   }
 

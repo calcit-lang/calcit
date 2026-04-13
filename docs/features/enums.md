@@ -186,4 +186,4 @@ Runtime type validation is enforced at instance creation — passing the wrong t
 
 - [Tuples](tuples.md) — raw tagged tuples without a class
 - [Records](records.md) — named-field structs with `defstruct`
-- [Static Analysis](static-analysis.md) — type checking for enum payloads
+- [Static Analysis](static-analysis.md) — type checking for enum payloads and type slots

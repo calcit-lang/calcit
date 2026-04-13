@@ -28,6 +28,9 @@ static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
+  /// Global type-slot registry: maps slot names to their bound type annotations.
+  /// A slot is declared via `deftype-slot` (value = None) and bound via `bind-type` (value = Some).
+  static TYPE_SLOTS: RefCell<HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
 }
 
 /// Register program-level lookup functions.  Must be called once at startup
@@ -50,6 +53,50 @@ pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: im
 
 fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
+}
+
+// ---------------------------------------------------------------------------
+// Type-slot public API
+// ---------------------------------------------------------------------------
+
+/// Declare a type slot. Returns Err if the slot name is already declared.
+pub fn register_type_slot(name: Arc<str>) -> Result<(), String> {
+  TYPE_SLOTS.with(|slots| {
+    let mut map = slots.borrow_mut();
+    if map.contains_key(&name) {
+      return Err(format!("type slot already declared: {name}"));
+    }
+    map.insert(name, None);
+    Ok(())
+  })
+}
+
+/// Bind a concrete type to a declared slot. Returns Err if the slot is unknown or already bound.
+pub fn bind_type_slot(name: &str, ty: Arc<CalcitTypeAnnotation>) -> Result<(), String> {
+  TYPE_SLOTS.with(|slots| {
+    let mut map = slots.borrow_mut();
+    match map.get_mut(name) {
+      Some(slot) if slot.is_some() => Err(format!(
+        "type slot '{name}' already bound — each slot can only be bound once per program"
+      )),
+      Some(slot) => {
+        *slot = Some(ty);
+        Ok(())
+      }
+      None => Err(format!("unknown type slot: {name}")),
+    }
+  })
+}
+
+/// Look up the type bound to a slot. Returns `None` if the slot is unknown or not yet bound.
+pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
+}
+
+/// Clear all type slots. Called at program startup/shutdown to avoid stale state across runs.
+#[allow(dead_code)]
+pub fn clear_type_slots() {
+  TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
 }
 
 fn truncate_type_form_preview(raw: &str) -> String {
@@ -171,6 +218,9 @@ pub enum CalcitTypeAnnotation {
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
   /// Unit/nil type — for side-effectful functions that explicitly return nil
   Unit,
+  /// A type slot reference declared via `deftype-slot` and bound via `bind-type`.
+  /// At type-checking time, this is resolved by looking up the global TYPE_SLOTS registry.
+  TypeSlot(Arc<str>),
 }
 
 impl CalcitTypeAnnotation {
@@ -240,7 +290,8 @@ impl CalcitTypeAnnotation {
       | Self::CirruQuote
       | Self::Dynamic
       | Self::TypeVar(_)
-      | Self::Unit => Ok(()),
+      | Self::Unit
+      | Self::TypeSlot(_) => Ok(()),
     }
   }
 
@@ -1131,6 +1182,13 @@ impl CalcitTypeAnnotation {
           Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)))
         };
       }
+      // Type slot reference: *name → TypeSlot(name)
+      if sym.starts_with('*') {
+        let slot_name = sym.trim_start_matches('*');
+        if !slot_name.is_empty() {
+          return Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_name)));
+        }
+      }
       if strict_named_refs && Self::generics_contains(generics, sym) {
         return Arc::new(CalcitTypeAnnotation::TypeVar(sym.to_owned()));
       }
@@ -1444,6 +1502,7 @@ impl CalcitTypeAnnotation {
       Self::Record(struct_def) => format!("struct {}", struct_def.name),
       Self::Tuple(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
+      Self::TypeSlot(name) => format!("type-slot({name})"),
       _ => "unknown".to_string(),
     }
   }
@@ -1512,6 +1571,7 @@ impl CalcitTypeAnnotation {
 
   /// Resolve to struct, also returning the (ns, def) path when available from a TypeRef.
   /// The path can be used to construct an Import reference for JS codegen compatibility.
+  #[allow(clippy::type_complexity)]
   pub fn resolve_to_struct_with_ref(&self) -> Option<(CalcitStruct, Option<(Arc<str>, Arc<str>)>)> {
     match self {
       Self::Struct(base, _) => Some((base.as_ref().clone(), None)),
@@ -1685,6 +1745,14 @@ impl CalcitTypeAnnotation {
           return resolved.matches_with_bindings(other, bindings);
         }
         false
+      }
+      // TypeSlot: resolve the bound type from the global registry and delegate
+      (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
+        if let Some(resolved) = resolve_type_slot(name) {
+          return resolved.matches_with_bindings(other, bindings);
+        }
+        // Slot not yet bound — treat as Dynamic (no checking)
+        true
       }
       _ => false,
     }
@@ -1962,6 +2030,7 @@ impl CalcitTypeAnnotation {
       Self::Enum(e, _) => Edn::Tag(e.name().clone()),
       Self::Record(struct_def) => Edn::Tag(struct_def.name.clone()),
       Self::Tuple(enum_def) => Edn::Tag(enum_def.name().clone()),
+      Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
       // Anything else falls back to dynamic
       _ => Edn::tag("dynamic"),
     }
@@ -2068,6 +2137,7 @@ impl CalcitTypeAnnotation {
       Self::Record(struct_def) => format!("struct {}", struct_def.name),
       Self::Tuple(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
+      Self::TypeSlot(name) => format!("type-slot({name})"),
       _ => "unknown".to_string(),
     }
   }
@@ -2101,6 +2171,7 @@ impl CalcitTypeAnnotation {
       Self::Trait(_) => 25,
       Self::TraitSet(_) => 26,
       Self::Unit => 27,
+      Self::TypeSlot(_) => 28,
     }
   }
 }
@@ -2917,6 +2988,10 @@ impl Hash for CalcitTypeAnnotation {
         }
       }
       Self::Unit => "unit".hash(state),
+      Self::TypeSlot(name) => {
+        "type-slot".hash(state);
+        name.hash(state);
+      }
     }
   }
 }
@@ -3210,6 +3285,13 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     // Generic type variables cannot be checked at runtime; allow any value
     CalcitTypeAnnotation::TypeVar(_) => true,
     CalcitTypeAnnotation::Variadic(inner) => matches!(value, Calcit::List(_)) || value_matches_type_annotation(value, inner),
+    CalcitTypeAnnotation::TypeSlot(name) => {
+      if let Some(resolved) = resolve_type_slot(name) {
+        value_matches_type_annotation(value, &resolved)
+      } else {
+        true // unbound slot: permissive like Dynamic
+      }
+    }
   }
 }
 

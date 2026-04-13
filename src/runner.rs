@@ -475,7 +475,11 @@ pub fn evaluate_symbol_from_program(
   } else if let Some(v) = lookup_symbol_in_program_namespaces(sym, file_ns, call_stack)? {
     v
   } else {
-    unreachable!("expected symbol from path, this is a quick path, should succeed")
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Var,
+      format!("expected symbol `{sym}` from path `{file_ns}`, this is a quick path, should succeed"),
+      call_stack,
+    ));
   };
   Ok(v)
 }
