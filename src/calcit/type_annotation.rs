@@ -1590,6 +1590,33 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Try to resolve this type annotation to a concrete `CalcitEnum` definition.
+  /// Works for `Enum(def, _)`, `Tuple(def)`, and `TypeRef("ns/name", _)` that can be
+  /// looked up from the program registry.
+  pub fn resolve_to_enum(&self) -> Option<CalcitEnum> {
+    self.resolve_to_enum_with_ref().map(|(e, _)| e)
+  }
+
+  /// Resolve to enum, also returning the (ns, def) path when available from a TypeRef.
+  /// The path can be used to construct an Import reference for JS codegen compatibility.
+  #[allow(clippy::type_complexity)]
+  pub fn resolve_to_enum_with_ref(&self) -> Option<(CalcitEnum, Option<(Arc<str>, Arc<str>)>)> {
+    match self {
+      Self::Enum(base, _) => Some((base.as_ref().clone(), None)),
+      Self::Tuple(base) => Some((base.as_ref().clone(), None)),
+      Self::TypeRef(name, _) => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        if let Some((ns, def)) = stripped.rsplit_once('/') {
+          resolve_enum_from_program(ns, def).map(|e| (e, Some((Arc::from(ns), Arc::from(def)))))
+        } else {
+          None
+        }
+      }
+      Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
+      _ => None,
+    }
+  }
+
   pub fn matches_annotation(&self, expected: &CalcitTypeAnnotation) -> bool {
     let mut bindings = TypeBindings::new();
     self.matches_with_bindings(expected, &mut bindings)
@@ -2219,6 +2246,30 @@ fn resolve_struct_from_program(ns: &str, def: &str) -> Option<CalcitStruct> {
       lookup_def_code_registered(ns, def).and_then(|code| {
         resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
           Calcit::Struct(s) => Some(s),
+          _ => None,
+        })
+      })
+    })
+}
+
+/// Resolve an enum definition by namespace and definition name from the program registry.
+/// Used by `CalcitTypeAnnotation::resolve_to_enum` to look up `TypeRef("ns/def")` at compile time.
+fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnum> {
+  lookup_runtime_ready_registered(ns, def)
+    .and_then(|value| match &value {
+      Calcit::Enum(e) => Some(e.to_owned()),
+      Calcit::Record(record) => CalcitEnum::from_record(record.to_owned()).ok(),
+      _ => resolve_type_def_from_code(&value).and_then(|resolved| match resolved {
+        Calcit::Enum(e) => Some(e),
+        Calcit::Record(record) => CalcitEnum::from_record(record).ok(),
+        _ => None,
+      }),
+    })
+    .or_else(|| {
+      lookup_def_code_registered(ns, def).and_then(|code| {
+        resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
+          Calcit::Enum(e) => Some(e),
+          Calcit::Record(record) => CalcitEnum::from_record(record).ok(),
           _ => None,
         })
       })

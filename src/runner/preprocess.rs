@@ -660,10 +660,9 @@ fn preprocess_list_call(
       if !has_spread {
         let processed_args = CalcitList::from(ys.drop_left());
         // Rewrite hashmap literal args to record literals when the expected type is a struct
-        let (final_args, ys_updated) = if let Some(rewritten) =
+        let (mid_args, ys_mid) = if let Some(rewritten) =
           try_rewrite_map_args_to_records(info.as_ref(), &processed_args, file_ns, &def_name, check_warnings)
         {
-          // Rebuild ys with the head + rewritten args
           let mut new_ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
           for item in rewritten.iter() {
             new_ys = new_ys.push(item.to_owned());
@@ -671,6 +670,18 @@ fn preprocess_list_call(
           (rewritten, new_ys)
         } else {
           (processed_args.clone(), ys.clone())
+        };
+        // Rewrite untyped tuple literal args to enum tuples when the expected type is an enum
+        let (final_args, ys_updated) = if let Some(rewritten) =
+          try_rewrite_tuple_args_to_enum_tuples(info.as_ref(), &mid_args, file_ns, &def_name, check_warnings)
+        {
+          let mut new_ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
+          for item in rewritten.iter() {
+            new_ys = new_ys.push(item.to_owned());
+          }
+          (rewritten, new_ys)
+        } else {
+          (mid_args, ys_mid)
         };
         ys = ys_updated;
         check_core_fn_arg_types(info.as_ref(), &final_args, scope_types, file_ns, &def_name, check_warnings);
@@ -1824,6 +1835,119 @@ fn try_rewrite_single_map_to_record(
   }
 
   Some(Calcit::from(record_items))
+}
+
+/// Walk the processed argument list and rewrite untyped tuple literals (`:: :tag ...`)
+/// to typed enum tuple construction (`%:: EnumDef :tag ...`) when the function parameter
+/// is annotated as an enum type. Returns a new list if any rewrite happened, None otherwise.
+fn try_rewrite_tuple_args_to_enum_tuples(
+  fn_info: &CalcitFn,
+  processed_args: &CalcitList,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<CalcitList> {
+  if fn_info.arg_types.is_empty() {
+    return None;
+  }
+
+  let mut rewritten = false;
+  let mut new_args: Vec<Calcit> = Vec::with_capacity(processed_args.len());
+
+  for (idx, arg) in processed_args.iter().enumerate() {
+    let expected_type = if idx < fn_info.arg_types.len() {
+      Some(&fn_info.arg_types[idx])
+    } else {
+      None
+    };
+
+    if let Some(expected) = expected_type {
+      if let Some(rewritten_arg) =
+        try_rewrite_single_tuple_to_enum_tuple(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
+      {
+        new_args.push(rewritten_arg);
+        rewritten = true;
+        continue;
+      }
+    }
+    new_args.push(arg.to_owned());
+  }
+
+  if rewritten {
+    Some(CalcitList::from(new_args.as_slice()))
+  } else {
+    None
+  }
+}
+
+/// Try to rewrite a single untyped tuple literal (`:: :tag payload...`) to a typed enum tuple
+/// (`%:: EnumDef :tag payload...`) if the expected type is an enum.
+/// Returns Some(rewritten_expr) if rewritten, None otherwise.
+fn try_rewrite_single_tuple_to_enum_tuple(
+  arg: &Calcit,
+  expected_type: &Arc<CalcitTypeAnnotation>,
+  file_ns: &str,
+  def_name: &str,
+  fn_name: &str,
+  arg_idx: usize,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<Calcit> {
+  // Only handle untyped tuple literals (lists starting with Proc(NativeTuple))
+  let Calcit::List(arg_list) = arg else { return None };
+  let Some(Calcit::Proc(CalcitProc::NativeTuple)) = arg_list.first() else {
+    return None;
+  };
+
+  // Resolve the expected type to an enum definition + optional ns/def path
+  let (enum_def, ns_def_path) = expected_type.resolve_to_enum_with_ref()?;
+
+  // Validate: the tuple literal needs at least a tag
+  if arg_list.len() < 2 {
+    gen_check_warning(
+      format!(
+        "[Warn] tuple-to-enum rewrite skipped for `{fn_name}` arg {}: tuple literal has no tag, at {file_ns}/{def_name}",
+        arg_idx + 1,
+      ),
+      file_ns,
+      check_warnings,
+    );
+    return None;
+  }
+
+  // Build the enum reference node (same strategy as map-to-record):
+  // - If we have ns/def path (from TypeRef), emit an Import so JS codegen can emit a variable reference
+  // - Otherwise fall back to Calcit::Enum (works for interpreter, not for JS codegen)
+  let enum_ref_node = if let Some((ns, def)) = ns_def_path {
+    let import_info = if ns.as_ref() == file_ns {
+      ImportInfo::SameFile {
+        at_def: Arc::from(def_name),
+      }
+    } else {
+      ImportInfo::NsReferDef {
+        at_ns: Arc::from(file_ns),
+        at_def: Arc::from(def_name),
+      }
+    };
+    Calcit::Import(CalcitImport {
+      ns: ns.to_owned(),
+      def: def.to_owned(),
+      info: Arc::new(import_info),
+      def_id: None,
+    })
+  } else {
+    Calcit::Enum(enum_def)
+  };
+
+  // Build rewritten: [NativeEnumTupleNew, enum_ref, tag, ...payloads]
+  let mut items: Vec<Calcit> = Vec::with_capacity(arg_list.len() + 1);
+  items.push(Calcit::Proc(CalcitProc::NativeEnumTupleNew));
+  items.push(enum_ref_node);
+  // Copy tag and payloads from the original tuple literal (skip NativeTuple head)
+  for item in arg_list.iter().skip(1) {
+    items.push(item.to_owned());
+  }
+
+  Some(Calcit::from(items))
 }
 
 /// Check user-defined function argument types against type annotations

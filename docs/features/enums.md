@@ -175,6 +175,32 @@ defenum MaybeInt (:some :number) (:none)
 
 Runtime type validation is enforced at instance creation — passing the wrong type to `%::` will raise an error.
 
+## Automatic Tuple-to-Enum Rewrite
+
+When a function parameter is typed as an enum in its schema, the preprocessor automatically rewrites untyped tuple literal (`::`) arguments to typed enum tuple construction (`%::`). This lets you write shorter tuple syntax while still getting full enum type checking.
+
+```cirru
+defenum Result0 (:err :string) (:ok)
+
+defn takes-result (r)
+  :: :fn $ {} (:return :dynamic)
+    :args $ [] 'app.main/Result0
+  tag-match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
+
+; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
+takes-result $ :: :ok
+; Equivalent to:
+takes-result $ %:: Result0 :ok
+```
+
+Requirements for the rewrite to trigger:
+
+- The function must have a schema with `:args` that references an enum type (via `TypeRef` like `'ns/EnumName`, `Enum`, or `Tuple`)
+- The argument at the call site must be an untyped tuple literal (`::`)
+- The enum definition must be resolvable at preprocess time
+
+If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
+
 ## Notes
 
 - Enum instances are immutable tuples with a class reference.
