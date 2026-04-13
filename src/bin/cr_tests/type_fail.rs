@@ -90,21 +90,82 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 #[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
   let _guard = lock_fixture_tests();
-  let entries = load_fixture_entries("calcit/type-fail/schema-call-arg-type-mismatch.cirru");
-  let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+  let fixtures = [
+    (
+      "calcit/type-fail/schema-call-arg-type-mismatch.cirru",
+      "expects type `:number`, but got `:string`",
+    ),
+    (
+      "calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru",
+      "expects type `type-slot(payload)`, but got `:number`",
+    ),
+  ];
 
-  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-    .expect("call-arg fixture should preprocess with warnings, not hard errors");
+  for (path, expected_msg) in fixtures {
+    let entries = load_fixture_entries(path);
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
-  let warnings = warnings.borrow();
-  assert_eq!(warnings.len(), 1, "expected exactly one warning, got: {warnings:?}");
-  let warning = &warnings[0];
-  assert_eq!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH"));
-  assert!(
-    warning.message().contains("expects type `:number`, but got `:string`"),
-    "warning message was: {}",
-    warning.message()
-  );
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("call-arg fixture should preprocess with warnings, not hard errors");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH"))
+      .collect();
+    assert_eq!(
+      matched.len(),
+      1,
+      "expected exactly one arg-type warning for {path}, got: {warnings:?}"
+    );
+    let warning = matched[0];
+    assert_eq!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH"));
+    assert!(
+      warning.message().contains(expected_msg),
+      "warning message for {path} was: {}",
+      warning.message()
+    );
+  }
+}
+
+#[test]
+fn type_fail_type_slot_fixtures_report_errors() {
+  let _guard = lock_fixture_tests();
+
+  let fixtures = [
+    ("calcit/type-fail/type-slot-bind-unknown.cirru", "unknown type slot: payload"),
+    (
+      "calcit/type-fail/type-slot-bind-duplicate.cirru",
+      "type slot 'payload' already bound",
+    ),
+  ];
+
+  for (path, expected_msg) in fixtures {
+    let entries = load_fixture_entries(path);
+    let err = run_check_only(&entries).expect_err("type-slot fixture should fail during check-only");
+
+    assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
+  }
+}
+
+#[test]
+fn type_fail_type_slot_fixture_is_repeatable_across_program_loads() {
+  let _guard = lock_fixture_tests();
+
+  for _ in 0..2 {
+    let entries = load_fixture_entries("calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("type-slot fixture should preprocess with warnings on repeated loads");
+
+    let warning_count = warnings
+      .borrow()
+      .iter()
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH"))
+      .count();
+    assert_eq!(warning_count, 1);
+  }
 }
 
 #[test]

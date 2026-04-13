@@ -759,6 +759,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   // Register the program lookup functions in type_annotation so it can resolve
   // imported type definitions without a circular module dependency.
   calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
+  calcit::clear_type_slots();
 
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
 

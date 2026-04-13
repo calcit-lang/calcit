@@ -4,7 +4,7 @@ use crate::{
     self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
     CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax,
     CalcitTrait, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
-    bind_type_slot, register_type_slot,
+    bind_type_slot, brief_type_of_value, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -840,25 +840,70 @@ fn preprocess_list_call(
         // Eagerly execute type-slot procs during preprocessing so that TypeSlot
         // annotations can be resolved by the type checker within the same compilation.
         if let Some(Calcit::Proc(CalcitProc::DeftypeSlot)) = ys.first() {
-          if let Some(Calcit::Tag(tag)) = processed_args.first() {
-            let _ = register_type_slot(Arc::from(tag.ref_str()));
+          if let Some(slot_name) = processed_args.first().and_then(|arg| match arg {
+            Calcit::Tag(tag) => Some(Arc::from(tag.ref_str())),
+            Calcit::Str(text) => Some(Arc::from(text.as_ref())),
+            _ => None,
+          }) {
+            register_type_slot(slot_name)
+              .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location()))?;
           }
         }
         if let Some(Calcit::Proc(CalcitProc::BindType)) = ys.first() {
-          if let (Some(Calcit::Tag(tag)), Some(type_arg)) = (processed_args.first(), processed_args.get(1)) {
+          if let (Some(slot_arg), Some(type_arg)) = (processed_args.first(), processed_args.get(1)) {
+            let slot_name = match slot_arg {
+              Calcit::Tag(tag) => tag.ref_str(),
+              Calcit::Str(text) => text.as_ref(),
+              _ => {
+                return Err(CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Unexpected,
+                  format!("bind-type expected a tag or string as slot name, got: {slot_arg}"),
+                  call_stack,
+                  head.get_location(),
+                ));
+              }
+            };
             let resolved = match type_arg {
               Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_program_value_for_preprocess(ns, def, *def_id),
               Calcit::Symbol { sym, info, .. } => resolve_program_value_for_preprocess(&info.at_ns, sym, None),
               other => Some(other.to_owned()),
             };
-            let type_annotation = resolved.and_then(|v| match v {
-              Calcit::Enum(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(vec![])))),
-              Calcit::Struct(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![])))),
-              _ => None,
-            });
-            if let Some(ty) = type_annotation {
-              let _ = bind_type_slot(tag.ref_str(), ty);
-            }
+            let Some(resolved) = resolved else {
+              return Err(CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Unexpected,
+                format!("bind-type expected a resolvable type value for slot `{slot_name}`"),
+                call_stack,
+                head.get_location(),
+              ));
+            };
+            let type_annotation = match &resolved {
+              Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
+              Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
+              Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+              other => match infer_type_from_expr(other, scope_types) {
+                Some(inferred)
+                  if matches!(
+                    inferred.as_ref(),
+                    CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::Record(_)
+                  ) =>
+                {
+                  inferred
+                }
+                _ => {
+                  return Err(CalcitErr::use_msg_stack_location(
+                    CalcitErrKind::Unexpected,
+                    format!(
+                      "bind-type expected an enum, struct, or record as type value, got: {}",
+                      brief_type_of_value(other)
+                    ),
+                    call_stack,
+                    head.get_location(),
+                  ));
+                }
+              },
+            };
+            bind_type_slot(slot_name, type_annotation)
+              .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location()))?;
           }
         }
 
