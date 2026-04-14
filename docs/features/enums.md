@@ -16,7 +16,8 @@ Calcit enums are tagged unions — each variant has a tag (keyword) and zero or 
 
 - **Define**: `defenum Shape (:circle :number) (:rect :number :number)`
 - **Create**: `%:: Shape :circle 5`
-- **Match**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
+- **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
+- **Match** (legacy): `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape :enum`
 
 ## Defining Enums
@@ -55,7 +56,9 @@ let
   println err
 ```
 
-## Pattern Matching with `tag-match`
+## Pattern Matching with `tag-match` (legacy)
+
+> **Note**: Prefer `match` (see below) for new code. `match` provides compile-time exhaustiveness checking.
 
 `tag-match` branches on the variant tag and binds payload values to names:
 
@@ -87,6 +90,56 @@ let
   println (describe ok)
   ; => OK: success
 ```
+
+## Pattern Matching with `match` (recommended)
+
+`match` is a native syntax (not a macro) that branches on enum variant tags with **compile-time exhaustiveness checking**. When the matched value has a known enum type, the preprocessor verifies that all variants are covered:
+
+```cirru
+let
+    Shape $ defenum Shape (:circle :number) (:rect :number :number)
+    c $ %:: Shape :circle 5
+    area
+      match c
+        (:circle radius) (* radius radius 3.14159)
+        (:rect w h) (* w h)
+  println area
+  ; => 78.53975
+```
+
+If you omit a variant and don't have a wildcard `_` branch, the compiler warns:
+
+```cirru.no-check
+match c
+  (:circle radius) (* radius radius 3.14159)
+  ; ⚠ Warning: match on `Shape` is not exhaustive. Missing variant(s): [:rect]
+```
+
+Use `_` as a wildcard to catch remaining variants:
+
+```cirru
+let
+    Shape $ defenum Shape (:circle :number) (:rect :number :number)
+    c $ %:: Shape :circle 5
+    label
+      match c
+        (:circle _r) |round
+        _ |other
+  println label
+  ; => round
+```
+
+### `match` vs `tag-match`
+
+| Feature | `match` | `tag-match` |
+|---------|---------|-------------|
+| Implementation | Native syntax | Macro (expands to nested `if`) |
+| Exhaustiveness | Compile-time warning | None |
+| Variant arity check | Yes | No |
+| JS output | Direct if-else chain | Nested ternaries |
+| Recommended | Yes | Legacy use |
+
+Both syntaxes share the same branch format: each branch is `(pattern body)`.
 
 ## Zero-payload Variants
 
@@ -204,7 +257,8 @@ If any condition is not met, the argument is left unchanged (no error is raised)
 ## Notes
 
 - Enum instances are immutable tuples with a class reference.
-- `tag-match` is exhaustive match; unmatched tags raise a runtime error.
+- `match` is the recommended pattern matching syntax with exhaustiveness checking.
+- `tag-match` is a legacy macro; unmatched tags raise a runtime error without compile-time warning.
 - Use `&tuple:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
 - Enums vs plain tuples: plain `:: :tag val` tuples have no class; `%:: Enum :tag val` tuples carry their enum class for origin checking.
 

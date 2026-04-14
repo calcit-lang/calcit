@@ -56,7 +56,7 @@ For detailed information about specific features:
 Use this section as a keyword index for `cr docs read`:
 
 - **Collections**: list, map, set, tuple, record
-- **Pattern Matching**: enum, tag-match, tuple-match, result
+- **Pattern Matching**: enum, match, tag-match, tuple-match, result, exhaustiveness
 - **Types**: static-analysis, assert-type, optional, variadic
 - **Methods**: trait, impl-traits, method dispatch, trait-call
 - **Interop**: js interop, async, promise, js-await
