@@ -8,6 +8,7 @@ aliases:
   - "tagged union"
   - "tagged unions"
 ---
+
 # Enums (defenum)
 
 Calcit enums are tagged unions — each variant has a tag (keyword) and zero or more typed payload fields. Under the hood enums are represented as tuples with a class reference.
@@ -131,13 +132,13 @@ let
 
 ### `match` vs `tag-match`
 
-| Feature | `match` | `tag-match` |
-|---------|---------|-------------|
-| Implementation | Native syntax | Macro (expands to nested `if`) |
-| Exhaustiveness | Compile-time warning | None |
-| Variant arity check | Yes | No |
-| JS output | Direct if-else chain | Nested ternaries |
-| Recommended | Yes | Legacy use |
+| Feature             | `match`              | `tag-match`                    |
+| ------------------- | -------------------- | ------------------------------ |
+| Implementation      | Native syntax        | Macro (expands to nested `if`) |
+| Exhaustiveness      | Compile-time warning | None                           |
+| Variant arity check | Yes                  | No                             |
+| JS output           | Direct if-else chain | Nested ternaries               |
+| Recommended         | Yes                  | Legacy use                     |
 
 Both syntaxes share the same branch format: each branch is `(pattern body)`.
 

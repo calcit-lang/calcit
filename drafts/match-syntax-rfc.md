@@ -43,11 +43,11 @@ match <value>
 
 ### Pattern 形式
 
-| Pattern | 含义 | 示例 |
-|---------|------|------|
-| `(:tag)` | 零载荷变体 | `(:ok) :success` |
+| Pattern            | 含义                       | 示例                       |
+| ------------------ | -------------------------- | -------------------------- |
+| `(:tag)`           | 零载荷变体                 | `(:ok) :success`           |
 | `(:tag b1 b2 ...)` | 带载荷变体，绑定到局部变量 | `(:err msg) (println msg)` |
-| `_` | 通配符（匹配所有） | `_ :default` |
+| `_`                | 通配符（匹配所有）         | `_ :default`               |
 
 ### 完整示例
 
@@ -148,14 +148,14 @@ missing = all_variants - covered_tags
 
 ## 7. 实现文件
 
-| 文件 | 变更 |
-|------|------|
-| `src/calcit/syntax_name.rs` | `CalcitSyntax::Match` 变体 + `SyntaxTypeSignature` |
-| `src/builtins/syntax.rs` | `syntax_match()` 运行时处理器 |
-| `src/builtins.rs` | dispatch 入口 |
-| `src/runner/preprocess/mod.rs` | `preprocess_match()` 预处理+穷尽性检查 |
-| `src/codegen/emit_js.rs` | `gen_match_code()` JS 代码生成 |
-| `calcit/test-enum.cirru` | 测试用例 |
+| 文件                           | 变更                                               |
+| ------------------------------ | -------------------------------------------------- |
+| `src/calcit/syntax_name.rs`    | `CalcitSyntax::Match` 变体 + `SyntaxTypeSignature` |
+| `src/builtins/syntax.rs`       | `syntax_match()` 运行时处理器                      |
+| `src/builtins.rs`              | dispatch 入口                                      |
+| `src/runner/preprocess/mod.rs` | `preprocess_match()` 预处理+穷尽性检查             |
+| `src/codegen/emit_js.rs`       | `gen_match_code()` JS 代码生成                     |
+| `calcit/test-enum.cirru`       | 测试用例                                           |
 
 ## 8. 迁移指南
 

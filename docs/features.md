@@ -13,6 +13,7 @@ entry_for:
   - "impl-traits"
   - "assert-type"
 ---
+
 # Features
 
 Calcit inherits most features from Clojure/ClojureScript while adding its own innovations:
