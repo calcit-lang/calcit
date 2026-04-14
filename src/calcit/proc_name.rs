@@ -369,6 +369,8 @@ pub enum CalcitProc {
   #[strum(serialize = "remove-watch")]
   RemoveWatch,
   // records
+  #[strum(serialize = "?{}")]
+  NativeLooseRecord,
   #[strum(serialize = "&%{}")]
   NativeRecord,
   #[strum(serialize = "&%{}?")]
@@ -997,6 +999,10 @@ impl CalcitProc {
       }),
 
       // === Record operations ===
+      NativeLooseRecord => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![variadic_dynamic()],
+      }),
       NativeRecord => Some(ProcTypeSignature {
         return_type: some_tag("record"),
         arg_types: vec![some_tag("struct"), variadic_dynamic()],

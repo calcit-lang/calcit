@@ -320,6 +320,62 @@ Requirements for the rewrite to trigger:
 
 If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
 
+## Loose Records (`?{}`)
+
+Loose records are records created without a declared struct definition, using the `?{}` syntax. This is analogous to how untyped tuples (`::`) work without requiring a `defenum` — loose records provide the same convenience for named fields.
+
+### Creating a Loose Record
+
+```cirru
+?{} :name |John :age 30
+; => (?{} (:age 30) (:name |John))
+```
+
+Fields are automatically sorted alphabetically, matching the behavior of struct-backed records. All keys must be tags, and duplicate keys produce an error.
+
+### Accessing Fields
+
+Loose records support the same field access operations as struct-backed records:
+
+```cirru
+let
+    r $ ?{} :x 10 :y 20
+  println $ :x r       ; => 10
+  println $ type-of r   ; => :record
+```
+
+### Automatic Rewrite to Struct Record
+
+When a loose record is passed to a function whose parameter is typed as a struct, the preprocessor automatically rewrites it to a struct-backed record — just like the map-to-record rewrite:
+
+```cirru
+defstruct Point (:x :number) (:y :number)
+
+defn sum-point (p)
+  :: :fn $ {} (:return :number)
+    :args $ [] 'app.main/Point
+  &+ (:x p) (:y p)
+
+; Loose record rewritten to struct record at compile time:
+sum-point $ ?{} :x 10 :y 20
+; Equivalent to:
+sum-point $ %{} Point (:x 10) (:y 20)
+```
+
+The rewrite uses the same requirements as map-to-record rewrite. Fields not present in the loose record but defined in the struct are filled with `nil`.
+
+### Design Symmetry
+
+The collection type system follows a consistent "precision increasing" pattern:
+
+| Positional (by index) | Named (by field) |
+|----------------------|------------------|
+| `list` (dynamic)     | `hashmap` (dynamic) |
+| `:: :tag ...` (untyped tuple) | `?{} :field val` (loose record) |
+| `%:: Enum :tag ...` (typed enum) | `%{} Struct :field val` (typed record) |
+
+Both untyped tuples and loose records can be automatically rewritten to their typed counterparts when function parameter types are known at compile time.
+
 ## Performance Notes
 
 - Records are immutable — updates create new records

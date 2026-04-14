@@ -687,34 +687,36 @@ fn preprocess_list_call(
         ys = ys.push(form);
       }
       if !has_spread {
-        let processed_args = CalcitList::from(ys.drop_left());
+        let mut current_args = CalcitList::from(ys.drop_left());
+        let mut any_rewritten = false;
         // Rewrite hashmap literal args to record literals when the expected type is a struct
-        let (mid_args, ys_mid) = if let Some(rewritten) =
-          try_rewrite_map_args_to_records(info.as_ref(), &processed_args, file_ns, &def_name, check_warnings)
+        if let Some(rewritten) = try_rewrite_map_args_to_records(info.as_ref(), &current_args, file_ns, &def_name, check_warnings) {
+          current_args = rewritten;
+          any_rewritten = true;
+        }
+        // Rewrite loose record literal args (`?{}`) to struct record literals when the expected type is a struct
+        if let Some(rewritten) =
+          try_rewrite_loose_record_args_to_struct_records(info.as_ref(), &current_args, file_ns, &def_name, check_warnings)
         {
-          let mut new_ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
-          for item in rewritten.iter() {
-            new_ys = new_ys.push(item.to_owned());
-          }
-          (rewritten, new_ys)
-        } else {
-          (processed_args.clone(), ys.clone())
-        };
+          current_args = rewritten;
+          any_rewritten = true;
+        }
         // Rewrite untyped tuple literal args to enum tuples when the expected type is an enum
-        let (final_args, ys_updated) = if let Some(rewritten) =
-          try_rewrite_tuple_args_to_enum_tuples(info.as_ref(), &mid_args, file_ns, &def_name, check_warnings)
+        if let Some(rewritten) = try_rewrite_tuple_args_to_enum_tuples(info.as_ref(), &current_args, file_ns, &def_name, check_warnings)
         {
+          current_args = rewritten;
+          any_rewritten = true;
+        }
+        // Rebuild ys only once after all rewrites
+        if any_rewritten {
           let mut new_ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
-          for item in rewritten.iter() {
+          for item in current_args.iter() {
             new_ys = new_ys.push(item.to_owned());
           }
-          (rewritten, new_ys)
-        } else {
-          (mid_args, ys_mid)
-        };
-        ys = ys_updated;
-        check_core_fn_arg_types(info.as_ref(), &final_args, scope_types, file_ns, &def_name, check_warnings);
-        check_user_fn_arg_types(info.as_ref(), &final_args, scope_types, file_ns, &def_name, check_warnings);
+          ys = new_ys;
+        }
+        check_core_fn_arg_types(info.as_ref(), &current_args, scope_types, file_ns, &def_name, check_warnings);
+        check_user_fn_arg_types(info.as_ref(), &current_args, scope_types, file_ns, &def_name, check_warnings);
       }
       if has_spread {
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
@@ -1653,7 +1655,7 @@ fn check_proc_arg_types(
 
   if matches!(
     proc,
-    CalcitProc::NativeRecord | CalcitProc::NativeRecordPartial | CalcitProc::NativeRecordGet
+    CalcitProc::NativeRecord | CalcitProc::NativeRecordPartial | CalcitProc::NativeRecordGet | CalcitProc::NativeLooseRecord
   ) {
     return;
   }
@@ -1999,6 +2001,145 @@ fn try_rewrite_single_map_to_record(
 
   // Build the rewritten record literal with ALL struct fields in order.
   // Fields not provided in the map get nil. Format: [NativeRecord, struct_ref, k1, v1, k2, v2, ...]
+  let mut record_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
+  record_items.push(Calcit::Proc(CalcitProc::NativeRecord));
+  record_items.push(struct_ref_node);
+  for field in struct_def.fields.iter() {
+    record_items.push(Calcit::Tag(field.to_owned()));
+    if let Some(value) = provided_fields.get(field) {
+      record_items.push((*value).to_owned());
+    } else {
+      record_items.push(Calcit::Nil);
+    }
+  }
+
+  Some(Calcit::from(record_items))
+}
+
+/// Walk the processed argument list and rewrite loose record literals (`?{} :field val ...`)
+/// to struct record literals (`%{} StructDef :field val ...`) when the function parameter
+/// is annotated as a struct type. Returns a new list if any rewrite happened, None otherwise.
+fn try_rewrite_loose_record_args_to_struct_records(
+  fn_info: &CalcitFn,
+  processed_args: &CalcitList,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<CalcitList> {
+  if fn_info.arg_types.is_empty() {
+    return None;
+  }
+
+  let mut rewritten = false;
+  let mut new_args: Vec<Calcit> = Vec::with_capacity(processed_args.len());
+
+  for (idx, arg) in processed_args.iter().enumerate() {
+    let expected_type = if idx < fn_info.arg_types.len() {
+      Some(&fn_info.arg_types[idx])
+    } else {
+      None
+    };
+
+    if let Some(expected) = expected_type {
+      if let Some(rewritten_arg) =
+        try_rewrite_single_loose_record_to_struct_record(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
+      {
+        new_args.push(rewritten_arg);
+        rewritten = true;
+        continue;
+      }
+    }
+    new_args.push(arg.to_owned());
+  }
+
+  if rewritten {
+    Some(CalcitList::from(new_args.as_slice()))
+  } else {
+    None
+  }
+}
+
+/// Try to rewrite a single loose record literal (`?{} :field val ...`) to a struct record literal
+/// if the expected type is a struct. Returns Some(rewritten_expr) if rewritten, None otherwise.
+fn try_rewrite_single_loose_record_to_struct_record(
+  arg: &Calcit,
+  expected_type: &Arc<CalcitTypeAnnotation>,
+  file_ns: &str,
+  def_name: &str,
+  fn_name: &str,
+  arg_idx: usize,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<Calcit> {
+  // Only handle loose record literals (lists starting with Proc(NativeLooseRecord))
+  let Calcit::List(arg_list) = arg else { return None };
+  let Some(Calcit::Proc(CalcitProc::NativeLooseRecord)) = arg_list.first() else {
+    return None;
+  };
+
+  // Resolve the expected type to a struct definition + optional ns/def path
+  let (struct_def, ns_def_path) = expected_type.resolve_to_struct_with_ref()?;
+
+  // Validate: the loose record literal has flat key-value pairs after the NativeLooseRecord head
+  let items: Vec<&Calcit> = arg_list.iter().skip(1).collect();
+  if items.len() % 2 != 0 {
+    return None; // malformed, skip
+  }
+
+  // Validate all keys are tags AND are valid struct fields
+  let mut provided_fields: std::collections::HashMap<cirru_edn::EdnTag, &Calcit> = std::collections::HashMap::new();
+  for chunk in items.chunks(2) {
+    if let Calcit::Tag(key) = &chunk[0] {
+      if !struct_def.fields.iter().any(|f| f == key) {
+        gen_check_warning(
+          format!(
+            "[Warn] loose-record-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct `{}`, at {file_ns}/{def_name}",
+            arg_idx + 1,
+            struct_def.name,
+          ),
+          file_ns,
+          check_warnings,
+        );
+        return None;
+      }
+      provided_fields.insert(key.to_owned(), chunk[1]);
+    } else {
+      gen_check_warning(
+        format!(
+          "[Warn] loose-record-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
+          arg_idx + 1,
+          chunk[0]
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return None;
+    }
+  }
+
+  // Build the struct reference node
+  let struct_ref_node = if let Some((ns, def)) = ns_def_path {
+    let import_info = if ns.as_ref() == file_ns {
+      ImportInfo::SameFile {
+        at_def: Arc::from(def_name),
+      }
+    } else {
+      ImportInfo::NsReferDef {
+        at_ns: Arc::from(file_ns),
+        at_def: Arc::from(def_name),
+      }
+    };
+    Calcit::Import(CalcitImport {
+      ns: ns.to_owned(),
+      def: def.to_owned(),
+      info: Arc::new(import_info),
+      def_id: None,
+    })
+  } else {
+    Calcit::Struct(struct_def.clone())
+  };
+
+  // Build the rewritten record literal with ALL struct fields in order.
+  // Fields not provided get nil. Format: [NativeRecord, struct_ref, k1, v1, k2, v2, ...]
   let mut record_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
   record_items.push(Calcit::Proc(CalcitProc::NativeRecord));
   record_items.push(struct_ref_node);
@@ -3234,6 +3375,9 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
             if let Some(record_type) = infer_record_literal_type(xs, scope_types) {
               return Some(record_type);
             }
+          }
+          if matches!(proc, CalcitProc::NativeLooseRecord) {
+            return Some(tag_annotation("record"));
           }
           if matches!(proc, CalcitProc::NativeRecordGet) {
             if let Some(field_type) = infer_record_get_type(xs, scope_types) {

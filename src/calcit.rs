@@ -241,7 +241,11 @@ impl fmt::Display for Calcit {
         Ok(())
       }
       Record(CalcitRecord { struct_ref, values, .. }) => {
-        f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+        if record::LOOSE_RECORD_NAME == struct_ref.name.ref_str() {
+          f.write_str("(?{}")?;
+        } else {
+          f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+        }
         for idx in 0..struct_ref.fields.len() {
           f.write_str(&format!(" ({} {})", Calcit::tag(struct_ref.fields[idx].ref_str()), values[idx]))?;
         }

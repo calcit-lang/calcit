@@ -30,6 +30,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Proc(CalcitProc::NativeTuple)),
+      // loose record syntax (record without struct)
+      "?{}" => Ok(Calcit::Proc(CalcitProc::NativeLooseRecord)),
       _ => match s.chars().next().expect("load first char") {
         ':' if s.len() > 1 && s.chars().nth(1) != Some(':') => Ok(Calcit::tag(&s[1..])),
         '.' => {

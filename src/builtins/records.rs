@@ -423,6 +423,44 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }))
 }
 
+/// Create a loose record from key-value pairs: `?{} :field1 val1 :field2 val2`
+/// Fields are sorted alphabetically, mirroring struct-backed record behaviour.
+pub fn call_loose_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len().rem(2) != 0 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "?{} expected pairs of :field value, but received:", xs);
+  }
+  let size = xs.len() / 2;
+  // Collect (field, value) pairs, validate all keys are tags
+  let mut pairs: Vec<(EdnTag, Calcit)> = Vec::with_capacity(size);
+  for chunk in xs.chunks(2) {
+    match &chunk[0] {
+      Calcit::Tag(tag) => {
+        pairs.push((tag.to_owned(), chunk[1].to_owned()));
+      }
+      other => {
+        return CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("?{{}} expected tag as field name, but received: {}", other.lisp_str()),
+        );
+      }
+    }
+  }
+  // Sort by field name (struct fields are always sorted)
+  pairs.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
+  // Check for duplicate fields
+  for i in 1..pairs.len() {
+    if pairs[i].0 == pairs[i - 1].0 {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("?{{}} received duplicate field: :{}", pairs[i].0.ref_str()),
+      );
+    }
+  }
+  let fields: Vec<EdnTag> = pairs.iter().map(|(f, _)| f.to_owned()).collect();
+  let values: Vec<Calcit> = pairs.into_iter().map(|(_, v)| v).collect();
+  Ok(Calcit::Record(CalcitRecord::from_loose_pairs(fields, values)))
+}
+
 pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {

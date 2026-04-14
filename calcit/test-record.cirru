@@ -77,7 +77,7 @@
               :args $ [] 'test-record.main/Point2D
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-map-to-record) (do true)
+            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-loose-record-rewrite) (test-map-to-record) (do true)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
@@ -115,6 +115,12 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+        |test-loose-record-rewrite $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            fn () (log-title "|Testing loose-record-to-struct rewrite")
+              assert= 30 $ sum-point (?{} :x 10 :y 20)
+              assert= true $ check-point-type (?{} :x 10 :y 20)
+          :examples $ []
         |test-map-to-record $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing map-to-record rewrite")
