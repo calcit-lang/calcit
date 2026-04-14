@@ -14,7 +14,7 @@ use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitLocal, CalcitMacro,
   CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
 };
-use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
+use crate::calcit::{Calcit, CalcitErr, CalcitScope, CalcitTuple, gen_core_id};
 use crate::call_stack::CallStackList;
 use crate::runner::{self, call_expr, evaluate_expr};
 
@@ -922,4 +922,124 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
     }),
     location: None,
   })
+}
+
+/// Runtime handler for `match` syntax.
+/// After preprocessing, the form is:
+///   (match <value-expr> (<pattern1> <body1>) (<pattern2> <body2>) ...)
+/// where each pattern is either:
+///   - a list `(:tag binding1 binding2 ...)` for enum variant matching
+///   - the symbol `_` for a wildcard/default case
+pub fn syntax_match(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.is_empty() {
+    return CalcitErr::err_str(CalcitErrKind::Arity, "match expected a value and branches");
+  }
+
+  let value = evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+
+  let (tag, extra) = match &value {
+    Calcit::Tuple(CalcitTuple { tag, extra, .. }) => match tag.as_ref() {
+      Calcit::Tag(t) => (t.to_owned(), extra),
+      _ => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Type,
+          format!("match expected tuple with tag as first element, got: {tag}"),
+          call_stack,
+          expr[0].get_location(),
+        ));
+      }
+    },
+    _ => {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!("match expected a tuple value, got: {}", calcit::brief_type_of_value(&value)),
+        call_stack,
+        expr[0].get_location(),
+      ));
+    }
+  };
+
+  // Iterate over branches
+  for branch_idx in 1..expr.len() {
+    let branch = match &expr[branch_idx] {
+      Calcit::List(xs) if xs.len() == 2 => xs,
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match branch expected a pair (pattern body), got: {other}"),
+          call_stack,
+          other.get_location(),
+        ));
+      }
+    };
+
+    let pattern = &branch[0];
+    let body = &branch[1];
+
+    match pattern {
+      // Wildcard: always matches
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
+        return evaluate_expr(body, scope, file_ns, call_stack);
+      }
+      // Local that was preprocessed from `_`
+      Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_" => {
+        return evaluate_expr(body, scope, file_ns, call_stack);
+      }
+      // Tag pattern: (:variant-tag binding1 binding2 ...)
+      Calcit::List(pat_xs) if !pat_xs.is_empty() => {
+        let pat_tag = match &pat_xs[0] {
+          Calcit::Tag(t) => t,
+          other => {
+            return Err(CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Syntax,
+              format!("match pattern expected a tag, got: {other}"),
+              call_stack,
+              other.get_location(),
+            ));
+          }
+        };
+
+        let binding_count = pat_xs.len() - 1;
+        if *pat_tag == tag && binding_count == extra.len() {
+          // Bind payload values to scope
+          let mut body_scope = scope.to_owned();
+          for i in 0..binding_count {
+            match &pat_xs[i + 1] {
+              Calcit::Local(CalcitLocal { idx, .. }) => {
+                body_scope.insert_mut(*idx, extra[i].to_owned());
+              }
+              Calcit::Symbol { sym, .. } => {
+                let idx = CalcitLocal::track_sym(sym);
+                body_scope.insert_mut(idx, extra[i].to_owned());
+              }
+              other => {
+                return Err(CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Syntax,
+                  format!("match pattern expected a binding name, got: {other}"),
+                  call_stack,
+                  other.get_location(),
+                ));
+              }
+            }
+          }
+          return evaluate_expr(body, &body_scope, file_ns, call_stack);
+        }
+      }
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match unexpected pattern: {other}"),
+          call_stack,
+          other.get_location(),
+        ));
+      }
+    }
+  }
+
+  Err(CalcitErr::use_msg_stack_location(
+    CalcitErrKind::Unexpected,
+    format!("match found no matching branch for tag :{}", tag.ref_str()),
+    call_stack,
+    expr[0].get_location(),
+  ))
 }

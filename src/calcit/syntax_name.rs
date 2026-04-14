@@ -75,6 +75,9 @@ pub enum CalcitSyntax {
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
+  /// pattern matching on enum tuples with exhaustiveness detection
+  #[strum(serialize = "match")]
+  Match,
 }
 
 impl CalcitSyntax {
@@ -157,6 +160,11 @@ impl CalcitSyntax {
       CallSpread => Some(SyntaxTypeSignature {
         param_names: vec!["f", "args"],
         param_types: vec![dyn_t.clone(), list_dyn.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      Match => Some(SyntaxTypeSignature {
+        param_names: vec!["value", "branches"],
+        param_types: vec![dyn_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),
       Defn | Defmacro | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,

@@ -815,6 +815,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_traits(name, name_ns, &args, &mut ctx)
         }
+        CalcitSyntax::Match => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_match(name, name_ns, &args, &mut ctx)
+        }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
@@ -2487,6 +2491,229 @@ fn extract_predicate_binding(cond_form: &Calcit) -> Option<(Arc<str>, Arc<Calcit
     _ => None,
   }?;
   Some((sym, ann))
+}
+
+/// Preprocess `match` syntax and perform exhaustiveness checking.
+/// Input form (pair-based): `(match <value> (<pattern1> <body1>) (<pattern2> <body2>) ...)`
+///
+/// Each pattern is either:
+/// - a list `(:tag binding1 binding2 ...)` for enum variant matching
+/// - the symbol `_` for a wildcard/default case
+fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
+  if args.is_empty() {
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Syntax,
+      "match expected a value expression and branches".to_owned(),
+      ctx.call_stack,
+    ));
+  }
+
+  // After the value, remaining args are pairs: (pattern body) (pattern body) ...
+  // Each pair is a 2-element list where first is the pattern and second is the body.
+  // Cirru naturally creates this when each branch is on its own indented line.
+  let branch_count = args.len() - 1;
+  if branch_count == 0 {
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Syntax,
+      "match expected value followed by (pattern body) pairs, got 0 branches".to_owned(),
+      ctx.call_stack,
+    ));
+  }
+
+  let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
+
+  // Preprocess the value expression
+  let value_form = preprocess_expr(
+    args.first().unwrap(),
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+
+  // Try to infer enum type from the value expression for exhaustiveness checking
+  let enum_def = infer_type_from_expr(&value_form, ctx.scope_types).and_then(|t| match t.as_ref() {
+    CalcitTypeAnnotation::Tuple(enum_ref) => Some(enum_ref.as_ref().to_owned()),
+    CalcitTypeAnnotation::TypeSlot(name) => calcit::resolve_type_slot(name).and_then(|resolved| match resolved.as_ref() {
+      CalcitTypeAnnotation::Enum(e, _) => Some(e.as_ref().to_owned()),
+      _ => None,
+    }),
+    _ => None,
+  });
+
+  xs.push(value_form);
+
+  // Collect matched tags for exhaustiveness checking
+  let mut matched_tags: Vec<Arc<str>> = vec![];
+  let mut has_wildcard = false;
+
+  // Iterate branch pairs: each arg after value is (pattern body)
+  for branch_idx in 1..args.len() {
+    let branch = &args[branch_idx];
+    let pair = match branch {
+      Calcit::List(pair_xs) if pair_xs.len() == 2 => pair_xs,
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match branch expected a 2-element list (pattern body), got: {other}"),
+          ctx.call_stack,
+          other.get_location(),
+        ));
+      }
+    };
+    let pattern = &pair[0];
+    let body = &pair[1];
+
+    match pattern {
+      // Wildcard: `_`
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
+        has_wildcard = true;
+        let processed_body = preprocess_expr(
+          body,
+          ctx.scope_defs,
+          ctx.scope_types,
+          ctx.file_ns,
+          ctx.check_warnings,
+          ctx.call_stack,
+        )?;
+        xs.push(Calcit::from(CalcitList::from(&[pattern.to_owned(), processed_body])));
+      }
+      // Tag pattern: (:tag binding1 binding2 ...)
+      Calcit::List(pat_xs) if !pat_xs.is_empty() => {
+        let pat_tag = match &pat_xs[0] {
+          Calcit::Tag(t) => t.ref_str(),
+          other => {
+            return Err(CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Syntax,
+              format!("match pattern expected a tag as first element, got: {other}"),
+              ctx.call_stack,
+              other.get_location(),
+            ));
+          }
+        };
+
+        // Validate variant exists in enum and check arity
+        if let Some(ref enum_def) = enum_def {
+          if let Some(variant) = enum_def.find_variant_by_name(pat_tag) {
+            let expected_arity = variant.arity();
+            let actual_arity = pat_xs.len() - 1;
+            if expected_arity != actual_arity {
+              gen_check_warning(
+                format!(
+                  "[Warn] match: variant `{}::{}` expects {} payload(s), but pattern binds {}, at {}/{}",
+                  enum_def.name(),
+                  pat_tag,
+                  expected_arity,
+                  actual_arity,
+                  ctx.file_ns,
+                  ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
+                ),
+                ctx.file_ns,
+                ctx.check_warnings,
+              );
+            }
+          } else {
+            let available: Vec<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
+            gen_check_warning(
+              format!(
+                "[Warn] match: enum `{}` has no variant `:{pat_tag}`. Available: [{}], at {}/{}",
+                enum_def.name(),
+                available.join(", "),
+                ctx.file_ns,
+                ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
+              ),
+              ctx.file_ns,
+              ctx.check_warnings,
+            );
+          }
+        }
+
+        matched_tags.push(Arc::from(pat_tag));
+
+        // Create scope with bindings for the body
+        let mut body_defs = ctx.scope_defs.to_owned();
+        let mut body_types = ctx.scope_types.clone();
+        let mut processed_pattern: Vec<Calcit> = vec![pat_xs[0].to_owned()]; // Keep the tag
+
+        for (bind_idx, binding) in pat_xs.iter().skip(1).enumerate() {
+          match binding {
+            Calcit::Symbol { sym, info, location } => {
+              body_defs.insert(sym.to_owned());
+
+              // Infer payload type from enum variant definition
+              let payload_type = enum_def
+                .as_ref()
+                .and_then(|e| e.find_variant_by_name(pat_tag))
+                .and_then(|v| v.payload_types().get(bind_idx).cloned())
+                .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
+
+              let local = Calcit::Local(CalcitLocal {
+                idx: CalcitLocal::track_sym(sym),
+                sym: sym.to_owned(),
+                info: Arc::new(CalcitSymbolInfo {
+                  at_ns: info.at_ns.to_owned(),
+                  at_def: info.at_def.to_owned(),
+                }),
+                location: location.to_owned(),
+                type_info: payload_type.clone(),
+              });
+
+              body_types.insert(sym.to_owned(), payload_type);
+              processed_pattern.push(local);
+            }
+            other => {
+              return Err(CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Syntax,
+                format!("match pattern binding expected a symbol, got: {other}"),
+                ctx.call_stack,
+                other.get_location(),
+              ));
+            }
+          }
+        }
+
+        let processed_body = preprocess_expr(body, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        xs.push(Calcit::from(CalcitList::from(&[
+          Calcit::from(CalcitList::from(processed_pattern.as_slice())),
+          processed_body,
+        ])));
+      }
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match pattern expected (:tag ...) or _, got: {other}"),
+          ctx.call_stack,
+          other.get_location(),
+        ));
+      }
+    }
+  }
+
+  // Exhaustiveness checking
+  if let Some(ref enum_def) = enum_def {
+    if !has_wildcard {
+      let all_variants: BTreeSet<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
+      let covered: BTreeSet<&str> = matched_tags.iter().map(|t| t.as_ref()).collect();
+      let missing: Vec<&str> = all_variants.difference(&covered).copied().collect();
+
+      if !missing.is_empty() {
+        gen_check_warning(
+          format!(
+            "[Warn] match on `{}` is not exhaustive. Missing variant(s): [{}], at {}/{}",
+            enum_def.name(),
+            missing.iter().map(|t| format!(":{t}")).collect::<Vec<_>>().join(", "),
+            ctx.file_ns,
+            ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
+          ),
+          ctx.file_ns,
+          ctx.check_warnings,
+        );
+      }
+    }
+  }
+
+  Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
 }
 
 pub fn preprocess_defn(

@@ -439,6 +439,7 @@ fn gen_call_code(
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
+        CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
           let (prelude, args_code) =
             gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
@@ -871,6 +872,126 @@ fn gen_let_code(
     Ok(format!("{defs_code}{body_part}"))
   } else {
     Ok(make_fn_wrapper(&format!("{defs_code}{body_part}"), has_await))
+  }
+}
+
+/// Generate JS code for `match` syntax.
+/// After preprocessing, `body` is: [<value>, (<pattern1> <body1>), (<pattern2> <body2>), ...]
+/// Generated JS is an IIFE with if-else chain checking tuple tag and arity.
+fn gen_match_code(
+  body: &CalcitList,
+  local_defs: &HashSet<Arc<str>>,
+  _xs: &Calcit,
+  ns: &str,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  base_return_label: Option<&str>,
+) -> Result<String, String> {
+  if body.is_empty() {
+    return Err("match expected value and branches".to_owned());
+  }
+
+  let has_await = detect_await(body);
+  let return_label = base_return_label.unwrap_or("return ");
+  let proc_prefix = get_proc_prefix(ns);
+
+  let value_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+  let val_var = js_gensym("match_v");
+  let tag_var = js_gensym("match_t");
+
+  let mut chunk = String::new();
+  writeln!(chunk, "let {val_var} = {value_code};").expect("write");
+  writeln!(chunk, "let {tag_var} = {proc_prefix}_$n_tuple_$o_nth({val_var}, 0);").expect("write");
+
+  let mut first = true;
+  for branch_idx in 1..body.len() {
+    let branch = match &body[branch_idx] {
+      Calcit::List(xs) if xs.len() == 2 => xs,
+      other => return Err(format!("match branch expected a pair, got: {other}")),
+    };
+
+    let pattern = &branch[0];
+    let branch_body = &branch[1];
+
+    match pattern {
+      // Wildcard
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
+        let body_code = to_js_code(branch_body, ns, local_defs, file_imports, tags, Some(return_label))?;
+        if first {
+          writeln!(chunk, "{{ {body_code} }}").expect("write");
+        } else {
+          writeln!(chunk, " else {{ {body_code} }}").expect("write");
+        }
+        first = false;
+      }
+      Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_" => {
+        let body_code = to_js_code(branch_body, ns, local_defs, file_imports, tags, Some(return_label))?;
+        if first {
+          writeln!(chunk, "{{ {body_code} }}").expect("write");
+        } else {
+          writeln!(chunk, " else {{ {body_code} }}").expect("write");
+        }
+        first = false;
+      }
+      // Tag pattern: (:tag binding1 binding2 ...)
+      Calcit::List(pat_xs) if !pat_xs.is_empty() => {
+        let tag_name = match &pat_xs[0] {
+          Calcit::Tag(t) => t,
+          other => return Err(format!("match pattern expected tag, got: {other}")),
+        };
+
+        tags.borrow_mut().insert(tag_name.to_owned());
+        let tag_code = tags::tag_access(tag_name.ref_str());
+        let arity = pat_xs.len(); // includes tag, so total tuple count
+
+        let else_mark = if first { "" } else { " else " };
+        write!(
+          chunk,
+          "{else_mark}if ({tag_var} === {tag_code} && {proc_prefix}_$n_tuple_$o_count({val_var}) === {arity}) {{"
+        )
+        .expect("write");
+
+        // Generate binding code
+        let mut scoped_defs = local_defs.to_owned();
+        for (i, binding) in pat_xs.iter().skip(1).enumerate() {
+          let bind_name = match binding {
+            Calcit::Local(CalcitLocal { sym, .. }) => escape_var(sym),
+            Calcit::Symbol { sym, .. } => escape_var(sym),
+            other => return Err(format!("match binding expected symbol, got: {other}")),
+          };
+          if let Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } = binding {
+            scoped_defs.insert(sym.to_owned());
+          }
+          write!(chunk, "\nlet {bind_name} = {proc_prefix}_$n_tuple_$o_nth({val_var}, {});", i + 1).expect("write");
+        }
+
+        let body_code = to_js_code(branch_body, ns, &scoped_defs, file_imports, tags, Some(return_label))?;
+        writeln!(chunk, "\n{body_code} }}").expect("write");
+        first = false;
+      }
+      other => return Err(format!("match unexpected pattern: {other}")),
+    }
+  }
+
+  // Add fallthrough error if no wildcard
+  if !body.iter().skip(1).any(|b| {
+    matches!(b,
+      Calcit::List(xs) if xs.len() == 2 && matches!(&xs[0],
+        Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_"
+      )
+    )
+  }) {
+    write!(
+      chunk,
+      " else {{ throw new Error(\"match: no matching branch for tag \" + {tag_var}); }}"
+    )
+    .expect("write");
+  }
+
+  if base_return_label.is_some() {
+    Ok(chunk)
+  } else {
+    Ok(make_fn_wrapper(&chunk, has_await))
   }
 }
 
