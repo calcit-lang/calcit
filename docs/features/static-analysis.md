@@ -502,6 +502,7 @@ defn main! ()
 - Each slot can only be declared and bound **once** per program.
 - Only enum, struct, and record types can be bound to slots.
 - Unbound slots are treated as `:dynamic` (no type checking, no error).
+- At runtime, `bind-type` is a no-op if the slot was already bound during preprocessing (avoids double-bind errors).
 
 ### Example: Detecting Wrong Dispatch Calls
 

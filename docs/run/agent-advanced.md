@@ -1352,6 +1352,28 @@ cr edit add-import my.ns -e 'respo.util.format :refer $ hsl'
 - `imports` 全量替换，一旦格式错误会覆盖所有 imports
 - 只有需要完全重置所有 imports 时才用 `imports`
 
+❌ **陷阱5：在 Cirru 源码中合并 `:as` 和 `:refer` 到同一条 import 规则**
+
+Calcit 的 import 规则解析器只支持 **3 元素规则**（`ns :as alias` 或 `ns :refer (syms)`）。合并写法 `ns :as alias :refer (syms)` 不会报错，但 `:refer` 部分会被静默丢弃，导致符号无法解析。
+
+```cirru.no-check
+;; ❌ 错误：:refer 部分被静默丢弃，Op 无法被找到
+ns app.main $ :require
+  app.schema :as schema :refer $ Op
+
+;; ✅ 正确：拆成两条独立规则
+ns app.main $ :require
+  app.schema :as schema
+  app.schema :refer $ Op
+```
+
+对应 CLI 操作也需要分两次：
+
+```bash
+cr edit add-import app.main -e 'app.schema :as schema'
+cr edit add-import app.main -e 'app.schema :refer $ Op'
+```
+
 ### 6. 推荐工作流程
 
 **基本流程（search 快速定位 ⭐⭐⭐）：**

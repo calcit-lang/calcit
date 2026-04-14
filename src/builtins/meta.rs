@@ -3,7 +3,8 @@ use crate::{
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
-    bind_type_slot, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, value_matches_type_annotation,
+    bind_type_slot, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, resolve_type_slot,
+    value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -1816,6 +1817,10 @@ pub fn deftype_slot(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 /// `bind-type` proc: bind a concrete type (enum/struct) to a declared type slot.
 /// Usage: `(bind-type :dispatch-op Op)` where `Op` is a defenum definition.
+///
+/// At runtime this is a no-op when the slot was already bound during preprocessing —
+/// the preprocessing phase eagerly resolves and binds the slot, so the runtime call
+/// simply returns nil to avoid a "double-bind" error.
 pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(
@@ -1834,6 +1839,10 @@ pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       );
     }
   };
+  // If the slot was already bound (typically by preprocessing), skip the runtime bind.
+  if resolve_type_slot(name).is_some() {
+    return Ok(Calcit::Nil);
+  }
   let ty: Arc<CalcitTypeAnnotation> = match &xs[1] {
     Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
     Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
