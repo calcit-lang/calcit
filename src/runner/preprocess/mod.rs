@@ -2529,7 +2529,6 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ));
   }
 
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   let cond_form = preprocess_expr(
     args.first().unwrap(),
     ctx.scope_defs,
@@ -2538,7 +2537,6 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.check_warnings,
     ctx.call_stack,
   )?;
-  xs = xs.push_right(cond_form.to_owned());
 
   let refined_binding = extract_predicate_binding(&cond_form);
   let mut true_scope_types = ctx.scope_types.clone();
@@ -2554,19 +2552,33 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.check_warnings,
     ctx.call_stack,
   )?;
-  xs = xs.push_right(true_form);
 
-  if let Some(false_branch) = args.get(2) {
+  let false_form = if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
-    let false_form = preprocess_expr(
+    Some(preprocess_expr(
       false_branch,
       ctx.scope_defs,
       &mut false_scope_types,
       ctx.file_ns,
       ctx.check_warnings,
       ctx.call_stack,
-    )?;
-    xs = xs.push_right(false_form);
+    )?)
+  } else {
+    None
+  };
+
+  // P7: constant folding — eliminate dead branch when condition is a literal
+  match &cond_form {
+    Calcit::Bool(true) => return Ok(true_form),
+    Calcit::Bool(false) | Calcit::Nil => return Ok(false_form.unwrap_or(Calcit::Nil)),
+    _ => {}
+  }
+
+  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  xs = xs.push_right(cond_form);
+  xs = xs.push_right(true_form);
+  if let Some(f) = false_form {
+    xs = xs.push_right(f);
   }
 
   Ok(Calcit::List(Arc::new(xs.into())))
