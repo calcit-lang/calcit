@@ -499,6 +499,33 @@ fn gen_call_code(
         Err(format!("&record:assoc-at expected 4 arguments, got: {body}"))
       }
     }
+    // &record:with-at: optimized with pre-resolved indices.
+    // JS ignores indices and calls the same _$n_record_$o_with(proto, tag, val, ...) function.
+    Calcit::Proc(CalcitProc::NativeRecordWithAt) => {
+      if body.len() >= 3 && (body.len() - 1) % 3 == 0 {
+        let proc_prefix = get_proc_prefix(ns);
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let triple_count = (body.len() - 1) / 3;
+        let mut all_args = vec![record_code];
+        for i in 0..triple_count {
+          let base = 1 + i * 3;
+          // Skip index (body[base]), emit tag and value for JS
+          let tag_code = to_js_code(&body[base + 1], ns, local_defs, file_imports, tags, None)?;
+          let value_code = to_js_code(&body[base + 2], ns, local_defs, file_imports, tags, None)?;
+          all_args.push(tag_code);
+          all_args.push(value_code);
+        }
+        Ok(format!(
+          "{return_code}{proc_prefix}{}({})",
+          escape_var("&record:with"),
+          all_args.join(", ")
+        ))
+      } else {
+        Err(format!(
+          "&record:with-at expected (record, idx, tag, val, ...) triples, got: {body}"
+        ))
+      }
+    }
     Calcit::Proc(_) => {
       let (prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;

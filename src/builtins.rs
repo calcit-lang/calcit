@@ -512,6 +512,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeRecordNth => records::record_nth(args),
     NativeRecordAssoc => records::assoc(args),
     NativeRecordAssocAt => records::record_assoc_at(args),
+    NativeRecordWithAt => records::record_with_at(args),
     NativeRecordExtendAs => records::extend_as(args),
     DeftypeSlot => meta::deftype_slot(args),
     BindType => meta::bind_type(args),

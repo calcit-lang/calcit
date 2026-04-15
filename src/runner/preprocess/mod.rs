@@ -972,6 +972,53 @@ fn preprocess_list_call(
           }
         }
 
+        // Optimize &record:with to &record:with-at when all field indices can be resolved at compile time
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordWith))
+          && processed_args.len() >= 3
+          && (processed_args.len() - 1) % 2 == 0
+        {
+          if let Some(record_arg) = processed_args.first() {
+            if let Some(type_info) = resolve_type_value(record_arg, scope_types) {
+              if let Some(struct_def) = type_info.as_ref().as_struct() {
+                let pair_count = (processed_args.len() - 1) / 2;
+                let mut all_resolved = true;
+                let mut new_args: Vec<Calcit> = Vec::with_capacity(1 + pair_count * 3);
+                new_args.push(record_arg.to_owned());
+
+                for i in 0..pair_count {
+                  let k_idx = 1 + i * 2;
+                  let v_idx = k_idx + 1;
+                  if let Some(Calcit::Tag(field_tag)) = processed_args.get(k_idx) {
+                    if let Some(idx) = struct_def.index_of(field_tag.ref_str()) {
+                      new_args.push(Calcit::Number(idx as f64));
+                      new_args.push(Calcit::Tag(field_tag.to_owned()));
+                      if let Some(val) = processed_args.get(v_idx) {
+                        new_args.push(val.to_owned());
+                      } else {
+                        all_resolved = false;
+                        break;
+                      }
+                    } else {
+                      all_resolved = false;
+                      break;
+                    }
+                  } else {
+                    all_resolved = false;
+                    break;
+                  }
+                }
+
+                if all_resolved {
+                  let mut items: Vec<Calcit> = Vec::with_capacity(1 + new_args.len());
+                  items.push(Calcit::Proc(CalcitProc::NativeRecordWithAt));
+                  items.extend(new_args);
+                  ys = CalcitList::new_inner_from(&items);
+                }
+              }
+            }
+          }
+        }
+
         // Infer type for Method(Invoke) and update the head if type info is available
         if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {
           if let Some(receiver) = processed_args.first() {

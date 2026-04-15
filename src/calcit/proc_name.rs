@@ -401,6 +401,8 @@ pub enum CalcitProc {
   NativeRecordAssoc,
   #[strum(serialize = "&record:assoc-at")]
   NativeRecordAssocAt,
+  #[strum(serialize = "&record:with-at")]
+  NativeRecordWithAt,
   #[strum(serialize = "&record:extend-as")]
   NativeRecordExtendAs,
   // type slots
@@ -1026,6 +1028,17 @@ impl CalcitProc {
       NativeRecordAssocAt => Some(ProcTypeSignature {
         return_type: some_tag("record"),
         arg_types: vec![some_tag("record"), some_tag("number"), some_tag("tag"), dynamic_tag()],
+      }),
+      NativeRecordWithAt => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        // (record, idx, tag, value, ...) — variadic triples after first arg
+        arg_types: vec![
+          some_tag("record"),
+          some_tag("number"),
+          some_tag("tag"),
+          dynamic_tag(),
+          variadic_dynamic(),
+        ],
       }),
       NativeRecordGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),

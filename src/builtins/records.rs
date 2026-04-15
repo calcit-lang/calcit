@@ -538,6 +538,60 @@ pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Optimized `&record:with` — field indices pre-resolved at compile time.
+/// Args: (record, idx1, :tag1, val1, idx2, :tag2, val2, ...)
+/// Tags are carried for JS codegen; Rust runtime uses indices directly.
+pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() || (xs.len() - 1) % 3 != 0 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&record:with-at expected (record, idx, tag, val, ...) triples, but received:",
+      xs,
+    );
+  }
+  match &xs[0] {
+    Calcit::Record(CalcitRecord { struct_ref, values }) => {
+      let mut new_values = (**values).to_owned();
+      let triple_count = (xs.len() - 1) / 3;
+      for i in 0..triple_count {
+        let base = 1 + i * 3;
+        match &xs[base] {
+          Calcit::Number(n) => {
+            let idx = *n as usize;
+            if idx < new_values.len() {
+              xs[base + 2].clone_into(&mut new_values[idx]);
+            } else {
+              return CalcitErr::err_str(
+                CalcitErrKind::Arity,
+                format!(
+                  "&record:with-at index {} out of range for record `{}` with {} fields",
+                  idx,
+                  struct_ref.name,
+                  new_values.len()
+                ),
+              );
+            }
+          }
+          other => {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("&record:with-at expected number index, but received: {}", other.lisp_str()),
+            );
+          }
+        }
+      }
+      Ok(Calcit::Record(CalcitRecord {
+        struct_ref: struct_ref.to_owned(),
+        values: Arc::new(new_values),
+      }))
+    }
+    a => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&record:with-at expected a record, but received: {}", a.lisp_str()),
+    ),
+  }
+}
+
 pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
