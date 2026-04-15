@@ -320,18 +320,18 @@ pub fn call_expr(
       if xs.len() == 2 {
         let v = evaluate_expr(&xs[1], scope, file_ns, call_stack)?;
 
-        if let Calcit::Map(m) = v {
-          match m.get(&Calcit::Tag(k.to_owned())) {
+        match &v {
+          Calcit::Map(m) => match m.get(&Calcit::Tag(k.to_owned())) {
             Some(value) => Ok(value.to_owned()),
             None => Ok(Calcit::Nil),
-          }
-        } else {
-          Err(CalcitErr::use_msg_stack_location(
+          },
+          Calcit::Record(record) => Ok(record.get(k.ref_str()).cloned().unwrap_or(Calcit::Nil)),
+          _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
-            format!("expected a hashmap, got: {v}"),
+            format!("expected a hashmap or record, got: {v}"),
             call_stack,
             v.get_location(),
-          ))
+          )),
         }
       } else {
         Err(CalcitErr::use_msg_stack_location(

@@ -267,6 +267,7 @@
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1
                 assert= 21 $ get (update p1 :age inc) :age
+                assert= 20 $ :age p1
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
