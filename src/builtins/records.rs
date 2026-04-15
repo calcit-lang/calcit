@@ -461,6 +461,40 @@ pub fn call_loose_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(CalcitRecord::from_loose_pairs(fields, values)))
 }
 
+/// Direct indexed access to a record field: `&record:nth record index`
+/// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
+pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:nth expected 2 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(CalcitRecord { values, struct_ref }), Calcit::Number(n)) => {
+      let idx = *n as usize;
+      if idx < values.len() {
+        Ok(values[idx].to_owned())
+      } else {
+        CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!(
+            "&record:nth index {} out of range for record `{}` with {} fields",
+            idx,
+            struct_ref.name,
+            values.len()
+          ),
+        )
+      }
+    }
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&record:nth expected (record, number), but received: {} {}",
+        a.lisp_str(),
+        b.lisp_str()
+      ),
+    ),
+  }
+}
+
 pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {

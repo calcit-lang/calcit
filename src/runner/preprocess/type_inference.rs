@@ -465,6 +465,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       return Some(field_type);
     }
   }
+  if matches!(proc, CalcitProc::NativeRecordNth) {
+    if let Some(field_type) = infer_record_nth_type(xs, scope_types) {
+      return Some(field_type);
+    }
+  }
   proc.get_type_signature().map(|type_sig| type_sig.return_type.clone())
 }
 
@@ -499,6 +504,22 @@ fn infer_record_get_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
   let field_arg = xs.get(2)?;
   let field_name = extract_field_name(field_arg)?;
   infer_record_field_type(record_arg, field_name, scope_types)
+}
+
+/// Infer the return type of `&record:nth record idx` by looking up the field type at the given index.
+fn infer_record_nth_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 3 {
+    return None;
+  }
+  let record_arg = xs.get(1)?;
+  let idx_arg = xs.get(2)?;
+  let idx = match idx_arg {
+    Calcit::Number(n) => *n as usize,
+    _ => return None,
+  };
+  let type_info = resolve_type_value(record_arg, scope_types)?;
+  let struct_def = type_info.as_ref().as_struct()?;
+  struct_def.field_types.get(idx).cloned()
 }
 
 fn infer_record_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {

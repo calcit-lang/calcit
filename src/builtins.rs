@@ -509,6 +509,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeRecordCount => records::count(args),
     NativeRecordContains => records::contains_ques(args),
     NativeRecordGet => records::get(args),
+    NativeRecordNth => records::record_nth(args),
     NativeRecordAssoc => records::assoc(args),
     NativeRecordExtendAs => records::extend_as(args),
     DeftypeSlot => meta::deftype_slot(args),

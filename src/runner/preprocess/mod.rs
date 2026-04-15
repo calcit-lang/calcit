@@ -741,8 +741,25 @@ fn preprocess_list_call(
     }
 
     _ => match &head_form {
-      Calcit::Tag(..) => {
+      Calcit::Tag(tag) => {
         if args.len() == 1 {
+          // Preprocess the argument first to get type info
+          let processed_arg = preprocess_expr(&args[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+          // Try to resolve the arg type as a struct record for indexed access optimization
+          if let Some(type_info) = resolve_type_value(&processed_arg, scope_types) {
+            if let Some(struct_def) = type_info.as_ref().as_struct() {
+              if let Some(idx) = struct_def.index_of(tag.ref_str()) {
+                // Emit (&record:nth processed_arg idx) — O(1) direct index access
+                let nth_call = Calcit::from(CalcitList::from(&[
+                  Calcit::Proc(CalcitProc::NativeRecordNth),
+                  processed_arg,
+                  Calcit::Number(idx as f64),
+                ]));
+                return Ok(nth_call);
+              }
+            }
+          }
+          // Fallback: rewrite to (get arg :tag) and re-preprocess
           let get_method = Calcit::Import(CalcitImport {
             ns: calcit::CORE_NS.into(),
             def: "get".into(),
@@ -912,6 +929,23 @@ fn preprocess_list_call(
         validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
         check_record_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+
+        // Optimize &record:get to &record:nth when field index can be resolved at compile time
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordGet)) && processed_args.len() == 2 {
+          if let (Some(record_arg), Some(Calcit::Tag(field_tag))) = (processed_args.first(), processed_args.get(1)) {
+            if let Some(type_info) = resolve_type_value(record_arg, scope_types) {
+              if let Some(struct_def) = type_info.as_ref().as_struct() {
+                if let Some(idx) = struct_def.index_of(field_tag.ref_str()) {
+                  ys = CalcitList::new_inner_from(&[
+                    Calcit::Proc(CalcitProc::NativeRecordNth),
+                    record_arg.to_owned(),
+                    Calcit::Number(idx as f64),
+                  ]);
+                }
+              }
+            }
+          }
+        }
 
         // Infer type for Method(Invoke) and update the head if type info is available
         if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {

@@ -471,6 +471,16 @@ fn gen_call_code(
     }
     // deftype-slot and bind-type are preprocessing-only; they have no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) | Calcit::Proc(CalcitProc::BindType) => Ok(format!("{return_code}null")),
+    // &record:nth emits direct indexed access: record.values[idx]
+    Calcit::Proc(CalcitProc::NativeRecordNth) => {
+      if body.len() == 2 {
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
+        Ok(format!("{return_code}{record_code}.values[{idx_code}]"))
+      } else {
+        Err(format!("&record:nth expected 2 arguments, got: {body}"))
+      }
+    }
     Calcit::Proc(_) => {
       let (prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;

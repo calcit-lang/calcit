@@ -161,7 +161,11 @@ pub(crate) fn check_proc_arg_types(
 
   if matches!(
     proc,
-    CalcitProc::NativeRecord | CalcitProc::NativeRecordPartial | CalcitProc::NativeRecordGet | CalcitProc::NativeLooseRecord
+    CalcitProc::NativeRecord
+      | CalcitProc::NativeRecordPartial
+      | CalcitProc::NativeRecordGet
+      | CalcitProc::NativeRecordNth
+      | CalcitProc::NativeLooseRecord
   ) {
     return;
   }

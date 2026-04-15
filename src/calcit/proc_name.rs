@@ -395,6 +395,8 @@ pub enum CalcitProc {
   NativeRecordContains,
   #[strum(serialize = "&record:get")]
   NativeRecordGet,
+  #[strum(serialize = "&record:nth")]
+  NativeRecordNth,
   #[strum(serialize = "&record:assoc")]
   NativeRecordAssoc,
   #[strum(serialize = "&record:extend-as")]
@@ -1022,6 +1024,10 @@ impl CalcitProc {
       NativeRecordGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("record"), some_tag("tag")],
+      }),
+      NativeRecordNth => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("record"), some_tag("number")],
       }),
       NativeRecordCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
