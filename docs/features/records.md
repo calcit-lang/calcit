@@ -8,6 +8,7 @@ aliases:
   - "field access"
   - "struct fields"
 ---
+
 # Records
 
 Calcit provides Records as a way to define structured data types with named fields, similar to structs in other languages. Records are defined with `defstruct` and instantiated with the `%{}` macro.
@@ -368,10 +369,10 @@ The rewrite uses the same requirements as map-to-record rewrite. Fields not pres
 
 The collection type system follows a consistent "precision increasing" pattern:
 
-| Positional (by index) | Named (by field) |
-|----------------------|------------------|
-| `list` (dynamic)     | `hashmap` (dynamic) |
-| `:: :tag ...` (untyped tuple) | `?{} :field val` (loose record) |
+| Positional (by index)            | Named (by field)                       |
+| -------------------------------- | -------------------------------------- |
+| `list` (dynamic)                 | `hashmap` (dynamic)                    |
+| `:: :tag ...` (untyped tuple)    | `?{} :field val` (loose record)        |
 | `%:: Enum :tag ...` (typed enum) | `%{} Struct :field val` (typed record) |
 
 Both untyped tuples and loose records can be automatically rewritten to their typed counterparts when function parameter types are known at compile time.

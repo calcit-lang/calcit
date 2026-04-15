@@ -11,6 +11,7 @@ aliases:
 entry_for:
   - "assert-type"
 ---
+
 # Static Type Analysis
 
 Calcit includes a built-in static type analysis system that performs compile-time checks to catch common errors before runtime. This system operates during the preprocessing phase and provides warnings for type mismatches and other potential issues.

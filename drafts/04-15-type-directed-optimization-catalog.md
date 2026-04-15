@@ -6,14 +6,14 @@
 
 ## 数据结构现状
 
-| 类型 | 内部表示 | 查询复杂度 | 更新复杂度 | 已有编译期优化 |
-|------|---------|-----------|-----------|--------------|
-| Record | `Vec<Calcit>` + 字段按字母排序的 `CalcitStruct` | O(log n) 二分 | O(n) clone Vec | `&record:nth` 索引重写 ✅, `&record:assoc-at` ✅ P1, `&record:with-at` ✅ P2 |
-| Map | `rpds::HashTrieMapSync` | O(1) hash | O(1) persistent | 无 |
-| List | `Vec` / `TernaryTreeList` 自动切换 | O(1) 或 O(log n) | O(1) prepend/append | 结构自动选择 |
-| Tuple | tag + `Vec<Calcit>` | O(1) index | O(n) clone | enum variant HashMap 查找 |
-| Set | `rpds::HashTrieSetSync` | O(1) hash | O(1) persistent | 无 |
-| Scope | `Vec<ScopePair>` | O(n) 反向线性扫描（缓存友好） | O(1) push | ✅ P5 — 从 `TernaryTreeList` 改为 `Vec` |
+| 类型   | 内部表示                                        | 查询复杂度                    | 更新复杂度          | 已有编译期优化                                                               |
+| ------ | ----------------------------------------------- | ----------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| Record | `Vec<Calcit>` + 字段按字母排序的 `CalcitStruct` | O(log n) 二分                 | O(n) clone Vec      | `&record:nth` 索引重写 ✅, `&record:assoc-at` ✅ P1, `&record:with-at` ✅ P2 |
+| Map    | `rpds::HashTrieMapSync`                         | O(1) hash                     | O(1) persistent     | 无                                                                           |
+| List   | `Vec` / `TernaryTreeList` 自动切换              | O(1) 或 O(log n)              | O(1) prepend/append | 结构自动选择                                                                 |
+| Tuple  | tag + `Vec<Calcit>`                             | O(1) index                    | O(n) clone          | enum variant HashMap 查找                                                    |
+| Set    | `rpds::HashTrieSetSync`                         | O(1) hash                     | O(1) persistent     | 无                                                                           |
+| Scope  | `Vec<ScopePair>`                                | O(n) 反向线性扫描（缓存友好）  | O(1) push           | ✅ P5 — 从 `TernaryTreeList` 改为 `Vec`                                      |
 
 ## 优化项目
 
@@ -78,6 +78,7 @@
 **位置**: `src/builtins/syntax.rs` L933-1050（runner），`src/codegen/emit_js.rs` L897-978（JS codegen）。
 
 **方案**:
+
 - **Rust 端**: enum 类型已知时预处理阶段把 tag 比较替换为 `variant_index` 的整数比较
 - **JS 端**: emit `switch (tag.idx)` 替代 if-else 链
 
@@ -153,14 +154,14 @@
 
 ### 已完成（fibo 基准: 836ms → 718ms，总提升 ~14%）
 
-| 顺序 | 项目 | Commit | 关键变更 | 基准影响 |
-|------|------|--------|---------|----------|
-| 1 | P0 | `0116e54` | runner.rs Tag-call Record fallback | 正确性修复 |
-| 2 | P1 | `44a8bfa` | NativeRecordAssocAt + preprocess 重写 | Record 更新加速（fibo 不涉及） |
-| 3 | P5 | `07d6dfc` | Scope 从 TernaryTreeList 改为 Vec | ~13% fibo 提升（最大单项收益） |
-| 4 | P2 | `0e705f1` | NativeRecordWithAt 批量索引化 | Record 批量更新加速（fibo 不涉及） |
-| 5 | P7 | `fa325c6` | if 常量折叠 | 宏展开场景受益 |
-| - | 额外 | `7c04880` | runtime def resolution 去重复 RwLock 读 | 微优化 |
+| 顺序 | 项目 | Commit    | 关键变更                                | 基准影响                           |
+| ---- | ---- | --------- | --------------------------------------- | ---------------------------------- |
+| 1    | P0   | `0116e54` | runner.rs Tag-call Record fallback      | 正确性修复                         |
+| 2    | P1   | `44a8bfa` | NativeRecordAssocAt + preprocess 重写   | Record 更新加速（fibo 不涉及）     |
+| 3    | P5   | `07d6dfc` | Scope 从 TernaryTreeList 改为 Vec       | ~13% fibo 提升（最大单项收益）     |
+| 4    | P2   | `0e705f1` | NativeRecordWithAt 批量索引化           | Record 批量更新加速（fibo 不涉及） |
+| 5    | P7   | `fa325c6` | if 常量折叠                             | 宏展开场景受益                     |
+| -    | 额外 | `7c04880` | runtime def resolution 去重复 RwLock 读 | 微优化                             |
 
 ### 待定
 
