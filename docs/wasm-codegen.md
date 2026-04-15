@@ -18,6 +18,8 @@ Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集�
 | `&number:rem` | ✅ | 通过 trunc/mul/sub 模拟 |
 | 比较: `&<`, `&>`, `&=` | ✅ | 返回 f64 (1.0/0.0) |
 | `not` | ✅ | 逻辑非 |
+| `identical?` | ✅ | 数值相等 (f64.eq) |
+| 数学: `floor`, `ceil`, `round`, `sqrt` | ✅ | 直接映射 WASM 指令 |
 | `recur` (尾递归) | ✅ | 映射到 WASM loop + br |
 | 函数调用 | ✅ | 同模块内函数互调 |
 
@@ -79,11 +81,26 @@ defn fibo (n)
 
 ## 实现位置
 
-- `src/codegen/emit_wasm.rs` — WAT 代码生成（~440 行）
+- `src/codegen/emit_wasm.rs` — WAT 代码生成
 - `src/codegen.rs` — 模块注册
 - `src/cli_args.rs` — `EmitWasmCommand` CLI 定义
 - `src/bin/cr.rs` — `run_wasm_codegen` 入口
-- `demos/wasm-demo.cirru` — 示例程序
+- `calcit/test-wasm.cirru` — 测试用例（纯数值函数集）
+- `scripts/test-wasm.sh` — WASM 验证脚本（集成在 `yarn check-all` 中）
+
+## 测试
+
+WASM 验证已集成到 `yarn check-all` 流程中（通过 `yarn try-wasm`）：
+
+```bash
+# 单独运行 WASM 测试
+bash scripts/test-wasm.sh
+
+# 或通过 yarn
+yarn try-wasm
+```
+
+测试覆盖的函数：fibo, factorial, add-two, sum-range, floor, ceil, round, sqrt, rem, compare, not, let-chain, collatz-steps, gcd。
 
 ## 未来改进路线
 
@@ -92,7 +109,9 @@ defn fibo (n)
 - **输出路径配置** — 目前固定输出到 `js-out/program.wat`，应支持 `--emit-path` 指定
 - **跨命名空间函数调用** — 当前仅编译 init 命名空间中的函数，应支持跨 ns 调用
 - **let 嵌套优化** — 预处理后的 `CoreLet` 链已做扁平化，但可进一步合并连续 local.set
-- **更多数学函数** — `floor`, `ceil`, `sqrt`, `pow` 等都有 WASM 原生指令对应
+- ~~**更多数学函数**~~ — ✅ 已实现 `floor`, `ceil`, `round`, `sqrt`（直接映射 WASM 指令）
+- **`pow` 支持** — WASM 无 `f64.pow` 指令，需通过 host import 或整数幂展开实现
+- **`sin`/`cos` 支持** — WASM 无三角函数指令，需通过 host import 实现
 
 ### 中期（需要较多工作）
 

@@ -319,6 +319,23 @@ fn gen_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> Re
       Ok(format!("(select (f64.const 1) (f64.const 0) (f64.eq {a} (f64.const 0)))"))
     }
 
+    // Math functions (unary)
+    CalcitProc::Floor => unary_op(ctx, "f64.floor", args),
+    CalcitProc::Ceil => unary_op(ctx, "f64.ceil", args),
+    CalcitProc::Round => unary_op(ctx, "f64.nearest", args),
+    CalcitProc::Sqrt => unary_op(ctx, "f64.sqrt", args),
+    CalcitProc::Sin | CalcitProc::Cos => {
+      // WASM has no built-in sin/cos; reject for now
+      Err(format!("trigonometric function {proc} not available in WASM (no f64.sin/cos)"))
+    }
+    CalcitProc::Pow => {
+      // a^b: no direct WASM op; we import Math.pow at module level or reject
+      // For now, compile as repeated multiply for small integer exponents,
+      // or reject for general case.
+      Err("pow not yet supported in WASM codegen (no f64.pow instruction)".into())
+    }
+    CalcitProc::Identical => cmp_op(ctx, "f64.eq", args),
+
     // Recur — tail call via br to loop
     CalcitProc::Recur => {
       if args.len() != ctx.arg_names.len() {
@@ -350,6 +367,14 @@ fn gen_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> Re
 
     _ => Err(format!("unsupported proc in WASM: {proc}")),
   }
+}
+
+fn unary_op(ctx: &mut WasmGenCtx, op: &str, args: &[Calcit]) -> Result<String, String> {
+  if args.len() != 1 {
+    return Err(format!("{op} expects 1 arg, got {}", args.len()));
+  }
+  let a = gen_expr(ctx, &args[0])?;
+  Ok(format!("({op} {a})"))
 }
 
 fn binary_op(ctx: &mut WasmGenCtx, op: &str, args: &[Calcit]) -> Result<String, String> {
