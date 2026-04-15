@@ -64,6 +64,8 @@ pub enum CalcitCommand {
   EmitJs(EmitJsCommand),
   /// emit Cirru EDN representation of program to program-ir.cirru
   EmitIr(EmitIrCommand),
+  /// emit WAT (WebAssembly Text format) for a numeric subset of Calcit
+  EmitWasm(EmitWasmCommand),
   /// evaluate snippet
   Eval(EvalCommand),
   /// analyze code structure and helpers (call-graph, count-calls, check-examples)
@@ -102,6 +104,11 @@ pub struct EmitIrCommand {
   #[argh(switch, short = 'w')]
   pub watch: bool,
 }
+
+/// emit WAT (WebAssembly Text format) for a numeric subset of Calcit
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "wasm")]
+pub struct EmitWasmCommand {}
 
 /// run program
 #[derive(FromArgs, PartialEq, Debug, Clone)]

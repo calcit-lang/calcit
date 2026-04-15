@@ -256,6 +256,9 @@ fn main() -> Result<(), String> {
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
+  } else if let Some(CalcitCommand::EmitWasm(_)) = &cli_args.subcommand {
+    eval_once = true;
+    run_wasm_codegen(&entries, &cli_args.emit_path)
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
@@ -596,6 +599,35 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       }
     }
   }
+  let duration = Instant::now().duration_since(started_time);
+  println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
+  Ok(())
+}
+
+fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str) -> Result<(), String> {
+  let started_time = Instant::now();
+  codegen::set_codegen_mode(true);
+
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+
+  // preprocess to init
+  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+    Ok(_) => (),
+    Err(failure) => {
+      eprintln!("\nfailed preprocessing, {failure}");
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return Err(headline);
+    }
+  }
+
+  match codegen::emit_wasm::emit_wasm(&entries.init_ns, emit_path) {
+    Ok(_) => (),
+    Err(failure) => {
+      return Err(failure);
+    }
+  }
+
   let duration = Instant::now().duration_since(started_time);
   println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
   Ok(())
