@@ -14,8 +14,15 @@ mod injection;
 mod cli_handlers;
 
 #[cfg(test)]
+static GLOBAL_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
+#[cfg(test)]
 #[path = "cr_tests/type_fail.rs"]
 mod cr_type_fail_tests;
+
+#[cfg(test)]
+#[path = "cr_tests/cirru_suite.rs"]
+mod cr_cirru_suite_tests;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;

@@ -1,9 +1,10 @@
 use super::*;
 use std::cell::RefCell;
 use std::fs;
-use std::sync::{LazyLock, Mutex};
 
-static FIXTURE_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+fn lock_fixture_tests() -> std::sync::MutexGuard<'static, ()> {
+  super::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+}
 
 fn load_fixture_entries(path: &str) -> ProgramEntries {
   builtins::effects::init_effects_states();
@@ -46,10 +47,6 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
     reload_ns: reload_ns.into(),
     reload_def: reload_def.into(),
   }
-}
-
-fn lock_fixture_tests() -> std::sync::MutexGuard<'static, ()> {
-  FIXTURE_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
 }
 
 #[test]

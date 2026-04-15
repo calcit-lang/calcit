@@ -749,12 +749,15 @@ fn preprocess_list_call(
           if let Some(type_info) = resolve_type_value(&processed_arg, scope_types) {
             if let Some(struct_def) = type_info.as_ref().as_struct() {
               if let Some(idx) = struct_def.index_of(tag.ref_str()) {
-                // Emit (&record:nth processed_arg idx) — O(1) direct index access
-                let nth_call = Calcit::from(CalcitList::from(&[
+                // Emit (&record:nth processed_arg idx :field-tag)
+                // The 3rd arg (field tag) is used by JS codegen where field order differs from Rust
+                let items: Vec<Calcit> = vec![
                   Calcit::Proc(CalcitProc::NativeRecordNth),
                   processed_arg,
                   Calcit::Number(idx as f64),
-                ]));
+                  Calcit::Tag(tag.to_owned()),
+                ];
+                let nth_call = Calcit::from(CalcitList::from(items.as_slice()));
                 return Ok(nth_call);
               }
             }
@@ -940,6 +943,7 @@ fn preprocess_list_call(
                     Calcit::Proc(CalcitProc::NativeRecordNth),
                     record_arg.to_owned(),
                     Calcit::Number(idx as f64),
+                    Calcit::Tag(field_tag.to_owned()),
                   ]);
                 }
               }

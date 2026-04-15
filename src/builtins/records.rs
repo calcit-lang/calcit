@@ -464,8 +464,10 @@ pub fn call_loose_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// Direct indexed access to a record field: `&record:nth record index`
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
 pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:nth expected 2 arguments, but received:", xs);
+  // Accept 2 or 3 args: (record, idx) or (record, idx, :field-tag)
+  // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
+  if xs.len() < 2 || xs.len() > 3 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:nth expected 2-3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(CalcitRecord { values, struct_ref }), Calcit::Number(n)) => {

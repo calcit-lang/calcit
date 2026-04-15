@@ -1027,7 +1027,7 @@ impl CalcitProc {
       }),
       NativeRecordNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![some_tag("record"), some_tag("number")],
+        arg_types: vec![some_tag("record"), some_tag("number"), optional_tag("tag")],
       }),
       NativeRecordCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
