@@ -1,7 +1,5 @@
 use std::{fmt::Display, sync::Arc};
 
-use im_ternary_tree::TernaryTreeList;
-
 use crate::Calcit;
 
 use super::{CalcitLocal, CalcitTypeAnnotation};
@@ -152,29 +150,16 @@ impl Display for ScopePair {
   }
 }
 
-/// scope in the semantics of persistent data structure
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitScope(TernaryTreeList<ScopePair>);
-
-impl Default for CalcitScope {
-  fn default() -> Self {
-    Self(TernaryTreeList::Empty)
-  }
-}
+/// scope backed by a contiguous Vec for cache-friendly reverse linear scan
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CalcitScope(Vec<ScopePair>);
 
 impl CalcitScope {
-  /// load value of a symbol from the scope
+  /// load value of a symbol from the scope (reverse scan for shadowing)
   pub fn get(&self, key: u16) -> Option<&Calcit> {
-    let size = self.0.len();
-    for i in 0..size {
-      let idx = size - 1 - i;
-      match self.0.get(idx) {
-        Some(pair) => {
-          if pair.key == key {
-            return Some(&pair.value);
-          }
-        }
-        None => continue,
+    for pair in self.0.iter().rev() {
+      if pair.key == key {
+        return Some(&pair.value);
       }
     }
     None
@@ -185,14 +170,14 @@ impl CalcitScope {
     self.get(key)
   }
 
-  /// mutable insertiong of variable
+  /// mutable insertion of variable
   pub fn insert_mut(&mut self, key: u16, value: Calcit) {
-    self.0 = self.0.push_right(ScopePair { key, value })
+    self.0.push(ScopePair { key, value });
   }
 
   pub fn get_names(&self) -> String {
     let mut vars = String::new();
-    for (i, k) in self.0.into_iter().enumerate() {
+    for (i, k) in self.0.iter().enumerate() {
       if i > 0 {
         vars.push(',');
       }
