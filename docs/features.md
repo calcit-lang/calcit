@@ -52,6 +52,11 @@ For detailed information about specific features:
 - [Traits](features/traits.md) - Capability-based method dispatch and explicit trait calls
 - [Static Analysis](features/static-analysis.md) - Type checking and compile-time validation
 
+## Compilation Targets
+
+- [JavaScript Codegen](run/cli-options.md#js-codegen-options) - Generate ES Modules from Calcit
+- [WASM Codegen](wasm-codegen.md) - Experimental compilation of numeric functions to WebAssembly
+
 ## Quick Find by Task
 
 Use this section as a keyword index for `cr docs read`:
@@ -99,5 +104,7 @@ Calcit's static analysis provides:
 - **Zero-cost abstractions** - Persistent data structures with minimal overhead
 - **Lazy sequences** - Efficient processing of large datasets
 - **Optimized compilation** - JavaScript output with tree-shaking support
+- **Type-directed optimizations** - Compile-time rewrites for record field access/update when types are known (e.g., `&record:assoc` → `&record:assoc-at`)
+- **Experimental WASM codegen** - Compile pure numeric functions to [WebAssembly Text format](wasm-codegen.md)
 
 Calcit is designed to be familiar to Clojure developers while providing modern tooling, type safety, and excellent development experience.

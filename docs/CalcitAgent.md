@@ -496,7 +496,7 @@ cr js
 
 当当前模板不够用时，按下面的“能力分层”自行扩展：
 
-- 运行与编译：`cr`, `cr js`, `cr ir`, `-w/--watch`
+- 运行与编译：`cr`, `cr js`, `cr ir`, `cr wasm`（实验性）, `-w/--watch`
 - 查询与定位：`cr query defs/def/search/search-expr/usages/schema/examples`
 - 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`
 - 结构化编辑：`cr tree show/replace/target-replace/cp/wrap/unwrap/raise/rewrite`

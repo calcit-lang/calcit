@@ -400,6 +400,30 @@ Checks are automatically skipped for:
 - `calcit.core` namespace (external library)
 - Functions with variadic or optional parameters (complex arity rules)
 
+## Type-Directed Optimizations
+
+Beyond warning about type errors, the static analysis system drives **compile-time performance optimizations**. When the preprocessor knows a value's type, it rewrites operations to skip runtime dispatches:
+
+### Record Field Operations
+
+When a record's struct type is known:
+
+- **Field read** `(:field record)` → `&record:nth record <index>` — O(1) direct access instead of O(log n) name lookup
+- **Field update** `&record:assoc record :field value` → `&record:assoc-at record <index> value` — pre-resolved field index
+- **Batch update** `record-with record (:f1 v1) (:f2 v2)` → `&record:with-at record <indexes> <values>` — all indices pre-resolved
+
+### Conditional Folding
+
+When `if` conditions are literal `true`, `false`, or `nil`:
+
+- `(if true a b)` → `a` — dead branch eliminated at preprocess time
+- `(if false a b)` → `b`
+- `(if nil a b)` → `b`
+
+### How to Benefit
+
+These rewrites are automatic. Provide type annotations (`hint-fn`, `:schema`, `assert-type`) so the preprocessor can resolve types at compile time. Use `--warn-dyn-method` to find places where type information is missing.
+
 ## Best Practices
 
 ### 1. Use Type Annotations for Public APIs

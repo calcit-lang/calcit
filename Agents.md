@@ -25,8 +25,9 @@ cr docs agents --full
 
 ### 运行模式更新（cr / js / ir）
 
-- `cr <entry>`、`cr <entry> js`、`cr <entry> ir` 现在默认都是**单次执行**（once）。
+- `cr <entry>`、`cr <entry> js`、`cr <entry> ir`、`cr <entry> wasm` 现在默认都是**单次执行**（once）。
 - 需要监听时，显式传 `-w` 或 `--watch`（如 `cr -w <entry>`、`cr <entry> js -w`、`cr <entry> ir -w`）。
+- `cr <entry> wasm` 为实验性 WASM codegen，生成 WAT 文本格式，仅支持纯数值函数子集。
 
 ### cr eval 基础与常见踩坑
 
@@ -88,7 +89,7 @@ cr docs agents --full
 
 ## 项目结构概览
 
-- `src/`：Rust 核心实现（`src/calcit/` 数据结构, `src/runner/` 运行时, `src/builtins/` 语法, `src/codegen/` IR/JS 输出）。
+- `src/`：Rust 核心实现（`src/calcit/` 数据结构, `src/runner/` 运行时, `src/builtins/` 语法, `src/codegen/` IR/JS/WASM 输出）。
 - `calcit/`：Cirru 源码与测试用例（`*.cirru`）。
 - `lib/` & `js-out/`：JS 共享库与编译输出。
 - `docs/` & `demos/`：开发文档与实验性示例。

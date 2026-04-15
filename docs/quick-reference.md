@@ -35,6 +35,7 @@ cr eval "echo |done"
 - `cr eval "code"` - Evaluate code snippet
 - `cr js` - Generate JavaScript
 - `cr ir` - Generate IR representation
+- `cr wasm` - Generate WASM (experimental, numeric subset → WAT)
 - `cr query ...` - Query definitions/usages/search
 - `cr docs ...` - Read/search guidebook docs
 - `cr libs ...` - Search/read library docs

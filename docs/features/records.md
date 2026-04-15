@@ -379,5 +379,16 @@ Both untyped tuples and loose records can be automatically rewritten to their ty
 ## Performance Notes
 
 - Records are immutable — updates create new records
-- Field access is O(1)
+- Field access is O(1) when the struct type is known at preprocess time (compile-time index resolution)
+- When the type is unknown, field access falls back to O(log n) binary search over sorted field names
 - Use `record-with` to update multiple fields at once and minimize intermediate allocations
+
+### Type-Directed Optimizations
+
+When the static analysis system knows a value's struct type, the preprocessor rewrites field operations to skip runtime name lookups:
+
+- **Field read** `(:field record)` → `&record:nth record <index>` — direct index access instead of name search
+- **Field update** `&record:assoc record :field value` → `&record:assoc-at record <index> value` — skips `index_of` binary search
+- **Batch update** `record-with record (:f1 v1) (:f2 v2)` → `&record:with-at record <indexes> <values>` — all indices pre-resolved
+
+These rewrites are automatic and transparent. To benefit from them, provide type annotations via `:schema` or `hint-fn` so the preprocessor can resolve struct types.
