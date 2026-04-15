@@ -8,16 +8,16 @@
 
 | 类型 | 内部表示 | 查询复杂度 | 更新复杂度 | 已有编译期优化 |
 |------|---------|-----------|-----------|--------------|
-| Record | `Vec<Calcit>` + 字段按字母排序的 `CalcitStruct` | O(log n) 二分 | O(n) clone Vec | `&record:nth` 索引重写 ✅ |
+| Record | `Vec<Calcit>` + 字段按字母排序的 `CalcitStruct` | O(log n) 二分 | O(n) clone Vec | `&record:nth` 索引重写 ✅, `&record:assoc-at` ✅ P1, `&record:with-at` ✅ P2 |
 | Map | `rpds::HashTrieMapSync` | O(1) hash | O(1) persistent | 无 |
 | List | `Vec` / `TernaryTreeList` 自动切换 | O(1) 或 O(log n) | O(1) prepend/append | 结构自动选择 |
 | Tuple | tag + `Vec<Calcit>` | O(1) index | O(n) clone | enum variant HashMap 查找 |
 | Set | `rpds::HashTrieSetSync` | O(1) hash | O(1) persistent | 无 |
-| Scope | `TernaryTreeList<ScopePair>` | **O(n) 线性扫描** | O(1) push | 无 |
+| Scope | `Vec<ScopePair>` | O(n) 反向线性扫描（缓存友好） | O(1) push | ✅ P5 — 从 `TernaryTreeList` 改为 `Vec` |
 
 ## 优化项目
 
-### P0: Tag 调用 Record 的运行时 fallback
+### P0: Tag 调用 Record 的运行时 fallback ✅ `0116e54`
 
 **问题**: `(:field x)` 在 runner.rs 只处理 `Calcit::Map`。当 `x` 是 `Calcit::Record` 时直接报错 `"expected a hashmap"`。预处理阶段的 `(:tag record)` → `&record:nth` 重写仅在类型已知时生效；类型未知时走 fallback 触发运行时错误。
 
@@ -37,7 +37,7 @@
 
 ---
 
-### P1: `&record:assoc` 编译期索引化
+### P1: `&record:assoc` 编译期索引化 ✅ `44a8bfa`
 
 **问题**: `&record:assoc record :field value` 运行时做 `index_of` 二分查找定位字段，然后 clone 整个 `Vec<Calcit>` 再改一个位置。
 
@@ -57,7 +57,7 @@
 
 ---
 
-### P2: `&record:with` 批量更新索引化
+### P2: `&record:with` 批量更新索引化 ✅ `0e705f1`
 
 **问题**: `&record:with record :a 1 :b 2` 每个字段都做一次 `index_of` 二分查找。
 
@@ -71,7 +71,7 @@
 
 ---
 
-### P3: `tag-match` 分支整数化
+### P3: `tag-match` 分支整数化 ⬜ 推迟（侵入性大，CalcitTuple 12+ 构造点需改动）
 
 **问题**: `tag-match` 运行时用 tag 字符串逐一比较（线性扫描分支）。JS codegen 也是 if-else 链。
 
@@ -87,7 +87,7 @@
 
 ---
 
-### P4: Method dispatch 静态绑定
+### P4: Method dispatch 静态绑定 ⬜ 推迟（复杂度高，待类型覆盖率提高）
 
 **问题**: `.method obj` 运行时路径：① 匹配 receiver 类型 → ② 查 impl 列表（builtin 还要 evaluate symbol）→ ③ 线性遍历 `impls` 数组找方法名。
 
@@ -101,19 +101,19 @@
 
 ---
 
-### P5: Scope 变量查找 O(1) 化
+### P5: Scope 变量查找优化 ✅ `07d6dfc`
 
 **问题**: `CalcitScope` 用 `TernaryTreeList<ScopePair>` 存变量，lookup 向后线性扫描 O(n)。每次变量引用（每个表达式节点）都付出这个代价。
 
-**位置**: `src/runner/fns.rs` L157-197。
+**位置**: `src/calcit/fns.rs`。
 
-**方案**:
-- **方案 A**: 预处理阶段把 `Local.idx`（u16）做 de Bruijn 风格的 slot 编号（当前已有 `CalcitLocal::track_sym` 给全局唯一 idx），运行时 scope 改为 `Vec<Option<Calcit>>` 直接索引
-- **方案 B**: 保持 persistent tree 但加一层 `HashMap<u16, usize>` 缓存位置
+**实际方案**: 采用 **Vec 方案** — 把 `CalcitScope` 内部从 `TernaryTreeList<ScopePair>` 改为 `Vec<ScopePair>`，`get()` 用 `.iter().rev()` 反向线性扫描。对于典型 2-3 变量的小 scope，Vec 的缓存局部性远优于 tree 结构。
 
-**收益**: 变量查找从 O(depth) 降到 O(1)。
+**注**: HashMap 方案实测有 ~1% 回退（hash 开销大于小 scope 的线性扫描），Vec 方案反而带来 ~13% fibo 基准提升。
 
-**影响**: 高 — 变量查找是最热操作，对解释器整体吞吐量有根本性影响。需要仔细验证 shadowing、closure capture、persistent scope push 等语义是否兼容。
+**收益**: fibo 基准从 ~836ms 降到 ~728ms（~13% 提升）。
+
+**影响**: 高 — 变量查找是最热操作，对解释器整体吞吐量有根本性影响。
 
 ---
 
@@ -129,11 +129,11 @@
 
 ---
 
-### P7: `if` 条件常量折叠
+### P7: `if` 条件常量折叠 ✅ `fa325c6`
 
 **问题**: `if true x y` 运行时仍求值条件。
 
-**方案**: 预处理阶段条件是字面量 `true`/`false`/`nil` 时直接消除分支。
+**方案**: 预处理阶段条件是字面量 `true`/`false`/`nil` 时直接消除分支。在 `preprocess_if()` 中，预处理完 cond/true/false 三个子表达式后，检查 `match &cond_form { Calcit::Bool(true) => return Ok(true_form), Calcit::Bool(false) | Calcit::Nil => return Ok(false_form), _ => {} }`。
 
 **影响**: 低 — 手写代码少见，但宏展开后常见。
 
@@ -149,10 +149,21 @@
 4. `emit_js.rs` — 添加 codegen 分支（JS 可能需要不同策略，参考 `&record:nth` 的 field-tag 方案）
 5. `type_checking.rs` / `type_inference.rs` — 确保新 proc 参与类型检查
 
-## 推荐执行顺序
+## 执行记录
 
-**近期**: P0 → P1 → P5（正确性 → 高频操作 → 热路径）
+### 已完成（fibo 基准: 836ms → 718ms，总提升 ~14%）
 
-**中期**: P3 → P4（enum/trait 优化，需类型覆盖率提高后收益更大）
+| 顺序 | 项目 | Commit | 关键变更 | 基准影响 |
+|------|------|--------|---------|----------|
+| 1 | P0 | `0116e54` | runner.rs Tag-call Record fallback | 正确性修复 |
+| 2 | P1 | `44a8bfa` | NativeRecordAssocAt + preprocess 重写 | Record 更新加速（fibo 不涉及） |
+| 3 | P5 | `07d6dfc` | Scope 从 TernaryTreeList 改为 Vec | ~13% fibo 提升（最大单项收益） |
+| 4 | P2 | `0e705f1` | NativeRecordWithAt 批量索引化 | Record 批量更新加速（fibo 不涉及） |
+| 5 | P7 | `fa325c6` | if 常量折叠 | 宏展开场景受益 |
+| - | 额外 | `7c04880` | runtime def resolution 去重复 RwLock 读 | 微优化 |
 
-**长期**: P2, P6, P7（递减收益，视实际瓶颈决定）
+### 待定
+
+- **P3**: tag-match 整数化 — 推迟，CalcitTuple 12+ 构造点需改动，侵入性大
+- **P4**: Method dispatch 静态绑定 — 推迟，实现复杂度高
+- **P6**: get-in/assoc-in 静态路径展开 — 未开始，视实际瓶颈决定
