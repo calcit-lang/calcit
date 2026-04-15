@@ -2,7 +2,7 @@
 
 ## 概述
 
-Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集编译为 WAT（WebAssembly Text format）。这**不是 Calcit 的主打功能**，定位为实验性的"加速岛"（hot island），适用于计算密集的纯函数。
+Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集编译为二进制 `.wasm` 文件（通过 `wasm-encoder` crate）。这**不是 Calcit 的主打功能**，定位为实验性的“加速岛”（hot island），适用于计算密集的纯函数。
 
 ## 支持的子集
 
@@ -35,16 +35,21 @@ Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集�
 ## 使用方式
 
 ```bash
-# 编译为 WAT
+# 编译为 .wasm 二进制
 cr demos/wasm-demo.cirru wasm
 
-# 输出在 js-out/program.wat
+# 输出在 js-out/program.wasm
 # 不支持的函数会打印 skip 信息到 stderr
 
-# 用 wasmtime 验证和运行
-wasmtime compile js-out/program.wat -o /dev/null        # 验证
-wasmtime run --invoke fibo js-out/program.wat -- 10      # 调用
-wasmtime run --invoke factorial js-out/program.wat -- 10 # 调用
+# 用 Node.js 加载和运行
+node -e "
+const fs = require('fs');
+const wasm = fs.readFileSync('js-out/program.wasm');
+const mod = new WebAssembly.Module(wasm);
+const inst = new WebAssembly.Instance(mod);
+console.log(inst.exports.fibo(10));      // 89
+console.log(inst.exports.factorial(10)); // 3628800
+"
 ```
 
 ## 示例
@@ -57,36 +62,27 @@ defn fibo (n)
     &+ (fibo (&- n 1)) (fibo (&- n 2))
 ```
 
-生成的 WAT：
-
-```wat
-(func $fibo (param $n f64) (result f64)
-  (if (result f64) (f64.ne (select (f64.const 1) (f64.const 0)
-      (f64.lt (local.get $n) (f64.const 2))) (f64.const 0))
-    (then (f64.const 1))
-    (else (f64.add
-      (call $fibo (f64.sub (local.get $n) (f64.const 1)))
-      (call $fibo (f64.sub (local.get $n) (f64.const 2)))))))
-```
+编译后输出二进制 `js-out/program.wasm`，可用 `wasm-tools print js-out/program.wasm` 查看反汇编的 WAT 文本。
 
 ## 设计决策
 
-1. **纯 WAT 文本输出** — 不引入 WASM 二进制编码依赖（如 wasm-encoder），保持代码体积最小。后续可用 `wat2wasm` 或 wasmtime 做二进制转换。
+1. **二进制 `.wasm` 输出** — 使用 `wasm-encoder` crate 直接生成标准 WASM 二进制格式。无需外部工具（如 wasmtime、wat2wasm），Node.js 内置的 `WebAssembly` API 即可加载运行，CI 也无需额外安装依赖。
 
 2. **All-f64 类型策略** — Calcit 只有一种数值类型（f64），WASM codegen 将所有值统一为 f64，Bool 用 1.0/0.0 表示。这避免了类型分析的复杂度。
 
 3. **比较运算的 f64 返回** — WASM 比较指令返回 i32，但我们的值体系是 f64。使用 `select` 指令将 i32 条件转为 f64 (1.0/0.0)。`if` 表达式再用 `f64.ne x 0.0` 转回 i32 条件。
 
-4. **recur 映射到 WASM loop** — `recur` 在 Calcit 中用于尾递归。WASM codegen 检测函数体是否包含 recur，如果是则整个函数体包装在 `(loop $recur (result f64) ...)` 中，`recur` 编译为临时变量赋值 + `br $recur`。
+4. **recur 映射到 WASM loop** — `recur` 在 Calcit 中用于尾递归。WASM codegen 检测函数体是否包含 recur，如果是则整个函数体包装在 `(loop (result f64) ...)` 中，`recur` 编译为临时变量赋值 + `br` 到 loop 标签（通过 block_depth 追踪嵌套深度）。
 
 ## 实现位置
 
-- `src/codegen/emit_wasm.rs` — WAT 代码生成
+- `src/codegen/emit_wasm.rs` — WASM 二进制代码生成（via wasm-encoder）
 - `src/codegen.rs` — 模块注册
 - `src/cli_args.rs` — `EmitWasmCommand` CLI 定义
 - `src/bin/cr.rs` — `run_wasm_codegen` 入口
 - `calcit/test-wasm.cirru` — 测试用例（纯数值函数集）
-- `scripts/test-wasm.sh` — WASM 验证脚本（集成在 `yarn check-all` 中）
+- `scripts/test-wasm.sh` — WASM 验证脚本（生成 + Node.js 验证，集成在 `yarn check-all` 中）
+- `scripts/test-wasm.mjs` — Node.js 测试运行器
 
 ## 测试
 
@@ -106,7 +102,7 @@ yarn try-wasm
 
 ### 近期（低投入）
 
-- **输出路径配置** — 目前固定输出到 `js-out/program.wat`，应支持 `--emit-path` 指定
+- **输出路径配置** — 目前固定输出到 `js-out/program.wasm`，应支持 `--emit-path` 指定
 - **跨命名空间函数调用** — 当前仅编译 init 命名空间中的函数，应支持跨 ns 调用
 - **let 嵌套优化** — 预处理后的 `CoreLet` 链已做扁平化，但可进一步合并连续 local.set
 - ~~**更多数学函数**~~ — ✅ 已实现 `floor`, `ceil`, `round`, `sqrt`（直接映射 WASM 指令）
@@ -115,7 +111,6 @@ yarn try-wasm
 
 ### 中期（需要较多工作）
 
-- **WASM 二进制输出** — 直接输出 `.wasm` 二进制，省去 wat2wasm 步骤。可考虑轻量级 crate 如 `wasm-encoder`
 - **JS 互操作桥接** — 生成 JS wrapper，允许 JS codegen 的代码调用 WASM 编译的热函数
 - **Record 支持** — 将 Record 映射到线性内存 struct（字段按排序索引直接偏移），需要完整的类型信息
 - **Tag/Enum 支持** — Tag 编译为整数常量，tag-match 编译为 `br_table` 跳转表

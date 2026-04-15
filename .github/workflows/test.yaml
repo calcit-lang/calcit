@@ -38,11 +38,6 @@ jobs:
       - run: cargo test
       - run: cargo run --bin cr calcit/test.cirru
 
-      - name: Install wasmtime
-        run: |
-          curl https://wasmtime.dev/install.sh -sSf | bash
-          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
-
       - name: "try wasm"
         run: CR_BIN="./target/debug/cr" bash scripts/test-wasm.sh
 

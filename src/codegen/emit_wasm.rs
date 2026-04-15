@@ -1,4 +1,4 @@
-//! Minimal WASM codegen for Calcit — generates WAT (WebAssembly Text format).
+//! Minimal WASM codegen for Calcit — generates binary `.wasm` via `wasm-encoder`.
 //!
 //! Supports a small subset of Calcit for demonstration purposes:
 //! - `defn` with fixed-arity arguments (all f64)
@@ -11,39 +11,74 @@
 //!
 //! All values are represented as f64 (matching Calcit's single numeric type).
 //! Booleans: true → 1.0, false/nil → 0.0.
-//! Output is a `.wat` file that can be compiled with `wat2wasm` (from wabt)
-//! or run directly with `wasmtime`.
+//! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::fs;
 use std::path::Path;
+
+use wasm_encoder::{
+  CodeSection, ExportKind, ExportSection, Function, FunctionSection, Ieee64, Instruction, Module, TypeSection, ValType,
+};
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax};
 use crate::program;
 
-/// Emit a WAT module from the compiled program.
+/// Convert f64 to wasm-encoder's Ieee64 representation.
+fn f64_const(v: f64) -> Instruction<'static> {
+  Instruction::F64Const(Ieee64::from(v))
+}
+
+/// Emit a WASM binary module from the compiled program.
 /// Only processes functions from the namespace that contains the init entry.
 pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
 
-  let mut functions: Vec<WasmFunc> = Vec::new();
+  let mut compiled_fns: Vec<CompiledFn> = Vec::new();
 
   if let Some(file_info) = program_data.get(init_ns) {
+    // First pass: extract all function signatures
+    let mut fn_defs: Vec<(String, CalcitFnArgs, Vec<Calcit>)> = Vec::new();
     for (def_name, compiled) in &file_info.defs {
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
       match extract_fn_parts(&compiled.preprocessed_code) {
-        Ok((args, body)) => match gen_wasm_func(def_name, &args, &body) {
-          Ok(func) => functions.push(func),
-          Err(e) => {
-            eprintln!("[wasm] skipping {init_ns}/{def_name}: {e}");
-          }
-        },
+        Ok((args, body)) => {
+          fn_defs.push((def_name.to_string(), args, body));
+        }
         Err(e) => {
           eprintln!("[wasm] skipping {init_ns}/{def_name}: {e}");
+        }
+      }
+    }
+
+    // Build provisional index map (all functions)
+    let fn_index: HashMap<String, u32> = fn_defs
+      .iter()
+      .enumerate()
+      .map(|(i, (name, _, _))| (name.clone(), i as u32))
+      .collect();
+
+    // Second pass: compile. If a function fails, we still reserve its slot
+    // with a trivial body so indices remain stable.
+    for (def_name, args, body) in &fn_defs {
+      match compile_fn(def_name, args, body, &fn_index) {
+        Ok(func) => compiled_fns.push(func),
+        Err(e) => {
+          eprintln!("[wasm] skipping {init_ns}/{def_name}: {e}");
+          // Insert a stub function to maintain index stability
+          let arity = match args {
+            CalcitFnArgs::Args(v) => v.len(),
+            CalcitFnArgs::MarkedArgs(v) => v.len(),
+          };
+          compiled_fns.push(CompiledFn {
+            name: def_name.clone(),
+            arity,
+            locals: vec![],
+            instructions: vec![f64_const(0.0)],
+          });
         }
       }
     }
@@ -51,37 +86,94 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     return Err(format!("namespace not found: {init_ns}"));
   }
 
-  if functions.is_empty() {
+  if compiled_fns.is_empty() {
     return Err("no functions could be compiled to WASM".into());
   }
 
-  // Build module
-  let mut wat = String::from("(module\n");
-  for func in &functions {
-    wat.push_str(&func.wat);
-    wat.push('\n');
-  }
-  // Export all compiled functions
-  for func in &functions {
-    writeln!(wat, "  (export \"{}\" (func ${}))", func.name, func.name).expect("write");
-  }
-  wat.push_str(")\n");
+  // Build module using wasm-encoder
+  let wasm_bytes = build_wasm_module(&compiled_fns)?;
 
   // Write output
   let out_path = Path::new(emit_path);
   if !out_path.exists() {
     fs::create_dir_all(out_path).map_err(|e| format!("failed to create dir: {e}"))?;
   }
-  let wat_file = out_path.join("program.wat");
-  fs::write(&wat_file, &wat).map_err(|e| format!("failed to write WAT: {e}"))?;
-  println!("wrote WAT to: {}", wat_file.display());
+  let wasm_file = out_path.join("program.wasm");
+  fs::write(&wasm_file, &wasm_bytes).map_err(|e| format!("failed to write WASM: {e}"))?;
+  println!("wrote WASM to: {}", wasm_file.display());
 
   Ok(())
 }
 
-struct WasmFunc {
+/// Intermediate representation of a compiled function before encoding.
+struct CompiledFn {
   name: String,
-  wat: String,
+  arity: usize,
+  /// All local variables (including temporaries), indexed by declaration order
+  locals: Vec<ValType>,
+  /// Instruction sequence for the function body
+  instructions: Vec<Instruction<'static>>,
+}
+
+/// Build a binary WASM module from compiled functions.
+fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
+  let mut module = Module::new();
+
+  // Type section: each function gets its own type (all f64 params/result)
+  let mut types = TypeSection::new();
+  for f in fns {
+    let params: Vec<ValType> = vec![ValType::F64; f.arity];
+    types.ty().function(params, vec![ValType::F64]);
+  }
+  module.section(&types);
+
+  // Function section: map each function to its type
+  let mut functions = FunctionSection::new();
+  for (i, _) in fns.iter().enumerate() {
+    functions.function(i as u32);
+  }
+  module.section(&functions);
+
+  // Export section
+  let mut exports = ExportSection::new();
+  for (i, f) in fns.iter().enumerate() {
+    exports.export(&f.name, ExportKind::Func, i as u32);
+  }
+  module.section(&exports);
+
+  // Code section
+  let mut codes = CodeSection::new();
+  for f in fns {
+    let locals: Vec<(u32, ValType)> = if f.locals.is_empty() {
+      vec![]
+    } else {
+      // Group consecutive identical types
+      let mut groups = Vec::new();
+      let mut count = 1u32;
+      let mut prev = f.locals[0];
+      for &t in &f.locals[1..] {
+        if t == prev {
+          count += 1;
+        } else {
+          groups.push((count, prev));
+          prev = t;
+          count = 1;
+        }
+      }
+      groups.push((count, prev));
+      groups
+    };
+
+    let mut func = Function::new(locals);
+    for instr in &f.instructions {
+      func.instruction(instr);
+    }
+    func.instruction(&Instruction::End);
+    codes.function(&func);
+  }
+  module.section(&codes);
+
+  Ok(module.finish())
 }
 
 /// Extract function name, args, and body from preprocessed `(defn name (args...) body...)` form.
@@ -100,67 +192,70 @@ fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String
 
 /// Context for WASM code generation within a single function.
 struct WasmGenCtx {
-  /// Map from local variable name to WASM local index name
-  locals: HashMap<String, String>,
-  /// Local declarations to emit at function start
-  local_decls: Vec<String>,
-  /// Counter for generating unique local names
-  local_counter: usize,
+  /// Map from local variable name to WASM local index
+  locals: HashMap<String, u32>,
+  /// Local declarations to add (beyond parameters)
+  extra_locals: Vec<ValType>,
+  /// Next local index (starts after parameters)
+  next_local: u32,
   /// Whether this function uses recur (needs loop wrapping)
   uses_recur: bool,
-  /// Argument names in order (for recur)
-  arg_names: Vec<String>,
+  /// Argument local indices in order (for recur)
+  arg_indices: Vec<u32>,
+  /// Collected instructions
+  instructions: Vec<Instruction<'static>>,
+  /// Function name → index map for cross-function calls
+  fn_index: HashMap<String, u32>,
+  /// Current block nesting depth relative to the recur loop
+  /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
+  block_depth: u32,
 }
 
 impl WasmGenCtx {
-  fn new() -> Self {
+  fn new(num_params: u32, fn_index: HashMap<String, u32>) -> Self {
     WasmGenCtx {
       locals: HashMap::new(),
-      local_decls: Vec::new(),
-      local_counter: 0,
+      extra_locals: Vec::new(),
+      next_local: num_params,
       uses_recur: false,
-      arg_names: Vec::new(),
+      arg_indices: Vec::new(),
+      instructions: Vec::new(),
+      fn_index,
+      block_depth: 0,
     }
   }
 
-  fn fresh_local(&mut self, hint: &str) -> String {
-    let name = format!("$_{}_{}", hint, self.local_counter);
-    self.local_counter += 1;
-    name
+  fn alloc_local(&mut self) -> u32 {
+    let idx = self.next_local;
+    self.next_local += 1;
+    self.extra_locals.push(ValType::F64);
+    idx
   }
 
-  fn declare_local(&mut self, name: &str) -> String {
-    let wasm_name = self.fresh_local(name);
-    self.local_decls.push(format!("(local {wasm_name} f64)"));
-    self.locals.insert(name.to_owned(), wasm_name.clone());
-    wasm_name
+  fn declare_local(&mut self, name: &str) -> u32 {
+    let idx = self.alloc_local();
+    self.locals.insert(name.to_owned(), idx);
+    idx
+  }
+
+  fn emit(&mut self, instr: Instruction<'static>) {
+    self.instructions.push(instr);
   }
 }
 
-fn gen_wasm_func(name: &str, args: &CalcitFnArgs, body: &[Calcit]) -> Result<WasmFunc, String> {
-  let mut ctx = WasmGenCtx::new();
-
-  // Process arguments — only simple fixed-arity args supported
-  let mut params = Vec::new();
+fn compile_fn(name: &str, args: &CalcitFnArgs, body: &[Calcit], fn_index: &HashMap<String, u32>) -> Result<CompiledFn, String> {
+  let mut param_names = Vec::new();
   match args {
     CalcitFnArgs::Args(idxs) => {
       for idx in idxs {
-        let sym = CalcitLocal::read_name(*idx);
-        let wasm_name = format!("${sym}");
-        ctx.locals.insert(sym.clone(), wasm_name.clone());
-        ctx.arg_names.push(wasm_name.clone());
-        params.push(format!("(param {wasm_name} f64)"));
+        param_names.push(CalcitLocal::read_name(*idx));
       }
     }
     CalcitFnArgs::MarkedArgs(labels) => {
       for label in labels {
         match label {
           CalcitArgLabel::Idx(idx) => {
-            let sym = CalcitLocal::read_name(*idx);
-            let wasm_name = format!("${sym}");
-            ctx.locals.insert(sym.clone(), wasm_name.clone());
-            ctx.arg_names.push(wasm_name.clone());
-            params.push(format!("(param {wasm_name} f64)"));
+            param_names.push(CalcitLocal::read_name(*idx));
           }
           CalcitArgLabel::OptionalMark | CalcitArgLabel::RestMark => {
             return Err("optional/rest args not supported in WASM codegen".into());
@@ -170,27 +265,32 @@ fn gen_wasm_func(name: &str, args: &CalcitFnArgs, body: &[Calcit]) -> Result<Was
     }
   }
 
+  let arity = param_names.len();
+  let mut ctx = WasmGenCtx::new(arity as u32, fn_index.clone());
+
+  // Register parameter locals
+  for (i, pname) in param_names.iter().enumerate() {
+    ctx.locals.insert(pname.clone(), i as u32);
+    ctx.arg_indices.push(i as u32);
+  }
+
   // Check if body uses recur
   ctx.uses_recur = body.iter().any(check_uses_recur);
 
-  // Generate body
-  let body_code = gen_body(&mut ctx, body)?;
-
-  let params_str = params.join(" ");
-  let locals_str = ctx.local_decls.join("\n    ");
-
-  let func_body = if ctx.uses_recur {
-    // Wrap in (loop $recur ...)
-    format!("    {locals_str}\n    (loop $recur (result f64)\n      {body_code}\n    )",)
+  if ctx.uses_recur {
+    // loop $recur (result f64) ... end
+    ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ValType::F64)));
+    emit_body(&mut ctx, body)?;
+    ctx.emit(Instruction::End); // end loop
   } else {
-    format!("    {locals_str}\n    {body_code}")
-  };
+    emit_body(&mut ctx, body)?;
+  }
 
-  let wat = format!("  (func ${name} {params_str} (result f64)\n{func_body}\n  )",);
-
-  Ok(WasmFunc {
+  Ok(CompiledFn {
     name: name.to_owned(),
-    wat,
+    arity,
+    locals: ctx.extra_locals,
+    instructions: ctx.instructions,
   })
 }
 
@@ -208,259 +308,256 @@ fn check_uses_recur(expr: &Calcit) -> bool {
   }
 }
 
-/// Generate WASM code for a sequence of expressions (last one is the return value).
-fn gen_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<String, String> {
+/// Emit instructions for a sequence of expressions (last is the return value).
+fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
   if exprs.is_empty() {
-    return Ok("(f64.const 0)".into());
+    ctx.emit(f64_const(0.0));
+    return Ok(());
   }
-  let mut parts = Vec::new();
   for (i, expr) in exprs.iter().enumerate() {
-    if i == exprs.len() - 1 {
-      // Last expression is the return value
-      parts.push(gen_expr(ctx, expr)?);
-    } else {
-      // Non-last expressions: evaluate and drop result
-      let code = gen_expr(ctx, expr)?;
-      parts.push(format!("(drop {code})"));
+    emit_expr(ctx, expr)?;
+    if i < exprs.len() - 1 {
+      ctx.emit(Instruction::Drop);
     }
   }
-  Ok(parts.join("\n      "))
+  Ok(())
 }
 
-/// Generate WASM expression code for a single Calcit node.
-fn gen_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<String, String> {
+/// Emit instructions for a single Calcit expression.
+fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
   match expr {
-    Calcit::Number(n) => Ok(format!("(f64.const {n})")),
-    Calcit::Bool(true) => Ok("(f64.const 1)".into()),
-    Calcit::Bool(false) | Calcit::Nil => Ok("(f64.const 0)".into()),
-
+    Calcit::Number(n) => {
+      ctx.emit(f64_const(*n));
+    }
+    Calcit::Bool(true) => {
+      ctx.emit(f64_const(1.0));
+    }
+    Calcit::Bool(false) | Calcit::Nil => {
+      ctx.emit(f64_const(0.0));
+    }
     Calcit::Local(local) => {
       let name = &*local.sym;
-      match ctx.locals.get(name) {
-        Some(wasm_name) => Ok(format!("(local.get {wasm_name})")),
-        None => Err(format!("undefined local variable: {name}")),
-      }
+      let idx = *ctx.locals.get(name).ok_or_else(|| format!("undefined local variable: {name}"))?;
+      ctx.emit(Instruction::LocalGet(idx));
     }
-
-    Calcit::List(xs) if !xs.is_empty() => gen_call_expr(ctx, xs),
-
-    _ => Err(format!("unsupported WASM expression: {expr}")),
+    Calcit::List(xs) if !xs.is_empty() => {
+      emit_call_expr(ctx, xs)?;
+    }
+    _ => return Err(format!("unsupported WASM expression: {expr}")),
   }
+  Ok(())
 }
 
-/// Generate WASM code for a call expression (list with head + args).
-fn gen_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Result<String, String> {
+/// Emit instructions for a call expression.
+fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Result<(), String> {
   let head = &xs[0];
   let args_list: Vec<Calcit> = xs.drop_left().to_vec();
-  let args_slice = &args_list;
 
   match head {
-    // Syntax forms
     Calcit::Syntax(syn, _) => match syn {
-      CalcitSyntax::If => gen_if(ctx, &args_list),
-      CalcitSyntax::CoreLet => gen_let(ctx, &args_list),
+      CalcitSyntax::If => emit_if(ctx, &args_list),
+      CalcitSyntax::CoreLet => emit_let(ctx, &args_list),
       CalcitSyntax::Defn => Err("nested defn not supported in WASM".into()),
       _ => Err(format!("unsupported syntax in WASM: {syn}")),
     },
-
-    // Builtin procs
-    Calcit::Proc(proc) => gen_proc_call(ctx, proc, args_slice),
-
-    // Function calls (imports or local defs)
+    Calcit::Proc(proc) => emit_proc_call(ctx, proc, &args_list),
     Calcit::Import(import) => {
-      let mut arg_codes = Vec::new();
-      for arg in args_slice {
-        arg_codes.push(gen_expr(ctx, arg)?);
+      let fn_idx = *ctx
+        .fn_index
+        .get(import.def.as_ref())
+        .ok_or_else(|| format!("unknown function: {}", import.def))?;
+      for arg in &args_list {
+        emit_expr(ctx, arg)?;
       }
-      Ok(format!("(call ${} {})", import.def, arg_codes.join(" ")))
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
     }
-
-    // Symbol-based calls (for self-recursion or unresolved)
     Calcit::Symbol { sym, .. } => {
-      let mut arg_codes = Vec::new();
-      for arg in args_slice {
-        arg_codes.push(gen_expr(ctx, arg)?);
+      let fn_idx = *ctx.fn_index.get(sym.as_ref()).ok_or_else(|| format!("unknown function: {sym}"))?;
+      for arg in &args_list {
+        emit_expr(ctx, arg)?;
       }
-      Ok(format!("(call ${sym} {})", arg_codes.join(" ")))
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
     }
-
     _ => Err(format!("unsupported call head in WASM: {head}")),
   }
 }
 
-/// Generate WASM for builtin proc calls.
-fn gen_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> Result<String, String> {
+/// Emit instructions for builtin proc calls.
+fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> Result<(), String> {
   match proc {
     // Arithmetic
-    CalcitProc::NativeAdd => binary_op(ctx, "f64.add", args),
-    CalcitProc::NativeMinus => binary_op(ctx, "f64.sub", args),
-    CalcitProc::NativeMultiply => binary_op(ctx, "f64.mul", args),
-    CalcitProc::NativeDivide => binary_op(ctx, "f64.div", args),
+    CalcitProc::NativeAdd => emit_binary(ctx, Instruction::F64Add, args),
+    CalcitProc::NativeMinus => emit_binary(ctx, Instruction::F64Sub, args),
+    CalcitProc::NativeMultiply => emit_binary(ctx, Instruction::F64Mul, args),
+    CalcitProc::NativeDivide => emit_binary(ctx, Instruction::F64Div, args),
     CalcitProc::NativeNumberRem => {
-      // WASM doesn't have f64.rem, so we use: a - trunc(a/b) * b
+      // a - trunc(a/b) * b
       if args.len() != 2 {
         return Err("rem expects 2 args".into());
       }
-      let a = gen_expr(ctx, &args[0])?;
-      let b = gen_expr(ctx, &args[1])?;
-      Ok(format!("(f64.sub {a} (f64.mul (f64.trunc (f64.div {a} {b})) {b}))"))
+      emit_expr(ctx, &args[0])?; // a
+      emit_expr(ctx, &args[0])?; // a (again)
+      emit_expr(ctx, &args[1])?; // b
+      ctx.emit(Instruction::F64Div);
+      ctx.emit(Instruction::F64Trunc);
+      emit_expr(ctx, &args[1])?; // b (again)
+      ctx.emit(Instruction::F64Mul);
+      ctx.emit(Instruction::F64Sub);
+      Ok(())
     }
 
-    // Comparisons — produce f64 (1.0 for true, 0.0 for false)
-    CalcitProc::NativeLessThan => cmp_op(ctx, "f64.lt", args),
-    CalcitProc::NativeGreaterThan => cmp_op(ctx, "f64.gt", args),
-    CalcitProc::NativeEquals => cmp_op(ctx, "f64.eq", args),
+    // Comparisons — produce f64 (1.0 or 0.0)
+    CalcitProc::NativeLessThan => emit_cmp(ctx, Instruction::F64Lt, args),
+    CalcitProc::NativeGreaterThan => emit_cmp(ctx, Instruction::F64Gt, args),
+    CalcitProc::NativeEquals | CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
     CalcitProc::Not => {
       if args.len() != 1 {
         return Err("not expects 1 arg".into());
       }
-      let a = gen_expr(ctx, &args[0])?;
-      // not: 0.0 → 1.0, anything else → 0.0
-      Ok(format!("(select (f64.const 1) (f64.const 0) (f64.eq {a} (f64.const 0)))"))
+      // not: 0.0 → 1.0, else → 0.0
+      ctx.emit(f64_const(1.0)); // true result
+      ctx.emit(f64_const(0.0)); // false result
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq); // i32 condition
+      ctx.emit(Instruction::Select);
+      Ok(())
     }
 
-    // Math functions (unary)
-    CalcitProc::Floor => unary_op(ctx, "f64.floor", args),
-    CalcitProc::Ceil => unary_op(ctx, "f64.ceil", args),
-    CalcitProc::Round => unary_op(ctx, "f64.nearest", args),
-    CalcitProc::Sqrt => unary_op(ctx, "f64.sqrt", args),
-    CalcitProc::Sin | CalcitProc::Cos => {
-      // WASM has no built-in sin/cos; reject for now
-      Err(format!("trigonometric function {proc} not available in WASM (no f64.sin/cos)"))
-    }
-    CalcitProc::Pow => {
-      // a^b: no direct WASM op; we import Math.pow at module level or reject
-      // For now, compile as repeated multiply for small integer exponents,
-      // or reject for general case.
-      Err("pow not yet supported in WASM codegen (no f64.pow instruction)".into())
-    }
-    CalcitProc::Identical => cmp_op(ctx, "f64.eq", args),
+    // Math (unary)
+    CalcitProc::Floor => emit_unary(ctx, Instruction::F64Floor, args),
+    CalcitProc::Ceil => emit_unary(ctx, Instruction::F64Ceil, args),
+    CalcitProc::Round => emit_unary(ctx, Instruction::F64Nearest, args),
+    CalcitProc::Sqrt => emit_unary(ctx, Instruction::F64Sqrt, args),
+    CalcitProc::Sin | CalcitProc::Cos => Err(format!("trigonometric function {proc} not available in WASM (no f64.sin/cos)")),
+    CalcitProc::Pow => Err("pow not yet supported in WASM codegen (no f64.pow instruction)".into()),
 
-    // Recur — tail call via br to loop
+    // Recur
     CalcitProc::Recur => {
-      if args.len() != ctx.arg_names.len() {
+      if args.len() != ctx.arg_indices.len() {
         return Err(format!(
           "recur arity mismatch: expected {}, got {}",
-          ctx.arg_names.len(),
+          ctx.arg_indices.len(),
           args.len()
         ));
       }
-      let mut code = String::new();
-      // Evaluate all args first (into temp locals to avoid order issues)
+      // Evaluate all args into temp locals first
       let mut temps = Vec::new();
-      for arg in args.iter() {
-        let arg_code = gen_expr(ctx, arg)?;
-        let tmp = ctx.fresh_local("recur_tmp");
-        ctx.local_decls.push(format!("(local {tmp} f64)"));
-        writeln!(code, "(local.set {tmp} {arg_code})").expect("write");
+      for arg in args {
+        let tmp = ctx.alloc_local();
+        emit_expr(ctx, arg)?;
+        ctx.emit(Instruction::LocalSet(tmp));
         temps.push(tmp);
       }
-      // Assign temps back to params
-      for (i, tmp) in temps.iter().enumerate() {
-        writeln!(code, "(local.set {} (local.get {tmp}))", ctx.arg_names[i]).expect("write");
+      // Copy temps back to arg locals
+      for (i, &tmp) in temps.iter().enumerate() {
+        ctx.emit(Instruction::LocalGet(tmp));
+        ctx.emit(Instruction::LocalSet(ctx.arg_indices[i]));
       }
-      code.push_str("(br $recur)");
-      // br $recur branches unconditionally; code after is unreachable.
-      // Wrap in a block to satisfy the type checker:
-      Ok(format!("(block (result f64)\n{code}\n(f64.const 0)\n)"))
+      ctx.emit(Instruction::Br(ctx.block_depth)); // br to the recur loop
+      // After unconditional br, mark as unreachable for the type checker
+      ctx.emit(Instruction::Unreachable);
+      Ok(())
     }
 
     _ => Err(format!("unsupported proc in WASM: {proc}")),
   }
 }
 
-fn unary_op(ctx: &mut WasmGenCtx, op: &str, args: &[Calcit]) -> Result<String, String> {
+fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
-    return Err(format!("{op} expects 1 arg, got {}", args.len()));
+    return Err(format!("{instr:?} expects 1 arg, got {}", args.len()));
   }
-  let a = gen_expr(ctx, &args[0])?;
-  Ok(format!("({op} {a})"))
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(instr);
+  Ok(())
 }
 
-fn binary_op(ctx: &mut WasmGenCtx, op: &str, args: &[Calcit]) -> Result<String, String> {
+fn emit_binary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
-    return Err(format!("{op} expects 2 args, got {}", args.len()));
+    return Err(format!("{instr:?} expects 2 args, got {}", args.len()));
   }
-  let a = gen_expr(ctx, &args[0])?;
-  let b = gen_expr(ctx, &args[1])?;
-  Ok(format!("({op} {a} {b})"))
+  emit_expr(ctx, &args[0])?;
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(instr);
+  Ok(())
 }
 
-fn cmp_op(ctx: &mut WasmGenCtx, op: &str, args: &[Calcit]) -> Result<String, String> {
+fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
-    return Err(format!("{op} expects 2 args, got {}", args.len()));
+    return Err(format!("{instr:?} expects 2 args, got {}", args.len()));
   }
-  let a = gen_expr(ctx, &args[0])?;
-  let b = gen_expr(ctx, &args[1])?;
-  // Comparison produces i32; convert to f64 via select
-  Ok(format!("(select (f64.const 1) (f64.const 0) ({op} {a} {b}))"))
+  // select (f64.const 1) (f64.const 0) (cmp a b)
+  ctx.emit(f64_const(1.0));
+  ctx.emit(f64_const(0.0));
+  emit_expr(ctx, &args[0])?;
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(instr);
+  ctx.emit(Instruction::Select);
+  Ok(())
 }
 
-/// Generate WASM for `if` expression.
-fn gen_if(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<String, String> {
-  if args_list.len() < 2 || args_list.len() > 3 {
-    return Err(format!("if expects 2-3 args, got {}", args_list.len()));
+/// Emit WASM for `if` expression.
+fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(format!("if expects 2-3 args, got {}", args.len()));
   }
-  let cond = gen_expr(ctx, &args_list[0])?;
-  let then_branch = gen_expr(ctx, &args_list[1])?;
-  let else_branch = if args_list.len() == 3 {
-    gen_expr(ctx, &args_list[2])?
+  // condition → i32
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne); // nonzero is truthy → i32
+
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.block_depth += 1;
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::Else);
+  if args.len() == 3 {
+    emit_expr(ctx, &args[2])?;
   } else {
-    "(f64.const 0)".into()
-  };
-
-  // Convert f64 condition to i32: nonzero is truthy
-  // (f64.ne cond (f64.const 0))
-  Ok(format!(
-    "(if (result f64) (f64.ne {cond} (f64.const 0))\n        (then {then_branch})\n        (else {else_branch})\n      )"
-  ))
+    ctx.emit(f64_const(0.0));
+  }
+  ctx.block_depth -= 1;
+  ctx.emit(Instruction::End);
+  Ok(())
 }
 
-/// Generate WASM for `let` expression.
-fn gen_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<String, String> {
+/// Emit WASM for `let` expression.
+fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
   if body.is_empty() {
-    return Ok("(f64.const 0)".into());
+    ctx.emit(f64_const(0.0));
+    return Ok(());
   }
 
   let pair = &body[0];
   let rest = &body[1..];
 
   match pair {
-    Calcit::Nil => {
-      // No binding, just evaluate body
-      gen_body(ctx, rest)
-    }
-    Calcit::List(xs) if xs.is_empty() => {
-      // No binding, just evaluate body
-      gen_body(ctx, rest)
-    }
+    Calcit::Nil => emit_body(ctx, rest),
+    Calcit::List(xs) if xs.is_empty() => emit_body(ctx, rest),
     Calcit::List(xs) if xs.len() == 2 => {
       let var_name = match &xs[0] {
         Calcit::Local(CalcitLocal { sym, .. }) => sym.to_string(),
         Calcit::Symbol { sym, .. } => sym.to_string(),
         other => return Err(format!("let binding expected symbol, got: {other}")),
       };
-      let value_code = gen_expr(ctx, &xs[1])?;
 
-      // Declare local and set value
-      let wasm_name = ctx.declare_local(&var_name);
-      let mut code = format!("(local.set {wasm_name} {value_code})\n");
+      emit_expr(ctx, &xs[1])?;
+      let idx = ctx.declare_local(&var_name);
+      ctx.emit(Instruction::LocalSet(idx));
 
-      // Check if rest is a single nested let (optimization: flatten)
+      // Flatten nested lets
       if rest.len() == 1 {
         if let Calcit::List(inner) = &rest[0] {
           if let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first() {
             let inner_body: Vec<Calcit> = inner.drop_left().to_vec();
-            let inner_code = gen_let(ctx, &inner_body)?;
-            code.push_str(&inner_code);
-            return Ok(code);
+            return emit_let(ctx, &inner_body);
           }
         }
       }
 
-      let body_code = gen_body(ctx, rest)?;
-      code.push_str(&body_code);
-      Ok(code)
+      emit_body(ctx, rest)
     }
     _ => Err(format!("unsupported let binding form: {pair}")),
   }
