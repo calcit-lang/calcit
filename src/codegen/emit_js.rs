@@ -487,6 +487,18 @@ fn gen_call_code(
         Err(format!("&record:nth expected 2-3 arguments, got: {body}"))
       }
     }
+    // &record:assoc-at: optimized assoc with pre-resolved index.
+    // JS uses record.assoc(tag, value) since JS field ordering differs from Rust.
+    Calcit::Proc(CalcitProc::NativeRecordAssocAt) => {
+      if body.len() == 4 {
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
+        let value_code = to_js_code(&body[3], ns, local_defs, file_imports, tags, None)?;
+        Ok(format!("{return_code}{record_code}.assoc({tag_code}, {value_code})"))
+      } else {
+        Err(format!("&record:assoc-at expected 4 arguments, got: {body}"))
+      }
+    }
     Calcit::Proc(_) => {
       let (prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;

@@ -951,6 +951,27 @@ fn preprocess_list_call(
           }
         }
 
+        // Optimize &record:assoc to &record:assoc-at when field index can be resolved at compile time
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordAssoc)) && processed_args.len() == 3 {
+          if let (Some(record_arg), Some(Calcit::Tag(field_tag)), Some(value_arg)) =
+            (processed_args.first(), processed_args.get(1), processed_args.get(2))
+          {
+            if let Some(type_info) = resolve_type_value(record_arg, scope_types) {
+              if let Some(struct_def) = type_info.as_ref().as_struct() {
+                if let Some(idx) = struct_def.index_of(field_tag.ref_str()) {
+                  ys = CalcitList::new_inner_from(&[
+                    Calcit::Proc(CalcitProc::NativeRecordAssocAt),
+                    record_arg.to_owned(),
+                    Calcit::Number(idx as f64),
+                    Calcit::Tag(field_tag.to_owned()),
+                    value_arg.to_owned(),
+                  ]);
+                }
+              }
+            }
+          }
+        }
+
         // Infer type for Method(Invoke) and update the head if type info is available
         if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {
           if let Some(receiver) = processed_args.first() {
@@ -966,12 +987,15 @@ fn preprocess_list_call(
         }
 
         if let Some(call_head) = ys.first() {
+          // Recompute processed_args from ys after optimization rewrites (e.g. record:get→nth, assoc→assoc-at)
+          let processed_args = CalcitList::from(ys.drop_left());
           warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_method_name_conflict(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         }
 
         // Check Proc argument types if available
         if let Some(Calcit::Proc(proc)) = ys.first() {
+          let processed_args = CalcitList::from(ys.drop_left());
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         }
 

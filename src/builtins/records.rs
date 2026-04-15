@@ -497,6 +497,47 @@ pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Direct indexed assoc on a record field: `&record:assoc-at record index :field value`
+/// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
+pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  // 4 args: (record, idx, :field-tag, value)
+  // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
+  if xs.len() != 4 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:assoc-at expected 4 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(CalcitRecord { struct_ref, values }), Calcit::Number(n)) => {
+      let idx = *n as usize;
+      if idx < values.len() {
+        let mut new_values = (**values).to_owned();
+        xs[3].clone_into(&mut new_values[idx]);
+        Ok(Calcit::Record(CalcitRecord {
+          struct_ref: struct_ref.to_owned(),
+          values: Arc::new(new_values),
+        }))
+      } else {
+        CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!(
+            "&record:assoc-at index {} out of range for record `{}` with {} fields",
+            idx,
+            struct_ref.name,
+            values.len()
+          ),
+        )
+      }
+    }
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&record:assoc-at expected (record, number), but received: {} {}",
+        a.lisp_str(),
+        b.lisp_str()
+      ),
+    ),
+  }
+}
+
 pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
