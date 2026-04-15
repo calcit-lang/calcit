@@ -23,6 +23,7 @@ if ! command -v wasmtime &>/dev/null; then
 fi
 
 echo "=== WASM codegen test ==="
+echo "wasmtime version: $(wasmtime --version)"
 
 # Step 1: generate WAT
 "$BIN" "$ENTRY" wasm 2>&1
@@ -32,7 +33,16 @@ wasmtime compile "$WAT" -o /dev/null
 echo "WAT compilation: OK"
 
 # Step 3: run exported functions and check expected values
-export WASMTIME_NEW_CLI=0
+# Detect wasmtime CLI style: v14+ changed --invoke position
+# New CLI: wasmtime run <module> --invoke <func> -- <args>
+# Old CLI: wasmtime run --invoke <func> <module> -- <args>
+WASM_MAJOR=$(wasmtime --version | grep -oE '[0-9]+' | head -1)
+if [ "${WASM_MAJOR:-0}" -ge 25 ]; then
+  NEW_CLI=1
+else
+  NEW_CLI=0
+fi
+
 fail=0
 
 check() {
@@ -40,7 +50,11 @@ check() {
   local expected="$1"; shift
   local func="$1"; shift
   local got
-  got=$(wasmtime run --invoke "$func" "$WAT" -- "$@" 2>&1 | tail -1)
+  if [ "$NEW_CLI" = "1" ]; then
+    got=$(wasmtime run "$WAT" --invoke "$func" -- "$@" 2>&1 | tail -1)
+  else
+    got=$(WASMTIME_NEW_CLI=0 wasmtime run --invoke "$func" "$WAT" -- "$@" 2>&1 | tail -1)
+  fi
   if [ "$got" = "$expected" ]; then
     echo "  $label = $got  OK"
   else
