@@ -1,6 +1,6 @@
 # Drafts 整理索引
 
-更新时间：2026-03-09
+更新时间：2026-04-15
 
 ## 目录原则
 
@@ -18,6 +18,8 @@
 | `language-theory-evolution-plan.md` | Review-needed | 偏理论路线图，阅读时需区分愿景与已落地内容。               |
 | `optional-record-macro-plan.md`     | Review-needed | 小范围提案，尚未进入稳定实现。                             |
 | `project-modernization-roadmap.md`  | Review-needed | 工程路线图可参考，但不要当作语法或行为文档。               |
+| `04-15-type-directed-optimization-catalog.md` | Active | 基于 `&record:nth` 经验，系统梳理 Record/Tuple/Scope 等类型导向优化机会。 |
+| `04-15-wasm-compilation-feasibility.md` | Active | WASM 编译三条路径（解释器→WASM / AOT 子集 / WASM GC）的可行性评估。 |
 
 ## 已执行的清理
 
