@@ -512,12 +512,15 @@ fn resolve_runtime_def_value(
     match lookup_runtime_cell_by_id(def_id) {
       Some(RuntimeCell::Cold) | None => {
         let _ = seed_runtime_lazy_from_compiled(ns, def);
+        // Re-read only after seeding changed the cell
+        if let Some(cell) = lookup_runtime_cell_by_id(def_id) {
+          return resolve_runtime_cell_value(cell, mode, call_stack);
+        }
       }
-      Some(RuntimeCell::Lazy { .. } | RuntimeCell::Ready(_) | RuntimeCell::Resolving | RuntimeCell::Errored(_)) => {}
-    }
-
-    if let Some(cell) = lookup_runtime_cell_by_id(def_id) {
-      return resolve_runtime_cell_value(cell, mode, call_stack);
+      Some(cell) => {
+        // Fast path: reuse the already-read cell (avoids redundant RwLock read)
+        return resolve_runtime_cell_value(cell, mode, call_stack);
+      }
     }
   }
 
