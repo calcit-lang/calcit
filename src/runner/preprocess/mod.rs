@@ -2148,6 +2148,31 @@ fn try_specialize_polymorphic_call(
   let receiver = processed_args.first()?;
   let receiver_type = resolve_type_value(receiver, scope_types)?;
 
+  // --- Type predicate folding: when the receiver's static type is known, we
+  // can fold `(list? x)` / `(map? x)` / ... to a literal Bool. This removes
+  // a user-def call + a `type-of` proc call from every such check.
+  //
+  // We only fold the positive case (type is definitely the queried kind) to
+  // keep the matrix small; negative folding would need to enumerate every
+  // other variant of `CalcitTypeAnnotation`, which is fragile as the enum
+  // grows. Leaving dynamic / unknown / mismatched cases to runtime is safe.
+  let predicate_true = matches!(
+    (fn_def, receiver_type.as_ref()),
+    ("list?", T::List(_))
+      | ("map?", T::Map(_, _))
+      | ("set?", T::Set(_))
+      | ("string?", T::String)
+      | ("number?", T::Number)
+      | ("bool?", T::Bool)
+      | ("tag?", T::Tag)
+      | ("fn?", T::Fn(_) | T::DynFn)
+      | ("tuple?", T::Tuple(_) | T::DynTuple)
+      | ("record?", T::Record(_) | T::Struct(_, _))
+  );
+  if predicate_true {
+    return Some(Calcit::Bool(true));
+  }
+
   // --- Calcit-level (user def) specializations: higher-order collection ops ---
   let core_def_name: Option<&'static str> = match (fn_def, receiver_type.as_ref()) {
     ("map", T::List(_)) => Some("&list:map"),
