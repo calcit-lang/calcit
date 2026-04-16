@@ -2211,6 +2211,13 @@ fn try_specialize_polymorphic_call(
     ("assoc", T::Map(_, _)) => NativeMapAssoc,
     ("assoc", T::Tuple(_) | T::DynTuple) => NativeTupleAssoc,
     ("assoc", T::Record(_)) => NativeRecordAssoc,
+    // includes?
+    ("includes?", T::List(_)) => NativeListIncludes,
+    ("includes?", T::Map(_, _)) => NativeMapIncludes,
+    ("includes?", T::Set(_)) => NativeSetIncludes,
+    ("includes?", T::String) => NativeStrIncludes,
+    // reverse (only list has a native proc)
+    ("reverse", T::List(_)) => NativeListReverse,
     _ => return None,
   };
 
