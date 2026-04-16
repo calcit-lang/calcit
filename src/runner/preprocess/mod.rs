@@ -739,7 +739,7 @@ fn preprocess_list_call(
         // Try to specialize polymorphic calls when receiver type is known
         if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
           let current_args = CalcitList::from(ys.drop_left());
-          if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types) {
+          if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
             return Ok(specialized);
           }
         }
@@ -2113,7 +2113,21 @@ fn warn_on_method_name_conflict(
 /// When the receiver's type is statically known, replaces the generic call
 /// (e.g. `(count x)`) with a direct proc call (e.g. `(&list:count x)`),
 /// eliminating runtime type-dispatch chains.
-fn try_specialize_polymorphic_call(fn_ns: &str, fn_def: &str, processed_args: &CalcitList, scope_types: &ScopeTypes) -> Option<Calcit> {
+///
+/// Two flavours of target:
+///   * A built-in `CalcitProc` (the majority — `count`, `empty?`, `first`,
+///     ...). The resulting head is a `Calcit::Proc`.
+///   * A Calcit-level user definition in `calcit.core` (e.g. `&list:map`,
+///     `&map:filter`, `&set:filter`). These are used for higher-order
+///     collection ops that are written in Calcit itself. The resulting head
+///     is a `Calcit::Import` pointing at the core def.
+fn try_specialize_polymorphic_call(
+  fn_ns: &str,
+  fn_def: &str,
+  processed_args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+) -> Option<Calcit> {
   use CalcitProc::*;
   use CalcitTypeAnnotation as T;
 
@@ -2121,9 +2135,42 @@ fn try_specialize_polymorphic_call(fn_ns: &str, fn_def: &str, processed_args: &C
     return None;
   }
 
+  // Refuse to specialize calls *inside* the polymorphic dispatcher definitions
+  // themselves (avoids cycles if someone adds `(map ...)` inside `&list:map`).
+  if matches!(
+    fn_def,
+    "&list:map" | "&map:map" | "&set:map" | "&list:filter" | "&map:filter" | "&set:filter"
+  ) {
+    return None;
+  }
+
   // Get receiver (first argument) and its type
   let receiver = processed_args.first()?;
   let receiver_type = resolve_type_value(receiver, scope_types)?;
+
+  // --- Calcit-level (user def) specializations: higher-order collection ops ---
+  let core_def_name: Option<&'static str> = match (fn_def, receiver_type.as_ref()) {
+    ("map", T::List(_)) => Some("&list:map"),
+    ("map", T::Map(_, _)) => Some("&map:map"),
+    ("filter", T::List(_)) => Some("&list:filter"),
+    ("filter", T::Map(_, _)) => Some("&map:filter"),
+    ("filter", T::Set(_)) => Some("&set:filter"),
+    _ => None,
+  };
+  if let Some(def_name) = core_def_name {
+    let head = Calcit::Import(CalcitImport {
+      ns: calcit::CORE_NS.into(),
+      def: def_name.into(),
+      info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+      def_id: Some(program::ensure_def_id(calcit::CORE_NS, def_name).0),
+    });
+    let mut items: Vec<Calcit> = Vec::with_capacity(processed_args.len() + 1);
+    items.push(head);
+    for arg in processed_args.iter() {
+      items.push(arg.to_owned());
+    }
+    return Some(Calcit::from(items));
+  }
 
   let proc = match (fn_def, receiver_type.as_ref()) {
     // count
