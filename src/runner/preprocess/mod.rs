@@ -736,6 +736,13 @@ fn preprocess_list_call(
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
         Ok(Calcit::from(CalcitList::from(ys)))
       } else {
+        // Try to specialize polymorphic calls when receiver type is known
+        if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
+          let current_args = CalcitList::from(ys.drop_left());
+          if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types) {
+            return Ok(specialized);
+          }
+        }
         Ok(Calcit::from(CalcitList::from(ys)))
       }
     }
@@ -2102,6 +2109,73 @@ fn warn_on_method_name_conflict(
   }
 }
 
+/// Try to specialize a polymorphic core function call at compile time.
+/// When the receiver's type is statically known, replaces the generic call
+/// (e.g. `(count x)`) with a direct proc call (e.g. `(&list:count x)`),
+/// eliminating runtime type-dispatch chains.
+fn try_specialize_polymorphic_call(fn_ns: &str, fn_def: &str, processed_args: &CalcitList, scope_types: &ScopeTypes) -> Option<Calcit> {
+  use CalcitProc::*;
+  use CalcitTypeAnnotation as T;
+
+  if fn_ns != calcit::CORE_NS {
+    return None;
+  }
+
+  // Get receiver (first argument) and its type
+  let receiver = processed_args.first()?;
+  let receiver_type = resolve_type_value(receiver, scope_types)?;
+
+  let proc = match (fn_def, receiver_type.as_ref()) {
+    // count
+    ("count", T::List(_)) => NativeListCount,
+    ("count", T::Map(_, _)) => NativeMapCount,
+    ("count", T::Set(_)) => NativeSetCount,
+    ("count", T::String) => NativeStrCount,
+    ("count", T::Tuple(_) | T::DynTuple) => NativeTupleCount,
+    ("count", T::Record(_)) => NativeRecordCount,
+    // empty?
+    ("empty?", T::List(_)) => NativeListEmpty,
+    ("empty?", T::Map(_, _)) => NativeMapEmpty,
+    ("empty?", T::Set(_)) => NativeSetEmpty,
+    ("empty?", T::String) => NativeStrEmpty,
+    // contains?
+    ("contains?", T::List(_)) => NativeListContains,
+    ("contains?", T::Map(_, _)) => NativeMapContains,
+    ("contains?", T::Set(_)) => NativeSetIncludes,
+    ("contains?", T::String) => NativeStrContains,
+    ("contains?", T::Record(_)) => NativeRecordContains,
+    // first
+    ("first", T::List(_)) => NativeListFirst,
+    ("first", T::String) => NativeStrFirst,
+    // rest
+    ("rest", T::List(_)) => NativeListRest,
+    // nth
+    ("nth", T::List(_)) => NativeListNth,
+    ("nth", T::String) => NativeStrNth,
+    ("nth", T::Tuple(_) | T::DynTuple) => NativeTupleNth,
+    // get
+    ("get", T::Map(_, _)) => NativeMapGet,
+    ("get", T::List(_)) => NativeListNth,
+    ("get", T::String) => NativeStrNth,
+    ("get", T::Tuple(_) | T::DynTuple) => NativeTupleNth,
+    ("get", T::Record(_)) => NativeRecordGet,
+    // assoc
+    ("assoc", T::List(_)) => NativeListAssoc,
+    ("assoc", T::Map(_, _)) => NativeMapAssoc,
+    ("assoc", T::Tuple(_) | T::DynTuple) => NativeTupleAssoc,
+    ("assoc", T::Record(_)) => NativeRecordAssoc,
+    _ => return None,
+  };
+
+  // Build specialized call: (proc arg1 arg2 ...)
+  let mut items: Vec<Calcit> = Vec::with_capacity(processed_args.len() + 1);
+  items.push(Calcit::Proc(proc));
+  for arg in processed_args.iter() {
+    items.push(arg.to_owned());
+  }
+  Some(Calcit::from(items))
+}
+
 fn try_inline_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) -> Option<Calcit> {
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
@@ -2365,7 +2439,10 @@ fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>
 
 fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
   if let Some(struct_def) = type_value.as_struct() {
-    return Some(struct_def.impls.to_owned());
+    // Prepend core record impls; user impls come after and win (last_wins=true)
+    let mut impls = resolve_core_impl_records("&core-record-impls").unwrap_or_default();
+    impls.extend(struct_def.impls.iter().cloned());
+    return Some(impls);
   }
 
   if let CalcitTypeAnnotation::Struct(struct_def, _) = type_value {
@@ -2373,11 +2450,24 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
   }
 
   if let CalcitTypeAnnotation::Enum(enum_def, _) = type_value {
-    return Some(enum_def.impls.to_owned());
+    // Prepend core tuple impls; user impls come after and win (last_wins=true)
+    let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
+    impls.extend(enum_def.impls.iter().cloned());
+    return Some(impls);
   }
 
   if let CalcitTypeAnnotation::Tuple(enum_def) = type_value {
-    return Some(enum_def.impls.to_owned());
+    // Prepend core tuple impls; user impls come after and win (last_wins=true)
+    let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
+    impls.extend(enum_def.impls.iter().cloned());
+    return Some(impls);
+  }
+
+  if let CalcitTypeAnnotation::DynTuple = type_value {
+    // Untyped tuple: only core impls
+    if let Some(core_impls) = resolve_core_impl_records("&core-tuple-impls") {
+      return Some(core_impls);
+    }
   }
 
   if let Some(class_symbol) = core_impl_list_symbol_from_type_annotation(type_value) {
@@ -2410,6 +2500,11 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
   }
 
   None
+}
+
+/// Resolve core impl records from a symbol name in calcit.core
+fn resolve_core_impl_records(symbol: &str) -> Option<Vec<Arc<CalcitImpl>>> {
+  resolve_program_value_for_preprocess(calcit::CORE_NS, symbol, None).and_then(|v| collect_impl_records_from_value(&v))
 }
 
 fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitTrait>>> {
@@ -2538,10 +2633,10 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.call_stack,
   )?;
 
-  let refined_binding = extract_predicate_binding(&cond_form);
+  let narrowing = extract_predicate_bindings(&cond_form, ctx.scope_types);
   let mut true_scope_types = ctx.scope_types.clone();
-  if let Some((sym, inferred)) = refined_binding {
-    true_scope_types.insert(sym, inferred);
+  if let Some((sym, inferred)) = &narrowing.true_binding {
+    true_scope_types.insert(sym.clone(), inferred.clone());
   }
 
   let true_form = preprocess_expr(
@@ -2555,6 +2650,9 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
 
   let false_form = if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
+    if let Some((sym, inferred)) = &narrowing.false_binding {
+      false_scope_types.insert(sym.clone(), inferred.clone());
+    }
     Some(preprocess_expr(
       false_branch,
       ctx.scope_defs,
@@ -2584,34 +2682,89 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
-fn extract_predicate_binding(cond_form: &Calcit) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+struct PredicateNarrowing {
+  true_binding: Option<(Arc<str>, Arc<CalcitTypeAnnotation>)>,
+  false_binding: Option<(Arc<str>, Arc<CalcitTypeAnnotation>)>,
+}
+
+fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {
+  let empty = PredicateNarrowing {
+    true_binding: None,
+    false_binding: None,
+  };
   let Calcit::List(items) = cond_form else {
-    return None;
+    return empty;
   };
   if items.len() != 2 {
-    return None;
+    return empty;
   }
-  let pred_name = match items.first()? {
-    Calcit::Symbol { sym, .. } => Some(sym.as_ref()),
-    Calcit::Import(CalcitImport { def, .. }) => Some(def.as_ref()),
+  let Some(pred_name) = (match items.first() {
+    Some(Calcit::Symbol { sym, .. }) => Some(sym.as_ref()),
+    Some(Calcit::Import(CalcitImport { def, .. })) => Some(def.as_ref()),
     _ => None,
-  }?;
-  let ann = match pred_name {
+  }) else {
+    return empty;
+  };
+  let target = match items.get(1) {
+    Some(t) => t,
+    None => return empty,
+  };
+  let sym = match target {
+    Calcit::Local(local) => local.sym.to_owned(),
+    Calcit::Symbol { sym, .. } => sym.to_owned(),
+    _ => return empty,
+  };
+
+  // Simple type predicates: narrow the true branch to the asserted type
+  if let Some(ann) = match pred_name {
     "list?" => Some(tag_annotation("list")),
     "map?" => Some(tag_annotation("map")),
     "set?" => Some(tag_annotation("set")),
     "string?" => Some(tag_annotation("string")),
     "number?" => Some(tag_annotation("number")),
     "tuple?" => Some(tag_annotation("tuple")),
+    "tag?" => Some(tag_annotation("tag")),
+    "bool?" => Some(tag_annotation("bool")),
+    "symbol?" => Some(tag_annotation("symbol")),
+    "fn?" => Some(tag_annotation("fn")),
     _ => None,
-  }?;
-  let target = items.get(1)?;
-  let sym = match target {
-    Calcit::Local(local) => Some(local.sym.to_owned()),
-    Calcit::Symbol { sym, .. } => Some(sym.to_owned()),
-    _ => None,
-  }?;
-  Some((sym, ann))
+  } {
+    return PredicateNarrowing {
+      true_binding: Some((sym, ann)),
+      false_binding: None,
+    };
+  }
+
+  // nil?/some?: narrow both branches when the variable has Optional type
+  match pred_name {
+    "nil?" => {
+      let false_binding = scope_types.get(&sym).and_then(|current| {
+        if let CalcitTypeAnnotation::Optional(inner) = current.as_ref() {
+          Some((sym.clone(), inner.clone()))
+        } else {
+          None
+        }
+      });
+      PredicateNarrowing {
+        true_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+        false_binding,
+      }
+    }
+    "some?" => {
+      let true_binding = scope_types.get(&sym).and_then(|current| {
+        if let CalcitTypeAnnotation::Optional(inner) = current.as_ref() {
+          Some((sym.clone(), inner.clone()))
+        } else {
+          None
+        }
+      });
+      PredicateNarrowing {
+        true_binding,
+        false_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+      }
+    }
+    _ => empty,
+  }
 }
 
 /// Preprocess `match` syntax and perform exhaustiveness checking.

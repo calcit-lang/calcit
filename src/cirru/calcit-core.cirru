@@ -257,6 +257,14 @@
           :code $ quote
             def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem)
           :examples $ []
+        |&core-record-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for record") (:schema nil)
+          :code $ quote
+            def &core-record-impls $ [] &core-record-methods internal/&core-show-impl internal/&core-eq-impl
+          :examples $ []
+        |&core-record-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+          :code $ quote
+            def &core-record-methods $ &impl::new :&core-record-methods (:: :count &record:count) (:: :contains? &record:contains?) (:: :get &record:get) (:: :nth &record:nth) (:: :assoc &record:assoc) (:: :to-map &record:to-map) (:: :empty? $ defn &record:empty?-impl (x) (&= 0 (&record:count x)))
+          :examples $ []
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set") (:schema nil)
           :code $ quote
             def &core-set-impls $ [] &core-set-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-set-impl
@@ -272,6 +280,14 @@
         |&core-string-methods $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat)
+          :examples $ []
+        |&core-tuple-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for tuple") (:schema nil)
+          :code $ quote
+            def &core-tuple-impls $ [] &core-tuple-methods internal/&core-show-impl internal/&core-eq-impl
+          :examples $ []
+        |&core-tuple-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+          :code $ quote
+            def &core-tuple-methods $ &impl::new :&core-tuple-methods (:: :count &tuple:count) (:: :nth &tuple:nth) (:: :get &tuple:nth) (:: :assoc &tuple:assoc) (:: :first $ defn &tuple:first-impl (x) (&tuple:nth x 0)) (:: :empty? $ defn &tuple:empty?-impl (x) (&= 0 (&tuple:count x))) (:: :contains? $ defn &tuple:contains?-impl (x k) (if (&>= k 0) (&< k (&tuple:count x)) false))
           :examples $ []
         |&data-to-code $ %{} :CodeEntry (:doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code") (:schema nil)
           :code $ quote &runtime-implementation
@@ -455,7 +471,7 @@
               :return $ :: :set 'T
         |&init-builtin-impls! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-tuple-impls) (identity &core-record-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls
@@ -1893,10 +1909,8 @@
             defn assoc (x & args)
               if (nil? x)
                 raise $ str-spaced "|assoc does not work on nil for:" args
-                if (tuple? x) (&tuple:assoc x & args)
-                  if (list? x) (&list:assoc x & args)
-                    if (record? x) (&record:assoc x & args)
-                      if (map? x) (&map:assoc x & args) (.assoc x & args)
+                if (list? x) (&list:assoc x & args)
+                  if (map? x) (&map:assoc x & args) (.assoc x & args)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -2221,13 +2235,9 @@
           :code $ quote
             defn contains? (x k)
               if (nil? x) false $ if (list? x) (&list:contains? x k)
-                if (record? x) (&record:contains? x k)
-                  if (tuple? x)
-                    and (&>= k 0)
-                      &< k $ &tuple:count x
-                    if (map? x) (&map:contains? x k)
-                      if (set? x) (&set:includes? x k)
-                        if (string? x) (&str:contains? x k) (.contains? x k)
+                if (map? x) (&map:contains? x k)
+                  if (set? x) (&set:includes? x k)
+                    if (string? x) (&str:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -2250,12 +2260,10 @@
         |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
             defn count (x)
-              if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
-                if (list? x) (&list:count x)
-                  if (record? x) (&record:count x)
-                    if (map? x) (&map:count x)
-                      if (set? x) (&set:count x)
-                        if (string? x) (&str:count x) (.count x)
+              if (nil? x) 0 $ if (list? x) (&list:count x)
+                if (map? x) (&map:count x)
+                  if (set? x) (&set:count x)
+                    if (string? x) (&str:count x) (.count x)
           :examples $ []
             quote $ assert= 4
               count $ [] 1 2 3 4
@@ -2718,12 +2726,7 @@
               if (nil? x) true $ if (list? x) (&list:empty? x)
                 if (map? x) (&map:empty? x)
                   if (set? x) (&set:empty? x)
-                    if (string? x) (&str:empty? x)
-                      if (record? x)
-                        &= 0 $ &record:count x
-                        if (tuple? x)
-                          &= 0 $ &tuple:count x
-                          .empty? x
+                    if (string? x) (&str:empty? x) (.empty? x)
           :examples $ []
             quote $ assert= true
               empty? $ []
@@ -2872,9 +2875,8 @@
         |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
-              if (nil? x) nil $ if (tuple? x) (&tuple:nth x 0)
-                if (list? x) (&list:first x)
-                  if (string? x) (&str:first x) (.first x)
+              if (nil? x) nil $ if (list? x) (&list:first x)
+                if (string? x) (&str:first x) (.first x)
           :examples $ []
             quote $ assert= 1
               first $ [] 1 2 3
@@ -3040,10 +3042,7 @@
             defn get (base k)
               if (nil? base) nil $ if (string? base) (&str:nth base k)
                 if (map? base) (&map:get base k)
-                  if (list? base) (&list:nth base k)
-                    if (tuple? base) (&tuple:nth base k)
-                      if (record? base) (&record:get base k)
-                        raise $ str-spaced "|Expected map or list for get, got:" base k
+                  if (list? base) (&list:nth base k) (.get base k)
           :examples $ []
             quote $ assert= 2
               get ([] 0 2 4) 1
@@ -3852,9 +3851,8 @@
         |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
             defn nth (x i)
-              if (tuple? x) (&tuple:nth x i)
-                if (list? x) (&list:nth x i)
-                  if (string? x) (&str:nth x i) (.nth x i)
+              if (list? x) (&list:nth x i)
+                if (string? x) (&str:nth x i) (.nth x i)
           :examples $ []
             quote $ assert= 2
               nth ([] 1 2 3) 1

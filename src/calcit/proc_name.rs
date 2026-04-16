@@ -527,7 +527,7 @@ impl CalcitProc {
       }),
       TurnTag => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
-        arg_types: vec![some_tag("string")],
+        arg_types: vec![dynamic_tag()],
       }),
       NativeCompare => Some(ProcTypeSignature {
         return_type: some_tag("number"),

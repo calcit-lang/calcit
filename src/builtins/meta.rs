@@ -1034,8 +1034,26 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   use Calcit::*;
   match v0 {
     // user-defined values: impl-traits appends, so later impls override earlier ones
-    Tuple(tuple) => method_call_impls(tuple.impls(), v0, name, method_args, call_stack, true),
-    Record(record) => method_call_impls(&record.struct_ref.impls, v0, name, method_args, call_stack, true),
+    Tuple(tuple) => {
+      let user_impls = tuple.impls();
+      let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
+      if has_user_method {
+        method_call_impls(user_impls, v0, name, method_args, call_stack, true)
+      } else {
+        let impls_value = runner::evaluate_symbol_from_program("&core-tuple-impls", calcit::CORE_NS, None, call_stack)?;
+        method_call(&impls_value, v0, name, method_args, call_stack)
+      }
+    }
+    Record(record) => {
+      let user_impls = &record.struct_ref.impls;
+      let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
+      if has_user_method {
+        method_call_impls(user_impls, v0, name, method_args, call_stack, true)
+      } else {
+        let impls_value = runner::evaluate_symbol_from_program("&core-record-impls", calcit::CORE_NS, None, call_stack)?;
+        method_call(&impls_value, v0, name, method_args, call_stack)
+      }
+    }
 
     // builtin values should already be preprocessed
     List(..) => {
