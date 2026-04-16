@@ -492,6 +492,18 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       CalcitSyntax::If => emit_if(ctx, &args_list),
       CalcitSyntax::CoreLet => emit_let(ctx, &args_list),
       CalcitSyntax::Match => emit_match(ctx, &args_list),
+      CalcitSyntax::HintFn => {
+        // hint-fn is metadata-only; emit nothing (0.0 placeholder)
+        ctx.emit(f64_const(0.0));
+        Ok(())
+      }
+      CalcitSyntax::AssertType => {
+        // assert-type checks type at preprocess time; at runtime just evaluate the expression
+        if args_list.is_empty() {
+          return Err("assert-type expects at least 1 arg".into());
+        }
+        emit_expr(ctx, &args_list[0])
+      }
       CalcitSyntax::Defn => Err("nested defn not supported in WASM".into()),
       _ => Err(format!("unsupported syntax in WASM: {syn}")),
     },

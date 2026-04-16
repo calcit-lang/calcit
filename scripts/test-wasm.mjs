@@ -94,6 +94,24 @@ checkApprox("test-cos(π)", -1, e["test-cos"], Math.PI);
 check("test-cross-ns(3,7)", 20, e["test-cross-ns"], 3, 7);
 check("test-cross-ns(5,5)", 20, e["test-cross-ns"], 5, 5);
 
+// --- calcit.core function tests (abs, negate, &<=, &>=) ---
+check("test-abs(5)", 5, e["test-abs"], 5);
+check("test-abs(-7)", 7, e["test-abs"], -7);
+check("test-abs(0)", 0, e["test-abs"], 0);
+check("test-negate(3)", -3, e["test-negate"], 3);
+check("test-negate(-4)", 4, e["test-negate"], -4);
+check("test-negate(0)", 0, e["test-negate"], 0);
+check("test-lte(3,5)", 1, e["test-lte"], 3, 5);
+check("test-lte(5,5)", 1, e["test-lte"], 5, 5);
+check("test-lte(7,5)", 0, e["test-lte"], 7, 5);
+check("test-gte(7,5)", 1, e["test-gte"], 7, 5);
+check("test-gte(5,5)", 1, e["test-gte"], 5, 5);
+check("test-gte(3,5)", 0, e["test-gte"], 3, 5);
+check("test-min(3,7)", 3, e["test-min"], 3, 7);
+check("test-min(9,2)", 2, e["test-min"], 9, 2);
+check("test-max(3,7)", 7, e["test-max"], 3, 7);
+check("test-max(9,2)", 9, e["test-max"], 9, 2);
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);

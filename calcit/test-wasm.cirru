@@ -183,6 +183,36 @@
             defn test-cross-ns (a b)
               helper/add-and-double a b
           :examples $ []
+        |test-abs $ %{} :CodeEntry (:doc "|abs from calcit.core") (:schema nil)
+          :code $ quote
+            defn test-abs (x) (abs x)
+          :examples $ []
+        |test-negate $ %{} :CodeEntry (:doc "|negate from calcit.core") (:schema nil)
+          :code $ quote
+            defn test-negate (x) (negate x)
+          :examples $ []
+        |test-lte $ %{} :CodeEntry (:doc "|less-than-or-equal") (:schema nil)
+          :code $ quote
+            defn test-lte (a b)
+              if (&< a b) 1
+                if (&= a b) 1 0
+          :examples $ []
+        |test-gte $ %{} :CodeEntry (:doc "|greater-than-or-equal") (:schema nil)
+          :code $ quote
+            defn test-gte (a b)
+              if (&> a b) 1
+                if (&= a b) 1 0
+          :examples $ []
+        |test-min $ %{} :CodeEntry (:doc "|min of two numbers") (:schema nil)
+          :code $ quote
+            defn test-min (a b)
+              if (&< a b) a b
+          :examples $ []
+        |test-max $ %{} :CodeEntry (:doc "|max of two numbers") (:schema nil)
+          :code $ quote
+            defn test-max (a b)
+              if (&> a b) a b
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()
