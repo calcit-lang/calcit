@@ -53,6 +53,19 @@ check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
 // --- Tuple tests ---
 check("test-tuple-sum()", 30, e["test-tuple-sum"]);
 
+// --- Bitwise tests ---
+check("test-bit-and(0xFF,0x0F)", 0x0F, e["test-bit-and"], 0xFF, 0x0F);
+check("test-bit-or(0xF0,0x0F)", 0xFF, e["test-bit-or"], 0xF0, 0x0F);
+check("test-bit-xor(0xFF,0x0F)", 0xF0, e["test-bit-xor"], 0xFF, 0x0F);
+check("test-bit-not(0)", -1, e["test-bit-not"], 0);
+check("test-bit-shl(1,8)", 256, e["test-bit-shl"], 1, 8);
+check("test-bit-shr(256,4)", 16, e["test-bit-shr"], 256, 4);
+
+// --- Match tests ---
+check("test-match-tag(3,7)", 10, e["test-match-tag"], 3, 7);
+check("test-match-sub(10,3)", 7, e["test-match-sub"], 10, 3);
+check("test-match-wildcard()", -1, e["test-match-wildcard"]);
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);

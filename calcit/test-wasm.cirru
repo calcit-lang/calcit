@@ -113,6 +113,59 @@
                 t $ :: :pair 10 20
                 &+ (&tuple:nth t 0) (&tuple:nth t 1)
           :examples $ []
+        |test-bit-and $ %{} :CodeEntry (:doc "|Bitwise AND") (:schema nil)
+          :code $ quote
+            defn test-bit-and (a b) (bit-and a b)
+          :examples $ []
+        |test-bit-or $ %{} :CodeEntry (:doc "|Bitwise OR") (:schema nil)
+          :code $ quote
+            defn test-bit-or (a b) (bit-or a b)
+          :examples $ []
+        |test-bit-xor $ %{} :CodeEntry (:doc "|Bitwise XOR") (:schema nil)
+          :code $ quote
+            defn test-bit-xor (a b) (bit-xor a b)
+          :examples $ []
+        |test-bit-not $ %{} :CodeEntry (:doc "|Bitwise NOT") (:schema nil)
+          :code $ quote
+            defn test-bit-not (a) (bit-not a)
+          :examples $ []
+        |test-bit-shl $ %{} :CodeEntry (:doc "|Bitwise shift left") (:schema nil)
+          :code $ quote
+            defn test-bit-shl (a b) (bit-shl a b)
+          :examples $ []
+        |test-bit-shr $ %{} :CodeEntry (:doc "|Bitwise shift right") (:schema nil)
+          :code $ quote
+            defn test-bit-shr (a b) (bit-shr a b)
+          :examples $ []
+        |test-match-tag $ %{} :CodeEntry (:doc "|Match on tuple tag") (:schema nil)
+          :code $ quote
+            defn test-match-tag (x y)
+              &let
+                t $ :: :add x y
+                match t
+                  (:add a b) (&+ a b)
+                  (:sub a b) (&- a b)
+                  _ 0
+          :examples $ []
+        |test-match-sub $ %{} :CodeEntry (:doc "|Match on second variant") (:schema nil)
+          :code $ quote
+            defn test-match-sub (x y)
+              &let
+                t $ :: :sub x y
+                match t
+                  (:add a b) (&+ a b)
+                  (:sub a b) (&- a b)
+                  _ 0
+          :examples $ []
+        |test-match-wildcard $ %{} :CodeEntry (:doc "|Match falls to wildcard") (:schema nil)
+          :code $ quote
+            defn test-match-wildcard ()
+              &let
+                t $ :: :unknown 99
+                match t
+                  (:add a b) (&+ a b)
+                  _ -1
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()

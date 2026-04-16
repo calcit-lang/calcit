@@ -430,6 +430,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
     Calcit::Syntax(syn, _) => match syn {
       CalcitSyntax::If => emit_if(ctx, &args_list),
       CalcitSyntax::CoreLet => emit_let(ctx, &args_list),
+      CalcitSyntax::Match => emit_match(ctx, &args_list),
       CalcitSyntax::Defn => Err("nested defn not supported in WASM".into()),
       _ => Err(format!("unsupported syntax in WASM: {syn}")),
     },
@@ -569,6 +570,24 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     | CalcitProc::NativeTupleEnumVariantArity
     | CalcitProc::NativeTupleValidateEnum => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
 
+    // Bitwise operations — convert to i32, operate, convert back to f64
+    CalcitProc::BitShl => emit_bitwise_binary(ctx, Instruction::I32Shl, args),
+    CalcitProc::BitShr => emit_bitwise_binary(ctx, Instruction::I32ShrS, args),
+    CalcitProc::BitAnd => emit_bitwise_binary(ctx, Instruction::I32And, args),
+    CalcitProc::BitOr => emit_bitwise_binary(ctx, Instruction::I32Or, args),
+    CalcitProc::BitXor => emit_bitwise_binary(ctx, Instruction::I32Xor, args),
+    CalcitProc::BitNot => {
+      if args.len() != 1 {
+        return Err("bit-not expects 1 arg".into());
+      }
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::I32TruncF64S);
+      ctx.emit(Instruction::I32Const(-1)); // all bits set
+      ctx.emit(Instruction::I32Xor);
+      ctx.emit(Instruction::F64ConvertI32S);
+      Ok(())
+    }
+
     // List / String / Other — not yet supported
     _ => Err(format!("unsupported proc in WASM: {proc}")),
   }
@@ -604,6 +623,20 @@ fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) 
   emit_expr(ctx, &args[1])?;
   ctx.emit(instr);
   ctx.emit(Instruction::Select);
+  Ok(())
+}
+
+/// Emit a binary bitwise operation: convert both args to i32, apply op, convert back to f64.
+fn emit_bitwise_binary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err(format!("{instr:?} expects 2 args, got {}", args.len()));
+  }
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::I32TruncF64S);
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::I32TruncF64S);
+  ctx.emit(instr);
+  ctx.emit(Instruction::F64ConvertI32S);
   Ok(())
 }
 
@@ -669,6 +702,141 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
     }
     _ => Err(format!("unsupported let binding form: {pair}")),
   }
+}
+
+/// Emit WASM for `match` expression (pattern matching on enum tuples).
+///
+/// Preprocessed form: [value_expr, (pattern body), (pattern body), ...]
+/// Each pattern is either `_` (wildcard) or `(:tag binding1 binding2 ...)`.
+/// The value must be a tuple — we read its tag_id at offset 0 and compare.
+///
+/// Compilation strategy: nested if/else chain comparing the tag_id.
+///   evaluate value → store pointer in temp local
+///   load tag_id from pointer
+///   if tag == :variant1_id then { bind payloads; body1 }
+///   else if tag == :variant2_id then { bind payloads; body2 }
+///   else { wildcard_body or 0.0 }
+fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    return Err("match requires a value and branches".into());
+  }
+
+  // Evaluate the value expression (a tuple) and store its f64 pointer
+  emit_expr(ctx, &args[0])?;
+  let ptr_f64 = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(ptr_f64));
+
+  // Convert to i32 for memory access and load the tag_id (f64 at offset 0)
+  let tag_local = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(tag_local));
+
+  // Collect branches: separate tag branches and wildcard
+  let branches = &args[1..];
+  let mut tag_branches: Vec<(&Calcit, &Calcit)> = Vec::new(); // (pattern, body)
+  let mut wildcard_body: Option<&Calcit> = None;
+
+  for branch in branches {
+    let Calcit::List(pair) = branch else {
+      return Err(format!("match branch expected a pair, got: {branch}"));
+    };
+    if pair.len() != 2 {
+      return Err(format!("match branch expected 2 elements, got {}", pair.len()));
+    }
+    let pattern = &pair[0];
+    let body = &pair[1];
+
+    match pattern {
+      // Wildcard
+      Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_" => {
+        wildcard_body = Some(body);
+      }
+      // Tag pattern: (:tag binding1 binding2 ...)
+      Calcit::List(_) => {
+        tag_branches.push((pattern, body));
+      }
+      other => return Err(format!("unsupported match pattern: {other}")),
+    }
+  }
+
+  // Generate nested if/else chain
+  let num_tag_branches = tag_branches.len();
+  if num_tag_branches == 0 {
+    // Only wildcard
+    if let Some(body) = wildcard_body {
+      emit_expr(ctx, body)?;
+    } else {
+      ctx.emit(f64_const(0.0));
+    }
+    return Ok(());
+  }
+
+  // For each tag branch we emit:
+  //   if (tag_local == variant_tag_id) then { bind payloads; body }
+  //   else { next branch or wildcard }
+  for (i, (pattern, body)) in tag_branches.iter().enumerate() {
+    let Calcit::List(pat_xs) = pattern else {
+      return Err(format!("match pattern expected list, got: {pattern}"));
+    };
+    let tag_str = match &pat_xs[0] {
+      Calcit::Tag(t) => t.to_string(),
+      other => return Err(format!("match pattern expected tag, got: {other}")),
+    };
+    let tag_id = *ctx
+      .tag_index
+      .get(&tag_str)
+      .ok_or_else(|| format!("unknown tag in match pattern: {tag_str}"))?;
+
+    // Compare: tag_local == tag_id
+    ctx.emit(Instruction::LocalGet(tag_local));
+    ctx.emit(f64_const(tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    ctx.block_depth += 1;
+
+    // Bind payload variables from tuple fields
+    let binding_count = pat_xs.len() - 1;
+    for bind_idx in 0..binding_count {
+      let binding = &pat_xs[1 + bind_idx];
+      let bind_name = match binding {
+        Calcit::Local(CalcitLocal { sym, .. }) => sym.to_string(),
+        Calcit::Symbol { sym, .. } => sym.to_string(),
+        other => return Err(format!("match binding expected symbol, got: {other}")),
+      };
+      // Payload at offset (1 + bind_idx) * 8 from tuple pointer
+      let offset = ((1 + bind_idx) * 8) as u64;
+      ctx.emit(Instruction::LocalGet(ptr_f64));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
+      let idx = ctx.declare_local(&bind_name);
+      ctx.emit(Instruction::LocalSet(idx));
+    }
+
+    // Emit body
+    emit_expr(ctx, body)?;
+
+    ctx.emit(Instruction::Else);
+    // If this is the last tag branch, emit wildcard or default
+    if i == num_tag_branches - 1 {
+      if let Some(wb) = wildcard_body {
+        emit_expr(ctx, wb)?;
+      } else {
+        ctx.emit(f64_const(0.0));
+      }
+    }
+    // Otherwise the next iteration will emit the next if/else inside this else block
+  }
+
+  // Close all the if/else blocks (one End per branch)
+  for _ in 0..num_tag_branches {
+    ctx.block_depth -= 1;
+    ctx.emit(Instruction::End);
+  }
+
+  Ok(())
 }
 
 // ---------------------------------------------------------------------------
