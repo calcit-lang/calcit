@@ -785,6 +785,15 @@ pub fn has_def_code(ns: &str, def: &str) -> bool {
   }
 }
 
+/// List all def names in a source-code namespace.
+pub fn list_source_def_names(ns: &str) -> Vec<Arc<str>> {
+  let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
+  match program_code.get(ns) {
+    Some(file) => file.defs.keys().cloned().collect(),
+    None => vec![],
+  }
+}
+
 pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
   let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
   let file = program_code.get(ns)?;

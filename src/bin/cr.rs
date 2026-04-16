@@ -610,14 +610,21 @@ fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str) -> Result<(), Str
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  // preprocess to init
-  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
-    Ok(_) => (),
-    Err(failure) => {
-      eprintln!("\nfailed preprocessing, {failure}");
-      let headline = failure.headline();
-      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
-      return Err(headline);
+  // Preprocess ALL defs in the init namespace (not just the entry point).
+  // WASM codegen exports every compilable function, so we need all defs preprocessed.
+  // Process non-fn defs (like defrecord) first to ensure type resolution works.
+  let all_defs = program::list_source_def_names(&entries.init_ns);
+  for def_name in &all_defs {
+    match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, def_name, check_warnings, &CallStackList::default()) {
+      Ok(_) => (),
+      Err(failure) => {
+        eprintln!(
+          "[wasm] preprocessing failed for {}/{}: {}",
+          entries.init_ns,
+          def_name,
+          failure.headline()
+        );
+      }
     }
   }
 

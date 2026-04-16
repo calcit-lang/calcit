@@ -42,6 +42,17 @@ check("test-let-chain(3)", 20, e["test-let-chain"], 3);
 check("collatz-steps(27)", 111, e["collatz-steps"], 27);
 check("gcd(48,18)", 6, e.gcd, 48, 18);
 
+// --- Tag tests ---
+check("test-tag-eq()", 1, e["test-tag-eq"]);
+check("test-tag-neq()", 0, e["test-tag-neq"]);
+
+// --- Record tests ---
+check("test-record-sum(3,4)", 7, e["test-record-sum"], 3, 4);
+check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
+
+// --- Tuple tests ---
+check("test-tuple-sum()", 30, e["test-tuple-sum"]);
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);

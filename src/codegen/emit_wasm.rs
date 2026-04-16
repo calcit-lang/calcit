@@ -23,12 +23,12 @@ use std::fs;
 use std::path::Path;
 
 use wasm_encoder::{
-  CodeSection, ConstExpr, ExportKind, ExportSection, Function, FunctionSection, GlobalSection, GlobalType, Ieee64,
-  Instruction, MemorySection, MemoryType, Module, TypeSection, ValType,
+  CodeSection, ConstExpr, ExportKind, ExportSection, Function, FunctionSection, GlobalSection, GlobalType, Ieee64, Instruction,
+  MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::builtins::syntax::get_raw_args_fn;
-use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStruct, CalcitSyntax};
 use crate::program;
 
 /// Initial heap offset — reserve first 16 bytes.
@@ -686,11 +686,7 @@ fn collect_all_tags(fn_defs: &[(String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<
   }
   tags.sort();
   tags.dedup();
-  tags
-    .into_iter()
-    .enumerate()
-    .map(|(i, t)| (t, (i + 1) as u32))
-    .collect()
+  tags.into_iter().enumerate().map(|(i, t)| (t, (i + 1) as u32)).collect()
 }
 
 fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
@@ -709,6 +705,17 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
         tags.push(f.to_string());
       }
     }
+    // When struct refs are imports, resolve them to collect their tags
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      if let Ok(struct_def) = resolve_struct_ref(expr) {
+        tags.push(struct_def.name.to_string());
+        for f in struct_def.fields.iter() {
+          tags.push(f.to_string());
+        }
+      }
+      // Also try to collect tags from the expression in case it's used as a value
+      let _ = (ns, def); // suppress unused warnings
+    }
     _ => {}
   }
 }
@@ -717,7 +724,10 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 // Record operations
 // ---------------------------------------------------------------------------
 
-/// Emit `&%{} struct_ref val0 val1 ...` — allocate a Record in linear memory.
+/// Emit `&%{} struct_ref :field1 val1 :field2 val2 ...` — allocate a Record in linear memory.
+///
+/// The preprocessed form is: [NativeRecord, struct_ref, :tag1, val1, :tag2, val2, ...]
+/// where struct_ref is either Calcit::Struct or Calcit::Import pointing to the struct def.
 ///
 /// Memory layout: [struct_tag_id: f64] [field_0: f64] [field_1: f64] ...
 /// All fields are in the order defined by CalcitStruct.fields (alphabetical).
@@ -726,26 +736,27 @@ fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
   if args.is_empty() {
     return Err("&%{} requires at least struct_ref argument".into());
   }
-  // First arg is the struct definition (CalcitStruct)
-  let struct_ref = match &args[0] {
-    Calcit::Struct(s) => s,
-    other => return Err(format!("&%{{}}: expected struct reference, got: {other}")),
-  };
-  let field_count = struct_ref.fields.len();
-  let value_args = &args[1..];
-  if value_args.len() != field_count {
+  // First arg is the struct definition — resolve it
+  let struct_def = resolve_struct_ref(&args[0])?;
+
+  let field_count = struct_def.fields.len();
+
+  // Remaining args are interleaved: :tag1, val1, :tag2, val2, ...
+  let field_args = &args[1..];
+  if field_args.len() != field_count * 2 {
     return Err(format!(
-      "&%{{}}: expected {} field values, got {}",
+      "&%{{}}: expected {} tag-value pairs ({} args), got {}",
       field_count,
-      value_args.len()
+      field_count * 2,
+      field_args.len()
     ));
   }
 
   // Get struct tag ID
   let struct_tag_id = *ctx
     .tag_index
-    .get(&struct_ref.name.to_string())
-    .ok_or_else(|| format!("unknown struct tag: {}", struct_ref.name))?;
+    .get(&struct_def.name.to_string())
+    .ok_or_else(|| format!("unknown struct tag: {}", struct_def.name))?;
 
   // Total bytes: (1 + field_count) * 8
   let total_size = ((1 + field_count) * 8) as i32;
@@ -760,9 +771,11 @@ fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
   // Store each field value at offset (1 + i) * 8
-  for (i, val) in value_args.iter().enumerate() {
+  // field_args layout: [:tag0, val0, :tag1, val1, ...]
+  for i in 0..field_count {
+    let value_expr = &field_args[i * 2 + 1]; // skip the tag, take the value
     ctx.emit(Instruction::LocalGet(ptr_local));
-    emit_expr(ctx, val)?;
+    emit_expr(ctx, value_expr)?;
     ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
   }
 
@@ -770,6 +783,86 @@ fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
+}
+
+/// Resolve a struct reference (either inline Calcit::Struct or Calcit::Import) to a CalcitStruct.
+fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStruct, String> {
+  match node {
+    Calcit::Struct(s) => Ok(s.clone()),
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      // Try runtime first
+      if let Some(Calcit::Struct(s)) = program::lookup_runtime_ready(ns, def) {
+        return Ok(s);
+      }
+      // Try compiled def
+      if let Some(compiled) = program::lookup_compiled_def(ns, def) {
+        if let Calcit::Struct(s) = &compiled.codegen_form {
+          return Ok(s.clone());
+        }
+        if let Calcit::Struct(s) = &compiled.preprocessed_code {
+          return Ok(s.clone());
+        }
+        // Try to extract struct from defrecord form: (defrecord Name :field1 :field2 ...)
+        if let Some(struct_def) = try_parse_defrecord_form(&compiled.codegen_form) {
+          return Ok(struct_def);
+        }
+        if let Some(struct_def) = try_parse_defrecord_form(&compiled.preprocessed_code) {
+          return Ok(struct_def);
+        }
+        return Err(format!("&%{{}}: compiled def {ns}/{def} is not a struct"));
+      }
+      // Try source code
+      if let Some(source) = program::lookup_def_code(ns, def) {
+        if let Some(struct_def) = try_parse_defrecord_form(&source) {
+          return Ok(struct_def);
+        }
+      }
+      Err(format!("&%{{}}: cannot resolve struct reference {ns}/{def}"))
+    }
+    other => Err(format!("&%{{}}: expected struct reference, got: {other}")),
+  }
+}
+
+/// Try to extract a CalcitStruct from a `(defrecord Name :field1 :field2 ...)` form.
+fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStruct> {
+  let Calcit::List(xs) = code else { return None };
+  if xs.len() < 2 {
+    return None;
+  }
+  // Check head is defrecord (Symbol)
+  let is_defrecord = match &xs[0] {
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "defrecord" || sym.as_ref().ends_with("/defrecord"),
+    _ => false,
+  };
+  if !is_defrecord {
+    return None;
+  }
+  // Extract name
+  let name = match &xs[1] {
+    Calcit::Tag(t) => t.clone(),
+    Calcit::Symbol { sym, .. } => {
+      // ns/def format — extract just the def part
+      let name_str = sym.as_ref().rsplit('/').next().unwrap_or(sym.as_ref());
+      cirru_edn::EdnTag::from(name_str)
+    }
+    Calcit::Import(CalcitImport { def, .. }) => cirru_edn::EdnTag::from(def.as_ref()),
+    _ => return None,
+  };
+  // Extract fields (remaining args that are Tags)
+  let mut fields: Vec<cirru_edn::EdnTag> = Vec::new();
+  for item in xs.iter().skip(2) {
+    if let Calcit::Tag(t) = item {
+      fields.push(t.clone());
+    }
+  }
+  fields.sort();
+  Some(CalcitStruct {
+    name,
+    fields: std::sync::Arc::new(fields),
+    field_types: std::sync::Arc::new(vec![]),
+    generics: std::sync::Arc::new(vec![]),
+    impls: vec![],
+  })
 }
 
 /// Emit `&record:nth record idx_literal tag_literal` — O(1) field access by index.

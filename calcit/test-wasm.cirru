@@ -85,6 +85,34 @@
               if (&= b 0) a
                 recur b $ &number:rem a b
           :examples $ []
+        |test-tag-eq $ %{} :CodeEntry (:doc "|Tag equality — same tags") (:schema nil)
+          :code $ quote
+            defn test-tag-eq ()
+              if (&= :ok :ok) 1 0
+          :examples $ []
+        |test-tag-neq $ %{} :CodeEntry (:doc "|Tag inequality — different tags") (:schema nil)
+          :code $ quote
+            defn test-tag-neq ()
+              if (&= :ok :err) 1 0
+          :examples $ []
+        |Point $ %{} :CodeEntry (:doc "|Record definition for WASM test") (:schema nil)
+          :code $ quote
+            defrecord Point :x :y
+          :examples $ []
+        |test-record-sum $ %{} :CodeEntry (:doc "|Record create + field access") (:schema nil)
+          :code $ quote
+            defn test-record-sum (x y)
+              &let
+                p $ %{} Point (:x x) (:y y)
+                &+ (&record:nth p 0 :x) (&record:nth p 1 :y)
+          :examples $ []
+        |test-tuple-sum $ %{} :CodeEntry (:doc "|Tuple create + nth access") (:schema nil)
+          :code $ quote
+            defn test-tuple-sum ()
+              &let
+                t $ :: :pair 10 20
+                &+ (&tuple:nth t 0) (&tuple:nth t 1)
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()
