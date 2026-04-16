@@ -164,6 +164,12 @@ check("test-type-of-set", 1, e["test-type-of-set"]);
 check("test-type-of-number", 1, e["test-type-of-number"]);
 check("test-type-of-tuple", 1, e["test-type-of-tuple"]);
 
+// --- derived predicates (list?, number?, map?) ---
+check("test-list?-true", 1, e["test-list?-true"]);
+check("test-list?-false", 0, e["test-list?-false"]);
+check("test-number?-true", 1, e["test-number?-true"]);
+check("test-map?-true", 1, e["test-map?-true"]);
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);

@@ -446,6 +446,26 @@
             defn test-type-of-tuple ()
               if (&= (type-of (:: :Pair 1 2)) :tuple) 1 0
           :examples $ []
+        |test-list?-true $ %{} :CodeEntry (:doc "|list? on a list returns true (1)") (:schema nil)
+          :code $ quote
+            defn test-list?-true ()
+              if (list? ([] 1 2)) 1 0
+          :examples $ []
+        |test-list?-false $ %{} :CodeEntry (:doc "|list? on number returns false (0)") (:schema nil)
+          :code $ quote
+            defn test-list?-false ()
+              if (list? 42) 1 0
+          :examples $ []
+        |test-number?-true $ %{} :CodeEntry (:doc "|number? on number returns true (1)") (:schema nil)
+          :code $ quote
+            defn test-number?-true ()
+              if (number? 42) 1 0
+          :examples $ []
+        |test-map?-true $ %{} :CodeEntry (:doc "|map? on map returns true (1)") (:schema nil)
+          :code $ quote
+            defn test-map?-true ()
+              if (map? (&{} :a 1)) 1 0
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()
