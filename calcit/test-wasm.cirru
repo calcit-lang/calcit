@@ -421,6 +421,31 @@
             defn test-rest-empty ()
               sum-rest 10 20
           :examples $ []
+        |test-type-of-list $ %{} :CodeEntry (:doc "|type-of list == :list tag") (:schema nil)
+          :code $ quote
+            defn test-type-of-list ()
+              if (&= (type-of ([] 1 2 3)) :list) 1 0
+          :examples $ []
+        |test-type-of-map $ %{} :CodeEntry (:doc "|type-of map == :map tag") (:schema nil)
+          :code $ quote
+            defn test-type-of-map ()
+              if (&= (type-of (&{} :a 1)) :map) 1 0
+          :examples $ []
+        |test-type-of-set $ %{} :CodeEntry (:doc "|type-of set == :set tag") (:schema nil)
+          :code $ quote
+            defn test-type-of-set ()
+              if (&= (type-of (#{} 1 2)) :set) 1 0
+          :examples $ []
+        |test-type-of-number $ %{} :CodeEntry (:doc "|type-of number == :number tag") (:schema nil)
+          :code $ quote
+            defn test-type-of-number ()
+              if (&= (type-of 42) :number) 1 0
+          :examples $ []
+        |test-type-of-tuple $ %{} :CodeEntry (:doc "|type-of tuple == :tuple tag") (:schema nil)
+          :code $ quote
+            defn test-type-of-tuple ()
+              if (&= (type-of (:: :Pair 1 2)) :tuple) 1 0
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()

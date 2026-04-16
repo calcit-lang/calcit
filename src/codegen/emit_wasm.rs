@@ -35,6 +35,11 @@ use crate::program;
 const HEAP_START: i32 = 16;
 /// Global index for the heap pointer (bump allocator).
 const HEAP_PTR_GLOBAL: u32 = 0;
+/// Magic marker written at `raw_base` of every heap allocation. Used by
+/// `type-of` to distinguish real pointers from raw f64 numbers that happen to
+/// fall inside the heap address range. Value chosen to be unlikely to appear
+/// as the low 32 bits of a typical integer f64 value.
+const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
 
 /// Convert f64 to wasm-encoder's Ieee64 representation.
 fn f64_const(v: f64) -> Instruction<'static> {
@@ -46,6 +51,15 @@ fn mem_arg_f64(offset: u64) -> wasm_encoder::MemArg {
   wasm_encoder::MemArg {
     offset,
     align: 3, // log2(8) = 3
+    memory_index: 0,
+  }
+}
+
+/// MemArg for i32 load/store (4-byte aligned, memory 0).
+fn mem_arg_i32(offset: u64) -> wasm_encoder::MemArg {
+  wasm_encoder::MemArg {
+    offset,
+    align: 2, // log2(4) = 2
     memory_index: 0,
   }
 }
@@ -710,6 +724,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Cos => emit_host_call(ctx, "cos", args),
     CalcitProc::Pow => emit_host_call(ctx, "pow", args),
 
+    // type-of: reads the heap type header or returns :number for non-pointers.
+    CalcitProc::TypeOf => emit_type_of(ctx, args),
+
     // Recur
     CalcitProc::Recur => {
       if args.len() != ctx.arg_indices.len() {
@@ -850,6 +867,79 @@ fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]
   }
   emit_expr(ctx, &args[0])?;
   ctx.emit(instr);
+  Ok(())
+}
+
+/// Emit `type-of v`. All heap objects carry a type tag at `raw_base` (ptr - 8),
+/// so for values that look like heap pointers we read that tag; otherwise we
+/// fall back to `:number`.
+///
+/// Pointer detection heuristic (enough for core-library usage patterns):
+/// - value must be a finite integer (== trunc(v))
+/// - value must be within `[HEAP_START + 8, current_heap_ptr)` (logical ptrs begin
+///   8 bytes after the raw base)
+/// - the i32 offset at `(ptr - 8)` must contain a registered type tag id
+///
+/// Values failing any check are reported as `:number`. This is a deliberate
+/// simplification — distinguishing bool/nil/tag/number without NaN-boxing is
+/// not supported and is unlikely to be needed by the subset of core functions
+/// currently compiled.
+fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err(format!("type-of expects 1 arg, got {}", args.len()));
+  }
+  let number_tag = get_type_tag(ctx, "number");
+  let v_local = ctx.alloc_local_typed(ValType::F64);
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(v_local));
+
+  let is_valid_ptr = ctx.alloc_local_typed(ValType::I32);
+  let raw_base = ctx.alloc_local_typed(ValType::I32);
+
+  // 1) integer-valued: v == trunc(v)
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
+  // 2) v >= (HEAP_START + 8) as f64
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(f64_const((HEAP_START + 8) as f64));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::I32And);
+  // 3) v < current heap_ptr
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(is_valid_ptr));
+
+  // raw_base = trunc(v) - 8
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(raw_base));
+
+  // Short-circuit: only load memory when range is valid.
+  ctx.emit(Instruction::LocalGet(is_valid_ptr));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  // Check magic at raw_base+0 == HEAP_MAGIC.
+  ctx.emit(Instruction::LocalGet(raw_base));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  // Load tag id (i32) at raw_base+4 and convert to f64.
+  ctx.emit(Instruction::LocalGet(raw_base));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(number_tag));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(number_tag));
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -1113,8 +1203,18 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 
 /// Collect all Tag values from function bodies (multi-namespace format) and build tag→id map.
 /// Tag IDs start at 1 (0 is unused/reserved).
+/// Builtin type tags always registered in tag_index, so `type-of` can return them
+/// and heap objects can carry them in their header slot.
+const BUILTIN_TYPE_TAGS: &[&str] = &[
+  "list", "map", "set", "tuple", "record", "number", "bool", "nil", "tag", "fn", "string",
+];
+
 fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
   let mut tags: Vec<String> = Vec::new();
+  // Always include builtin type tags — used by `type-of` and heap headers.
+  for t in BUILTIN_TYPE_TAGS {
+    tags.push((*t).to_string());
+  }
   for (_, _, _, body) in fn_defs {
     for expr in body {
       collect_tags_from_expr(expr, &mut tags);
@@ -1199,7 +1299,7 @@ fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
 
   // Allocate: save i32 pointer to a temporary local
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_size, ptr_local);
+  emit_bump_alloc(ctx, total_size, ptr_local, "record");
 
   // Store struct tag at offset 0
   ctx.emit(Instruction::LocalGet(ptr_local));
@@ -1376,7 +1476,7 @@ fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let total_size = ((1 + payload.len()) * 8) as i32;
 
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_size, ptr_local);
+  emit_bump_alloc(ctx, total_size, ptr_local, "tuple");
 
   // Store tag at offset 0
   ctx.emit(Instruction::LocalGet(ptr_local));
@@ -1427,24 +1527,68 @@ fn emit_tuple_count(args: &[Calcit]) -> Result<(), String> {
 /// Emit inline bump-allocator: allocate `byte_size` bytes and store the i32
 /// base pointer into `ptr_local`.
 ///
+/// Look up the tag ID for a builtin type tag (e.g. "list", "map").
+/// Panics if the tag is missing — builtin type tags are always pre-registered.
+fn get_type_tag(ctx: &WasmGenCtx, name: &str) -> f64 {
+  *ctx
+    .tag_index
+    .get(name)
+    .unwrap_or_else(|| panic!("builtin type tag not registered: {name}")) as f64
+}
+
+/// Bump-allocator emitter with heap type header.
+///
+/// Allocates `byte_size + 8` bytes: first 8 bytes store the type tag (f64),
+/// the remaining `byte_size` bytes are the logical payload. Returns the LOGICAL
+/// pointer (= raw_base + 8) in `ptr_local`, so all existing offset math works
+/// unchanged. `type-of` can recover the type by loading at `(ptr - 8)`.
+///
+/// WAT sketch:
 /// ```wasm
-/// global.get $heap_ptr        ;; [i32:old_ptr]
-/// local.tee $ptr_local        ;; [i32:old_ptr] (saved)
-/// i32.const <byte_size>       ;; [i32:old_ptr, i32:size]
-/// i32.add                     ;; [i32:new_ptr]
-/// global.set $heap_ptr        ;; [] (bumped)
+/// global.get $heap_ptr
+/// f64.const <type_tag>
+/// f64.store offset=0
+/// global.get $heap_ptr
+/// i32.const 8
+/// i32.add
+/// local.tee $ptr_local
+/// i32.const <byte_size>
+/// i32.add
+/// global.set $heap_ptr
 /// ```
-fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u32) {
+fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u32, type_tag: &str) {
+  let tag_val = get_type_tag(ctx, type_tag) as i32;
+  // Write magic at raw_base+0.
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+  // Write tag id at raw_base+4.
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(tag_val));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
+  // Compute logical ptr = base + 8 and save.
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalTee(ptr_local));
+  // Bump by byte_size, yielding new heap_ptr = old_base + 8 + byte_size.
   ctx.emit(Instruction::I32Const(byte_size));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
 }
 
-/// Bump-allocator with dynamic size (i32 local).
-fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr_local: u32) {
+/// Bump-allocator with dynamic size (i32 local) and heap type header.
+fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr_local: u32, type_tag: &str) {
+  let tag_val = get_type_tag(ctx, type_tag) as i32;
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(tag_val));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalTee(ptr_local));
   ctx.emit(Instruction::LocalGet(size_local));
   ctx.emit(Instruction::I32Add);
@@ -1554,7 +1698,7 @@ fn emit_ds_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Allocate a new data-structure with a count header and return its i32 pointer.
 /// `count_i32` is the count local; `slot_count_expr` computes the total f64 slots
 /// (including the count header). Returns the allocated i32 pointer local.
-fn emit_alloc_with_count(ctx: &mut WasmGenCtx, count_i32: u32, total_slots_i32: u32) -> u32 {
+fn emit_alloc_with_count(ctx: &mut WasmGenCtx, count_i32: u32, total_slots_i32: u32, type_tag: &str) -> u32 {
   let size = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(total_slots_i32));
   ctx.emit(Instruction::I32Const(8));
@@ -1562,7 +1706,7 @@ fn emit_alloc_with_count(ctx: &mut WasmGenCtx, count_i32: u32, total_slots_i32: 
   ctx.emit(Instruction::LocalSet(size));
 
   let ptr = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc_dynamic(ctx, size, ptr);
+  emit_bump_alloc_dynamic(ctx, size, ptr, type_tag);
 
   // Store count
   ctx.emit(Instruction::LocalGet(ptr));
@@ -1581,7 +1725,7 @@ fn emit_list_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let count = args.len();
   let total_bytes = ((1 + count) * 8) as i32;
   let ptr = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_bytes, ptr);
+  emit_bump_alloc(ctx, total_bytes, ptr, "list");
 
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(f64_const(count as f64));
@@ -1649,7 +1793,7 @@ fn emit_list_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   // Copy elements: dst[8..] ← src[16..]
   let dst_base = emit_addr_offset(ctx, dst, 8);
@@ -1685,7 +1829,7 @@ fn emit_list_append(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   // Copy old elements: dst[8..] ← src[8..]
   let dst_base = emit_addr_offset(ctx, dst, 8);
@@ -1731,7 +1875,7 @@ fn emit_list_prepend(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   // Store element at dst[8]
   ctx.emit(Instruction::LocalGet(dst));
@@ -1768,7 +1912,7 @@ fn emit_list_butlast(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   let dst_base = emit_addr_offset(ctx, dst, 8);
   let src_base = emit_addr_offset(ctx, src, 8);
@@ -1814,7 +1958,7 @@ fn emit_list_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   // src_base = src + 8 + start*8
   let src_base = ctx.alloc_local_typed(ValType::I32);
@@ -1849,7 +1993,7 @@ fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, count, total_slots);
+  let dst = emit_alloc_with_count(ctx, count, total_slots, "list");
 
   // Loop: dst[8 + i*8] = src[8 + (count-1-i)*8]
   let i = ctx.alloc_local_typed(ValType::I32);
@@ -1925,7 +2069,7 @@ fn emit_list_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   // Copy a: dst[8..] ← src_a[8..]
   let dst_base_a = emit_addr_offset(ctx, dst, 8);
@@ -1971,7 +2115,7 @@ fn emit_list_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, count, total_slots);
+  let dst = emit_alloc_with_count(ctx, count, total_slots, "list");
 
   // Copy all elements
   let dst_base = emit_addr_offset(ctx, dst, 8);
@@ -2018,7 +2162,7 @@ fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots);
+  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
 
   // Copy [0..idx): src_base = src+8, dst_base = dst+8, n = idx
   let before_n = ctx.alloc_local_typed(ValType::I32);
@@ -2155,7 +2299,7 @@ fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let count = args.len() / 2;
   let total_bytes = ((1 + count * 2) * 8) as i32;
   let ptr = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_bytes, ptr);
+  emit_bump_alloc(ctx, total_bytes, ptr, "map");
 
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(f64_const(count as f64));
@@ -2433,7 +2577,7 @@ fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::I32Const(1));
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(ts));
-    let d = emit_alloc_with_count(ctx, nc, ts);
+    let d = emit_alloc_with_count(ctx, nc, ts, "map");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -2473,7 +2617,7 @@ fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::I32Const(1));
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(ts));
-    let d = emit_alloc_with_count(ctx, count, ts);
+    let d = emit_alloc_with_count(ctx, count, ts, "map");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -2576,7 +2720,7 @@ fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
     ctx.emit(Instruction::I32Const(1));
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(ts));
-    let d = emit_alloc_with_count(ctx, nc, ts);
+    let d = emit_alloc_with_count(ctx, nc, ts, "map");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -2648,7 +2792,7 @@ fn emit_map_to_pairs(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(outer_ts));
-  let outer = emit_alloc_with_count(ctx, count, outer_ts);
+  let outer = emit_alloc_with_count(ctx, count, outer_ts, "list");
 
   // Loop: for each entry, create a 2-element list [key, value]
   let i = ctx.alloc_local_typed(ValType::I32);
@@ -2665,7 +2809,7 @@ fn emit_map_to_pairs(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
 
   // Allocate pair: [2, key, value] = 3 f64 slots = 24 bytes
   let pair = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, 24, pair);
+  emit_bump_alloc(ctx, 24, pair, "list");
   ctx.emit(Instruction::LocalGet(pair));
   ctx.emit(f64_const(2.0));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
@@ -2730,7 +2874,7 @@ fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let count = args.len();
   let total_bytes = ((1 + count) * 8) as i32;
   let ptr = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_bytes, ptr);
+  emit_bump_alloc(ctx, total_bytes, ptr, "set");
 
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(f64_const(count as f64));
@@ -2821,7 +2965,7 @@ fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
     ctx.emit(Instruction::I32Const(1));
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(ts));
-    let d = emit_alloc_with_count(ctx, nc, ts);
+    let d = emit_alloc_with_count(ctx, nc, ts, "set");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -2914,7 +3058,7 @@ fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
     ctx.emit(Instruction::I32Const(1));
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(ts));
-    let d = emit_alloc_with_count(ctx, nc, ts);
+    let d = emit_alloc_with_count(ctx, nc, ts, "set");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 

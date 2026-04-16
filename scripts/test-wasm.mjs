@@ -157,6 +157,13 @@ check("test-rest-count()", 3, e["test-rest-count"]);
 check("test-rest-sum() 1+2+3+4+5", 15, e["test-rest-sum"]);
 check("test-rest-empty() 10+20", 30, e["test-rest-empty"]);
 
+// --- type-of tests ---
+check("test-type-of-list", 1, e["test-type-of-list"]);
+check("test-type-of-map", 1, e["test-type-of-map"]);
+check("test-type-of-set", 1, e["test-type-of-set"]);
+check("test-type-of-number", 1, e["test-type-of-number"]);
+check("test-type-of-tuple", 1, e["test-type-of-tuple"]);
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);
