@@ -51,62 +51,81 @@ fn mem_arg_f64(offset: u64) -> wasm_encoder::MemArg {
 }
 
 /// Emit a WASM binary module from the compiled program.
-/// Only processes functions from the namespace that contains the init entry.
+/// Processes functions from all namespaces in the program.
 pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
 
-  let mut compiled_fns: Vec<CompiledFn> = Vec::new();
+  // First pass: extract all function signatures from all namespaces
+  let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
 
-  if let Some(file_info) = program_data.get(init_ns) {
-    // First pass: extract all function signatures
-    let mut fn_defs: Vec<(String, CalcitFnArgs, Vec<Calcit>)> = Vec::new();
+  // Collect init_ns first, then other namespaces (ordering for export clarity)
+  let mut ns_order: Vec<&str> = Vec::new();
+  if program_data.contains_key(init_ns) {
+    ns_order.push(init_ns);
+  }
+  for ns in program_data.keys() {
+    if ns.as_ref() != init_ns {
+      ns_order.push(ns);
+    }
+  }
+
+  for &ns in &ns_order {
+    let Some(file_info) = program_data.get(ns) else {
+      continue;
+    };
     for (def_name, compiled) in &file_info.defs {
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
       match extract_fn_parts(&compiled.preprocessed_code) {
         Ok((args, body)) => {
-          fn_defs.push((def_name.to_string(), args, body));
+          fn_defs.push((ns.to_string(), def_name.to_string(), args, body));
         }
         Err(e) => {
-          eprintln!("[wasm] skipping {init_ns}/{def_name}: {e}");
+          eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
         }
       }
     }
+  }
 
-    // Build provisional index map (all functions)
-    let fn_index: HashMap<String, u32> = fn_defs
-      .iter()
-      .enumerate()
-      .map(|(i, (name, _, _))| (name.clone(), i as u32))
-      .collect();
+  if fn_defs.is_empty() {
+    return Err(format!("namespace not found or no functions: {init_ns}"));
+  }
 
-    // Collect all tags referenced in function bodies
-    let tag_index = collect_all_tags(&fn_defs);
+  // Build fn_index: host imports first, then user functions offset by num_imports
+  let num_imports = HOST_IMPORTS.len() as u32;
+  let mut fn_index: HashMap<String, u32> = HashMap::new();
+  for (i, (ns, name, _, _)) in fn_defs.iter().enumerate() {
+    let idx = num_imports + i as u32;
+    let qualified = format!("{ns}/{name}");
+    fn_index.insert(qualified, idx);
+    // Also insert bare name — last writer wins; bare name is fallback
+    fn_index.insert(name.clone(), idx);
+  }
 
-    // Second pass: compile. If a function fails, we still reserve its slot
-    // with a trivial body so indices remain stable.
-    for (def_name, args, body) in &fn_defs {
-      match compile_fn(def_name, args, body, &fn_index, &tag_index) {
-        Ok(func) => compiled_fns.push(func),
-        Err(e) => {
-          eprintln!("[wasm] skipping {init_ns}/{def_name}: {e}");
-          // Insert a stub function to maintain index stability
-          let arity = match args {
-            CalcitFnArgs::Args(v) => v.len(),
-            CalcitFnArgs::MarkedArgs(v) => v.len(),
-          };
-          compiled_fns.push(CompiledFn {
-            name: def_name.clone(),
-            arity,
-            locals: vec![],
-            instructions: vec![f64_const(0.0)],
-          });
-        }
+  // Collect all tags referenced in function bodies
+  let tag_index = collect_all_tags_from(&fn_defs);
+
+  // Second pass: compile. If a function fails, we still reserve its slot
+  // with a trivial body so indices remain stable.
+  let mut compiled_fns: Vec<CompiledFn> = Vec::new();
+  for (ns, def_name, args, body) in &fn_defs {
+    match compile_fn(def_name, args, body, &fn_index, &tag_index) {
+      Ok(func) => compiled_fns.push(func),
+      Err(e) => {
+        eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
+        let arity = match args {
+          CalcitFnArgs::Args(v) => v.len(),
+          CalcitFnArgs::MarkedArgs(v) => v.len(),
+        };
+        compiled_fns.push(CompiledFn {
+          name: def_name.clone(),
+          arity,
+          locals: vec![],
+          instructions: vec![f64_const(0.0)],
+        });
       }
     }
-  } else {
-    return Err(format!("namespace not found: {init_ns}"));
   }
 
   if compiled_fns.is_empty() {
@@ -139,21 +158,63 @@ struct CompiledFn {
 }
 
 /// Build a binary WASM module from compiled functions.
+/// Host-imported function specification.
+struct HostImport {
+  module: &'static str,
+  name: &'static str,
+  arity: usize,
+}
+
+/// List of host-imported math functions.
+/// These are provided by the JS environment and indexed before user functions.
+const HOST_IMPORTS: &[HostImport] = &[
+  HostImport {
+    module: "math",
+    name: "pow",
+    arity: 2,
+  },
+  HostImport {
+    module: "math",
+    name: "sin",
+    arity: 1,
+  },
+  HostImport {
+    module: "math",
+    name: "cos",
+    arity: 1,
+  },
+];
+
+/// Build a binary WASM module from compiled functions.
+/// Host imports occupy the first function indices (0..HOST_IMPORTS.len()),
+/// then user functions follow at indices HOST_IMPORTS.len()..
 fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
+  let num_imports = HOST_IMPORTS.len() as u32;
 
-  // Type section: each function gets its own type (all f64 params/result)
+  // Type section: host imports first, then user functions
   let mut types = TypeSection::new();
+  for imp in HOST_IMPORTS {
+    let params: Vec<ValType> = vec![ValType::F64; imp.arity];
+    types.ty().function(params, vec![ValType::F64]);
+  }
   for f in fns {
     let params: Vec<ValType> = vec![ValType::F64; f.arity];
     types.ty().function(params, vec![ValType::F64]);
   }
   module.section(&types);
 
-  // Function section: map each function to its type
+  // Import section: host functions
+  let mut imports = wasm_encoder::ImportSection::new();
+  for (i, imp) in HOST_IMPORTS.iter().enumerate() {
+    imports.import(imp.module, imp.name, wasm_encoder::EntityType::Function(i as u32));
+  }
+  module.section(&imports);
+
+  // Function section: map each user function to its type (offset by num_imports)
   let mut functions = FunctionSection::new();
   for (i, _) in fns.iter().enumerate() {
-    functions.function(i as u32);
+    functions.function(num_imports + i as u32);
   }
   module.section(&functions);
 
@@ -180,11 +241,11 @@ fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
   );
   module.section(&globals);
 
-  // Export section
+  // Export section: user functions (indices offset by num_imports)
   let mut exports = ExportSection::new();
   exports.export("memory", ExportKind::Memory, 0);
   for (i, f) in fns.iter().enumerate() {
-    exports.export(&f.name, ExportKind::Func, i as u32);
+    exports.export(&f.name, ExportKind::Func, num_imports + i as u32);
   }
   module.section(&exports);
 
@@ -436,10 +497,14 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
     },
     Calcit::Proc(proc) => emit_proc_call(ctx, proc, &args_list),
     Calcit::Import(import) => {
-      let fn_idx = *ctx
+      // Try qualified "ns/def" first, then bare "def" as fallback
+      let qualified = format!("{}/{}", import.ns, import.def);
+      let fn_idx = ctx
         .fn_index
-        .get(import.def.as_ref())
-        .ok_or_else(|| format!("unknown function: {}", import.def))?;
+        .get(&qualified)
+        .or_else(|| ctx.fn_index.get(import.def.as_ref()))
+        .ok_or_else(|| format!("unknown function: {qualified}"))?;
+      let fn_idx = *fn_idx;
       for arg in &args_list {
         emit_expr(ctx, arg)?;
       }
@@ -505,8 +570,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Ceil => emit_unary(ctx, Instruction::F64Ceil, args),
     CalcitProc::Round => emit_unary(ctx, Instruction::F64Nearest, args),
     CalcitProc::Sqrt => emit_unary(ctx, Instruction::F64Sqrt, args),
-    CalcitProc::Sin | CalcitProc::Cos => Err(format!("trigonometric function {proc} not available in WASM (no f64.sin/cos)")),
-    CalcitProc::Pow => Err("pow not yet supported in WASM codegen (no f64.pow instruction)".into()),
+    CalcitProc::Sin => emit_host_call(ctx, "sin", args),
+    CalcitProc::Cos => emit_host_call(ctx, "cos", args),
+    CalcitProc::Pow => emit_host_call(ctx, "pow", args),
 
     // Recur
     CalcitProc::Recur => {
@@ -599,6 +665,23 @@ fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]
   }
   emit_expr(ctx, &args[0])?;
   ctx.emit(instr);
+  Ok(())
+}
+
+/// Emit a call to a host-imported function by name.
+fn emit_host_call(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
+  let import_idx = HOST_IMPORTS
+    .iter()
+    .position(|imp| imp.name == name)
+    .ok_or_else(|| format!("unknown host import: {name}"))?;
+  let expected_arity = HOST_IMPORTS[import_idx].arity;
+  if args.len() != expected_arity {
+    return Err(format!("{name} expects {expected_arity} args, got {}", args.len()));
+  }
+  for arg in args {
+    emit_expr(ctx, arg)?;
+  }
+  ctx.emit(Instruction::Call(import_idx as u32));
   Ok(())
 }
 
@@ -843,11 +926,11 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 // Tag collection
 // ---------------------------------------------------------------------------
 
-/// Collect all Tag values from function bodies and build a compile-time tag→id map.
+/// Collect all Tag values from function bodies (multi-namespace format) and build tag→id map.
 /// Tag IDs start at 1 (0 is unused/reserved).
-fn collect_all_tags(fn_defs: &[(String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
+fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
   let mut tags: Vec<String> = Vec::new();
-  for (_, _, body) in fn_defs {
+  for (_, _, _, body) in fn_defs {
     for expr in body {
       collect_tags_from_expr(expr, &mut tags);
     }

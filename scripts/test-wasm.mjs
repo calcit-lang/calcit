@@ -7,7 +7,13 @@ import { readFileSync } from "fs";
 const wasmPath = "js-out/program.wasm";
 const wasm = readFileSync(wasmPath);
 const mod = new WebAssembly.Module(wasm);
-const inst = new WebAssembly.Instance(mod);
+const inst = new WebAssembly.Instance(mod, {
+  math: {
+    pow: Math.pow,
+    sin: Math.sin,
+    cos: Math.cos,
+  },
+});
 const e = inst.exports;
 
 let fail = 0;
@@ -18,6 +24,16 @@ function check(label, expected, fn, ...args) {
     console.log(`  ${label} = ${got}  OK`);
   } else {
     console.log(`  ${label} = ${got}  FAIL (expected ${expected})`);
+    fail++;
+  }
+}
+
+function checkApprox(label, expected, fn, ...args) {
+  const got = fn(...args);
+  if (Math.abs(got - expected) < 1e-10) {
+    console.log(`  ${label} ≈ ${got}  OK`);
+  } else {
+    console.log(`  ${label} = ${got}  FAIL (expected ≈${expected})`);
     fail++;
   }
 }
@@ -65,6 +81,18 @@ check("test-bit-shr(256,4)", 16, e["test-bit-shr"], 256, 4);
 check("test-match-tag(3,7)", 10, e["test-match-tag"], 3, 7);
 check("test-match-sub(10,3)", 7, e["test-match-sub"], 10, 3);
 check("test-match-wildcard()", -1, e["test-match-wildcard"]);
+
+// --- Host import tests (pow, sin, cos) ---
+check("test-pow(2,10)", 1024, e["test-pow"], 2, 10);
+check("test-pow(3,3)", 27, e["test-pow"], 3, 3);
+checkApprox("test-sin(0)", 0, e["test-sin"], 0);
+checkApprox("test-sin(π/2)", 1, e["test-sin"], Math.PI / 2);
+checkApprox("test-cos(0)", 1, e["test-cos"], 0);
+checkApprox("test-cos(π)", -1, e["test-cos"], Math.PI);
+
+// --- Cross-namespace tests ---
+check("test-cross-ns(3,7)", 20, e["test-cross-ns"], 3, 7);
+check("test-cross-ns(5,5)", 20, e["test-cross-ns"], 5, 5);
 
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);

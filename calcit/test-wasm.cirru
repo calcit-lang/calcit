@@ -166,6 +166,23 @@
                   (:add a b) (&+ a b)
                   _ -1
           :examples $ []
+        |test-pow $ %{} :CodeEntry (:doc "|pow via host import") (:schema nil)
+          :code $ quote
+            defn test-pow (base exp) (pow base exp)
+          :examples $ []
+        |test-sin $ %{} :CodeEntry (:doc "|sin via host import") (:schema nil)
+          :code $ quote
+            defn test-sin (x) (sin x)
+          :examples $ []
+        |test-cos $ %{} :CodeEntry (:doc "|cos via host import") (:schema nil)
+          :code $ quote
+            defn test-cos (x) (cos x)
+          :examples $ []
+        |test-cross-ns $ %{} :CodeEntry (:doc "|Cross-namespace function call") (:schema nil)
+          :code $ quote
+            defn test-cross-ns (a b)
+              helper/add-and-double a b
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()
@@ -178,3 +195,16 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-wasm.main
+            :require
+              test-wasm.helper :as helper
+        :examples $ []
+    |test-wasm.helper $ %{} :FileEntry
+      :defs $ {}
+        |add-and-double $ %{} :CodeEntry (:doc "|Helper: add two numbers and double") (:schema nil)
+          :code $ quote
+            defn add-and-double (a b)
+              &* (&+ a b) 2
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |)
+        :code $ quote
+          ns test-wasm.helper
