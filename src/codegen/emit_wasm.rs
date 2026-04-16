@@ -96,6 +96,9 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   let num_imports = HOST_IMPORTS.len() as u32;
   let mut fn_index: HashMap<String, u32> = HashMap::new();
   let mut fn_arity: HashMap<String, u32> = HashMap::new();
+  // Track functions with rest args: value is the fixed-arity count (params before `&`).
+  // WASM arity for such functions is `fixed_arity + 1` (the rest list pointer).
+  let mut fn_has_rest: HashMap<String, u32> = HashMap::new();
   for (i, (ns, name, args, _)) in fn_defs.iter().enumerate() {
     let idx = num_imports + i as u32;
     let qualified = format!("{ns}/{name}");
@@ -103,12 +106,13 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     // Also insert bare name — last writer wins; bare name is fallback
     fn_index.insert(name.clone(), idx);
     // Compute WASM arity (only Idx labels, not markers)
-    let arity = match args {
-      CalcitFnArgs::Args(v) => v.len() as u32,
-      CalcitFnArgs::MarkedArgs(labels) => labels.iter().filter(|l| matches!(l, CalcitArgLabel::Idx(_))).count() as u32,
-    };
-    fn_arity.insert(qualified, arity);
+    let (arity, rest_fixed) = compute_fn_arity(args);
+    fn_arity.insert(qualified.clone(), arity);
     fn_arity.insert(name.clone(), arity);
+    if let Some(fixed) = rest_fixed {
+      fn_has_rest.insert(qualified, fixed);
+      fn_has_rest.insert(name.clone(), fixed);
+    }
   }
 
   // Collect all tags referenced in function bodies
@@ -118,17 +122,14 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // with a trivial body so indices remain stable.
   let mut compiled_fns: Vec<CompiledFn> = Vec::new();
   for (ns, def_name, args, body) in &fn_defs {
-    match compile_fn(def_name, args, body, &fn_index, &fn_arity, &tag_index) {
+    match compile_fn(def_name, args, body, &fn_index, &fn_arity, &fn_has_rest, &tag_index) {
       Ok(func) => compiled_fns.push(func),
       Err(e) => {
         eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
-        let arity = match args {
-          CalcitFnArgs::Args(v) => v.len(),
-          CalcitFnArgs::MarkedArgs(labels) => labels.iter().filter(|l| matches!(l, CalcitArgLabel::Idx(_))).count(),
-        };
+        let (arity, _) = compute_fn_arity(args);
         compiled_fns.push(CompiledFn {
           name: def_name.clone(),
-          arity,
+          arity: arity as usize,
           locals: vec![],
           instructions: vec![f64_const(0.0)],
         });
@@ -324,6 +325,9 @@ struct WasmGenCtx {
   fn_index: HashMap<String, u32>,
   /// Function name → WASM arity (number of f64 params, excluding markers)
   fn_arity: HashMap<String, u32>,
+  /// Function name → fixed-arity (params before `&`) for functions with rest args.
+  /// WASM arity for these is `fixed_arity + 1` (the rest list pointer).
+  fn_has_rest: HashMap<String, u32>,
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
   tag_index: HashMap<String, u32>,
   /// Current block nesting depth relative to the recur loop
@@ -332,7 +336,13 @@ struct WasmGenCtx {
 }
 
 impl WasmGenCtx {
-  fn new(num_params: u32, fn_index: HashMap<String, u32>, fn_arity: HashMap<String, u32>, tag_index: HashMap<String, u32>) -> Self {
+  fn new(
+    num_params: u32,
+    fn_index: HashMap<String, u32>,
+    fn_arity: HashMap<String, u32>,
+    fn_has_rest: HashMap<String, u32>,
+    tag_index: HashMap<String, u32>,
+  ) -> Self {
     WasmGenCtx {
       locals: HashMap::new(),
       extra_locals: Vec::new(),
@@ -342,6 +352,7 @@ impl WasmGenCtx {
       instructions: Vec::new(),
       fn_index,
       fn_arity,
+      fn_has_rest,
       tag_index,
       block_depth: 0,
     }
@@ -371,12 +382,53 @@ impl WasmGenCtx {
   }
 }
 
+/// Compute WASM arity for a function signature.
+///
+/// Returns `(wasm_arity, rest_fixed)`:
+/// - `wasm_arity`: total number of f64 params the function takes
+/// - `rest_fixed`: if the function has a rest arg, the number of fixed params
+///   before `&` (`wasm_arity - 1`); otherwise `None`.
+///
+/// Optional marks (`?`) are transparent: callers pad nil for omitted optional args.
+/// Rest args (`&`) are represented as a single f64 list-pointer param.
+fn compute_fn_arity(args: &CalcitFnArgs) -> (u32, Option<u32>) {
+  match args {
+    CalcitFnArgs::Args(v) => (v.len() as u32, None),
+    CalcitFnArgs::MarkedArgs(labels) => {
+      let mut fixed: u32 = 0;
+      let mut rest_param_count: u32 = 0;
+      let mut rest_seen = false;
+      for label in labels {
+        match label {
+          CalcitArgLabel::Idx(_) => {
+            if rest_seen {
+              rest_param_count += 1;
+            } else {
+              fixed += 1;
+            }
+          }
+          CalcitArgLabel::OptionalMark => {}
+          CalcitArgLabel::RestMark => {
+            rest_seen = true;
+          }
+        }
+      }
+      if rest_seen && rest_param_count > 0 {
+        (fixed + 1, Some(fixed))
+      } else {
+        (fixed, None)
+      }
+    }
+  }
+}
+
 fn compile_fn(
   name: &str,
   args: &CalcitFnArgs,
   body: &[Calcit],
   fn_index: &HashMap<String, u32>,
   fn_arity: &HashMap<String, u32>,
+  fn_has_rest: &HashMap<String, u32>,
   tag_index: &HashMap<String, u32>,
 ) -> Result<CompiledFn, String> {
   let mut param_names = Vec::new();
@@ -387,17 +439,25 @@ fn compile_fn(
       }
     }
     CalcitFnArgs::MarkedArgs(labels) => {
+      // Track `&` marker: the next Idx after RestMark is the rest-args list param.
+      // We still add it as a regular f64 param (holding the list pointer),
+      // so no special handling is needed beyond accepting the marker.
+      let mut seen_rest = false;
       for label in labels {
         match label {
           CalcitArgLabel::Idx(idx) => {
             param_names.push(CalcitLocal::read_name(*idx));
+            if seen_rest {
+              // Only one rest param allowed — ignore any extras defensively.
+              seen_rest = false;
+            }
           }
           CalcitArgLabel::OptionalMark => {
             // Optional marker — not a parameter slot, just skip it.
             // The caller always passes all args (nil for omitted optional ones).
           }
           CalcitArgLabel::RestMark => {
-            return Err("rest args not supported in WASM codegen".into());
+            seen_rest = true;
           }
         }
       }
@@ -405,7 +465,13 @@ fn compile_fn(
   }
 
   let arity = param_names.len();
-  let mut ctx = WasmGenCtx::new(arity as u32, fn_index.clone(), fn_arity.clone(), tag_index.clone());
+  let mut ctx = WasmGenCtx::new(
+    arity as u32,
+    fn_index.clone(),
+    fn_arity.clone(),
+    fn_has_rest.clone(),
+    tag_index.clone(),
+  );
 
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
@@ -539,31 +605,58 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         .or_else(|| ctx.fn_arity.get(import.def.as_ref()))
         .copied()
         .unwrap_or(args_list.len() as u32);
-      for arg in &args_list {
-        emit_expr(ctx, arg)?;
-      }
-      // Pad nil for missing optional args
-      for _ in args_list.len()..(target_arity as usize) {
-        ctx.emit(f64_const(0.0));
-      }
+      let rest_fixed = ctx
+        .fn_has_rest
+        .get(&qualified)
+        .or_else(|| ctx.fn_has_rest.get(import.def.as_ref()))
+        .copied();
+      emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
     }
     Calcit::Symbol { sym, .. } => {
       let fn_idx = *ctx.fn_index.get(sym.as_ref()).ok_or_else(|| format!("unknown function: {sym}"))?;
       let target_arity = ctx.fn_arity.get(sym.as_ref()).copied().unwrap_or(args_list.len() as u32);
-      for arg in &args_list {
+      let rest_fixed = ctx.fn_has_rest.get(sym.as_ref()).copied();
+      emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
+    }
+    _ => Err(format!("unsupported call head in WASM: {head}")),
+  }
+}
+
+/// Emit argument evaluation for a direct function call.
+///
+/// Handles three cases:
+/// - Fixed-arity (no rest): evaluates each arg, pads nil for missing optional args.
+/// - Rest args (callee has `&`): evaluates the first `fixed` args as-is, then
+///   packs the remaining args into a list and passes that as the last f64 param.
+fn emit_call_args(ctx: &mut WasmGenCtx, args_list: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
+  match rest_fixed {
+    Some(fixed) => {
+      let fixed = fixed as usize;
+      if args_list.len() < fixed {
+        return Err(format!("rest-args call expected at least {} args, got {}", fixed, args_list.len()));
+      }
+      // Emit fixed args directly
+      for arg in args_list.iter().take(fixed) {
+        emit_expr(ctx, arg)?;
+      }
+      // Pack the rest into a list
+      emit_list_new(ctx, &args_list[fixed..])?;
+    }
+    None => {
+      for arg in args_list {
         emit_expr(ctx, arg)?;
       }
       // Pad nil for missing optional args
       for _ in args_list.len()..(target_arity as usize) {
         ctx.emit(f64_const(0.0));
       }
-      ctx.emit(Instruction::Call(fn_idx));
-      Ok(())
     }
-    _ => Err(format!("unsupported call head in WASM: {head}")),
   }
+  Ok(())
 }
 
 /// Emit instructions for builtin proc calls.

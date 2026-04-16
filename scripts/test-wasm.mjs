@@ -70,9 +70,9 @@ check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
 check("test-tuple-sum()", 30, e["test-tuple-sum"]);
 
 // --- Bitwise tests ---
-check("test-bit-and(0xFF,0x0F)", 0x0F, e["test-bit-and"], 0xFF, 0x0F);
-check("test-bit-or(0xF0,0x0F)", 0xFF, e["test-bit-or"], 0xF0, 0x0F);
-check("test-bit-xor(0xFF,0x0F)", 0xF0, e["test-bit-xor"], 0xFF, 0x0F);
+check("test-bit-and(0xFF,0x0F)", 0x0f, e["test-bit-and"], 0xff, 0x0f);
+check("test-bit-or(0xF0,0x0F)", 0xff, e["test-bit-or"], 0xf0, 0x0f);
+check("test-bit-xor(0xFF,0x0F)", 0xf0, e["test-bit-xor"], 0xff, 0x0f);
 check("test-bit-not(0)", -1, e["test-bit-not"], 0);
 check("test-bit-shl(1,8)", 256, e["test-bit-shl"], 1, 8);
 check("test-bit-shr(256,4)", 16, e["test-bit-shr"], 256, 4);
@@ -151,6 +151,11 @@ check("test-set-includes()", 1, e["test-set-includes"]); // 1+0
 check("test-set-include()", 3, e["test-set-include"]);
 check("test-set-exclude()", 2, e["test-set-exclude"]);
 check("test-to-pairs()", 4, e["test-to-pairs"]); // list count=2 + first pair count=2
+
+// --- Rest args tests ---
+check("test-rest-count()", 3, e["test-rest-count"]);
+check("test-rest-sum() 1+2+3+4+5", 15, e["test-rest-sum"]);
+check("test-rest-empty() 10+20", 30, e["test-rest-empty"]);
 
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);

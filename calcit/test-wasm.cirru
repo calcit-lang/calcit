@@ -391,6 +391,36 @@
             defn test-map-includes ()
               &+ (if (&map:includes? (&{} :a 10 :b 20) 20) 1 0) (if (&map:includes? (&{} :a 10 :b 20) 99) 10 0)
           :examples $ []
+        |collect-rest $ %{} :CodeEntry (:doc "|returns rest list unchanged") (:schema nil)
+          :code $ quote
+            defn collect-rest (a & xs) xs
+          :examples $ []
+        |test-rest-count $ %{} :CodeEntry (:doc "|rest args count: 3 extras") (:schema nil)
+          :code $ quote
+            defn test-rest-count ()
+              &list:count $ collect-rest 1 2 3 4
+          :examples $ []
+        |sum-rest-list $ %{} :CodeEntry (:doc "|helper: sums a list via recur") (:schema nil)
+          :code $ quote
+            defn sum-rest-list (acc xs)
+              if (&list:empty? xs) acc
+                recur (&+ acc (&list:first xs)) (&list:rest xs)
+          :examples $ []
+        |sum-rest $ %{} :CodeEntry (:doc "|variadic sum: a + b + rest...") (:schema nil)
+          :code $ quote
+            defn sum-rest (a b & xs)
+              sum-rest-list (&+ a b) xs
+          :examples $ []
+        |test-rest-sum $ %{} :CodeEntry (:doc "|rest args: 1+2+3+4+5 = 15") (:schema nil)
+          :code $ quote
+            defn test-rest-sum ()
+              sum-rest 1 2 3 4 5
+          :examples $ []
+        |test-rest-empty $ %{} :CodeEntry (:doc "|rest args with no extras: 10+20 = 30") (:schema nil)
+          :code $ quote
+            defn test-rest-empty ()
+              sum-rest 10 20
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()
