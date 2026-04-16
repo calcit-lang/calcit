@@ -1909,10 +1909,7 @@
             defn assoc (x & args)
               if (nil? x)
                 raise $ str-spaced "|assoc does not work on nil for:" args
-                if (list? x) (&list:assoc x & args)
-                  if (map? x) (&map:assoc x & args)
-                    if (record? x) (&record:assoc x & args)
-                      if (tuple? x) (&tuple:assoc x & args) (.assoc x & args)
+                if (list? x) (&list:assoc x & args) (.assoc x & args)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -2236,11 +2233,7 @@
         |contains? $ %{} :CodeEntry (:doc "|Checks whether a collection contains a key or index at the current level. Supports lists, tuples, maps, and records while treating nil as false.")
           :code $ quote
             defn contains? (x k)
-              if (nil? x) false $ if (list? x) (&list:contains? x k)
-                if (map? x) (&map:contains? x k)
-                  if (set? x) (&set:includes? x k)
-                    if (string? x) (&str:contains? x k)
-                      if (record? x) (&record:contains? x k) (.contains? x k)
+              if (nil? x) false $ if (list? x) (&list:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -2263,12 +2256,7 @@
         |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
             defn count (x)
-              if (nil? x) 0 $ if (list? x) (&list:count x)
-                if (map? x) (&map:count x)
-                  if (set? x) (&set:count x)
-                    if (string? x) (&str:count x)
-                      if (tuple? x) (&tuple:count x)
-                        if (record? x) (&record:count x) (.count x)
+              if (nil? x) 0 $ if (list? x) (&list:count x) (.count x)
           :examples $ []
             quote $ assert= 4
               count $ [] 1 2 3 4
@@ -2728,12 +2716,7 @@
         |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
           :code $ quote
             defn empty? (x)
-              if (nil? x) true $ if (list? x) (&list:empty? x)
-                if (map? x) (&map:empty? x)
-                  if (set? x) (&set:empty? x)
-                    if (string? x) (&str:empty? x)
-                      if (record? x) (&= 0 (&record:count x))
-                        if (tuple? x) (&= 0 (&tuple:count x)) (.empty? x)
+              if (nil? x) true $ if (list? x) (&list:empty? x) (.empty? x)
           :examples $ []
             quote $ assert= true
               empty? $ []
@@ -2817,9 +2800,7 @@
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f)
-              if (nil? xs) nil $ if (list? xs) (&list:filter xs f)
-                if (map? xs) (&map:filter xs f)
-                  if (set? xs) (&set:filter xs f) (.filter xs f)
+              if (nil? xs) nil $ if (list? xs) (&list:filter xs f) (.filter xs f)
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -2882,9 +2863,7 @@
         |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
-              if (nil? x) nil $ if (list? x) (&list:first x)
-                if (string? x) (&str:first x)
-                  if (tuple? x) (&tuple:nth x 0) (.first x)
+              if (nil? x) nil $ if (list? x) (&list:first x) (.first x)
           :examples $ []
             quote $ assert= 1
               first $ [] 1 2 3
@@ -3048,11 +3027,7 @@
         |get $ %{} :CodeEntry (:doc "|Reads a value from collections or strings by key or index. Handles maps, lists, tuples, records, and strings; nil bases return nil.")
           :code $ quote
             defn get (base k)
-              if (nil? base) nil $ if (string? base) (&str:nth base k)
-                if (map? base) (&map:get base k)
-                  if (list? base) (&list:nth base k)
-                    if (tuple? base) (&tuple:nth base k)
-                      if (record? base) (&record:get base k) (.get base k)
+              if (nil? base) nil $ if (list? base) (&list:nth base k) (.get base k)
           :examples $ []
             quote $ assert= 2
               get ([] 0 2 4) 1
@@ -3236,10 +3211,7 @@
         |includes? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn includes? (x k)
-              if (nil? x) false $ if (list? x) (&list:includes? x k)
-                if (map? x) (&map:includes? x k)
-                  if (set? x) (&set:includes? x k)
-                    if (string? x) (&str:includes? x k) (.includes? x k)
+              if (nil? x) false $ if (list? x) (&list:includes? x k) (.includes? x k)
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -3683,8 +3655,7 @@
                         :args $ [] :set :dynamic
                         :return :set
                       include acc $ f x
-                  if (map? xs) (&map:map xs f)
-                    raise $ str-spaced "|expected list or set for map function, got:" xs
+                  .map xs f
           :examples $ []
             quote $ assert= ([] 2 3 4)
               map ([] 1 2 3) inc
@@ -3861,10 +3832,7 @@
         |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
             defn nth (x i)
-              if (list? x) (&list:nth x i)
-                if (string? x) (&str:nth x i)
-                  if (tuple? x) (&tuple:nth x i)
-                    if (record? x) (&record:nth x i) (.nth x i)
+              if (list? x) (&list:nth x i) (.nth x i)
           :examples $ []
             quote $ assert= 2
               nth ([] 1 2 3) 1
