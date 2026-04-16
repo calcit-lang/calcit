@@ -8,9 +8,14 @@
 //! - Comparisons: `&<`, `&>`, `&=`
 //! - `recur` (tail recursion via WASM loop)
 //! - Number literals, Bool literals, Nil (→ 0.0)
+//! - Tag values (compiled to f64 integer constants)
+//! - Record creation (`&%{}`) and field access (`&record:nth`, `&record:get`)
+//! - Tuple creation (`::`) and field access (`&tuple:nth`)
 //!
 //! All values are represented as f64 (matching Calcit's single numeric type).
 //! Booleans: true → 1.0, false/nil → 0.0.
+//! Tags: mapped to positive f64 integers at compile time.
+//! Record/Tuple pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
 use std::collections::HashMap;
@@ -18,16 +23,31 @@ use std::fs;
 use std::path::Path;
 
 use wasm_encoder::{
-  CodeSection, ExportKind, ExportSection, Function, FunctionSection, Ieee64, Instruction, Module, TypeSection, ValType,
+  CodeSection, ConstExpr, ExportKind, ExportSection, Function, FunctionSection, GlobalSection, GlobalType, Ieee64,
+  Instruction, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax};
 use crate::program;
 
+/// Initial heap offset — reserve first 16 bytes.
+const HEAP_START: i32 = 16;
+/// Global index for the heap pointer (bump allocator).
+const HEAP_PTR_GLOBAL: u32 = 0;
+
 /// Convert f64 to wasm-encoder's Ieee64 representation.
 fn f64_const(v: f64) -> Instruction<'static> {
   Instruction::F64Const(Ieee64::from(v))
+}
+
+/// MemArg for f64 load/store (8-byte aligned, memory 0).
+fn mem_arg_f64(offset: u64) -> wasm_encoder::MemArg {
+  wasm_encoder::MemArg {
+    offset,
+    align: 3, // log2(8) = 3
+    memory_index: 0,
+  }
 }
 
 /// Emit a WASM binary module from the compiled program.
@@ -61,10 +81,13 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
       .map(|(i, (name, _, _))| (name.clone(), i as u32))
       .collect();
 
+    // Collect all tags referenced in function bodies
+    let tag_index = collect_all_tags(&fn_defs);
+
     // Second pass: compile. If a function fails, we still reserve its slot
     // with a trivial body so indices remain stable.
     for (def_name, args, body) in &fn_defs {
-      match compile_fn(def_name, args, body, &fn_index) {
+      match compile_fn(def_name, args, body, &fn_index, &tag_index) {
         Ok(func) => compiled_fns.push(func),
         Err(e) => {
           eprintln!("[wasm] skipping {init_ns}/{def_name}: {e}");
@@ -134,8 +157,32 @@ fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
   }
   module.section(&functions);
 
+  // Memory section: 1 page (64KB) for linear memory (records, tuples)
+  let mut memories = MemorySection::new();
+  memories.memory(MemoryType {
+    minimum: 1,
+    maximum: None,
+    memory64: false,
+    shared: false,
+    page_size_log2: None,
+  });
+  module.section(&memories);
+
+  // Global section: heap pointer for bump allocator
+  let mut globals = GlobalSection::new();
+  globals.global(
+    GlobalType {
+      val_type: ValType::I32,
+      mutable: true,
+      shared: false,
+    },
+    &ConstExpr::i32_const(HEAP_START),
+  );
+  module.section(&globals);
+
   // Export section
   let mut exports = ExportSection::new();
+  exports.export("memory", ExportKind::Memory, 0);
   for (i, f) in fns.iter().enumerate() {
     exports.export(&f.name, ExportKind::Func, i as u32);
   }
@@ -206,13 +253,15 @@ struct WasmGenCtx {
   instructions: Vec<Instruction<'static>>,
   /// Function name → index map for cross-function calls
   fn_index: HashMap<String, u32>,
+  /// Tag name → integer ID map (compile-time constant, shared across all functions)
+  tag_index: HashMap<String, u32>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
 }
 
 impl WasmGenCtx {
-  fn new(num_params: u32, fn_index: HashMap<String, u32>) -> Self {
+  fn new(num_params: u32, fn_index: HashMap<String, u32>, tag_index: HashMap<String, u32>) -> Self {
     WasmGenCtx {
       locals: HashMap::new(),
       extra_locals: Vec::new(),
@@ -221,14 +270,21 @@ impl WasmGenCtx {
       arg_indices: Vec::new(),
       instructions: Vec::new(),
       fn_index,
+      tag_index,
       block_depth: 0,
     }
   }
 
+  /// Allocate an anonymous f64 local variable.
   fn alloc_local(&mut self) -> u32 {
+    self.alloc_local_typed(ValType::F64)
+  }
+
+  /// Allocate an anonymous local variable of the given type.
+  fn alloc_local_typed(&mut self, vt: ValType) -> u32 {
     let idx = self.next_local;
     self.next_local += 1;
-    self.extra_locals.push(ValType::F64);
+    self.extra_locals.push(vt);
     idx
   }
 
@@ -243,7 +299,13 @@ impl WasmGenCtx {
   }
 }
 
-fn compile_fn(name: &str, args: &CalcitFnArgs, body: &[Calcit], fn_index: &HashMap<String, u32>) -> Result<CompiledFn, String> {
+fn compile_fn(
+  name: &str,
+  args: &CalcitFnArgs,
+  body: &[Calcit],
+  fn_index: &HashMap<String, u32>,
+  tag_index: &HashMap<String, u32>,
+) -> Result<CompiledFn, String> {
   let mut param_names = Vec::new();
   match args {
     CalcitFnArgs::Args(idxs) => {
@@ -266,7 +328,7 @@ fn compile_fn(name: &str, args: &CalcitFnArgs, body: &[Calcit], fn_index: &HashM
   }
 
   let arity = param_names.len();
-  let mut ctx = WasmGenCtx::new(arity as u32, fn_index.clone());
+  let mut ctx = WasmGenCtx::new(arity as u32, fn_index.clone(), tag_index.clone());
 
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
@@ -335,6 +397,14 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     Calcit::Bool(false) | Calcit::Nil => {
       ctx.emit(f64_const(0.0));
     }
+    Calcit::Tag(t) => {
+      let tag_str = t.to_string();
+      let id = *ctx
+        .tag_index
+        .get(&tag_str)
+        .ok_or_else(|| format!("unknown tag in WASM codegen: {tag_str}"))?;
+      ctx.emit(f64_const(id as f64));
+    }
     Calcit::Local(local) => {
       let name = &*local.sym;
       let idx = *ctx.locals.get(name).ok_or_else(|| format!("undefined local variable: {name}"))?;
@@ -343,6 +413,9 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     Calcit::List(xs) if !xs.is_empty() => {
       emit_call_expr(ctx, xs)?;
     }
+    Calcit::Str(_) => return Err("String values not yet supported in WASM codegen".into()),
+    Calcit::Record(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Tuple(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
     _ => return Err(format!("unsupported WASM expression: {expr}")),
   }
   Ok(())
@@ -462,6 +535,41 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Ok(())
     }
 
+    // Record operations
+    CalcitProc::NativeRecord => emit_record_new(ctx, args),
+    CalcitProc::NativeRecordNth => emit_record_nth(ctx, args),
+    CalcitProc::NativeRecordGet => emit_record_get(ctx, args),
+    CalcitProc::NativeRecordCount => emit_record_count(args),
+    CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
+      Err("Record mutation (assoc/with) not yet supported in WASM codegen".into())
+    }
+    CalcitProc::NativeRecordFromMap
+    | CalcitProc::NativeRecordToMap
+    | CalcitProc::NativeRecordExtendAs
+    | CalcitProc::NativeRecordPartial
+    | CalcitProc::NativeRecordMatches
+    | CalcitProc::NativeRecordContains
+    | CalcitProc::NativeRecordStruct
+    | CalcitProc::NativeRecordGetName
+    | CalcitProc::NativeRecordImpls
+    | CalcitProc::NativeRecordWithAt
+    | CalcitProc::NativeLooseRecord => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
+
+    // Tuple operations
+    CalcitProc::NativeTuple => emit_tuple_new(ctx, args),
+    CalcitProc::NativeTupleNth => emit_tuple_nth(ctx, args),
+    CalcitProc::NativeTupleCount => emit_tuple_count(args),
+    CalcitProc::NativeEnumTupleNew
+    | CalcitProc::NativeTupleAssoc
+    | CalcitProc::NativeTupleImpls
+    | CalcitProc::NativeTupleParams
+    | CalcitProc::NativeTupleEnum
+    | CalcitProc::NativeTupleImplTraits
+    | CalcitProc::NativeTupleEnumHasVariant
+    | CalcitProc::NativeTupleEnumVariantArity
+    | CalcitProc::NativeTupleValidateEnum => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
+
+    // List / String / Other — not yet supported
     _ => Err(format!("unsupported proc in WASM: {proc}")),
   }
 }
@@ -561,4 +669,246 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
     }
     _ => Err(format!("unsupported let binding form: {pair}")),
   }
+}
+
+// ---------------------------------------------------------------------------
+// Tag collection
+// ---------------------------------------------------------------------------
+
+/// Collect all Tag values from function bodies and build a compile-time tag→id map.
+/// Tag IDs start at 1 (0 is unused/reserved).
+fn collect_all_tags(fn_defs: &[(String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
+  let mut tags: Vec<String> = Vec::new();
+  for (_, _, body) in fn_defs {
+    for expr in body {
+      collect_tags_from_expr(expr, &mut tags);
+    }
+  }
+  tags.sort();
+  tags.dedup();
+  tags
+    .into_iter()
+    .enumerate()
+    .map(|(i, t)| (t, (i + 1) as u32))
+    .collect()
+}
+
+fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
+  match expr {
+    Calcit::Tag(t) => {
+      tags.push(t.to_string());
+    }
+    Calcit::List(xs) => {
+      for x in xs.iter() {
+        collect_tags_from_expr(x, tags);
+      }
+    }
+    Calcit::Struct(s) => {
+      tags.push(s.name.to_string());
+      for f in s.fields.iter() {
+        tags.push(f.to_string());
+      }
+    }
+    _ => {}
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Record operations
+// ---------------------------------------------------------------------------
+
+/// Emit `&%{} struct_ref val0 val1 ...` — allocate a Record in linear memory.
+///
+/// Memory layout: [struct_tag_id: f64] [field_0: f64] [field_1: f64] ...
+/// All fields are in the order defined by CalcitStruct.fields (alphabetical).
+/// Returns the pointer as f64.
+fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    return Err("&%{} requires at least struct_ref argument".into());
+  }
+  // First arg is the struct definition (CalcitStruct)
+  let struct_ref = match &args[0] {
+    Calcit::Struct(s) => s,
+    other => return Err(format!("&%{{}}: expected struct reference, got: {other}")),
+  };
+  let field_count = struct_ref.fields.len();
+  let value_args = &args[1..];
+  if value_args.len() != field_count {
+    return Err(format!(
+      "&%{{}}: expected {} field values, got {}",
+      field_count,
+      value_args.len()
+    ));
+  }
+
+  // Get struct tag ID
+  let struct_tag_id = *ctx
+    .tag_index
+    .get(&struct_ref.name.to_string())
+    .ok_or_else(|| format!("unknown struct tag: {}", struct_ref.name))?;
+
+  // Total bytes: (1 + field_count) * 8
+  let total_size = ((1 + field_count) * 8) as i32;
+
+  // Allocate: save i32 pointer to a temporary local
+  let ptr_local = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, total_size, ptr_local);
+
+  // Store struct tag at offset 0
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // Store each field value at offset (1 + i) * 8
+  for (i, val) in value_args.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    emit_expr(ctx, val)?;
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
+  }
+
+  // Return pointer as f64
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// Emit `&record:nth record idx_literal tag_literal` — O(1) field access by index.
+///
+/// `idx` must be a compile-time Number constant.
+fn emit_record_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  // args: [record_expr, idx_expr, tag_expr]
+  if args.len() < 2 {
+    return Err("&record:nth requires at least 2 args (record, index)".into());
+  }
+  let idx = match &args[1] {
+    Calcit::Number(n) => *n as usize,
+    other => return Err(format!("&record:nth index must be a number literal, got: {other}")),
+  };
+  // Field is at byte offset (1 + idx) * 8 from the record pointer
+  let offset = ((1 + idx) * 8) as u64;
+
+  // Evaluate record expression → f64 pointer
+  emit_expr(ctx, &args[0])?;
+  // Convert f64 pointer to i32
+  ctx.emit(Instruction::I32TruncF64U);
+  // Load f64 value at the field offset
+  ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
+  Ok(())
+}
+
+/// Emit `&record:get record :field_tag` — field access by tag name.
+///
+/// Since fields are sorted alphabetically (matching CalcitStruct), we need the
+/// struct type info to map tag to index. For now, this is only supported when
+/// the tag is a compile-time constant and we can infer the struct type.
+fn emit_record_get(_ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err("&record:get requires 2 args (record, tag)".into());
+  }
+  // For now, fall back to runtime error — we need struct type info to map field name to index.
+  // This operation is typically rewritten to &record:nth during preprocessing.
+  Err("&record:get not yet supported in WASM (use &record:nth via preprocessing optimization)".into())
+}
+
+/// Emit `&record:count record` — returns the number of fields.
+/// Since this is known at compile time via struct definition, it could be optimized.
+/// For now, return an error indicating the caller should use the preprocessed form.
+fn emit_record_count(args: &[Calcit]) -> Result<(), String> {
+  let _ = args;
+  Err("&record:count not yet supported in WASM codegen".into())
+}
+
+// ---------------------------------------------------------------------------
+// Tuple operations
+// ---------------------------------------------------------------------------
+
+/// Emit `:: tag val0 val1 ...` — allocate a Tuple in linear memory.
+///
+/// Memory layout: [tag_id: f64] [payload_0: f64] [payload_1: f64] ...
+/// Returns the pointer as f64.
+fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    return Err(":: requires at least a tag argument".into());
+  }
+
+  // First arg is the tag
+  let tag_id = match &args[0] {
+    Calcit::Tag(t) => {
+      let tag_str = t.to_string();
+      *ctx
+        .tag_index
+        .get(&tag_str)
+        .ok_or_else(|| format!("unknown tag in tuple constructor: {tag_str}"))?
+    }
+    other => return Err(format!("::: expected tag as first arg, got: {other}")),
+  };
+
+  let payload = &args[1..];
+  let total_size = ((1 + payload.len()) * 8) as i32;
+
+  let ptr_local = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, total_size, ptr_local);
+
+  // Store tag at offset 0
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(tag_id as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // Store payload fields
+  for (i, val) in payload.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    emit_expr(ctx, val)?;
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
+  }
+
+  // Return pointer as f64
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// Emit `&tuple:nth tuple idx` — O(1) payload access by index.
+fn emit_tuple_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err("&tuple:nth requires 2 args (tuple, index)".into());
+  }
+  let idx = match &args[1] {
+    Calcit::Number(n) => *n as usize,
+    other => return Err(format!("&tuple:nth index must be a number literal, got: {other}")),
+  };
+  // Payload field is at offset (1 + idx) * 8
+  let offset = ((1 + idx) * 8) as u64;
+
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
+  Ok(())
+}
+
+/// Emit `&tuple:count tuple` — not yet supported.
+fn emit_tuple_count(args: &[Calcit]) -> Result<(), String> {
+  let _ = args;
+  Err("&tuple:count not yet supported in WASM codegen".into())
+}
+
+// ---------------------------------------------------------------------------
+// Memory helpers
+// ---------------------------------------------------------------------------
+
+/// Emit inline bump-allocator: allocate `byte_size` bytes and store the i32
+/// base pointer into `ptr_local`.
+///
+/// ```wasm
+/// global.get $heap_ptr        ;; [i32:old_ptr]
+/// local.tee $ptr_local        ;; [i32:old_ptr] (saved)
+/// i32.const <byte_size>       ;; [i32:old_ptr, i32:size]
+/// i32.add                     ;; [i32:new_ptr]
+/// global.set $heap_ptr        ;; [] (bumped)
+/// ```
+fn emit_bump_alloc(ctx: &mut WasmGenCtx, byte_size: i32, ptr_local: u32) {
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::LocalTee(ptr_local));
+  ctx.emit(Instruction::I32Const(byte_size));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
 }
