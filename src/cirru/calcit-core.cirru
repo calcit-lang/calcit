@@ -1910,7 +1910,9 @@
               if (nil? x)
                 raise $ str-spaced "|assoc does not work on nil for:" args
                 if (list? x) (&list:assoc x & args)
-                  if (map? x) (&map:assoc x & args) (.assoc x & args)
+                  if (map? x) (&map:assoc x & args)
+                    if (record? x) (&record:assoc x & args)
+                      if (tuple? x) (&tuple:assoc x & args) (.assoc x & args)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -2237,7 +2239,8 @@
               if (nil? x) false $ if (list? x) (&list:contains? x k)
                 if (map? x) (&map:contains? x k)
                   if (set? x) (&set:includes? x k)
-                    if (string? x) (&str:contains? x k) (.contains? x k)
+                    if (string? x) (&str:contains? x k)
+                      if (record? x) (&record:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -2263,7 +2266,9 @@
               if (nil? x) 0 $ if (list? x) (&list:count x)
                 if (map? x) (&map:count x)
                   if (set? x) (&set:count x)
-                    if (string? x) (&str:count x) (.count x)
+                    if (string? x) (&str:count x)
+                      if (tuple? x) (&tuple:count x)
+                        if (record? x) (&record:count x) (.count x)
           :examples $ []
             quote $ assert= 4
               count $ [] 1 2 3 4
@@ -2726,7 +2731,9 @@
               if (nil? x) true $ if (list? x) (&list:empty? x)
                 if (map? x) (&map:empty? x)
                   if (set? x) (&set:empty? x)
-                    if (string? x) (&str:empty? x) (.empty? x)
+                    if (string? x) (&str:empty? x)
+                      if (record? x) (&= 0 (&record:count x))
+                        if (tuple? x) (&= 0 (&tuple:count x)) (.empty? x)
           :examples $ []
             quote $ assert= true
               empty? $ []
@@ -2876,7 +2883,8 @@
           :code $ quote
             defn first (x)
               if (nil? x) nil $ if (list? x) (&list:first x)
-                if (string? x) (&str:first x) (.first x)
+                if (string? x) (&str:first x)
+                  if (tuple? x) (&tuple:nth x 0) (.first x)
           :examples $ []
             quote $ assert= 1
               first $ [] 1 2 3
@@ -3042,7 +3050,9 @@
             defn get (base k)
               if (nil? base) nil $ if (string? base) (&str:nth base k)
                 if (map? base) (&map:get base k)
-                  if (list? base) (&list:nth base k) (.get base k)
+                  if (list? base) (&list:nth base k)
+                    if (tuple? base) (&tuple:nth base k)
+                      if (record? base) (&record:get base k) (.get base k)
           :examples $ []
             quote $ assert= 2
               get ([] 0 2 4) 1
@@ -3852,7 +3862,9 @@
           :code $ quote
             defn nth (x i)
               if (list? x) (&list:nth x i)
-                if (string? x) (&str:nth x i) (.nth x i)
+                if (string? x) (&str:nth x i)
+                  if (tuple? x) (&tuple:nth x i)
+                    if (record? x) (&record:nth x i) (.nth x i)
           :examples $ []
             quote $ assert= 2
               nth ([] 1 2 3) 1
