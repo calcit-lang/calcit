@@ -115,6 +115,8 @@ $procs.register_calcit_builtin_impls({{
   set: _$n_core_set_methods,
   string: _$n_core_string_methods,
   fn: _$n_core_fn_methods,
+  tuple: _$n_core_tuple_impls,
+  record: _$n_core_record_impls,
 }});
 
 let runtimeVersion = $procs.calcit_version;

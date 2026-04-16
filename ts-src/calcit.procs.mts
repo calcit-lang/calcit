@@ -146,11 +146,20 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   if (!(traitDef instanceof CalcitTrait)) {
     throw new Error(`&assert-traits expected a trait definition, but received: ${toString(traitDef, true)}`);
   }
-  const pair = lookup_impls(value);
-  if (pair == null) {
-    throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
+  // For records/tuples, only check instance impls (not builtin fallbacks),
+  // matching the Rust runtime behavior of collect_impl_records_for_value.
+  let impls: CalcitImpl[];
+  if (value instanceof CalcitRecord) {
+    impls = value.structRef.impls ?? [];
+  } else if (value instanceof CalcitTuple) {
+    impls = value.impls ?? [];
+  } else {
+    const pair = lookup_impls(value);
+    if (pair == null) {
+      throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
+    }
+    impls = pair[0];
   }
-  const impls = pair[0];
   const missing: string[] = [];
   for (let i = 0; i < traitDef.methods.length; i++) {
     const method = traitDef.methods[i];
@@ -1792,6 +1801,8 @@ let calcit_builtin_impls = {
   list: null as CalcitImplEntry,
   map: null as CalcitImplEntry,
   fn: null as CalcitImplEntry,
+  tuple: null as CalcitImplEntry,
+  record: null as CalcitImplEntry,
 };
 
 // need to register code from outside
@@ -1831,10 +1842,26 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     impls = normalize_builtin_impls(calcit_builtin_impls.map);
   } else if (obj instanceof CalcitRecord) {
     tag = obj.name.toString();
-    impls = obj.structRef.impls;
+    let instanceImpls = obj.structRef.impls;
+    let builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.record);
+    if (builtinRecordImpls && instanceImpls && instanceImpls.length > 0) {
+      impls = [...builtinRecordImpls, ...instanceImpls];
+    } else if (builtinRecordImpls) {
+      impls = builtinRecordImpls;
+    } else {
+      impls = instanceImpls;
+    }
   } else if (obj instanceof CalcitTuple) {
     tag = obj.tag.toString();
-    impls = obj.impls;
+    let instanceImpls = obj.impls;
+    let builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.tuple);
+    if (builtinTupleImpls && instanceImpls && instanceImpls.length > 0) {
+      impls = [...builtinTupleImpls, ...instanceImpls];
+    } else if (builtinTupleImpls) {
+      impls = builtinTupleImpls;
+    } else {
+      impls = instanceImpls;
+    }
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.set);
