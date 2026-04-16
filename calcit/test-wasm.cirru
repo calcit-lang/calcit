@@ -213,6 +213,184 @@
             defn test-max (a b)
               if (&> a b) a b
           :examples $ []
+        |test-list-count $ %{} :CodeEntry (:doc "|list count") (:schema nil)
+          :code $ quote
+            defn test-list-count ()
+              &list:count $ [] 10 20 30
+          :examples $ []
+        |test-list-nth $ %{} :CodeEntry (:doc "|list nth element") (:schema nil)
+          :code $ quote
+            defn test-list-nth (i)
+              &list:nth ([] 10 20 30 40) i
+          :examples $ []
+        |test-list-first $ %{} :CodeEntry (:doc "|list first element") (:schema nil)
+          :code $ quote
+            defn test-list-first ()
+              &list:first $ [] 42 99
+          :examples $ []
+        |test-list-rest-count $ %{} :CodeEntry (:doc "|count of rest") (:schema nil)
+          :code $ quote
+            defn test-list-rest-count ()
+              &list:count $ &list:rest $ [] 10 20 30
+          :examples $ []
+        |test-list-rest-first $ %{} :CodeEntry (:doc "|first of rest") (:schema nil)
+          :code $ quote
+            defn test-list-rest-first ()
+              &list:first $ &list:rest $ [] 10 20 30
+          :examples $ []
+        |test-list-empty-true $ %{} :CodeEntry (:doc "|empty list is empty") (:schema nil)
+          :code $ quote
+            defn test-list-empty-true ()
+              if (&list:empty? $ []) 1 0
+          :examples $ []
+        |test-list-empty-false $ %{} :CodeEntry (:doc "|non-empty list not empty") (:schema nil)
+          :code $ quote
+            defn test-list-empty-false ()
+              if (&list:empty? $ [] 1) 1 0
+          :examples $ []
+        |test-list-append $ %{} :CodeEntry (:doc "|append returns correct count and last elem") (:schema nil)
+          :code $ quote
+            defn test-list-append ()
+              &let
+                xs $ append ([] 10 20) 30
+                &+ (&list:count xs) (&list:nth xs 2)
+          :examples $ []
+        |test-list-prepend $ %{} :CodeEntry (:doc "|prepend returns correct first elem") (:schema nil)
+          :code $ quote
+            defn test-list-prepend ()
+              &list:first $ prepend ([] 10 20) 5
+          :examples $ []
+        |test-list-butlast $ %{} :CodeEntry (:doc "|butlast drops last element") (:schema nil)
+          :code $ quote
+            defn test-list-butlast ()
+              &list:count $ butlast $ [] 10 20 30
+          :examples $ []
+        |test-list-slice $ %{} :CodeEntry (:doc "|slice with start and end") (:schema nil)
+          :code $ quote
+            defn test-list-slice ()
+              &let
+                xs $ &list:slice ([] 10 20 30 40 50) 1 4
+                &+ (&list:count xs) (&list:first xs)
+          :examples $ []
+        |test-list-reverse $ %{} :CodeEntry (:doc "|reverse a list") (:schema nil)
+          :code $ quote
+            defn test-list-reverse ()
+              &let
+                xs $ &list:reverse $ [] 10 20 30
+                &+ (&list:first xs) (&list:nth xs 2)
+          :examples $ []
+        |test-list-concat $ %{} :CodeEntry (:doc "|concat two lists") (:schema nil)
+          :code $ quote
+            defn test-list-concat ()
+              &let
+                xs $ &list:concat ([] 10 20) ([] 30 40)
+                &+ (&list:count xs) (&list:nth xs 3)
+          :examples $ []
+        |test-list-assoc $ %{} :CodeEntry (:doc "|assoc replaces element") (:schema nil)
+          :code $ quote
+            defn test-list-assoc ()
+              &list:nth (&list:assoc ([] 10 20 30) 1 99) 1
+          :examples $ []
+        |test-list-dissoc $ %{} :CodeEntry (:doc "|dissoc removes element") (:schema nil)
+          :code $ quote
+            defn test-list-dissoc ()
+              &let
+                xs $ &list:dissoc ([] 10 20 30) 1
+                &+ (&list:count xs) (&list:nth xs 1)
+          :examples $ []
+        |test-list-contains $ %{} :CodeEntry (:doc "|contains checks index bounds") (:schema nil)
+          :code $ quote
+            defn test-list-contains ()
+              &let
+                xs $ [] 10 20 30
+                &+ (if (&list:contains? xs 2) 1 0) (if (&list:contains? xs 5) 10 0)
+          :examples $ []
+        |test-list-includes $ %{} :CodeEntry (:doc "|includes checks value presence") (:schema nil)
+          :code $ quote
+            defn test-list-includes ()
+              &+ (if (&list:includes? ([] 10 20 30) 20) 1 0) (if (&list:includes? ([] 10 20 30) 99) 10 0)
+          :examples $ []
+        |test-map-count $ %{} :CodeEntry (:doc "|map count") (:schema nil)
+          :code $ quote
+            defn test-map-count ()
+              &map:count $ &{} :a 1 :b 2 :c 3
+          :examples $ []
+        |test-map-get $ %{} :CodeEntry (:doc "|map get by key") (:schema nil)
+          :code $ quote
+            defn test-map-get ()
+              &map:get (&{} :a 10 :b 20 :c 30) :b
+          :examples $ []
+        |test-map-empty-true $ %{} :CodeEntry (:doc "|empty map is empty") (:schema nil)
+          :code $ quote
+            defn test-map-empty-true ()
+              if (&map:empty? $ &{}) 1 0
+          :examples $ []
+        |test-map-empty-false $ %{} :CodeEntry (:doc "|non-empty map not empty") (:schema nil)
+          :code $ quote
+            defn test-map-empty-false ()
+              if (&map:empty? $ &{} :a 1) 1 0
+          :examples $ []
+        |test-map-assoc-new $ %{} :CodeEntry (:doc "|assoc adds new key") (:schema nil)
+          :code $ quote
+            defn test-map-assoc-new ()
+              &let
+                m $ &map:assoc (&{} :a 1) :b 2
+                &+ (&map:count m) (&map:get m :b)
+          :examples $ []
+        |test-map-assoc-update $ %{} :CodeEntry (:doc "|assoc updates existing key") (:schema nil)
+          :code $ quote
+            defn test-map-assoc-update ()
+              &map:get (&map:assoc (&{} :a 1 :b 2) :b 99) :b
+          :examples $ []
+        |test-map-dissoc $ %{} :CodeEntry (:doc "|dissoc removes key") (:schema nil)
+          :code $ quote
+            defn test-map-dissoc ()
+              &let
+                m $ &map:dissoc (&{} :a 1 :b 2 :c 3) :b
+                &+ (&map:count m) (&map:get m :c)
+          :examples $ []
+        |test-map-contains $ %{} :CodeEntry (:doc "|contains checks key presence") (:schema nil)
+          :code $ quote
+            defn test-map-contains ()
+              &+ (if (&map:contains? (&{} :a 1 :b 2) :a) 1 0) (if (&map:contains? (&{} :a 1 :b 2) :z) 10 0)
+          :examples $ []
+        |test-set-count $ %{} :CodeEntry (:doc "|set count") (:schema nil)
+          :code $ quote
+            defn test-set-count ()
+              &set:count $ #{} 10 20 30
+          :examples $ []
+        |test-set-empty $ %{} :CodeEntry (:doc "|empty set") (:schema nil)
+          :code $ quote
+            defn test-set-empty ()
+              &+ (if (&set:empty? $ #{}) 1 0) (if (&set:empty? $ #{} 1) 10 0)
+          :examples $ []
+        |test-set-includes $ %{} :CodeEntry (:doc "|set includes value") (:schema nil)
+          :code $ quote
+            defn test-set-includes ()
+              &+ (if (&set:includes? (#{} 10 20 30) 20) 1 0) (if (&set:includes? (#{} 10 20 30) 99) 10 0)
+          :examples $ []
+        |test-set-include $ %{} :CodeEntry (:doc "|include adds element") (:schema nil)
+          :code $ quote
+            defn test-set-include ()
+              &set:count $ &include (#{} 10 20) 30
+          :examples $ []
+        |test-set-exclude $ %{} :CodeEntry (:doc "|exclude removes element") (:schema nil)
+          :code $ quote
+            defn test-set-exclude ()
+              &set:count $ &exclude (#{} 10 20 30) 20
+          :examples $ []
+        |test-to-pairs $ %{} :CodeEntry (:doc "|to-pairs count") (:schema nil)
+          :code $ quote
+            defn test-to-pairs ()
+              &let
+                ps $ to-pairs $ &{} :a 1 :b 2
+                &+ (&list:count ps) (&list:count $ &list:first ps)
+          :examples $ []
+        |test-map-includes $ %{} :CodeEntry (:doc "|map includes checks value") (:schema nil)
+          :code $ quote
+            defn test-map-includes ()
+              &+ (if (&map:includes? (&{} :a 10 :b 20) 20) 1 0) (if (&map:includes? (&{} :a 10 :b 20) 99) 10 0)
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! ()

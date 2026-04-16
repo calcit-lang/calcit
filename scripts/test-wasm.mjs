@@ -112,6 +112,46 @@ check("test-min(9,2)", 2, e["test-min"], 9, 2);
 check("test-max(3,7)", 7, e["test-max"], 3, 7);
 check("test-max(9,2)", 9, e["test-max"], 9, 2);
 
+// --- List tests ---
+check("test-list-count()", 3, e["test-list-count"]);
+check("test-list-nth(0)", 10, e["test-list-nth"], 0);
+check("test-list-nth(2)", 30, e["test-list-nth"], 2);
+check("test-list-nth(3)", 40, e["test-list-nth"], 3);
+check("test-list-first()", 42, e["test-list-first"]);
+check("test-list-rest-count()", 2, e["test-list-rest-count"]);
+check("test-list-rest-first()", 20, e["test-list-rest-first"]);
+check("test-list-empty-true()", 1, e["test-list-empty-true"]);
+check("test-list-empty-false()", 0, e["test-list-empty-false"]);
+check("test-list-append()", 33, e["test-list-append"]); // count=3 + nth(2)=30
+check("test-list-prepend()", 5, e["test-list-prepend"]);
+check("test-list-butlast()", 2, e["test-list-butlast"]);
+check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
+check("test-list-reverse()", 40, e["test-list-reverse"]); // first=30 + nth(2)=10
+check("test-list-concat()", 44, e["test-list-concat"]); // count=4 + nth(3)=40
+check("test-list-assoc()", 99, e["test-list-assoc"]);
+check("test-list-dissoc()", 32, e["test-list-dissoc"]); // count=2 + nth(1)=30
+check("test-list-contains()", 1, e["test-list-contains"]); // 1+0
+check("test-list-includes()", 1, e["test-list-includes"]); // 1+0
+
+// --- Map tests ---
+check("test-map-count()", 3, e["test-map-count"]);
+check("test-map-get()", 20, e["test-map-get"]);
+check("test-map-empty-true()", 1, e["test-map-empty-true"]);
+check("test-map-empty-false()", 0, e["test-map-empty-false"]);
+check("test-map-assoc-new()", 4, e["test-map-assoc-new"]); // count=2 + get(:b)=2
+check("test-map-assoc-update()", 99, e["test-map-assoc-update"]);
+check("test-map-dissoc()", 5, e["test-map-dissoc"]); // count=2 + get(:c)=3
+check("test-map-contains()", 1, e["test-map-contains"]); // 1+0
+check("test-map-includes()", 1, e["test-map-includes"]); // 1+0
+
+// --- Set tests ---
+check("test-set-count()", 3, e["test-set-count"]);
+check("test-set-empty()", 1, e["test-set-empty"]); // 1+0
+check("test-set-includes()", 1, e["test-set-includes"]); // 1+0
+check("test-set-include()", 3, e["test-set-include"]);
+check("test-set-exclude()", 2, e["test-set-exclude"]);
+check("test-to-pairs()", 4, e["test-to-pairs"]); // list count=2 + first pair count=2
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);
