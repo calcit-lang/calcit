@@ -2780,6 +2780,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   let Some(pred_name) = (match items.first() {
     Some(Calcit::Symbol { sym, .. }) => Some(sym.as_ref()),
     Some(Calcit::Import(CalcitImport { def, .. })) => Some(def.as_ref()),
+    Some(Calcit::Proc(proc)) => Some(proc.as_ref()),
     _ => None,
   }) else {
     return empty;

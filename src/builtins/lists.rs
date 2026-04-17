@@ -688,6 +688,13 @@ pub fn assoc_after(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn list_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list? expects exactly 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::List(_))))
+}
+
 pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:empty? expected a list, but received:", xs);

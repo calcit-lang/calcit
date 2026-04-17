@@ -450,6 +450,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeListSlice => lists::slice(args),
     NativeListAssocBefore => lists::assoc_before(args),
     NativeListAssocAfter => lists::assoc_after(args),
+    NativeListQ => lists::list_ques(args),
     NativeListCount => lists::count(args),
     NativeListEmpty => lists::empty_ques(args),
     NativeListContains => lists::contains_ques(args),

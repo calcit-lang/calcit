@@ -836,6 +836,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeListDissoc => emit_list_dissoc(ctx, args),
     CalcitProc::NativeListContains => emit_list_contains(ctx, args),
     CalcitProc::NativeListIncludes => emit_list_includes(ctx, args),
+    CalcitProc::NativeListQ => emit_list_q(ctx, args),
 
     // ------- Map operations -------
     CalcitProc::NativeMap => emit_map_new(ctx, args),
@@ -2209,6 +2210,22 @@ fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
 
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// `list? x` — true (1.0) when x is a list value.
+/// Implemented as: (type-of x) == list-tag
+fn emit_list_q(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err(format!("list? expects 1 arg, got {}", args.len()));
+  }
+  let list_tag = get_type_tag(ctx, "list");
+  ctx.emit(f64_const(1.0));
+  ctx.emit(f64_const(0.0));
+  emit_type_of(ctx, args)?;
+  ctx.emit(f64_const(list_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::Select);
   Ok(())
 }
 

@@ -3590,9 +3590,7 @@
                 () nil
                 (head tail) head
         |list? $ %{} :CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
-          :code $ quote
-            defn list? (x)
-              &= (type-of x) :list
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ list? ([] 1 2 3)
             quote $ list? ({})

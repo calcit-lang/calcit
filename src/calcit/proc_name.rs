@@ -303,6 +303,9 @@ pub enum CalcitProc {
   NativeListToSet,
   #[strum(serialize = "&list:distinct")]
   NativeListDistinct,
+  // type predicate procs
+  #[strum(serialize = "list?")]
+  NativeListQ,
   // maps
   #[strum(serialize = "&{}")]
   NativeMap,
@@ -772,6 +775,10 @@ impl CalcitProc {
       NativeListConcat => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![variadic_dynamic()],
+      }),
+      NativeListQ => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
       }),
       NativeListCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
