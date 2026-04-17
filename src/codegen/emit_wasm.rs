@@ -31,8 +31,10 @@ use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStruct, CalcitSyntax};
 use crate::program;
 
-/// Initial heap offset — reserve first 16 bytes.
-const HEAP_START: i32 = 16;
+/// Base offset — reserve first 16 bytes for bookkeeping.
+/// The actual heap start will be shifted when string literals occupy the
+/// initial segment (see `build_string_pool`).
+const HEAP_BASE: i32 = 16;
 /// Global index for the heap pointer (bump allocator).
 const HEAP_PTR_GLOBAL: u32 = 0;
 /// Magic marker written at `raw_base` of every heap allocation. Used by
@@ -132,11 +134,14 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Collect all tags referenced in function bodies
   let tag_index = collect_all_tags_from(&fn_defs);
 
+  // Build string literal pool: assigns each unique string a memory offset.
+  let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index);
+
   // Second pass: compile. If a function fails, we still reserve its slot
   // with a trivial body so indices remain stable.
   let mut compiled_fns: Vec<CompiledFn> = Vec::new();
   for (ns, def_name, args, body) in &fn_defs {
-    match compile_fn(def_name, args, body, &fn_index, &fn_arity, &fn_has_rest, &tag_index) {
+    match compile_fn(def_name, args, body, &fn_index, &fn_arity, &fn_has_rest, &tag_index, &string_pool, heap_start) {
       Ok(func) => compiled_fns.push(func),
       Err(e) => {
         eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
@@ -156,7 +161,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   }
 
   // Build module using wasm-encoder
-  let wasm_bytes = build_wasm_module(&compiled_fns)?;
+  let wasm_bytes = build_wasm_module(&compiled_fns, heap_start, &string_data_segment)?;
 
   // Write output
   let out_path = Path::new(emit_path);
@@ -211,7 +216,7 @@ const HOST_IMPORTS: &[HostImport] = &[
 /// Build a binary WASM module from compiled functions.
 /// Host imports occupy the first function indices (0..HOST_IMPORTS.len()),
 /// then user functions follow at indices HOST_IMPORTS.len()..
-fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
+fn build_wasm_module(fns: &[CompiledFn], heap_start: i32, string_data: &[u8]) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
   let num_imports = HOST_IMPORTS.len() as u32;
 
@@ -260,7 +265,7 @@ fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
       mutable: true,
       shared: false,
     },
-    &ConstExpr::i32_const(HEAP_START),
+    &ConstExpr::i32_const(heap_start),
   );
   module.section(&globals);
 
@@ -303,6 +308,13 @@ fn build_wasm_module(fns: &[CompiledFn]) -> Result<Vec<u8>, String> {
     codes.function(&func);
   }
   module.section(&codes);
+
+  // Data section: string literals pre-allocated before the heap
+  if !string_data.is_empty() {
+    let mut data = wasm_encoder::DataSection::new();
+    data.active(0, &ConstExpr::i32_const(HEAP_BASE), string_data.iter().copied());
+    module.section(&data);
+  }
 
   Ok(module.finish())
 }
@@ -347,6 +359,11 @@ struct WasmGenCtx {
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
+  /// String literal pool: string content → logical pointer (f64).
+  /// Strings are pre-allocated in a data segment before the heap.
+  string_pool: HashMap<String, u32>,
+  /// The runtime heap start (after string data segment).
+  heap_start: i32,
 }
 
 impl WasmGenCtx {
@@ -356,6 +373,8 @@ impl WasmGenCtx {
     fn_arity: HashMap<String, u32>,
     fn_has_rest: HashMap<String, u32>,
     tag_index: HashMap<String, u32>,
+    string_pool: HashMap<String, u32>,
+    heap_start: i32,
   ) -> Self {
     WasmGenCtx {
       locals: HashMap::new(),
@@ -369,6 +388,8 @@ impl WasmGenCtx {
       fn_has_rest,
       tag_index,
       block_depth: 0,
+      string_pool,
+      heap_start,
     }
   }
 
@@ -444,6 +465,8 @@ fn compile_fn(
   fn_arity: &HashMap<String, u32>,
   fn_has_rest: &HashMap<String, u32>,
   tag_index: &HashMap<String, u32>,
+  string_pool: &HashMap<String, u32>,
+  heap_start: i32,
 ) -> Result<CompiledFn, String> {
   let mut param_names = Vec::new();
   match args {
@@ -485,6 +508,8 @@ fn compile_fn(
     fn_arity.clone(),
     fn_has_rest.clone(),
     tag_index.clone(),
+    string_pool.clone(),
+    heap_start,
   );
 
   // Register parameter locals
@@ -570,7 +595,13 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     Calcit::List(xs) if !xs.is_empty() => {
       emit_call_expr(ctx, xs)?;
     }
-    Calcit::Str(_) => return Err("String values not yet supported in WASM codegen".into()),
+    Calcit::Str(s) => {
+      let ptr = ctx
+        .string_pool
+        .get(s.as_ref())
+        .ok_or_else(|| format!("string literal not found in pool: {s}"))?;
+      ctx.emit(f64_const(*ptr as f64));
+    }
     Calcit::Record(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
     Calcit::Tuple(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
     _ => return Err(format!("unsupported WASM expression: {expr}")),
@@ -629,12 +660,35 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       Ok(())
     }
     Calcit::Symbol { sym, .. } => {
-      let fn_idx = *ctx.fn_index.get(sym.as_ref()).ok_or_else(|| format!("unknown function: {sym}"))?;
-      let target_arity = ctx.fn_arity.get(sym.as_ref()).copied().unwrap_or(args_list.len() as u32);
-      let rest_fixed = ctx.fn_has_rest.get(sym.as_ref()).copied();
+      let name = sym.as_ref();
+      // IO functions are no-ops in WASM: evaluate args for side effects, return nil
+      if matches!(name, "println" | "eprintln" | "echo") {
+        for arg in &args_list {
+          emit_expr(ctx, arg)?;
+          ctx.emit(Instruction::Drop);
+        }
+        ctx.emit(f64_const(0.0)); // nil
+        return Ok(());
+      }
+      let fn_idx = *ctx.fn_index.get(name).ok_or_else(|| format!("unknown function: {sym}"))?;
+      let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(args_list.len() as u32);
+      let rest_fixed = ctx.fn_has_rest.get(name).copied();
       emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
+    }
+    Calcit::Registered(name) => {
+      // Registered procs (eprintln, println, echo, etc.)
+      let name = name.as_ref();
+      if matches!(name, "println" | "eprintln" | "echo") {
+        for arg in &args_list {
+          emit_expr(ctx, arg)?;
+          ctx.emit(Instruction::Drop);
+        }
+        ctx.emit(f64_const(0.0)); // nil
+        return Ok(());
+      }
+      Err(format!("unsupported registered proc in WASM: {name}"))
     }
     _ => Err(format!("unsupported call head in WASM: {head}")),
   }
@@ -701,6 +755,35 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeLessThan => emit_cmp(ctx, Instruction::F64Lt, args),
     CalcitProc::NativeGreaterThan => emit_cmp(ctx, Instruction::F64Gt, args),
     CalcitProc::NativeEquals | CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
+    CalcitProc::NativeCompare => {
+      // &compare a b → -1.0 if a<b, 0.0 if a==b, 1.0 if a>b
+      if args.len() != 2 {
+        return Err(format!("&compare expects 2 args, got {}", args.len()));
+      }
+      let a = ctx.alloc_local();
+      let b = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(a));
+      emit_expr(ctx, &args[1])?;
+      ctx.emit(Instruction::LocalSet(b));
+      // if a < b then -1 else (if a > b then 1 else 0)
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(b));
+      ctx.emit(Instruction::F64Lt);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.emit(f64_const(-1.0));
+      ctx.emit(Instruction::Else);
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(b));
+      ctx.emit(Instruction::F64Gt);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.emit(f64_const(1.0));
+      ctx.emit(Instruction::Else);
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      Ok(())
+    }
     CalcitProc::Not => {
       if args.len() != 1 {
         return Err("not expects 1 arg".into());
@@ -773,7 +856,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeRecord => emit_record_new(ctx, args),
     CalcitProc::NativeRecordNth => emit_record_nth(ctx, args),
     CalcitProc::NativeRecordGet => emit_record_get(ctx, args),
-    CalcitProc::NativeRecordCount => emit_record_count(args),
+    CalcitProc::NativeRecordCount => emit_record_count(ctx, args),
     CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
       Err("Record mutation (assoc/with) not yet supported in WASM codegen".into())
     }
@@ -793,6 +876,15 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeTuple => emit_tuple_new(ctx, args),
     CalcitProc::NativeTupleNth => emit_tuple_nth(ctx, args),
     CalcitProc::NativeTupleCount => emit_tuple_count(ctx, args),
+    CalcitProc::NativeTupleValidateEnum => {
+      // Runtime enum validation — no-op in WASM, just evaluate args and discard
+      for arg in args {
+        emit_expr(ctx, arg)?;
+        ctx.emit(Instruction::Drop);
+      }
+      ctx.emit(f64_const(0.0)); // nil
+      Ok(())
+    }
     CalcitProc::NativeEnumTupleNew
     | CalcitProc::NativeTupleAssoc
     | CalcitProc::NativeTupleImpls
@@ -800,8 +892,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     | CalcitProc::NativeTupleEnum
     | CalcitProc::NativeTupleImplTraits
     | CalcitProc::NativeTupleEnumHasVariant
-    | CalcitProc::NativeTupleEnumVariantArity
-    | CalcitProc::NativeTupleValidateEnum => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
+    | CalcitProc::NativeTupleEnumVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
 
     // Bitwise operations — convert to i32, operate, convert back to f64
     CalcitProc::BitShl => emit_bitwise_binary(ctx, Instruction::I32Shl, args),
@@ -862,6 +953,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeMapContains => emit_map_contains(ctx, args),
     CalcitProc::NativeMapIncludes => emit_map_includes(ctx, args),
     CalcitProc::ToPairs => emit_map_to_pairs(ctx, args),
+    CalcitProc::NativeMapToList => emit_map_to_list(ctx, args),
 
     // ------- Set operations -------
     CalcitProc::Set => emit_set_new(ctx, args),
@@ -898,7 +990,7 @@ fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]
 ///
 /// Pointer detection heuristic (enough for core-library usage patterns):
 /// - value must be a finite integer (== trunc(v))
-/// - value must be within `[HEAP_START + 8, current_heap_ptr)` (logical ptrs begin
+/// - value must be within `[HEAP_BASE + 8, current_heap_ptr)` (logical ptrs begin
 ///   8 bytes after the raw base)
 /// - the i32 offset at `(ptr - 8)` must contain a registered type tag id
 ///
@@ -923,9 +1015,9 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::LocalGet(v_local));
   ctx.emit(Instruction::F64Trunc);
   ctx.emit(Instruction::F64Eq);
-  // 2) v >= (HEAP_START + 8) as f64
+  // 2) v >= (HEAP_BASE + 8) as f64  (lowest possible logical pointer)
   ctx.emit(Instruction::LocalGet(v_local));
-  ctx.emit(f64_const((HEAP_START + 8) as f64));
+  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
   ctx.emit(Instruction::F64Ge);
   ctx.emit(Instruction::I32And);
   // 3) v < current heap_ptr
@@ -1299,12 +1391,89 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 // Record operations
 // ---------------------------------------------------------------------------
 
+/// Build a string literal pool for WASM linear memory.
+///
+/// Scans all function bodies for `Calcit::Str` literals, deduplicates them,
+/// and lays them out in memory starting at `HEAP_BASE`.
+///
+/// Each string is stored as:
+///   `[magic:i32][type_tag("string"):i32][byte_len:f64][utf8_bytes... padded to 8]`
+///
+/// Returns:
+///   - `string_pool`: maps string content → logical pointer (offset of byte_len field)
+///   - `data_segment`: raw bytes for the WASM data section
+///   - `heap_start`: the new heap start offset (after all string data)
+fn build_string_pool(
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  tag_index: &HashMap<String, u32>,
+) -> (HashMap<String, u32>, Vec<u8>, i32) {
+  let mut strings: Vec<String> = Vec::new();
+  for (_, _, _, body) in fn_defs {
+    for expr in body {
+      collect_strings_from_expr(expr, &mut strings);
+    }
+  }
+  strings.sort();
+  strings.dedup();
+
+  if strings.is_empty() {
+    return (HashMap::new(), Vec::new(), HEAP_BASE);
+  }
+
+  let string_tag_id = *tag_index.get("string").expect("string type tag must exist") as i32;
+  let mut pool: HashMap<String, u32> = HashMap::new();
+  let mut data: Vec<u8> = Vec::new();
+  let mut offset = HEAP_BASE as u32; // current write position in linear memory
+
+  for s in &strings {
+    let byte_len = s.len() as u32;
+    // Write header: magic (i32) + type_tag (i32)
+    data.extend_from_slice(&(HEAP_MAGIC as u32).to_le_bytes());
+    data.extend_from_slice(&(string_tag_id as u32).to_le_bytes());
+    // Logical pointer = offset + 8 (after header)
+    let logical_ptr = offset + 8;
+    pool.insert(s.clone(), logical_ptr);
+    // Write byte_len as f64
+    data.extend_from_slice(&(byte_len as f64).to_le_bytes());
+    // Write UTF-8 bytes
+    data.extend_from_slice(s.as_bytes());
+    // Pad to 8-byte alignment
+    let padded_len = (byte_len + 7) & !7;
+    for _ in byte_len..padded_len {
+      data.push(0);
+    }
+    // Advance offset: 8 (header) + 8 (byte_len f64) + padded_len
+    offset += 8 + 8 + padded_len;
+  }
+
+  let heap_start = offset as i32;
+  (pool, data, heap_start)
+}
+
+fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
+  match expr {
+    Calcit::Str(s) => {
+      strings.push(s.to_string());
+    }
+    Calcit::List(xs) => {
+      for x in xs.iter() {
+        collect_strings_from_expr(x, strings);
+      }
+    }
+    _ => {}
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Record operations (continued)
+// ---------------------------------------------------------------------------
+
 /// Emit `&%{} struct_ref :field1 val1 :field2 val2 ...` — allocate a Record in linear memory.
 ///
 /// The preprocessed form is: [NativeRecord, struct_ref, :tag1, val1, :tag2, val2, ...]
 /// where struct_ref is either Calcit::Struct or Calcit::Import pointing to the struct def.
 ///
-/// Memory layout: [struct_tag_id: f64] [field_0: f64] [field_1: f64] ...
+/// Memory layout: [count: f64] [struct_tag_id: f64] [field_0: f64] [field_1: f64] ...
 /// All fields are in the order defined by CalcitStruct.fields (alphabetical).
 /// Returns the pointer as f64.
 fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
@@ -1333,25 +1502,31 @@ fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
     .get(&struct_def.name.to_string())
     .ok_or_else(|| format!("unknown struct tag: {}", struct_def.name))?;
 
-  // Total bytes: (1 + field_count) * 8
-  let total_size = ((1 + field_count) * 8) as i32;
+  // Layout: [count:f64][struct_tag:f64][field0:f64][field1:f64]...
+  // Total bytes: (2 + field_count) * 8
+  let total_size = ((2 + field_count) * 8) as i32;
 
   // Allocate: save i32 pointer to a temporary local
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, total_size, ptr_local, "record");
 
-  // Store struct tag at offset 0
+  // Store field count at offset 0
   ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(f64_const(field_count as f64));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  // Store each field value at offset (1 + i) * 8
+  // Store struct tag at offset 8
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+
+  // Store each field value at offset (2 + i) * 8
   // field_args layout: [:tag0, val0, :tag1, val1, ...]
   for i in 0..field_count {
     let value_expr = &field_args[i * 2 + 1]; // skip the tag, take the value
     ctx.emit(Instruction::LocalGet(ptr_local));
     emit_expr(ctx, value_expr)?;
-    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + i) * 8) as u64)));
   }
 
   // Return pointer as f64
@@ -1448,19 +1623,37 @@ fn emit_record_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
   if args.len() < 2 {
     return Err("&record:nth requires at least 2 args (record, index)".into());
   }
-  let idx = match &args[1] {
-    Calcit::Number(n) => *n as usize,
-    other => return Err(format!("&record:nth index must be a number literal, got: {other}")),
-  };
-  // Field is at byte offset (1 + idx) * 8 from the record pointer
-  let offset = ((1 + idx) * 8) as u64;
-
-  // Evaluate record expression → f64 pointer
-  emit_expr(ctx, &args[0])?;
-  // Convert f64 pointer to i32
-  ctx.emit(Instruction::I32TruncF64U);
-  // Load f64 value at the field offset
-  ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
+  // Layout: [count:f64][struct_tag:f64][field0:f64]...
+  // Field at byte offset (2 + idx) * 8 from the record pointer
+  match &args[1] {
+    Calcit::Number(n) => {
+      // Static index — compile-time constant offset
+      let idx = *n as usize;
+      let offset = ((2 + idx) * 8) as u64;
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
+    }
+    _ => {
+      // Dynamic index — compute offset at runtime: (2 + idx) * 8
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::I32TruncF64U);
+      let ptr_local = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalSet(ptr_local));
+      // Compute byte offset: (2 + idx) * 8
+      emit_expr(ctx, &args[1])?;
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::I32Const(2));
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Mul);
+      // Add base pointer
+      ctx.emit(Instruction::LocalGet(ptr_local));
+      ctx.emit(Instruction::I32Add);
+      // Load f64 at computed offset
+      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    }
+  }
   Ok(())
 }
 
@@ -1479,29 +1672,34 @@ fn emit_record_get(_ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String>
 }
 
 /// Emit `&record:count record` — returns the number of fields.
-/// Since this is known at compile time via struct definition, it could be optimized.
-/// For now, return an error indicating the caller should use the preprocessed form.
-fn emit_record_count(args: &[Calcit]) -> Result<(), String> {
-  let _ = args;
-  Err("&record:count not yet supported in WASM codegen".into())
+/// Layout: [count:f64][struct_tag:f64][fields...]
+/// Count is at offset 0 from the record pointer.
+fn emit_record_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    return Err("&record:count requires 1 arg (record)".into());
+  }
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  Ok(())
 }
 
 /// Emit `&record:matches? a b` — check if two records have the same struct type.
 ///
-/// Record layout: [struct_tag: f64] [field0: f64] ...
+/// Record layout: [count: f64] [struct_tag: f64] [field0: f64] ...
 /// Compares the struct_tag (offset 0) of both records.
 fn emit_record_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&record:matches? expects 2 args".into());
   }
-  // Load struct_tag of first record
+  // Load struct_tag of first record (at offset 8, after count)
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  // Load struct_tag of second record
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  // Load struct_tag of second record (at offset 8, after count)
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   // Compare and return 1.0 or 0.0
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -2886,6 +3084,19 @@ fn emit_map_to_pairs(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   if args.len() != 1 {
     return Err("to-pairs expects 1 arg".into());
   }
+  emit_map_to_pair_list(ctx, args, "set")
+}
+
+/// `&map:to-list map` — convert map to list of `[key, value]` pairs.
+fn emit_map_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err("&map:to-list expects 1 arg".into());
+  }
+  emit_map_to_pair_list(ctx, args, "list")
+}
+
+/// Shared implementation: convert a map to a list/set of `[key, value]` pairs.
+fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer_tag: &str) -> Result<(), String> {
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, map_ptr);
 
@@ -2895,7 +3106,7 @@ fn emit_map_to_pairs(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(outer_ts));
-  let outer = emit_alloc_with_count(ctx, count, outer_ts, "list");
+  let outer = emit_alloc_with_count(ctx, count, outer_ts, outer_tag);
 
   // Loop: for each entry, create a 2-element list [key, value]
   let i = ctx.alloc_local_typed(ValType::I32);
