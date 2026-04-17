@@ -106,12 +106,28 @@
                 p $ %{} Point (:x x) (:y y)
                 &+ (&record:nth p 0 :x) (&record:nth p 1 :y)
           :examples $ []
-        |test-tuple-sum $ %{} :CodeEntry (:doc "|Tuple create + nth access") (:schema nil)
+        |test-record-matches-true $ %{} :CodeEntry (:doc "|record:matches? returns true for same type") (:schema nil)
+          :code $ quote
+            defn test-record-matches-true ()
+              &let
+                a $ %{} Point (:x 1) (:y 2)
+                &let
+                  b $ %{} Point (:x 3) (:y 4)
+                  if (&record:matches? a b) 1 0
+          :examples $ []
+        |test-tuple-sum $ %{} :CodeEntry (:doc "|Tuple create + nth access: idx 1 and 2 are payloads") (:schema nil)
           :code $ quote
             defn test-tuple-sum ()
               &let
                 t $ :: :pair 10 20
-                &+ (&tuple:nth t 0) (&tuple:nth t 1)
+                &+ (&tuple:nth t 1) (&tuple:nth t 2)
+          :examples $ []
+        |test-tuple-count $ %{} :CodeEntry (:doc "|Tuple count returns payload count") (:schema nil)
+          :code $ quote
+            defn test-tuple-count ()
+              &let
+                t $ :: :pair 10 20
+                &tuple:count t
           :examples $ []
         |test-bit-and $ %{} :CodeEntry (:doc "|Bitwise AND") (:schema nil)
           :code $ quote
@@ -379,6 +395,26 @@
             defn test-set-exclude ()
               &set:count $ &exclude (#{} 10 20 30) 20
           :examples $ []
+        |test-set-difference $ %{} :CodeEntry (:doc "|difference removes elements in second set") (:schema nil)
+          :code $ quote
+            defn test-set-difference ()
+              &set:count $ &difference (#{} 10 20 30 40) (#{} 20 40)
+          :examples $ []
+        |test-set-difference-empty $ %{} :CodeEntry (:doc "|difference with disjoint sets keeps all") (:schema nil)
+          :code $ quote
+            defn test-set-difference-empty ()
+              &set:count $ &difference (#{} 10 20) (#{} 30 40)
+          :examples $ []
+        |test-set-union $ %{} :CodeEntry (:doc "|union merges two sets") (:schema nil)
+          :code $ quote
+            defn test-set-union ()
+              &set:count $ &union (#{} 10 20) (#{} 20 30 40)
+          :examples $ []
+        |test-set-union-same $ %{} :CodeEntry (:doc "|union of identical sets") (:schema nil)
+          :code $ quote
+            defn test-set-union-same ()
+              &set:count $ &union (#{} 10 20 30) (#{} 10 20 30)
+          :examples $ []
         |test-to-pairs $ %{} :CodeEntry (:doc "|to-pairs count") (:schema nil)
           :code $ quote
             defn test-to-pairs ()
@@ -390,6 +426,48 @@
           :code $ quote
             defn test-map-includes ()
               &+ (if (&map:includes? (&{} :a 10 :b 20) 20) 1 0) (if (&map:includes? (&{} :a 10 :b 20) 99) 10 0)
+          :examples $ []
+        |test-map-merge $ %{} :CodeEntry (:doc "|merge two maps, b overrides a") (:schema nil)
+          :code $ quote
+            defn test-map-merge ()
+              &map:count $ &merge (&{} :a 1 :b 2) (&{} :b 3 :c 4)
+          :examples $ []
+        |test-map-merge-value $ %{} :CodeEntry (:doc "|merge override check via get") (:schema nil)
+          :code $ quote
+            defn test-map-merge-value ()
+              &map:get (&merge (&{} :a 1 :b 2) (&{} :b 99)) :b
+          :examples $ []
+        |test-map-diff-new $ %{} :CodeEntry (:doc "|diff-new: entries in b not in a") (:schema nil)
+          :code $ quote
+            defn test-map-diff-new ()
+              &map:count $ &map:diff-new (&{} :a 1 :b 2) (&{} :b 3 :c 4 :d 5)
+          :examples $ []
+        |test-map-diff-keys $ %{} :CodeEntry (:doc "|diff-keys: keys in a not in b") (:schema nil)
+          :code $ quote
+            defn test-map-diff-keys ()
+              &set:count $ &map:diff-keys (&{} :a 1 :b 2 :c 3) (&{} :b 10)
+          :examples $ []
+        |test-map-common-keys $ %{} :CodeEntry (:doc "|common-keys: keys in both a and b") (:schema nil)
+          :code $ quote
+            defn test-map-common-keys ()
+              &set:count $ &map:common-keys (&{} :a 1 :b 2 :c 3) (&{} :b 10 :c 20 :d 30)
+          :examples $ []
+        |test-range $ %{} :CodeEntry (:doc "|range creates list of numbers") (:schema nil)
+          :code $ quote
+            defn test-range ()
+              &list:count $ range 5
+          :examples $ []
+        |test-range-sum $ %{} :CodeEntry (:doc "|range 5 first+last: 0+4=4") (:schema nil)
+          :code $ quote
+            defn test-range-sum ()
+              &let
+                xs $ range 5
+                &+ (&list:nth xs 0) (&list:nth xs 4)
+          :examples $ []
+        |test-range-two-args $ %{} :CodeEntry (:doc "|range 2 5 creates 3 elements") (:schema nil)
+          :code $ quote
+            defn test-range-two-args ()
+              &list:count $ range 2 5
           :examples $ []
         |collect-rest $ %{} :CodeEntry (:doc "|returns rest list unchanged") (:schema nil)
           :code $ quote

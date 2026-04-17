@@ -65,9 +65,11 @@ check("test-tag-neq()", 0, e["test-tag-neq"]);
 // --- Record tests ---
 check("test-record-sum(3,4)", 7, e["test-record-sum"], 3, 4);
 check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
+check("test-record-matches-true()", 1, e["test-record-matches-true"]);
 
 // --- Tuple tests ---
 check("test-tuple-sum()", 30, e["test-tuple-sum"]);
+check("test-tuple-count()", 2, e["test-tuple-count"]);
 
 // --- Bitwise tests ---
 check("test-bit-and(0xFF,0x0F)", 0x0f, e["test-bit-and"], 0xff, 0x0f);
@@ -150,7 +152,23 @@ check("test-set-empty()", 1, e["test-set-empty"]); // 1+0
 check("test-set-includes()", 1, e["test-set-includes"]); // 1+0
 check("test-set-include()", 3, e["test-set-include"]);
 check("test-set-exclude()", 2, e["test-set-exclude"]);
+check("test-set-difference()", 2, e["test-set-difference"]); // {10,30} from {10,20,30,40} - {20,40}
+check("test-set-difference-empty()", 2, e["test-set-difference-empty"]); // disjoint, keeps all
+check("test-set-union()", 4, e["test-set-union"]); // {10,20,30,40}
+check("test-set-union-same()", 3, e["test-set-union-same"]); // {10,20,30}
 check("test-to-pairs()", 4, e["test-to-pairs"]); // list count=2 + first pair count=2
+
+// --- Map merge/diff tests ---
+check("test-map-merge()", 3, e["test-map-merge"]); // {a:1, b:3, c:4}
+check("test-map-merge-value()", 99, e["test-map-merge-value"]); // b overridden to 99
+check("test-map-diff-new()", 2, e["test-map-diff-new"]); // {c:4, d:5} not in a
+check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b
+check("test-map-common-keys()", 2, e["test-map-common-keys"]); // #{b, c} in both
+
+// --- Range tests ---
+check("test-range()", 5, e["test-range"]); // [0,1,2,3,4]
+check("test-range-sum()", 4, e["test-range-sum"]); // 0+4
+check("test-range-two-args()", 3, e["test-range-two-args"]); // [2,3,4]
 
 // --- Rest args tests ---
 check("test-rest-count()", 3, e["test-rest-count"]);
