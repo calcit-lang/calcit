@@ -1996,9 +1996,7 @@
             {} (:return :bool)
               :args $ [] :string
         |bool? $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn bool? (x)
-              &= (type-of x) :bool
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -2903,11 +2901,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |fn? $ %{} :CodeEntry (:doc "|Check if a value is a function")
-          :code $ quote
-            defn fn? (x)
-              if
-                &= (type-of x) :fn
-                , true $ &= (type-of x) :proc
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (fn? inc)
             quote $ assert= false (fn? 123)
@@ -3713,9 +3707,7 @@
                   :args $ [] 'K 'V
               :generics $ [] 'K 'V 'R
         |map? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a map")
-          :code $ quote
-            defn map? (x)
-              &= (type-of x) :map
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               map? $ {} (:a 1)
@@ -3787,9 +3779,7 @@
             {} (:return :number)
               :args $ [] :number
         |nil? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is nil")
-          :code $ quote
-            defn nil? (x)
-              &= (type-of x) :nil
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (nil? nil)
             quote $ assert= false (nil? 0)
@@ -3839,9 +3829,7 @@
             {} (:return :dynamic)
               :args $ [] :dynamic :number
         |number? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
-          :code $ quote
-            defn number? (x)
-              &= (type-of x) :number
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (number? 123)
             quote $ assert= true (number? 3.14)
@@ -4033,9 +4021,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct-based record (created with defstruct + %{}).")
-          :code $ quote
-            defn record? (x)
-              &= (type-of x) :record
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= false
               record? $ {} (:x 1)
@@ -4182,9 +4168,7 @@
             {} (:return :map)
               :args $ [] :map :list
         |set? $ %{} :CodeEntry (:doc "|Check if a value is a set")
-          :code $ quote
-            defn set? (x)
-              &= (type-of x) :set
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               set? $ #{} 1 2 3
@@ -4296,9 +4280,7 @@
             {} (:rest :dynamic) (:return :string)
               :args $ []
         |string? $ %{} :CodeEntry (:doc "|checks if value is a string")
-          :code $ quote
-            defn string? (x)
-              &= (type-of x) :string
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (string? |hello)
             quote $ assert= false (string? 123)
@@ -4357,9 +4339,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
         |symbol? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
-          :code $ quote
-            defn symbol? (x)
-              &= (type-of x) :symbol
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               symbol? $ quote item
@@ -4405,9 +4385,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |tag? $ %{} :CodeEntry (:doc "|Check if a value is a tag (keyword)")
-          :code $ quote
-            defn tag? (x)
-              &= (type-of x) :tag
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (tag? :keyword)
             quote $ assert= false (tag? |string)
@@ -4509,9 +4487,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
         |tuple? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a tuple literal created with the `::` form.")
-          :code $ quote
-            defn tuple? (x)
-              &= (type-of x) :tuple
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               tuple? $ :: :a :b

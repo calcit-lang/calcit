@@ -1051,6 +1051,13 @@ fn preprocess_list_call(
         if let Some(Calcit::Proc(proc)) = ys.first() {
           let processed_args = CalcitList::from(ys.drop_left());
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+
+          // Try predicate folding for type-predicate procs
+          if let Some(specialized) =
+            try_specialize_polymorphic_call(calcit::CORE_NS, proc.as_ref(), &processed_args, scope_types, file_ns)
+          {
+            return Ok(specialized);
+          }
         }
 
         // Check Local function call argument types if the local has a known Fn type

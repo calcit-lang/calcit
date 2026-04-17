@@ -114,6 +114,30 @@ pub enum CalcitProc {
   ReadFile,
   #[strum(serialize = "write-file")]
   WriteFile,
+  #[strum(serialize = "list?")]
+  ListQuestion,
+  #[strum(serialize = "tag?")]
+  TagQuestion,
+  #[strum(serialize = "symbol?")]
+  SymbolQuestion,
+  #[strum(serialize = "nil?")]
+  NilQuestion,
+  #[strum(serialize = "string?")]
+  StringQuestion,
+  #[strum(serialize = "map?")]
+  MapQuestion,
+  #[strum(serialize = "number?")]
+  NumberQuestion,
+  #[strum(serialize = "bool?")]
+  BoolQuestion,
+  #[strum(serialize = "set?")]
+  SetQuestion,
+  #[strum(serialize = "tuple?")]
+  TupleQuestion,
+  #[strum(serialize = "record?")]
+  RecordQuestion,
+  #[strum(serialize = "fn?")]
+  FnQuestion,
   /// to detect syntax `&`
   #[strum(serialize = "is-spreading-mark?")]
   IsSpreadingMark,
@@ -594,6 +618,54 @@ impl CalcitProc {
       }),
       NativeDataToCode => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag()],
+      }),
+      ListQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      TagQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      SymbolQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      NilQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      StringQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      MapQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      NumberQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      BoolQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      SetQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      TupleQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      RecordQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      FnQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
       }),
       IsSpreadingMark => Some(ProcTypeSignature {

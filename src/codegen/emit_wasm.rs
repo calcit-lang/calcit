@@ -727,6 +727,20 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // type-of: reads the heap type header or returns :number for non-pointers.
     CalcitProc::TypeOf => emit_type_of(ctx, args),
 
+    // type predicates
+    CalcitProc::ListQuestion => emit_type_predicate(ctx, "list", args),
+    CalcitProc::TagQuestion => emit_type_predicate(ctx, "tag", args),
+    CalcitProc::SymbolQuestion => emit_type_predicate(ctx, "symbol", args),
+    CalcitProc::NilQuestion => emit_type_predicate(ctx, "nil", args),
+    CalcitProc::StringQuestion => emit_type_predicate(ctx, "string", args),
+    CalcitProc::MapQuestion => emit_type_predicate(ctx, "map", args),
+    CalcitProc::NumberQuestion => emit_type_predicate(ctx, "number", args),
+    CalcitProc::BoolQuestion => emit_type_predicate(ctx, "bool", args),
+    CalcitProc::SetQuestion => emit_type_predicate(ctx, "set", args),
+    CalcitProc::TupleQuestion => emit_type_predicate(ctx, "tuple", args),
+    CalcitProc::RecordQuestion => emit_type_predicate(ctx, "record", args),
+    CalcitProc::FnQuestion => emit_type_predicate(ctx, "fn", args),
+
     // Recur
     CalcitProc::Recur => {
       if args.len() != ctx.arg_indices.len() {
@@ -941,6 +955,23 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::Else);
   ctx.emit(f64_const(number_tag));
   ctx.emit(Instruction::End);
+  Ok(())
+}
+
+/// Emit a type predicate like `list?`. Compares `type-of v` with the given
+/// type tag and pushes 1.0 (true) or 0.0 (false).
+fn emit_type_predicate(ctx: &mut WasmGenCtx, type_name: &str, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err(format!("{}? expects 1 arg, got {}", type_name, args.len()));
+  }
+  let expected_tag = get_type_tag(ctx, type_name);
+  // Emit type-of, which leaves a tag f64 on the stack
+  emit_type_of(ctx, args)?;
+  // Compare with expected tag
+  ctx.emit(f64_const(expected_tag));
+  ctx.emit(Instruction::F64Eq);
+  // Convert i32 boolean to f64
+  ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
@@ -1207,7 +1238,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Builtin type tags always registered in tag_index, so `type-of` can return them
 /// and heap objects can carry them in their header slot.
 const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "list", "map", "set", "tuple", "record", "number", "bool", "nil", "tag", "fn", "string",
+  "list", "map", "set", "tuple", "record", "number", "bool", "nil", "tag", "fn", "string", "symbol",
 ];
 
 fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {

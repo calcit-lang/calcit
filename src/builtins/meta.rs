@@ -1802,6 +1802,90 @@ pub fn cirru_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn list_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::List(_))))
+}
+
+pub fn tag_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "tag? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Tag(_))))
+}
+
+pub fn symbol_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "symbol? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Symbol { .. })))
+}
+
+pub fn nil_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "nil? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Nil)))
+}
+
+pub fn string_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "string? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Str(_))))
+}
+
+pub fn map_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "map? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Map(_))))
+}
+
+pub fn number_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "number? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Number(_))))
+}
+
+pub fn bool_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "bool? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Bool(_))))
+}
+
+pub fn set_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "set? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Set(_))))
+}
+
+pub fn tuple_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "tuple? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Tuple { .. })))
+}
+
+pub fn record_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "record? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Record { .. })))
+}
+
+pub fn fn_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "fn? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Fn { .. } | Calcit::Proc(_))))
+}
+
 pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "is-spreading-mark? expected 1 argument, but received:", xs);
