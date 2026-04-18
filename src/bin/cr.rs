@@ -256,9 +256,6 @@ fn main() -> Result<(), String> {
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
-  } else if let Some(CalcitCommand::EmitWasm(_)) = &cli_args.subcommand {
-    eval_once = true;
-    run_wasm_codegen(&entries, &cli_args.emit_path)
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
@@ -599,42 +596,6 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       }
     }
   }
-  let duration = Instant::now().duration_since(started_time);
-  println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
-  Ok(())
-}
-
-fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str) -> Result<(), String> {
-  let started_time = Instant::now();
-  codegen::set_codegen_mode(true);
-
-  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-
-  // Preprocess ALL defs in the init namespace (not just the entry point).
-  // WASM codegen exports every compilable function, so we need all defs preprocessed.
-  // Process non-fn defs (like defrecord) first to ensure type resolution works.
-  let all_defs = program::list_source_def_names(&entries.init_ns);
-  for def_name in &all_defs {
-    match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, def_name, check_warnings, &CallStackList::default()) {
-      Ok(_) => (),
-      Err(failure) => {
-        eprintln!(
-          "[wasm] preprocessing failed for {}/{}: {}",
-          entries.init_ns,
-          def_name,
-          failure.headline()
-        );
-      }
-    }
-  }
-
-  match codegen::emit_wasm::emit_wasm(&entries.init_ns, emit_path) {
-    Ok(_) => (),
-    Err(failure) => {
-      return Err(failure);
-    }
-  }
-
   let duration = Instant::now().duration_since(started_time);
   println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
   Ok(())

@@ -82,6 +82,11 @@
                 &+ acc $ &list:first xs
                 &list:rest xs
           :examples $ []
+        |sum-rest-forward $ %{} :CodeEntry (:doc "|forwards a rest list via &call-spread") (:schema :dynamic)
+          :code $ quote
+            defn sum-rest-forward (a b & xs)
+              sum-rest a b & xs
+          :examples $ []
         |test-abs $ %{} :CodeEntry (:doc "|abs from calcit.core") (:schema :dynamic)
           :code $ quote
             defn test-abs (x) (abs x)
@@ -215,6 +220,17 @@
               &list:empty? $ []
               , 1 0
           :examples $ []
+        |test-list-empty-method $ %{} :CodeEntry (:doc "|.empty returns an empty list") (:schema :dynamic)
+          :code $ quote
+            defn test-list-empty-method () $ count
+              .empty $ [] 10 20 30
+          :examples $ []
+        |test-list-empty?-method $ %{} :CodeEntry (:doc "|.empty? uses generic method dispatch") (:schema :dynamic)
+          :code $ quote
+            defn test-list-empty?-method () $ if
+              .empty? $ []
+              , 1 0
+          :examples $ []
         |test-list-first $ %{} :CodeEntry (:doc "|list first element") (:schema :dynamic)
           :code $ quote
             defn test-list-first () $ &list:first ([] 42 99)
@@ -232,6 +248,34 @@
               if
                 &list:includes? ([] 10 20 30) 99
                 , 10 0
+          :examples $ []
+        |test-list-contains-method $ %{} :CodeEntry (:doc "|.contains? dispatches on list") (:schema :dynamic)
+          :code $ quote
+            defn test-list-contains-method () $ &+
+              if
+                .contains? ([] 10 20 30) 1
+                , 1 0
+              if
+                .contains? ([] 10 20 30) 9
+                , 10 0
+          :examples $ []
+        |test-list-includes-method $ %{} :CodeEntry (:doc "|.includes? dispatches on list") (:schema :dynamic)
+          :code $ quote
+            defn test-list-includes-method () $ &+
+              if
+                .includes? ([] 10 20 30) 20
+                , 1 0
+              if
+                .includes? ([] 10 20 30) 99
+                , 10 0
+          :examples $ []
+        |test-list-max-method $ %{} :CodeEntry (:doc "|.max dispatches on list") (:schema :dynamic)
+          :code $ quote
+            defn test-list-max-method () $ .max ([] 10 20 30 15)
+          :examples $ []
+        |test-list-min-method $ %{} :CodeEntry (:doc "|.min dispatches on list") (:schema :dynamic)
+          :code $ quote
+            defn test-list-min-method () $ .min ([] 10 20 30 15)
           :examples $ []
         |test-list-nth $ %{} :CodeEntry (:doc "|list nth element") (:schema :dynamic)
           :code $ quote
@@ -350,6 +394,11 @@
               &map:empty? $ &{}
               , 1 0
           :examples $ []
+        |test-map-empty-method $ %{} :CodeEntry (:doc "|.empty returns an empty map") (:schema :dynamic)
+          :code $ quote
+            defn test-map-empty-method () $ count
+              .empty $ &{} :a 1 :b 2
+          :examples $ []
         |test-map-get $ %{} :CodeEntry (:doc "|map get by key") (:schema :dynamic)
           :code $ quote
             defn test-map-get () $ &map:get (&{} :a 10 :b 20 :c 30) :b
@@ -370,6 +419,26 @@
                 , 1 0
               if
                 &map:includes? (&{} :a 10 :b 20) 99
+                , 10 0
+          :examples $ []
+        |test-map-contains-method $ %{} :CodeEntry (:doc "|.contains? dispatches on map") (:schema :dynamic)
+          :code $ quote
+            defn test-map-contains-method () $ &+
+              if
+                .contains? (&{} :a 1 :b 2) :a
+                , 1 0
+              if
+                .contains? (&{} :a 1 :b 2) :z
+                , 10 0
+          :examples $ []
+        |test-map-includes-method $ %{} :CodeEntry (:doc "|.includes? dispatches on map") (:schema :dynamic)
+          :code $ quote
+            defn test-map-includes-method () $ &+
+              if
+                .includes? (&{} :a 10 :b 20) 20
+                , 1 0
+              if
+                .includes? (&{} :a 10 :b 20) 99
                 , 10 0
           :examples $ []
         |test-map-merge $ %{} :CodeEntry (:doc "|merge two maps, b overrides a") (:schema :dynamic)
@@ -492,12 +561,36 @@
                 &= (&record:field-tag point 0) :x
                 , 1 0
           :examples $ []
+        |test-record-get-name $ %{} :CodeEntry (:doc "|record get-name returns struct tag") (:schema :dynamic)
+          :code $ quote
+            defn test-record-get-name () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              if
+                &= (&record:get-name point) :Point
+                , 1 0
+          :examples $ []
         |test-record-sum $ %{} :CodeEntry (:doc "|Record create + field access") (:schema :dynamic)
           :code $ quote
             defn test-record-sum (x y)
               &let
                 p $ %{} Point (:x x) (:y y)
                 &+ (&record:nth p 0 :x) (&record:nth p 1 :y)
+          :examples $ []
+        |test-record-struct-eq $ %{} :CodeEntry (:doc "|record struct equals source struct") (:schema :dynamic)
+          :code $ quote
+            defn test-record-struct-eq () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              if
+                &= (&record:struct point) Point
+                , 1 0
+          :examples $ []
+        |test-record-to-map $ %{} :CodeEntry (:doc "|record to-map exposes field values by tag") (:schema :dynamic)
+          :code $ quote
+            defn test-record-to-map () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              &let
+                m $ &record:to-map point
+                &+ (&map:get m :x) (&map:get m :y)
           :examples $ []
         |test-rem $ %{} :CodeEntry (:doc |remainder) (:schema :dynamic)
           :code $ quote
@@ -514,6 +607,10 @@
         |test-rest-sum $ %{} :CodeEntry (:doc "|rest args: 1+2+3+4+5 = 15") (:schema :dynamic)
           :code $ quote
             defn test-rest-sum () $ sum-rest 1 2 3 4 5
+          :examples $ []
+        |test-call-spread-rest $ %{} :CodeEntry (:doc "|rest list forwarding via &call-spread") (:schema :dynamic)
+          :code $ quote
+            defn test-call-spread-rest () (sum-rest-forward 1 2 3 4 5)
           :examples $ []
         |test-round $ %{} :CodeEntry (:doc "|round function") (:schema :dynamic)
           :code $ quote
@@ -543,6 +640,11 @@
                 &set:empty? $ #{} 1
                 , 10 0
           :examples $ []
+        |test-set-empty-method $ %{} :CodeEntry (:doc "|.empty returns an empty set") (:schema :dynamic)
+          :code $ quote
+            defn test-set-empty-method () $ count
+              .empty $ #{} 10 20 30
+          :examples $ []
         |test-set-exclude $ %{} :CodeEntry (:doc "|exclude removes element") (:schema :dynamic)
           :code $ quote
             defn test-set-exclude () $ &set:count
@@ -562,6 +664,34 @@
               if
                 &set:includes? (#{} 10 20 30) 99
                 , 10 0
+          :examples $ []
+        |test-set-contains-method $ %{} :CodeEntry (:doc "|.contains? dispatches on set") (:schema :dynamic)
+          :code $ quote
+            defn test-set-contains-method () $ &+
+              if
+                .contains? (#{} 10 20 30) 20
+                , 1 0
+              if
+                .contains? (#{} 10 20 30) 99
+                , 10 0
+          :examples $ []
+        |test-set-includes-method $ %{} :CodeEntry (:doc "|.includes? dispatches on set") (:schema :dynamic)
+          :code $ quote
+            defn test-set-includes-method () $ &+
+              if
+                .includes? (#{} 10 20 30) 20
+                , 1 0
+              if
+                .includes? (#{} 10 20 30) 99
+                , 10 0
+          :examples $ []
+        |test-set-max-method $ %{} :CodeEntry (:doc "|.max dispatches on set") (:schema :dynamic)
+          :code $ quote
+            defn test-set-max-method () $ .max (#{} 10 20 30 15)
+          :examples $ []
+        |test-set-min-method $ %{} :CodeEntry (:doc "|.min dispatches on set") (:schema :dynamic)
+          :code $ quote
+            defn test-set-min-method () $ .min (#{} 10 20 30 15)
           :examples $ []
         |test-set-union $ %{} :CodeEntry (:doc "|union merges two sets") (:schema :dynamic)
           :code $ quote

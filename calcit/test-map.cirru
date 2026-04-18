@@ -118,12 +118,16 @@
                   assoc (&{} :a 1 :b 2) :c 3
                   &{} :a 1 :b 2 :c 3
                 assert=
-                  assoc (&{} :a 1) :b 2 :c 3
+                  assoc
+                    assoc (&{} :a 1) :b 2
+                    , :c 3
                   &{} :a 1 :b 2 :c 3
                 inside-js: $ &let
                   data $ &{} :a 1
                   .!turnMap data
-                  assert= (assoc data :b 2 :c 3) (&{} :a 1 :b 2 :c 3)
+                  assert=
+                    assoc (assoc data :b 2) :c 3
+                    &{} :a 1 :b 2 :c 3
                 assert= (dissoc dict :a) ({,} :b 2 :c 3 :d 5)
                 assert= dict $ dissoc dict :h
                 assert= (dissoc dict :a :b :c) (&{} :d 5)

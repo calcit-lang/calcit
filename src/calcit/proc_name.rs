@@ -328,7 +328,7 @@ pub enum CalcitProc {
   #[strum(serialize = "&list:distinct")]
   NativeListDistinct,
   // type predicate procs
-  #[strum(serialize = "list?")]
+  #[strum(serialize = "&list?")]
   NativeListQ,
   // buf-list (mutable append-only list)
   #[strum(serialize = "&buf-list:new")]

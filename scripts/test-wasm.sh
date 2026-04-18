@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 # Verify WASM codegen: generate binary .wasm and validate with Node.js.
 # Usage: bash scripts/test-wasm.sh
-# Set CR_BIN to override the cr binary path (default: release then debug build).
+# Set CR_WASM_BIN to override the cr-wasm binary path (default: release then debug build).
 set -euo pipefail
 
-if [[ -n "${CR_BIN:-}" ]]; then
-  BIN="$CR_BIN"
-elif [[ -x ./target/release/cr ]]; then
-  BIN="./target/release/cr"
-elif [[ -x ./target/debug/cr ]]; then
-  BIN="./target/debug/cr"
+if [[ -n "${CR_WASM_BIN:-}" ]]; then
+  BIN="$CR_WASM_BIN"
+elif [[ -x ./target/release/cr-wasm ]]; then
+  BIN="./target/release/cr-wasm"
+elif [[ -x ./target/debug/cr-wasm ]]; then
+  BIN="./target/debug/cr-wasm"
 else
-  echo "ERROR: cr binary not found. Build first or set CR_BIN."
-  exit 1
+  BIN=""
 fi
 ENTRY="calcit/test-wasm.cirru"
 
 # Step 1: generate .wasm binary
-"$BIN" "$ENTRY" wasm 2>&1
+if [[ -n "$BIN" ]]; then
+  "$BIN" "$ENTRY" 2>&1
+else
+  bash scripts/cargo-with-sdk.sh run --bin cr-wasm -- "$ENTRY" 2>&1
+fi
 
 # Step 2: validate and run with Node.js
 node scripts/test-wasm.mjs

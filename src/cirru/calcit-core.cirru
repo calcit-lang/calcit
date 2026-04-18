@@ -714,25 +714,45 @@
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:max (xs)
-              list-match xs
-                () nil
-                (x0 xss)
-                  reduce xss x0 $ defn %max (acc x) (&max acc x)
+              if (&list:empty? xs) nil
+                &list:max-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :list
+        |&list:max-loop $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn &list:max-loop (xs acc)
+              if (&list:empty? xs) acc $ &let
+                x $ &list:first xs
+                recur
+                  &list:rest xs
+                  if (&> x acc) x acc
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :list :number
         |&list:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:min (xs)
-              list-match xs
-                () nil
-                (x0 xss)
-                  reduce xss x0 $ defn %min (acc x) (&min acc x)
+              if (&list:empty? xs) nil
+                &list:min-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :list
+        |&list:min-loop $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn &list:min-loop (xs acc)
+              if (&list:empty? xs) acc $ &let
+                x $ &list:first xs
+                recur
+                  &list:rest xs
+                  if (&< x acc) x acc
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :list :number
         |&list:nth $ %{} :CodeEntry (:doc "|internal function for getting nth list element\nSyntax: (&list:nth list index)\nParams: list (list), index (number)\nReturns: any or nil\nReturns element at index, nil if index out of bounds")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1162,11 +1182,7 @@
               :return $ :: :set 'T
         |&set:max $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &set:max (xs)
-              &let
-                pair $ &set:destruct xs
-                if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
-                  defn %max (acc x) (&max acc x)
+            defn &set:max (xs) $ &list:max (&set:to-list xs)
           :examples $ []
           :schema $ :: :fn
             {}
@@ -1175,11 +1191,7 @@
               :return $ :: :optional 'T
         |&set:min $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &set:min (xs)
-              &let
-                pair $ &set:destruct xs
-                if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
-                  defn %min (acc x) (&min acc x)
+            defn &set:min (xs) $ &list:min (&set:to-list xs)
           :examples $ []
           :schema $ :: :fn
             {}
@@ -1906,10 +1918,10 @@
             {} $ :args ([] :dynamic :dynamic)
         |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
-            defn assoc (x & args)
+            defn assoc (x k v)
               if (nil? x)
-                raise $ str-spaced "|assoc does not work on nil for:" args
-                if (list? x) (&list:assoc x & args) (.assoc x & args)
+                raise $ str-spaced "|assoc does not work on nil for:" k v
+                if (list? x) (&list:assoc x k v) (.assoc x k v)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -1918,8 +1930,8 @@
             quote $ assert= (&{} :a 1 :b 3)
               assoc (&{} :a 1 :b 2) :b 3
           :schema $ :: :fn
-            {} (:rest :dynamic) (:return :dynamic)
-              :args $ [] :dynamic
+            {} (:return :dynamic)
+              :args $ [] :dynamic :dynamic :dynamic
         |assoc-in $ %{} :CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
@@ -3871,7 +3883,7 @@
                       or
                         ~ $ &list:first xs
                         ~@ $ &list:rest xs
-                      if (= false ~v1#)
+                      if (&= false ~v1#)
                         or
                           ~ $ &list:first xs
                           ~@ $ &list:rest xs
@@ -3880,7 +3892,7 @@
                   or
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
-                  if (= false ~item)
+                  if (&= false ~item)
                     or
                       ~ $ &list:first xs
                       ~@ $ &list:rest xs

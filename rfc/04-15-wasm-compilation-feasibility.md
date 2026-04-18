@@ -222,6 +222,58 @@ WASM GC proposal（2024 年起 V8/SpiderMonkey 已发布）提供：
 2. **中期**: 路径二的子集 — 从纯数值计算函数开始，生成 WASM 模块作为 JS codegen 的"加速岛"（hot island），由 JS 运行时按需调用
 3. **远期**: 路径三 — 随 WASM GC 工具链成熟，逐步扩展可编译子集
 
+## 2026-04 进展状态
+
+当前项目已经不再停留在“可行性评估”阶段，而是进入“持续补齐子集能力”的实施阶段：
+
+- `src/codegen/emit_wasm.rs` 已落地，并拆分出 `runtime.rs`、`methods.rs`、`records.rs` 子模块维护。
+- `yarn check-all` 已纳入 WASM 验证，当前会编译 `calcit/test-wasm.cirru` 并通过 `scripts/test-wasm.mjs` 做 Node.js 侧断言。
+- 发布版本 `0.12.21` 已覆盖 BufList、基础 map/set/list/tuple/record 操作、若干动态方法分派、host println/logging 等运行时能力。
+- `recollect` 已可在已发布的 `setup-cr` 工具链上启用 WASM 回归测试，但仍有更高层 API 与应用侧依赖未覆盖。
+
+可以更直白地估计当前距离：
+
+- 距离“底层运行时对子集集合操作足够稳固”大约还剩 `30%`。
+- 距离“`calcit.core` 高频 helper 在真实下游项目里不需要大面积绕开”大约还剩 `50%`。
+- 距离“Respo/recollect 这类应用侧流程可稳定跑通”大约还剩 `75%`。
+
+这意味着近期重点不再是“证明能不能做”，而是“持续缩小尚未支持的语言与运行时边界”。
+
+## 近期计划细化
+
+### P0: 消除被下游真实项目阻塞的运行时缺口
+
+优先级依据不是抽象完整性，而是下游项目是否真实卡住：
+
+1. 继续补动态 method/runtime 缺口。
+  - `.contains?`、`.includes?`、`.empty` 已开始在 direct method path 上落地，但 `calcit.core` wrapper 侧仍有 skip 项，需要继续把 lowering 对齐到底。
+  - 当前仍缺 `.min`、`.max` 等集合方法的稳定支持。
+  - 这些能力会直接影响 `calcit.core` 高层 helper 在 WASM 下的可用性。
+
+2. 继续补充 `calcit.core` 常见高阶路径。
+  - `foldl`、`foldl-shortcut`、`foldr-shortcut`、`sort`、`&call-spread` 仍是大量跳过项的源头。
+  - 这部分不是为了追求“理论完备”，而是为了减少真实项目中被迫绕开 core helper 的情况。
+
+3. 持续扩大 `test-wasm.cirru` 的下游回归覆盖。
+  - 每补一个能力，都应优先加一个最小但能锁定语义边界的 WASM 用例。
+  - 需要优先覆盖下游真实依赖的模式，而不是只补纯数值 demo。
+
+### P1: 以 recollect 为代表补 API 级验证
+
+`recollect` 已经证明当前 WASM 子集可支撑一部分 diff/patch 逻辑，因此下一阶段应显式面向下游 API：
+
+1. 用 API parity fixtures 覆盖 `diff-twig` / `patch-twig`。
+2. 增加 record-heavy / map-heavy / nested tree 场景。
+3. 把“当前可运行”和“仍 blocked”的场景分开记录，避免 roadmap 只剩模糊叙述。
+
+### P2: 推进解释器到 wasm32 的基础编译检查
+
+路径一仍值得保留，但它的短期目标应更具体：
+
+1. 先跑通 `cargo build --target wasm32-unknown-unknown --lib`。
+2. 把剩余链接错误收敛成明确的 `cfg` 门控清单。
+3. 把解释器路径与 AOT 路径共享的可复用运行时能力整理出来，避免两条线重复补洞。
+
 ## 验证第一步
 
 ```bash

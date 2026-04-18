@@ -132,7 +132,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       // println!("[Warn] slow path reading symbol: {}", sym);
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
-    Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
+    Local(CalcitLocal { idx, sym, .. }) => evaluate_symbol_from_scope(*idx, sym, scope),
     Import(CalcitImport { ns, def, def_id, .. }) => evaluate_symbol_from_program(def, ns, *def_id, call_stack),
     List(xs) => match xs.first() {
       None => Err(CalcitErr::use_msg_stack_location(
@@ -453,14 +453,20 @@ pub fn evaluate_symbol(
   }
 }
 
-pub fn evaluate_symbol_from_scope(idx: u16, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {
-  // although scope is detected first, it would trigger warning during preprocess
-  Ok(
-    scope
-      .get(idx)
-      .expect("expected symbol from scope, this is a quick path, should succeed")
-      .to_owned(),
-  )
+pub fn evaluate_symbol_from_scope(idx: u16, sym: &str, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {
+  // Fast path: resolve by compiled local slot index.
+  if let Some(v) = scope.get(idx) {
+    return Ok(v.to_owned());
+  }
+
+  // Defensive fallback: resolve by symbol name so runtime does not panic when
+  // local slot numbering drifts in edge macro/preprocess paths.
+  if let Some(v) = scope.get_by_name(sym) {
+    return Ok(v.to_owned());
+  }
+
+  let vars = scope.get_names();
+  CalcitErr::err_str(CalcitErrKind::Var, format!("unknown local `{sym}`(#{idx}) in scope {vars}"))
 }
 
 /// a quick path of evaluating symbols, without checking scope and import

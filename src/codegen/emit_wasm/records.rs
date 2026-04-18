@@ -274,6 +274,79 @@ pub(super) fn emit_record_field_tag(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   Ok(())
 }
 
+pub(super) fn emit_record_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err("&record:get-name requires 1 arg (record)".into());
+  }
+
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  Ok(())
+}
+
+pub(super) fn emit_record_struct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err("&record:struct requires 1 arg (record)".into());
+  }
+
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  Ok(())
+}
+
+pub(super) fn emit_record_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err("&record:to-map requires 1 arg (record)".into());
+  }
+
+  let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let struct_tag_local = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(record_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(struct_tag_local));
+
+  emit_map_new(ctx, &[])?;
+  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(map_ptr));
+
+  let assoc_fn_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_map_assoc")
+    .expect("runtime helper __rt_map_assoc must exist");
+
+  let mut struct_entries = ctx
+    .record_field_tags
+    .iter()
+    .map(|(tag, fields)| (*tag, fields.clone()))
+    .collect::<Vec<_>>();
+  struct_entries.sort_by_key(|(tag, _)| *tag);
+
+  for (struct_tag_id, field_tag_ids) in &struct_entries {
+    ctx.emit(Instruction::LocalGet(struct_tag_local));
+    ctx.emit(f64_const(*struct_tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+
+    for (field_idx, field_tag_id) in field_tag_ids.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(map_ptr));
+      ctx.emit(f64_const(*field_tag_id as f64));
+      ctx.emit(Instruction::LocalGet(record_ptr));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + field_idx) * 8) as u64)));
+      ctx.emit(Instruction::Call(assoc_fn_idx));
+      ctx.emit(Instruction::LocalSet(map_ptr));
+    }
+
+    ctx.emit(Instruction::End);
+  }
+
+  ctx.emit(Instruction::LocalGet(map_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
 /// Emit `&record:matches? a b` — check if two records have the same struct type.
 ///
 /// Record layout: [count: f64] [struct_tag: f64] [field0: f64] ...

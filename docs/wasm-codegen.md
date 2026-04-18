@@ -37,7 +37,7 @@ Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集�
 
 ```bash
 # 编译为 .wasm 二进制
-cr demos/wasm-demo.cirru wasm
+cr-wasm demos/wasm-demo.cirru
 
 # 输出在 js-out/program.wasm
 # 不支持的函数会打印 skip 信息到 stderr

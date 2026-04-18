@@ -42,8 +42,9 @@ mod runtime;
 
 use methods::{emit_call_args, emit_method_invoke};
 use records::{
-  emit_record_count, emit_record_field_tag, emit_record_get, emit_record_matches, emit_record_new, emit_record_nth, emit_tuple_assoc,
-  emit_tuple_count, emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
+  emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name, emit_record_matches, emit_record_new,
+  emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count, emit_tuple_new, emit_tuple_nth,
+  resolve_struct_ref, try_parse_defrecord_form,
 };
 use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
 
@@ -141,9 +142,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     let idx = num_imports + runtime_fn_count + i as u32;
     let qualified = format!("{ns}/{name}");
     fn_index.insert(qualified.clone(), idx);
-    // Also insert bare name — last writer wins; bare name is fallback
     fn_index.insert(name.clone(), idx);
-    // Compute WASM arity (only Idx labels, not markers)
     let (arity, rest_fixed) = compute_fn_arity(args);
     fn_arity.insert(qualified.clone(), arity);
     fn_arity.insert(name.clone(), arity);
@@ -153,8 +152,8 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     }
   }
 
-  // Collect all tags referenced in function bodies
   let tag_index = collect_all_tags_from(&fn_defs);
+  println!("TAG INDEX: {:?}", tag_index);
   let record_field_tags = collect_record_field_tags_from_program(&program_data, &tag_index);
 
   // Build string literal pool: assigns each unique string a memory offset.
@@ -478,12 +477,23 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     Calcit::Bool(false) | Calcit::Nil => {
       ctx.emit(f64_const(0.0));
     }
+    Calcit::List(xs) if xs.is_empty() => {
+      emit_list_new(ctx, &[])?;
+    }
     Calcit::Tag(t) => {
       let tag_str = t.to_string();
       let id = *ctx
         .tag_index
         .get(&tag_str)
         .ok_or_else(|| format!("unknown tag in WASM codegen: {tag_str}"))?;
+      ctx.emit(f64_const(id as f64));
+    }
+    Calcit::Struct(s) => {
+      let tag_str = s.name.to_string();
+      let id = *ctx
+        .tag_index
+        .get(&tag_str)
+        .ok_or_else(|| format!("unknown struct tag in WASM codegen: {tag_str}"))?;
       ctx.emit(f64_const(id as f64));
     }
     Calcit::Local(local) => {
@@ -498,6 +508,18 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     // It's a no-op — just emit nil so it can be dropped by emit_body.
     Calcit::Import(import) if import.def.as_ref() == "do" => {
       ctx.emit(f64_const(0.0));
+    }
+    Calcit::Import(import) => {
+      if let Ok(struct_def) = resolve_struct_ref(expr) {
+        let tag_str = struct_def.name.to_string();
+        let id = *ctx
+          .tag_index
+          .get(&tag_str)
+          .ok_or_else(|| format!("unknown struct tag in WASM codegen: {tag_str}"))?;
+        ctx.emit(f64_const(id as f64));
+      } else {
+        return Err(format!("unsupported WASM expression: {}/{}", import.ns, import.def));
+      }
     }
     Calcit::Str(s) => {
       let ptr = ctx
@@ -520,6 +542,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
 
   match head {
     Calcit::Syntax(syn, _) => match syn {
+      CalcitSyntax::CallSpread => emit_call_spread(ctx, &args_list),
       CalcitSyntax::If => emit_if(ctx, &args_list),
       CalcitSyntax::CoreLet => emit_let(ctx, &args_list),
       CalcitSyntax::Match => emit_match(ctx, &args_list),
@@ -612,8 +635,142 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       }
       Err(format!("unsupported registered proc in WASM: {name}"))
     }
+    Calcit::Fn { info, .. } => {
+      let def_ref = info.def_ref.as_ref().ok_or_else(|| {
+        format!(
+          "function literal without def reference is not supported in WASM: {}/{}",
+          info.def_ns, info.name
+        )
+      })?;
+      let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
+      let fn_idx = ctx
+        .fn_index
+        .get(&qualified)
+        .or_else(|| ctx.fn_index.get(def_ref.def_name.as_ref()))
+        .copied()
+        .ok_or_else(|| format!("unknown function literal target in WASM: {qualified}"))?;
+      let target_arity = ctx
+        .fn_arity
+        .get(&qualified)
+        .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
+        .copied()
+        .unwrap_or(args_list.len() as u32);
+      let rest_fixed = ctx
+        .fn_has_rest
+        .get(&qualified)
+        .or_else(|| ctx.fn_has_rest.get(def_ref.def_name.as_ref()))
+        .copied();
+      emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
+    }
     _ => Err(format!("unsupported call head in WASM: {head}")),
   }
+}
+
+fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), String> {
+  if args_list.is_empty() {
+    return Err("&call-spread expects at least a callee".into());
+  }
+
+  let head = &args_list[0];
+  let call_args = &args_list[1..];
+
+  match head {
+    Calcit::Import(import) => {
+      let qualified = format!("{}/{}", import.ns, import.def);
+      let fn_idx = ctx
+        .fn_index
+        .get(&qualified)
+        .or_else(|| ctx.fn_index.get(import.def.as_ref()))
+        .copied()
+        .ok_or_else(|| format!("unknown function: {qualified}"))?;
+      let target_arity = ctx
+        .fn_arity
+        .get(&qualified)
+        .or_else(|| ctx.fn_arity.get(import.def.as_ref()))
+        .copied()
+        .unwrap_or(call_args.len() as u32);
+      let rest_fixed = ctx
+        .fn_has_rest
+        .get(&qualified)
+        .or_else(|| ctx.fn_has_rest.get(import.def.as_ref()))
+        .copied();
+      emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
+    }
+    Calcit::Symbol { sym, .. } => {
+      let name = sym.as_ref();
+      let fn_idx = *ctx.fn_index.get(name).ok_or_else(|| format!("unknown function: {sym}"))?;
+      let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(call_args.len() as u32);
+      let rest_fixed = ctx.fn_has_rest.get(name).copied();
+      emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
+    }
+    Calcit::Fn { info, .. } => {
+      let def_ref = info.def_ref.as_ref().ok_or_else(|| {
+        format!(
+          "function literal without def reference is not supported in WASM: {}/{}",
+          info.def_ns, info.name
+        )
+      })?;
+      let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
+      let fn_idx = ctx
+        .fn_index
+        .get(&qualified)
+        .or_else(|| ctx.fn_index.get(def_ref.def_name.as_ref()))
+        .copied()
+        .ok_or_else(|| format!("unknown function literal target in WASM: {qualified}"))?;
+      let target_arity = ctx
+        .fn_arity
+        .get(&qualified)
+        .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
+        .copied()
+        .unwrap_or(call_args.len() as u32);
+      let rest_fixed = ctx
+        .fn_has_rest
+        .get(&qualified)
+        .or_else(|| ctx.fn_has_rest.get(def_ref.def_name.as_ref()))
+        .copied();
+      emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
+      ctx.emit(Instruction::Call(fn_idx));
+      Ok(())
+    }
+    _ => Err(format!("unsupported call head in WASM: {head}")),
+  }
+}
+
+fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
+  let Some(fixed) = rest_fixed else {
+    return Err("&call-spread in WASM currently requires the target function to accept rest args".into());
+  };
+
+  let fixed = fixed as usize;
+  let spread_arg = if call_args.len() == fixed + 1 {
+    &call_args[fixed]
+  } else if call_args.len() == fixed + 2 && matches!(call_args[fixed], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+    &call_args[fixed + 1]
+  } else {
+    return Err(format!(
+      "&call-spread in WASM expects {} fixed args plus `& spread-list`, got {} args",
+      fixed,
+      call_args.len()
+    ));
+  };
+
+  for arg in call_args.iter().take(fixed) {
+    emit_expr(ctx, arg)?;
+  }
+  emit_expr(ctx, spread_arg)?;
+
+  let emitted_args = fixed + 1;
+  for _ in emitted_args..(target_arity as usize) {
+    ctx.emit(f64_const(0.0));
+  }
+
+  Ok(())
 }
 
 /// Emit instructions for builtin proc calls.
@@ -747,16 +904,16 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeRecordGet => emit_record_get(ctx, args),
     CalcitProc::NativeRecordCount => emit_record_count(ctx, args),
     CalcitProc::NativeRecordFieldTag => emit_record_field_tag(ctx, args),
+    CalcitProc::NativeRecordStruct => emit_record_struct(ctx, args),
+    CalcitProc::NativeRecordGetName => emit_record_get_name(ctx, args),
+    CalcitProc::NativeRecordToMap => emit_record_to_map(ctx, args),
     CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
       Err("Record mutation (assoc/with) not yet supported in WASM codegen".into())
     }
     CalcitProc::NativeRecordFromMap
-    | CalcitProc::NativeRecordToMap
     | CalcitProc::NativeRecordExtendAs
     | CalcitProc::NativeRecordPartial
     | CalcitProc::NativeRecordContains
-    | CalcitProc::NativeRecordStruct
-    | CalcitProc::NativeRecordGetName
     | CalcitProc::NativeRecordImpls
     | CalcitProc::NativeRecordWithAt
     | CalcitProc::NativeLooseRecord => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
@@ -859,6 +1016,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeSetCount => emit_ds_count(ctx, args),
     CalcitProc::NativeSetEmpty => emit_ds_empty(ctx, args),
     CalcitProc::NativeSetIncludes => emit_set_includes(ctx, args),
+    CalcitProc::NativeSetToList => emit_set_to_list(ctx, args),
     CalcitProc::NativeDifference => emit_set_difference(ctx, args),
     CalcitProc::NativeUnion => emit_set_union(ctx, args),
     CalcitProc::NativeMerge => emit_map_merge(ctx, args),
@@ -2521,8 +2679,8 @@ fn emit_buf_list_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(i));
+  ctx.emit(Instruction::Br(0));
 
-  ctx.emit(Instruction::Br(0)); // continue loop
   ctx.emit(Instruction::End); // end loop
   ctx.emit(Instruction::End); // end block
 
@@ -2868,6 +3026,29 @@ fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   Ok(())
 }
 
+/// `&set:to-list set` — copy set payload into a list.
+fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err("&set:to-list expects 1 arg".into());
+  }
+  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  let count = emit_load_count_i32(ctx, src);
+  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(total_slots));
+
+  let dst = emit_alloc_with_count(ctx, count, total_slots, "list");
+  let dst_base = emit_addr_offset(ctx, dst, 8);
+  let src_base = emit_addr_offset(ctx, src, 8);
+  emit_copy_f64_loop(ctx, dst_base, src_base, count);
+
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
 /// `&include set value` — new set with element added (if not present).
 fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
@@ -3108,7 +3289,7 @@ fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let b = emit_ptr_to_i32(ctx, &args[1])?;
   let b_count = emit_load_count_i32(ctx, b);
 
-  // Over-allocate: max possible is a_count + b_count
+  // Over-allocate: max is a_count + b_count
   let max_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::LocalGet(b_count));
@@ -3143,7 +3324,7 @@ fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::BrIf(1));
 
   // Load b[bi]
-  let elem = ctx.alloc_local();
+  let be = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(b));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -3152,28 +3333,67 @@ fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(elem));
+  ctx.emit(Instruction::LocalSet(be));
 
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", a, elem);
+  // Scan dst for matching element
+  let found = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(found));
+  let di = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(di));
 
-  // If not found in a, append to result
-  ctx.emit(Instruction::LocalGet(found_idx));
-  ctx.emit(Instruction::I32Const(-1));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(di));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::LocalGet(di));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(elem));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(be));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(found));
+  ctx.emit(Instruction::Br(2));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(di));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(write_idx));
+  ctx.emit(Instruction::LocalSet(di));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(found));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  {
+    // Not found: append at write_idx position
+    let addr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(dst));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(write_idx));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(addr));
+    ctx.emit(Instruction::LocalGet(addr));
+    ctx.emit(Instruction::LocalGet(be));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalGet(write_idx));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(write_idx));
+  }
   ctx.emit(Instruction::End);
 
   // bi++
@@ -3196,7 +3416,7 @@ fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   Ok(())
 }
 
-/// `&merge a b` — merge two maps; keys in `b` override keys in `a`.
+/// `&merge a b` — map merge where keys from `b` override keys from `a`.
 fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&merge expects 2 args".into());
@@ -3208,7 +3428,7 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let b_count = emit_load_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
-  // Over-allocate: max count is a_count + b_count
+  // Over-allocate: at most a_count + b_count entries.
   let max_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::LocalGet(b_count));
@@ -3224,22 +3444,68 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::LocalSet(total_slots));
   let dst_root = emit_alloc_with_count(ctx, max_count, total_slots, "map");
 
-  // Copy all of a's kv pairs into result
-  let copy_n = ctx.alloc_local_typed(ValType::I32);
+  let write_idx = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(write_idx));
+
+  // Copy all entries from a into dst flat buffer.
+  let ai = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(ai));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(ai));
   ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  let ak = ctx.alloc_local();
+  let av = ctx.alloc_local();
+  let a_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(a_flat));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(ai));
+  ctx.emit(Instruction::I32Const(16));
   ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::LocalSet(copy_n));
-  let db = emit_addr_offset(ctx, dst_root, 8);
-  let sb = emit_addr_offset(ctx, a_flat, 8);
-  emit_copy_f64_loop(ctx, db, sb, copy_n);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(a_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(ak));
+  ctx.emit(Instruction::LocalGet(a_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(av));
 
-  // write_count tracks actual number of entries
-  let write_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::LocalSet(write_count));
+  let out_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(dst_root));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(out_addr));
+  ctx.emit(Instruction::LocalGet(out_addr));
+  ctx.emit(Instruction::LocalGet(ak));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(out_addr));
+  ctx.emit(Instruction::LocalGet(av));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(write_idx));
 
-  // For each entry in b, find matching key in dst or append
+  ctx.emit(Instruction::LocalGet(ai));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(ai));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  // Merge entries from b: override existing key, otherwise append.
   let bi = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(bi));
@@ -3251,8 +3517,9 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
 
-  // Load b key and value
   let bk = ctx.alloc_local();
+  let bv = ctx.alloc_local();
+  let b_addr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(b_flat));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -3260,19 +3527,16 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32Const(16));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
-  let bkv_addr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalTee(bkv_addr));
+  ctx.emit(Instruction::LocalTee(b_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(bk));
-  let bv = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(bkv_addr));
+  ctx.emit(Instruction::LocalGet(b_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(bv));
 
-  // Scan dst for matching key
-  let found_idx = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(-1));
-  ctx.emit(Instruction::LocalSet(found_idx));
+  let found = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(found));
   let di = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(di));
@@ -3280,9 +3544,11 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::LocalGet(di));
-  ctx.emit(Instruction::LocalGet(write_count));
+  ctx.emit(Instruction::LocalGet(write_idx));
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
+
+  let d_addr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(dst_root));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -3290,14 +3556,20 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32Const(16));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(d_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(di));
-  ctx.emit(Instruction::LocalSet(found_idx));
+  // Override value for existing key.
+  ctx.emit(Instruction::LocalGet(d_addr));
+  ctx.emit(Instruction::LocalGet(bv));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(found));
   ctx.emit(Instruction::Br(2));
   ctx.emit(Instruction::End);
+
   ctx.emit(Instruction::LocalGet(di));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
@@ -3306,48 +3578,33 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(found_idx));
-  ctx.emit(Instruction::I32Const(-1));
-  ctx.emit(Instruction::I32Eq);
+  // If key not found, append pair.
+  ctx.emit(Instruction::LocalGet(found));
+  ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   {
-    // Not found: append at write_count position
-    let addr = ctx.alloc_local_typed(ValType::I32);
+    let out_addr = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(dst_root));
     ctx.emit(Instruction::I32Const(8));
     ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(write_count));
+    ctx.emit(Instruction::LocalGet(write_idx));
     ctx.emit(Instruction::I32Const(16));
     ctx.emit(Instruction::I32Mul);
     ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(addr));
-    ctx.emit(Instruction::LocalGet(addr));
+    ctx.emit(Instruction::LocalSet(out_addr));
+    ctx.emit(Instruction::LocalGet(out_addr));
     ctx.emit(Instruction::LocalGet(bk));
     ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-    ctx.emit(Instruction::LocalGet(addr));
+    ctx.emit(Instruction::LocalGet(out_addr));
     ctx.emit(Instruction::LocalGet(bv));
     ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-    ctx.emit(Instruction::LocalGet(write_count));
+    ctx.emit(Instruction::LocalGet(write_idx));
     ctx.emit(Instruction::I32Const(1));
     ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(write_count));
-  }
-  ctx.emit(Instruction::Else);
-  {
-    // Found: overwrite value at found_idx
-    ctx.emit(Instruction::LocalGet(dst_root));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(found_idx));
-    ctx.emit(Instruction::I32Const(16));
-    ctx.emit(Instruction::I32Mul);
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(bv));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+    ctx.emit(Instruction::LocalSet(write_idx));
   }
   ctx.emit(Instruction::End);
 
-  // bi++
   ctx.emit(Instruction::LocalGet(bi));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
@@ -3356,9 +3613,9 @@ fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  // Patch actual count
+  // Patch actual count and convert flat map back to runtime map.
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.emit(Instruction::LocalGet(write_count));
+  ctx.emit(Instruction::LocalGet(write_idx));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
@@ -3380,20 +3637,53 @@ fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   let b_count = emit_load_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
-  // Over-allocate: max is b_count entries
+  // Over-allocate: max is a_count entries
   let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(b_count));
+  ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::I32Const(2));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_root = emit_alloc_with_count(ctx, b_count, total_slots, "map");
+  let dst_root = emit_alloc_with_count(ctx, a_count, total_slots, "map");
 
   let write_idx = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(write_idx));
 
+  let ai = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(ai));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(ai));
+  ctx.emit(Instruction::LocalGet(a_count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  // Load a[ai] key and val
+  let ak = ctx.alloc_local();
+  let av = ctx.alloc_local();
+  let akv_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(a_flat));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(ai));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(akv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(ak));
+  ctx.emit(Instruction::LocalGet(akv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(av));
+
+  // Scan b for key and value match
+  let found_eq = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(found_eq));
   let bi = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(bi));
@@ -3405,8 +3695,6 @@ fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
 
-  // Load b[bi] key
-  let bk = ctx.alloc_local();
   let bkv_addr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(b_flat));
   ctx.emit(Instruction::I32Const(8));
@@ -3417,47 +3705,34 @@ fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalTee(bkv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(bk));
+  ctx.emit(Instruction::LocalGet(ak));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
 
-  // Scan a for key
-  let found = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(found));
-  let ai = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(ai));
-
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(a_flat));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::I32Const(16));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(bk));
+  // Key found in b, now check if values are equal
+  ctx.emit(Instruction::LocalGet(bkv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalGet(av));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::LocalSet(found));
+  ctx.emit(Instruction::LocalSet(found_eq));
+  ctx.emit(Instruction::End);
+
+  // Break b loop since we found the key (whether values matched or not, key is unique)
   ctx.emit(Instruction::Br(2));
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(ai));
+
+  ctx.emit(Instruction::LocalGet(bi));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(ai));
+  ctx.emit(Instruction::LocalSet(bi));
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  // If NOT found in a, copy b[bi] kv to result
-  ctx.emit(Instruction::LocalGet(found));
+  // If NOT found_eq, copy a[ai] kv to result
+  ctx.emit(Instruction::LocalGet(found_eq));
   ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   {
@@ -3471,11 +3746,10 @@ fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(addr));
     ctx.emit(Instruction::LocalGet(addr));
-    ctx.emit(Instruction::LocalGet(bk));
+    ctx.emit(Instruction::LocalGet(ak));
     ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
     ctx.emit(Instruction::LocalGet(addr));
-    ctx.emit(Instruction::LocalGet(bkv_addr));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+    ctx.emit(Instruction::LocalGet(av));
     ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
     ctx.emit(Instruction::LocalGet(write_idx));
     ctx.emit(Instruction::I32Const(1));
@@ -3484,11 +3758,11 @@ fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   }
   ctx.emit(Instruction::End);
 
-  // bi++
-  ctx.emit(Instruction::LocalGet(bi));
+  // ai++
+  ctx.emit(Instruction::LocalGet(ai));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(bi));
+  ctx.emit(Instruction::LocalSet(ai));
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -3540,7 +3814,7 @@ fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
 
-  // Load a[ai] key (maps: stride 16, key at offset 0 from entry)
+  // Load a[ai] key
   let ak = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(a_flat));
   ctx.emit(Instruction::I32Const(8));

@@ -132,8 +132,8 @@ cr js -w --emit-path dist/
 cr ir -w
 
 # WASM codegen (experimental, numeric subset only)
-cr wasm
-cr demos/wasm-demo.cirru wasm
+cr-wasm
+cr-wasm demos/wasm-demo.cirru
 
 # Testing single run
 cr --init-fn app.test/run-tests!
@@ -150,8 +150,8 @@ cr --disable-stack
 Generate WAT (WebAssembly Text format) for pure numeric functions:
 
 ```bash
-cr wasm                          # compile init namespace to WAT
-cr demos/wasm-demo.cirru wasm    # compile specific file
+cr-wasm                          # compile init namespace to wasm binary
+cr-wasm demos/wasm-demo.cirru    # compile specific file
 ```
 
 Output is written to `js-out/program.wat`. Only a subset of Calcit is supported (numbers, `if`, `let`, arithmetic, comparisons, `recur`, function calls). Unsupported functions are skipped with a warning.

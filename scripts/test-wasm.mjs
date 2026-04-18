@@ -135,6 +135,10 @@ check("test-record-sum(3,4)", 7, e["test-record-sum"], 3, 4);
 check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
 check("test-record-matches-true()", 1, e["test-record-matches-true"]);
 check("test-record-field-tag()", 1, e["test-record-field-tag"]);
+check("test-record-get-name()", 1, e["test-record-get-name"]);
+check("test-record-struct-eq()", 1, e["test-record-struct-eq"]);
+check("test-record-to-map()", 3, e["test-record-to-map"]);
+check("test-call-spread-rest()", 15, e["test-call-spread-rest"]);
 
 // --- Tuple tests ---
 check("test-tuple-sum()", 30, e["test-tuple-sum"]);
@@ -196,6 +200,8 @@ check("test-list-rest-count()", 2, e["test-list-rest-count"]);
 check("test-list-rest-first()", 20, e["test-list-rest-first"]);
 check("test-list-empty-true()", 1, e["test-list-empty-true"]);
 check("test-list-empty-false()", 0, e["test-list-empty-false"]);
+check("test-list-empty-method()", 0, e["test-list-empty-method"]);
+check("test-list-empty?-method()", 1, e["test-list-empty?-method"]);
 check("test-list-append()", 33, e["test-list-append"]); // count=3 + nth(2)=30
 check("test-list-prepend()", 5, e["test-list-prepend"]);
 check("test-tuple-assoc()", 29, e["test-tuple-assoc"]);
@@ -207,22 +213,34 @@ check("test-list-assoc()", 99, e["test-list-assoc"]);
 check("test-list-dissoc()", 32, e["test-list-dissoc"]); // count=2 + nth(1)=30
 check("test-list-contains()", 1, e["test-list-contains"]); // 1+0
 check("test-list-includes()", 1, e["test-list-includes"]); // 1+0
+check("test-list-contains-method()", 1, e["test-list-contains-method"]); // 1+0
+check("test-list-includes-method()", 1, e["test-list-includes-method"]); // 1+0
+check("test-list-max-method()", 30, e["test-list-max-method"]);
+check("test-list-min-method()", 10, e["test-list-min-method"]);
 
 // --- Map tests ---
 check("test-map-count()", 3, e["test-map-count"]);
 check("test-map-get()", 20, e["test-map-get"]);
 check("test-map-empty-true()", 1, e["test-map-empty-true"]);
 check("test-map-empty-false()", 0, e["test-map-empty-false"]);
+check("test-map-empty-method()", 0, e["test-map-empty-method"]);
 check("test-map-assoc-new()", 4, e["test-map-assoc-new"]); // count=2 + get(:b)=2
 check("test-map-assoc-update()", 99, e["test-map-assoc-update"]);
 check("test-map-dissoc()", 5, e["test-map-dissoc"]); // count=2 + get(:c)=3
 check("test-map-contains()", 1, e["test-map-contains"]); // 1+0
 check("test-map-includes()", 1, e["test-map-includes"]); // 1+0
+check("test-map-contains-method()", 1, e["test-map-contains-method"]); // 1+0
+check("test-map-includes-method()", 1, e["test-map-includes-method"]); // 1+0
 
 // --- Set tests ---
 check("test-set-count()", 3, e["test-set-count"]);
 check("test-set-empty()", 1, e["test-set-empty"]); // 1+0
+check("test-set-empty-method()", 0, e["test-set-empty-method"]);
 check("test-set-includes()", 1, e["test-set-includes"]); // 1+0
+check("test-set-contains-method()", 1, e["test-set-contains-method"]); // 1+0
+check("test-set-includes-method()", 1, e["test-set-includes-method"]); // 1+0
+check("test-set-max-method()", 30, e["test-set-max-method"]);
+check("test-set-min-method()", 10, e["test-set-min-method"]);
 check("test-set-include()", 3, e["test-set-include"]);
 check("test-set-exclude()", 2, e["test-set-exclude"]);
 check("test-set-difference()", 2, e["test-set-difference"]); // {10,30} from {10,20,30,40} - {20,40}

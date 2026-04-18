@@ -39,7 +39,7 @@ jobs:
       - run: cargo run --bin cr calcit/test.cirru
 
       - name: "try wasm"
-        run: CR_BIN="./target/debug/cr" bash scripts/test-wasm.sh
+        run: CR_WASM_BIN="./target/debug/cr-wasm" bash scripts/test-wasm.sh
 
       - uses: giraffate/clippy-action@v1
         with:

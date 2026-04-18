@@ -64,10 +64,10 @@ pub(super) fn build_wasm_module(fns: &[CompiledFn], heap_start: i32, string_data
   }
   module.section(&functions);
 
-  // Memory section: 1 page (64KB) for linear memory (records, tuples)
+  // Memory section: 100 pages (6.4MB) for linear memory (records, tuples)
   let mut memories = MemorySection::new();
   memories.memory(MemoryType {
-    minimum: 1,
+    minimum: 100,
     maximum: None,
     memory64: false,
     shared: false,
@@ -801,6 +801,12 @@ fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(slots));
   rt_emit_copy_slots(&mut b, copy_fn_idx, new_bucket, bucket, slots);
+  b.emit(Instruction::LocalGet(new_bucket));
+  b.emit(Instruction::LocalGet(bucket_count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(8)));
   b.emit(Instruction::LocalGet(new_bucket));
   b.emit(Instruction::I32Const(16));
   b.emit(Instruction::I32Add);

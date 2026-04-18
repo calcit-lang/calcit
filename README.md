@@ -29,11 +29,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install calcit
 ```
 
-3 binaries are installed:
+4 binaries are installed:
 
 - `calcit`, the runtime and js compiler
+- `cr-wasm`, standalone WASM codegen tool
 - `caps`, for downloading dependencies declared in `deps.cirru`
 - `bundle_calcit`, bundle code if you don't want to use Calcit Editor
+
+When installing from source, explicitly include both runners:
+
+```bash
+cargo install --path . --bin cr --bin cr-wasm --bin caps --bin bundle_calcit
+```
 
 To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/setup-cr).
 
@@ -163,6 +170,8 @@ cargo run --bin cr -- calcit/test.cirru -1 js && yarn try-js
 cargo run --bin cr -- eval 'range 100'
 
 cr compact.cirru -1 ir # compiles intermediate representation into program-ir.cirru
+
+cr-wasm calcit/test-wasm.cirru # compile standalone wasm target to js-out/program.wasm
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
