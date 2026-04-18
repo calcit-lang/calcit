@@ -153,7 +153,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   }
 
   let tag_index = collect_all_tags_from(&fn_defs);
-  println!("TAG INDEX: {:?}", tag_index);
+  println!("TAG INDEX: {tag_index:?}");
   let record_field_tags = collect_record_field_tags_from_program(&program_data, &tag_index);
 
   // Build string literal pool: assigns each unique string a memory offset.
@@ -1495,9 +1495,7 @@ fn build_string_pool(
     data.extend_from_slice(s.as_bytes());
     // Pad to 8-byte alignment
     let padded_len = (byte_len + 7) & !7;
-    for _ in byte_len..padded_len {
-      data.push(0);
-    }
+    data.extend(std::iter::repeat_n(0u8, (padded_len - byte_len) as usize));
     // Advance offset: 8 (header) + 8 (byte_len f64) + padded_len
     offset += 8 + 8 + padded_len;
   }
@@ -1512,8 +1510,8 @@ fn collect_record_field_tags_from_program(
 ) -> HashMap<u32, Vec<u32>> {
   let mut result = HashMap::new();
 
-  for (_, file_info) in program_data {
-    for (_, compiled) in &file_info.defs {
+  for file_info in program_data.values() {
+    for compiled in file_info.defs.values() {
       let struct_def =
         try_parse_defrecord_form(&compiled.preprocessed_code).or_else(|| try_parse_defrecord_form(&compiled.codegen_form));
       let Some(struct_def) = struct_def else {

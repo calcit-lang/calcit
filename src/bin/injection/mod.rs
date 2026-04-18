@@ -33,6 +33,7 @@ static TRACE_FFI: AtomicBool = AtomicBool::new(false);
 static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
 static TRACE_FFI_STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 
+#[allow(dead_code)]
 pub fn set_trace_ffi(v: bool) {
   TRACE_FFI.store(v, Ordering::Relaxed);
   if v {
