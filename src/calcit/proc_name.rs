@@ -330,6 +330,17 @@ pub enum CalcitProc {
   // type predicate procs
   #[strum(serialize = "list?")]
   NativeListQ,
+  // buf-list (mutable append-only list)
+  #[strum(serialize = "&buf-list:new")]
+  NativeBufListNew,
+  #[strum(serialize = "&buf-list:push")]
+  NativeBufListPush,
+  #[strum(serialize = "&buf-list:concat")]
+  NativeBufListConcat,
+  #[strum(serialize = "&buf-list:to-list")]
+  NativeBufListToList,
+  #[strum(serialize = "&buf-list:count")]
+  NativeBufListCount,
   // maps
   #[strum(serialize = "&{}")]
   NativeMap,
@@ -424,6 +435,8 @@ pub enum CalcitProc {
   NativeRecordGet,
   #[strum(serialize = "&record:nth")]
   NativeRecordNth,
+  #[strum(serialize = "&record:field-tag")]
+  NativeRecordFieldTag,
   #[strum(serialize = "&record:assoc")]
   NativeRecordAssoc,
   #[strum(serialize = "&record:assoc-at")]
@@ -896,6 +909,27 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list")],
       }),
+      // === BufList operations ===
+      NativeBufListNew => Some(ProcTypeSignature {
+        return_type: some_tag("buf-list"),
+        arg_types: vec![],
+      }),
+      NativeBufListPush => Some(ProcTypeSignature {
+        return_type: some_tag("buf-list"),
+        arg_types: vec![some_tag("buf-list"), dynamic_tag()],
+      }),
+      NativeBufListConcat => Some(ProcTypeSignature {
+        return_type: some_tag("buf-list"),
+        arg_types: vec![some_tag("buf-list"), some_tag("list")],
+      }),
+      NativeBufListToList => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("buf-list")],
+      }),
+      NativeBufListCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("buf-list")],
+      }),
       Foldl => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
@@ -1126,6 +1160,10 @@ impl CalcitProc {
       NativeRecordNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("record"), some_tag("number"), optional_tag("tag")],
+      }),
+      NativeRecordFieldTag => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![some_tag("record"), some_tag("number")],
       }),
       NativeRecordCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),

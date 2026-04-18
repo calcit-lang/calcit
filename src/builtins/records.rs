@@ -497,6 +497,39 @@ pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Get the field tag (name) at a given index: `&record:field-tag record index`
+pub fn record_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:field-tag expected 2 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(CalcitRecord { struct_ref, .. }), Calcit::Number(n)) => {
+      let idx = *n as usize;
+      if idx < struct_ref.fields.len() {
+        Ok(Calcit::Tag(struct_ref.fields[idx].to_owned()))
+      } else {
+        CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!(
+            "&record:field-tag index {} out of range for record `{}` with {} fields",
+            idx,
+            struct_ref.name,
+            struct_ref.fields.len()
+          ),
+        )
+      }
+    }
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&record:field-tag expected (record, number), but received: {} {}",
+        a.lisp_str(),
+        b.lisp_str()
+      ),
+    ),
+  }
+}
+
 /// Direct indexed assoc on a record field: `&record:assoc-at record index :field value`
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
 pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {

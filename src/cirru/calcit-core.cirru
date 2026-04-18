@@ -489,7 +489,7 @@
         |&list-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &list-match-internal (v branch1 pair branch2)
-              quasiquote $ if (empty? ~v)
+              quasiquote $ if (&list:empty? ~v)
                 &let () ~@branch1
                 &let
                     ~ $ first pair

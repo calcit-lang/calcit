@@ -114,6 +114,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Ref(..)
     | Tuple { .. }
     | Buffer(..)
+    | BufList(..)
     | CirruQuote(..)
     | Proc(_)
     | Macro { .. }

@@ -145,7 +145,8 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     | Calcit::Import(..)
     | Calcit::Registered(..)
     | Calcit::Local(..)
-    | Calcit::AnyRef(..) => {
+    | Calcit::AnyRef(..)
+    | Calcit::BufList(..) => {
       let msg = format!(
         "json-stringify cannot encode value of type: {}",
         type_of(&[value.to_owned()])?.lisp_str()

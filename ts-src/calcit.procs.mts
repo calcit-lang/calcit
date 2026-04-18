@@ -316,6 +316,57 @@ export function _$n_record_$o_count(x: CalcitValue): number {
 
   throw new Error(`expected a record ${x}`);
 }
+
+export function _$n_record_$o_field_tag(x: CalcitValue, idx: CalcitValue): CalcitTag {
+  if (!(x instanceof CalcitRecord)) throw new Error(`&record:field-tag expected a record, got ${x}`);
+  const i = idx as number;
+  if (i < 0 || i >= x.fields.length) throw new Error(`&record:field-tag index ${i} out of bounds (${x.fields.length})`);
+  return x.fields[i];
+}
+
+// === BufList — mutable append-only list ===
+// Wrapper around a plain JS Array for O(1) push.
+export class CalcitBufList {
+  buf: CalcitValue[];
+  constructor(buf?: CalcitValue[]) {
+    this.buf = buf ?? [];
+  }
+}
+
+export function _$n_buf_list_$o_new(): CalcitBufList {
+  return new CalcitBufList();
+}
+
+export function _$n_buf_list_$o_push(buf: CalcitValue, item: CalcitValue): CalcitBufList {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:push expected a buf-list, got ${buf}`);
+  buf.buf.push(item);
+  return buf;
+}
+
+export function _$n_buf_list_$o_concat(buf: CalcitValue, xs: CalcitValue): CalcitBufList {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:concat expected a buf-list, got ${buf}`);
+  if (xs instanceof CalcitSliceList || xs instanceof CalcitList) {
+    const gen = xs.items();
+    let next = gen.next();
+    while (!next.done) {
+      buf.buf.push(next.value);
+      next = gen.next();
+    }
+  } else {
+    throw new Error(`&buf-list:concat expected a list, got ${xs}`);
+  }
+  return buf;
+}
+
+export function _$n_buf_list_$o_to_list(buf: CalcitValue): CalcitSliceList {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:to-list expected a buf-list, got ${buf}`);
+  return new CalcitSliceList([...buf.buf]);
+}
+
+export function _$n_buf_list_$o_count(buf: CalcitValue): number {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:count expected a buf-list, got ${buf}`);
+  return buf.buf.length;
+}
 export function _$n_set_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitSet) return x.len();
 
@@ -1503,6 +1554,9 @@ export let nil_$q_ = (x: CalcitValue): boolean => {
 };
 export let tag_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitTag;
+};
+export let symbol_$q_ = (x: CalcitValue): boolean => {
+  return x instanceof CalcitSymbol;
 };
 export let map_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitSliceMap || x instanceof CalcitMap;

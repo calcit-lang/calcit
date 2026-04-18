@@ -474,6 +474,12 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeListDissoc => lists::dissoc(args),
     NativeListToSet => lists::list_to_set(args),
     NativeListDistinct => lists::distinct(args),
+    // buf-list
+    NativeBufListNew => lists::buf_list_new(args),
+    NativeBufListPush => lists::buf_list_push(args),
+    NativeBufListConcat => lists::buf_list_concat(args),
+    NativeBufListToList => lists::buf_list_to_list(args),
+    NativeBufListCount => lists::buf_list_count(args),
     // maps
     NativeMap => maps::call_new_map(args),
     NativeMerge => maps::call_merge(args),
@@ -523,6 +529,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeRecordContains => records::contains_ques(args),
     NativeRecordGet => records::get(args),
     NativeRecordNth => records::record_nth(args),
+    NativeRecordFieldTag => records::record_field_tag(args),
     NativeRecordAssoc => records::assoc(args),
     NativeRecordAssocAt => records::record_assoc_at(args),
     NativeRecordWithAt => records::record_with_at(args),

@@ -47,6 +47,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Ref(..) => Ok(Calcit::tag("ref")),
     Tuple { .. } => Ok(Calcit::tag("tuple")),
     Buffer(..) => Ok(Calcit::tag("buffer")),
+    BufList(..) => Ok(Calcit::tag("buf-list")),
     CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
     Recur(..) => Ok(Calcit::tag("recur")),
     List(..) => Ok(Calcit::tag("list")),

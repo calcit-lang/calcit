@@ -89,6 +89,9 @@ pub enum Calcit {
   Tuple(CalcitTuple),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
+  /// mutable append-only list, for performance-sensitive accumulation patterns.
+  /// Only supports push/concat at the tail, no head/middle mutation.
+  BufList(Arc<Mutex<Vec<Calcit>>>),
   /// cirru quoted data, for faster meta programming
   CirruQuote(Cirru),
   /// not for data, but for recursion
@@ -209,6 +212,10 @@ impl fmt::Display for Calcit {
           }
         }
         f.write_str(")")
+      }
+      BufList(items) => {
+        let items = items.lock().expect("BufList lock");
+        f.write_str(&format!("(&buf-list count={})", items.len()))
       }
       Recur(xs) => {
         f.write_str("(&recur")?;
@@ -456,6 +463,11 @@ impl Hash for Calcit {
         "buffer:".hash(_state);
         buf.hash(_state);
       }
+      BufList(items) => {
+        "buf-list:".hash(_state);
+        let items = items.lock().expect("BufList lock");
+        items.hash(_state);
+      }
       CirruQuote(code) => {
         "cirru-quote:".hash(_state);
         code.hash(_state);
@@ -646,6 +658,14 @@ impl Ord for Calcit {
       (Buffer(..), _) => Less,
       (_, Buffer(..)) => Greater,
 
+      (BufList(a), BufList(b)) => {
+        let a = a.lock().expect("BufList lock");
+        let b = b.lock().expect("BufList lock");
+        a.cmp(&*b)
+      }
+      (BufList(_), _) => Less,
+      (_, BufList(_)) => Greater,
+
       (Recur(a), Recur(b)) => a.cmp(b),
       (Recur(_), _) => Less,
       (_, Recur(_)) => Greater,
@@ -740,6 +760,11 @@ impl PartialEq for Calcit {
       (Ref(a, _), Ref(b, _)) => a == b,
       (Tuple(a), Tuple(b)) => a == b,
       (Buffer(b), Buffer(d)) => b == d,
+      (BufList(a), BufList(b)) => {
+        let a = a.lock().expect("BufList lock");
+        let b = b.lock().expect("BufList lock");
+        *a == *b
+      }
       (CirruQuote(b), CirruQuote(d)) => b == d,
       (List(a), List(b)) => a == b,
       (Set(a), Set(b)) => a == b,

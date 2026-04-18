@@ -7,11 +7,45 @@ import { readFileSync } from "fs";
 const wasmPath = "js-out/program.wasm";
 const wasm = readFileSync(wasmPath);
 const mod = new WebAssembly.Module(wasm);
+
+// Collect values printed from WASM for test assertions
+const wasmLog = [];
+
 const inst = new WebAssembly.Instance(mod, {
   math: {
     pow: Math.pow,
     sin: Math.sin,
     cos: Math.cos,
+  },
+  io: {
+    // log_value(v: f64) — decode v and print using host memory view
+    log_value: (v) => {
+      const mem = new DataView(inst.exports.memory.buffer);
+      // f64 pointer: if it looks like a heap address, read type_tag from header
+      const raw = v;
+      // Try to read as a heap pointer (i32 stored in f64)
+      const ptr = raw | 0; // truncate to i32
+      const HEAP_MAGIC = 0xca1c17a9 | 0;
+      if (ptr >= 16 && ptr < mem.byteLength - 8) {
+        const magic = mem.getInt32(ptr - 8, true);
+        if (magic === HEAP_MAGIC) {
+          const typeTag = mem.getInt32(ptr - 4, true);
+          if (typeTag === 10) {
+            // string: read byte_len then UTF-8 bytes
+            const byteLen = mem.getFloat64(ptr, true);
+            const bytes = new Uint8Array(mem.buffer, ptr + 8, byteLen);
+            const str = new TextDecoder().decode(bytes);
+            console.log("[wasm-println]", str);
+            wasmLog.push(str);
+            return 0;
+          }
+        }
+      }
+      // Fall back: print as number
+      console.log("[wasm-println]", raw);
+      wasmLog.push(raw);
+      return 0;
+    },
   },
 });
 const e = inst.exports;
@@ -36,6 +70,40 @@ function checkApprox(label, expected, fn, ...args) {
     console.log(`  ${label} = ${got}  FAIL (expected ≈${expected})`);
     fail++;
   }
+}
+
+function getHashSlots(n) {
+  const hash = e["test-map-hash-value"](n) >>> 0;
+  return [hash & 31, (hash >>> 5) & 31];
+}
+
+function findSameTopDifferentLeaf(limit = 4096) {
+  const byTop = new Map();
+  for (let n = 1; n <= limit; n++) {
+    const [idx0, idx1] = getHashSlots(n);
+    const seen = byTop.get(idx0);
+    if (seen != null && seen.idx1 !== idx1) {
+      return [seen.value, n, idx0, seen.idx1, idx0, idx1];
+    }
+    if (seen == null) {
+      byTop.set(idx0, { value: n, idx1 });
+    }
+  }
+  throw new Error("failed to find numeric pair with shared top slot");
+}
+
+function findSameBucketCollision(limit = 4096) {
+  const seenBuckets = new Map();
+  for (let n = 1; n <= limit; n++) {
+    const [idx0, idx1] = getHashSlots(n);
+    const bucketKey = `${idx0}:${idx1}`;
+    const seen = seenBuckets.get(bucketKey);
+    if (seen != null) {
+      return [seen, n, idx0, idx1, idx0, idx1];
+    }
+    seenBuckets.set(bucketKey, n);
+  }
+  throw new Error("failed to find numeric bucket collision for WASM map test");
 }
 
 console.log("=== WASM codegen test (Node.js) ===");
@@ -66,6 +134,7 @@ check("test-tag-neq()", 0, e["test-tag-neq"]);
 check("test-record-sum(3,4)", 7, e["test-record-sum"], 3, 4);
 check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
 check("test-record-matches-true()", 1, e["test-record-matches-true"]);
+check("test-record-field-tag()", 1, e["test-record-field-tag"]);
 
 // --- Tuple tests ---
 check("test-tuple-sum()", 30, e["test-tuple-sum"]);
@@ -83,6 +152,7 @@ check("test-bit-shr(256,4)", 16, e["test-bit-shr"], 256, 4);
 check("test-match-tag(3,7)", 10, e["test-match-tag"], 3, 7);
 check("test-match-sub(10,3)", 7, e["test-match-sub"], 10, 3);
 check("test-match-wildcard()", -1, e["test-match-wildcard"]);
+check("test-hash-number()", 1, e["test-hash-number"]);
 
 // --- Host import tests (pow, sin, cos) ---
 check("test-pow(2,10)", 1024, e["test-pow"], 2, 10);
@@ -118,14 +188,17 @@ check("test-max(9,2)", 9, e["test-max"], 9, 2);
 check("test-list-count()", 3, e["test-list-count"]);
 check("test-list-nth(0)", 10, e["test-list-nth"], 0);
 check("test-list-nth(2)", 30, e["test-list-nth"], 2);
+check("test-list-first-generic()", 42, e["test-list-first-generic"]);
 check("test-list-nth(3)", 40, e["test-list-nth"], 3);
 check("test-list-first()", 42, e["test-list-first"]);
+check("test-list-rest-generic-first()", 20, e["test-list-rest-generic-first"]);
 check("test-list-rest-count()", 2, e["test-list-rest-count"]);
 check("test-list-rest-first()", 20, e["test-list-rest-first"]);
 check("test-list-empty-true()", 1, e["test-list-empty-true"]);
 check("test-list-empty-false()", 0, e["test-list-empty-false"]);
 check("test-list-append()", 33, e["test-list-append"]); // count=3 + nth(2)=30
 check("test-list-prepend()", 5, e["test-list-prepend"]);
+check("test-tuple-assoc()", 29, e["test-tuple-assoc"]);
 check("test-list-butlast()", 2, e["test-list-butlast"]);
 check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
 check("test-list-reverse()", 40, e["test-list-reverse"]); // first=30 + nth(2)=10
@@ -165,6 +238,31 @@ check("test-map-diff-new()", 2, e["test-map-diff-new"]); // {c:4, d:5} not in a
 check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b
 check("test-map-common-keys()", 2, e["test-map-common-keys"]); // #{b, c} in both
 
+const sameTopDifferentLeaf = findSameTopDifferentLeaf();
+check(
+  `test-map-two-keys-sum(${sameTopDifferentLeaf[0]},${sameTopDifferentLeaf[1]})`,
+  30,
+  e["test-map-two-keys-sum"],
+  sameTopDifferentLeaf[0],
+  sameTopDifferentLeaf[1]
+);
+
+const sameBucketCollision = findSameBucketCollision();
+check(
+  `test-map-two-keys-sum collision(${sameBucketCollision[0]},${sameBucketCollision[1]})`,
+  30,
+  e["test-map-two-keys-sum"],
+  sameBucketCollision[0],
+  sameBucketCollision[1]
+);
+check(
+  `test-map-bucket-update(${sameBucketCollision[0]},${sameBucketCollision[1]})`,
+  109,
+  e["test-map-bucket-update"],
+  sameBucketCollision[0],
+  sameBucketCollision[1]
+);
+
 // --- Range tests ---
 check("test-range()", 5, e["test-range"]); // [0,1,2,3,4]
 check("test-range-sum()", 4, e["test-range-sum"]); // 0+4
@@ -187,6 +285,20 @@ check("test-list?-true", 1, e["test-list?-true"]);
 check("test-list?-false", 0, e["test-list?-false"]);
 check("test-number?-true", 1, e["test-number?-true"]);
 check("test-map?-true", 1, e["test-map?-true"]);
+
+// --- BufList tests ---
+check("test-buf-list-push()", 3, e["test-buf-list-push"]);
+check("test-buf-list-to-list()", 3, e["test-buf-list-to-list"]);
+
+// --- println host import test ---
+wasmLog.length = 0;
+e["test-println"]();
+if (wasmLog[0] === 42) {
+  console.log("  test-println() logged 42  OK");
+} else {
+  console.log(`  test-println() logged ${wasmLog[0]}  FAIL (expected 42)`);
+  fail++;
+}
 
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
