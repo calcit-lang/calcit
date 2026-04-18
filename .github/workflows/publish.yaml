@@ -52,6 +52,7 @@ jobs:
         with:
           files: |
             target/release/cr
+            target/release/cr-wasm
             target/release/bundle_calcit
             target/release/caps
 
