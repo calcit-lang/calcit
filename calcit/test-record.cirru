@@ -82,6 +82,10 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            defn reload! () $ println |reloaded
+          :examples $ []
         |sum-point $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn sum-point (p)
@@ -165,6 +169,14 @@
                   %{} (&record:struct kitty) (:name |kitty) (:color :red)
                 assert= (&record:to-map kitty) (&{} :name |kitty :color :red)
                 assert= 2 $ &record:count kitty
+                assert=
+                  &record:get kitty $ &record:field-tag kitty 0
+                  &record:nth kitty 0
+                assert=
+                  &record:get kitty $ &record:field-tag kitty 1
+                  &record:nth kitty 1
+                assert= true $ &record:contains? kitty (&record:field-tag kitty 0)
+                assert= true $ &record:contains? kitty (&record:field-tag kitty 1)
                 assert= true $ &record:contains? kitty :color
                 assert= false $ &record:contains? kitty :age
                 assert=

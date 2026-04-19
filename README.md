@@ -161,15 +161,15 @@ I use these commands to run local examples:
 
 ```bash
 # run tests in Rust
-cargo run --bin cr -- calcit/test.cirru -1
+cargo run --bin cr -- calcit/test.cirru
 
 # run tests in Node.js
-cargo run --bin cr -- calcit/test.cirru -1 js && yarn try-js
+cargo run --bin cr -- calcit/test.cirru js && yarn try-js
 
 # run snippet
 cargo run --bin cr -- eval 'range 100'
 
-cr compact.cirru -1 ir # compiles intermediate representation into program-ir.cirru
+cr compact.cirru ir # compiles intermediate representation into program-ir.cirru
 
 cr-wasm calcit/test-wasm.cirru # compile standalone wasm target to js-out/program.wasm
 ```

@@ -324,6 +324,13 @@ export function _$n_record_$o_field_tag(x: CalcitValue, idx: CalcitValue): Calci
   return x.fields[i];
 }
 
+export function _$n_record_$o_nth(x: CalcitValue, idx: CalcitValue): CalcitValue {
+  if (!(x instanceof CalcitRecord)) throw new Error(`&record:nth expected a record, got ${x}`);
+  const i = idx as number;
+  if (i < 0 || i >= x.values.length) throw new Error(`&record:nth index ${i} out of range for record with ${x.values.length} fields`);
+  return x.values[i];
+}
+
 // === BufList — mutable append-only list ===
 // Wrapper around a plain JS Array for O(1) push.
 export class CalcitBufList {
