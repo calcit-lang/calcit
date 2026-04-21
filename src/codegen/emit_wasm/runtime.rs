@@ -140,7 +140,12 @@ pub(super) fn build_wasm_module(fns: &[CompiledFn], heap_start: i32, string_data
   Ok(module.finish())
 }
 
-pub(super) fn build_runtime_fns(base_index: u32, map_tag: i32, list_tag: i32, string_tag: i32) -> (Vec<CompiledFn>, HashMap<String, u32>) {
+pub(super) fn build_runtime_fns(
+  base_index: u32,
+  map_tag: i32,
+  list_tag: i32,
+  string_tag: i32,
+) -> (Vec<CompiledFn>, HashMap<String, u32>) {
   let mut fn_index = HashMap::new();
   let mut fns = Vec::new();
 
@@ -1773,10 +1778,8 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::I32Const(8),
     Instruction::I32Add,
     Instruction::LocalSet(5),
-
     // Block $outer (result f64) — used for early-exit via Br
     Instruction::Block(wasm_encoder::BlockType::Result(ValType::F64)),
-
     // if n_len == 0: push 0.0, br $outer
     Instruction::LocalGet(3),
     Instruction::I32Eqz,
@@ -1784,7 +1787,6 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::F64Const(Ieee64::from(0.0f64)),
     Instruction::Br(1), // 0=If, 1=$outer
     Instruction::End,
-
     // if n_len > h_len: push -1.0, br $outer
     Instruction::LocalGet(3),
     Instruction::LocalGet(2),
@@ -1793,17 +1795,14 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::F64Const(Ieee64::from(-1.0f64)),
     Instruction::Br(1), // 0=If, 1=$outer
     Instruction::End,
-
     // limit = h_len - n_len  (last valid start position)
     Instruction::LocalGet(2),
     Instruction::LocalGet(3),
     Instruction::I32Sub,
     Instruction::LocalSet(8),
-
     // i = 0
     Instruction::I32Const(0),
     Instruction::LocalSet(6),
-
     // Block $exit_outer (empty) — outer loop exit
     Instruction::Block(wasm_encoder::BlockType::Empty),
     // Loop $outer_loop
@@ -1813,11 +1812,9 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::LocalGet(8),
     Instruction::I32GtU,
     Instruction::BrIf(1), // 0=$outer_loop(continue), 1=$exit_outer(break)
-
     // j = 0
     Instruction::I32Const(0),
     Instruction::LocalSet(7),
-
     // Block $mismatch (empty) — inner loop exit on mismatch
     Instruction::Block(wasm_encoder::BlockType::Empty),
     // Loop $inner_loop
@@ -1859,7 +1856,6 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::Br(0), // continue $inner_loop
     Instruction::End,   // end $inner_loop
     Instruction::End,   // end $mismatch
-
     // i++
     Instruction::LocalGet(6),
     Instruction::I32Const(1),
@@ -1868,7 +1864,6 @@ fn build_rt_str_find_index() -> CompiledFn {
     Instruction::Br(0), // continue $outer_loop
     Instruction::End,   // end $outer_loop
     Instruction::End,   // end $exit_outer
-
     // Not found: push -1.0 (result of $outer)
     Instruction::F64Const(Ieee64::from(-1.0f64)),
     Instruction::End, // end $outer (result f64)
@@ -1922,10 +1917,8 @@ fn build_rt_str_starts_with() -> CompiledFn {
     Instruction::I32Const(8),
     Instruction::I32Add,
     Instruction::LocalSet(5),
-
     // Block $outer (result f64) — early-exit via Br
     Instruction::Block(wasm_encoder::BlockType::Result(ValType::F64)),
-
     // if p_len == 0: push 1.0, br $outer (empty prefix always matches)
     Instruction::LocalGet(3),
     Instruction::I32Eqz,
@@ -1933,7 +1926,6 @@ fn build_rt_str_starts_with() -> CompiledFn {
     Instruction::F64Const(Ieee64::from(1.0f64)),
     Instruction::Br(1), // 0=If, 1=$outer
     Instruction::End,
-
     // if p_len > s_len: push 0.0, br $outer
     Instruction::LocalGet(3),
     Instruction::LocalGet(2),
@@ -1942,11 +1934,9 @@ fn build_rt_str_starts_with() -> CompiledFn {
     Instruction::F64Const(Ieee64::from(0.0f64)),
     Instruction::Br(1), // 0=If, 1=$outer
     Instruction::End,
-
     // i = 0
     Instruction::I32Const(0),
     Instruction::LocalSet(6),
-
     // Block $fail (empty) — break here on first mismatch
     Instruction::Block(wasm_encoder::BlockType::Empty),
     // Loop $loop
@@ -1985,7 +1975,6 @@ fn build_rt_str_starts_with() -> CompiledFn {
     Instruction::Br(0), // continue $loop
     Instruction::End,   // end $loop
     Instruction::End,   // end $fail
-
     // Mismatch: push 0.0 (result of $outer)
     Instruction::F64Const(Ieee64::from(0.0f64)),
     Instruction::End, // end $outer
@@ -2037,10 +2026,8 @@ fn build_rt_str_ends_with() -> CompiledFn {
     Instruction::I32Const(8),
     Instruction::I32Add,
     Instruction::LocalSet(5),
-
     // Block $outer (result f64)
     Instruction::Block(wasm_encoder::BlockType::Result(ValType::F64)),
-
     // if suf_len == 0: push 1.0, br $outer
     Instruction::LocalGet(3),
     Instruction::I32Eqz,
@@ -2048,7 +2035,6 @@ fn build_rt_str_ends_with() -> CompiledFn {
     Instruction::F64Const(Ieee64::from(1.0f64)),
     Instruction::Br(1),
     Instruction::End,
-
     // if suf_len > s_len: push 0.0, br $outer
     Instruction::LocalGet(3),
     Instruction::LocalGet(2),
@@ -2057,17 +2043,14 @@ fn build_rt_str_ends_with() -> CompiledFn {
     Instruction::F64Const(Ieee64::from(0.0f64)),
     Instruction::Br(1),
     Instruction::End,
-
     // offset = s_len - suf_len  (start byte position in s for comparison)
     Instruction::LocalGet(2),
     Instruction::LocalGet(3),
     Instruction::I32Sub,
     Instruction::LocalSet(6),
-
     // i = 0
     Instruction::I32Const(0),
     Instruction::LocalSet(7),
-
     // Block $fail (empty)
     Instruction::Block(wasm_encoder::BlockType::Empty),
     // Loop $loop
@@ -2108,7 +2091,6 @@ fn build_rt_str_ends_with() -> CompiledFn {
     Instruction::Br(0), // continue $loop
     Instruction::End,   // end $loop
     Instruction::End,   // end $fail
-
     // Mismatch: push 0.0
     Instruction::F64Const(Ieee64::from(0.0f64)),
     Instruction::End, // end $outer
@@ -2156,12 +2138,12 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::LocalGet(0));
   b.push(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.push(Instruction::F64Lt);
-  b.push(Instruction::LocalSet(2));  // neg
+  b.push(Instruction::LocalSet(2)); // neg
 
   // raw_i64 = i64.trunc_f64_s(value)
   b.push(Instruction::LocalGet(0));
   b.push(Instruction::I64TruncF64S);
-  b.push(Instruction::LocalSet(1));  // raw_i64
+  b.push(Instruction::LocalSet(1)); // raw_i64
 
   // abs_i64 = neg ? -raw_i64 : raw_i64
   b.push(Instruction::LocalGet(2));
@@ -2177,9 +2159,9 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
 
   // Count digits: ndigits = 0; tmp = abs_i64; do { ndigits++; tmp /= 10; } while tmp != 0
   b.push(Instruction::I32Const(0));
-  b.push(Instruction::LocalSet(4));  // ndigits = 0
+  b.push(Instruction::LocalSet(4)); // ndigits = 0
   b.push(Instruction::LocalGet(3));
-  b.push(Instruction::LocalSet(5));  // tmp = abs_i64
+  b.push(Instruction::LocalSet(5)); // tmp = abs_i64
 
   b.push(Instruction::Block(wasm_encoder::BlockType::Empty));
   b.push(Instruction::Loop(wasm_encoder::BlockType::Empty));
@@ -2204,9 +2186,9 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   // total_len = ndigits + (neg ? 1 : 0)
   // payload = 8 (byte_len f64) + total_len rounded up to 8 bytes
   // Compute total_len
-  b.push(Instruction::LocalGet(4));  // ndigits
-  b.push(Instruction::LocalGet(2));  // neg flag (0 or 1)
-  b.push(Instruction::I32Add);       // total_len
+  b.push(Instruction::LocalGet(4)); // ndigits
+  b.push(Instruction::LocalGet(2)); // neg flag (0 or 1)
+  b.push(Instruction::I32Add); // total_len
 
   // payload = total_len (round up to 8): (total_len + 7) & ~7
   b.push(Instruction::I32Const(7));
@@ -2214,12 +2196,12 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::I32Const(-8i32));
   b.push(Instruction::I32And);
   b.push(Instruction::I32Const(8));
-  b.push(Instruction::I32Add);       // payload = 8 + padded_total_len
-  b.push(Instruction::LocalSet(6));  // payload
+  b.push(Instruction::I32Add); // payload = 8 + padded_total_len
+  b.push(Instruction::LocalSet(6)); // payload
 
   // Allocate string: raw_base = HEAP_PTR_GLOBAL
   b.push(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.push(Instruction::LocalTee(11));  // raw_base
+  b.push(Instruction::LocalTee(11)); // raw_base
   // Write HEAP_MAGIC at raw_base
   b.push(Instruction::I32Const(HEAP_MAGIC));
   b.push(Instruction::I32Store(mem_arg_i32(0)));
@@ -2233,12 +2215,12 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::LocalGet(11));
   b.push(Instruction::I32Const(8));
   b.push(Instruction::I32Add);
-  b.push(Instruction::LocalSet(7));  // str_ptr (logical)
+  b.push(Instruction::LocalSet(7)); // str_ptr (logical)
   // content = str_ptr + 8 (after byte_len slot)
   b.push(Instruction::LocalGet(7));
   b.push(Instruction::I32Const(8));
   b.push(Instruction::I32Add);
-  b.push(Instruction::LocalSet(8));  // content base
+  b.push(Instruction::LocalSet(8)); // content base
   // Advance heap_ptr by payload
   b.push(Instruction::LocalGet(11));
   b.push(Instruction::I32Const(8));
@@ -2249,28 +2231,28 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
 
   // Write byte_len = total_len (ndigits + neg) at str_ptr+0
   b.push(Instruction::LocalGet(7));
-  b.push(Instruction::LocalGet(4));  // ndigits
-  b.push(Instruction::LocalGet(2));  // neg
-  b.push(Instruction::I32Add);       // total_len
+  b.push(Instruction::LocalGet(4)); // ndigits
+  b.push(Instruction::LocalGet(2)); // neg
+  b.push(Instruction::I32Add); // total_len
   b.push(Instruction::F64ConvertI32U);
   b.push(Instruction::F64Store(mem_arg_f64(0)));
 
   // Write '-' at content[0] if neg
   b.push(Instruction::LocalGet(2));
   b.push(Instruction::If(wasm_encoder::BlockType::Empty));
-  b.push(Instruction::LocalGet(8));   // content addr
+  b.push(Instruction::LocalGet(8)); // content addr
   b.push(Instruction::I32Const(b'-' as i32));
   b.push(Instruction::I32Store8(mem_arg_byte(0)));
   b.push(Instruction::End);
 
   // Write digits right-to-left, pos starts at (neg + ndigits - 1)
   // pos = neg + ndigits - 1
-  b.push(Instruction::LocalGet(2));   // neg
-  b.push(Instruction::LocalGet(4));   // ndigits
+  b.push(Instruction::LocalGet(2)); // neg
+  b.push(Instruction::LocalGet(4)); // ndigits
   b.push(Instruction::I32Add);
   b.push(Instruction::I32Const(1));
   b.push(Instruction::I32Sub);
-  b.push(Instruction::LocalSet(9));   // pos
+  b.push(Instruction::LocalSet(9)); // pos
 
   // tmp = abs_i64 again
   b.push(Instruction::LocalGet(3));
@@ -2284,12 +2266,12 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::I64Const(10));
   b.push(Instruction::I64RemU);
   b.push(Instruction::I32WrapI64);
-  b.push(Instruction::LocalSet(10));  // digit
+  b.push(Instruction::LocalSet(10)); // digit
   // content[pos] = '0' + digit
-  b.push(Instruction::LocalGet(8));   // content base
-  b.push(Instruction::LocalGet(9));   // pos
-  b.push(Instruction::I32Add);        // content + pos
-  b.push(Instruction::LocalGet(10));  // digit
+  b.push(Instruction::LocalGet(8)); // content base
+  b.push(Instruction::LocalGet(9)); // pos
+  b.push(Instruction::I32Add); // content + pos
+  b.push(Instruction::LocalGet(10)); // digit
   b.push(Instruction::I32Const(b'0' as i32));
   b.push(Instruction::I32Add);
   b.push(Instruction::I32Store8(mem_arg_byte(0)));
@@ -2314,7 +2296,7 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   // return str_ptr as f64 — leave on stack
   b.push(Instruction::LocalGet(7));
   b.push(Instruction::F64ConvertI32U);
-  b.push(Instruction::Else);  // end integer branch / start non-integer branch
+  b.push(Instruction::Else); // end integer branch / start non-integer branch
 
   // --- non-integer branch: allocate string "number" ---
   // "number" = 6 bytes: 110 117 109 98 101 114 (0x6e,0x75,0x6d,0x62,0x65,0x72)
@@ -2331,10 +2313,10 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::LocalGet(11));
   b.push(Instruction::I32Const(8));
   b.push(Instruction::I32Add);
-  b.push(Instruction::LocalSet(7));  // str_ptr
+  b.push(Instruction::LocalSet(7)); // str_ptr
   // Advance heap_ptr by 16 (8 byte_len + 8 padded content)
   b.push(Instruction::LocalGet(11));
-  b.push(Instruction::I32Const(24));  // 8 header + 8 byte_len + 8 padded bytes
+  b.push(Instruction::I32Const(24)); // 8 header + 8 byte_len + 8 padded bytes
   b.push(Instruction::I32Add);
   b.push(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
   // byte_len = 6
@@ -2368,7 +2350,7 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::LocalGet(7));
   b.push(Instruction::F64ConvertI32U);
 
-  b.push(Instruction::End);  // end if/else for integer check
+  b.push(Instruction::End); // end if/else for integer check
 
   CompiledFn {
     export_name: None,
