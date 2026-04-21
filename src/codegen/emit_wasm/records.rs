@@ -457,10 +457,12 @@ pub(super) fn emit_tuple_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
-/// Emit `&tuple:count tuple` — payload count (excludes tag).
+/// Emit `&tuple:count tuple` — matches interpreter semantics: payload count + 1 (includes tag).
 ///
 /// Tuple layout: [count:f64][tag:f64][payload0:f64]...
-/// Count is at offset 0.
+/// Stored count at offset 0 is the raw payload count; the interpreter returns `extra.len() + 1`.
+/// The +1 is required for `&tag-match-internal` which compares `(&list:count pattern)` (tag + bindings)
+/// against `(&tuple:count value)`.
 pub(super) fn emit_tuple_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err("&tuple:count expects 1 arg".into());
@@ -468,6 +470,9 @@ pub(super) fn emit_tuple_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  // Add 1 to match interpreter: interpreter returns extra.len() + 1 (tag counts as element)
+  ctx.emit(Instruction::F64Const(Ieee64::from(1.0f64)));
+  ctx.emit(Instruction::F64Add);
   Ok(())
 }
 

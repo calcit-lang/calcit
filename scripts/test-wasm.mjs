@@ -142,7 +142,7 @@ check("test-call-spread-rest()", 15, e["test-call-spread-rest"]);
 
 // --- Tuple tests ---
 check("test-tuple-sum()", 30, e["test-tuple-sum"]);
-check("test-tuple-count()", 2, e["test-tuple-count"]);
+check("test-tuple-count()", 3, e["test-tuple-count"]);
 
 // --- Bitwise tests ---
 check("test-bit-and(0xFF,0x0F)", 0x0f, e["test-bit-and"], 0xff, 0x0f);
@@ -307,6 +307,48 @@ check("test-map?-true", 1, e["test-map?-true"]);
 // --- BufList tests ---
 check("test-buf-list-push()", 3, e["test-buf-list-push"]);
 check("test-buf-list-to-list()", 3, e["test-buf-list-to-list"]);
+
+// --- String operation tests ---
+check("test-str-count()", 5, e["test-str-count"]);
+check("test-str-empty-true()", 1, e["test-str-empty-true"]); // count("") == 0
+check("test-str-empty-false()", 0, e["test-str-empty-false"]); // count("hi") == 0 is false
+check("test-str-concat()", 6, e["test-str-concat"]);
+check("test-str-nth()", 101, e["test-str-nth"]); // 'e' = 0x65 = 101
+check("test-str-first()", 104, e["test-str-first"]); // 'h' = 0x68 = 104
+check("test-str-rest()", 4, e["test-str-rest"]);
+check("test-str-slice()", 3, e["test-str-slice"]); // &str:slice "abcde" 1 4 = "bcd"
+check("test-str-compare-eq()", 0, e["test-str-compare-eq"]);
+check("test-str-compare-lt()", -1, e["test-str-compare-lt"]);
+check("test-str-compare-gt()", 1, e["test-str-compare-gt"]);
+check("test-str-contains-true()", 1, e["test-str-contains-true"]); // idx 1 < len 5
+check("test-str-contains-false()", 0, e["test-str-contains-false"]); // idx 10 >= len 5
+check("test-str-find-index-found()", 1, e["test-str-find-index-found"]); // "ell" at byte 1
+check("test-str-find-index-not-found()", -1, e["test-str-find-index-not-found"]); // "xyz" not found
+check("test-str-includes-true()", 1, e["test-str-includes-true"]); // "ell" in "hello"
+check("test-str-includes-false()", 0, e["test-str-includes-false"]); // "xyz" not in "hello"
+check("test-str-pad-left()", 5, e["test-str-pad-left"]); // pad-left "hi" 5 "-" = "---hi"
+check("test-str-pad-right()", 5, e["test-str-pad-right"]); // pad-right "hi" 5 "-" = "hi---"
+
+// --- __str_new FFI test (JS → WASM string passing) ---
+// Protocol: read heap top, write bytes at top+16 (zero-copy), call __str_new(top+16, len)
+{
+  const mem = inst.exports.memory.buffer;
+  const heapTop = inst.exports.__heap_ptr.value;
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode("world");
+  new Uint8Array(mem, heapTop + 16, bytes.length).set(bytes);
+  const strPtr = inst.exports.__str_new(heapTop + 16, bytes.length);
+  // Decode: byte_len at strPtr, content at strPtr+8
+  const view = new DataView(mem);
+  const byteLen = view.getFloat64(strPtr | 0, true);
+  const decoded = new TextDecoder().decode(new Uint8Array(mem, (strPtr | 0) + 8, byteLen));
+  if (decoded === "world") {
+    console.log("  __str_new FFI: 'world'  OK");
+  } else {
+    console.log(`  __str_new FFI: '${decoded}'  FAIL (expected 'world')`);
+    fail++;
+  }
+}
 
 // --- println host import test ---
 wasmLog.length = 0;
