@@ -58,6 +58,28 @@ pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result
 /// appearing in preprocessed code) and `Calcit::Fn { info }` values that don't
 /// have a resolvable `def_ref`.
 pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>, Vec<Calcit>)> {
+  // Handle Calcit::Fn values — anonymous lambdas created by `fn` macro after preprocessing.
+  if let Calcit::Fn { info, .. } = callee {
+    let params: Vec<String> = match info.args.as_ref() {
+      CalcitFnArgs::MarkedArgs(labels) => labels
+        .iter()
+        .filter_map(|label| {
+          if let CalcitArgLabel::Idx(idx) = label {
+            Some(CalcitLocal::read_name(*idx))
+          } else {
+            None
+          }
+        })
+        .collect(),
+      CalcitFnArgs::Args(idxs) => idxs.iter().map(|&idx| CalcitLocal::read_name(idx)).collect(),
+    };
+    let body = info.body.clone();
+    if body.is_empty() {
+      return None;
+    }
+    return Some((params, body));
+  }
+
   let Calcit::List(items) = callee else {
     return None;
   };
@@ -72,9 +94,6 @@ pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>,
           _ => None,
         })
         .collect();
-      if params.len() < 1 {
-        return None;
-      }
       let body: Vec<Calcit> = items.drop_left().drop_left().drop_left().to_vec();
       if body.is_empty() {
         return None;
@@ -167,6 +186,9 @@ pub(super) enum FoldlCallKind {
   Inline(Vec<String>, Vec<Calcit>),
   /// A native builtin proc (e.g. `&+`, `&merge`).
   Proc(CalcitProc),
+  /// A local variable holding a function table index (f64) — uses call_indirect.
+  /// Value is the WASM local index of the variable.
+  Dynamic(u32),
 }
 
 /// Emit a call to a native proc using two pre-allocated locals as arguments.
@@ -226,7 +248,16 @@ pub(super) fn resolve_callee_kind(ctx: &WasmGenCtx, callee: &Calcit, _acc: u32, 
     return Ok(FoldlCallKind::Inline(params, body));
   }
   if let Calcit::Proc(proc) = callee {
-    return Ok(FoldlCallKind::Proc(proc.clone()));
+    return Ok(FoldlCallKind::Proc(*proc));
+  }
+  // Local variable holding a function value (dyn dispatch via call_indirect)
+  if let Calcit::Local(local) = callee {
+    let local_idx = ctx
+      .locals
+      .get(&*local.sym)
+      .copied()
+      .ok_or_else(|| format!("foldl callee local not found: {}", local.sym))?;
+    return Ok(FoldlCallKind::Dynamic(local_idx));
   }
   Err(format!("foldl callee must be a static fn/import/symbol in WASM, got: {callee}"))
 }
@@ -264,6 +295,15 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
       Ok(())
     }
     FoldlCallKind::Proc(proc) => emit_foldl_proc_call(ctx, proc, acc, elem),
+    // Dynamic dispatch via call_indirect: (acc_f64, elem_f64) → f64. Canonical type 2.
+    FoldlCallKind::Dynamic(fn_local_idx) => {
+      ctx.emit(Instruction::LocalGet(acc));
+      ctx.emit(Instruction::LocalGet(elem));
+      ctx.emit(Instruction::LocalGet(*fn_local_idx));
+      ctx.emit(Instruction::I32TruncF64S);
+      ctx.emit(Instruction::CallIndirect { type_index: 2, table_index: 0 });
+      Ok(())
+    }
   }
 }
 
@@ -573,6 +613,15 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
       }
       result
     }
+    // Dynamic dispatch via call_indirect: local holds f64 table slot index.
+    // Canonical type 1 = (f64) → f64.
+    FoldlCallKind::Dynamic(fn_local_idx) => {
+      ctx.emit(Instruction::LocalGet(arg));
+      ctx.emit(Instruction::LocalGet(*fn_local_idx));
+      ctx.emit(Instruction::I32TruncF64S);
+      ctx.emit(Instruction::CallIndirect { type_index: 1, table_index: 0 });
+      Ok(())
+    }
   }
 }
 
@@ -598,6 +647,16 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
       Ok(())
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
+    // Dynamic dispatch: (elem_f64, idx_as_f64) → f64. Canonical type 2.
+    FoldlCallKind::Dynamic(fn_local_idx) => {
+      ctx.emit(Instruction::LocalGet(elem));
+      ctx.emit(Instruction::LocalGet(idx));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalGet(*fn_local_idx));
+      ctx.emit(Instruction::I32TruncF64S);
+      ctx.emit(Instruction::CallIndirect { type_index: 2, table_index: 0 });
+      Ok(())
+    }
   }
 }
 
@@ -610,7 +669,16 @@ fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKi
     return Ok(FoldlCallKind::Inline(params, body));
   }
   if let Calcit::Proc(proc) = callee {
-    return Ok(FoldlCallKind::Proc(proc.clone()));
+    return Ok(FoldlCallKind::Proc(*proc));
+  }
+  // Local variable holding a function value (dyn dispatch via call_indirect)
+  if let Calcit::Local(local) = callee {
+    let local_idx = ctx
+      .locals
+      .get(&*local.sym)
+      .copied()
+      .ok_or_else(|| format!("HOF callee local not found: {}", local.sym))?;
+    return Ok(FoldlCallKind::Dynamic(local_idx));
   }
   Err(format!("HOF callee must be a static fn/import/symbol in WASM, got: {callee}"))
 }
@@ -907,5 +975,121 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End); ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+/// `map-kv xs f` — apply binary `f(k, v) → [k', v']` to every entry of a map, returning a new map.
+/// Iterates via `__rt_map_linearize` which returns a flat `[n_pairs, k0, v0, k1, v1, ...]` buffer.
+pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err(format!("map-kv expects 2 args, got {}", args.len()));
+  }
+
+  // Resolve binary callee: f(k, v) → [k', v']
+  let kind = if let Some((params, body)) = try_extract_inline_lambda(&args[1]) {
+    if params.len() < 2 {
+      return Err("map-kv: inline lambda needs at least 2 params".into());
+    }
+    FoldlCallKind::Inline(params, body)
+  } else {
+    return Err("map-kv: callee must be an inline lambda in WASM".into());
+  };
+
+  // Evaluate map source → i32 ptr
+  emit_expr(ctx, &args[0])?;
+  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(map_ptr));
+
+  // __rt_map_linearize(map_ptr) → flat [n_pairs, k0, v0, ...] buffer (i32 ptr)
+  let linearize_idx = *ctx.runtime_fn_index.get("__rt_map_linearize")
+    .ok_or("runtime __rt_map_linearize missing")?;
+  ctx.emit(Instruction::LocalGet(map_ptr));
+  ctx.emit(Instruction::Call(linearize_idx));
+  let flat_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(flat_ptr));
+
+  // n_pairs = flat_ptr[0] (f64 → i32)
+  let n_pairs = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(n_pairs));
+
+  // Start accumulator as an empty map
+  emit_map_new(ctx, &[])?;
+  let acc = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(acc));
+
+  let i = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(i));
+  let key = ctx.alloc_local();
+  let val = ctx.alloc_local();
+  let result_ptr = ctx.alloc_local_typed(ValType::I32);
+  let new_key = ctx.alloc_local();
+  let new_val = ctx.alloc_local();
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(n_pairs));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  // key = flat_ptr[8 + i*16]
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(16)); ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(key));
+
+  // val = flat_ptr[16 + i*16]
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(16)); ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(16)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(val));
+
+  // result = f(key, val) — inline the lambda
+  match &kind {
+    FoldlCallKind::Inline(params, body) => {
+      let old0 = ctx.locals.insert(params[0].clone(), key);
+      let old1 = ctx.locals.insert(params[1].clone(), val);
+      emit_body(ctx, body)?;
+      match old0 { Some(v) => { ctx.locals.insert(params[0].clone(), v); } None => { ctx.locals.remove(&params[0]); } }
+      match old1 { Some(v) => { ctx.locals.insert(params[1].clone(), v); } None => { ctx.locals.remove(&params[1]); } }
+    }
+    _ => unreachable!(),
+  }
+
+  // result is [k', v'] list on stack; get its pointer
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(result_ptr));
+
+  // new_key = result[0] at offset 8, new_val = result[1] at offset 16
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(new_key));
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::LocalSet(new_val));
+
+  // acc = __rt_map_assoc(acc, new_key, new_val)
+  let assoc_idx = *ctx.runtime_fn_index.get("__rt_map_assoc").expect("__rt_map_assoc");
+  ctx.emit(Instruction::LocalGet(acc));
+  ctx.emit(Instruction::LocalGet(new_key));
+  ctx.emit(Instruction::LocalGet(new_val));
+  ctx.emit(Instruction::Call(assoc_idx));
+  ctx.emit(Instruction::LocalSet(acc));
+
+  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(acc));
+  ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }

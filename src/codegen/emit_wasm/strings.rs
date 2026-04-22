@@ -10,6 +10,7 @@ use super::*;
 /// Returns `(ptr_local, content_base_local)`:
 /// - `ptr_local`: i32 local = logical pointer (where byte_len f64 lives)
 /// - `content_base_local`: i32 local = ptr + 8 (start of UTF-8 content)
+///
 /// Also stores byte_len as f64 into ptr+0.
 pub(super) fn emit_str_alloc(ctx: &mut WasmGenCtx, len_i32: u32) -> (u32, u32) {
   // padded_len = (len + 7) & -8  (round up to 8-byte boundary)

@@ -112,6 +112,12 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.emit(f64_const(0.0));
       Ok(())
     }
+    // .map f — fallback for non-list/non-set types (e.g., maps); return nil (0.0).
+    // List case is handled via the `map` HOF interceptor before reaching here.
+    "map" => {
+      ctx.emit(f64_const(0.0));
+      Ok(())
+    }
     _ => Err(format!("unsupported invoke method in WASM: .{name}")),
   }
 }

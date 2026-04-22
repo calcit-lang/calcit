@@ -181,18 +181,66 @@ pub(super) fn emit_record_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// Emit `&record:get record :field_tag` — field access by tag name.
+/// Emit `&record:get record :field_tag` — dynamic field access by tag name.
 ///
-/// Since fields are sorted alphabetically (matching CalcitStruct), we need the
-/// struct type info to map tag to index. For now, this is only supported when
-/// the tag is a compile-time constant and we can infer the struct type.
-pub(super) fn emit_record_get(_ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+/// Performs a compile-time dispatch table: for each known struct type, scans
+/// field tags and returns the matching field value. Returns nil (0.0) if tag not found.
+pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&record:get requires 2 args (record, tag)".into());
   }
-  // For now, fall back to runtime error — we need struct type info to map field name to index.
-  // This operation is typically rewritten to &record:nth during preprocessing.
-  Err("&record:get not yet supported in WASM (use &record:nth via preprocessing optimization)".into())
+
+  let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+
+  // Load struct_tag from record at offset 8
+  let struct_tag_local = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(record_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(struct_tag_local));
+
+  // Evaluate key_tag argument
+  let key_tag_local = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(key_tag_local));
+
+  let mut struct_entries = ctx
+    .record_field_tags
+    .iter()
+    .map(|(tag, fields)| (*tag, fields.clone()))
+    .collect::<Vec<_>>();
+  struct_entries.sort_by_key(|(tag, _)| *tag);
+
+  // For each struct type: if struct_tag matches, scan field tags and return matching value
+  for (struct_tag_id, field_tag_ids) in &struct_entries {
+    ctx.emit(Instruction::LocalGet(struct_tag_local));
+    ctx.emit(f64_const(*struct_tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+
+    // Nested if-chain: return field value for matching tag, else 0.0 (nil)
+    for (field_idx, field_tag_id) in field_tag_ids.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(key_tag_local));
+      ctx.emit(f64_const(*field_tag_id as f64));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      // Load field value at offset (2 + field_idx) * 8
+      ctx.emit(Instruction::LocalGet(record_ptr));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + field_idx) * 8) as u64)));
+      ctx.emit(Instruction::Else);
+    }
+    ctx.emit(f64_const(0.0)); // field tag not found → nil
+    for _ in field_tag_ids {
+      ctx.emit(Instruction::End);
+    }
+
+    ctx.emit(Instruction::Else);
+  }
+
+  ctx.emit(f64_const(0.0)); // unknown struct type → nil
+  for _ in &struct_entries {
+    ctx.emit(Instruction::End);
+  }
+  Ok(())
 }
 
 /// Emit `&record:count record` — returns the number of fields.
@@ -372,6 +420,65 @@ pub(super) fn emit_record_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(f64_const(0.0));
   ctx.block_depth -= 1;
   ctx.emit(Instruction::End);
+  Ok(())
+}
+
+/// Emit `&record:contains? record key_tag` — check if a field tag exists in a record.
+///
+/// Layout: [count:f64][struct_tag:f64][field0:f64]...
+/// Field tags are compile-time known via ctx.record_field_tags.
+pub(super) fn emit_record_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err("&record:contains? requires 2 args (record, key_tag)".into());
+  }
+  let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+
+  // Load struct_tag from record at offset 8
+  let struct_tag_local = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(record_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(struct_tag_local));
+
+  // Evaluate key_tag argument
+  let key_tag_local = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(key_tag_local));
+
+  let mut struct_entries = ctx
+    .record_field_tags
+    .iter()
+    .map(|(tag, fields)| (*tag, fields.clone()))
+    .collect::<Vec<_>>();
+  struct_entries.sort_by_key(|(tag, _)| *tag);
+
+  // For each known struct type: if struct_tag matches, scan field tags for key_tag
+  for (struct_tag_id, field_tag_ids) in &struct_entries {
+    ctx.emit(Instruction::LocalGet(struct_tag_local));
+    ctx.emit(f64_const(*struct_tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+
+    // Nested if-chain: return 1.0 if key_tag matches any field tag, else 0.0
+    for field_tag_id in field_tag_ids {
+      ctx.emit(Instruction::LocalGet(key_tag_local));
+      ctx.emit(f64_const(*field_tag_id as f64));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.emit(f64_const(1.0)); // field found
+      ctx.emit(Instruction::Else);
+    }
+    ctx.emit(f64_const(0.0)); // field not found
+    for _ in field_tag_ids {
+      ctx.emit(Instruction::End);
+    }
+
+    ctx.emit(Instruction::Else);
+  }
+
+  ctx.emit(f64_const(0.0)); // unknown struct type
+  for _ in &struct_entries {
+    ctx.emit(Instruction::End);
+  }
   Ok(())
 }
 

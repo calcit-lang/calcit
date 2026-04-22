@@ -597,15 +597,42 @@ pub(super) fn emit_list_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
 /// `&list:dissoc list idx` — new list without element at index.
 pub(super) fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
+  use crate::calcit::CalcitSyntax;
+  // Handle spread form: (&list:dissoc x & rest_list) — rest_list[0] is the index
+  let (list_arg, idx_arg): (&Calcit, Option<&Calcit>) = if args.len() == 3
+    && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _))
+  {
+    (&args[0], None) // spread form: extract idx from rest_list at runtime
+  } else if args.len() == 2 {
+    (&args[0], Some(&args[1]))
+  } else {
     return Err("&list:dissoc expects 2 args".into());
-  }
-  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  };
+
+  let src = emit_ptr_to_i32(ctx, list_arg)?;
   let count = emit_load_count_i32(ctx, src);
   let idx = ctx.alloc_local_typed(ValType::I32);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(idx));
+  if let Some(idx_expr) = idx_arg {
+    emit_expr(ctx, idx_expr)?;
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(idx));
+  } else {
+    // Spread form: rest_list[0] is the index (load first element of the rest list)
+    let rest_list_f64 = ctx.alloc_local();
+    emit_expr(ctx, &args[2])?;
+    ctx.emit(Instruction::LocalSet(rest_list_f64));
+    let rest_list_i32 = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(rest_list_f64));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(rest_list_i32));
+    // Load element 0: offset 8 from list start
+    ctx.emit(Instruction::LocalGet(rest_list_i32));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(idx));
+  }
 
   let new_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(count));

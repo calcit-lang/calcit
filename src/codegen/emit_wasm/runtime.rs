@@ -32,20 +32,36 @@ pub(super) const HOST_IMPORTS: &[HostImport] = &[
   },
 ];
 
+/// Maximum arity covered by canonical call_indirect type entries.
+/// Types 0..MAX_CANONICAL_ARITY are reserved: type N = (f64 × N) → f64.
+pub(super) const MAX_CANONICAL_ARITY: u32 = 8;
+
 /// Build a binary WASM module from compiled functions.
 /// Host imports occupy the first function indices (0..HOST_IMPORTS.len()),
 /// then user functions follow at indices HOST_IMPORTS.len()..
+///
+/// `runtime_fn_count`: how many leading entries in `fns` are runtime helper
+/// functions (not user-defined calcit functions). Only the user calcit fns
+/// (fns[runtime_fn_count..]) are registered in the funcref table.
 pub(super) fn build_wasm_module(
   fns: &[CompiledFn],
   heap_start: i32,
   string_data: &[u8],
   atom_initial_values: &[f64],
+  runtime_fn_count: u32,
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
   let num_imports = HOST_IMPORTS.len() as u32;
+  let user_fn_count = fns.len() as u32 - runtime_fn_count;
 
-  // Type section: host imports first, then user functions
+  // Type section:
+  //   0..MAX_CANONICAL_ARITY  — canonical HOF callback types: (f64×N) → f64
+  //   MAX_CANONICAL_ARITY + 0..HOST_IMPORTS.len() — host import types
+  //   MAX_CANONICAL_ARITY + HOST_IMPORTS.len() + 0..fns.len() — user fn types
   let mut types = TypeSection::new();
+  for arity in 0..MAX_CANONICAL_ARITY {
+    types.ty().function(vec![ValType::F64; arity as usize], vec![ValType::F64]);
+  }
   for imp in HOST_IMPORTS {
     let params: Vec<ValType> = vec![ValType::F64; imp.arity];
     types.ty().function(params, vec![ValType::F64]);
@@ -55,19 +71,35 @@ pub(super) fn build_wasm_module(
   }
   module.section(&types);
 
-  // Import section: host functions
+  // Import section: host functions (type indices shifted by MAX_CANONICAL_ARITY)
   let mut imports = wasm_encoder::ImportSection::new();
   for (i, imp) in HOST_IMPORTS.iter().enumerate() {
-    imports.import(imp.module, imp.name, wasm_encoder::EntityType::Function(i as u32));
+    imports.import(
+      imp.module,
+      imp.name,
+      wasm_encoder::EntityType::Function(MAX_CANONICAL_ARITY + i as u32),
+    );
   }
   module.section(&imports);
 
-  // Function section: map each user function to its type (offset by num_imports)
+  // Function section: map each user function to its type
   let mut functions = FunctionSection::new();
   for (i, _) in fns.iter().enumerate() {
-    functions.function(num_imports + i as u32);
+    functions.function(MAX_CANONICAL_ARITY + num_imports + i as u32);
   }
   module.section(&functions);
+
+  // Table section: one funcref table holding all user calcit functions.
+  // Table slot i → calcit fn at fn_defs[i] (function index: num_imports + runtime_fn_count + i).
+  let mut tables = TableSection::new();
+  tables.table(TableType {
+    element_type: RefType::FUNCREF,
+    minimum: user_fn_count as u64,
+    maximum: Some(user_fn_count as u64),
+    table64: false,
+    shared: false,
+  });
+  module.section(&tables);
 
   // Memory section: 100 pages (6.4MB) for linear memory (records, tuples)
   let mut memories = MemorySection::new();
@@ -112,6 +144,19 @@ pub(super) fn build_wasm_module(
     }
   }
   module.section(&exports);
+
+  // Element section: populate the funcref table with user calcit function indices.
+  // table slot i → function index (num_imports + runtime_fn_count + i).
+  if user_fn_count > 0 {
+    let fn_indices: Vec<u32> = (0..user_fn_count).map(|i| num_imports + runtime_fn_count + i).collect();
+    let mut elements = ElementSection::new();
+    elements.active(
+      Some(0),
+      &ConstExpr::i32_const(0),
+      Elements::Functions(fn_indices.as_slice().into()),
+    );
+    module.section(&elements);
+  }
 
   // Code section
   let mut codes = CodeSection::new();
@@ -2138,11 +2183,10 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   //          5=tmp_i64(i64), 6=payload(i32), 7=str_ptr(i32), 8=content(i32),
   //          9=pos(i32), 10=digit(i32), 11=raw_base(i32)
   use wasm_encoder::Ieee64;
-  let mut b = vec![];
+  let mut b = vec![Instruction::LocalGet(0)];
 
   // Check if value is an integer: floor(value) == value (and not NaN)
   // Use: value - floor(value) == 0.0
-  b.push(Instruction::LocalGet(0));
   b.push(Instruction::F64Floor);
   b.push(Instruction::LocalGet(0));
   b.push(Instruction::F64Eq);

@@ -128,13 +128,36 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&map:dissoc map key` — new map without key (or same if key absent).
 pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
+  use crate::calcit::CalcitSyntax;
+  // Handle spread form: (&map:dissoc x & rest_list) — rest_list[0] is the key
+  let (map_arg, key_arg_opt) = if args.len() == 3 && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+    (&args[0], None)
+  } else if args.len() == 2 {
+    (&args[0], Some(&args[1]))
+  } else {
     return Err("&map:dissoc expects 2 args".into());
-  }
-  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  };
+
+  let src = emit_ptr_to_i32(ctx, map_arg)?;
   let target = ctx.alloc_local();
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::LocalSet(target));
+  if let Some(key_expr) = key_arg_opt {
+    emit_expr(ctx, key_expr)?;
+    ctx.emit(Instruction::LocalSet(target));
+  } else {
+    // Spread form: load key from rest_list[0]
+    let rest_list_f64 = ctx.alloc_local();
+    emit_expr(ctx, &args[2])?;
+    ctx.emit(Instruction::LocalSet(rest_list_f64));
+    let rest_list_i32 = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(rest_list_f64));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(rest_list_i32));
+    ctx.emit(Instruction::LocalGet(rest_list_i32));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalSet(target));
+  }
   let fn_idx = *ctx
     .runtime_fn_index
     .get("__rt_map_dissoc")
@@ -460,12 +483,14 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   if args.len() != 2 {
     return Err("&map:diff-new expects 2 args".into());
   }
-  let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
-  let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
-  let b = emit_ptr_to_i32(ctx, &args[1])?;
+  // &map:diff-new b a — returns entries in b (args[0]) NOT in a (args[1])
+  // Iterate over b, check each key against a; if not found in a, include in result.
+  let b = emit_ptr_to_i32(ctx, &args[0])?;
   let b_count = emit_load_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
+  let a = emit_ptr_to_i32(ctx, &args[1])?;
+  let a_count = emit_load_count_i32(ctx, a);
+  let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
 
   // Over-allocate: max is b_count entries (we iterate over b)
   let total_slots = ctx.alloc_local_typed(ValType::I32);
