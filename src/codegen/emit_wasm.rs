@@ -43,7 +43,7 @@ mod runtime;
 use methods::{emit_call_args, emit_method_invoke};
 use records::{
   emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name, emit_record_matches, emit_record_new,
-  emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count, emit_tuple_new, emit_tuple_nth,
+  emit_enum_tuple_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count, emit_tuple_new, emit_tuple_nth,
   resolve_struct_ref, try_parse_defrecord_form,
 };
 use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
@@ -215,6 +215,31 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index);
 
+  // Scan for defatom definitions — each gets a mutable WASM global (f64).
+  let mut atom_initial_values: Vec<f64> = Vec::new();
+  let mut atom_globals: HashMap<String, u32> = HashMap::new();
+  for &ns in &ns_order {
+    let Some(file_info) = program_data.get(ns) else {
+      continue;
+    };
+    for (def_name, compiled) in &file_info.defs {
+      if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code {
+        if matches!(xs.first(), Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))) {
+          let qualified = format!("{ns}/{def_name}");
+          let global_idx = atom_initial_values.len() as u32;
+          atom_globals.insert(qualified, global_idx);
+          // Determine initial value from 3rd node (index 2)
+          let init_val = match xs.get(2) {
+            Some(crate::calcit::Calcit::Bool(true)) => 1.0,
+            Some(crate::calcit::Calcit::Number(n)) => *n,
+            _ => 0.0, // false / nil / complex init → default 0.0
+          };
+          atom_initial_values.push(init_val);
+        }
+      }
+    }
+  }
+
   let env = WasmCompileEnv {
     fn_index,
     fn_arity,
@@ -223,6 +248,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     tag_index,
     record_field_tags,
     string_pool,
+    atom_globals,
   };
 
   // Second pass: compile. If a function fails, we still reserve its slot
@@ -254,7 +280,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   }
 
   // Build module using wasm-encoder
-  let wasm_bytes = build_wasm_module(&compiled_fns, heap_start, &string_data_segment)?;
+  let wasm_bytes = build_wasm_module(&compiled_fns, heap_start, &string_data_segment, &atom_initial_values)?;
 
   // Write output
   let out_path = Path::new(emit_path);
@@ -288,6 +314,8 @@ struct WasmCompileEnv {
   tag_index: HashMap<String, u32>,
   record_field_tags: HashMap<u32, Vec<u32>>,
   string_pool: HashMap<String, u32>,
+  /// qualified atom name ("ns/def") → WASM global index
+  atom_globals: HashMap<String, u32>,
 }
 
 fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
@@ -336,6 +364,8 @@ struct WasmGenCtx {
   /// String literal pool: string content → logical pointer (f64).
   /// Strings are pre-allocated in a data segment before the heap.
   string_pool: HashMap<String, u32>,
+  /// qualified atom name ("ns/def") → WASM global index
+  atom_globals: HashMap<String, u32>,
 }
 
 impl WasmGenCtx {
@@ -355,6 +385,7 @@ impl WasmGenCtx {
       record_field_tags: env.record_field_tags,
       block_depth: 0,
       string_pool: env.string_pool,
+      atom_globals: env.atom_globals,
     }
   }
 
@@ -566,7 +597,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       ctx.emit(f64_const(0.0));
     }
     Calcit::Import(import) => {
-      if let Ok(struct_def) = resolve_struct_ref(expr) {
+      // Check if this is a reference to a known WASM global (defatom)
+      let qualified = format!("{}/{}", import.ns, import.def);
+      if let Some(&global_idx) = ctx.atom_globals.get(&qualified) {
+        ctx.emit(Instruction::GlobalGet(global_idx));
+      } else if let Ok(struct_def) = resolve_struct_ref(expr) {
         let tag_str = struct_def.name.to_string();
         let id = *ctx
           .tag_index
@@ -586,6 +621,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     }
     Calcit::Record(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
     Calcit::Tuple(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
+    // `[]` used as a bare expression (not in call position) evaluates to an empty list.
+    // This arises from `cond` branches like `true []` where `[]` is the return value.
+    Calcit::Proc(CalcitProc::List) => {
+      emit_list_new(ctx, &[])?;
+    }
     _ => return Err(format!("unsupported WASM expression: {expr}")),
   }
   Ok(())
@@ -615,6 +655,36 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         emit_expr(ctx, &args_list[0])
       }
       CalcitSyntax::Defn => Err("nested defn not supported in WASM".into()),
+      CalcitSyntax::Quote | CalcitSyntax::Quasiquote => {
+        // Quote creates a runtime value (quoted symbol/expression).
+        // In WASM, emit nil as a placeholder — quote values appear mainly in
+        // error-reporting paths (e.g., the assert macro formats the failing
+        // expression via `format-to-lisp (quote ~xs)`) and don't affect the
+        // normal execution path.
+        ctx.emit(f64_const(0.0));
+        Ok(())
+      }
+      CalcitSyntax::Reset => {
+        // reset! atom new-value — set atom global and return new value
+        if args_list.len() != 2 {
+          return Err(format!("reset! expects 2 args, got {}", args_list.len()));
+        }
+        let qualified = match &args_list[0] {
+          Calcit::Import(import) => format!("{}/{}", import.ns, import.def),
+          _ => return Err(format!("reset! first arg must be an atom import, got: {}", args_list[0])),
+        };
+        let global_idx = *ctx
+          .atom_globals
+          .get(&qualified)
+          .ok_or_else(|| format!("unknown atom in reset!: {qualified}"))?;
+        emit_expr(ctx, &args_list[1])?;
+        // Store new value in global, and leave it on stack as return value
+        let tmp = ctx.alloc_local();
+        ctx.emit(Instruction::LocalTee(tmp));
+        ctx.emit(Instruction::GlobalSet(global_idx));
+        ctx.emit(Instruction::LocalGet(tmp));
+        Ok(())
+      }
       _ => Err(format!("unsupported syntax in WASM: {syn}")),
     },
     Calcit::Proc(proc) => emit_proc_call(ctx, proc, &args_list),
@@ -634,6 +704,26 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "union" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Union),
           "difference" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Difference),
           "include" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Include),
+          // `reduce xs x0 f` → inline as foldl so proc/import callees work.
+          "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
+          // `foldl-compare xs acc f` → inline comparison loop.
+          "foldl-compare" if args_list.len() == 3 => return emit_foldl_compare(ctx, &args_list),
+          // Unary HOF intercepts — callee 'f' would be unresolvable inside core defs.
+          "map" if args_list.len() == 2 => return emit_map(ctx, &args_list),
+          "map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
+          "each" if args_list.len() == 2 => return emit_each(ctx, &args_list),
+          "filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
+          "any?" if args_list.len() == 2 => return emit_any(ctx, &args_list),
+          "every?" if args_list.len() == 2 => return emit_every(ctx, &args_list),
+          "find" if args_list.len() == 2 => return emit_find(ctx, &args_list),
+          "find-index" if args_list.len() == 2 => return emit_find_index(ctx, &args_list),
+          // `concat` takes variadic lists — intercept to emit variadic list concat.
+          "concat" if args_list.len() >= 2 => return emit_list_concat(ctx, &args_list),
+          // `deref` — in WASM, all atoms are globals; just evaluate the atom expression.
+          "deref" if args_list.len() == 1 => return emit_expr(ctx, &args_list[0]),
+          // `str` / `str-spaced` — variadic string concat; core defs use (&syntax &) which is unsupported.
+          "str" if !args_list.is_empty() => return emit_str_variadic(ctx, &args_list),
+          "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),
           _ => {}
         }
       }
@@ -804,8 +894,28 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
     }
+    Calcit::Proc(proc) => {
+      // A proc used as the spread callee — just emit a regular proc call with spread args
+      emit_call_spread_args_as_regular(ctx, proc, call_args)
+    }
     _ => Err(format!("unsupported call head in WASM: {head}")),
   }
+}
+
+/// For proc callees in spread calls: collect args (handling `& spread-list`) and emit proc.
+fn emit_call_spread_args_as_regular(ctx: &mut WasmGenCtx, proc: &CalcitProc, call_args: &[Calcit]) -> Result<(), String> {
+  // Gather concrete args, expanding `& spread-list` if present
+  let mut real_args: Vec<Calcit> = vec![];
+  let mut i = 0;
+  while i < call_args.len() {
+    if matches!(call_args[i], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      i += 1; // skip the & marker, next is the spread list
+    } else {
+      real_args.push(call_args[i].clone());
+    }
+    i += 1;
+  }
+  emit_proc_call(ctx, proc, &real_args)
 }
 
 fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
@@ -998,8 +1108,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(f64_const(0.0)); // nil
       Ok(())
     }
-    CalcitProc::NativeEnumTupleNew
-    | CalcitProc::NativeTupleImpls
+    // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
+    CalcitProc::NativeEnumTupleNew => emit_enum_tuple_new(ctx, args),
+    CalcitProc::NativeTupleImpls
     | CalcitProc::NativeTupleParams
     | CalcitProc::NativeTupleEnum
     | CalcitProc::NativeTupleImplTraits
@@ -1085,6 +1196,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeSetToList => emit_set_to_list(ctx, args),
     CalcitProc::NativeDifference => emit_set_difference(ctx, args),
     CalcitProc::NativeUnion => emit_set_union(ctx, args),
+    CalcitProc::NativeSetIntersection => emit_set_intersection(ctx, args),
     CalcitProc::NativeSetDestruct => emit_set_destruct(ctx, args),
     CalcitProc::NativeMerge => emit_map_merge(ctx, args),
     CalcitProc::NativeMergeNonNil => emit_map_merge_non_nil(ctx, args),
@@ -1130,6 +1242,21 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
         ctx.emit(Instruction::Drop);
       }
       ctx.emit(f64_const(0.0));
+      Ok(())
+    }
+
+    // @atom deref: just emit the argument (which should already be a GlobalGet)
+    CalcitProc::AtomDeref => {
+      if args.len() != 1 {
+        return Err(format!("&atom:deref expects 1 arg, got {}", args.len()));
+      }
+      emit_expr(ctx, &args[0])
+    }
+
+    // quit! — trap (abort) the WASM instance
+    CalcitProc::Quit => {
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(f64_const(0.0)); // unreachable, but keeps type stack valid
       Ok(())
     }
 

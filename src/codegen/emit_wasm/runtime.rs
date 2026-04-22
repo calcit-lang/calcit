@@ -35,7 +35,12 @@ pub(super) const HOST_IMPORTS: &[HostImport] = &[
 /// Build a binary WASM module from compiled functions.
 /// Host imports occupy the first function indices (0..HOST_IMPORTS.len()),
 /// then user functions follow at indices HOST_IMPORTS.len()..
-pub(super) fn build_wasm_module(fns: &[CompiledFn], heap_start: i32, string_data: &[u8]) -> Result<Vec<u8>, String> {
+pub(super) fn build_wasm_module(
+  fns: &[CompiledFn],
+  heap_start: i32,
+  string_data: &[u8],
+  atom_initial_values: &[f64],
+) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
   let num_imports = HOST_IMPORTS.len() as u32;
 
@@ -75,7 +80,7 @@ pub(super) fn build_wasm_module(fns: &[CompiledFn], heap_start: i32, string_data
   });
   module.section(&memories);
 
-  // Global section: heap pointer for bump allocator
+  // Global section: heap pointer for bump allocator, then atom globals
   let mut globals = GlobalSection::new();
   globals.global(
     GlobalType {
@@ -85,6 +90,16 @@ pub(super) fn build_wasm_module(fns: &[CompiledFn], heap_start: i32, string_data
     },
     &ConstExpr::i32_const(heap_start),
   );
+  for &init_val in atom_initial_values {
+    globals.global(
+      GlobalType {
+        val_type: ValType::F64,
+        mutable: true,
+        shared: false,
+      },
+      &ConstExpr::f64_const(init_val.into()),
+    );
+  }
   module.section(&globals);
 
   // Export section: memory, heap pointer global, and named functions

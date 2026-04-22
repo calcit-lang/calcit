@@ -333,12 +333,65 @@ pub(super) fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `&list:concat a b` — concatenate two lists.
 pub(super) fn emit_list_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&list:concat expects 2 args".into());
+  if args.len() < 2 {
+    return Err(format!("&list:concat expects at least 2 args, got {}", args.len()));
   }
-  let src_a = emit_ptr_to_i32(ctx, &args[0])?;
+  if args.len() == 2 {
+    // Direct 2-arg fast path
+    return emit_list_concat_two(ctx, &args[0], &args[1]);
+  }
+  // Variadic: fold pairs left
+  emit_list_concat_two(ctx, &args[0], &args[1])?;
+  for extra in &args[2..] {
+    // Result of previous concat is on stack as f64; convert to i32 ptr, concat with extra
+    let prev_f64 = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(prev_f64));
+    let prev = Calcit::Number(0.0); // dummy — we'll push the f64 local directly
+    let _ = prev; // unused
+    // Push prev f64 local as first arg, emit extra as second
+    let src_a_local = prev_f64; // f64 local holding ptr as f64
+    let src_a = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(src_a_local));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(src_a));
+    let count_a = emit_load_count_i32(ctx, src_a);
+    let src_b = emit_ptr_to_i32(ctx, extra)?;
+    let count_b = emit_load_count_i32(ctx, src_b);
+    let new_count = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(count_a));
+    ctx.emit(Instruction::LocalGet(count_b));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(new_count));
+    let total_slots = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(new_count));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(total_slots));
+    let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
+    let dst_base_a = emit_addr_offset(ctx, dst, 8);
+    let src_base_a = emit_addr_offset(ctx, src_a, 8);
+    emit_copy_f64_loop(ctx, dst_base_a, src_base_a, count_a);
+    let dst_base_b = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(dst));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(count_a));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(dst_base_b));
+    let src_base_b = emit_addr_offset(ctx, src_b, 8);
+    emit_copy_f64_loop(ctx, dst_base_b, src_base_b, count_b);
+    ctx.emit(Instruction::LocalGet(dst));
+    ctx.emit(Instruction::F64ConvertI32U);
+  }
+  Ok(())
+}
+
+fn emit_list_concat_two(ctx: &mut WasmGenCtx, a: &Calcit, b: &Calcit) -> Result<(), String> {
+  let src_a = emit_ptr_to_i32(ctx, a)?;
   let count_a = emit_load_count_i32(ctx, src_a);
-  let src_b = emit_ptr_to_i32(ctx, &args[1])?;
+  let src_b = emit_ptr_to_i32(ctx, b)?;
   let count_b = emit_load_count_i32(ctx, src_b);
 
   let new_count = ctx.alloc_local_typed(ValType::I32);

@@ -526,6 +526,146 @@ pub(super) fn emit_str_pad_right(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
+/// Internal helper: concat two string i32 pointer locals into a new string.
+/// Leaves the result f64 pointer on the stack.
+fn concat_two_i32_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
+  let len_a = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_a));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(len_a));
+
+  let len_b = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_b));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(len_b));
+
+  let len_c = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(len_a));
+  ctx.emit(Instruction::LocalGet(len_b));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(len_c));
+
+  let (ptr_c, dst_c) = emit_str_alloc(ctx, len_c);
+
+  let src_a = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_a));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(src_a));
+  ctx.emit(Instruction::LocalGet(dst_c));
+  ctx.emit(Instruction::LocalGet(src_a));
+  ctx.emit(Instruction::LocalGet(len_a));
+  ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+
+  let dst_b_off = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(dst_c));
+  ctx.emit(Instruction::LocalGet(len_a));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(dst_b_off));
+
+  let src_b = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_b));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(src_b));
+
+  ctx.emit(Instruction::LocalGet(dst_b_off));
+  ctx.emit(Instruction::LocalGet(src_b));
+  ctx.emit(Instruction::LocalGet(len_b));
+  ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+
+  ctx.emit(Instruction::LocalGet(ptr_c));
+  ctx.emit(Instruction::F64ConvertI32U);
+}
+
+/// `str args...` — convert each arg to string and concatenate all.
+/// Intercept for the variadic `str` call, bypassing the core library definition.
+pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    // Return empty string: allocate string with length 0
+    let zero_local = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(zero_local));
+    let (ptr, _) = emit_str_alloc(ctx, zero_local);
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64ConvertI32U);
+    return Ok(());
+  }
+
+  // Convert first arg to string, store as i32 ptr
+  emit_turn_string(ctx, std::slice::from_ref(&args[0]))?;
+  let acc_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(acc_ptr));
+
+  for arg in &args[1..] {
+    emit_turn_string(ctx, std::slice::from_ref(arg))?;
+    let next_ptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(next_ptr));
+
+    concat_two_i32_ptrs(ctx, acc_ptr, next_ptr);
+    // result f64 on stack → convert to i32 and update acc
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(acc_ptr));
+  }
+
+  ctx.emit(Instruction::LocalGet(acc_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// `str-spaced args...` — convert each arg to string, join with space separators.
+pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    let zero_local = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(zero_local));
+    let (ptr, _) = emit_str_alloc(ctx, zero_local);
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64ConvertI32U);
+    return Ok(());
+  }
+
+  // Allocate a 1-byte space string inline in WASM memory
+  let one_local = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(one_local));
+  let (space_ptr, space_content) = emit_str_alloc(ctx, one_local);
+  // Write 0x20 (ASCII space) at content_base
+  ctx.emit(Instruction::LocalGet(space_content));
+  ctx.emit(Instruction::I32Const(0x20));
+  ctx.emit(Instruction::I32Store8(super::mem_arg_byte(0)));
+
+  // Convert first arg to string, store as i32 ptr
+  emit_turn_string(ctx, std::slice::from_ref(&args[0]))?;
+  let acc_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(acc_ptr));
+
+  for arg in &args[1..] {
+    // Append space: acc = acc + " "
+    concat_two_i32_ptrs(ctx, acc_ptr, space_ptr);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(acc_ptr));
+
+    // Append next arg
+    emit_turn_string(ctx, std::slice::from_ref(arg))?;
+    let next_ptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(next_ptr));
+    concat_two_i32_ptrs(ctx, acc_ptr, next_ptr);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(acc_ptr));
+  }
+
+  ctx.emit(Instruction::LocalGet(acc_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
 // ===========================================================================
 // __str_new — exported FFI helper for JS → WASM string passing.
 //

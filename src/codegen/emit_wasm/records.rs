@@ -389,14 +389,18 @@ pub(super) fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     return Err(":: requires at least a tag argument".into());
   }
 
-  // First arg is the tag
-  let tag_id = match &args[0] {
+  // First arg is the tag — accept Calcit::Tag or Calcit::Bool (used by foldl-shortcut pattern)
+  let tag_f64 = match &args[0] {
     Calcit::Tag(t) => {
       let tag_str = t.to_string();
-      *ctx
+      let tag_id = *ctx
         .tag_index
         .get(&tag_str)
-        .ok_or_else(|| format!("unknown tag in tuple constructor: {tag_str}"))?
+        .ok_or_else(|| format!("unknown tag in tuple constructor: {tag_str}"))?;
+      tag_id as f64
+    }
+    Calcit::Bool(b) => {
+      if *b { 1.0 } else { 0.0 }
     }
     other => return Err(format!("::: expected tag as first arg, got: {other}")),
   };
@@ -415,7 +419,7 @@ pub(super) fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
   // Store tag at offset 8
   ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(tag_id as f64));
+  ctx.emit(f64_const(tag_f64));
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
 
   // Store payload fields starting at offset 16
@@ -426,6 +430,55 @@ pub(super) fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   }
 
   // Return pointer as f64
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// Emit `%:: enum_class tag payload...` — enum variant constructor.
+///
+/// Unlike `::` (NativeTuple), `%::` carries an enum class as first arg which is
+/// ignored in WASM (used for type-checking only). Layout is identical to `::`.
+/// args: [enum_class, tag, payload...]
+pub(super) fn emit_enum_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() < 2 {
+    return Err("%:: requires at least (enum_class tag) arguments".into());
+  }
+
+  // args[0] is enum_class — ignored in WASM (type info only)
+  // args[1] is the variant tag
+  let tag_f64 = match &args[1] {
+    Calcit::Tag(t) => {
+      let tag_str = t.to_string();
+      let tag_id = *ctx
+        .tag_index
+        .get(&tag_str)
+        .ok_or_else(|| format!("unknown tag in enum tuple constructor: {tag_str}"))?;
+      tag_id as f64
+    }
+    other => return Err(format!("%:: expected tag as second arg, got: {other}")),
+  };
+
+  let payload = &args[2..];
+  let total_size = ((2 + payload.len()) * 8) as i32;
+
+  let ptr_local = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, total_size, ptr_local, "tuple");
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(payload.len() as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(tag_f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+
+  for (i, val) in payload.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    emit_expr(ctx, val)?;
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + i) * 8) as u64)));
+  }
+
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
