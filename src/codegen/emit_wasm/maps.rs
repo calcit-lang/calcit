@@ -1150,3 +1150,109 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
+
+/// Core body for `zipmap xs ys` — local 0 = xs (f64), local 1 = ys (f64).
+pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64: u32) -> Result<(), String> {
+  let xs_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(xs_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(xs_ptr));
+
+  let ys_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ys_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ys_ptr));
+
+  let xs_count = emit_load_count_i32(ctx, xs_ptr);
+  let ys_count = emit_load_count_i32(ctx, ys_ptr);
+
+  // min_count = min(xs_count, ys_count)
+  let min_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(xs_count));
+  ctx.emit(Instruction::LocalGet(ys_count));
+  ctx.emit(Instruction::LocalGet(xs_count));
+  ctx.emit(Instruction::LocalGet(ys_count));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::Select);
+  ctx.emit(Instruction::LocalSet(min_count));
+
+  // result = empty map
+  let result = ctx.alloc_local();
+  emit_map_new(ctx, &[])?;
+  ctx.emit(Instruction::LocalSet(result));
+
+  let assoc_fn_idx = *ctx.runtime_fn_index.get("__rt_map_assoc")
+    .expect("runtime helper __rt_map_assoc must exist");
+
+  let i = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(i));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(min_count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  // k = xs[i]
+  let k = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(xs_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(k));
+
+  // v = ys[i]
+  let v = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ys_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(v));
+
+  // result = map_assoc(result, k, v)
+  let result_i32 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(result_i32));
+  ctx.emit(Instruction::LocalGet(result_i32));
+  ctx.emit(Instruction::LocalGet(k));
+  ctx.emit(Instruction::LocalGet(v));
+  ctx.emit(Instruction::Call(assoc_fn_idx));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(i));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+/// `zipmap xs ys` — call-site intercept.
+pub(super) fn emit_zipmap(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err(format!("zipmap expects 2 args, got {}", args.len()));
+  }
+  let xs = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(xs));
+  let ys = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(ys));
+  emit_zipmap_from_locals(ctx, xs, ys)
+}

@@ -259,7 +259,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     } else {
       def_name.clone()
     };
-    match compile_fn(def_name, &export_name, args, body, &env) {
+    // Try custom implementation (avoids skip for known-good WASM rewrites).
+    let result = try_custom_def_impl(ns, def_name, &export_name, args, &env)
+      .unwrap_or_else(|| compile_fn(def_name, &export_name, args, body, &env));
+    match result {
       Ok(func) => compiled_fns.push(func),
       Err(e) => {
         eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
@@ -450,6 +453,45 @@ fn compute_fn_arity(args: &CalcitFnArgs) -> (u32, Option<u32>) {
         (fixed, None)
       }
     }
+  }
+}
+
+fn try_custom_def_impl(
+  ns: &str,
+  def_name: &str,
+  export_name: &str,
+  _args: &CalcitFnArgs,
+  env: &WasmCompileEnv,
+) -> Option<Result<CompiledFn, String>> {
+  if ns != "calcit.core" {
+    return None;
+  }
+  // Helpers for building a 2-param custom function body.
+  type BodyFn = fn(&mut WasmGenCtx) -> Result<(), String>;
+  let arity: u32 = 2;
+  let build = |body_fn: BodyFn, en: &str, env: &WasmCompileEnv| -> Result<CompiledFn, String> {
+    let mut ctx = WasmGenCtx::new(arity, env.clone());
+    // Register param locals 0 and 1
+    ctx.locals.insert("__p0__".into(), 0);
+    ctx.locals.insert("__p1__".into(), 1);
+    ctx.arg_indices.push(0);
+    ctx.arg_indices.push(1);
+    body_fn(&mut ctx)?;
+    Ok(CompiledFn {
+      export_name: Some(en.to_owned()),
+      params: vec![ValType::F64; arity as usize],
+      results: vec![ValType::F64],
+      locals: ctx.extra_locals,
+      instructions: ctx.instructions,
+    })
+  };
+  match def_name {
+    "repeat" => Some(build(|ctx| emit_repeat_from_locals(ctx, 0, 1), export_name, env)),
+    "interleave" => Some(build(|ctx| emit_interleave_from_locals(ctx, 0, 1), export_name, env)),
+    "zipmap" => Some(build(|ctx| emit_zipmap_from_locals(ctx, 0, 1), export_name, env)),
+    "join" => Some(build(|ctx| emit_join_from_locals(ctx, 0, 1), export_name, env)),
+    "join-str" => Some(build(|ctx| emit_join_str_from_locals(ctx, 0, 1), export_name, env)),
+    _ => None,
   }
 }
 
@@ -718,12 +760,32 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "find" if args_list.len() == 2 => return emit_find(ctx, &args_list),
           "find-index" if args_list.len() == 2 => return emit_find_index(ctx, &args_list),
           // `concat` takes variadic lists — intercept to emit variadic list concat.
-          "concat" if args_list.len() >= 2 => return emit_list_concat(ctx, &args_list),
+          "concat" => return emit_list_concat(ctx, &args_list),
           // `deref` — in WASM, all atoms are globals; just evaluate the atom expression.
           "deref" if args_list.len() == 1 => return emit_expr(ctx, &args_list[0]),
           // `str` / `str-spaced` — variadic string concat; core defs use (&syntax &) which is unsupported.
           "str" if !args_list.is_empty() => return emit_str_variadic(ctx, &args_list),
           "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),
+          // `foldl'` is an inline variant of `foldl` with same arg order (xs acc f).
+          "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
+          // `filter-not` — keep elements where f(elem) is falsy.
+          "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
+          // `slice` — delegated to list slice (list-only, 2-3 args).
+          "slice" if args_list.len() >= 2 && args_list.len() <= 3 => return emit_list_slice(ctx, &args_list),
+          // `dissoc` — delegated to map dissoc for 2-arg calls.
+          "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
+          // `conj` — append one or more elements to a list.
+          "conj" if args_list.len() >= 2 => return emit_conj(ctx, &args_list),
+          // `update` — map update: new map with key set to f(old value).
+          "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
+          // `mapcat xs f` — map then flatten one level.
+          "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
+          // Simple loop implementations for HOF-based definitions.
+          "repeat" if args_list.len() == 2 => return emit_repeat(ctx, &args_list),
+          "interleave" if args_list.len() == 2 => return emit_interleave(ctx, &args_list),
+          "zipmap" if args_list.len() == 2 => return emit_zipmap(ctx, &args_list),
+          "join" if args_list.len() == 2 => return emit_join(ctx, &args_list),
+          "join-str" if args_list.len() == 2 => return emit_join_str(ctx, &args_list),
           _ => {}
         }
       }

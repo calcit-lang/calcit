@@ -580,6 +580,37 @@ fn concat_two_i32_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
   ctx.emit(Instruction::F64ConvertI32U);
 }
 
+/// Convert a pre-evaluated f64 value local to a string i32 pointer local.
+/// Equivalent to `emit_turn_string` but takes a local instead of a Calcit expression.
+pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) -> u32 {
+  use crate::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+  use std::sync::Arc;
+  // Map a temporary name to the pre-evaluated local
+  let sym: Arc<str> = Arc::from("__ts_arg__");
+  let dummy_info = Arc::new(CalcitSymbolInfo {
+    at_ns: Arc::from("wasm"),
+    at_def: Arc::from("__ts"),
+  });
+  let prev = ctx.locals.insert(sym.as_ref().to_owned(), v_local);
+  let expr = crate::calcit::Calcit::Local(CalcitLocal {
+    idx: 0,
+    sym: sym.clone(),
+    info: dummy_info,
+    location: None,
+    type_info: DYNAMIC_TYPE.clone(),
+  });
+  let _ = emit_turn_string(ctx, std::slice::from_ref(&expr));
+  match prev {
+    Some(v) => { ctx.locals.insert(sym.as_ref().to_owned(), v); }
+    None => { ctx.locals.remove(sym.as_ref()); }
+  }
+  // emit_turn_string leaves f64 on stack; convert to i32 local
+  let str_i32 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(str_i32));
+  str_i32
+}
+
 /// `str args...` — convert each arg to string and concatenate all.
 /// Intercept for the variadic `str` call, bypassing the core library definition.
 pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
@@ -1062,4 +1093,104 @@ pub(super) fn build_str_pad_right_fn(str_tag_id: i32) -> CompiledFn {
     ],
     instructions,
   }
+}
+
+/// Core body for `join-str xs sep` — local 0 = xs (f64), local 1 = sep (f64 str).
+pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f64: u32) -> Result<(), String> {
+  let xs_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(xs_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(xs_ptr));
+  let count = emit_load_count_i32(ctx, xs_ptr);
+
+  // result starts as "" (empty string in pool or alloc 0-length string)
+  let result = ctx.alloc_local();
+  // Alloc an empty string
+  let zero = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(zero));
+  let (empty_ptr, _) = emit_str_alloc(ctx, zero);
+  ctx.emit(Instruction::LocalGet(empty_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(result));
+
+  let sep_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(sep_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(sep_ptr));
+
+  let i = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(i));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  // if i > 0: result = concat(result, sep)
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  let result_ptr_for_sep = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(result_ptr_for_sep));
+  concat_two_i32_ptrs(ctx, result_ptr_for_sep, sep_ptr);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+
+  // elem = xs[i], turn to string
+  let elem = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(xs_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(elem));
+
+  // elem_str = turn_string(elem)
+  let elem_arr = [crate::calcit::Calcit::Nil]; // dummy
+  let _ = elem_arr;
+  // Use emit_turn_string_from_f64_local instead (inline the conversion)
+  let elem_str_ptr = emit_turn_string_from_local(ctx, elem);
+
+  // result = concat(result, elem_str)
+  let result_ptr2 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(result_ptr2));
+  concat_two_i32_ptrs(ctx, result_ptr2, elem_str_ptr);
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(i));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+/// `join-str xs sep` — call-site intercept.
+pub(super) fn emit_join_str(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err(format!("join-str expects 2 args, got {}", args.len()));
+  }
+  let xs = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(xs));
+  let sep = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(sep));
+  emit_join_str_from_locals(ctx, xs, sep)
 }

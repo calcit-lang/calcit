@@ -92,6 +92,26 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       }
       emit_method_assoc(ctx, receiver, extra_locals[0], extra_locals[1])
     }
+    // .deref — for atom/ref types; falls through when not a ref (return receiver as-is).
+    "deref" => {
+      if !extra_locals.is_empty() {
+        return Err("method .deref expects 0 arguments".into());
+      }
+      ctx.emit(Instruction::LocalGet(receiver));
+      Ok(())
+    }
+    // .slice start end — fallback for non-list/string types; return nil (0.0).
+    // List and string cases are handled before this branch in the definition.
+    "slice" => {
+      ctx.emit(f64_const(0.0));
+      Ok(())
+    }
+    // .filter f — fallback for non-list types; return nil (0.0).
+    // List case is handled before this branch in the definition.
+    "filter" => {
+      ctx.emit(f64_const(0.0));
+      Ok(())
+    }
     _ => Err(format!("unsupported invoke method in WASM: .{name}")),
   }
 }
