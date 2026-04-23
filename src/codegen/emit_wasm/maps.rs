@@ -478,12 +478,13 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
-/// `&map:diff-new a b` — map of entries in `b` whose keys are NOT in `a`.
+/// `&map:diff-new a b` — map of entries in `a` whose keys are NOT in `b`.
+/// Matches interpreter semantics: starts from `a` (args[0]) and removes keys present in `b` (args[1]).
 pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&map:diff-new expects 2 args".into());
   }
-  // `&map:diff-new a b` returns entries in `b` (args[1]) whose keys are not in `a` (args[0]).
+  // `&map:diff-new a b` returns entries in `a` (args[0]) whose keys are not in `b` (args[1]).
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
@@ -491,21 +492,21 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   let b_count = emit_load_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
-  // Over-allocate: max is b_count entries (we iterate over b)
+  // Over-allocate: max is a_count entries (we iterate over a)
   let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(b_count));
+  ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::I32Const(2));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_root = emit_alloc_with_count(ctx, b_count, total_slots, "map");
+  let dst_root = emit_alloc_with_count(ctx, a_count, total_slots, "map");
 
   let write_idx = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(write_idx));
 
-  // Outer loop: iterate over b
+  // Outer loop: iterate over a
   let bi = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(bi));
@@ -513,15 +514,15 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::LocalGet(bi));
-  ctx.emit(Instruction::LocalGet(b_count));
+  ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
 
-  // Load b[bi] key and val
+  // Load a[bi] key and val
   let bk = ctx.alloc_local();
   let bv = ctx.alloc_local();
   let bkv_addr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(b_flat));
+  ctx.emit(Instruction::LocalGet(a_flat));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(bi));
@@ -535,7 +536,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(bv));
 
-  // Scan a for this b key
+  // Scan b for this a key
   let found_in_a = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(found_in_a));
@@ -546,12 +547,12 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::LocalGet(a_count));
+  ctx.emit(Instruction::LocalGet(b_count));
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::BrIf(1));
 
   let akv_addr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_flat));
+  ctx.emit(Instruction::LocalGet(b_flat));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(ai));
@@ -564,7 +565,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
 
-  // b key found in a — mark and break inner loop
+  // a key found in b — mark and break inner loop
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found_in_a));
   ctx.emit(Instruction::Br(2));
@@ -578,7 +579,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  // If NOT found in a, copy b[bi] kv to result
+  // If NOT found in b, copy a[bi] kv to result
   ctx.emit(Instruction::LocalGet(found_in_a));
   ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
