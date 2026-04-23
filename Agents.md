@@ -80,36 +80,23 @@ cr docs agents --full
 
 升级版本时需同步更新两处，缺一会导致 crates.io 或 npm 发布不一致：
 
-```bash
-# 1. 修改 Cargo.toml 中的 version 字段
-# 2. 修改 package.json 中的 version 字段（保持一致）
-# 3. 更新 lock 文件
-cargo update --workspace   # 更新 Cargo.lock
-yarn                       # 更新 yarn.lock（如有 package.json 变动）
-```
-
-可固化为脚本（如 `scripts/bump-version.sh`），避免遗漏。
+- 修改 `Cargo.toml` 中的 `version` 字段
+- 修改 `package.json` 中的 `version` 字段（保持一致）
+- 执行 `cargo update --workspace` 更新 `Cargo.lock`
 
 ### PR 与 commit 习惯
 
-- **分支开发**：在功能分支上反复提交迭代，不依赖自动合并。
+- **分支开发**：在功能分支上反复提交迭代，**不由 agent 合并 PR**，由人工确认后合并。
 - **测试门禁**：本地先把 `cargo test` 和 `yarn check-all` 全部跑过，确认通过后再推送到 PR，等 GitHub Actions 也全跑过才合并。
-- **Tag 规范**：tag 随 commit 一起打，不单独创建。格式为 `0.12.27`（**无 `v` 前缀**），历史惯例一贯如此。在 commit message 里注明版本号，例如 `chore: release 0.12.27`。
+- **Tag 规范**：tag 随 commit 一起打，格式为 `0.12.28`（**无 `v` 前缀**）。在 commit message 里注明版本号，例如 `chore: release 0.12.28`。
 
 ```bash
 # 打 tag 并推送（不带 v 前缀）
-git tag 0.12.27 -m "Release 0.12.27"
-git push origin 0.12.27
+git tag 0.12.28 -m "Release 0.12.28"
+git push origin 0.12.28
 ```
 
-### crates.io 发布加速
-
-当前 `publish.yaml` 在发布前会完整重跑一遍 `cargo test`，对 agent 频繁发布场景过慢。优化措施：
-
-1. **`--no-verify`**：跳过发布前的重复编译验证（本地 + CI 已跑过，可信）。
-2. **Sparse 协议**：设置 `CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse`，index 查找从分钟级降到秒级。
-
-对应 `publish.yaml` 已加入这两项加速，详见文件。
+发布到 crates.io 和 npm 由 `publish.yaml` workflow 在 release 事件触发时自动完成（已做加速优化，详见文件）。
 
 ## 性能与资源验证
 
