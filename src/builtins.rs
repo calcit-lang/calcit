@@ -474,6 +474,14 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeListDissoc => lists::dissoc(args),
     NativeListToSet => lists::list_to_set(args),
     NativeListDistinct => lists::distinct(args),
+    NativeListLast => lists::last(args),
+    NativeListAppend => lists::append(args),
+    NativeListPrepend => lists::prepend(args),
+    NativeListButlast => lists::butlast(args),
+    NativeListSort => lists::sort(args, call_stack),
+    NativeListRange => lists::range(args),
+    NativeListFoldl => lists::foldl(args, call_stack),
+    NativeListFoldlShortcut => lists::foldl_shortcut(args, call_stack),
     // buf-list
     NativeBufListNew => lists::buf_list_new(args),
     NativeBufListPush => lists::buf_list_push(args),
@@ -497,6 +505,8 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeMapDiffNew => maps::diff_new(args),
     NativeMapDiffKeys => maps::diff_keys(args),
     NativeMapCommonKeys => maps::common_keys(args),
+    NativeMapKeys => maps::map_keys(args),
+    NativeMapVals => maps::map_vals(args),
     // sets
     Set => sets::new_set(args),
     NativeInclude => sets::call_include(args),

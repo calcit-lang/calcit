@@ -252,7 +252,7 @@ check("test-to-pairs()", 4, e["test-to-pairs"]); // list count=2 + first pair co
 // --- Map merge/diff tests ---
 check("test-map-merge()", 3, e["test-map-merge"]); // {a:1, b:3, c:4}
 check("test-map-merge-value()", 99, e["test-map-merge-value"]); // b overridden to 99
-check("test-map-diff-new()", 2, e["test-map-diff-new"]); // {c:4, d:5} not in a
+check("test-map-diff-new()", 1, e["test-map-diff-new"]); // {a:1} — entries of a not in b
 check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b
 check("test-map-common-keys()", 2, e["test-map-common-keys"]); // #{b, c} in both
 

@@ -105,6 +105,26 @@ pub fn slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn last(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:last expected 1 argument (a list), but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::List(ys) => {
+      let n = ys.len();
+      if n == 0 {
+        Ok(Calcit::Nil)
+      } else {
+        match ys.get(n - 1) {
+          Some(v) => Ok((*v).to_owned()),
+          None => Ok(Calcit::Nil),
+        }
+      }
+    }
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:last expected a list, but received: {a}")),
+  }
+}
+
 pub fn append(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(

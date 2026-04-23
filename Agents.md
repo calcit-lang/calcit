@@ -97,7 +97,12 @@ git push origin 0.12.28
 
 # 创建 GitHub release（触发 publish.yaml）
 gh release create 0.12.28 --title "0.12.28" --notes "..."
+
+# 验证 publish workflow 状态（用轮询，不要用 gh run watch——它是交互式 TUI，会卡住脚本）
+gh run list --limit 5
 ```
+
+> ⚠️ **`gh run watch` 是交互式 pager（类似 less），在脚本或 Agent 场景下会卡住**，按 `q` 退出后续命令也不会被执行。验证时统一用 `gh run list --limit 5` 轮询。
 
 ## 性能与资源验证
 

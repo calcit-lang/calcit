@@ -327,6 +327,22 @@ pub enum CalcitProc {
   NativeListToSet,
   #[strum(serialize = "&list:distinct")]
   NativeListDistinct,
+  #[strum(serialize = "&list:last")]
+  NativeListLast,
+  #[strum(serialize = "&list:append")]
+  NativeListAppend,
+  #[strum(serialize = "&list:prepend")]
+  NativeListPrepend,
+  #[strum(serialize = "&list:butlast")]
+  NativeListButlast,
+  #[strum(serialize = "&list:sort")]
+  NativeListSort,
+  #[strum(serialize = "&list:range")]
+  NativeListRange,
+  #[strum(serialize = "&list:foldl")]
+  NativeListFoldl,
+  #[strum(serialize = "&list:foldl-shortcut")]
+  NativeListFoldlShortcut,
   // type predicate procs
   #[strum(serialize = "&list?")]
   NativeListQ,
@@ -374,6 +390,10 @@ pub enum CalcitProc {
   NativeMapDiffKeys,
   #[strum(serialize = "&map:common-keys")]
   NativeMapCommonKeys,
+  #[strum(serialize = "&map:keys")]
+  NativeMapKeys,
+  #[strum(serialize = "&map:vals")]
+  NativeMapVals,
   // sets
   #[strum(serialize = "#{}")]
   Set,
@@ -841,19 +861,19 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![variadic_dynamic()],
       }),
-      Append | Prepend => Some(ProcTypeSignature {
+      Append | Prepend | NativeListAppend | NativeListPrepend => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list"), dynamic_tag()],
       }),
-      Butlast | NativeListReverse => Some(ProcTypeSignature {
+      Butlast | NativeListReverse | NativeListButlast => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list")],
       }),
-      Range => Some(ProcTypeSignature {
+      Range | NativeListRange => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("number"), optional_tag("number"), optional_tag("number")],
       }),
-      Sort => Some(ProcTypeSignature {
+      Sort | NativeListSort => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list"), optional_fn()],
       }),
@@ -909,6 +929,10 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list")],
       }),
+      NativeListLast => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("list")],
+      }),
       // === BufList operations ===
       NativeBufListNew => Some(ProcTypeSignature {
         return_type: some_tag("buf-list"),
@@ -934,9 +958,13 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
       }),
-      FoldlShortcut | FoldrShortcut => Some(ProcTypeSignature {
+      FoldlShortcut | FoldrShortcut | NativeListFoldlShortcut => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
+      }),
+      NativeListFoldl => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
       }),
 
       // === Map operations ===
@@ -987,6 +1015,10 @@ impl CalcitProc {
       NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
         return_type: some_set(),
         arg_types: vec![some_tag("map"), some_tag("map")],
+      }),
+      NativeMapKeys | NativeMapVals => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("map")],
       }),
       NativeMapDestruct => Some(ProcTypeSignature {
         return_type: optional_tag("list"),

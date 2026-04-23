@@ -171,6 +171,28 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn map_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
+    Some(Calcit::Map(ys)) => {
+      let keys: Vec<Calcit> = ys.keys().map(|k| k.to_owned()).collect();
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(keys))))
+    }
+    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:keys expected a map, but received: {a}")),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:keys expected 1 argument, but received none"),
+  }
+}
+
+pub fn map_vals(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
+    Some(Calcit::Map(ys)) => {
+      let vals: Vec<Calcit> = ys.values().map(|v| v.to_owned()).collect();
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(vals))))
+    }
+    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:vals expected a map, but received: {a}")),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:vals expected 1 argument, but received none"),
+  }
+}
+
 pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {

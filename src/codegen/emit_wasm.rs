@@ -1655,6 +1655,18 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Append => emit_list_append(ctx, args),
     CalcitProc::Prepend => emit_list_prepend(ctx, args),
     CalcitProc::Butlast => emit_list_butlast(ctx, args),
+    CalcitProc::NativeListAppend => emit_list_append(ctx, args),
+    CalcitProc::NativeListPrepend => emit_list_prepend(ctx, args),
+    CalcitProc::NativeListButlast => emit_list_butlast(ctx, args),
+    CalcitProc::NativeListLast => emit_list_last(ctx, args),
+    CalcitProc::NativeListSort => {
+      // Sort is not yet implemented in WASM — pass list through as stub
+      if args.is_empty() { ctx.emit(f64_const(0.0)); } else { emit_expr(ctx, &args[0])?; }
+      Ok(())
+    }
+    CalcitProc::NativeListRange => emit_range(ctx, args),
+    CalcitProc::NativeListFoldl => emit_foldl(ctx, args),
+    CalcitProc::NativeListFoldlShortcut => emit_foldl_shortcut(ctx, args),
     CalcitProc::NativeListCount => emit_ds_count(ctx, args),
     CalcitProc::NativeListNth => emit_list_nth(ctx, args),
     CalcitProc::NativeListFirst => emit_list_first(ctx, args),
@@ -1706,6 +1718,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeMapDiffKeys => emit_map_diff_keys(ctx, args),
     CalcitProc::NativeMapCommonKeys => emit_map_common_keys(ctx, args),
     CalcitProc::NativeMapDestruct => emit_map_destruct(ctx, args),
+    CalcitProc::NativeMapKeys => emit_map_keys(ctx, args),
+    CalcitProc::NativeMapVals => emit_map_vals(ctx, args),
     CalcitProc::Range => emit_range(ctx, args),
     CalcitProc::NativeHash => emit_hash_proc(ctx, args),
 

@@ -104,6 +104,14 @@ fn map_key_path_segment(key: &Edn) -> String {
 
 /// Convert a schema Edn value (either old Quote-wrapped or new direct map) into Edn map form.
 fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
+  // Simple scalar schemas (e.g. :dynamic, :nil) are valid as-is — skip Cirru path
+  match value {
+    Edn::Tag(_) | Edn::Nil => {
+      validate_schema_edn_no_legacy_quotes(value, owner)?;
+      return Ok(value.clone());
+    }
+    _ => {}
+  }
   // Old format: Edn::Quote wrapping Cirru — convert to direct map Edn
   if let Ok(cirru) = from_edn::<Cirru>(value.clone()) {
     let text = cirru_parser::format(&[cirru], true.into())
