@@ -46,7 +46,7 @@ use records::{
   emit_record_matches, emit_record_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count,
   emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
 };
-use runtime::{build_runtime_fns, build_wasm_module, HOST_IMPORTS};
+use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
 
 /// Base offset — reserve first 16 bytes for bookkeeping.
 /// The actual heap start will be shifted when string literals occupy the
@@ -1570,7 +1570,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.emit(Instruction::LocalSet(ctx.arg_indices[i]));
         }
         ctx.emit(Instruction::Br(ctx.block_depth)); // br to the recur loop
-                                                    // After unconditional br, mark as unreachable for the type checker
+        // After unconditional br, mark as unreachable for the type checker
         ctx.emit(Instruction::Unreachable);
         Ok(())
       }
@@ -1661,7 +1661,11 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeListLast => emit_list_last(ctx, args),
     CalcitProc::NativeListSort => {
       // Sort is not yet implemented in WASM — pass list through as stub
-      if args.is_empty() { ctx.emit(f64_const(0.0)); } else { emit_expr(ctx, &args[0])?; }
+      if args.is_empty() {
+        ctx.emit(f64_const(0.0));
+      } else {
+        emit_expr(ctx, &args[0])?;
+      }
       Ok(())
     }
     CalcitProc::NativeListRange => emit_range(ctx, args),
@@ -1676,7 +1680,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeListReverse => emit_list_reverse(ctx, args),
     CalcitProc::NativeListConcat => emit_list_concat(ctx, args),
     CalcitProc::NativeListAssoc => emit_list_assoc(ctx, args),
+    CalcitProc::NativeListAssocBefore => emit_list_assoc_before(ctx, args),
+    CalcitProc::NativeListAssocAfter => emit_list_assoc_after(ctx, args),
     CalcitProc::NativeListDissoc => emit_list_dissoc(ctx, args),
+    CalcitProc::NativeListToSet => emit_list_to_set(ctx, args),
     CalcitProc::NativeListContains => emit_list_contains(ctx, args),
     CalcitProc::NativeListIncludes => emit_list_includes(ctx, args),
     CalcitProc::NativeListQ => emit_list_q(ctx, args),

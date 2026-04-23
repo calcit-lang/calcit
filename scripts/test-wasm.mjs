@@ -210,7 +210,10 @@ check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
 check("test-list-reverse()", 40, e["test-list-reverse"]); // first=30 + nth(2)=10
 check("test-list-concat()", 44, e["test-list-concat"]); // count=4 + nth(3)=40
 check("test-list-assoc()", 99, e["test-list-assoc"]);
+check("test-list-assoc-before()", 103, e["test-list-assoc-before"]); // count=4 + nth(1)=99
+check("test-list-assoc-after()", 103, e["test-list-assoc-after"]); // count=4 + nth(1)=99
 check("test-list-dissoc()", 32, e["test-list-dissoc"]); // count=2 + nth(1)=30
+check("test-list-to-set()", 3, e["test-list-to-set"]); // {10,20,30} deduplicated
 check("test-list-contains()", 1, e["test-list-contains"]); // 1+0
 check("test-list-includes()", 1, e["test-list-includes"]); // 1+0
 check("test-list-contains-method()", 1, e["test-list-contains-method"]); // 1+0

@@ -188,6 +188,18 @@
               &list:assoc ([] 10 20 30) 1 99
               , 1
           :examples $ []
+        |test-list-assoc-after $ %{} :CodeEntry (:doc "|assoc-after inserts element after index") (:schema :dynamic)
+          :code $ quote
+            defn test-list-assoc-after () $ &let
+              xs $ &list:assoc-after ([] 10 20 30) 0 99
+              &+ (&list:count xs) (&list:nth xs 1)
+          :examples $ []
+        |test-list-assoc-before $ %{} :CodeEntry (:doc "|assoc-before inserts element before index") (:schema :dynamic)
+          :code $ quote
+            defn test-list-assoc-before () $ &let
+              xs $ &list:assoc-before ([] 10 20 30) 1 99
+              &+ (&list:count xs) (&list:nth xs 1)
+          :examples $ []
         |test-list-butlast $ %{} :CodeEntry (:doc "|butlast drops last element") (:schema :dynamic)
           :code $ quote
             defn test-list-butlast () $ &list:count
@@ -226,6 +238,12 @@
             defn test-list-dissoc () $ &let
               xs $ &list:dissoc ([] 10 20 30) 1
               &+ (&list:count xs) (&list:nth xs 1)
+          :examples $ []
+        |test-list-to-set $ %{} :CodeEntry (:doc "|list to set deduplicates elements") (:schema :dynamic)
+          :code $ quote
+            defn test-list-to-set () $ &let
+              s $ &list:to-set ([] 10 20 30 20 10)
+              &set:count s
           :examples $ []
         |test-list-empty-false $ %{} :CodeEntry (:doc "|non-empty list not empty") (:schema :dynamic)
           :code $ quote
