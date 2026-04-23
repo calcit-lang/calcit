@@ -1,0 +1,5 @@
+- WASM export names now stay unique by qualifying only colliding defs with `ns/def`.
+- `list-match` macro now uses `&list:empty?` after the existing list guard, avoiding the unsupported generic `empty?` invoke path in WASM.
+- Added minimal `Calcit::Method` handling in WASM for dynamic `.empty?`, `.count`, `.nth`, and `.get` calls.
+- `&tuple:nth` in WASM now accepts dynamic indices instead of literal-only indices.
+- Verified `yarn try-all` still passes in calcit after the WASM changes.

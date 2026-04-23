@@ -130,6 +130,43 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   }
 }
 
+/// Recursively replace any `Edn::AnyRef` nodes with a text placeholder so the result is safe to
+/// pass to `cirru_edn::format`. Use this in display/error-snapshot paths, NOT in FFI round-trips.
+pub fn sanitize_edn_for_format(e: &Edn) -> Edn {
+  match e {
+    Edn::AnyRef(_) => Edn::str("&any-ref"),
+    Edn::List(EdnListView(xs)) => Edn::List(EdnListView(xs.iter().map(sanitize_edn_for_format).collect())),
+    Edn::Set(xs) => {
+      let mut ys = EdnSetView::default();
+      for x in xs.0.iter() {
+        ys.insert(sanitize_edn_for_format(x));
+      }
+      ys.into()
+    }
+    Edn::Map(xs) => {
+      let mut ys = EdnMapView::default();
+      for (k, v) in xs.0.iter() {
+        ys.insert(sanitize_edn_for_format(k), sanitize_edn_for_format(v));
+      }
+      ys.into()
+    }
+    Edn::Tuple(EdnTupleView { tag, extra, enum_tag }) => Edn::Tuple(EdnTupleView {
+      tag: Arc::new(sanitize_edn_for_format(tag)),
+      extra: extra.iter().map(sanitize_edn_for_format).collect(),
+      enum_tag: enum_tag.as_ref().map(|x| Arc::new(sanitize_edn_for_format(x))),
+    }),
+    Edn::Record(EdnRecordView { tag, pairs }) => {
+      let mut ys = EdnRecordView::new(tag.to_owned());
+      for (k, v) in pairs.iter() {
+        ys.insert(k.to_owned(), sanitize_edn_for_format(v));
+      }
+      ys.into()
+    }
+    Edn::Atom(inner) => Edn::Atom(Box::new(sanitize_edn_for_format(inner))),
+    other => other.clone(),
+  }
+}
+
 pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
   match x {
     Edn::Nil => Calcit::Nil,

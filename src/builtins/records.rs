@@ -190,6 +190,14 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             }
           };
           let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_expr, generics.as_slice());
+          if let Err(e) = field_type.validate_applied_type_args() {
+            let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
+            return CalcitErr::err_str_with_hint(
+              CalcitErrKind::Type,
+              format!("&struct::new field `{field_name}` has invalid type annotation: {e}"),
+              hint,
+            );
+          }
           fields.push((field_name, field_type));
         }
         (Some(_), None, _) => {
@@ -413,6 +421,208 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     struct_ref: base_struct,
     values: Arc::new(base_values),
   }))
+}
+
+/// Create a loose record from key-value pairs: `?{} :field1 val1 :field2 val2`
+/// Fields are sorted alphabetically, mirroring struct-backed record behaviour.
+pub fn call_loose_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len().rem(2) != 0 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "?{} expected pairs of :field value, but received:", xs);
+  }
+  let size = xs.len() / 2;
+  // Collect (field, value) pairs, validate all keys are tags
+  let mut pairs: Vec<(EdnTag, Calcit)> = Vec::with_capacity(size);
+  for chunk in xs.chunks(2) {
+    match &chunk[0] {
+      Calcit::Tag(tag) => {
+        pairs.push((tag.to_owned(), chunk[1].to_owned()));
+      }
+      other => {
+        return CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("?{{}} expected tag as field name, but received: {}", other.lisp_str()),
+        );
+      }
+    }
+  }
+  // Sort by field name (struct fields are always sorted)
+  pairs.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
+  // Check for duplicate fields
+  for i in 1..pairs.len() {
+    if pairs[i].0 == pairs[i - 1].0 {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("?{{}} received duplicate field: :{}", pairs[i].0.ref_str()),
+      );
+    }
+  }
+  let fields: Vec<EdnTag> = pairs.iter().map(|(f, _)| f.to_owned()).collect();
+  let values: Vec<Calcit> = pairs.into_iter().map(|(_, v)| v).collect();
+  Ok(Calcit::Record(CalcitRecord::from_loose_pairs(fields, values)))
+}
+
+/// Direct indexed access to a record field: `&record:nth record index`
+/// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
+pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  // Accept 2 or 3 args: (record, idx) or (record, idx, :field-tag)
+  // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
+  if xs.len() < 2 || xs.len() > 3 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:nth expected 2-3 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(CalcitRecord { values, struct_ref }), Calcit::Number(n)) => {
+      let idx = *n as usize;
+      if idx < values.len() {
+        Ok(values[idx].to_owned())
+      } else {
+        CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!(
+            "&record:nth index {} out of range for record `{}` with {} fields",
+            idx,
+            struct_ref.name,
+            values.len()
+          ),
+        )
+      }
+    }
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&record:nth expected (record, number), but received: {} {}",
+        a.lisp_str(),
+        b.lisp_str()
+      ),
+    ),
+  }
+}
+
+/// Get the field tag (name) at a given index: `&record:field-tag record index`
+pub fn record_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:field-tag expected 2 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(CalcitRecord { struct_ref, .. }), Calcit::Number(n)) => {
+      let idx = *n as usize;
+      if idx < struct_ref.fields.len() {
+        Ok(Calcit::Tag(struct_ref.fields[idx].to_owned()))
+      } else {
+        CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!(
+            "&record:field-tag index {} out of range for record `{}` with {} fields",
+            idx,
+            struct_ref.name,
+            struct_ref.fields.len()
+          ),
+        )
+      }
+    }
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&record:field-tag expected (record, number), but received: {} {}",
+        a.lisp_str(),
+        b.lisp_str()
+      ),
+    ),
+  }
+}
+
+/// Direct indexed assoc on a record field: `&record:assoc-at record index :field value`
+/// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
+pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  // 4 args: (record, idx, :field-tag, value)
+  // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
+  if xs.len() != 4 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:assoc-at expected 4 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(CalcitRecord { struct_ref, values }), Calcit::Number(n)) => {
+      let idx = *n as usize;
+      if idx < values.len() {
+        let mut new_values = (**values).to_owned();
+        xs[3].clone_into(&mut new_values[idx]);
+        Ok(Calcit::Record(CalcitRecord {
+          struct_ref: struct_ref.to_owned(),
+          values: Arc::new(new_values),
+        }))
+      } else {
+        CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!(
+            "&record:assoc-at index {} out of range for record `{}` with {} fields",
+            idx,
+            struct_ref.name,
+            values.len()
+          ),
+        )
+      }
+    }
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&record:assoc-at expected (record, number), but received: {} {}",
+        a.lisp_str(),
+        b.lisp_str()
+      ),
+    ),
+  }
+}
+
+/// Optimized `&record:with` — field indices pre-resolved at compile time.
+/// Args: (record, idx1, :tag1, val1, idx2, :tag2, val2, ...)
+/// Tags are carried for JS codegen; Rust runtime uses indices directly.
+pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() || (xs.len() - 1) % 3 != 0 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&record:with-at expected (record, idx, tag, val, ...) triples, but received:",
+      xs,
+    );
+  }
+  match &xs[0] {
+    Calcit::Record(CalcitRecord { struct_ref, values }) => {
+      let mut new_values = (**values).to_owned();
+      let triple_count = (xs.len() - 1) / 3;
+      for i in 0..triple_count {
+        let base = 1 + i * 3;
+        match &xs[base] {
+          Calcit::Number(n) => {
+            let idx = *n as usize;
+            if idx < new_values.len() {
+              xs[base + 2].clone_into(&mut new_values[idx]);
+            } else {
+              return CalcitErr::err_str(
+                CalcitErrKind::Arity,
+                format!(
+                  "&record:with-at index {} out of range for record `{}` with {} fields",
+                  idx,
+                  struct_ref.name,
+                  new_values.len()
+                ),
+              );
+            }
+          }
+          other => {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("&record:with-at expected number index, but received: {}", other.lisp_str()),
+            );
+          }
+        }
+      }
+      Ok(Calcit::Record(CalcitRecord {
+        struct_ref: struct_ref.to_owned(),
+        values: Arc::new(new_values),
+      }))
+    }
+    a => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&record:with-at expected a record, but received: {}", a.lisp_str()),
+    ),
+  }
 }
 
 pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {

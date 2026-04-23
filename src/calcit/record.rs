@@ -6,6 +6,10 @@ use crate::Calcit;
 
 use super::CalcitStruct;
 
+/// Sentinel name for loose records (records without a declared struct).
+/// Analogous to how CalcitTuple has sum_type: None for untyped tuples.
+pub const LOOSE_RECORD_NAME: &str = "?";
+
 #[derive(Debug, Clone)]
 pub struct CalcitRecord {
   pub struct_ref: Arc<CalcitStruct>,
@@ -36,6 +40,20 @@ impl CalcitRecord {
 
   pub fn fields(&self) -> &Arc<Vec<EdnTag>> {
     &self.struct_ref.fields
+  }
+
+  /// Returns true if this record was created with `?{}` (no declared struct).
+  pub fn is_loose(&self) -> bool {
+    self.struct_ref.name.ref_str() == LOOSE_RECORD_NAME
+  }
+
+  /// Create a loose record from sorted field-value pairs.
+  /// Fields must already be sorted alphabetically.
+  pub fn from_loose_pairs(fields: Vec<EdnTag>, values: Vec<Calcit>) -> Self {
+    CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new(LOOSE_RECORD_NAME), fields)),
+      values: Arc::new(values),
+    }
   }
 
   /// returns position of target

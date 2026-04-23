@@ -7,9 +7,6 @@ pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct ToplevelCalcit {
   #[argh(subcommand)]
   pub subcommand: Option<CalcitCommand>,
-  /// run once and exit (kept for compatibility)
-  #[argh(switch, short = '1')]
-  pub once: bool,
   /// enable watch mode for direct run mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
@@ -25,6 +22,9 @@ pub struct ToplevelCalcit {
   /// warn on dynamic method calls that cannot be monomorphized
   #[argh(switch)]
   pub warn_dyn_method: bool,
+  /// print FFI dylib calls and callbacks for debugging native crashes
+  #[argh(switch)]
+  pub trace_ffi: bool,
   /// entry file path, defaults to "js-out/"
   #[argh(option, default = "String::from(\"js-out/\")")]
   pub emit_path: String,
@@ -49,9 +49,12 @@ pub struct ToplevelCalcit {
   /// print version only
   #[argh(switch)]
   pub version: bool,
-  /// suppress tips output in all commands
+  /// show full tips output in all commands
   #[argh(switch)]
-  pub no_tips: bool,
+  pub tips: bool,
+  /// control tips verbosity: minimal (default), full, none
+  #[argh(option)]
+  pub tips_level: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -63,7 +66,7 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
-  /// analyze code structure (call-graph, count-calls, check-examples)
+  /// analyze code structure and helpers (call-graph, count-calls, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -83,9 +86,6 @@ pub enum CalcitCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "js")]
 pub struct EmitJsCommand {
-  /// run once and exit (kept for compatibility)
-  #[argh(switch, short = '1')]
-  pub once: bool,
   /// enable watch mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
@@ -98,9 +98,6 @@ pub struct EmitJsCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
-  /// run once and exit (kept for compatibility)
-  #[argh(switch, short = '1')]
-  pub once: bool,
   /// enable watch mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
@@ -124,7 +121,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure (call-graph, count-calls, check-examples, check-types)
+/// analyze code structure and helpers (call-graph, count-calls, check-examples, check-types, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -141,6 +138,28 @@ pub enum AnalyzeSubcommand {
   CheckExamples(CheckExamplesCommand),
   /// check type-information coverage in namespace definitions
   CheckTypes(CheckTypesCommand),
+  /// escape a Calcit symbol into JavaScript-safe identifier form
+  JsEscape(JsEscapeCommand),
+  /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+  JsUnescape(JsUnescapeCommand),
+}
+
+/// escape a Calcit symbol into JavaScript-safe identifier form
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "js-escape")]
+pub struct JsEscapeCommand {
+  /// original Calcit symbol
+  #[argh(positional)]
+  pub symbol: String,
+}
+
+/// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "js-unescape")]
+pub struct JsUnescapeCommand {
+  /// escaped JavaScript identifier
+  #[argh(positional)]
+  pub symbol: String,
 }
 
 /// check type-information coverage in namespace definitions
@@ -270,9 +289,6 @@ pub struct QuerySchemaCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
-  /// do not display helpful usage tips
-  #[argh(switch)]
-  pub no_tips: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -328,6 +344,18 @@ pub struct QueryDefCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// preferred nodes per display fragment when large expressions are chunked
+  #[argh(option, default = "56")]
+  pub chunk_target_nodes: usize,
+  /// stop recursive chunk splitting once fragments fall below this node count
+  #[argh(option, default = "68")]
+  pub chunk_max_nodes: usize,
+  /// only enable chunked display when total expression nodes reach this threshold
+  #[argh(option, default = "88")]
+  pub chunk_trigger_nodes: usize,
+  /// force raw full-definition display without chunking
+  #[argh(switch)]
+  pub raw: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -364,6 +392,9 @@ pub struct QueryFindCommand {
   /// maximum number of results (default 20)
   #[argh(option, short = 'n', default = "20")]
   pub limit: usize,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -376,6 +407,9 @@ pub struct QueryUsagesCommand {
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -394,12 +428,15 @@ pub struct QuerySearchCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
-  /// start search from specific path (comma-separated indices, e.g. "2,1,0")
+  /// start search from specific path (dot-separated indices preferred, e.g. "2.1.0")
   #[argh(option, short = 'p', long = "start-path")]
   pub start_path: Option<String>,
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -424,6 +461,9 @@ pub struct QuerySearchExprCommand {
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -468,6 +508,12 @@ pub struct DocsSearchCommand {
   /// filter by filename (optional)
   #[argh(option, short = 'f')]
   pub filename: Option<String>,
+  /// search scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// search docs for a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -489,6 +535,12 @@ pub struct DocsReadCommand {
   /// show line numbers in heading list and section titles
   #[argh(switch)]
   pub with_lines: bool,
+  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -525,6 +577,12 @@ pub struct DocsReadLinesCommand {
   /// number of lines to read (default: 80)
   #[argh(option, short = 'n', default = "80")]
   pub lines: usize,
+  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1105,7 +1163,7 @@ pub struct TreeShowCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated preferred, comma-separated also accepted; e.g. "2.1.0")
   #[argh(option, short = 'p')]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -1114,6 +1172,21 @@ pub struct TreeShowCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// preferred nodes per display fragment when large expressions are chunked
+  #[argh(option, default = "56")]
+  pub chunk_target_nodes: usize,
+  /// stop recursive chunk splitting once fragments fall below this node count
+  #[argh(option, default = "68")]
+  pub chunk_max_nodes: usize,
+  /// only enable chunked display when total expression nodes reach this threshold
+  #[argh(option, default = "88")]
+  pub chunk_trigger_nodes: usize,
+  /// nested chunk layers to expand beyond ROOT (default 1 shows ROOT + direct chunks only)
+  #[argh(option, default = "1")]
+  pub chunk_expand_depth: usize,
+  /// force raw subtree display without chunking
+  #[argh(switch)]
+  pub raw: bool,
 }
 
 /// copy node from one path to another within a definition

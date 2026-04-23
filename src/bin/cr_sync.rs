@@ -1,8 +1,8 @@
 use argh::FromArgs;
 use calcit::detailed_snapshot::{
-  DetailCirru, DetailedCodeEntry, DetailedFileInSnapshot, DetailedSnapshot, load_detailed_snapshot_data,
+  DetailCirru, DetailedCodeEntry, DetailedFileInSnapshot, DetailedNsEntry, DetailedSnapshot, load_detailed_snapshot_data,
 };
-use calcit::snapshot::{CodeEntry, FileInSnapShot, Snapshot, load_snapshot_data};
+use calcit::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, load_snapshot_data};
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 use std::fmt::Debug;
@@ -95,7 +95,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       println!("  {change}");
 
       // 打印差异原因的详细信息
-      if let (Some(new_entry), ChangePath::FunctionDefinition { file_name, def_name }) = (&change.new_entry, &change.path) {
+      if let (Some(SnapshotEntry::Def(new_entry)), ChangePath::FunctionDefinition { file_name, def_name }) =
+        (&change.new_entry, &change.path)
+      {
         if let Some(detailed_file) = detailed_snapshot.files.get(file_name) {
           if let Some(detailed_entry) = detailed_file.defs.get(def_name) {
             match change.change_type {
@@ -117,7 +119,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
           }
         }
-      } else if let (Some(new_entry), ChangePath::NamespaceDefinition { file_name }) = (&change.new_entry, &change.path) {
+      } else if let (Some(SnapshotEntry::Ns(new_entry)), ChangePath::NamespaceDefinition { file_name }) =
+        (&change.new_entry, &change.path)
+      {
         if let Some(detailed_file) = detailed_snapshot.files.get(file_name) {
           match change.change_type {
             ChangeType::ModifiedCode => {
@@ -187,10 +191,16 @@ impl std::fmt::Display for ChangePath {
 }
 
 #[derive(Debug, Clone)]
+enum SnapshotEntry {
+  Ns(NsEntry),
+  Def(CodeEntry),
+}
+
+#[derive(Debug, Clone)]
 struct SnapshotChange {
   path: ChangePath,
   change_type: ChangeType,
-  new_entry: Option<CodeEntry>,
+  new_entry: Option<SnapshotEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -262,7 +272,7 @@ fn detailed_snapshot_to_edn(snapshot: &DetailedSnapshot) -> Edn {
     file_record.pairs.push(("defs".into(), Edn::from(defs_map)));
 
     // Add ns field, make sure "ns" is after "defs"
-    file_record.pairs.push(("ns".into(), detailed_code_entry_to_edn(&v.ns)));
+    file_record.pairs.push(("ns".into(), detailed_ns_entry_to_edn(&v.ns)));
 
     files_map.insert(Edn::str(k.as_str()), Edn::Record(file_record));
   }
@@ -299,6 +309,18 @@ fn detailed_code_entry_to_edn(entry: &DetailedCodeEntry) -> Edn {
     })
     .collect();
   record.pairs.push(("examples".into(), Edn::List(examples_list.into())));
+
+  Edn::Record(record)
+}
+
+fn detailed_ns_entry_to_edn(entry: &DetailedNsEntry) -> Edn {
+  let mut record = cirru_edn::EdnRecordView {
+    tag: cirru_edn::EdnTag::new("NsEntry"),
+    pairs: Vec::new(),
+  };
+
+  record.pairs.push(("code".into(), detailed_cirru_to_edn(&entry.code)));
+  record.pairs.push(("doc".into(), Edn::Str(entry.doc.as_str().into())));
 
   Edn::Record(record)
 }
@@ -528,7 +550,7 @@ fn detect_snapshot_changes(compact: &Snapshot, detailed: &DetailedSnapshot) -> V
             file_name: file_name.clone(),
           },
           change_type: ChangeType::Added,
-          new_entry: Some(compact_file.ns.clone()),
+          new_entry: Some(SnapshotEntry::Ns(compact_file.ns.clone())),
         });
 
         // Then add all definitions in the new file
@@ -539,7 +561,7 @@ fn detect_snapshot_changes(compact: &Snapshot, detailed: &DetailedSnapshot) -> V
               def_name: def_name.clone(),
             },
             change_type: ChangeType::Added,
-            new_entry: Some(code_entry.clone()),
+            new_entry: Some(SnapshotEntry::Def(code_entry.clone())),
           });
         }
       }
@@ -593,7 +615,7 @@ fn compare_file_definitions(
         file_name: file_name.to_string(),
       },
       change_type,
-      new_entry: Some(compact_file.ns.clone()),
+      new_entry: Some(SnapshotEntry::Ns(compact_file.ns.clone())),
     });
   }
 
@@ -630,7 +652,7 @@ fn compare_file_definitions(
               def_name: def_name.clone(),
             },
             change_type,
-            new_entry: Some(compact_entry.clone()),
+            new_entry: Some(SnapshotEntry::Def(compact_entry.clone())),
           });
         }
       }
@@ -642,7 +664,7 @@ fn compare_file_definitions(
             def_name: def_name.clone(),
           },
           change_type: ChangeType::Added,
-          new_entry: Some(compact_entry.clone()),
+          new_entry: Some(SnapshotEntry::Def(compact_entry.clone())),
         });
       }
     }
@@ -683,20 +705,18 @@ fn apply_snapshot_changes(detailed: &mut DetailedSnapshot, changes: &[SnapshotCh
   }
 }
 
-fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entry: &CodeEntry) {
+fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entry: &SnapshotEntry) {
   match path {
     ChangePath::FunctionDefinition { file_name, def_name } => {
       // Create file if it doesn't exist
       if !detailed.files.contains_key(file_name) {
-        use calcit::detailed_snapshot::{DetailedCodeEntry, DetailedFileInSnapshot};
+        use calcit::detailed_snapshot::{DetailedFileInSnapshot, DetailedNsEntry};
         use std::collections::HashMap;
 
         // Create empty namespace entry
-        let empty_ns = DetailedCodeEntry {
+        let empty_ns = DetailedNsEntry {
           doc: String::new(),
-          examples: vec![],
           code: cirru_parser::Cirru::Leaf("".into()).into(),
-          schema: calcit::calcit::DYNAMIC_TYPE.clone(),
         };
 
         detailed.files.insert(
@@ -708,7 +728,7 @@ fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entr
         );
       }
 
-      if let Some(file) = detailed.files.get_mut(file_name) {
+      if let (Some(file), SnapshotEntry::Def(new_entry)) = (detailed.files.get_mut(file_name), new_entry) {
         file.defs.insert(def_name.clone(), new_entry.clone().into());
       }
     }
@@ -721,21 +741,27 @@ fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entr
         detailed.files.insert(
           file_name.clone(),
           DetailedFileInSnapshot {
-            ns: new_entry.clone().into(),
+            ns: match new_entry {
+              SnapshotEntry::Ns(entry) => entry.clone().into(),
+              SnapshotEntry::Def(_) => DetailedNsEntry {
+                doc: String::new(),
+                code: cirru_parser::Cirru::Leaf("".into()).into(),
+              },
+            },
             defs: HashMap::new(),
           },
         );
-      } else if let Some(file) = detailed.files.get_mut(file_name) {
+      } else if let (Some(file), SnapshotEntry::Ns(new_entry)) = (detailed.files.get_mut(file_name), new_entry) {
         file.ns = new_entry.clone().into();
       }
     }
   }
 }
 
-fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entry: &CodeEntry, change_type: &ChangeType) {
+fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entry: &SnapshotEntry, change_type: &ChangeType) {
   match path {
     ChangePath::FunctionDefinition { file_name, def_name } => {
-      if let Some(file) = detailed.files.get_mut(file_name) {
+      if let (Some(file), SnapshotEntry::Def(new_entry)) = (detailed.files.get_mut(file_name), new_entry) {
         if let Some(existing_def) = file.defs.get_mut(def_name) {
           // Update document part
           existing_def.doc = new_entry.doc.clone();
@@ -751,7 +777,7 @@ fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_e
       }
     }
     ChangePath::NamespaceDefinition { file_name } => {
-      if let Some(file) = detailed.files.get_mut(file_name) {
+      if let (Some(file), SnapshotEntry::Ns(new_entry)) = (detailed.files.get_mut(file_name), new_entry) {
         // Update document part
         file.ns.doc = new_entry.doc.clone();
 

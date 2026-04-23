@@ -44,8 +44,8 @@ pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
-  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, brief_type_of_value, register_program_lookups,
-  value_matches_type_annotation, with_type_annotation_warning_context,
+  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, bind_type_slot, brief_type_of_value, clear_type_slots,
+  register_program_lookups, register_type_slot, resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
 };
 
 use compare::{
@@ -89,6 +89,9 @@ pub enum Calcit {
   Tuple(CalcitTuple),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
+  /// mutable append-only list, for performance-sensitive accumulation patterns.
+  /// Only supports push/concat at the tail, no head/middle mutation.
+  BufList(Arc<Mutex<Vec<Calcit>>>),
   /// cirru quoted data, for faster meta programming
   CirruQuote(Cirru),
   /// not for data, but for recursion
@@ -163,7 +166,6 @@ impl fmt::Display for Calcit {
       } // TODO, escaping choices
       Thunk(thunk) => match thunk {
         CalcitThunk::Code { code, .. } => f.write_str(&format!("(&thunk _ {code})")),
-        CalcitThunk::Evaled { code, value } => f.write_str(&format!("(&thunk {value} {code})")),
       },
       CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
@@ -211,6 +213,10 @@ impl fmt::Display for Calcit {
         }
         f.write_str(")")
       }
+      BufList(items) => {
+        let items = items.lock().expect("BufList lock");
+        f.write_str(&format!("(&buf-list count={})", items.len()))
+      }
       Recur(xs) => {
         f.write_str("(&recur")?;
         for x in &**xs {
@@ -242,7 +248,11 @@ impl fmt::Display for Calcit {
         Ok(())
       }
       Record(CalcitRecord { struct_ref, values, .. }) => {
-        f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+        if record::LOOSE_RECORD_NAME == struct_ref.name.ref_str() {
+          f.write_str("(?{}")?;
+        } else {
+          f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+        }
         for idx in 0..struct_ref.fields.len() {
           f.write_str(&format!(" ({} {})", Calcit::tag(struct_ref.fields[idx].ref_str()), values[idx]))?;
         }
@@ -453,6 +463,11 @@ impl Hash for Calcit {
         "buffer:".hash(_state);
         buf.hash(_state);
       }
+      BufList(items) => {
+        "buf-list:".hash(_state);
+        let items = items.lock().expect("BufList lock");
+        items.hash(_state);
+      }
       CirruQuote(code) => {
         "cirru-quote:".hash(_state);
         code.hash(_state);
@@ -643,6 +658,14 @@ impl Ord for Calcit {
       (Buffer(..), _) => Less,
       (_, Buffer(..)) => Greater,
 
+      (BufList(a), BufList(b)) => {
+        let a = a.lock().expect("BufList lock");
+        let b = b.lock().expect("BufList lock");
+        a.cmp(&*b)
+      }
+      (BufList(_), _) => Less,
+      (_, BufList(_)) => Greater,
+
       (Recur(a), Recur(b)) => a.cmp(b),
       (Recur(_), _) => Less,
       (_, Recur(_)) => Greater,
@@ -737,6 +760,11 @@ impl PartialEq for Calcit {
       (Ref(a, _), Ref(b, _)) => a == b,
       (Tuple(a), Tuple(b)) => a == b,
       (Buffer(b), Buffer(d)) => b == d,
+      (BufList(a), BufList(b)) => {
+        let a = a.lock().expect("BufList lock");
+        let b = b.lock().expect("BufList lock");
+        *a == *b
+      }
       (CirruQuote(b), CirruQuote(d)) => b == d,
       (List(a), List(b)) => a == b,
       (Set(a), Set(b)) => a == b,
@@ -1095,7 +1123,7 @@ impl fmt::Display for NodeLocation {
       "{}/{} [{}]",
       self.ns,
       self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
     )
   }
 }
@@ -1389,7 +1417,7 @@ mod tests {
         at_def: Arc::from("demo"),
         at_ns: Arc::from("app.main"),
       }),
-      coord: None,
+      def_id: None,
     });
 
     assert_ne!(symbol, local);
@@ -1497,5 +1525,15 @@ mod tests {
       assert_eq!(value.cmp(&cloned), Equal);
       assert_eq!(calcit_hash(&value), calcit_hash(&cloned));
     }
+  }
+
+  #[test]
+  fn node_location_uses_dot_separator() {
+    let loc = NodeLocation::new(
+      Arc::from("app.comp.sidebar"),
+      Arc::from("comp-sidebar"),
+      Arc::from(vec![3, 2, 1, 0]),
+    );
+    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar [3.2.1.0]");
   }
 }

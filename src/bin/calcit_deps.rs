@@ -10,6 +10,7 @@ use argh::{self, FromArgs};
 use cirru_edn::Edn;
 use colored::*;
 use git::*;
+use semver::Version;
 use std::{
   collections::HashMap,
   fs,
@@ -95,8 +96,8 @@ pub fn main() -> Result<(), String> {
     }
 
     match &cli_args.subcommand {
-      Some(SubCommand::Outdated(_)) => {
-        let updated = outdated_tags(deps.dependencies, &cli_args.input)?;
+      Some(SubCommand::Outdated(opts)) => {
+        let updated = outdated_tags(deps, &cli_args.input, opts.yes)?;
         if updated {
           // Re-read deps.cirru and download updated dependencies
           println!("\nDownloading updated dependencies...");
@@ -329,7 +330,11 @@ enum SubCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// show outdated versions
 #[argh(subcommand, name = "outdated")]
-struct OutdatedCaps {}
+struct OutdatedCaps {
+  /// update deps.cirru directly without interactive confirmation
+  #[argh(switch, short = 'y', long = "yes")]
+  yes: bool,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// download named packages with org/repo@branch
@@ -456,14 +461,14 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
 /// also git fetch to read latest tag from remote,
 /// then we can compare, get outdated version printed
 /// Returns true if deps.cirru was updated
-fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<bool, String> {
+fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<bool, String> {
   print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
   println!();
 
   let mut outdated_packages = Vec::new();
   let mut children = vec![];
 
-  for (org_and_folder, version) in deps {
+  for (org_and_folder, version) in &deps.dependencies {
     let org_and_folder_clone = org_and_folder.clone();
     let version_clone = version.clone();
     let ret = thread::spawn(move || {
@@ -474,7 +479,7 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<b
       }
       ret.ok()
     });
-    children.push((org_and_folder, version, ret));
+    children.push((org_and_folder.clone(), version.clone(), ret));
   }
 
   for (org_and_folder, version, child) in children {
@@ -485,9 +490,28 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<b
     }
   }
 
-  if !outdated_packages.is_empty() {
+  let calcit_version_upgrade = deps.calcit_version.as_ref().and_then(|version| {
+    let expected = Version::parse(version).ok()?;
+    let current = Version::parse(CALCIT_VERSION).ok()?;
+    if expected < current { Some(version.to_owned()) } else { None }
+  });
+
+  if !outdated_packages.is_empty() || calcit_version_upgrade.is_some() {
+    if auto_yes {
+      update_deps_file(&outdated_packages, calcit_version_upgrade.as_deref(), deps_file)?;
+      println!("deps.cirru updated successfully!");
+      return Ok(true);
+    }
+
     println!();
-    print!("Found {} outdated package(s). Update deps.cirru? (y/N): ", outdated_packages.len());
+    let mut changes = Vec::new();
+    if !outdated_packages.is_empty() {
+      changes.push(format!("{} outdated package(s)", outdated_packages.len()));
+    }
+    if let Some(version) = &calcit_version_upgrade {
+      changes.push(format!("calcit-version {version} -> {CALCIT_VERSION}"));
+    }
+    print!("Found {}. Update deps.cirru? (y/N): ", changes.join(", "));
     std::io::stdout().flush().map_err(|e| e.to_string())?;
 
     let mut input = String::new();
@@ -495,7 +519,7 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<b
     let input = input.trim();
 
     if input.is_empty() || input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
-      update_deps_file(&outdated_packages, deps_file)?;
+      update_deps_file(&outdated_packages, calcit_version_upgrade.as_deref(), deps_file)?;
       println!("deps.cirru updated successfully!");
       return Ok(true);
     }
@@ -533,7 +557,11 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
   }
 }
 
-fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)], deps_file: &str) -> Result<(), String> {
+fn update_deps_file(
+  outdated_packages: &[(Arc<str>, Arc<str>, String)],
+  calcit_version_upgrade: Option<&str>,
+  deps_file: &str,
+) -> Result<(), String> {
   if !Path::new(deps_file).exists() {
     return Err("deps.cirru file not found".to_string());
   }
@@ -545,6 +573,10 @@ fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)], deps_fil
     format!("Failed to parse '{deps_file}'")
   })?;
   let mut deps: PackageDeps = parsed.try_into()?;
+
+  if let Some(version) = calcit_version_upgrade {
+    deps.calcit_version = Some(version.to_string());
+  }
 
   // Update the dependencies in the parsed structure
   for (org_and_folder, _old_version, new_version) in outdated_packages {

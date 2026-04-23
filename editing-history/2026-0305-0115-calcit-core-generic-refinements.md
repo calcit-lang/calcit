@@ -52,6 +52,6 @@
 
 - `yarn check-all > js-out/check-all.log`，`EXIT:0`
 - `cargo build --release > js-out/release-build.log`
-- `./target/release/cr calcit/test.cirru -1 > js-out/release-run.log`，`EXIT:0`
+- `./target/release/cr calcit/test.cirru > js-out/release-run.log`，`EXIT:0`
 
 结论：本次改动仅增强静态类型信息，未改变运行行为，且全量检查通过。

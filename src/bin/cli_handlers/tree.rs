@@ -1,8 +1,11 @@
 use cirru_parser::Cirru;
 use colored::Colorize;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
-use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
+use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
+use super::common::{
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, format_path, format_path_bracketed, parse_input_to_cirru, parse_path, read_code_input,
+};
+use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
@@ -120,6 +123,19 @@ fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
   }
 }
 
+fn print_preview_block(label: &str, node: &Cirru, max_lines: usize, color: &str) {
+  let label_text = match color {
+    "yellow" => label.yellow().bold(),
+    "green" => label.green().bold(),
+    "cyan" => label.cyan().bold(),
+    _ => label.bold(),
+  };
+  println!("{label_text}:");
+  for line in format_preview_with_type(node, max_lines).lines() {
+    println!("  {line}");
+  }
+}
+
 /// Find the first leaf (preorder) and format for preview
 fn first_leaf_preview(node: &Cirru) -> Option<String> {
   match node {
@@ -144,15 +160,10 @@ fn format_child_preview(node: &Cirru) -> String {
 }
 
 /// Show a side-by-side diff preview of the change
-fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: &[usize]) -> String {
+fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str) -> String {
   let mut output = String::new();
 
-  output.push_str(&format!(
-    "\n{}: {} at path [{}]\n",
-    "Preview".blue().bold(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  ));
+  output.push_str(&format!("\n{}: {}\n", "Preview".blue().bold(), operation));
   output.push('\n');
 
   // Show old and new side by side (simplified version)
@@ -167,6 +178,54 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
   output.push('\n');
 
   output
+}
+
+fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -> usize {
+  println!("{}", "Chunked preview".green().bold());
+  println!(
+    "{}",
+    format!(
+      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
+      display.total.nodes,
+      display.total.branches,
+      display.total.leaves,
+      display.total.max_depth,
+      display.fragments.len()
+    )
+    .dimmed()
+  );
+  println!();
+
+  let visible_fragments: Vec<_> = display
+    .fragments
+    .iter()
+    .filter(|fragment| fragment_nesting_level(fragment, &display.fragments) <= chunk_expand_depth)
+    .collect();
+
+  if visible_fragments.len() < display.fragments.len() {
+    println!(
+      "{}",
+      format!(
+        "showing {}/{} fragments; nested chunks beyond level {} are hidden",
+        visible_fragments.len(),
+        display.fragments.len(),
+        chunk_expand_depth
+      )
+      .dimmed()
+    );
+    println!();
+  }
+
+  for fragment in &visible_fragments {
+    println!("{} {}", fragment.id.cyan().bold(), format!("at {}", fragment.coord).dimmed());
+    println!("{}", format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed());
+    for line in fragment.cirru.lines() {
+      println!("  {line}");
+    }
+    println!();
+  }
+
+  visible_fragments.len()
 }
 
 // ============================================================================
@@ -219,11 +278,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       let valid_node = navigate_to_path(&code_entry.code, valid_path).unwrap();
 
       // Format the valid path display
-      let valid_path_display = if valid_path.is_empty() {
-        "root".to_string()
-      } else {
-        format!("[{}]", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
-      };
+      let valid_path_display = format_path_bracketed(valid_path);
 
       // Get preview of the valid node
       let node_preview = match &valid_node {
@@ -254,12 +309,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!(
-              "cr tree show {} -p '{}'",
-              opts.target,
-              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-            )
-            .cyan()
+            format!("cr tree show {} -p '{}'", opts.target, format_path(valid_path)).cyan()
           );
         }
         Cirru::List(items) => {
@@ -272,12 +322,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!(
-              "cr tree show {} -p '{}'",
-              opts.target,
-              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-            )
-            .cyan()
+            format!("cr tree show {} -p '{}'", opts.target, format_path(valid_path)).cyan()
           );
 
           // Show first few children as hints
@@ -289,7 +334,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
               let child_path = if valid_path.is_empty() {
                 i.to_string()
               } else {
-                format!("{},{}", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","), i)
+                format!("{}.{}", format_path(valid_path), i)
               };
               eprintln!("  [{}] {} {} -p '{}'", i, child_preview.yellow(), "->".dimmed(), child_path);
             }
@@ -304,46 +349,32 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     }
   };
 
-  // Print info
-  let path_display = if path.is_empty() {
-    "(root)".to_string()
-  } else {
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  };
-  println!(
-    "{}: {}  path: [{}]",
-    "Location".green().bold(),
-    format!("{namespace}/{definition}").cyan(),
-    path_display
-  );
-
   let node_type = match &node {
     Cirru::Leaf(_) => "leaf",
     Cirru::List(items) => {
+      let chunk_options = ChunkDisplayOptions {
+        trigger_nodes: opts.chunk_trigger_nodes,
+        target_nodes: opts.chunk_target_nodes,
+        max_nodes: opts.chunk_max_nodes,
+        max_branches: 64,
+      };
+      let chunked_display = if opts.raw { None } else { maybe_chunk_node(&node, &chunk_options)? };
+
       println!("{}: {} ({} items)", "Type".green().bold(), "list".yellow(), items.len());
       println!();
-      println!("{}:", "Cirru preview".green().bold());
-      println!("  ");
-      let cirru_str = cirru_parser::format(std::slice::from_ref(&node), cirru_parser::CirruWriterOptions { use_inline: true })
-        .map_err(|e| format!("Failed to format Cirru: {e}"))?;
-      for line in cirru_str.lines() {
-        println!("  {line}");
-      }
-      println!();
-
-      if !items.is_empty() {
-        println!("{}:", "Children".green().bold());
-        for (i, item) in items.iter().enumerate() {
-          let type_str = format_child_preview(item);
-          let child_path = if opts.path.is_empty() {
-            i.to_string()
-          } else {
-            format!("{},{}", opts.path, i)
-          };
-          println!("  [{}] {} {} -p '{}'", i, type_str.yellow(), "->".dimmed(), child_path);
+      let shown_fragments = if let Some(display) = chunked_display {
+        Some((render_chunked_display(&display, opts.chunk_expand_depth), display.fragments.len()))
+      } else {
+        println!("{}:", "Cirru preview".green().bold());
+        println!("  ");
+        let cirru_str = cirru_parser::format(std::slice::from_ref(&node), cirru_parser::CirruWriterOptions { use_inline: true })
+          .map_err(|e| format!("Failed to format Cirru: {e}"))?;
+        for line in cirru_str.lines() {
+          println!("  {line}");
         }
         println!();
-      }
+        None
+      };
 
       if show_json {
         println!("{}:", "JSON".green().bold());
@@ -354,17 +385,20 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         println!();
       }
 
-      println!("{}: To modify this node:", "Next steps".blue().bold());
-      println!(
-        "  • Replace: {} {} -p '{}' {}",
-        "cr tree replace".cyan(),
-        opts.target,
-        opts.path,
-        "-e 'cirru one-liner'".dimmed()
-      );
-      println!("  • Delete:  {} {} -p '{}'", "cr tree delete".cyan(), opts.target, opts.path);
-      println!();
       let mut tips = Tips::new();
+      if let Some((shown_fragments, total_fragments)) = shown_fragments {
+        if shown_fragments < total_fragments {
+          tips.add_with_priority(
+            TipPriority::High,
+            format!(
+              "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
+              opts.chunk_expand_depth,
+              format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
+              "--raw".yellow()
+            ),
+          );
+        }
+      }
       tips.append(tip_prefer_oneliner_json(show_json));
       tips.print();
 
@@ -377,31 +411,14 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     if let Cirru::Leaf(s) = &node {
       println!("{}: {:?}", "Value".green().bold(), s.as_ref());
       println!();
-      println!("{}: To modify this leaf:", "Next steps".blue().bold());
-      println!(
-        "  • Replace: {} {} -p '{}' --leaf -e '<value>'",
-        "cr tree replace".cyan(),
-        opts.target,
-        opts.path
-      );
-      if !path.is_empty() {
-        // Show parent path for context
-        let parent_path = &path[..path.len() - 1];
-        let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+      if command_guidance_enabled() {
         println!(
-          "  • View parent: {} {} -p '{}'",
-          "cr tree show".cyan(),
-          opts.target,
-          parent_path_str
+          "{}: Use {} for symbols, {} for strings",
+          "Tip".blue().bold(),
+          "-e 'symbol'".yellow(),
+          "-e '|text'".yellow()
         );
       }
-      println!();
-      println!(
-        "{}: Use {} for symbols, {} for strings",
-        "Tip".blue().bold(),
-        "-e 'symbol'".yellow(),
-        "-e '|text'".yellow()
-      );
     }
   }
 
@@ -433,13 +450,10 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   // Save original for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
-
-  // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &new_node, "replace", &path));
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -448,30 +462,26 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied 'replace' at path [{}] in '{}/{}'",
-    "✓".green(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  let replaced_node = navigate_to_path(&new_code, &path)?;
+
+  println!("{} Replaced node", "✓".green());
   println!();
-  println!("{}:", "From".yellow().bold());
-  println!("{}", format_preview_with_type(&old_node, 20));
+  println!("{}", "Changed node".blue().bold());
+  print_preview_block("Before", &old_node, 20, "yellow");
   println!();
-  println!("{}:", "To".green().bold());
-  let new_node = navigate_to_path(&new_code, &path)?;
-  println!("{}", format_preview_with_type(&new_node, 20));
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!(
-    "  • Verify: {} '{}' -p '{}'",
-    "cr tree show".cyan(),
-    format_args!("{}/{}", namespace, definition),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  print_preview_block("After", &replaced_node, 20, "green");
+
+  if !path.is_empty() {
+    let parent_path = &path[..path.len() - 1];
+    let parent_after = if parent_path.is_empty() {
+      new_code.clone()
+    } else {
+      navigate_to_path(&new_code, parent_path)?.clone()
+    };
+    println!();
+    println!("{}", "Containing expression".blue().bold());
+    print_preview_block("After", &parent_after, 12, "cyan");
+  }
 
   Ok(())
 }
@@ -511,11 +521,11 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let old_node = navigate_to_path(&code_entry.code, &path)?;
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite", &path));
+  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite"));
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -524,13 +534,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied 'rewrite' at path [{}] in '{}/{}'",
-    "✓".green(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Applied 'rewrite'", "✓".green());
   println!();
   println!("{}:", "From".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 20));
@@ -539,16 +543,6 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
   println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!(
-    "  • Verify: {} '{}' -p '{}'",
-    "cr tree show".cyan(),
-    format_args!("{}/{}", namespace, definition),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-
   Ok(())
 }
 
@@ -581,14 +575,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     return Ok(());
   }
 
-  println!(
-    "{} Found {} match(es) for pattern '{}' in '{}/{}':",
-    "Search:".bold(),
-    matches.len(),
-    opts.pattern.yellow(),
-    namespace,
-    definition
-  );
+  println!("{} {} match(es):", "Search:".bold(), matches.len());
   println!();
 
   // Show preview of matches
@@ -631,13 +618,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   code_entry.code = new_code;
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Replaced {} occurrence(s) in '{}/{}'",
-    "✓".green(),
-    replaced_count,
-    namespace,
-    definition
-  );
+  println!("{} Replaced {} occurrence(s)", "✓".green(), replaced_count);
   println!();
   println!("{}:", "Replacement".green().bold());
   println!(
@@ -646,11 +627,6 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     format_preview_with_type(&replacement_node, 0)
   );
   println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • Verify: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!("  • Check errors: {}", "cr query error".cyan());
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-
   Ok(())
 }
 
@@ -679,21 +655,11 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
 
   if matches.is_empty() {
-    return Err(format!(
-      "No matches found for pattern '{}' in '{}/{}'",
-      opts.pattern, namespace, definition
-    ));
+    return Err("No matches found for target pattern".to_string());
   }
 
   if matches.len() > 1 {
-    println!(
-      "{} Found {} matches for pattern '{}' in '{}/{}'.",
-      "Notice:".yellow().bold(),
-      matches.len(),
-      opts.pattern.yellow(),
-      namespace,
-      definition
-    );
+    println!("{} Found {} matches.", "Notice:".yellow().bold(), matches.len());
     println!("Please use specific path to replace:");
     println!();
 
@@ -723,7 +689,9 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
       println!("  ... and {} more", matches.len() - 10);
     }
     println!();
-    println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+    if command_guidance_enabled() {
+      println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+    }
 
     return Err(String::new());
   }
@@ -733,20 +701,14 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace", path));
+  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace"));
 
   let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&replacement_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Replaced unique occurrence in '{}/{}' at path [{}]",
-    "✓".green(),
-    namespace,
-    definition,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
+  println!("{} Replaced unique occurrence", "✓".green());
 
   Ok(())
 }
@@ -802,11 +764,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   };
 
   // Show diff preview with parent context
-  println!(
-    "\n{}: Deleting node at path [{}]",
-    "Preview".blue().bold(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
+  println!("\n{}: delete", "Preview".blue().bold());
   println!("{}:", "Node to delete".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 10));
   println!();
@@ -815,7 +773,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -824,13 +782,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Deleted node at path [{}] in '{}/{}'",
-    "✓".green(),
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Deleted node", "✓".green());
   println!();
   println!("{}:", "Deleted node".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 20));
@@ -1055,12 +1007,7 @@ fn generic_insert_handler<T: InsertOperation>(
   };
 
   // Show diff preview
-  println!(
-    "\n{}: {} at path [{}]",
-    "Preview".blue().bold(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
-  );
+  println!("\n{}: {}", "Preview".blue().bold(), operation);
   println!("{}:", "Node to insert".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 8));
   println!();
@@ -1069,7 +1016,7 @@ fn generic_insert_handler<T: InsertOperation>(
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
 
@@ -1078,14 +1025,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied '{}' at path [{}] in '{}/{}'",
-    "✓".green(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Applied '{}'", "✓".green(), operation);
   println!();
   println!("{}:", "Inserted node".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 10));
@@ -1189,14 +1129,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Applied '{}' at path [{}] in '{}/{}'",
-    "✓".green(),
-    operation,
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-    namespace,
-    definition
-  );
+  println!("{} Applied '{}'", "✓".green(), operation);
   println!();
 
   // Explain what was swapped
@@ -1205,7 +1138,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     let parent_display = if parent_path.is_empty() {
       "root".to_string()
     } else {
-      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
     };
 
     match operation {
@@ -1237,7 +1170,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
-    tips.add(t);
+    tips.add_with_priority(TipPriority::High, t);
     tips.print();
   }
   println!("{}:", "Parent after swap".green().bold());
@@ -1319,15 +1252,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
     return Err(format!("Node at path [{}] has no children to splice", opts.path));
   }
 
-  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-  println!(
-    "\n{}: unwrap [{}] in '{}/{}', splicing {} children into parent",
-    "Preview".blue().bold(),
-    path_str,
-    namespace,
-    definition,
-    children.len()
-  );
+  println!("\n{}: unwrap {} child(ren)", "Preview".blue().bold(), children.len());
   println!("{}:", "Before".dimmed());
   println!("{}", format_preview_with_type(&node, opts.depth));
   println!("{} (spliced):", "After".cyan().bold());
@@ -1341,7 +1266,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Unwrapped node at [{}] in '{}/{}'", "✓".green(), path_str, namespace, definition);
+  println!("{} Unwrapped node", "✓".green());
 
   Ok(())
 }
@@ -1372,17 +1297,7 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
   let child_node = navigate_to_path(&code_entry.code, &path)?.clone();
   let parent_node = navigate_to_path(&code_entry.code, parent_path)?;
 
-  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-  let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-
-  println!(
-    "\n{}: raise [{}] in '{}/{}', replacing parent [{}]",
-    "Preview".blue().bold(),
-    path_str,
-    namespace,
-    definition,
-    if parent_path_str.is_empty() { "(root)" } else { &parent_path_str }
-  );
+  println!("\n{}: raise", "Preview".blue().bold());
   println!("{}:", "Before (parent)".dimmed());
   println!("{}", format_preview_with_type(&parent_node, opts.depth));
   println!("{}:", "After (raised child)".cyan().bold());
@@ -1394,14 +1309,7 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!(
-    "{} Raised node [{}] to replace parent [{}] in '{}/{}'",
-    "✓".green(),
-    path_str,
-    if parent_path_str.is_empty() { "(root)" } else { &parent_path_str },
-    namespace,
-    definition
-  );
+  println!("{} Raised node", "✓".green());
 
   Ok(())
 }
@@ -1435,14 +1343,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
   let new_node = process_node_with_references(&template, &references)?;
 
-  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-  println!(
-    "\n{}: wrap [{}] in '{}/{}'",
-    "Preview".blue().bold(),
-    path_str,
-    namespace,
-    definition
-  );
+  println!("\n{}: wrap", "Preview".blue().bold());
   println!("{}:", "Before".dimmed());
   println!("{}", format_preview_with_type(&original_node, opts.depth));
   println!("{}:", "After".cyan().bold());
@@ -1454,7 +1355,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Wrapped node at [{}] in '{}/{}'", "✓".green(), path_str, namespace, definition);
+  println!("{} Wrapped node", "✓".green());
 
   Ok(())
 }

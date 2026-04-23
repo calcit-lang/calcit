@@ -13,17 +13,21 @@
 - **一致性**：复用现有模式，保持日志和错误信息风格统一。
 - **测试覆盖**：新功能必须补齐正常路径与异常分支的测试用例。
 
-直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可：
+直接使用命令修改 calcit 程序时不需要调用 cargo, 直接按照文档给出的命令行示例执行即可。
+
+在开始任何 `cr edit` / `cr tree` 修改前，先把下面这条命令当作**硬前置步骤**执行一遍，而不是可选建议：
 
 ```bash
 cr docs agents --full
 ```
 
+未先阅读最新 Agent 指南时，不要直接开始改 `compact.cirru`，避免沿用过时心智模型误判命令边界。
+
 ### 运行模式更新（cr / js / ir）
 
-- `cr <entry>`、`cr <entry> js`、`cr <entry> ir` 现在默认都是**单次执行**（once）。
+- `cr <entry>`、`cr <entry> js`、`cr <entry> ir`、`cr <entry> wasm` 现在默认都是**单次执行**（once）。
 - 需要监听时，显式传 `-w` 或 `--watch`（如 `cr -w <entry>`、`cr <entry> js -w`、`cr <entry> ir -w`）。
-- `-1/--once` 仍保留兼容，但在默认 once 行为下通常可省略。
+- `cr <entry> wasm` 为实验性 WASM codegen，生成 WAT 文本格式，仅支持纯数值函数子集。
 
 ### cr eval 基础与常见踩坑
 
@@ -85,7 +89,7 @@ cr docs agents --full
 
 ## 项目结构概览
 
-- `src/`：Rust 核心实现（`src/calcit/` 数据结构, `src/runner/` 运行时, `src/builtins/` 语法, `src/codegen/` IR/JS 输出）。
+- `src/`：Rust 核心实现（`src/calcit/` 数据结构, `src/runner/` 运行时, `src/builtins/` 语法, `src/codegen/` IR/JS/WASM 输出）。
 - `calcit/`：Cirru 源码与测试用例（`*.cirru`）。
 - `lib/` & `js-out/`：JS 共享库与编译输出。
 - `docs/` & `demos/`：开发文档与实验性示例。

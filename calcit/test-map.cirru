@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-map)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-map)
   :configs $ {} (:init-fn |test-map.main/main!) (:reload-fn |test-map.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
   :entries $ {}
@@ -118,12 +118,16 @@
                   assoc (&{} :a 1 :b 2) :c 3
                   &{} :a 1 :b 2 :c 3
                 assert=
-                  assoc (&{} :a 1) :b 2 :c 3
+                  assoc
+                    assoc (&{} :a 1) :b 2
+                    , :c 3
                   &{} :a 1 :b 2 :c 3
                 inside-js: $ &let
                   data $ &{} :a 1
                   .!turnMap data
-                  assert= (assoc data :b 2 :c 3) (&{} :a 1 :b 2 :c 3)
+                  assert=
+                    assoc (assoc data :b 2) :c 3
+                    &{} :a 1 :b 2 :c 3
                 assert= (dissoc dict :a) ({,} :b 2 :c 3 :d 5)
                 assert= dict $ dissoc dict :h
                 assert= (dissoc dict :a :b :c) (&{} :d 5)
@@ -363,8 +367,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-map.main $ :require
             [] util.core :refer $ [] log-title inside-eval: inside-js:
-        :examples $ []

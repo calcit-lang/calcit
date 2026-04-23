@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-algebra)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-algebra)
   :configs $ {} (:init-fn |test-algebra.main/main!) (:reload-fn |test-algebra.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
   :entries $ {}
@@ -58,7 +58,7 @@
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing algebra") (; "\"Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
+            defn main! () (log-title "|Testing algebra") (; "|Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
@@ -126,8 +126,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-algebra $ :require
             util.core :refer $ log-title inside-eval:
-        :examples $ []

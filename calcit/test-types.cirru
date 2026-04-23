@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-types)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-types)
   :configs $ {} (:init-fn |test-types.main/main!) (:reload-fn |test-types.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -363,6 +363,5 @@
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-types.main)
-        :examples $ []

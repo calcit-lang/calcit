@@ -177,6 +177,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {x}")),
     Thunk(thunk) => Ok(thunk.get_code().to_owned()),
     Buffer(_) => Err(format!("data_to_calcit not implemented for buffer: {x}")),
+    BufList(_) => Err(format!("data_to_calcit not implemented for buf-list: {x}")),
     Recur(_xs) => Err(format!("data_to_calcit not implemented for recur: {x}")),
     Macro { .. } => Err(format!("data_to_calcit not implemented for macro: {x}")),
     Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {x}")),

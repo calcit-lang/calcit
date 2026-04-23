@@ -16,7 +16,8 @@ use calcit::cli_args::{
   EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{
-  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file, validate_schema_for_write,
+  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
+  validate_schema_for_write,
 };
 use cirru_parser::Cirru;
 use colored::Colorize;
@@ -25,7 +26,7 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, read_code_input};
-use super::tips::Tips;
+use super::tips::{Tips, command_guidance_enabled};
 
 /// Parse "namespace/definition" format into (namespace, definition)
 /// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
@@ -85,10 +86,18 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
 }
 
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
+  let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let snapshot = load_snapshot(snapshot_file)?;
-  save_snapshot(&snapshot, snapshot_file)?;
+  let formatted_content = render_snapshot_content(&snapshot)?;
 
-  println!("{} Refreshed snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  if formatted_content == original_content {
+    println!("{} No formatting changes for '{}'", "·".dimmed(), snapshot_file.dimmed());
+    return Ok(());
+  }
+
+  fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
+
+  println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
   Ok(())
 }
 
@@ -150,39 +159,56 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   if exists && !opts.overwrite {
     return Err(format!(
       "Definition '{definition}' already exists in namespace '{namespace}'.\n\
-       Use --overwrite to replace it, or use: cr tree replace {namespace}/{definition} -p '' -e '<code>'"
+       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{definition} --overwrite -f <file>"
     ));
   }
 
-  // Create definition
-  let code_entry = CodeEntry::from_code(syntax_tree);
+  // Create or overwrite definition.
+  // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
+  let code_entry = if exists {
+    if let Some(previous_entry) = file_data.defs.get(definition).cloned() {
+      let mut updated_entry = previous_entry;
+      updated_entry.code = syntax_tree;
+      updated_entry
+    } else {
+      CodeEntry::from_code(syntax_tree)
+    }
+  } else {
+    CodeEntry::from_code(syntax_tree)
+  };
   file_data.defs.insert(definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
+  let action_label = if exists { "Updated" } else { "Created" };
+
   println!(
-    "{} Created definition '{}' in namespace '{}'",
+    "{} {} definition '{}' in namespace '{}'",
     "✓".green(),
+    action_label,
     definition.cyan(),
     namespace
   );
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-  println!(
-    "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
-    "cr edit add-import".cyan(),
-    namespace,
-    definition
-  );
-  println!();
-  let mut tips = Tips::new();
-  tips.add(format!(
-    "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
-  ));
-  tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
-  tips.print();
+  if command_guidance_enabled() {
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+    println!("  • Check errors: {}", "cr query error".cyan());
+    println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+    println!(
+      "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
+      "cr edit add-import".cyan(),
+      namespace,
+      definition
+    );
+    println!();
+    let mut tips = Tips::new();
+    tips.add(format!(
+      "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
+    ));
+    tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
+    tips.print();
+  }
   Ok(())
 }
 
@@ -425,17 +451,19 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
     definition.cyan(),
     new_name.cyan()
   );
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
-  println!("  • Inspect source:   {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!(
-    "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
-    "cr tree replace".cyan(),
-    namespace,
-    new_name,
-    new_name
-  );
+  if command_guidance_enabled() {
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
+    println!("  • Inspect source:   {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+    println!(
+      "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
+      "cr tree replace".cyan(),
+      namespace,
+      new_name,
+      new_name
+    );
+  }
   Ok(())
 }
 
@@ -1074,7 +1102,10 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   };
 
   let file_entry = FileInSnapShot {
-    ns: CodeEntry::from_code(ns_code),
+    ns: NsEntry {
+      doc: String::new(),
+      code: ns_code,
+    },
     defs: HashMap::new(),
   };
 
@@ -1481,6 +1512,24 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
       snapshot.configs.reload_fn = opts.value.clone();
     }
     "version" => {
+      let v = opts.value.as_str();
+      if v.starts_with('|') {
+        return Err(format!(
+          "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
+        ));
+      }
+      // Validate semver-like format (x.y.z with optional pre-release suffix)
+      let is_valid_semver = {
+        let parts: Vec<&str> = v.splitn(4, '.').collect();
+        parts.len() >= 3
+          && parts
+            .iter()
+            .take(3)
+            .all(|p| !p.is_empty() && p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+      };
+      if !is_valid_semver {
+        return Err(format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"));
+      }
       snapshot.configs.version = opts.value.clone();
     }
     _ => {

@@ -48,25 +48,38 @@ pub fn cirru_to_json(node: &Cirru) -> String {
   serde_json::to_string_pretty(&cirru_to_json_value(node)).unwrap_or_else(|_| "[]".to_string())
 }
 
-/// Parse path string like "2,1,0" to Vec<usize>
+pub fn format_path_with_separator(path: &[usize], separator: &str) -> String {
+  path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(separator)
+}
+
+pub fn format_path(path: &[usize]) -> String {
+  format_path_with_separator(path, ".")
+}
+
+pub fn format_path_bracketed(path: &[usize]) -> String {
+  if path.is_empty() {
+    "root".to_string()
+  } else {
+    format!("[{}]", format_path(path))
+  }
+}
+
+/// Parse path string like "2.1.0" to Vec<usize>
 pub fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
   if path_str.is_empty() {
     return Ok(vec![]);
   }
 
+  if path_str.contains(',') {
+    return Err(format!(
+      "Invalid path '{path_str}': comma separator is no longer supported. Use dot-separated coordinates, e.g. '2.1.0'."
+    ));
+  }
+
   path_str
-    .split(',')
+    .split('.')
     .map(|s| s.trim().parse::<usize>().map_err(|e| format!("Invalid path index '{s}': {e}")))
     .collect()
-}
-
-/// Validate input source conflicts
-pub fn validate_input_sources(sources: &[bool]) -> Result<(), String> {
-  let count = sources.iter().filter(|&&x| x).count();
-  if count > 1 {
-    return Err(ERR_MULTIPLE_INPUT_SOURCES.to_string());
-  }
-  Ok(())
 }
 
 /// Validate input flag conflicts
@@ -75,6 +88,14 @@ pub fn validate_input_flags(leaf_input: bool, json_input: bool) -> Result<(), St
     return Err(ERR_CONFLICTING_INPUT_FLAGS.to_string());
   }
   Ok(())
+}
+
+pub fn validate_input_sources(sources: &[bool]) -> Result<(), String> {
+  if sources.iter().filter(|&&enabled| enabled).count() > 1 {
+    Err(ERR_MULTIPLE_INPUT_SOURCES.to_string())
+  } else {
+    Ok(())
+  }
 }
 
 /// Read code input from file, inline code, or json option.
@@ -298,5 +319,33 @@ pub fn parse_input_to_cirru(
       }
       Ok(Cirru::List(parsed))
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{format_path, format_path_bracketed, format_path_with_separator, parse_path};
+
+  #[test]
+  fn rejects_comma_separated_paths() {
+    let err = parse_path("3,2,1").unwrap_err();
+    assert!(err.contains("comma separator is no longer supported"));
+  }
+
+  #[test]
+  fn parses_dot_separated_paths() {
+    assert_eq!(parse_path("3.2.1").unwrap(), vec![3, 2, 1]);
+  }
+
+  #[test]
+  fn rejects_mixed_separators() {
+    assert!(parse_path("3,2.1").is_err());
+  }
+
+  #[test]
+  fn formats_paths_with_dot_by_default() {
+    assert_eq!(format_path(&[3, 2, 1]), "3.2.1");
+    assert_eq!(format_path_bracketed(&[3, 2, 1]), "[3.2.1]");
+    assert_eq!(format_path_with_separator(&[3, 2, 1], ","), "3,2,1");
   }
 }

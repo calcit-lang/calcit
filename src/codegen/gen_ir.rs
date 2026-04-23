@@ -7,8 +7,8 @@ use std::sync::Arc;
 use cirru_edn::{Edn, EdnListView, format};
 
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitEnum, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitRecord, CalcitStruct,
-  CalcitTuple, CalcitTypeAnnotation, ImportInfo, MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnum, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitLocal, CalcitRecord, CalcitStruct, CalcitTuple,
+  CalcitTypeAnnotation, ImportInfo, MethodKind,
 };
 use crate::program;
 
@@ -35,16 +35,9 @@ fn extract_import_type_info(ns: &str, def: &str) -> Edn {
     return Edn::Nil;
   }
 
-  let result = match program::lookup_evaled_def(ns, def) {
-    Some(value) => {
-      let annotation = CalcitTypeAnnotation::from_calcit(&value);
-      match annotation {
-        CalcitTypeAnnotation::Dynamic => Edn::Nil,
-        _ => dump_type_annotation(&annotation),
-      }
-    }
-    None => Edn::Nil,
-  };
+  let result = program::lookup_codegen_type_hint(ns, def)
+    .map(|annotation| dump_type_annotation(annotation.as_ref()))
+    .unwrap_or(Edn::Nil);
 
   if pushed {
     TYPE_INFO_STACK.with(|stack| {
@@ -92,18 +85,18 @@ impl From<IrData> for Edn {
 }
 
 pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), String> {
-  let program_data = program::clone_evaled_program();
+  let program_data = program::clone_compiled_program_snapshot()?;
 
   let mut files: HashMap<Arc<str>, IrDataFile> = HashMap::new();
 
   for (ns, file_info) in program_data.iter() {
     let mut defs: HashMap<Arc<str>, Edn> = HashMap::new();
-    for (def, code) in file_info.iter() {
-      defs.insert(def, dump_code(code));
+    for (def, compiled) in &file_info.defs {
+      defs.insert(def.to_owned(), dump_code(&compiled.codegen_form));
     }
 
     let file = IrDataFile { defs };
-    files.insert(ns, file);
+    files.insert(Arc::clone(ns), file);
   }
 
   let data = IrData {
@@ -256,6 +249,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Tuple(tuple) => dump_tuple_code(tuple),
     Calcit::Record(record) => dump_record_code(record),
+    Calcit::Impl(impl_def) => dump_impl_code(impl_def),
     Calcit::Struct(struct_def) => dump_struct_code(struct_def),
     Calcit::Enum(enum_def) => dump_enum_code(enum_def),
     Calcit::Method(method, kind) => {
@@ -270,6 +264,25 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         }
       }
       Edn::map_from_iter(entries)
+    }
+    Calcit::Map(xs) => {
+      // Map literals can appear as hint-fn schema data injected during preprocessing.
+      let mut pairs = EdnListView::default();
+      for (k, v) in xs.iter() {
+        pairs.push(Edn::from(vec![dump_code(k), dump_code(v)]));
+      }
+      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("map")), (Edn::tag("pairs"), pairs.into())])
+    }
+    Calcit::AnyRef(_) => {
+      // AnyRef is an opaque runtime handle; it cannot be embedded in IR code.
+      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("any-ref"))])
+    }
+    Calcit::Set(xs) => {
+      let mut items = EdnListView::default();
+      for x in xs.iter() {
+        items.push(dump_code(x));
+      }
+      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("set")), (Edn::tag("items"), items.into())])
     }
     Calcit::RawCode(_, code) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("raw-code")),
@@ -336,113 +349,7 @@ fn dump_type_list(xs: &[Arc<CalcitTypeAnnotation>]) -> Edn {
 }
 
 fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
-  match type_info {
-    CalcitTypeAnnotation::Bool => type_tag_map("bool"),
-    CalcitTypeAnnotation::Number => type_tag_map("number"),
-    CalcitTypeAnnotation::String => type_tag_map("string"),
-    CalcitTypeAnnotation::Symbol => type_tag_map("symbol"),
-    CalcitTypeAnnotation::Tag => type_tag_map("tag"),
-    CalcitTypeAnnotation::List(inner) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("list"))];
-      entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Map(k, v) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("map"))];
-      entries.push((Edn::tag("key"), dump_type_annotation(k.as_ref())));
-      entries.push((Edn::tag("value"), dump_type_annotation(v.as_ref())));
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::DynFn => type_tag_map("fn"),
-    CalcitTypeAnnotation::Ref(inner) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("ref"))];
-      entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Buffer => type_tag_map("buffer"),
-    CalcitTypeAnnotation::CirruQuote => type_tag_map("cirru-quote"),
-    CalcitTypeAnnotation::Record(record) => dump_struct_code(record.as_ref()),
-    CalcitTypeAnnotation::Tuple(tuple) => dump_enum_code(tuple.as_ref()),
-    CalcitTypeAnnotation::DynTuple => type_tag_map("tuple"),
-    CalcitTypeAnnotation::Fn(signature) => dump_function_type_annotation(signature.as_ref()),
-    CalcitTypeAnnotation::Set(_) => type_tag_map("set"),
-    CalcitTypeAnnotation::Variadic(inner) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("variadic"))];
-      entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Custom(value) => Edn::map_from_iter([
-      (Edn::tag("type"), Edn::tag("custom")),
-      (Edn::tag("value"), dump_code(value.as_ref())),
-    ]),
-    CalcitTypeAnnotation::Optional(inner) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("optional"))];
-      entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Dynamic => Edn::Nil,
-    CalcitTypeAnnotation::TypeVar(name) => Edn::map_from_iter([
-      (Edn::tag("type"), Edn::tag("type-var")),
-      (Edn::tag("value"), Edn::Str(name.clone())),
-    ]),
-    CalcitTypeAnnotation::TypeRef(name, args) => {
-      let mut entries = vec![
-        (Edn::tag("type"), Edn::tag("type-ref")),
-        (Edn::tag("value"), Edn::Str(name.clone())),
-      ];
-      if !args.is_empty() {
-        let mut args_edn = EdnListView::default();
-        for arg in args.iter() {
-          args_edn.push(dump_type_annotation(arg.as_ref()));
-        }
-        entries.push((Edn::tag("args"), args_edn.into()));
-      }
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Struct(struct_def, args) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("struct"))];
-      entries.push((Edn::tag("value"), dump_struct_code(struct_def.as_ref())));
-      if !args.is_empty() {
-        let mut args_edn = EdnListView::default();
-        for arg in args.iter() {
-          args_edn.push(dump_type_annotation(arg.as_ref()));
-        }
-        entries.push((Edn::tag("args"), args_edn.into()));
-      }
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Enum(enum_def, args) => {
-      let mut entries = vec![(Edn::tag("type"), Edn::tag("enum"))];
-      entries.push((Edn::tag("value"), dump_enum_code(enum_def.as_ref())));
-      if !args.is_empty() {
-        let mut args_edn = EdnListView::default();
-        for arg in args.iter() {
-          args_edn.push(dump_type_annotation(arg.as_ref()));
-        }
-        entries.push((Edn::tag("args"), args_edn.into()));
-      }
-      Edn::map_from_iter(entries)
-    }
-    CalcitTypeAnnotation::Trait(trait_def) => Edn::map_from_iter([
-      (Edn::tag("type"), Edn::tag("trait")),
-      (Edn::tag("value"), Edn::tag(trait_def.name.to_string())),
-    ]),
-    CalcitTypeAnnotation::TraitSet(traits) => {
-      let mut list = EdnListView::default();
-      for trait_def in traits.iter() {
-        list.push(Edn::tag(trait_def.name.to_string()));
-      }
-      Edn::map_from_iter([(Edn::tag("type"), Edn::tag("traits")), (Edn::tag("value"), list.into())])
-    }
-    CalcitTypeAnnotation::Unit => type_tag_map("unit"),
-  }
-}
-
-fn dump_function_type_annotation(signature: &CalcitFnTypeAnnotation) -> Edn {
-  let mut entries = vec![(Edn::tag("type"), Edn::tag("fn"))];
-  entries.push((Edn::tag("args"), dump_type_list(&signature.arg_types)));
-  entries.push((Edn::tag("return"), dump_type_annotation_opt(&signature.return_type)));
-  Edn::map_from_iter(entries)
+  type_info.to_type_edn()
 }
 
 fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {
@@ -478,6 +385,27 @@ fn dump_record_code(record: &CalcitRecord) -> Edn {
   }
   entries.push((Edn::tag("fields"), fields.into()));
   entries.push((Edn::tag("field-count"), Edn::Number(record.struct_ref.fields.len() as f64)));
+  Edn::map_from_iter(entries)
+}
+
+fn dump_impl_code(impl_def: &CalcitImpl) -> Edn {
+  let mut entries = vec![
+    (Edn::tag("kind"), Edn::tag("impl")),
+    (Edn::tag("name"), Edn::Str(impl_def.name.ref_str().into())),
+  ];
+  if let Some(trait_def) = impl_def.origin() {
+    entries.push((Edn::tag("trait"), Edn::Str(trait_def.name.ref_str().into())));
+  }
+
+  let mut fields = EdnListView::default();
+  for (field, value) in impl_def.fields.iter().zip(impl_def.values.iter()) {
+    fields.push(Edn::map_from_iter([
+      (Edn::tag("field"), Edn::Str(field.ref_str().into())),
+      (Edn::tag("value"), dump_code(value)),
+    ]));
+  }
+  entries.push((Edn::tag("fields"), fields.into()));
+  entries.push((Edn::tag("field-count"), Edn::Number(impl_def.fields.len() as f64)));
   Edn::map_from_iter(entries)
 }
 
@@ -546,6 +474,79 @@ fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
   entries
 }
 
-fn type_tag_map(type_name: &str) -> Edn {
-  Edn::map_from_iter([(Edn::tag("type"), Edn::tag(type_name))])
+#[cfg(test)]
+mod tests {
+  use super::{dump_code, dump_type_annotation};
+  use crate::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitImpl, CalcitProc, CalcitTypeAnnotation, SchemaKind};
+  use cirru_edn::{Edn, EdnTag};
+  use std::sync::Arc;
+
+  #[test]
+  fn dumps_impl_values_for_ir() {
+    let value = Calcit::Impl(CalcitImpl {
+      name: EdnTag::new("DemoImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Proc(CalcitProc::NativeStr)]),
+    });
+
+    let dumped = dump_code(&value);
+    let Edn::Map(entries) = dumped else {
+      panic!("expected impl to dump as map");
+    };
+
+    assert_eq!(entries.get(&Edn::tag("kind")), Some(&Edn::tag("impl")));
+    assert_eq!(entries.get(&Edn::tag("name")), Some(&Edn::str("DemoImpl")));
+    assert_eq!(entries.get(&Edn::tag("field-count")), Some(&Edn::Number(1.0)));
+
+    let Some(Edn::List(fields)) = entries.get(&Edn::tag("fields")) else {
+      panic!("expected impl fields list");
+    };
+    assert_eq!(fields.len(), 1);
+
+    let Some(Edn::Map(field_entry)) = fields.iter().next() else {
+      panic!("expected impl field entry to be a map");
+    };
+    assert_eq!(field_entry.get(&Edn::tag("field")), Some(&Edn::str("show")));
+
+    let Some(Edn::Map(proc_entry)) = field_entry.get(&Edn::tag("value")) else {
+      panic!("expected impl field value to be a map");
+    };
+    assert_eq!(proc_entry.get(&Edn::tag("kind")), Some(&Edn::tag("proc")));
+    assert_eq!(proc_entry.get(&Edn::tag("name")), Some(&Edn::str("&str")));
+    assert_eq!(proc_entry.get(&Edn::tag("builtin")), Some(&Edn::Bool(true)));
+  }
+
+  #[test]
+  fn dumps_type_annotations_as_canonical_type_edn() {
+    let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String));
+    assert_eq!(
+      dump_type_annotation(&list_type),
+      Edn::tuple(Edn::tag("list"), vec![Edn::tag("string")])
+    );
+
+    let map_type = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number));
+    assert_eq!(
+      dump_type_annotation(&map_type),
+      Edn::tuple(Edn::tag("map"), vec![Edn::tag("string"), Edn::tag("number")])
+    );
+
+    let fn_type = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::String)],
+      return_type: Arc::new(CalcitTypeAnnotation::Bool),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+    }));
+    assert_eq!(
+      dump_type_annotation(&fn_type),
+      Edn::tuple(
+        Edn::tag("fn"),
+        vec![Edn::map_from_iter([
+          (Edn::tag("args"), Edn::List(cirru_edn::EdnListView(vec![Edn::tag("string")]))),
+          (Edn::tag("return"), Edn::tag("bool")),
+        ])]
+      )
+    );
+  }
 }

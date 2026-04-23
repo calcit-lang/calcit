@@ -2,9 +2,11 @@
 //!
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
-use super::tips::{Tips, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
+use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
+use super::common::{format_path, parse_path};
+use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
-use calcit::cli_args::{QueryCommand, QuerySubcommand};
+use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -21,6 +23,191 @@ type SearchResults = Vec<(String, String, Vec<(Vec<usize>, Cirru)>)>;
 
 /// Type alias for reference results: (namespace, definition, context, coordinate-path, source-label)
 type RefResults = Vec<(String, String, String, Vec<Vec<usize>>, &'static str)>;
+
+struct SearchCommonOpts<'a> {
+  filter: Option<&'a str>,
+  loose: bool,
+  max_depth: usize,
+  entry: Option<&'a str>,
+  detail_offset: usize,
+}
+
+const DETAILED_RESULTS_WINDOW: usize = 3;
+
+fn detailed_window(detail_offset: usize, total: usize) -> (usize, usize) {
+  if total == 0 {
+    return (0, 0);
+  }
+  let start = detail_offset.min(total.saturating_sub(1));
+  let end = (start + DETAILED_RESULTS_WINDOW).min(total);
+  (start, end)
+}
+
+fn print_detail_window_hint(total: usize, detail_offset: usize, subject: &str) {
+  if total > DETAILED_RESULTS_WINDOW {
+    let (start, end) = detailed_window(detail_offset, total);
+    println!(
+      "{}",
+      format!("Detail window for {subject}: [{start}, {end}) (detail-offset={detail_offset}), other entries are compressed.").dimmed()
+    );
+  }
+}
+
+fn in_detail_window(index: usize, total: usize, detail_offset: usize) -> bool {
+  if total <= DETAILED_RESULTS_WINDOW {
+    return true;
+  }
+  let (start, end) = detailed_window(detail_offset, total);
+  index >= start && index < end
+}
+
+fn preview_node_oneline(node: &Cirru, max_len: usize) -> (String, bool) {
+  let text = match node {
+    Cirru::Leaf(s) => s.to_string(),
+    _ => node.format_one_liner().unwrap_or_default(),
+  };
+  if text.is_empty() {
+    return ("(matched)".to_string(), false);
+  }
+  if text.len() > max_len {
+    (text[..max_len].to_string(), true)
+  } else {
+    (text, false)
+  }
+}
+
+fn is_token_delimiter(ch: Option<char>) -> bool {
+  match ch {
+    None => true,
+    Some(c) => c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '$' | ','),
+  }
+}
+
+fn highlight_target_text(text: &str, target: Option<&str>, loose: bool) -> String {
+  let Some(target) = target else {
+    return text.to_string();
+  };
+  if target.is_empty() || !text.contains(target) {
+    return text.to_string();
+  }
+
+  if loose {
+    return text.replace(target, &format!("{}", target.bright_yellow().bold()));
+  }
+
+  let mut highlighted = String::with_capacity(text.len());
+  let mut last_index = 0;
+
+  for (idx, _) in text.match_indices(target) {
+    let prev_char = text[..idx].chars().next_back();
+    let next_char = text[idx + target.len()..].chars().next();
+    if is_token_delimiter(prev_char) && is_token_delimiter(next_char) {
+      highlighted.push_str(&text[last_index..idx]);
+      highlighted.push_str(&format!("{}", target.bright_yellow().bold()));
+      last_index = idx + target.len();
+    }
+  }
+
+  if last_index == 0 {
+    text.to_string()
+  } else {
+    highlighted.push_str(&text[last_index..]);
+    highlighted
+  }
+}
+
+fn path_parent(path: &[usize]) -> Option<Vec<usize>> {
+  if path.is_empty() {
+    None
+  } else {
+    Some(path[..path.len() - 1].to_vec())
+  }
+}
+
+fn get_node_at_path(code: &Cirru, path: &[usize]) -> Option<Cirru> {
+  if path.is_empty() {
+    return Some(code.clone());
+  }
+  let mut current = code;
+  for &idx in path {
+    match current {
+      Cirru::List(items) => current = items.get(idx)?,
+      Cirru::Leaf(_) => return None,
+    }
+  }
+  Some(current.clone())
+}
+
+fn count_nodes_limited(node: &Cirru, limit: usize) -> usize {
+  fn walk(node: &Cirru, acc: &mut usize, limit: usize) {
+    if *acc >= limit {
+      return;
+    }
+    *acc += 1;
+    if let Cirru::List(items) = node {
+      for item in items {
+        if *acc >= limit {
+          break;
+        }
+        walk(item, acc, limit);
+      }
+    }
+  }
+  let mut acc = 0;
+  walk(node, &mut acc, limit);
+  acc
+}
+
+fn can_show_parent_preview(expr_path: &[usize], parent_node: &Cirru) -> bool {
+  if expr_path.len() > 8 {
+    return false;
+  }
+  if let Cirru::List(items) = parent_node
+    && items.len() > 8
+  {
+    return false;
+  }
+  count_nodes_limited(parent_node, 40) < 40
+}
+
+fn expression_and_parent_preview(
+  code: &Cirru,
+  match_path: &[usize],
+  matched_node: &Cirru,
+  highlight_target: Option<&str>,
+  loose: bool,
+) -> ((String, bool), Vec<(String, bool)>) {
+  let expr_path = if matches!(matched_node, Cirru::Leaf(_)) {
+    path_parent(match_path).unwrap_or_else(|| match_path.to_vec())
+  } else {
+    match_path.to_vec()
+  };
+
+  let expr_node = get_node_at_path(code, &expr_path).unwrap_or_else(|| matched_node.clone());
+  let (expr_text, expr_truncated) = preview_node_oneline(&expr_node, 110);
+  let expr_preview = (highlight_target_text(&expr_text, highlight_target, loose), expr_truncated);
+
+  let mut parent_previews: Vec<(String, bool)> = Vec::new();
+  let mut current_path = expr_path;
+
+  for _ in 0..2 {
+    let Some(parent_path) = path_parent(&current_path) else {
+      break;
+    };
+    let Some(parent_node) = get_node_at_path(code, &parent_path) else {
+      break;
+    };
+
+    if can_show_parent_preview(&parent_path, &parent_node) {
+      let (preview_text, preview_truncated) = preview_node_oneline(&parent_node, 110);
+      parent_previews.push((highlight_target_text(&preview_text, highlight_target, loose), preview_truncated));
+    }
+
+    current_path = parent_path;
+  }
+
+  (expr_preview, parent_previews)
+}
 
 /// Parse "namespace/definition" format into (namespace, definition)
 /// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
@@ -40,7 +227,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_def(input_path, ns, def, opts.json)
+      handle_def(input_path, ns, def, opts)
     }
     QuerySubcommand::Peek(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
@@ -52,36 +239,38 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     }
     QuerySubcommand::Find(opts) => {
       if opts.exact {
-        handle_find(input_path, &opts.symbol, opts.deps)
+        handle_find(input_path, &opts.symbol, opts.deps, opts.detail_offset)
       } else {
-        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit)
+        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit, opts.detail_offset)
       }
     }
     QuerySubcommand::Usages(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_usages(input_path, ns, def, opts.deps)
+      handle_usages(input_path, ns, def, opts.deps, opts.detail_offset)
     }
-    QuerySubcommand::Search(opts) => handle_search_leaf(
-      input_path,
-      &opts.pattern,
-      opts.filter.as_deref(),
-      !opts.exact,
-      opts.max_depth,
-      opts.start_path.as_deref(),
-      opts.entry.as_deref(),
-    ),
-    QuerySubcommand::SearchExpr(opts) => handle_search_expr(
-      input_path,
-      &opts.pattern,
-      opts.filter.as_deref(),
-      !opts.exact,
-      opts.max_depth,
-      opts.json,
-      opts.entry.as_deref(),
-    ),
+    QuerySubcommand::Search(opts) => {
+      let common_opts = SearchCommonOpts {
+        filter: opts.filter.as_deref(),
+        loose: !opts.exact,
+        max_depth: opts.max_depth,
+        entry: opts.entry.as_deref(),
+        detail_offset: opts.detail_offset,
+      };
+      handle_search_leaf(input_path, &opts.pattern, opts.start_path.as_deref(), &common_opts)
+    }
+    QuerySubcommand::SearchExpr(opts) => {
+      let common_opts = SearchCommonOpts {
+        filter: opts.filter.as_deref(),
+        loose: !opts.exact,
+        max_depth: opts.max_depth,
+        entry: opts.entry.as_deref(),
+        detail_offset: opts.detail_offset,
+      };
+      handle_search_expr(input_path, &opts.pattern, opts.json, &common_opts)
+    }
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_schema(input_path, ns, def, opts.json, opts.no_tips)
+      handle_schema(input_path, ns, def, opts.json)
     }
   }
 }
@@ -224,10 +413,6 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
     println!("  {}", ns.cyan());
   }
 
-  let mut tips = Tips::new();
-  tips.append(tip_query_ns_list(include_deps));
-  tips.print();
-
   Ok(())
 }
 
@@ -240,8 +425,6 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  println!("{} {}", "Namespace:".bold(), namespace.cyan());
-
   if !file_data.ns.doc.is_empty() {
     println!("{} {}", "Doc:".bold(), file_data.ns.doc);
   }
@@ -251,11 +434,6 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
   println!("{}", ns_str.dimmed());
 
   println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
-
-  println!(
-    "\n{}",
-    format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed()
-  );
 
   Ok(())
 }
@@ -271,7 +449,7 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   let mut defs: Vec<&String> = file_data.defs.keys().collect();
   defs.sort();
 
-  println!("{} {} ({} definitions)", "Namespace:".bold(), namespace.cyan(), defs.len());
+  println!("{} {}", "Definitions:".bold(), defs.len());
 
   for def in &defs {
     let entry = &file_data.defs[*def];
@@ -292,10 +470,6 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
       println!("  {}{}", def.green(), schema_hint.dimmed());
     }
   }
-
-  let mut tips = Tips::new();
-  tips.append(tip_query_defs_list());
-  tips.print();
 
   Ok(())
 }
@@ -343,10 +517,12 @@ fn handle_error() -> Result<(), String> {
 
   if !Path::new(error_file).exists() {
     println!("{}", "No .calcit-error.cirru file found.".yellow());
-    println!();
-    println!("{}", "Next steps:".blue().bold());
-    println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
-    println!("  • Run syntax check: {}", "cr --check-only".cyan());
+    if command_guidance_enabled() {
+      println!();
+      println!("{}", "Next steps:".blue().bold());
+      println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
+      println!("  • Run syntax check: {}", "cr --check-only".cyan());
+    }
     return Ok(());
   }
 
@@ -370,16 +546,28 @@ fn handle_error() -> Result<(), String> {
     println!("{}", "✓ Error file is empty (no recent errors).".green());
     println!();
     println!("{}", "Your code compiled successfully!".dimmed());
+    println!(
+      "{}",
+      "Note: this only reflects recent Calcit parsing/preprocess/runtime status; still validate browser rendering, CSS values, and external side effects separately."
+        .dimmed()
+    );
   } else {
     println!("{}", "Last error stack trace:".bold().red());
     println!("{content}");
-    println!();
-    println!("{}", "Next steps to fix:".blue().bold());
-    println!("  • Search for error location: {} '<symbol>'", "cr query search".cyan());
-    println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
-    println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
-    println!();
-    println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
+    if command_guidance_enabled() {
+      println!();
+      println!("{}", "Next steps to fix:".blue().bold());
+      println!("  • Search for error location: {} '<symbol>'", "cr query search".cyan());
+      println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
+      println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
+      println!();
+      println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
+    }
+    println!(
+      "{}",
+      "Note: even when this clears, non-Calcit issues like CSS strings, DOM behavior, and external integrations can still be wrong."
+        .dimmed()
+    );
   }
 
   Ok(())
@@ -426,15 +614,36 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
     }
   }
 
-  // Unified tips output
-  let mut tips = Tips::new();
-  tips.append(tip_query_ns_list(false));
-  tips.print();
-
   Ok(())
 }
 
-fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bool) -> Result<(), String> {
+fn render_chunked_display(display: &ChunkedDisplay) {
+  println!("{}", "Chunked Cirru:".bold());
+  println!(
+    "{}",
+    format!(
+      "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
+      display.total.nodes,
+      display.total.branches,
+      display.total.leaves,
+      display.total.max_depth,
+      display.fragments.len()
+    )
+    .dimmed()
+  );
+  println!();
+
+  for fragment in &display.fragments {
+    println!("{} {}", fragment.id.cyan().bold(), format!("at {}", fragment.coord).dimmed());
+    println!("{}", format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed());
+    for line in fragment.cirru.lines() {
+      println!("  {line}");
+    }
+    println!();
+  }
+}
+
+fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -446,8 +655,6 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     .defs
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
-
-  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, definition, vec![]) {
     if let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
@@ -463,13 +670,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     println!("\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
 
-  println!("\n{}", "Cirru:".bold());
-  let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-  println!("{cirru_str}");
-
   println!("\n{}", "Schema:".bold());
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+    let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
       Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
       Err(e) => format!("(schema error: {e})"),
     };
@@ -478,24 +681,33 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     println!("{}", "(none)".dimmed());
   }
 
-  if show_json {
+  if !opts.raw {
+    let chunk_options = ChunkDisplayOptions {
+      trigger_nodes: opts.chunk_trigger_nodes,
+      target_nodes: opts.chunk_target_nodes,
+      max_nodes: opts.chunk_max_nodes,
+      max_branches: 64,
+    };
+    if let Some(display) = maybe_chunk_node(&code_entry.code, &chunk_options)? {
+      println!();
+      render_chunked_display(&display);
+    } else {
+      println!("\n{}", "Cirru:".bold());
+      let cirru_str =
+        cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+      println!("{cirru_str}");
+    }
+  } else {
+    println!("\n{}", "Cirru:".bold());
+    let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+    println!("{cirru_str}");
+  }
+
+  if opts.json {
     println!("\n{}", "JSON:".bold());
     let json = code_entry_to_json(code_entry);
     println!("{}", serde_json::to_string(&json).unwrap());
   }
-
-  let mut tips = Tips::new();
-  tips.add(format!(
-    "Try `cr query search <leaf> -f '{namespace}/{definition}'` to find coordinates of a leaf node"
-  ));
-  tips.add(format!(
-    "Use `cr tree show {namespace}/{definition} -p '0'` to explore tree for editing"
-  ));
-  if !code_entry.examples.is_empty() {
-    tips.add(format!("Use `cr query examples {namespace}/{definition}` to view examples"));
-  }
-  tips.append(tip_prefer_oneliner_json(show_json));
-  tips.print();
 
   Ok(())
 }
@@ -539,13 +751,8 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
-  println!("{} {}/{}", "Examples for:".bold(), namespace.cyan(), definition.green());
-
   if code_entry.examples.is_empty() {
     println!("\n{}", "(no examples)".dimmed());
-    let mut tips = Tips::new();
-    tips.add(format!("Use `cr edit examples {namespace}/{definition}` to add examples."));
-    tips.print();
   } else {
     println!("{} example(s)\n", code_entry.examples.len());
 
@@ -563,10 +770,6 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
       println!("  {} {}", "JSON:".dimmed(), serde_json::to_string(&json).unwrap().dimmed());
       println!();
     }
-
-    let mut tips = Tips::new();
-    tips.add(format!("Use `cr edit examples {namespace}/{definition}` to modify examples."));
-    tips.print();
   }
 
   Ok(())
@@ -585,8 +788,6 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     .defs
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
-
-  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
   // Always show doc (even if empty)
   if code_entry.doc.is_empty() {
@@ -621,7 +822,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   println!("{} {}", "Examples:".bold(), code_entry.examples.len());
 
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+    let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
       Ok(c) => c.format_one_liner()?,
       Err(e) => format!("(schema error: {e})"),
     };
@@ -635,19 +836,11 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     println!("{} -", "Schema:".bold());
   }
 
-  // Tips - show relevant next steps
-  println!("\n{}", "Tips:".bold());
-  println!("  {} cr query def {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr query schema {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
-
   Ok(())
 }
 
 /// Show definition schema
-fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool, no_tips: bool) -> Result<(), String> {
+fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -670,27 +863,18 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
     return Ok(());
   }
 
-  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
-
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())?;
+    let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn())?;
     println!("{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
   } else {
     println!("{} -", "Schema:".bold());
-  }
-
-  if !no_tips {
-    // Tips
-    println!("\n{}", "Tips:".bold());
-    println!("  {} cr query peek {}/{}", "-".dimmed(), namespace, definition);
-    println!("  {} cr edit schema {}/{} -e '{{}} ...'", "-".dimmed(), namespace, definition);
   }
 
   Ok(())
 }
 
 /// Find symbol across all namespaces
-fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(), String> {
+fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let mut found_definitions: Vec<(String, String)> = vec![];
@@ -740,9 +924,8 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
 
   // Print summary
   println!(
-    "{} '{}' - {} definition(s), {} reference(s)\n",
-    "Symbol:".bold(),
-    symbol.yellow(),
+    "{} {} definition(s), {} reference(s)\n",
+    "Matches:".bold(),
     found_definitions.len(),
     found_references.len().saturating_sub(found_definitions.len())
   );
@@ -750,8 +933,13 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
   // Print definitions
   if !found_definitions.is_empty() {
     println!("{}", "Defined in:".bold().green());
-    for (ns, def) in &found_definitions {
-      println!("  {}/{}", ns.cyan(), def.green());
+    print_detail_window_hint(found_definitions.len(), detail_offset, "definitions");
+    for (idx, (ns, def)) in found_definitions.iter().enumerate() {
+      if in_detail_window(idx, found_definitions.len(), detail_offset) {
+        println!("  {}/{}", ns.cyan(), def.green());
+      } else {
+        println!("  ⋯ {}/{}", ns.dimmed(), def.dimmed());
+      }
     }
     println!();
   }
@@ -764,7 +952,20 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
 
   if !references.is_empty() {
     println!("{}", "Referenced in:".bold());
-    for (ns, def, context, coords, source) in &references {
+    print_detail_window_hint(references.len(), detail_offset, "references");
+    for (idx, (ns, def, context, coords, source)) in references.iter().enumerate() {
+      if !in_detail_window(idx, references.len(), detail_offset) {
+        println!(
+          "  ⋯ {}/{} [{}] ({} path{})",
+          ns.dimmed(),
+          def.dimmed(),
+          source.dimmed(),
+          coords.len(),
+          if coords.len() == 1 { "" } else { "s" }
+        );
+        continue;
+      }
+
       // Show main line
       if !context.is_empty() {
         println!("  {}/{} [{}]  {}", ns.cyan(), def, source.dimmed(), context.dimmed());
@@ -777,7 +978,7 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
         let coords_parts: Vec<String> = coords
           .iter()
           .map(|path| {
-            let coord_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            let coord_str = format_path(path);
             format!("[{coord_str}]")
           })
           .collect();
@@ -788,21 +989,13 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
 
   if found_definitions.is_empty() && references.is_empty() {
     println!("{}", "No matches found.".yellow());
-    let mut tips = Tips::new();
-    tips.add("Try `cr query ns` to see available namespaces.");
-    tips.print();
-  } else if !found_definitions.is_empty() {
-    let (first_ns, first_def) = &found_definitions[0];
-    let mut tips = Tips::new();
-    tips.add(format!("Use `cr query peek {first_ns}/{first_def}` to see signature."));
-    tips.print();
   }
 
   Ok(())
 }
 
 /// Find usages of a specific definition
-fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_deps: bool) -> Result<(), String> {
+fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_deps: bool, detail_offset: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   // Verify the target definition exists
@@ -875,13 +1068,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     }
   }
 
-  println!(
-    "{} {}/{}  ({} usages)",
-    "Usages of:".bold(),
-    target_ns.cyan(),
-    target_def.green(),
-    usages.len()
-  );
+  println!("{} {}", "Usages:".bold(), usages.len());
 
   if usages.is_empty() {
     println!(
@@ -890,7 +1077,20 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     );
   } else {
     println!();
-    for (ns, def, context, coords, source) in &usages {
+    print_detail_window_hint(usages.len(), detail_offset, "usages");
+    for (idx, (ns, def, context, coords, source)) in usages.iter().enumerate() {
+      if !in_detail_window(idx, usages.len(), detail_offset) {
+        println!(
+          "  ⋯ {}/{} [{}] ({} path{})",
+          ns.dimmed(),
+          def.dimmed(),
+          source.dimmed(),
+          coords.len(),
+          if coords.len() == 1 { "" } else { "s" }
+        );
+        continue;
+      }
+
       // Show main line
       if !context.is_empty() {
         println!("  {}/{} [{}]  {}", ns.cyan(), def.green(), source.dimmed(), context.dimmed());
@@ -903,7 +1103,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
         let coords_parts: Vec<String> = coords
           .iter()
           .map(|path| {
-            let coord_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            let coord_str = format_path(path);
             format!("[{coord_str}]")
           })
           .collect();
@@ -913,7 +1113,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
   }
 
   // Tip
-  if !usages.is_empty() {
+  if !usages.is_empty() && command_guidance_enabled() {
     println!("\n{}", "Tip: Modifying this definition may affect the above locations.".dimmed());
   }
 
@@ -995,7 +1195,7 @@ fn check_ns_imports(ns_code: &Cirru, target_ns: &str, _target_def: &str) -> bool
 
 /// Fuzzy search for namespace/definition by pattern
 /// Searches for `<pattern>` in qualified names like `namespace/definition`
-fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limit: usize) -> Result<(), String> {
+fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limit: usize, detail_offset: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let pattern_lower = pattern.to_lowercase();
@@ -1042,18 +1242,27 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
   let total = results.len();
   let displayed: Vec<_> = results.into_iter().take(limit).collect();
 
-  println!("{} {} results for pattern \"{}\"", "Search:".bold(), total, pattern.yellow());
+  println!("{} {} results", "Search:".bold(), total);
 
   if displayed.is_empty() {
     println!("  {}", "No matches found".dimmed());
-    println!(
-      "\n{}",
-      "Tip: Try a broader pattern, or add --deps to include core namespaces.".dimmed()
-    );
+    if command_guidance_enabled() {
+      println!(
+        "\n{}",
+        "Tip: Try a broader pattern, or add --deps to include core namespaces.".dimmed()
+      );
+    }
     return Ok(());
   }
 
-  for (ns, def, is_core) in &displayed {
+  print_detail_window_hint(displayed.len(), detail_offset, "search results");
+
+  for (idx, (ns, def, is_core)) in displayed.iter().enumerate() {
+    if !in_detail_window(idx, displayed.len(), detail_offset) {
+      println!("  ⋯ {}/{}", ns.dimmed(), def.dimmed());
+      continue;
+    }
+
     let qualified = format!("{}/{}", ns.cyan(), def.green());
     if *is_core {
       println!("  {} {}", qualified, "(core)".dimmed());
@@ -1063,10 +1272,12 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
   }
 
   if total > limit {
-    println!("  {} {} more results...", "...".dimmed(), total - limit);
+    println!("  ⋯ {} more results...", total - limit);
   }
 
-  println!("\n{}", "Tip: Use `query def <ns/def>` to view definition content.".dimmed());
+  if command_guidance_enabled() {
+    println!("\n{}", "Tip: Use `query def <ns/def>` to view definition content.".dimmed());
+  }
 
   Ok(())
 }
@@ -1097,59 +1308,24 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
 }
 
 /// Search for leaf nodes (strings) in a definition
-fn handle_search_leaf(
-  input_path: &str,
-  pattern: &str,
-  filter: Option<&str>,
-  loose: bool,
-  max_depth: usize,
-  start_path: Option<&str>,
-  entry: Option<&str>,
-) -> Result<(), String> {
-  let snapshot = load_snapshot_with_entry(input_path, entry)?;
+fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>, common_opts: &SearchCommonOpts) -> Result<(), String> {
+  let snapshot = load_snapshot_with_entry(input_path, common_opts.entry)?;
 
   // Parse start_path if provided
   let parsed_start_path: Option<Vec<usize>> = if let Some(path_str) = start_path {
     if path_str.is_empty() {
       Some(vec![])
     } else {
-      let path: Result<Vec<usize>, _> = path_str.split(',').map(|s| s.trim().parse::<usize>()).collect();
-      Some(path.map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
+      Some(parse_path(path_str).map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
     }
   } else {
     None
   };
 
-  println!("{} Searching for:", "Search:".bold());
-  if loose {
-    println!("  {} (contains)", pattern.yellow());
-  } else {
-    println!("  {} (exact)", pattern.yellow());
-  }
-
-  if let Some(filter_str) = filter {
-    println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
-  } else {
-    println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
-  }
-  if let Some(entry_name) = entry {
-    println!("  {} {}", "Entry:".dimmed(), entry_name.cyan());
-  }
-
-  if let Some(ref path) = parsed_start_path {
-    let path_display = if path.is_empty() {
-      "root".to_string()
-    } else {
-      format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
-    };
-    println!("  {} {}", "Start path:".dimmed(), path_display.cyan());
-  }
-  println!();
-
   let mut all_results: SearchResults = Vec::new();
 
   // Parse filter to determine scope
-  let (filter_ns, filter_def) = if let Some(f) = filter {
+  let (filter_ns, filter_def) = if let Some(f) = common_opts.filter {
     if f.contains('/') {
       let parts: Vec<&str> = f.split('/').collect();
       if parts.len() == 2 {
@@ -1206,7 +1382,7 @@ fn handle_search_leaf(
       };
 
       let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
-      let results = search_leaf_nodes(&search_root, pattern, loose, max_depth, base_path);
+      let results = search_leaf_nodes(&search_root, pattern, common_opts.loose, common_opts.max_depth, base_path);
 
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
@@ -1218,6 +1394,8 @@ fn handle_search_leaf(
   if all_results.is_empty() {
     println!("{}", "No matches found.".yellow());
   } else {
+    all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
+
     let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
     println!(
       "{} {} match(es) found in {} definition(s):\n",
@@ -1228,140 +1406,72 @@ fn handle_search_leaf(
 
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
+      print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
 
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
-          for (path, _node) in results.iter().take(20) {
-            if path.is_empty() {
-              let content = code_entry.code.format_one_liner().unwrap_or_default();
-              println!("    {} {}", "(root)".cyan(), content.dimmed());
-            } else {
-              let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
-              let breadcrumb = get_breadcrumb_from_code(&code_entry.code, path);
-              println!("    {} {}", path_str.cyan(), breadcrumb.dimmed());
+          let total = results.len();
+          let (start, end) = detailed_window(common_opts.detail_offset, total);
+          let detailed_count = end.saturating_sub(start);
+          let compressed_count = total.saturating_sub(detailed_count);
 
-              // Get parent context
-              if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
-                let parent_oneliner = parent.format_one_liner().unwrap_or_default();
-                let display_parent = if parent_oneliner.len() > 80 {
-                  format!("{}...", &parent_oneliner[..80])
-                } else {
-                  parent_oneliner
-                };
-                println!("      {} {}", "in".dimmed(), display_parent.dimmed());
+          for (path, node) in results.iter().skip(start).take(detailed_count) {
+            if path.is_empty() {
+              let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
+              if truncated {
+                println!("    {} {} ⟪…⟫", "(root)".cyan(), content.dimmed());
+              } else {
+                println!("    {} {}", "(root)".cyan(), content.dimmed());
+              }
+            } else {
+              let path_str = format!("[{}]", format_path(path));
+              let ((expr_preview, expr_truncated), parent_previews) =
+                expression_and_parent_preview(&code_entry.code, path, node, Some(pattern), common_opts.loose);
+              let (display_preview, display_truncated) = parent_previews
+                .first()
+                .map(|(text, truncated)| (text.as_str(), *truncated))
+                .unwrap_or((expr_preview.as_str(), expr_truncated));
+              if display_truncated {
+                println!("    {} {} ⟪…⟫", path_str.cyan(), display_preview);
+              } else {
+                println!("    {} {}", path_str.cyan(), display_preview);
               }
             }
           }
 
-          if results.len() > 20 {
-            println!("    {}", format!("... and {} more", results.len() - 20).dimmed());
+          if compressed_count > 0 {
+            println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
           }
         }
       }
       println!();
     }
 
-    // Enhanced tips based on search context
-    println!("{}", "Next steps:".blue().bold());
-    if all_results.len() == 1 && all_results[0].2.len() == 1 {
-      let (ns, def_name, results) = &all_results[0];
-      let (path, _) = &results[0];
-      let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-      println!("  • View node: {} '{}/{}' -p '{}'", "cr tree show".cyan(), ns, def_name, path_str);
-      println!(
-        "  • Replace: {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
-        "cr tree replace".cyan(),
-        ns,
-        def_name,
-        path_str
-      );
-    } else {
-      println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
-    }
-
-    // If single definition with multiple matches, suggest batch rename workflow
-    if all_results.len() == 1 {
-      let (_ns, _def_name, results) = &all_results[0];
-      if results.len() > 1 {
-        println!("  • Batch replace: See tip below for renaming {} occurrences", results.len());
-      }
-    }
-
-    println!();
-
-    // Add batch rename tip for multiple matches in single definition
-    if all_results.len() == 1 && all_results[0].2.len() > 1 {
-      let (ns, def_name, results) = &all_results[0];
-      println!("{}", "Tip for batch rename:".yellow().bold());
-      println!("  Replace from largest index first to avoid path changes:");
-
-      // Show first command as example (in reverse order)
-      let mut sorted_results: Vec<_> = results.iter().collect();
-      sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
-
-      if let Some((path, _)) = sorted_results.first() {
-        let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-        println!(
-          "    {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
-          "cr tree replace".cyan(),
-          ns,
-          def_name,
-          path_str
-        );
-      }
-
-      if results.len() > 1 {
-        println!("    {}", format!("... ({} more to replace)", results.len() - 1).dimmed());
-      }
-
-      println!();
-      println!("{}", "⚠️  Important: Paths change after each modification!".yellow());
-      println!(
-        "{}",
+    let mut tips = Tips::new();
+    if total_matches > 10 && common_opts.loose {
+      tips.add_with_priority(
+        TipPriority::High,
         format!(
-          "   Alternative: Re-search after each change: {} '{}' -f '{}/{}'",
-          "cr query search".cyan(),
-          pattern,
-          ns,
-          def_name
-        )
-        .dimmed()
+          "Many matches ({total_matches}); add {} to show exact matches only",
+          "--exact".yellow()
+        ),
       );
     }
-
-    // Add quote reminder if pattern contains special characters
-    if pattern.contains('-') || pattern.contains('?') || pattern.contains('!') || pattern.contains('*') {
-      println!();
-      println!(
-        "{}",
-        format!("Tip: Always use single quotes around names with special characters: '{pattern}'").dimmed()
-      );
-    }
+    tips.print();
   }
 
   Ok(())
 }
 
 /// Search for structural expressions across project or in filtered scope
-fn handle_search_expr(
-  input_path: &str,
-  pattern: &str,
-  filter: Option<&str>,
-  loose: bool,
-  max_depth: usize,
-  json: bool,
-  entry: Option<&str>,
-) -> Result<(), String> {
-  let snapshot = load_snapshot_with_entry(input_path, entry)?;
+fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: &SearchCommonOpts) -> Result<(), String> {
+  let snapshot = load_snapshot_with_entry(input_path, common_opts.entry)?;
 
-  // Parse pattern
   let pattern_node = if json {
-    // Parse as JSON array
     let json_val: serde_json::Value = serde_json::from_str(pattern).map_err(|e| format!("Failed to parse JSON pattern: {e}"))?;
     json_to_cirru(&json_val)?
   } else {
-    // Parse as Cirru one-liner
     cirru_parser::parse(pattern)
       .map_err(|e| format!("Failed to parse Cirru pattern: {e}"))?
       .first()
@@ -1369,29 +1479,14 @@ fn handle_search_expr(
       .clone()
   };
 
-  println!("{} Searching for pattern:", "Search:".bold());
-
-  let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
-  if loose {
-    println!("  {} (substring match for leaf patterns)", pattern_display.yellow());
-  } else {
-    println!("  {} (exact match)", pattern_display.yellow());
-  }
-
-  if let Some(filter_str) = filter {
-    println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
-  } else {
-    println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
-  }
-  if let Some(entry_name) = entry {
-    println!("  {} {}", "Entry:".dimmed(), entry_name.cyan());
-  }
-  println!();
+  let highlight_target: Option<&str> = match &pattern_node {
+    Cirru::Leaf(s) => Some(s.as_ref()),
+    _ => None,
+  };
 
   let mut all_results: SearchResults = Vec::new();
 
-  // Parse filter to determine scope
-  let (filter_ns, filter_def) = if let Some(f) = filter {
+  let (filter_ns, filter_def) = if let Some(f) = common_opts.filter {
     if f.contains('/') {
       let parts: Vec<&str> = f.split('/').collect();
       if parts.len() == 2 {
@@ -1406,36 +1501,32 @@ fn handle_search_expr(
     (None, None)
   };
 
-  // Search through files
   for (ns, file_data) in &snapshot.files {
-    // Skip if namespace doesn't match filter
-    if let Some(filter_namespace) = filter_ns {
-      if ns != filter_namespace {
-        continue;
-      }
+    if let Some(filter_namespace) = filter_ns
+      && ns != filter_namespace
+    {
+      continue;
     }
 
-    // Search through definitions in this namespace
     for (def_name, code_entry) in &file_data.defs {
-      // Skip if definition doesn't match filter
-      if let Some(filter_definition) = filter_def {
-        if def_name != filter_definition {
-          continue;
-        }
+      if let Some(filter_definition) = filter_def
+        && def_name != filter_definition
+      {
+        continue;
       }
 
-      let results = search_expr_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
-
+      let results = search_expr_nodes(&code_entry.code, &pattern_node, common_opts.loose, common_opts.max_depth, &[]);
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }
     }
   }
 
-  // Print results grouped by namespace/definition
   if all_results.is_empty() {
     println!("{}", "No matches found.".yellow());
   } else {
+    all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
+
     let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
     println!(
       "{} {} match(es) found in {} definition(s):\n",
@@ -1446,93 +1537,59 @@ fn handle_search_expr(
 
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
+      print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
 
-      // Load code_entry to print results
-      if let Some(file_data) = snapshot.files.get(ns) {
-        if let Some(code_entry) = file_data.defs.get(def_name) {
-          for (path, _node) in results.iter().take(20) {
-            let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-            if path.is_empty() {
-              let content = code_entry.code.format_one_liner().unwrap_or_default();
-              println!("    {} {}", "(root)".cyan(), content.dimmed());
+      if let Some(file_data) = snapshot.files.get(ns)
+        && let Some(code_entry) = file_data.defs.get(def_name)
+      {
+        let total = results.len();
+        let (start, end) = detailed_window(common_opts.detail_offset, total);
+        let detailed_count = end.saturating_sub(start);
+        let compressed_count = total.saturating_sub(detailed_count);
+
+        for (path, node) in results.iter().skip(start).take(detailed_count) {
+          let path_str = format_path(path);
+          if path.is_empty() {
+            let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
+            if truncated {
+              println!("    {} {} ⟪…⟫", "(root)".cyan(), content.dimmed());
             } else {
-              let breadcrumb = get_breadcrumb_from_code(&code_entry.code, path);
-              println!("    {} path: '{}' context: {}", "•".cyan(), path_str, breadcrumb.dimmed());
-
-              // Get parent context
-              if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
-                let parent_oneliner = parent.format_one_liner().unwrap_or_default();
-                let display_parent = if parent_oneliner.len() > 80 {
-                  format!("{}...", &parent_oneliner[..80])
-                } else {
-                  parent_oneliner
-                };
-                println!("      {} {}", "in:".dimmed(), display_parent.dimmed());
-              }
+              println!("    {} {}", "(root)".cyan(), content.dimmed());
+            }
+          } else {
+            let ((expr_preview, expr_truncated), parent_previews) =
+              expression_and_parent_preview(&code_entry.code, path, node, highlight_target, common_opts.loose);
+            let (display_preview, display_truncated) = parent_previews
+              .first()
+              .map(|(text, truncated)| (text.as_str(), *truncated))
+              .unwrap_or((expr_preview.as_str(), expr_truncated));
+            if display_truncated {
+              println!("    {} {} ⟪…⟫", format!("[{path_str}]").cyan(), display_preview);
+            } else {
+              println!("    {} {}", format!("[{path_str}]").cyan(), display_preview);
             }
           }
+        }
 
-          if results.len() > 20 {
-            println!("    {}", format!("... and {} more", results.len() - 20).dimmed());
-          }
+        if compressed_count > 0 {
+          println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
         }
       }
+
       println!();
     }
 
-    // Enhanced tips based on search context
-    println!("{}", "Next steps:".blue().bold());
-    if all_results.len() == 1 && all_results[0].2.len() == 1 {
-      let (ns, def_name, results) = &all_results[0];
-      let (path, _) = &results[0];
-      let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-      println!("  • View node: {} '{}/{}' -p '{}'", "cr tree show".cyan(), ns, def_name, path_str);
-      println!(
-        "  • Replace: {} '{}/{}' -p '{}' -e '<new-expression>'",
-        "cr tree replace".cyan(),
-        ns,
-        def_name,
-        path_str
+    let mut tips = Tips::new();
+    if total_matches > 10 && common_opts.loose {
+      tips.add_with_priority(
+        TipPriority::High,
+        format!(
+          "Many matches ({total_matches}); add {} to show exact matches only",
+          "--exact".yellow()
+        ),
       );
-    } else {
-      println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
     }
-
-    // If single definition with multiple matches, suggest batch replace workflow
-    if all_results.len() == 1 {
-      let (_ns, _def_name, results) = &all_results[0];
-      if results.len() > 1 {
-        println!("  • Batch replace: See tip below for renaming {} occurrences", results.len());
-      }
-    }
-
-    println!();
-
-    // Add batch replace tip for multiple matches in single definition
-    if all_results.len() == 1 && all_results[0].2.len() > 1 {
-      let (ns, def_name, results) = &all_results[0];
-      println!("{}", "Tip for batch replace:".yellow().bold());
-      println!("  Replace from largest index first to avoid path changes:");
-
-      // Show first command as example (in reverse order)
-      let mut sorted_results: Vec<_> = results.iter().collect();
-      sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
-
-      if let Some((path, _)) = sorted_results.first() {
-        let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-        println!(
-          "    {} '{}/{}' -p '{}' -e '<new-expression>'",
-          "cr tree replace".cyan(),
-          ns,
-          def_name,
-          path_str
-        );
-      }
-
-      if results.len() > 1 {
-        println!("    {}", format!("... ({} more to replace)", results.len() - 1).dimmed());
-      }
-    }
+    tips.print();
   }
 
   Ok(())
@@ -1588,70 +1645,9 @@ fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize,
   results
 }
 
-/// Helper function to get parent node from code given a path
-fn get_parent_node_from_code(code: &Cirru, path: &[usize]) -> Option<Cirru> {
-  if path.is_empty() {
-    return None;
-  }
-  let parent_path = &path[..path.len() - 1];
-  if parent_path.is_empty() {
-    return Some(code.clone());
-  }
-
-  let mut current = code;
-  for &idx in parent_path {
-    if let Cirru::List(items) = current {
-      current = items.get(idx)?;
-    } else {
-      return None;
-    }
-  }
-  Some(current.clone())
-}
-
-fn get_breadcrumb_from_code(code: &Cirru, path: &[usize]) -> String {
-  let mut parts = Vec::new();
-  let mut current = code;
-
-  parts.push(preview_cirru_head(current));
-
-  for &idx in path {
-    if let Cirru::List(items) = current {
-      if let Some(next) = items.get(idx) {
-        current = next;
-        parts.push(preview_cirru_head(current));
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
-
-  parts.join(" → ")
-}
-
-fn preview_cirru_head(node: &Cirru) -> String {
-  match node {
-    Cirru::Leaf(s) => s.to_string(),
-    Cirru::List(items) => {
-      if items.is_empty() {
-        "()".to_string()
-      } else {
-        match &items[0] {
-          Cirru::Leaf(s) => s.to_string(),
-          Cirru::List(_) => "(...)".to_string(),
-        }
-      }
-    }
-  }
-}
-
-/// Search for expression nodes (structural matching)
 fn search_expr_nodes(node: &Cirru, pattern: &Cirru, loose: bool, max_depth: usize, current_path: &[usize]) -> Vec<(Vec<usize>, Cirru)> {
   let mut results = Vec::new();
 
-  // Check depth limit
   if max_depth > 0 && current_path.len() >= max_depth {
     return results;
   }

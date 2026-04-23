@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
-use crate::snapshot::{CodeEntry, FileInSnapShot, gen_meta_ns};
+use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, gen_meta_ns};
 
 /// Detailed Cirru structure with metadata for tracking changes
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,10 +252,66 @@ impl TryFrom<Edn> for DetailedCodeEntry {
   }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetailedNsEntry {
+  pub doc: String,
+  pub code: DetailCirru,
+}
+
+impl From<NsEntry> for DetailedNsEntry {
+  fn from(entry: NsEntry) -> Self {
+    DetailedNsEntry {
+      doc: entry.doc,
+      code: entry.code.into(),
+    }
+  }
+}
+
+impl From<DetailedNsEntry> for NsEntry {
+  fn from(detailed: DetailedNsEntry) -> Self {
+    NsEntry {
+      doc: detailed.doc,
+      code: detailed.code.into(),
+    }
+  }
+}
+
+impl TryFrom<Edn> for DetailedNsEntry {
+  type Error = String;
+  fn try_from(data: Edn) -> Result<Self, String> {
+    match data {
+      Edn::Record(record) => {
+        let mut doc = String::new();
+        let mut code = None;
+
+        for (key, value) in record.pairs.iter() {
+          match key.arc_str().as_ref() {
+            "doc" => {
+              if let Edn::Str(doc_str) = value {
+                doc = doc_str.to_string();
+              }
+            }
+            "code" => {
+              code = Some(value.to_owned().try_into()?);
+            }
+            _ => {}
+          }
+        }
+
+        Ok(DetailedNsEntry {
+          doc,
+          code: code.ok_or("Missing code field")?,
+        })
+      }
+      _ => Err("Expected record for DetailedNsEntry".to_string()),
+    }
+  }
+}
+
 /// Detailed file in snapshot with metadata
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetailedFileInSnapshot {
-  pub ns: DetailedCodeEntry,
+  pub ns: DetailedNsEntry,
   pub defs: HashMap<String, DetailedCodeEntry>,
 }
 

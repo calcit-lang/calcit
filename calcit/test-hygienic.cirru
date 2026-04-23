@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-hygienic)
+{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-hygienic)
   :configs $ {} (:init-fn |test-hygienic.main/main!) (:reload-fn |test-hygienic.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -11,8 +11,8 @@
             defmacro add-11 (a b)
               let
                   c 11
-                println "\"internal c:" a b c
-                quasiquote $ do (println "\"c is:" c)
+                println "|internal c:" a b c
+                quasiquote $ do (println "|c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
           :schema $ :: :macro
@@ -34,9 +34,8 @@
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (:ns test-hygienic.lib)
-        :examples $ []
     |test-hygienic.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
@@ -58,8 +57,7 @@
           :schema $ :: :fn
             {} (:return :bool)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-hygienic.main $ :require
             test-hygienic.lib :refer $ add-11 add-11-safe
-        :examples $ []

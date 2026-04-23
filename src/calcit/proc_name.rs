@@ -1,7 +1,11 @@
-use strum_macros::{AsRefStr, EnumString};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock};
+
+use strum::IntoEnumIterator;
+use strum_macros::{AsRefStr, EnumIter, EnumString};
 
 /// represent builtin functions for performance reasons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, strum_macros::Display, AsRefStr)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, EnumIter, strum_macros::Display, AsRefStr)]
 pub enum CalcitProc {
   // meta
   #[strum(serialize = "type-of")]
@@ -110,6 +114,30 @@ pub enum CalcitProc {
   ReadFile,
   #[strum(serialize = "write-file")]
   WriteFile,
+  #[strum(serialize = "list?")]
+  ListQuestion,
+  #[strum(serialize = "tag?")]
+  TagQuestion,
+  #[strum(serialize = "symbol?")]
+  SymbolQuestion,
+  #[strum(serialize = "nil?")]
+  NilQuestion,
+  #[strum(serialize = "string?")]
+  StringQuestion,
+  #[strum(serialize = "map?")]
+  MapQuestion,
+  #[strum(serialize = "number?")]
+  NumberQuestion,
+  #[strum(serialize = "bool?")]
+  BoolQuestion,
+  #[strum(serialize = "set?")]
+  SetQuestion,
+  #[strum(serialize = "tuple?")]
+  TupleQuestion,
+  #[strum(serialize = "record?")]
+  RecordQuestion,
+  #[strum(serialize = "fn?")]
+  FnQuestion,
   /// to detect syntax `&`
   #[strum(serialize = "is-spreading-mark?")]
   IsSpreadingMark,
@@ -126,6 +154,12 @@ pub enum CalcitProc {
   ParseCirruEdn,
   #[strum(serialize = "format-cirru-edn")]
   FormatCirruEdn,
+  #[strum(serialize = "json-parse")]
+  JsonParse,
+  #[strum(serialize = "json-stringify")]
+  JsonStringify,
+  #[strum(serialize = "json-pretty")]
+  JsonPretty,
   #[strum(serialize = "&cirru-quote:to-list")]
   NativeCirruQuoteToList,
   // time
@@ -293,6 +327,20 @@ pub enum CalcitProc {
   NativeListToSet,
   #[strum(serialize = "&list:distinct")]
   NativeListDistinct,
+  // type predicate procs
+  #[strum(serialize = "&list?")]
+  NativeListQ,
+  // buf-list (mutable append-only list)
+  #[strum(serialize = "&buf-list:new")]
+  NativeBufListNew,
+  #[strum(serialize = "&buf-list:push")]
+  NativeBufListPush,
+  #[strum(serialize = "&buf-list:concat")]
+  NativeBufListConcat,
+  #[strum(serialize = "&buf-list:to-list")]
+  NativeBufListToList,
+  #[strum(serialize = "&buf-list:count")]
+  NativeBufListCount,
   // maps
   #[strum(serialize = "&{}")]
   NativeMap,
@@ -359,6 +407,8 @@ pub enum CalcitProc {
   #[strum(serialize = "remove-watch")]
   RemoveWatch,
   // records
+  #[strum(serialize = "?{}")]
+  NativeLooseRecord,
   #[strum(serialize = "&%{}")]
   NativeRecord,
   #[strum(serialize = "&%{}?")]
@@ -383,14 +433,26 @@ pub enum CalcitProc {
   NativeRecordContains,
   #[strum(serialize = "&record:get")]
   NativeRecordGet,
+  #[strum(serialize = "&record:nth")]
+  NativeRecordNth,
+  #[strum(serialize = "&record:field-tag")]
+  NativeRecordFieldTag,
   #[strum(serialize = "&record:assoc")]
   NativeRecordAssoc,
+  #[strum(serialize = "&record:assoc-at")]
+  NativeRecordAssocAt,
+  #[strum(serialize = "&record:with-at")]
+  NativeRecordWithAt,
   #[strum(serialize = "&record:extend-as")]
   NativeRecordExtendAs,
+  // type slots
+  #[strum(serialize = "deftype-slot")]
+  DeftypeSlot,
+  #[strum(serialize = "bind-type")]
+  BindType,
 }
 
 use crate::CalcitTypeAnnotation;
-use std::sync::Arc;
 
 /// Type signature for a Proc (builtin function)
 #[derive(Debug, Clone)]
@@ -482,7 +544,11 @@ impl CalcitProc {
 
   /// Get the type signature for this proc if available
   /// Returns None for procs without type annotations
-  pub fn get_type_signature(&self) -> Option<ProcTypeSignature> {
+  pub fn get_type_signature(&self) -> Option<&'static ProcTypeSignature> {
+    PROC_TYPE_SIGNATURES.get(self)
+  }
+
+  fn build_type_signature(&self) -> Option<ProcTypeSignature> {
     use CalcitProc::*;
 
     match self {
@@ -501,7 +567,7 @@ impl CalcitProc {
       }),
       TurnTag => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
-        arg_types: vec![some_tag("string")],
+        arg_types: vec![dynamic_tag()],
       }),
       NativeCompare => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -565,6 +631,54 @@ impl CalcitProc {
       }),
       NativeDataToCode => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag()],
+      }),
+      ListQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      TagQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      SymbolQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      NilQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      StringQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      MapQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      NumberQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      BoolQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      SetQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      TupleQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      RecordQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      FnQuestion => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
       }),
       IsSpreadingMark => Some(ProcTypeSignature {
@@ -747,6 +861,10 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![variadic_dynamic()],
       }),
+      NativeListQ => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![dynamic_tag()],
+      }),
       NativeListCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("list")],
@@ -790,6 +908,27 @@ impl CalcitProc {
       NativeListDistinct => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list")],
+      }),
+      // === BufList operations ===
+      NativeBufListNew => Some(ProcTypeSignature {
+        return_type: some_tag("buf-list"),
+        arg_types: vec![],
+      }),
+      NativeBufListPush => Some(ProcTypeSignature {
+        return_type: some_tag("buf-list"),
+        arg_types: vec![some_tag("buf-list"), dynamic_tag()],
+      }),
+      NativeBufListConcat => Some(ProcTypeSignature {
+        return_type: some_tag("buf-list"),
+        arg_types: vec![some_tag("buf-list"), some_tag("list")],
+      }),
+      NativeBufListToList => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("buf-list")],
+      }),
+      NativeBufListCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("buf-list")],
       }),
       Foldl => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -979,6 +1118,10 @@ impl CalcitProc {
       }),
 
       // === Record operations ===
+      NativeLooseRecord => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![variadic_dynamic()],
+      }),
       NativeRecord => Some(ProcTypeSignature {
         return_type: some_tag("record"),
         arg_types: vec![some_tag("struct"), variadic_dynamic()],
@@ -995,9 +1138,32 @@ impl CalcitProc {
         return_type: some_tag("record"),
         arg_types: vec![some_tag("record"), dynamic_tag(), dynamic_tag()],
       }),
+      NativeRecordAssocAt => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("number"), some_tag("tag"), dynamic_tag()],
+      }),
+      NativeRecordWithAt => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        // (record, idx, tag, value, ...) — variadic triples after first arg
+        arg_types: vec![
+          some_tag("record"),
+          some_tag("number"),
+          some_tag("tag"),
+          dynamic_tag(),
+          variadic_dynamic(),
+        ],
+      }),
       NativeRecordGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("record"), some_tag("tag")],
+      }),
+      NativeRecordNth => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("record"), some_tag("number"), optional_tag("tag")],
+      }),
+      NativeRecordFieldTag => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![some_tag("record"), some_tag("number")],
       }),
       NativeRecordCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -1091,6 +1257,14 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string"), optional_dynamic()],
       }),
+      JsonParse => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("string")],
+      }),
+      JsonStringify | JsonPretty => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![dynamic_tag()],
+      }),
       FormatCirru | FormatCirruEdn => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![dynamic_tag(), optional_tag("bool")],
@@ -1125,6 +1299,16 @@ impl CalcitProc {
       // === Special forms and control flow ===
       // These typically don't have simple type signatures or are handled specially
       Recur => None,
+
+      // === Type slot operations ===
+      DeftypeSlot => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("tag")],
+      }),
+      BindType => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("tag"), dynamic_tag()],
+      }),
     }
   }
 
@@ -1133,3 +1317,9 @@ impl CalcitProc {
     self.get_type_signature().is_some()
   }
 }
+
+static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = LazyLock::new(|| {
+  CalcitProc::iter()
+    .filter_map(|proc| proc.build_type_signature().map(|signature| (proc, signature)))
+    .collect()
+});

@@ -22,7 +22,7 @@ import {
 } from "./calcit-data.mjs";
 
 import { CalcitRef } from "./js-ref.mjs";
-import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
+import { CalcitRecord } from "./js-record.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStruct } from "./js-struct.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
@@ -146,11 +146,20 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   if (!(traitDef instanceof CalcitTrait)) {
     throw new Error(`&assert-traits expected a trait definition, but received: ${toString(traitDef, true)}`);
   }
-  const pair = lookup_impls(value);
-  if (pair == null) {
-    throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
+  // For records/tuples, only check instance impls (not builtin fallbacks),
+  // matching the Rust runtime behavior of collect_impl_records_for_value.
+  let impls: CalcitImpl[];
+  if (value instanceof CalcitRecord) {
+    impls = value.structRef.impls ?? [];
+  } else if (value instanceof CalcitTuple) {
+    impls = value.impls ?? [];
+  } else {
+    const pair = lookup_impls(value);
+    if (pair == null) {
+      throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
+    }
+    impls = pair[0];
   }
-  const impls = pair[0];
   const missing: string[] = [];
   for (let i = 0; i < traitDef.methods.length; i++) {
     const method = traitDef.methods[i];
@@ -306,6 +315,64 @@ export function _$n_record_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitRecord) return x.fields.length;
 
   throw new Error(`expected a record ${x}`);
+}
+
+export function _$n_record_$o_field_tag(x: CalcitValue, idx: CalcitValue): CalcitTag {
+  if (!(x instanceof CalcitRecord)) throw new Error(`&record:field-tag expected a record, got ${x}`);
+  const i = idx as number;
+  if (i < 0 || i >= x.fields.length) throw new Error(`&record:field-tag index ${i} out of bounds (${x.fields.length})`);
+  return x.fields[i];
+}
+
+export function _$n_record_$o_nth(x: CalcitValue, idx: CalcitValue): CalcitValue {
+  if (!(x instanceof CalcitRecord)) throw new Error(`&record:nth expected a record, got ${x}`);
+  const i = idx as number;
+  if (i < 0 || i >= x.values.length) throw new Error(`&record:nth index ${i} out of range for record with ${x.values.length} fields`);
+  return x.values[i];
+}
+
+// === BufList — mutable append-only list ===
+// Wrapper around a plain JS Array for O(1) push.
+export class CalcitBufList {
+  buf: CalcitValue[];
+  constructor(buf?: CalcitValue[]) {
+    this.buf = buf ?? [];
+  }
+}
+
+export function _$n_buf_list_$o_new(): CalcitBufList {
+  return new CalcitBufList();
+}
+
+export function _$n_buf_list_$o_push(buf: CalcitValue, item: CalcitValue): CalcitBufList {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:push expected a buf-list, got ${buf}`);
+  buf.buf.push(item);
+  return buf;
+}
+
+export function _$n_buf_list_$o_concat(buf: CalcitValue, xs: CalcitValue): CalcitBufList {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:concat expected a buf-list, got ${buf}`);
+  if (xs instanceof CalcitSliceList || xs instanceof CalcitList) {
+    const gen = xs.items();
+    let next = gen.next();
+    while (!next.done) {
+      buf.buf.push(next.value);
+      next = gen.next();
+    }
+  } else {
+    throw new Error(`&buf-list:concat expected a list, got ${xs}`);
+  }
+  return buf;
+}
+
+export function _$n_buf_list_$o_to_list(buf: CalcitValue): CalcitSliceList {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:to-list expected a buf-list, got ${buf}`);
+  return new CalcitSliceList([...buf.buf]);
+}
+
+export function _$n_buf_list_$o_count(buf: CalcitValue): number {
+  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:count expected a buf-list, got ${buf}`);
+  return buf.buf.length;
 }
 export function _$n_set_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitSet) return x.len();
@@ -1495,6 +1562,9 @@ export let nil_$q_ = (x: CalcitValue): boolean => {
 export let tag_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitTag;
 };
+export let symbol_$q_ = (x: CalcitValue): boolean => {
+  return x instanceof CalcitSymbol;
+};
 export let map_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitSliceMap || x instanceof CalcitMap;
 };
@@ -1558,6 +1628,93 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
   } else {
     throw new Error(`Expected EDN in a single node, got ${nodes.length}`);
   }
+};
+
+const json_to_calcit = (value: any): CalcitValue => {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    return new CalcitSliceList(value.map(json_to_calcit));
+  }
+  if (typeof value === "object") {
+    const entries: CalcitValue[] = [];
+    for (const key of Object.keys(value)) {
+      entries.push(newTag(key), json_to_calcit(value[key]));
+    }
+    return new CalcitSliceMap(entries);
+  }
+  throw new Error(`Unsupported JSON value: ${value}`);
+};
+
+const calcit_json_key = (value: CalcitValue): string => {
+  if (value instanceof CalcitTag) return value.value;
+  if (typeof value === "string") return value;
+  throw new Error(`json-stringify expected object keys to be tags or strings, got: ${toString(value, true)}`);
+};
+
+const cirru_quote_to_json = (value: ICirruNode): any => {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(cirru_quote_to_json);
+  throw new Error(`Unsupported cirru quote node: ${value}`);
+};
+
+const calcit_to_json = (value: CalcitValue): any => {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return value;
+    throw new Error(`json-stringify cannot encode number: ${value}`);
+  }
+  if (typeof value === "boolean") return value;
+  if (value instanceof CalcitTag) return value.value;
+  if (value instanceof CalcitSymbol) return value.value;
+  if (value instanceof CalcitList || value instanceof CalcitSliceList) {
+    return Array.from(value.items()).map(calcit_to_json);
+  }
+  if (value instanceof CalcitSet) {
+    return value.values().map(calcit_to_json);
+  }
+  if (value instanceof CalcitMap || value instanceof CalcitSliceMap) {
+    const result: Record<string, any> = {};
+    for (const [key, item] of value.pairs()) {
+      result[calcit_json_key(key)] = calcit_to_json(item);
+    }
+    return result;
+  }
+  if (value instanceof CalcitTuple) {
+    return [calcit_to_json(value.tag), ...value.extra.map(calcit_to_json)];
+  }
+  if (value instanceof CalcitCirruQuote) {
+    return cirru_quote_to_json(value.value as ICirruNode);
+  }
+  if (value instanceof CalcitRecord) {
+    const result: Record<string, any> = {};
+    for (let idx = 0; idx < value.fields.length; idx++) {
+      result[value.fields[idx].value] = calcit_to_json(value.values[idx]);
+    }
+    return result;
+  }
+  throw new Error(`json-stringify cannot encode value: ${toString(value, true)}`);
+};
+
+export let json_parse = function (code: CalcitValue): CalcitValue {
+  if (arguments.length !== 1) throw new Error("json-parse expected 1 argument");
+  if (typeof code !== "string") {
+    throw new Error(`json-parse expected a string, got: ${toString(code, true)}`);
+  }
+  return json_to_calcit(JSON.parse(code));
+};
+
+export let json_stringify = function (value: CalcitValue): string {
+  if (arguments.length !== 1) throw new Error("json-stringify expected 1 argument");
+  return JSON.stringify(calcit_to_json(value));
+};
+
+export let json_pretty = function (value: CalcitValue): string {
+  if (arguments.length !== 1) throw new Error("json-pretty expected 1 argument");
+  return JSON.stringify(calcit_to_json(value), null, 2);
 };
 
 export let format_to_lisp = (x: CalcitValue): string => {
@@ -1705,6 +1862,8 @@ let calcit_builtin_impls = {
   list: null as CalcitImplEntry,
   map: null as CalcitImplEntry,
   fn: null as CalcitImplEntry,
+  tuple: null as CalcitImplEntry,
+  record: null as CalcitImplEntry,
 };
 
 // need to register code from outside
@@ -1744,10 +1903,26 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     impls = normalize_builtin_impls(calcit_builtin_impls.map);
   } else if (obj instanceof CalcitRecord) {
     tag = obj.name.toString();
-    impls = obj.structRef.impls;
+    let instanceImpls = obj.structRef.impls;
+    let builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.record);
+    if (builtinRecordImpls && instanceImpls && instanceImpls.length > 0) {
+      impls = [...builtinRecordImpls, ...instanceImpls];
+    } else if (builtinRecordImpls) {
+      impls = builtinRecordImpls;
+    } else {
+      impls = instanceImpls;
+    }
   } else if (obj instanceof CalcitTuple) {
     tag = obj.tag.toString();
-    impls = obj.impls;
+    let instanceImpls = obj.impls;
+    let builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.tuple);
+    if (builtinTupleImpls && instanceImpls && instanceImpls.length > 0) {
+      impls = [...builtinTupleImpls, ...instanceImpls];
+    } else if (builtinTupleImpls) {
+      impls = builtinTupleImpls;
+    } else {
+      impls = instanceImpls;
+    }
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.set);

@@ -34,14 +34,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo test
-      - run: cargo run --bin cr calcit/editor/compact.cirru --once
-      - run: cargo run --bin cr calcit/test.cirru --once
+      - run: cargo run --bin cr calcit/test.cirru
 
       - name: "try js"
         run: >
           yarn
           && yarn tsc
-          && cargo run --bin cr calcit/test.cirru --once js
+          && cargo run --bin cr calcit/test.cirru js
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
@@ -49,10 +48,11 @@ jobs:
       - run: cargo build --release
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/cr
+            target/release/cr-wasm
             target/release/bundle_calcit
             target/release/caps
 

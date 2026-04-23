@@ -1,5 +1,5 @@
 
-{} (:about "|type-fail: schema has :rest but code has no & param") (:package |type-fail-schema-rest-unexpected)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |type-fail-schema-rest-unexpected)
   :configs $ {} (:init-fn |type-fail-schema-rest-unexpected.main/main!) (:reload-fn |type-fail-schema-rest-unexpected.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -8,17 +8,14 @@
       :defs $ {}
         |bad-rest $ %{} :CodeEntry (:doc "|Expect preprocess error: schema has :rest but code has no & param")
           :code $ quote
-            defn bad-rest (x) $ do x
+            defn bad-rest (x) (do x)
           :examples $ []
           :schema $ :: :fn
-            {} (:return :number) (:rest :number)
+            {} (:rest :number) (:return :number)
               :args $ [] :number
         |main! $ %{} :CodeEntry (:doc "|Entry for type-fail schema unexpected rest")
           :code $ quote
-            defn main! () $ do
-              ; calling to force preprocessing of bad-rest
-              bad-rest 1
-              println |unreachable
+            defn main! () $ do (; calling to force preprocessing of bad-rest) (bad-rest 1) (println |unreachable)
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)
@@ -30,6 +27,5 @@
           :schema $ :: :fn
             {} (:return :unit)
               :args $ []
-      :ns $ %{} :CodeEntry (:doc "|Namespace for schema unexpected rest") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|Namespace for schema unexpected rest")
         :code $ quote (ns type-fail-schema-rest-unexpected.main)
-        :examples $ []

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::calcit::{Calcit, CalcitImport, CalcitLocal};
+use crate::program::{CompiledFileData, DefId};
 
 pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
   match xs {
@@ -15,6 +16,7 @@ pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
   }
 }
 
+#[cfg(test)]
 pub(super) fn sort_by_deps(deps: &HashMap<Arc<str>, Calcit>) -> Vec<Arc<str>> {
   let mut deps_graph: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
   let mut def_names: Vec<Arc<str>> = Vec::with_capacity(deps.len());
@@ -33,12 +35,41 @@ pub(super) fn sort_by_deps(deps: &HashMap<Arc<str>, Calcit>) -> Vec<Arc<str>> {
     deps_graph.insert(name.to_owned(), deps_info);
   }
 
+  sort_names_by_graph(def_names, &deps_graph)
+}
+
+pub(super) fn sort_compiled_defs_by_deps(file: &CompiledFileData) -> Vec<Arc<str>> {
+  let mut deps_graph: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
+  let mut def_names: Vec<Arc<str>> = Vec::with_capacity(file.defs.len());
+  let mut local_defs: HashMap<DefId, Arc<str>> = HashMap::with_capacity(file.defs.len());
+
+  for (name, compiled) in &file.defs {
+    def_names.push(name.to_owned());
+    local_defs.insert(compiled.def_id, name.to_owned());
+  }
+
+  for (name, compiled) in &file.defs {
+    let mut deps_info: HashSet<Arc<str>> = HashSet::new();
+    for dep_id in &compiled.deps {
+      if let Some(dep_name) = local_defs.get(dep_id)
+        && dep_name != name
+      {
+        deps_info.insert(dep_name.to_owned());
+      }
+    }
+    deps_graph.insert(name.to_owned(), deps_info);
+  }
+
+  sort_names_by_graph(def_names, &deps_graph)
+}
+
+fn sort_names_by_graph(mut def_names: Vec<Arc<str>>, deps_graph: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> Vec<Arc<str>> {
   def_names.sort();
 
   let mut result: Vec<Arc<str>> = Vec::with_capacity(def_names.len());
   'outer: for name in def_names {
     for (idx, existing) in result.iter().enumerate() {
-      if depends_on(existing, &name, &deps_graph, 3) {
+      if depends_on(existing, &name, deps_graph, 3) {
         result.insert(idx, name.to_owned());
         continue 'outer;
       }

@@ -137,7 +137,11 @@ impl CalcitEnum {
       Calcit::List(items) => {
         let mut payloads: Vec<Arc<CalcitTypeAnnotation>> = Vec::with_capacity(items.len());
         for item in items.iter() {
-          payloads.push(CalcitTypeAnnotation::parse_type_annotation_form(item));
+          let parsed = CalcitTypeAnnotation::parse_type_annotation_form(item);
+          parsed
+            .validate_applied_type_args()
+            .map_err(|e| format!("enum variant `{tag}` has invalid payload type annotation: {e}"))?;
+          payloads.push(parsed);
         }
         Ok(payloads)
       }
@@ -152,7 +156,7 @@ impl CalcitEnum {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitList, CalcitStruct, CalcitTypeAnnotation};
+  use crate::calcit::{CalcitList, CalcitStruct, CalcitTuple, CalcitTypeAnnotation};
 
   fn empty_list() -> Calcit {
     Calcit::List(Arc::new(CalcitList::Vector(vec![])))
@@ -185,5 +189,26 @@ mod tests {
       other => panic!("unexpected payload annotation: {other:?}"),
     }
     assert_eq!(enum_proto.find_variant_by_name("ok").unwrap().arity(), 0);
+  }
+
+  #[test]
+  fn rejects_non_generic_struct_type_args_in_payloads() {
+    let pair = CalcitStruct::from_fields(EdnTag::new("Pair"), vec![EdnTag::new("left"), EdnTag::new("right")]);
+    let applied_pair = Calcit::Tuple(CalcitTuple {
+      tag: Arc::new(Calcit::Struct(pair)),
+      extra: vec![Calcit::tag("number"), Calcit::tag("string")],
+      sum_type: None,
+    });
+    let record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Wrapped"), vec![EdnTag::new("pair")])),
+      values: Arc::new(vec![list_from(vec![applied_pair])]),
+    };
+
+    let err = CalcitEnum::from_record(record).expect_err("non-generic struct should reject type args in enum payloads");
+    assert!(
+      err.contains("enum variant `pair` has invalid payload type annotation")
+        && err.contains("struct `Pair` is not generic but received 2 type argument(s)"),
+      "unexpected error: {err}"
+    );
   }
 }
