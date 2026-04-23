@@ -773,9 +773,11 @@
           :code $ quote
             defn test-str-includes-true () $ &str:includes? |hello |ell
           :examples $ []
-        |test-str-nth $ %{} :CodeEntry (:doc "|byte value at index 1 of hello = 101 (e)") (:schema :dynamic)
+        |test-str-nth $ %{} :CodeEntry (:doc "|nth character at index 1 of hello is e") (:schema :dynamic)
           :code $ quote
-            defn test-str-nth () $ &str:nth |hello 1
+            defn test-str-nth () $ if
+              = (&str:nth |hello 1) |e
+              , 1 0
           :examples $ []
         |test-str-pad-left $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote

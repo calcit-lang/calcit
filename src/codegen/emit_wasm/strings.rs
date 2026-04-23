@@ -1,4 +1,5 @@
 use super::*;
+use wasm_encoder::BlockType;
 
 // ===========================================================================
 // String operations — layout: [magic:i32][type_tag:i32][byte_len:f64][utf8_bytes... padded]
@@ -137,21 +138,60 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// `&str:nth str idx` — byte value at index `idx` as f64 (UTF-8 byte, not char).
+/// `&str:nth str idx` — one-byte string at index `idx`, or nil when out of range.
 pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&str:nth expects 2 args".into());
   }
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  // addr = ptr + 8 + idx
+
+  let idx = ctx.alloc_local_typed(ValType::I32);
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::I32TruncF64S);
+  ctx.emit(Instruction::LocalSet(idx));
+
+  let len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(len));
+
+  // Out-of-range returns nil (0.0). In-range returns a fresh 1-byte string.
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32LtS);
+  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  ctx.emit(Instruction::Else);
+
+  let one = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(one));
+  let (ptr_b, dst_b) = emit_str_alloc(ctx, one);
+
+  let byte = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalGet(idx));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalSet(byte));
+
+  ctx.emit(Instruction::LocalGet(dst_b));
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+
+  ctx.emit(Instruction::LocalGet(ptr_b));
   ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -602,8 +642,12 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
   });
   let _ = emit_turn_string(ctx, std::slice::from_ref(&expr));
   match prev {
-    Some(v) => { ctx.locals.insert(sym.as_ref().to_owned(), v); }
-    None => { ctx.locals.remove(sym.as_ref()); }
+    Some(v) => {
+      ctx.locals.insert(sym.as_ref().to_owned(), v);
+    }
+    None => {
+      ctx.locals.remove(sym.as_ref());
+    }
   }
   // emit_turn_string leaves f64 on stack; convert to i32 local
   let str_i32 = ctx.alloc_local_typed(ValType::I32);

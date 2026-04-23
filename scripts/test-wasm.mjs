@@ -313,7 +313,7 @@ check("test-str-count()", 5, e["test-str-count"]);
 check("test-str-empty-true()", 1, e["test-str-empty-true"]); // count("") == 0
 check("test-str-empty-false()", 0, e["test-str-empty-false"]); // count("hi") == 0 is false
 check("test-str-concat()", 6, e["test-str-concat"]);
-check("test-str-nth()", 101, e["test-str-nth"]); // 'e' = 0x65 = 101
+check("test-str-nth()", 1, e["test-str-nth"]); // &str:nth returns the one-character string "e"
 check("test-str-first()", 104, e["test-str-first"]); // 'h' = 0x68 = 104
 check("test-str-rest()", 4, e["test-str-rest"]);
 check("test-str-slice()", 3, e["test-str-slice"]); // &str:slice "abcde" 1 4 = "bcd"

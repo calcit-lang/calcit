@@ -42,11 +42,11 @@ mod runtime;
 
 use methods::{emit_call_args, emit_method_invoke};
 use records::{
-  emit_record_contains, emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name, emit_record_matches, emit_record_new,
-  emit_enum_tuple_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count, emit_tuple_new, emit_tuple_nth,
-  resolve_struct_ref, try_parse_defrecord_form,
+  emit_enum_tuple_new, emit_record_contains, emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name,
+  emit_record_matches, emit_record_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count,
+  emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
 };
-use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
+use runtime::{build_runtime_fns, build_wasm_module, HOST_IMPORTS};
 
 /// Base offset — reserve first 16 bytes for bookkeeping.
 /// The actual heap start will be shifted when string literals occupy the
@@ -223,14 +223,22 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Scan for defatom definitions — each gets a mutable WASM global (f64).
   let mut atom_initial_values: Vec<f64> = Vec::new();
   let mut atom_globals: HashMap<String, u32> = HashMap::new();
+  // Collect top-level value defs so imported constants can be emitted as expressions.
+  let mut value_imports: HashMap<String, Calcit> = HashMap::new();
   for &ns in &ns_order {
     let Some(file_info) = program_data.get(ns) else {
       continue;
     };
     for (def_name, compiled) in &file_info.defs {
+      let qualified = format!("{ns}/{def_name}");
+      if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
+        value_imports.insert(qualified.clone(), compiled.preprocessed_code.to_owned());
+      }
       if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code {
-        if matches!(xs.first(), Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))) {
-          let qualified = format!("{ns}/{def_name}");
+        if matches!(
+          xs.first(),
+          Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))
+        ) {
           let global_idx = atom_initial_values.len() as u32;
           atom_globals.insert(qualified, global_idx);
           // Determine initial value from 3rd node (index 2)
@@ -254,6 +262,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     record_field_tags,
     string_pool,
     atom_globals,
+    value_imports,
     fn_table_index,
   };
 
@@ -289,7 +298,13 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   }
 
   // Build module using wasm-encoder
-  let wasm_bytes = build_wasm_module(&compiled_fns, heap_start, &string_data_segment, &atom_initial_values, runtime_fn_count)?;
+  let wasm_bytes = build_wasm_module(
+    &compiled_fns,
+    heap_start,
+    &string_data_segment,
+    &atom_initial_values,
+    runtime_fn_count,
+  )?;
 
   // Write output
   let out_path = Path::new(emit_path);
@@ -325,6 +340,8 @@ struct WasmCompileEnv {
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
+  /// qualified value name ("ns/def") → preprocessed expression for inlining.
+  value_imports: HashMap<String, Calcit>,
   /// qualified function name → funcref table slot index (0-based, for call_indirect)
   fn_table_index: HashMap<String, u32>,
 }
@@ -377,6 +394,8 @@ struct WasmGenCtx {
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
+  /// qualified value name ("ns/def") → preprocessed expression for inlining.
+  value_imports: HashMap<String, Calcit>,
   /// qualified function name → funcref table slot index (for call_indirect)
   fn_table_index: HashMap<String, u32>,
   /// inline lambda locals: local name → (params, body)
@@ -402,6 +421,7 @@ impl WasmGenCtx {
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
+      value_imports: env.value_imports,
       fn_table_index: env.fn_table_index,
       lambda_locals: HashMap::new(),
     }
@@ -517,7 +537,6 @@ fn compile_fn(
   body: &[Calcit],
   env: &WasmCompileEnv,
 ) -> Result<CompiledFn, String> {
-
   let mut param_names = Vec::new();
   match args {
     CalcitFnArgs::Args(idxs) => {
@@ -730,9 +749,16 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           .get(&tag_str)
           .ok_or_else(|| format!("unknown struct tag in WASM codegen: {tag_str}"))?;
         ctx.emit(f64_const(id as f64));
-      } else if let Some(&slot) = ctx.fn_table_index.get(&qualified).or_else(|| ctx.fn_table_index.get(import.def.as_ref())) {
+      } else if let Some(&slot) = ctx
+        .fn_table_index
+        .get(&qualified)
+        .or_else(|| ctx.fn_table_index.get(import.def.as_ref()))
+      {
         // Function reference used as a value — encode as f64 table slot index.
         ctx.emit(f64_const(slot as f64));
+      } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
+        // Imported top-level def value (e.g. a string constant). Inline its expression.
+        emit_expr(ctx, &value_expr)?;
       } else {
         // defvar or otherwise non-function import — emit nil (0.0) as a placeholder.
         // This covers `def`-defined values that aren't representable as f64.
@@ -1375,7 +1401,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Comparisons — produce f64 (1.0 or 0.0)
     CalcitProc::NativeLessThan => emit_cmp(ctx, Instruction::F64Lt, args),
     CalcitProc::NativeGreaterThan => emit_cmp(ctx, Instruction::F64Gt, args),
-    CalcitProc::NativeEquals | CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
+    CalcitProc::NativeEquals => emit_equals(ctx, args),
+    CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
     CalcitProc::NativeCompare => {
       // &compare a b → -1.0 if a<b, 0.0 if a==b, 1.0 if a>b
       if args.len() != 2 {
@@ -1435,7 +1462,19 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::ListQuestion => emit_type_predicate(ctx, "list", args),
     CalcitProc::TagQuestion => emit_type_predicate(ctx, "tag", args),
     CalcitProc::SymbolQuestion => emit_type_predicate(ctx, "symbol", args),
-    CalcitProc::NilQuestion => emit_type_predicate(ctx, "nil", args),
+    CalcitProc::NilQuestion => {
+      if args.len() != 1 {
+        return Err(format!("nil? expects 1 arg, got {}", args.len()));
+      }
+      // Current WASM backend represents nil as 0.0.
+      ctx.emit(f64_const(1.0));
+      ctx.emit(f64_const(0.0));
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::Select);
+      Ok(())
+    }
     CalcitProc::StringQuestion => emit_type_predicate(ctx, "string", args),
     CalcitProc::MapQuestion => emit_type_predicate(ctx, "map", args),
     CalcitProc::NumberQuestion => emit_type_predicate(ctx, "number", args),
@@ -1448,9 +1487,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Recur
     CalcitProc::Recur => {
       // Check for spread: args may be [a1, ..., ak, ArgSpread, rest_list]
-      let spread_pos = args
-        .iter()
-        .position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
+      let spread_pos = args.iter().position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
 
       if let Some(pos) = spread_pos {
         // Spread recur: unpack rest list into remaining param slots.
@@ -1533,7 +1570,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.emit(Instruction::LocalSet(ctx.arg_indices[i]));
         }
         ctx.emit(Instruction::Br(ctx.block_depth)); // br to the recur loop
-        // After unconditional br, mark as unreachable for the type checker
+                                                    // After unconditional br, mark as unreachable for the type checker
         ctx.emit(Instruction::Unreachable);
         Ok(())
       }
@@ -1914,6 +1951,125 @@ fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) 
   emit_expr(ctx, &args[1])?;
   ctx.emit(instr);
   ctx.emit(Instruction::Select);
+  Ok(())
+}
+
+/// Emit `=` with string content equality support.
+///
+/// Semantics:
+/// - Fast path: `a == b` on raw f64 representation.
+/// - If not equal and both look like heap strings, compare by `__rt_str_compare`.
+/// - Otherwise false.
+fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err(format!("= expects 2 args, got {}", args.len()));
+  }
+
+  let a = ctx.alloc_local();
+  let b = ctx.alloc_local();
+  let ptr_a = ctx.alloc_local_typed(ValType::I32);
+  let ptr_b = ctx.alloc_local_typed(ValType::I32);
+
+  let string_tag = *ctx
+    .tag_index
+    .get("string")
+    .ok_or_else(|| "string tag not found in WASM tag index".to_string())? as i32;
+  let rt_str_compare = *ctx
+    .runtime_fn_index
+    .get("__rt_str_compare")
+    .ok_or_else(|| "runtime helper __rt_str_compare not found".to_string())?;
+
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(a));
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(b));
+
+  // Fast path: exact value equality.
+  ctx.emit(Instruction::LocalGet(a));
+  ctx.emit(Instruction::LocalGet(b));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::Else);
+
+  // if both values are in current heap range [HEAP_BASE+8, heap_ptr)
+  ctx.emit(Instruction::LocalGet(a));
+  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(a));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+
+  ctx.emit(Instruction::LocalGet(b));
+  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(b));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+
+  // ptr_a = i32(a), ptr_b = i32(b)
+  ctx.emit(Instruction::LocalGet(a));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr_a));
+  ctx.emit(Instruction::LocalGet(b));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr_b));
+
+  // Check both pointers are tagged strings.
+  ctx.emit(Instruction::LocalGet(ptr_a));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+
+  ctx.emit(Instruction::LocalGet(ptr_a));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(string_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+
+  ctx.emit(Instruction::LocalGet(ptr_b));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+
+  ctx.emit(Instruction::LocalGet(ptr_b));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(string_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::LocalGet(ptr_a));
+  ctx.emit(Instruction::LocalGet(ptr_b));
+  ctx.emit(Instruction::Call(rt_str_compare));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

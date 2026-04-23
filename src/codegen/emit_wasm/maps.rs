@@ -483,14 +483,13 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   if args.len() != 2 {
     return Err("&map:diff-new expects 2 args".into());
   }
-  // &map:diff-new b a — returns entries in b (args[0]) NOT in a (args[1])
-  // Iterate over b, check each key against a; if not found in a, include in result.
-  let b = emit_ptr_to_i32(ctx, &args[0])?;
-  let b_count = emit_load_count_i32(ctx, b);
-  let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
-  let a = emit_ptr_to_i32(ctx, &args[1])?;
+  // `&map:diff-new a b` returns entries in `b` (args[1]) whose keys are not in `a` (args[0]).
+  let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
+  let b = emit_ptr_to_i32(ctx, &args[1])?;
+  let b_count = emit_load_count_i32(ctx, b);
+  let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
   // Over-allocate: max is b_count entries (we iterate over b)
   let total_slots = ctx.alloc_local_typed(ValType::I32);
@@ -1206,7 +1205,9 @@ pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64:
   emit_map_new(ctx, &[])?;
   ctx.emit(Instruction::LocalSet(result));
 
-  let assoc_fn_idx = *ctx.runtime_fn_index.get("__rt_map_assoc")
+  let assoc_fn_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_map_assoc")
     .expect("runtime helper __rt_map_assoc must exist");
 
   let i = ctx.alloc_local_typed(ValType::I32);

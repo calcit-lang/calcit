@@ -26,7 +26,8 @@ Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集�
 | List / Map / Set                       | ✅   | 线性内存 bump allocator  |
 | `println` / `echo` / IO               | ✅   | 通过 `io/log_value` host import |
 | 字符串字面量                           | ✅   | 编译期写入数据段         |
-| `&str:count` / `&str:nth` / `&str:first` / `&str:rest` / `&str:slice` | ✅ | UTF-8 字节操作 |
+| `&str:count` / `&str:first` / `&str:rest` / `&str:slice` | ✅ | UTF-8 字节操作 |
+| `&str:nth`                            | ✅   | 返回单字符字符串或 nil |
 | `&str:concat`                          | ✅   | bump alloc + `memory.copy` |
 | `&str:compare`                         | ✅   | 逐字节字典序比较         |
 | `&str:contains?`                       | ✅   | 字节索引范围检查         |
