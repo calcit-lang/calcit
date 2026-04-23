@@ -1612,7 +1612,21 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::ListQuestion => emit_type_predicate(ctx, "list", args),
     CalcitProc::TagQuestion => emit_type_predicate(ctx, "tag", args),
     CalcitProc::SymbolQuestion => emit_type_predicate(ctx, "symbol", args),
-    CalcitProc::NilQuestion => emit_type_predicate(ctx, "nil", args),
+    CalcitProc::NilQuestion => {
+      // nil is represented as 0.0 (no heap allocation), so we can't use emit_type_predicate.
+      // Inline: if value == 0.0 then 1.0 else 0.0
+      // WASM select pops [condition(i32), val2(f64), val1(f64)] from top; returns val1 if cond!=0.
+      if args.len() != 1 {
+        return Err(format!("nil? expects 1 arg, got {}", args.len()));
+      }
+      ctx.emit(f64_const(1.0)); // val1: result when nil (cond == true)
+      ctx.emit(f64_const(0.0)); // val2: result when not nil
+      emit_expr(ctx, &args[0])?; // the value to test
+      ctx.emit(f64_const(0.0)); // compare against nil (0.0)
+      ctx.emit(Instruction::F64Eq); // i32 condition: 1 if value == 0.0
+      ctx.emit(Instruction::Select);
+      Ok(())
+    }
     CalcitProc::StringQuestion => emit_type_predicate(ctx, "string", args),
     CalcitProc::MapQuestion => emit_type_predicate(ctx, "map", args),
     CalcitProc::NumberQuestion => emit_type_predicate(ctx, "number", args),
