@@ -137,34 +137,130 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// `&str:nth str idx` — byte value at index `idx` as f64 (UTF-8 byte, not char).
+/// `&str:nth str idx` — 1-char string at UTF-8 byte index `idx`.
+/// Allocates a new 1-byte string on the heap and copies the byte.
 pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&str:nth expects 2 args".into());
   }
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  // addr = ptr + 8 + idx
+
+  let idx = ctx.alloc_local_typed(ValType::I32);
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(idx));
+
+  // byte_len = i32(f64.load(ptr + 0))
+  let byte_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(byte_len));
+
+  // if idx < byte_len: return 1-char string; else return 0.0 (nil)
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::LocalGet(byte_len));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(wasm_encoder::ValType::F64)));
+
+  // byte_val = i32.load8u(ptr + 8 + idx)
+  let byte_val = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalGet(idx));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalSet(byte_val));
+
+  // Allocate a new 1-byte string
+  let one = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(one));
+  let (char_ptr, char_base) = emit_str_alloc(ctx, one);
+
+  // Store the byte at char_base+0
+  ctx.emit(Instruction::LocalGet(char_base));
+  ctx.emit(Instruction::LocalGet(byte_val));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+
+  // Push char_ptr as f64 (the if-result)
+  ctx.emit(Instruction::LocalGet(char_ptr));
   ctx.emit(Instruction::F64ConvertI32U);
+
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(0.0)); // nil
+  ctx.emit(Instruction::End);
+
   Ok(())
 }
 
-/// `&str:first str` — first byte value as f64.
+/// Helper: emit `&str:nth` from f64 locals (ptr_f64 and idx_f64) as used in method dispatch.
+/// Allocates a 1-char string and returns it as f64 on the stack, or 0.0 if out of bounds.
+pub(super) fn emit_str_nth_from_locals(ctx: &mut WasmGenCtx, ptr_f64: u32, idx_f64: u32) {
+  // Convert f64 locals to i32 working copies
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+
+  let idx = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(idx_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(idx));
+
+  // byte_len = i32(f64.load(ptr + 0))
+  let byte_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(byte_len));
+
+  // if idx < byte_len: return 1-char string; else return 0.0 (nil)
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::LocalGet(byte_len));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(wasm_encoder::ValType::F64)));
+
+  // byte_val = i32.load8u(ptr + 8 + idx)
+  let byte_val = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalSet(byte_val));
+
+  // Allocate a new 1-byte string
+  let one = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(one));
+  let (char_ptr, char_base) = emit_str_alloc(ctx, one);
+
+  // Store the byte at char_base+0
+  ctx.emit(Instruction::LocalGet(char_base));
+  ctx.emit(Instruction::LocalGet(byte_val));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+
+  // Push char_ptr as f64 (the if-result)
+  ctx.emit(Instruction::LocalGet(char_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(0.0)); // nil
+  ctx.emit(Instruction::End);
+}
+
+/// `&str:first str` — first byte as a 1-char string (heap allocated).
 pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err("&str:first expects 1 arg".into());
   }
-  emit_expr(ctx, &args[0])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Load8U(mem_arg_byte(8))); // offset 8 = first byte after byte_len
-  ctx.emit(Instruction::F64ConvertI32U);
-  Ok(())
+  // delegate to emit_str_nth with index 0
+  let zero = crate::calcit::Calcit::Number(0.0);
+  let new_args = [args[0].clone(), zero];
+  emit_str_nth(ctx, &new_args)
 }
 
 /// `&str:rest str` — new string without the first byte.
@@ -602,8 +698,12 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
   });
   let _ = emit_turn_string(ctx, std::slice::from_ref(&expr));
   match prev {
-    Some(v) => { ctx.locals.insert(sym.as_ref().to_owned(), v); }
-    None => { ctx.locals.remove(sym.as_ref()); }
+    Some(v) => {
+      ctx.locals.insert(sym.as_ref().to_owned(), v);
+    }
+    None => {
+      ctx.locals.remove(sym.as_ref());
+    }
   }
   // emit_turn_string leaves f64 on stack; convert to i32 local
   let str_i32 = ctx.alloc_local_typed(ValType::I32);
@@ -1194,4 +1294,129 @@ pub(super) fn emit_join_str(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(sep));
   emit_join_str_from_locals(ctx, xs, sep)
+}
+
+/// `split xs sep` — split string `xs` by separator `sep`.
+/// Currently supports only empty-string separator (splits into individual chars).
+/// Returns a list of single-character strings.
+pub(super) fn emit_str_split(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err(format!("split expects 2 args, got {}", args.len()));
+  }
+  // Evaluate args
+  let xs_f64 = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(xs_f64));
+  // sep must be empty string; we don't check at compile time, just assume it
+  // (evaluate and drop it)
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::Drop);
+
+  emit_str_split_chars_from_local(ctx, xs_f64)
+}
+
+/// Emit code that splits the string at f64-local `xs_f64` into individual characters (as a list).
+pub(super) fn emit_str_split_chars_from_local(ctx: &mut WasmGenCtx, xs_f64: u32) -> Result<(), String> {
+  // str_ptr = (i32)xs_f64
+  let str_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(xs_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(str_ptr));
+
+  // byte_len = load f64 at str_ptr+0, convert to i32
+  let byte_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(str_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(byte_len));
+
+  // Allocate list: (1 + byte_len) * 8 bytes
+  // list_size = (1 + byte_len) * 8
+  let list_size = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalGet(byte_len));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::LocalSet(list_size));
+
+  let list_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc_dynamic(ctx, list_size, list_ptr, "list");
+
+  // Store count as f64 at list_ptr+0
+  ctx.emit(Instruction::LocalGet(list_ptr));
+  ctx.emit(Instruction::LocalGet(byte_len));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // Loop: for i in 0..byte_len, create 1-byte string, store at list_ptr + (1+i)*8
+  let i = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(i));
+
+  // content base: str_ptr + 8 (bytes start after byte_len f64)
+  let content_base = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(str_ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(content_base));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+
+  // if i >= byte_len, break
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(byte_len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1)); // break out of block
+
+  // Allocate a 1-byte string
+  let one = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(one));
+  let (char_ptr, char_base) = emit_str_alloc(ctx, one);
+
+  // Read byte from content_base + i
+  let byte_val = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(content_base));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalSet(byte_val));
+
+  // Store byte at char_base + 0
+  ctx.emit(Instruction::LocalGet(char_base));
+  ctx.emit(Instruction::LocalGet(byte_val));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+
+  // Store char_ptr (as f64) into list_ptr + (1+i)*8
+  let offset_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::LocalGet(list_ptr));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(offset_addr));
+
+  ctx.emit(Instruction::LocalGet(offset_addr));
+  ctx.emit(Instruction::LocalGet(char_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // i++
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(i));
+
+  ctx.emit(Instruction::Br(0)); // loop back
+  ctx.emit(Instruction::End); // end loop
+  ctx.emit(Instruction::End); // end block
+
+  // Return list_ptr as f64
+  ctx.emit(Instruction::LocalGet(list_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
 }

@@ -42,9 +42,9 @@ mod runtime;
 
 use methods::{emit_call_args, emit_method_invoke};
 use records::{
-  emit_record_contains, emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name, emit_record_matches, emit_record_new,
-  emit_enum_tuple_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count, emit_tuple_new, emit_tuple_nth,
-  resolve_struct_ref, try_parse_defrecord_form,
+  emit_enum_tuple_new, emit_record_contains, emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name,
+  emit_record_matches, emit_record_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count,
+  emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
 };
 use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
 
@@ -229,7 +229,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     };
     for (def_name, compiled) in &file_info.defs {
       if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code {
-        if matches!(xs.first(), Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))) {
+        if matches!(
+          xs.first(),
+          Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))
+        ) {
           let qualified = format!("{ns}/{def_name}");
           let global_idx = atom_initial_values.len() as u32;
           atom_globals.insert(qualified, global_idx);
@@ -245,6 +248,52 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     }
   }
 
+  // Collect lazy value defs (non-fn, non-atom global `def` expressions).
+  // Each gets a pair of WASM globals (f64 value + i32 init-flag) and a 0-arity getter fn.
+  let mut lazy_defs: Vec<(String, String, Calcit)> = Vec::new(); // (ns, def_name, init_expr)
+  for &ns in &ns_order {
+    let Some(file_info) = program_data.get(ns) else {
+      continue;
+    };
+    for (def_name, compiled) in &file_info.defs {
+      if compiled.kind != program::CompiledDefKind::LazyValue {
+        continue;
+      }
+      // Skip defatom (handled above as atom globals)
+      if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code {
+        if matches!(
+          xs.first(),
+          Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))
+        ) {
+          continue;
+        }
+      }
+      lazy_defs.push((ns.to_string(), def_name.to_string(), compiled.preprocessed_code.clone()));
+    }
+  }
+  // Global layout (indices):
+  //   0            — __heap_ptr (i32)
+  //   1..1+Na      — atom value globals (f64), Na = atom_initial_values.len()
+  //   1+Na..1+Na+Nl  — lazy val globals (f64, init 0.0), Nl = lazy_defs.len()
+  //   1+Na+Nl..    — lazy flag globals (i32, init 0)
+  let atom_count = atom_initial_values.len() as u32;
+  let lazy_count = lazy_defs.len() as u32;
+  let lazy_val_global_base = 1 + atom_count;
+  let lazy_flag_global_base = lazy_val_global_base + lazy_count;
+
+  // Pre-assign getter function indices so they can be called by each other and by user fns.
+  // Getters are appended AFTER all user-compiled fns.
+  // fn_defs.len() user fns will be compiled first, then getters follow.
+  let getter_base_idx = num_imports + runtime_fn_count + fn_defs.len() as u32;
+  let mut lazy_globals: HashMap<String, u32> = HashMap::new();
+  for (i, (ns, def_name, _)) in lazy_defs.iter().enumerate() {
+    let qualified = format!("{ns}/{def_name}");
+    let getter_fn_idx = getter_base_idx + i as u32;
+    lazy_globals.insert(qualified.clone(), getter_fn_idx);
+    // Also allow unqualified lookup for same-ns references
+    fn_index.insert(format!("__lazy_getter_{i}"), getter_fn_idx);
+  }
+
   let env = WasmCompileEnv {
     fn_index,
     fn_arity,
@@ -255,6 +304,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     string_pool,
     atom_globals,
     fn_table_index,
+    lazy_globals,
   };
 
   // Second pass: compile. If a function fails, we still reserve its slot
@@ -288,8 +338,41 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     return Err("no functions could be compiled to WASM".into());
   }
 
+  // Third pass: build lazy getter functions.
+  // Each getter checks a flag global; if unset, evaluates init expr, stores in val global, sets flag.
+  let mut init_getter_calls: Vec<Instruction<'static>> = Vec::new();
+  for (i, (ns, def_name, init_expr)) in lazy_defs.iter().enumerate() {
+    let val_global_idx = lazy_val_global_base + i as u32;
+    let flag_global_idx = lazy_flag_global_base + i as u32;
+    let getter_fn = build_lazy_getter_fn(ns, def_name, val_global_idx, flag_global_idx, init_expr, &env);
+    let getter_idx = num_imports + compiled_fns.len() as u32;
+    init_getter_calls.push(Instruction::Call(getter_idx));
+    init_getter_calls.push(Instruction::Drop);
+    compiled_fns.push(getter_fn);
+  }
+
+  // Synthesize `__init` export: calls all getters to pre-initialize lazy globals.
+  // JS callers should invoke `e['__init']()` before any other exported functions.
+  if !lazy_defs.is_empty() {
+    init_getter_calls.push(f64_const(0.0)); // return nil
+    compiled_fns.push(CompiledFn {
+      export_name: Some("__init".to_string()),
+      params: vec![],
+      results: vec![ValType::F64],
+      locals: vec![],
+      instructions: init_getter_calls,
+    });
+  }
+
   // Build module using wasm-encoder
-  let wasm_bytes = build_wasm_module(&compiled_fns, heap_start, &string_data_segment, &atom_initial_values, runtime_fn_count)?;
+  let wasm_bytes = build_wasm_module(
+    &compiled_fns,
+    heap_start,
+    &string_data_segment,
+    &atom_initial_values,
+    lazy_count,
+    runtime_fn_count,
+  )?;
 
   // Write output
   let out_path = Path::new(emit_path);
@@ -327,6 +410,8 @@ struct WasmCompileEnv {
   atom_globals: HashMap<String, u32>,
   /// qualified function name → funcref table slot index (0-based, for call_indirect)
   fn_table_index: HashMap<String, u32>,
+  /// qualified non-fn def name → getter function index (lazy initializer)
+  lazy_globals: HashMap<String, u32>,
 }
 
 fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
@@ -382,6 +467,8 @@ struct WasmGenCtx {
   /// inline lambda locals: local name → (params, body)
   /// When a let-binding holds a `fn`/`defn` form, it's stored here for inlining at call sites.
   lambda_locals: HashMap<String, (Vec<String>, Vec<Calcit>)>,
+  /// qualified non-fn def name → getter function index (lazy initializer)
+  lazy_globals: HashMap<String, u32>,
 }
 
 impl WasmGenCtx {
@@ -404,6 +491,7 @@ impl WasmGenCtx {
       atom_globals: env.atom_globals,
       fn_table_index: env.fn_table_index,
       lambda_locals: HashMap::new(),
+      lazy_globals: env.lazy_globals,
     }
   }
 
@@ -471,6 +559,58 @@ fn compute_fn_arity(args: &CalcitFnArgs) -> (u32, Option<u32>) {
   }
 }
 
+fn build_lazy_getter_fn(
+  _ns: &str,
+  def_name: &str,
+  val_global_idx: u32,
+  flag_global_idx: u32,
+  init_expr: &Calcit,
+  env: &WasmCompileEnv,
+) -> CompiledFn {
+  // Probe compilation first; if it fails, emit a trivial getter returning 0.0.
+  let mut probe_ctx = WasmGenCtx::new(0, env.clone());
+  match emit_expr(&mut probe_ctx, init_expr) {
+    Ok(()) => {
+      // Build the full lazy getter:
+      //   if flag == 0 { val = <init>; global.set val; flag = 1 }
+      //   return global.get val
+      let mut ctx = WasmGenCtx::new(0, env.clone());
+      ctx.emit(Instruction::GlobalGet(flag_global_idx));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+      // Re-emit init expr into real ctx
+      if emit_expr(&mut ctx, init_expr).is_ok() {
+        ctx.emit(Instruction::GlobalSet(val_global_idx));
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::GlobalSet(flag_global_idx));
+      } else {
+        // shouldn't happen since probe succeeded, but be safe
+        ctx.emit(Instruction::Drop);
+      }
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::GlobalGet(val_global_idx));
+      CompiledFn {
+        export_name: None,
+        params: vec![],
+        results: vec![ValType::F64],
+        locals: ctx.extra_locals,
+        instructions: ctx.instructions,
+      }
+    }
+    Err(e) => {
+      eprintln!("[wasm] lazy getter for {def_name} failed to compile: {e}");
+      // Trivial getter: just return 0.0 (nil)
+      CompiledFn {
+        export_name: None,
+        params: vec![],
+        results: vec![ValType::F64],
+        locals: vec![],
+        instructions: vec![f64_const(0.0)],
+      }
+    }
+  }
+}
+
 fn try_custom_def_impl(
   ns: &str,
   def_name: &str,
@@ -517,7 +657,6 @@ fn compile_fn(
   body: &[Calcit],
   env: &WasmCompileEnv,
 ) -> Result<CompiledFn, String> {
-
   let mut param_names = Vec::new();
   match args {
     CalcitFnArgs::Args(idxs) => {
@@ -730,9 +869,16 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           .get(&tag_str)
           .ok_or_else(|| format!("unknown struct tag in WASM codegen: {tag_str}"))?;
         ctx.emit(f64_const(id as f64));
-      } else if let Some(&slot) = ctx.fn_table_index.get(&qualified).or_else(|| ctx.fn_table_index.get(import.def.as_ref())) {
+      } else if let Some(&slot) = ctx
+        .fn_table_index
+        .get(&qualified)
+        .or_else(|| ctx.fn_table_index.get(import.def.as_ref()))
+      {
         // Function reference used as a value — encode as f64 table slot index.
         ctx.emit(f64_const(slot as f64));
+      } else if let Some(&getter_idx) = ctx.lazy_globals.get(&qualified) {
+        // Non-fn def with lazy init — call the getter function which initializes on first call.
+        ctx.emit(Instruction::Call(getter_idx));
       } else {
         // defvar or otherwise non-function import — emit nil (0.0) as a placeholder.
         // This covers `def`-defined values that aren't representable as f64.
@@ -775,6 +921,28 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     // `{}` used as a bare expression — evaluates to an empty map.
     Calcit::Proc(CalcitProc::NativeMap) => {
       emit_map_new(ctx, &[])?;
+    }
+    // A bare symbol that refers to a namespace-level def (same-ns or intra-ns reference).
+    // Could be a lazy global def (not a function, not a local).
+    Calcit::Symbol { sym, info, .. } => {
+      let name = sym.as_ref();
+      // Check locals first
+      if let Some(&idx) = ctx.locals.get(name) {
+        ctx.emit(Instruction::LocalGet(idx));
+        return Ok(());
+      }
+      // Check qualified lazy global using the symbol's namespace context
+      let qualified = format!("{}/{}", info.at_ns.as_ref(), name);
+      if let Some(&getter_idx) = ctx.lazy_globals.get(&qualified).or_else(|| ctx.lazy_globals.get(name)) {
+        ctx.emit(Instruction::Call(getter_idx));
+        return Ok(());
+      }
+      // Check fn_table (function reference as value)
+      if let Some(&slot) = ctx.fn_table_index.get(&qualified).or_else(|| ctx.fn_table_index.get(name)) {
+        ctx.emit(f64_const(slot as f64));
+        return Ok(());
+      }
+      return Err(format!("unsupported WASM expression: {expr}"));
     }
     _ => return Err(format!("unsupported WASM expression: {expr}")),
   }
@@ -902,12 +1070,21 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "zipmap" if args_list.len() == 2 => return emit_zipmap(ctx, &args_list),
           "join" if args_list.len() == 2 => return emit_join(ctx, &args_list),
           "join-str" if args_list.len() == 2 => return emit_join_str(ctx, &args_list),
+          "split" if args_list.len() == 2 => return emit_str_split(ctx, &args_list),
+          "pairs-map" if args_list.len() == 1 => return emit_pairs_map(ctx, &args_list),
           // `let` — multi-binding form: (let ((name val)...) body...).
           // The preprocessor normally expands this to nested `&let` forms, but intercept here
           // as a fallback for cases where the macro expansion hasn't occurred.
           "let" if !args_list.is_empty() => return emit_let_multi(ctx, &args_list),
           // `map-kv xs f` — apply a binary function to each map entry, returning a new map.
           "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
+          // Arithmetic comparison wrappers — `number?` in their assert uses `emit_type_of`
+          // which treats `0.0` (nil) as non-number, causing false assertion failures when
+          // idx=0.  Intercept them here and emit direct F64 comparisons instead.
+          "&>=" if args_list.len() == 2 => return emit_cmp(ctx, Instruction::F64Ge, &args_list),
+          "&<=" if args_list.len() == 2 => return emit_cmp(ctx, Instruction::F64Le, &args_list),
+          "&>" if args_list.len() == 2 => return emit_cmp(ctx, Instruction::F64Gt, &args_list),
+          "&<" if args_list.len() == 2 => return emit_cmp(ctx, Instruction::F64Lt, &args_list),
           _ => {}
         }
       }
@@ -1375,34 +1552,34 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Comparisons — produce f64 (1.0 or 0.0)
     CalcitProc::NativeLessThan => emit_cmp(ctx, Instruction::F64Lt, args),
     CalcitProc::NativeGreaterThan => emit_cmp(ctx, Instruction::F64Gt, args),
-    CalcitProc::NativeEquals | CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
+    CalcitProc::NativeEquals | CalcitProc::Identical => {
+      // Use __rt_generic_eq for content-aware equality (strings compared by value, not pointer).
+      if args.len() != 2 {
+        return Err(format!("&= expects 2 args, got {}", args.len()));
+      }
+      let fn_idx = *ctx
+        .runtime_fn_index
+        .get("__rt_generic_eq")
+        .ok_or_else(|| "runtime helper __rt_generic_eq not found".to_string())?;
+      emit_expr(ctx, &args[0])?;
+      emit_expr(ctx, &args[1])?;
+      ctx.emit(Instruction::Call(fn_idx));
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
     CalcitProc::NativeCompare => {
       // &compare a b → -1.0 if a<b, 0.0 if a==b, 1.0 if a>b
+      // Uses __rt_generic_compare which handles both string and numeric comparison.
       if args.len() != 2 {
         return Err(format!("&compare expects 2 args, got {}", args.len()));
       }
-      let a = ctx.alloc_local();
-      let b = ctx.alloc_local();
       emit_expr(ctx, &args[0])?;
-      ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
-      ctx.emit(Instruction::LocalSet(b));
-      // if a < b then -1 else (if a > b then 1 else 0)
-      ctx.emit(Instruction::LocalGet(a));
-      ctx.emit(Instruction::LocalGet(b));
-      ctx.emit(Instruction::F64Lt);
-      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-      ctx.emit(f64_const(-1.0));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::LocalGet(a));
-      ctx.emit(Instruction::LocalGet(b));
-      ctx.emit(Instruction::F64Gt);
-      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-      ctx.emit(f64_const(1.0));
-      ctx.emit(Instruction::Else);
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
+      let fn_idx = *ctx
+        .runtime_fn_index
+        .get("__rt_generic_compare")
+        .ok_or("__rt_generic_compare not found")?;
+      ctx.emit(Instruction::Call(fn_idx));
       Ok(())
     }
     CalcitProc::Not => {
@@ -1448,9 +1625,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Recur
     CalcitProc::Recur => {
       // Check for spread: args may be [a1, ..., ak, ArgSpread, rest_list]
-      let spread_pos = args
-        .iter()
-        .position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
+      let spread_pos = args.iter().position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
 
       if let Some(pos) = spread_pos {
         // Spread recur: unpack rest list into remaining param slots.
@@ -1688,7 +1863,13 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeStrPadRight => emit_str_pad_right(ctx, args),
     CalcitProc::StartsWith => emit_str_starts_with(ctx, args),
     CalcitProc::EndsWith => emit_str_ends_with(ctx, args),
-    CalcitProc::TurnString | CalcitProc::NativeStr => emit_turn_string(ctx, args),
+    CalcitProc::TurnString | CalcitProc::NativeStr => {
+      if args.len() == 1 {
+        emit_turn_string(ctx, args)
+      } else {
+        emit_str_variadic(ctx, args)
+      }
+    }
 
     // --- List higher-order and utility operations ---
     CalcitProc::NativeListDistinct => emit_list_distinct(ctx, args),
@@ -1773,6 +1954,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Not yet supported
+    CalcitProc::Split => emit_str_split(ctx, args),
     _ => Err(format!("unsupported proc in WASM: {proc}")),
   }
 }
@@ -1805,10 +1987,19 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return Err(format!("type-of expects 1 arg, got {}", args.len()));
   }
   let number_tag = get_type_tag(ctx, "number");
+  let nil_tag = get_type_tag(ctx, "nil");
   let v_local = ctx.alloc_local_typed(ValType::F64);
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(v_local));
 
+  // Special case: 0.0 == nil
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(nil_tag));
+  ctx.emit(Instruction::Else);
+  // Not nil — continue with pointer/number check
   let is_valid_ptr = ctx.alloc_local_typed(ValType::I32);
   let raw_base = ctx.alloc_local_typed(ValType::I32);
 
@@ -1856,6 +2047,7 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::Else);
   ctx.emit(f64_const(number_tag));
   ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End); // end outer nil check
   Ok(())
 }
 

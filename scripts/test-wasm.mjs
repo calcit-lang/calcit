@@ -308,13 +308,30 @@ check("test-map?-true", 1, e["test-map?-true"]);
 check("test-buf-list-push()", 3, e["test-buf-list-push"]);
 check("test-buf-list-to-list()", 3, e["test-buf-list-to-list"]);
 
+function readStr(ptr) {
+  const mem = new DataView(inst.exports.memory.buffer);
+  const byteLen = mem.getFloat64(ptr | 0, true);
+  return new TextDecoder().decode(new Uint8Array(inst.exports.memory.buffer, (ptr | 0) + 8, byteLen));
+}
+
+function checkStr(label, expected, fn, ...args) {
+  const got = fn(...args);
+  const gotStr = readStr(got);
+  if (gotStr === expected) {
+    console.log(`  ${label} = "${gotStr}"  OK`);
+  } else {
+    console.log(`  ${label} = "${gotStr}"  FAIL (expected "${expected}")`);
+    fail++;
+  }
+}
+
 // --- String operation tests ---
 check("test-str-count()", 5, e["test-str-count"]);
 check("test-str-empty-true()", 1, e["test-str-empty-true"]); // count("") == 0
 check("test-str-empty-false()", 0, e["test-str-empty-false"]); // count("hi") == 0 is false
 check("test-str-concat()", 6, e["test-str-concat"]);
-check("test-str-nth()", 101, e["test-str-nth"]); // 'e' = 0x65 = 101
-check("test-str-first()", 104, e["test-str-first"]); // 'h' = 0x68 = 104
+checkStr("test-str-nth()", "e", e["test-str-nth"]); // &str:nth "hello" 1 = "e"
+checkStr("test-str-first()", "h", e["test-str-first"]); // &str:first "hello" = "h"
 check("test-str-rest()", 4, e["test-str-rest"]);
 check("test-str-slice()", 3, e["test-str-slice"]); // &str:slice "abcde" 1 4 = "bcd"
 check("test-str-compare-eq()", 0, e["test-str-compare-eq"]);

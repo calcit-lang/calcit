@@ -599,15 +599,14 @@ pub(super) fn emit_list_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 pub(super) fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   use crate::calcit::CalcitSyntax;
   // Handle spread form: (&list:dissoc x & rest_list) — rest_list[0] is the index
-  let (list_arg, idx_arg): (&Calcit, Option<&Calcit>) = if args.len() == 3
-    && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _))
-  {
-    (&args[0], None) // spread form: extract idx from rest_list at runtime
-  } else if args.len() == 2 {
-    (&args[0], Some(&args[1]))
-  } else {
-    return Err("&list:dissoc expects 2 args".into());
-  };
+  let (list_arg, idx_arg): (&Calcit, Option<&Calcit>) =
+    if args.len() == 3 && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      (&args[0], None) // spread form: extract idx from rest_list at runtime
+    } else if args.len() == 2 {
+      (&args[0], Some(&args[1]))
+    } else {
+      return Err("&list:dissoc expects 2 args".into());
+    };
 
   let src = emit_ptr_to_i32(ctx, list_arg)?;
   let count = emit_load_count_i32(ctx, src);

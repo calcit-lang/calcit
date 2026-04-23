@@ -12,6 +12,7 @@
 Added `emit_enum_tuple_new` for the `%::` proc (enum variant constructor).
 
 Key insight: `%::` always has the form `(%:: enum_class tag payload...)` where:
+
 - `enum_class` (args[0]) is for type-checking only — **ignored in WASM**
 - `tag` (args[1]) is the actual variant tag (Calcit::Tag)
 - `payload` (args[2..]) are the values
@@ -27,6 +28,7 @@ Memory layout is identical to `::` tuples: `[count:f64][tag_id:f64][payload...]`
 **File**: `src/codegen/emit_wasm/records.rs`
 
 Extended `emit_tuple_new` to accept `Calcit::Bool` as the tag field:
+
 - `true` → `1.0`
 - `false` → `0.0`
 
@@ -39,10 +41,12 @@ Extended `emit_tuple_new` to accept `Calcit::Bool` as the tag field:
 **File**: `src/codegen/emit_wasm/strings.rs`, `src/codegen/emit_wasm.rs`
 
 Added two new pub functions:
+
 - `emit_str_variadic(ctx, args)`: `(str a b c ...)` → left-fold of string concat
 - `emit_str_spaced(ctx, args)`: `(str-spaced a b c ...)` → join with space separator
 
 Private helper:
+
 - `concat_two_i32_ptrs(ctx, ptr_a, ptr_b)`: concatenates two strings from i32 ptr locals
 
 **Key technique**: `emit_turn_string` converts any f64 value to a string, then `concat_two_i32_ptrs` combines them without re-emitting expressions.
@@ -50,6 +54,7 @@ Private helper:
 For `str-spaced`, the space character is allocated dynamically (1-byte string with 0x20 written via `I32Store8`) to avoid depending on the string pool.
 
 **Intercept added in `emit_call_expr`** for `calcit.core` namespace:
+
 ```rust
 "str" if !args_list.is_empty() => return emit_str_variadic(ctx, &args_list),
 "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),

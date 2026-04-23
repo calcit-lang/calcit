@@ -29,6 +29,7 @@ calcit.core 内部定义了 `map/filter/each/any?/every?/find/find-index` 等 HO
 ### `src/codegen/emit_wasm/sets.rs`
 
 新增：
+
 - **`emit_set_intersection`** — `&set:intersection a b`：返回两集合共有元素。逻辑与 `emit_set_difference` 对称，条件取反（`I32Ne` 代替 `I32Eq`）。
 
 ### `src/codegen/emit_wasm/lists.rs`
@@ -38,6 +39,7 @@ calcit.core 内部定义了 `map/filter/each/any?/every?/find/find-index` 等 HO
 ### `src/codegen/emit_wasm.rs`
 
 **`emit_call_expr` 的 `calcit.core` 拦截块** 新增：
+
 ```rust
 "map" if args_list.len() == 2 => return emit_map(ctx, &args_list),
 "map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
@@ -52,11 +54,13 @@ calcit.core 内部定义了 `map/filter/each/any?/every?/find/find-index` 等 HO
 ```
 
 **`emit_proc_call`** 新增：
+
 ```rust
 CalcitProc::NativeSetIntersection => emit_set_intersection(ctx, args),
 ```
 
 **`emit_call_spread`** 新增 `Calcit::Proc` arm：
+
 ```rust
 Calcit::Proc(proc) => emit_call_spread_args_as_regular(ctx, proc, call_args),
 ```

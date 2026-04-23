@@ -772,6 +772,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
 fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
   let tuple_tag = get_type_tag(ctx, "tuple");
+  let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -788,7 +789,14 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_tuple_nth_from_local(ctx, receiver_local, index_local);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(string_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_str_nth_from_locals(ctx, receiver_local, index_local);
+  ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   Ok(())

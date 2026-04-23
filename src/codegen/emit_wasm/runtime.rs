@@ -48,6 +48,7 @@ pub(super) fn build_wasm_module(
   heap_start: i32,
   string_data: &[u8],
   atom_initial_values: &[f64],
+  lazy_count: u32,
   runtime_fn_count: u32,
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
@@ -112,7 +113,7 @@ pub(super) fn build_wasm_module(
   });
   module.section(&memories);
 
-  // Global section: heap pointer for bump allocator, then atom globals
+  // Global section: heap pointer, atom globals, lazy val globals, lazy flag globals
   let mut globals = GlobalSection::new();
   globals.global(
     GlobalType {
@@ -130,6 +131,28 @@ pub(super) fn build_wasm_module(
         shared: false,
       },
       &ConstExpr::f64_const(init_val.into()),
+    );
+  }
+  // Lazy value globals (f64, init 0.0)
+  for _ in 0..lazy_count {
+    globals.global(
+      GlobalType {
+        val_type: ValType::F64,
+        mutable: true,
+        shared: false,
+      },
+      &ConstExpr::f64_const(wasm_encoder::Ieee64::from(0.0f64)),
+    );
+  }
+  // Lazy flag globals (i32, init 0)
+  for _ in 0..lazy_count {
+    globals.global(
+      GlobalType {
+        val_type: ValType::I32,
+        mutable: true,
+        shared: false,
+      },
+      &ConstExpr::i32_const(0),
     );
   }
   module.section(&globals);
@@ -150,11 +173,7 @@ pub(super) fn build_wasm_module(
   if user_fn_count > 0 {
     let fn_indices: Vec<u32> = (0..user_fn_count).map(|i| num_imports + runtime_fn_count + i).collect();
     let mut elements = ElementSection::new();
-    elements.active(
-      Some(0),
-      &ConstExpr::i32_const(0),
-      Elements::Functions(fn_indices.as_slice().into()),
-    );
+    elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(fn_indices.as_slice().into()));
     module.section(&elements);
   }
 
@@ -422,15 +441,28 @@ pub(super) fn build_runtime_fns(
 
   let hash_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_hash_f64"), hash_idx);
-  fns.push(build_rt_hash_f64());
+  fns.push(build_rt_hash_f64_semantic(string_tag));
+
+  // String comparison (needed by generic_eq below)
+  let str_compare_early_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_str_compare_early"), str_compare_early_idx);
+  fns.push(build_rt_str_compare());
+
+  // Semantic equality: for string pointers compare content; otherwise use F64Eq.
+  let generic_eq_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_generic_eq"), generic_eq_idx);
+  fns.push(build_rt_generic_eq(str_compare_early_idx, string_tag));
 
   let map_root_assoc_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_assoc"), map_root_assoc_idx);
-  fns.push(build_rt_map_root_assoc(*fn_index.get("__rt_copy_f64_slots").expect("copy helper")));
+  fns.push(build_rt_map_root_assoc(
+    *fn_index.get("__rt_copy_f64_slots").expect("copy helper"),
+    generic_eq_idx,
+  ));
 
   let map_root_lookup_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_lookup"), map_root_lookup_idx);
-  fns.push(build_rt_map_root_lookup());
+  fns.push(build_rt_map_root_lookup(generic_eq_idx));
 
   let map_root_contains_value_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_contains_value"), map_root_contains_value_idx);
@@ -485,6 +517,13 @@ pub(super) fn build_runtime_fns(
   let str_compare_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_str_compare"), str_compare_idx);
   fns.push(build_rt_str_compare());
+
+  // Generic compare: __rt_generic_compare(a: f64, b: f64) → f64
+  // If both values look like string pointers (heap address with string tag), use __rt_str_compare.
+  // Otherwise, do numeric comparison: -1.0, 0.0, 1.0.
+  let generic_compare_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_generic_compare"), generic_compare_idx);
+  fns.push(build_rt_generic_compare(str_compare_idx, string_tag));
 
   // Substring search helper: __rt_str_find_index(h_ptr: i32, n_ptr: i32) → f64
   // Returns byte offset of first occurrence, or -1.0 if not found.
@@ -689,6 +728,7 @@ fn rt_emit_copy_slots(builder: &mut RuntimeFnBuilder, copy_fn_idx: u32, dst_loca
   builder.emit(Instruction::Call(copy_fn_idx));
 }
 
+#[allow(dead_code)]
 fn build_rt_hash_f64() -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
   b.emit(Instruction::LocalGet(0));
@@ -719,7 +759,7 @@ fn build_rt_map_make(map_tag: i32) -> CompiledFn {
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
-fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
+fn build_rt_map_root_assoc(copy_fn_idx: u32, generic_eq_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4); // root, key, value, hash
   let idx0 = b.alloc_i32();
   let idx1 = b.alloc_i32();
@@ -866,7 +906,7 @@ fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
   b.emit(Instruction::LocalTee(key_addr));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Call(generic_eq_idx));
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::LocalSet(found_idx));
@@ -970,7 +1010,7 @@ fn build_rt_map_root_assoc(copy_fn_idx: u32) -> CompiledFn {
   )
 }
 
-fn build_rt_map_root_lookup() -> CompiledFn {
+fn build_rt_map_root_lookup(generic_eq_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(3); // root, key, hash
   let idx0 = b.alloc_i32();
   let idx1 = b.alloc_i32();
@@ -1030,7 +1070,7 @@ fn build_rt_map_root_lookup() -> CompiledFn {
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Call(generic_eq_idx));
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::LocalSet(found));
@@ -2429,5 +2469,311 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
       ValType::I32, // raw_base (11)
     ],
     instructions: b,
+  }
+}
+
+/// `__rt_generic_compare(a: f64, b: f64) → f64`
+///
+/// Universal comparison: dispatches to string comparison if both args are string heap pointers,
+/// otherwise does numeric comparison. Returns -1.0, 0.0, or 1.0.
+#[allow(clippy::vec_init_then_push)]
+fn build_rt_generic_compare(str_compare_fn_idx: u32, string_tag: i32) -> CompiledFn {
+  use wasm_encoder::Ieee64;
+  // params: 0 = a (f64), 1 = b (f64)
+  // locals: 2 = a_i32 (i32), 3 = raw_base (i32), 4 = is_str (i32)
+  let heap_min = (HEAP_BASE as f64) + 8.0;
+  let mut ins = vec![];
+
+  // --- Check if `a` is a string heap pointer ---
+  // is_str = (a >= heap_min) && (floor(a) == a) && (magic ok) && (tag == string_tag)
+  // Step 1: heap range check
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::F64Const(Ieee64::from(heap_min)));
+  ins.push(Instruction::F64Ge);
+  // Step 2: integer-valued check (floor(a) == a)
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::F64Floor);
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::F64Eq);
+  ins.push(Instruction::I32And);
+  ins.push(Instruction::LocalSet(4)); // is_str = preliminary check
+
+  // If preliminary check passed, verify magic and type tag
+  ins.push(Instruction::LocalGet(4));
+  ins.push(Instruction::If(wasm_encoder::BlockType::Empty));
+  {
+    // a_i32 = (i32) a
+    ins.push(Instruction::LocalGet(0));
+    ins.push(Instruction::I32TruncF64U);
+    ins.push(Instruction::LocalSet(2));
+    // raw_base = a_i32 - 8
+    ins.push(Instruction::LocalGet(2));
+    ins.push(Instruction::I32Const(8));
+    ins.push(Instruction::I32Sub);
+    ins.push(Instruction::LocalSet(3));
+    // check HEAP_MAGIC at raw_base+0
+    ins.push(Instruction::LocalGet(3));
+    ins.push(Instruction::I32Load(mem_arg_i32(0)));
+    ins.push(Instruction::I32Const(HEAP_MAGIC));
+    ins.push(Instruction::I32Eq);
+    // check string_tag at raw_base+4
+    ins.push(Instruction::LocalGet(3));
+    ins.push(Instruction::I32Load(mem_arg_i32(4)));
+    ins.push(Instruction::I32Const(string_tag));
+    ins.push(Instruction::I32Eq);
+    ins.push(Instruction::I32And);
+    ins.push(Instruction::LocalSet(4));
+  }
+  ins.push(Instruction::End);
+
+  // --- Dispatch based on is_str ---
+  ins.push(Instruction::Block(wasm_encoder::BlockType::Result(ValType::F64)));
+  ins.push(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ins.push(Instruction::LocalGet(4));
+  ins.push(Instruction::I32Eqz);
+  ins.push(Instruction::BrIf(0)); // jump to numeric compare if not string
+
+  // String path: call __rt_str_compare(i32(a), i32(b))
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::I32TruncF64U);
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::I32TruncF64U);
+  ins.push(Instruction::Call(str_compare_fn_idx));
+  ins.push(Instruction::Br(1)); // jump to end of outer block
+  ins.push(Instruction::End); // end inner block (numeric path)
+
+  // Numeric path: a < b → -1.0, a > b → 1.0, else 0.0
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::F64Lt);
+  ins.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ins.push(Instruction::F64Const(Ieee64::from(-1.0f64)));
+  ins.push(Instruction::Else);
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::F64Gt);
+  ins.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ins.push(Instruction::F64Const(Ieee64::from(1.0f64)));
+  ins.push(Instruction::Else);
+  ins.push(Instruction::F64Const(Ieee64::from(0.0f64)));
+  ins.push(Instruction::End);
+  ins.push(Instruction::End);
+  ins.push(Instruction::End); // end outer block
+
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64, ValType::F64],
+    results: vec![ValType::F64],
+    locals: vec![
+      ValType::I32, // a_i32 (2)
+      ValType::I32, // raw_base (3)
+      ValType::I32, // is_str (4)
+    ],
+    instructions: ins,
+  }
+}
+
+/// `__rt_generic_eq(a: f64, b: f64) → i32`
+///
+/// Semantic equality: if both args are string heap pointers, compare byte content.
+/// Otherwise use `f64 ==` (identity/numeric equality).
+#[allow(clippy::vec_init_then_push)]
+fn build_rt_generic_eq(str_compare_fn_idx: u32, string_tag: i32) -> CompiledFn {
+  use wasm_encoder::Ieee64;
+  let mut ins = Vec::<Instruction>::new();
+  // locals: 0=a, 1=b (params)
+  // locals: 2=a_i32, 3=b_i32, 4=raw_a, 5=raw_b, 6=is_str_a, 7=is_str_b
+
+  // Check if a looks like a string heap pointer
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::F64Const(Ieee64::from(HEAP_BASE as f64)));
+  ins.push(Instruction::F64Ge);
+  ins.push(Instruction::If(wasm_encoder::BlockType::Empty));
+  // a_i32 = i32(a)
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::I32TruncF64U);
+  ins.push(Instruction::LocalSet(2));
+  // raw_a = a_i32 - 8
+  ins.push(Instruction::LocalGet(2));
+  ins.push(Instruction::I32Const(8));
+  ins.push(Instruction::I32Sub);
+  ins.push(Instruction::LocalSet(4));
+  // check magic at raw_a+0
+  ins.push(Instruction::LocalGet(4));
+  ins.push(Instruction::I32Load(mem_arg_i32(0)));
+  ins.push(Instruction::I32Const(HEAP_MAGIC));
+  ins.push(Instruction::I32Eq);
+  // check string_tag at raw_a+4
+  ins.push(Instruction::LocalGet(4));
+  ins.push(Instruction::I32Load(mem_arg_i32(4)));
+  ins.push(Instruction::I32Const(string_tag));
+  ins.push(Instruction::I32Eq);
+  ins.push(Instruction::I32And);
+  ins.push(Instruction::LocalSet(6)); // is_str_a
+  ins.push(Instruction::End); // end if
+
+  // Check if b is also a string heap pointer
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::F64Const(Ieee64::from(HEAP_BASE as f64)));
+  ins.push(Instruction::F64Ge);
+  ins.push(Instruction::If(wasm_encoder::BlockType::Empty));
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::I32TruncF64U);
+  ins.push(Instruction::LocalSet(3));
+  ins.push(Instruction::LocalGet(3));
+  ins.push(Instruction::I32Const(8));
+  ins.push(Instruction::I32Sub);
+  ins.push(Instruction::LocalSet(5));
+  ins.push(Instruction::LocalGet(5));
+  ins.push(Instruction::I32Load(mem_arg_i32(0)));
+  ins.push(Instruction::I32Const(HEAP_MAGIC));
+  ins.push(Instruction::I32Eq);
+  ins.push(Instruction::LocalGet(5));
+  ins.push(Instruction::I32Load(mem_arg_i32(4)));
+  ins.push(Instruction::I32Const(string_tag));
+  ins.push(Instruction::I32Eq);
+  ins.push(Instruction::I32And);
+  ins.push(Instruction::LocalSet(7)); // is_str_b
+  ins.push(Instruction::End); // end if
+
+  // If both are strings: compare content, return compare(a,b)==0
+  ins.push(Instruction::LocalGet(6));
+  ins.push(Instruction::LocalGet(7));
+  ins.push(Instruction::I32And);
+  ins.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ins.push(Instruction::LocalGet(2)); // a_i32
+  ins.push(Instruction::LocalGet(3)); // b_i32
+  ins.push(Instruction::Call(str_compare_fn_idx));
+  ins.push(Instruction::F64Const(Ieee64::from(0.0f64)));
+  ins.push(Instruction::F64Eq);
+  ins.push(Instruction::Else);
+  // Otherwise: f64 equality
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::F64Eq);
+  ins.push(Instruction::End);
+
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64, ValType::F64],
+    results: vec![ValType::I32],
+    locals: vec![
+      ValType::I32, // a_i32 (2)
+      ValType::I32, // b_i32 (3)
+      ValType::I32, // raw_a (4)
+      ValType::I32, // raw_b (5)
+      ValType::I32, // is_str_a (6)
+      ValType::I32, // is_str_b (7)
+    ],
+    instructions: ins,
+  }
+}
+
+/// `__rt_hash_f64_semantic(v: f64) → i32`
+///
+/// For string heap pointers: compute a djb2-style content hash over the bytes.
+/// For all other values: use bit-mixing of f64 bits.
+#[allow(clippy::vec_init_then_push)]
+fn build_rt_hash_f64_semantic(string_tag: i32) -> CompiledFn {
+  use wasm_encoder::Ieee64;
+  let mut ins = Vec::<Instruction>::new();
+  // locals: 0=v (param), 1=v_i32, 2=raw, 3=is_str, 4=len, 5=i, 6=hash, 7=byte_val
+
+  // Check if v is a string heap pointer
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::F64Const(Ieee64::from(HEAP_BASE as f64)));
+  ins.push(Instruction::F64Ge);
+  ins.push(Instruction::If(wasm_encoder::BlockType::Empty));
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::I32TruncF64U);
+  ins.push(Instruction::LocalSet(1));
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::I32Const(8));
+  ins.push(Instruction::I32Sub);
+  ins.push(Instruction::LocalSet(2));
+  ins.push(Instruction::LocalGet(2));
+  ins.push(Instruction::I32Load(mem_arg_i32(0)));
+  ins.push(Instruction::I32Const(HEAP_MAGIC));
+  ins.push(Instruction::I32Eq);
+  ins.push(Instruction::LocalGet(2));
+  ins.push(Instruction::I32Load(mem_arg_i32(4)));
+  ins.push(Instruction::I32Const(string_tag));
+  ins.push(Instruction::I32Eq);
+  ins.push(Instruction::I32And);
+  ins.push(Instruction::LocalSet(3)); // is_str
+  ins.push(Instruction::End); // end if
+
+  // is_str block
+  ins.push(Instruction::LocalGet(3));
+  ins.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  // content hash: djb2 over bytes
+  // len = i32(f64.load(v_i32+0))
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::F64Load(mem_arg_f64(0)));
+  ins.push(Instruction::I32TruncF64U);
+  ins.push(Instruction::LocalSet(4));
+  // hash = 5381
+  ins.push(Instruction::I32Const(5381));
+  ins.push(Instruction::LocalSet(6));
+  // i = 0
+  ins.push(Instruction::I32Const(0));
+  ins.push(Instruction::LocalSet(5));
+  ins.push(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ins.push(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ins.push(Instruction::LocalGet(5));
+  ins.push(Instruction::LocalGet(4));
+  ins.push(Instruction::I32GeU);
+  ins.push(Instruction::BrIf(1));
+  // byte = load8u(v_i32 + 8 + i)
+  ins.push(Instruction::LocalGet(1));
+  ins.push(Instruction::I32Const(8));
+  ins.push(Instruction::I32Add);
+  ins.push(Instruction::LocalGet(5));
+  ins.push(Instruction::I32Add);
+  ins.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  ins.push(Instruction::LocalSet(7));
+  // hash = hash * 33 ^ byte
+  ins.push(Instruction::LocalGet(6));
+  ins.push(Instruction::I32Const(33));
+  ins.push(Instruction::I32Mul);
+  ins.push(Instruction::LocalGet(7));
+  ins.push(Instruction::I32Xor);
+  ins.push(Instruction::LocalSet(6));
+  // i++
+  ins.push(Instruction::LocalGet(5));
+  ins.push(Instruction::I32Const(1));
+  ins.push(Instruction::I32Add);
+  ins.push(Instruction::LocalSet(5));
+  ins.push(Instruction::Br(0));
+  ins.push(Instruction::End); // end loop
+  ins.push(Instruction::End); // end block
+  ins.push(Instruction::LocalGet(6));
+  ins.push(Instruction::Else);
+  // non-string: bit-mix of f64
+  ins.push(Instruction::LocalGet(0));
+  ins.push(Instruction::I64ReinterpretF64);
+  ins.push(Instruction::I64Const(32));
+  ins.push(Instruction::I64ShrU);
+  ins.push(Instruction::I32WrapI64);
+  ins.push(Instruction::I32Const(0x9e37_79b9u32 as i32));
+  ins.push(Instruction::I32Mul);
+  ins.push(Instruction::I32Const(16));
+  ins.push(Instruction::I32Rotl);
+  ins.push(Instruction::End); // end is_str if
+
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64],
+    results: vec![ValType::I32],
+    locals: vec![
+      ValType::I32, // v_i32 (1)
+      ValType::I32, // raw (2)
+      ValType::I32, // is_str (3)
+      ValType::I32, // len (4)
+      ValType::I32, // i (5)
+      ValType::I32, // hash (6)
+      ValType::I32, // byte_val (7)
+    ],
+    instructions: ins,
   }
 }
