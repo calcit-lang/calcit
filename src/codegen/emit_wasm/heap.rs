@@ -264,3 +264,52 @@ pub(super) fn emit_alloc_map_with_root(ctx: &mut WasmGenCtx, count_i32: u32, roo
 
   ptr
 }
+
+// ===========================================================================
+// High-level list allocation helpers
+// ===========================================================================
+
+/// Allocate a list with `count` (i32 local) elements.
+/// total_slots = count + 1 (one extra for the count header).
+/// Stores `count` into the first f64 slot and returns the i32 base pointer local.
+/// This is the common pattern throughout list-building functions.
+pub(super) fn emit_alloc_list(ctx: &mut WasmGenCtx, count: u32) -> u32 {
+  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(total_slots));
+  emit_alloc_with_count(ctx, count, total_slots, "list")
+}
+
+/// Load the f64 element at index `i` (i32 local) from a list pointer `list_ptr` (i32 local).
+/// Pushes the f64 value on the WASM stack.
+/// Memory layout: list_ptr[0] = count, list_ptr[8 + i*8] = elem[i].
+/// i.e. address = list_ptr + (1 + i) * 8
+pub(super) fn emit_list_load_elem(ctx: &mut WasmGenCtx, list_ptr: u32, i: u32) {
+  ctx.emit(Instruction::LocalGet(list_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+}
+
+/// Compute the i32 address of list element at index `i` (both i32 locals).
+/// Allocates a new i32 local, stores the address in it, and returns it.
+/// address = list_ptr + (1 + i) * 8
+#[allow(dead_code)]
+pub(super) fn emit_list_elem_addr(ctx: &mut WasmGenCtx, list_ptr: u32, i: u32) -> u32 {
+  let addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(list_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(addr));
+  addr
+}

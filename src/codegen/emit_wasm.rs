@@ -471,6 +471,103 @@ impl WasmGenCtx {
     self.emit(f64_const(0.0));
     Ok(())
   }
+
+  // -----------------------------------------------------------------------
+  // Integer arithmetic helpers
+  // -----------------------------------------------------------------------
+
+  /// `local += 1` — 4-instruction pattern compressed to one call.
+  pub(super) fn i32_inc(&mut self, local: u32) {
+    self.emit(Instruction::LocalGet(local));
+    self.emit(Instruction::I32Const(1));
+    self.emit(Instruction::I32Add);
+    self.emit(Instruction::LocalSet(local));
+  }
+
+  /// `local -= 1`.
+  pub(super) fn i32_dec(&mut self, local: u32) {
+    self.emit(Instruction::LocalGet(local));
+    self.emit(Instruction::I32Const(1));
+    self.emit(Instruction::I32Sub);
+    self.emit(Instruction::LocalSet(local));
+  }
+
+  /// `local = a + b` — store sum of two i32 locals into `dst`.
+  #[allow(dead_code)]
+  pub(super) fn i32_add_into(&mut self, a: u32, b: u32, dst: u32) {
+    self.emit(Instruction::LocalGet(a));
+    self.emit(Instruction::LocalGet(b));
+    self.emit(Instruction::I32Add);
+    self.emit(Instruction::LocalSet(dst));
+  }
+
+  /// `local = a - b`.
+  #[allow(dead_code)]
+  pub(super) fn i32_sub_into(&mut self, a: u32, b: u32, dst: u32) {
+    self.emit(Instruction::LocalGet(a));
+    self.emit(Instruction::LocalGet(b));
+    self.emit(Instruction::I32Sub);
+    self.emit(Instruction::LocalSet(dst));
+  }
+
+  // -----------------------------------------------------------------------
+  // Control-flow structure helpers (Block / Loop / If)
+  // -----------------------------------------------------------------------
+
+  /// Begin a `block` (used as the outer breakable container around a loop).
+  pub(super) fn begin_block(&mut self) {
+    self.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  }
+
+  /// Begin a `loop` (the inner repeated body).
+  pub(super) fn begin_loop(&mut self) {
+    self.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  }
+
+  /// Begin an `if` with no result value (void block).
+  pub(super) fn begin_block_if(&mut self) {
+    self.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  }
+
+  /// Emit `end` for a single block/loop/if.
+  #[allow(dead_code)]
+  pub(super) fn end_one(&mut self) {
+    self.emit(Instruction::End);
+  }
+
+  /// Emit two `end`s — closes a loop then its surrounding block.
+  pub(super) fn end_block_loop(&mut self) {
+    self.emit(Instruction::End); // end loop
+    self.emit(Instruction::End); // end block
+  }
+
+  /// `br 0` — jump back to the top of the enclosing loop.
+  pub(super) fn br_loop(&mut self) {
+    self.emit(Instruction::Br(0));
+  }
+
+  /// `br_if 1` — exit the outer block (break out of the block+loop pair) if i32 on stack is non-zero.
+  pub(super) fn br_if_exit(&mut self) {
+    self.emit(Instruction::BrIf(1));
+  }
+
+  /// Emit the "i >= count → break" guard common to all forward-indexed loops.
+  /// Expects both locals to be i32. Emits: `LocalGet(i); LocalGet(count); I32GeU; BrIf(1)`.
+  pub(super) fn loop_exit_if_ge(& mut self, i: u32, count: u32) {
+    self.emit(Instruction::LocalGet(i));
+    self.emit(Instruction::LocalGet(count));
+    self.emit(Instruction::I32GeU);
+    self.br_if_exit();
+  }
+
+  /// Emit the "i < 0 → break" guard used by reverse loops.
+  /// Expects `i` to be an i32. Emits: `LocalGet(i); I32Const(0); I32LtS; BrIf(1)`.
+  pub(super) fn loop_exit_if_neg(&mut self, i: u32) {
+    self.emit(Instruction::LocalGet(i));
+    self.emit(Instruction::I32Const(0));
+    self.emit(Instruction::I32LtS);
+    self.br_if_exit();
+  }
 }
 
 /// Check that `args` has exactly `n` elements and return an error if not.

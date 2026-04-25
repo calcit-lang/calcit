@@ -366,7 +366,7 @@ pub(super) fn emit_record_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
     ctx.emit(Instruction::LocalGet(struct_tag_local));
     ctx.emit(f64_const(*struct_tag_id as f64));
     ctx.emit(Instruction::F64Eq);
-    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.begin_block_if();
 
     for (field_idx, field_tag_id) in field_tag_ids.iter().enumerate() {
       ctx.emit(Instruction::LocalGet(map_ptr));

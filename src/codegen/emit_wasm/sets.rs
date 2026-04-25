@@ -130,12 +130,9 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(bi));
 
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(bi));
-  ctx.emit(Instruction::LocalGet(b_count));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(bi, b_count);
 
   let be = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(b));
@@ -152,7 +149,7 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::LocalGet(found));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -162,16 +159,10 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(be));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(write_idx));
+  ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(bi));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(bi));
+  ctx.i32_inc(bi);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -207,12 +198,9 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ai));
 
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(ai, a_count);
 
   let elem = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(a));
@@ -230,7 +218,7 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -240,16 +228,10 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(elem));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(write_idx));
+  ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(ai));
+  ctx.i32_inc(ai);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -278,7 +260,7 @@ pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   {
     let nc = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(count));
@@ -339,13 +321,7 @@ pub(super) fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   expect_arity(1, args, "&set:to-list expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
-
-  let dst = emit_alloc_with_count(ctx, count, total_slots, "list");
+  let dst = emit_alloc_list(ctx, count);
   let dst_base = emit_addr_offset(ctx, dst, 8);
   let src_base = emit_addr_offset(ctx, src, 8);
   emit_copy_f64_loop(ctx, dst_base, src_base, count);
@@ -373,7 +349,7 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   {
     // Not found: append like list
     let nc = ctx.alloc_local_typed(ValType::I32);
@@ -431,7 +407,7 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Ne);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   {
     let nc = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(count));
@@ -518,12 +494,9 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ai));
 
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(ai, a_count);
 
   // Load a[ai]
   let elem = ctx.alloc_local();
@@ -543,7 +516,7 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -553,17 +526,11 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(elem));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(write_idx));
+  ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
   // ai++
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(ai));
+  ctx.i32_inc(ai);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -614,12 +581,9 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(bi));
 
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(bi));
-  ctx.emit(Instruction::LocalGet(b_count));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(bi, b_count);
 
   // Load b[bi]
   let be = ctx.alloc_local();
@@ -641,12 +605,9 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(di));
 
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(di));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(di, write_idx);
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -657,22 +618,19 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(be));
   ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
   ctx.emit(Instruction::Br(2));
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(di));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(di));
+  ctx.i32_inc(di);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(found));
   ctx.emit(Instruction::I32Eqz);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   {
     // Not found: append at write_idx position
     let addr = ctx.alloc_local_typed(ValType::I32);
@@ -687,18 +645,12 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     ctx.emit(Instruction::LocalGet(addr));
     ctx.emit(Instruction::LocalGet(be));
     ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-    ctx.emit(Instruction::LocalGet(write_idx));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(write_idx));
+    ctx.i32_inc(write_idx);
   }
   ctx.emit(Instruction::End);
 
   // bi++
-  ctx.emit(Instruction::LocalGet(bi));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(bi));
+  ctx.i32_inc(bi);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -737,12 +689,9 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ai));
 
-  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32GeU);
-  ctx.emit(Instruction::BrIf(1));
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(ai, a_count);
 
   let elem = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(a));
@@ -761,7 +710,7 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Ne);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -771,16 +720,10 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(elem));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(write_idx));
+  ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(ai));
+  ctx.i32_inc(ai);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -805,7 +748,7 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Eqz);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   // empty set → nil
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));

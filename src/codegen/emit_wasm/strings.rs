@@ -390,7 +390,7 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::LocalGet(v));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   {
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(Instruction::I32TruncF64U);
@@ -409,7 +409,7 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     ctx.emit(Instruction::I32Const(string_type_tag));
     ctx.emit(Instruction::I32Eq);
     ctx.emit(Instruction::I32And);
-    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.begin_block_if();
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(Instruction::LocalSet(result));
     ctx.emit(Instruction::End); // inner if
@@ -420,13 +420,13 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::LocalGet(result));
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   {
     // nil/false (0.0) -> allocate empty string ""
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(f64_const(0.0));
     ctx.emit(Instruction::F64Eq);
-    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.begin_block_if();
     {
       let raw = ctx.alloc_local_typed(ValType::I32);
       ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
@@ -1112,7 +1112,7 @@ pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f
   ctx.emit(Instruction::LocalGet(i));
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::I32GtU);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.begin_block_if();
   let result_ptr_for_sep = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(result));
   ctx.emit(Instruction::I32TruncF64U);
