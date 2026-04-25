@@ -108,13 +108,38 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 /// `&map:dissoc map key` — new map without key (or same if key absent).
 pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   use crate::calcit::CalcitSyntax;
+
+  // Multi-key form: (&map:dissoc m k1 k2 ...) — chain dissoc calls
+  if args.len() > 2 && !matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+    // Evaluate map first, keep result accumulating
+    let acc = ctx.alloc_local();
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::LocalSet(acc));
+    for key_expr in &args[1..] {
+      let src_ptr = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(acc));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(src_ptr));
+      let key_local = ctx.alloc_local();
+      emit_expr(ctx, key_expr)?;
+      ctx.emit(Instruction::LocalSet(key_local));
+      ctx.emit(Instruction::LocalGet(src_ptr));
+      ctx.emit(Instruction::LocalGet(key_local));
+      ctx.call_rt("__rt_map_dissoc");
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalSet(acc));
+    }
+    ctx.emit(Instruction::LocalGet(acc));
+    return Ok(());
+  }
+
   // Handle spread form: (&map:dissoc x & rest_list) — rest_list[0] is the key
   let (map_arg, key_arg_opt) = if args.len() == 3 && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
     (&args[0], None)
   } else if args.len() == 2 {
     (&args[0], Some(&args[1]))
   } else {
-    return Err("&map:dissoc expects 2 args".into());
+    return Err("&map:dissoc expects 2+ args".into());
   };
 
   let src = emit_ptr_to_i32(ctx, map_arg)?;

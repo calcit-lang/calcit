@@ -1121,3 +1121,165 @@ pub(super) fn emit_join_str(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   ctx.emit(Instruction::LocalSet(sep));
   emit_join_str_from_locals(ctx, xs, sep)
 }
+
+/// `trim` — strips whitespace (1 arg) or a specific character (2 args) from both ends.
+pub(super) fn emit_trim(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() == 1 {
+    emit_expr(ctx, &args[0])?;
+    ctx.call_rt("__rt_trim_ws");
+    Ok(())
+  } else if args.len() == 2 {
+    emit_expr(ctx, &args[0])?;
+    emit_expr(ctx, &args[1])?;
+    ctx.call_rt("__rt_trim_char");
+    Ok(())
+  } else {
+    Err(format!("trim expects 1 or 2 args, got {}", args.len()))
+  }
+}
+
+/// `blank?` — returns 1.0 if all bytes are ASCII whitespace, else 0.0.
+pub(super) fn emit_blank(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "blank?")?;
+  emit_expr(ctx, &args[0])?;
+  ctx.call_rt("__rt_blank");
+  Ok(())
+}
+
+/// `get-char-code` — returns the Unicode code point of the first character as f64.
+/// Handles full UTF-8 decoding (1-, 2-, 3-, 4-byte sequences).
+pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "get-char-code")?;
+  let ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  // content base = ptr + 8
+  let content = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(content));
+
+  let b0 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(content));
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalSet(b0));
+
+  let result = ctx.alloc_local_typed(ValType::I32);
+
+  // if b0 < 0x80: ASCII, result = b0
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::I32Const(0x80));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Else);
+  // elif b0 < 0xE0: 2-byte sequence
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::I32Const(0xE0));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  {
+    let b1 = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(1)));
+    ctx.emit(Instruction::LocalSet(b1));
+    // result = (b0 & 0x1F) << 6 | (b1 & 0x3F)
+    ctx.emit(Instruction::LocalGet(b0));
+    ctx.emit(Instruction::I32Const(0x1F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Const(6));
+    ctx.emit(Instruction::I32Shl);
+    ctx.emit(Instruction::LocalGet(b1));
+    ctx.emit(Instruction::I32Const(0x3F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  ctx.emit(Instruction::Else);
+  // elif b0 < 0xF0: 3-byte sequence
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::I32Const(0xF0));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  {
+    let b1 = ctx.alloc_local_typed(ValType::I32);
+    let b2 = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(1)));
+    ctx.emit(Instruction::LocalSet(b1));
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(2)));
+    ctx.emit(Instruction::LocalSet(b2));
+    // (b0 & 0x0F) << 12 | (b1 & 0x3F) << 6 | (b2 & 0x3F)
+    ctx.emit(Instruction::LocalGet(b0));
+    ctx.emit(Instruction::I32Const(0x0F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Const(12));
+    ctx.emit(Instruction::I32Shl);
+    ctx.emit(Instruction::LocalGet(b1));
+    ctx.emit(Instruction::I32Const(0x3F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Const(6));
+    ctx.emit(Instruction::I32Shl);
+    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalGet(b2));
+    ctx.emit(Instruction::I32Const(0x3F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  ctx.emit(Instruction::Else);
+  {
+    // 4-byte sequence: (b0 & 0x07) << 18 | (b1 & 0x3F) << 12 | (b2 & 0x3F) << 6 | (b3 & 0x3F)
+    let b1 = ctx.alloc_local_typed(ValType::I32);
+    let b2 = ctx.alloc_local_typed(ValType::I32);
+    let b3 = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(1)));
+    ctx.emit(Instruction::LocalSet(b1));
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(2)));
+    ctx.emit(Instruction::LocalSet(b2));
+    ctx.emit(Instruction::LocalGet(content));
+    ctx.emit(Instruction::I32Load8U(mem_arg_byte(3)));
+    ctx.emit(Instruction::LocalSet(b3));
+    ctx.emit(Instruction::LocalGet(b0));
+    ctx.emit(Instruction::I32Const(0x07));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Const(18));
+    ctx.emit(Instruction::I32Shl);
+    ctx.emit(Instruction::LocalGet(b1));
+    ctx.emit(Instruction::I32Const(0x3F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Const(12));
+    ctx.emit(Instruction::I32Shl);
+    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalGet(b2));
+    ctx.emit(Instruction::I32Const(0x3F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Const(6));
+    ctx.emit(Instruction::I32Shl);
+    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalGet(b3));
+    ctx.emit(Instruction::I32Const(0x3F));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  ctx.emit(Instruction::End); // end 4-byte if
+  ctx.emit(Instruction::End); // end 3-byte elif
+  ctx.emit(Instruction::End); // end 2-byte elif
+  ctx.emit(Instruction::End); // end ASCII if
+
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// `parse-float` — parse a decimal string to f64.
+pub(super) fn emit_parse_float(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "parse-float")?;
+  emit_expr(ctx, &args[0])?;
+  ctx.call_rt("__rt_parse_float");
+  Ok(())
+}

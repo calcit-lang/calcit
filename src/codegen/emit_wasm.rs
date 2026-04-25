@@ -1935,6 +1935,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::StartsWith => emit_str_starts_with(ctx, args),
     CalcitProc::EndsWith => emit_str_ends_with(ctx, args),
     CalcitProc::TurnString | CalcitProc::NativeStr => emit_turn_string(ctx, args),
+    CalcitProc::Trim => emit_trim(ctx, args),
+    CalcitProc::IsBlank => emit_blank(ctx, args),
+    CalcitProc::GetCharCode => emit_get_char_code(ctx, args),
+    CalcitProc::ParseFloat => emit_parse_float(ctx, args),
 
     // --- List higher-order and utility operations ---
     CalcitProc::NativeListDistinct => emit_list_distinct(ctx, args),

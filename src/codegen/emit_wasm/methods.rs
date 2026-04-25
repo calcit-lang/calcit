@@ -128,6 +128,152 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.call_rt("__rt_display_by");
       Ok(())
     }
+    // .blank? — true if all chars are whitespace
+    "blank?" => {
+      if !extra_locals.is_empty() {
+        return Err("method .blank? expects 0 arguments".into());
+      }
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.call_rt("__rt_blank");
+      Ok(())
+    }
+    // .get-char-code — Unicode code point of first character
+    "get-char-code" => {
+      if !extra_locals.is_empty() {
+        return Err("method .get-char-code expects 0 arguments".into());
+      }
+      // emit_get_char_code needs args slice; use a quick inline approach:
+      // load receiver, convert to ptr, decode UTF-8
+      let ptr = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(ptr));
+      let content = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+      ctx.emit(Instruction::LocalGet(ptr));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalSet(content));
+      let b0 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+      ctx.emit(Instruction::LocalGet(content));
+      ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(0)));
+      ctx.emit(Instruction::LocalSet(b0));
+      let result = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+      // ASCII fast path
+      ctx.emit(Instruction::LocalGet(b0));
+      ctx.emit(Instruction::I32Const(0x80));
+      ctx.emit(Instruction::I32LtU);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+      ctx.emit(Instruction::LocalGet(b0));
+      ctx.emit(Instruction::LocalSet(result));
+      ctx.emit(Instruction::Else);
+      // 2-byte
+      ctx.emit(Instruction::LocalGet(b0));
+      ctx.emit(Instruction::I32Const(0xE0));
+      ctx.emit(Instruction::I32LtU);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+      {
+        let b1 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+        ctx.emit(Instruction::LocalGet(content));
+        ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(1)));
+        ctx.emit(Instruction::LocalSet(b1));
+        ctx.emit(Instruction::LocalGet(b0));
+        ctx.emit(Instruction::I32Const(0x1F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Const(6));
+        ctx.emit(Instruction::I32Shl);
+        ctx.emit(Instruction::LocalGet(b1));
+        ctx.emit(Instruction::I32Const(0x3F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalSet(result));
+      }
+      ctx.emit(Instruction::Else);
+      // 3-byte
+      ctx.emit(Instruction::LocalGet(b0));
+      ctx.emit(Instruction::I32Const(0xF0));
+      ctx.emit(Instruction::I32LtU);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+      {
+        let b1 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+        let b2 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+        ctx.emit(Instruction::LocalGet(content));
+        ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(1)));
+        ctx.emit(Instruction::LocalSet(b1));
+        ctx.emit(Instruction::LocalGet(content));
+        ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(2)));
+        ctx.emit(Instruction::LocalSet(b2));
+        ctx.emit(Instruction::LocalGet(b0));
+        ctx.emit(Instruction::I32Const(0x0F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Const(12));
+        ctx.emit(Instruction::I32Shl);
+        ctx.emit(Instruction::LocalGet(b1));
+        ctx.emit(Instruction::I32Const(0x3F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Const(6));
+        ctx.emit(Instruction::I32Shl);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalGet(b2));
+        ctx.emit(Instruction::I32Const(0x3F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalSet(result));
+      }
+      ctx.emit(Instruction::Else);
+      {
+        // 4-byte
+        let b1 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+        let b2 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+        let b3 = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+        ctx.emit(Instruction::LocalGet(content));
+        ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(1)));
+        ctx.emit(Instruction::LocalSet(b1));
+        ctx.emit(Instruction::LocalGet(content));
+        ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(2)));
+        ctx.emit(Instruction::LocalSet(b2));
+        ctx.emit(Instruction::LocalGet(content));
+        ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(3)));
+        ctx.emit(Instruction::LocalSet(b3));
+        ctx.emit(Instruction::LocalGet(b0));
+        ctx.emit(Instruction::I32Const(0x07));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Const(18));
+        ctx.emit(Instruction::I32Shl);
+        ctx.emit(Instruction::LocalGet(b1));
+        ctx.emit(Instruction::I32Const(0x3F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Const(12));
+        ctx.emit(Instruction::I32Shl);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalGet(b2));
+        ctx.emit(Instruction::I32Const(0x3F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Const(6));
+        ctx.emit(Instruction::I32Shl);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalGet(b3));
+        ctx.emit(Instruction::I32Const(0x3F));
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::LocalSet(result));
+      }
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::LocalGet(result));
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
+    // .parse-float — parse string as decimal number
+    "parse-float" => {
+      if !extra_locals.is_empty() {
+        return Err("method .parse-float expects 0 arguments".into());
+      }
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.call_rt("__rt_parse_float");
+      Ok(())
+    }
     _ => Err(format!("unsupported invoke method in WASM: .{name}")),
   }
 }
