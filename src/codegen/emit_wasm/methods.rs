@@ -118,6 +118,16 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.emit(f64_const(0.0));
       Ok(())
     }
+    // .display-by radix — number radix formatting; delegates to &number:display-by runtime.
+    "display-by" => {
+      if extra_locals.len() != 1 {
+        return Err("method .display-by expects 1 argument (radix)".into());
+      }
+      ctx.emit(Instruction::LocalGet(receiver)); // value
+      ctx.emit(Instruction::LocalGet(extra_locals[0])); // radix
+      ctx.call_rt("__rt_display_by");
+      Ok(())
+    }
     _ => Err(format!("unsupported invoke method in WASM: .{name}")),
   }
 }

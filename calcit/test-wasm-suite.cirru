@@ -1,7 +1,7 @@
 
 {} (:about |Hand-authored WASM-target test suite — pulls in util plus pure-compute test modules and dispatches their main!. Edit via `cr edit`/`cr tree` once seeded.) (:package |test-wasm-suite)
   :configs $ {} (:init-fn |test-wasm-suite.main/main!) (:reload-fn |test-wasm-suite.main/reload!) (:version |0.0.0)
-    :modules $ [] |./util.cirru |./test-cond.cirru |./test-math.cirru |./test-set.cirru |./test-tuple.cirru |./test-fn.cirru |./test-lens.cirru |./test-edn.cirru
+    :modules $ [] |./util.cirru |./test-cond.cirru |./test-math.cirru |./test-set.cirru |./test-tuple.cirru |./test-fn.cirru |./test-lens.cirru |./test-edn.cirru |./test-string.cirru
   :entries $ {}
   :files $ {}
     |test-wasm-suite.main $ %{} :FileEntry
@@ -16,6 +16,7 @@
               test-fn/main!
               test-lens/main!
               test-edn/main!
+              test-string/main!
           :examples $ []
         |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
@@ -31,4 +32,4 @@
             [] test-fn.main :as test-fn
             [] test-lens.main :as test-lens
             [] test-edn.main :as test-edn
-            [] test-algebra.main :as test-algebra
+            [] test-string.main :as test-string

@@ -331,6 +331,8 @@ check("test-str-includes-true()", 1, e["test-str-includes-true"]); // "ell" in "
 check("test-str-includes-false()", 0, e["test-str-includes-false"]); // "xyz" not in "hello"
 check("test-str-pad-left()", 5, e["test-str-pad-left"]); // pad-left "hi" 5 "-" = "---hi"
 check("test-str-pad-right()", 5, e["test-str-pad-right"]); // pad-right "hi" 5 "-" = "hi---"
+check("test-display-by-bin()", 7, e["test-display-by-bin"]); // 17 in binary = "0b10001" (len 7)
+check("test-display-by-hex()", 4, e["test-display-by-hex"]); // 17 in hex = "0x11" (len 4)
 
 // --- __str_new FFI test (JS → WASM string passing) ---
 // Protocol: read heap top, write bytes at top+16 (zero-copy), call __str_new(top+16, len)

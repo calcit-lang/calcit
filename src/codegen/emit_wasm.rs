@@ -1991,8 +1991,19 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // &get-os — host OS info; not available in WASM; return nil.
     CalcitProc::NativeGetOs => ctx.stub_proc(args),
 
-    // &number:display-by / &number:format — formatting; stub in WASM.
-    CalcitProc::NativeNumberDisplayBy | CalcitProc::NativeNumberFormat => ctx.stub_proc(args),
+    // &number:display-by — radix string formatting.
+    CalcitProc::NativeNumberDisplayBy => {
+      if args.len() != 2 {
+        return Err("&number:display-by expects 2 args".into());
+      }
+      emit_expr(ctx, &args[0])?; // value f64
+      emit_expr(ctx, &args[1])?; // radix f64
+      ctx.call_rt("__rt_display_by");
+      Ok(())
+    }
+
+    // &number:format — formatting; stub in WASM.
+    CalcitProc::NativeNumberFormat => ctx.stub_proc(args),
 
     // sort — native sort with optional comparator; not yet supported in WASM; return first arg.
     CalcitProc::Sort => {
@@ -2930,6 +2941,11 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
   match expr {
     Calcit::Str(s) => {
       strings.push(s.to_string());
+    }
+    // Intern tag names as strings so that emit_ptr_to_i32 can convert tags to string ptrs
+    // (used when literal tags are passed to string procs like starts-with?, ends-with?, etc.)
+    Calcit::Tag(t) => {
+      strings.push(t.to_string());
     }
     Calcit::List(xs) => {
       for x in xs.iter() {

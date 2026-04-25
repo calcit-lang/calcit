@@ -4,10 +4,32 @@
 
 现有 WASM codegen（`emit_wasm.rs`）采用 all-f64 策略，仅支持纯数值函数。本文档描述如何在保持 all-f64 ABI 兼容的前提下，增量引入 Tag、Record、Tuple/Enum 等结构化数据的支持。
 
+## 三层类型架构（核心设计原则）
+
+Calcit WASM codegen 按 **Rust `T` vs `dyn Trait`** 的思路分三层处理，详细设计见
+`recollect/WASM-ROADMAP.md §"类型化 WASM 架构：Rust 风格设计模型"`，这里摘要关键决策：
+
+| 层级            | Calcit 形态                                                                | WASM 表示                                                               | 阶段                  |
+| --------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------- |
+| **静态**        | `Number`, `Bool`, `Tag`, `defstruct` Record, Enum Tuple                    | 直接 f64 / 线性内存 struct，零装箱                                      | S0（已完成）          |
+| **泛型单态化**  | `List<Number>`, `Map<Tag, Record>` 等带类型参数的集合；HOF lambda 类型已知 | 编译期展开专用函数；HOF 拦截器内联                                      | S0 HOF 路径（已完成） |
+| **动态（dyn）** | 标注 `:dynamic` 或无法推断的值；函数作为一等值                             | 装箱 tagged pointer（HEAP_MAGIC + type_tag + payload），运行时 dispatch | S1/S2（待做）         |
+
+**实现规则**：
+
+- 函数所有参数/返回值类型静态已知 → 走静态路径，零开销。
+- 类型参数已知的 HOF（`map`/`filter`/`foldl`）→ 编译期单态化，HOF 拦截器内联展开。
+- 类型未知（`:dynamic`）→ 装箱为 tagged pointer，运行时读 type_tag 分支 dispatch。
+- `assert-type` / downcast → 从 dyn 路径收窄回静态路径（读 tag → 失败则 `unreachable` → 成功则拆箱取 payload）。
+- 函数作为值（闭包）→ S1：函数表 `call_indirect`；S3：静态 lift + 捕获环境 struct。
+
+**给代码补类型标注就是在给 WASM 加速**——类型覆盖率直接决定静态路径覆盖率。
+实现 trait impl 系统时同样遵循此原则：trait 方法有具体类型时单态化，无类型时走 dyn dispatch。
+
 ## 设计决策（继承自初始实现）
 
 1. **二进制 `.wasm` 输出** — 使用 `wasm-encoder` crate 直接生成标准 WASM 二进制格式。
-2. **All-f64 类型策略** — 所有值统一为 f64，Bool 用 1.0/0.0 表示。
+2. **All-f64 类型策略** — 所有值统一为 f64，Bool 用 1.0/0.0 表示（静态层）；动态层用 i32 装箱指针（暂以 f64 编码传递）。
 3. **比较运算的 f64 返回** — 使用 `select` 指令将 i32 条件转为 f64 (1.0/0.0)。
 4. **recur 映射到 WASM loop** — 通过 `block_depth` 追踪嵌套深度。
 
@@ -17,22 +39,24 @@
 
 保持所有函数参数和返回值为 f64，扩展值的语义：
 
-| 值类型 | f64 表示方式 | 说明 |
-|--------|-------------|------|
-| Number | 直接 f64 | 不变 |
-| Bool | 1.0 / 0.0 | 不变 |
-| Nil | 0.0 | 不变 |
-| Tag | 正整数 f64 (1.0, 2.0, ...) | 编译时分配，全局唯一 |
-| Record 指针 | f64 编码的 i32 偏移 | 指向线性内存中的 Record 数据 |
-| Tuple 指针 | f64 编码的 i32 偏移 | 指向线性内存中的 Tuple 数据 |
+| 值类型      | f64 表示方式               | 说明                         |
+| ----------- | -------------------------- | ---------------------------- |
+| Number      | 直接 f64                   | 不变                         |
+| Bool        | 1.0 / 0.0                  | 不变                         |
+| Nil         | 0.0                        | 不变                         |
+| Tag         | 正整数 f64 (1.0, 2.0, ...) | 编译时分配，全局唯一         |
+| Record 指针 | f64 编码的 i32 偏移        | 指向线性内存中的 Record 数据 |
+| Tuple 指针  | f64 编码的 i32 偏移        | 指向线性内存中的 Tuple 数据  |
 
 指针与数值之间的转换：
+
 - 写入: `i32` → `f64.convert_i32_u`
 - 读取: `f64` → `i32.trunc_f64_u`
 
 ### 歧义规避
 
 Tag、指针、数值共用 f64 空间，依赖**编译时类型信息**区分：
+
 - WASM 子集要求 Record/Tuple 相关函数必须有类型标注
 - Tag 值与数值范围不重叠（Tag 从高位整数开始分配，或使用特殊编码）
 - 实验阶段不做运行时类型检查，类型错误由 Calcit 预处理保证
@@ -76,13 +100,13 @@ offset + 8*(n): field_{n-1} (f64, 8 bytes)
 
 ### 操作映射
 
-| Calcit 操作 | WASM 实现 |
-|-------------|----------|
-| `&%{} struct field1 val1 ...` | bump alloc + f64.store 每个字段 |
-| `&record:get record :field` | `f64.load (ptr + field_offset)` |
-| `&record:nth record idx tag` | `f64.load (ptr + (1 + idx) * 8)` |
-| `&record:assoc record :field val` | 复制整个 Record + 修改指定字段 |
-| `:field record` (tag-as-fn) | 等同于 `&record:get` |
+| Calcit 操作                       | WASM 实现                        |
+| --------------------------------- | -------------------------------- |
+| `&%{} struct field1 val1 ...`     | bump alloc + f64.store 每个字段  |
+| `&record:get record :field`       | `f64.load (ptr + field_offset)`  |
+| `&record:nth record idx tag`      | `f64.load (ptr + (1 + idx) * 8)` |
+| `&record:assoc record :field val` | 复制整个 Record + 修改指定字段   |
+| `:field record` (tag-as-fn)       | 等同于 `&record:get`             |
 
 ### 内存分配
 
@@ -117,11 +141,11 @@ offset + 16: payload_1 (f64, 8 bytes)
 
 ### 操作映射
 
-| Calcit 操作 | WASM 实现 |
-|-------------|----------|
-| `:: tag val1 val2 ...` | bump alloc + store tag + payloads |
-| `&tuple:nth tuple idx` | `f64.load (ptr + (1 + idx) * 8)` |
-| `tag-match` | load tag → if/else chain（小量 variants）或 `br_table`（多 variants） |
+| Calcit 操作            | WASM 实现                                                             |
+| ---------------------- | --------------------------------------------------------------------- |
+| `:: tag val1 val2 ...` | bump alloc + store tag + payloads                                     |
+| `&tuple:nth tuple idx` | `f64.load (ptr + (1 + idx) * 8)`                                      |
+| `tag-match`            | load tag → if/else chain（小量 variants）或 `br_table`（多 variants） |
 
 ### tag-match 编译
 
@@ -150,15 +174,16 @@ List 在 Calcit 中是持久化数据结构（`Vector(Vec)` 或 `TernaryTreeList
 
 ### 方案对比
 
-| 方案 | 复杂度 | 适用性 |
-|------|--------|--------|
-| Host import (JS 侧处理) | 低 | 适合 JS 互操作场景 |
-| 线性内存 UTF-8 | 中 | 需要自己维护 string pool |
-| WASM GC string (proposal) | 低 | 需要运行时支持 (V8/Deno ✅) |
+| 方案                      | 复杂度 | 适用性                      |
+| ------------------------- | ------ | --------------------------- |
+| Host import (JS 侧处理)   | 低     | 适合 JS 互操作场景          |
+| 线性内存 UTF-8            | 中     | 需要自己维护 string pool    |
+| WASM GC string (proposal) | 低     | 需要运行时支持 (V8/Deno ✅) |
 
 ### 结论
 
 本轮不实现 String。推荐路径：
+
 1. **近期**: host import 方案（`println` 等通过 host function 代理）
 2. **远期**: WASM GC string 标准化后直接采用
 

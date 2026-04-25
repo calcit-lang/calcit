@@ -43,6 +43,24 @@ pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalSet(is_heap));
 
+  // Further confirm via HEAP_MAGIC at raw_base = (val - 8). Without this,
+  // small numeric values (e.g. 42) accidentally fall into the heap range and
+  // get treated as heap pointers.
+  ctx.emit(Instruction::LocalGet(is_heap));
+  ctx.begin_block_if();
+  let raw_base = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(val));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(raw_base));
+  ctx.emit(Instruction::LocalGet(raw_base));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalSet(is_heap));
+  ctx.emit(Instruction::End);
+
   let result_i32 = ctx.alloc_local_typed(ValType::I32);
 
   // if is_heap: content hash via __rt_hash_list_or_set
@@ -130,8 +148,21 @@ pub(super) fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr
 // ===========================================================================
 
 /// Evaluate expression → i32 pointer, saved in a new local.
+/// Emit `expr` as an i32 heap pointer.  For literal tags, emit the interned string ptr
+/// directly (tags are conceptually coercible to their name string in string operations).
 pub(super) fn emit_ptr_to_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<u32, String> {
   let local = ctx.alloc_local_typed(ValType::I32);
+  // Special-case: a literal tag — use the interned string representation
+  if let Calcit::Tag(t) = expr {
+    let tag_name = t.to_string();
+    let ptr = ctx
+      .string_pool
+      .get(&tag_name)
+      .ok_or_else(|| format!("tag '{tag_name}' not found in string pool; it was not collected during build_string_pool"))?;
+    ctx.emit(Instruction::I32Const(*ptr as i32));
+    ctx.emit(Instruction::LocalSet(local));
+    return Ok(local);
+  }
   emit_expr(ctx, expr)?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(local));

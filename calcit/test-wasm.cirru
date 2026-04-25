@@ -805,6 +805,14 @@
           :code $ quote
             defn test-str-pad-right () $ &str:count (&str:pad-right |hi 5 |-)
           :examples $ []
+        |test-display-by-bin $ %{} :CodeEntry (:doc "|17 in binary = 0b10001, length 7") (:schema :dynamic)
+          :code $ quote
+            defn test-display-by-bin () $ &str:count (&number:display-by 17 2)
+          :examples $ []
+        |test-display-by-hex $ %{} :CodeEntry (:doc "|17 in hex = 0x11, length 4") (:schema :dynamic)
+          :code $ quote
+            defn test-display-by-hex () $ &str:count (&number:display-by 17 16)
+          :examples $ []
         |test-str-rest $ %{} :CodeEntry (:doc "|rest of hello has 4 bytes") (:schema :dynamic)
           :code $ quote
             defn test-str-rest () $ &str:count (&str:rest |hello)
