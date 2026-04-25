@@ -566,8 +566,7 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
   match kind {
     FoldlCallKind::Static(fn_idx) => {
       ctx.emit(Instruction::LocalGet(elem));
-      ctx.emit(Instruction::LocalGet(idx));
-      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.ptr_to_f64(idx);
       ctx.emit(Instruction::Call(*fn_idx));
       Ok(())
     }
@@ -586,8 +585,7 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
     // Dynamic dispatch: (elem_f64, idx_as_f64) → f64. Canonical type 2.
     FoldlCallKind::Dynamic(fn_local_idx) => {
       ctx.emit(Instruction::LocalGet(elem));
-      ctx.emit(Instruction::LocalGet(idx));
-      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.ptr_to_f64(idx);
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
       ctx.emit(Instruction::CallIndirect { type_index: 2, table_index: 0 });
@@ -1016,7 +1014,6 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(acc));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(acc);
   Ok(())
 }

@@ -241,10 +241,7 @@ pub(super) fn emit_alloc_with_count(ctx: &mut WasmGenCtx, count_i32: u32, total_
   emit_bump_alloc_dynamic(ctx, size, ptr, type_tag);
 
   // Store count
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::LocalGet(count_i32));
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.store_i32_as_f64(ptr, count_i32, 0);
   ptr
 }
 
@@ -252,15 +249,9 @@ pub(super) fn emit_alloc_map_with_root(ctx: &mut WasmGenCtx, count_i32: u32, roo
   let ptr = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, 16, ptr, "map");
 
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::LocalGet(count_i32));
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.store_i32_as_f64(ptr, count_i32, 0);
 
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::LocalGet(root_i32));
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.store_i32_as_f64(ptr, root_i32, 8);
 
   ptr
 }
@@ -312,4 +303,30 @@ pub(super) fn emit_list_elem_addr(ctx: &mut WasmGenCtx, list_ptr: u32, i: u32) -
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(addr));
   addr
+}
+
+/// Load list element at index `i` as an i32 pointer.
+/// Allocates a new i32 local, stores the truncated pointer, returns it.
+/// Equivalent to: `emit_list_load_elem(ctx, list_ptr, i) + I32TruncF64U + LocalSet(new)`.
+pub(super) fn emit_list_load_ptr(ctx: &mut WasmGenCtx, list_ptr: u32, i: u32) -> u32 {
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_list_load_elem(ctx, list_ptr, i);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  ptr
+}
+
+/// Store f64 value `val` at list index `idx` inside `dst` (all i32 locals).
+/// address = dst + 8 + idx * 8  (slot 0 is the count header)
+/// Pattern: `LocalGet(dst) + I32Const(8) + I32Add + LocalGet(idx) + I32Const(8) + I32Mul + I32Add + LocalGet(val) + F64Store(0)`.
+pub(super) fn emit_list_store_elem(ctx: &mut WasmGenCtx, dst: u32, idx: u32, val: u32) {
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(val));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 }

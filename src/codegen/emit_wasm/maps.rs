@@ -40,8 +40,7 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   let hashed_root = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
   let ptr = emit_alloc_map_with_root(ctx, count_local, hashed_root);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(ptr);
   Ok(())
 }
 
@@ -198,8 +197,7 @@ pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -246,8 +244,7 @@ pub(super) fn emit_map_vals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -314,8 +311,7 @@ pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(pair));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(pair);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
   ctx.i32_inc(i);
@@ -324,8 +320,7 @@ pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(outer));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(outer);
   Ok(())
 }
 
@@ -504,13 +499,11 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
   // Patch actual count and convert flat map back to runtime map.
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
   let dst = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root);
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -638,13 +631,11 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
   let dst = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root);
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -747,12 +738,10 @@ pub(super) fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -854,12 +843,10 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -925,8 +912,7 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::LocalGet(rest_map));
     ctx.emit(Instruction::F64Store(mem_arg_f64(24)));
 
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.ptr_to_f64(list_ptr);
     ctx.emit(Instruction::LocalSet(result));
   }
   ctx.emit(Instruction::End);
@@ -1133,12 +1119,10 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
 
   // Build the result map via __rt_map_from_flat from the flat dst_root buffer
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
   let dst = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root);
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 

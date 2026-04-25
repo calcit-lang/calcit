@@ -22,8 +22,7 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
     ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
   }
 
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(ptr);
   Ok(())
 }
 
@@ -150,15 +149,7 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(be));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  emit_list_store_elem(ctx, dst, write_idx, be);
   ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
@@ -168,13 +159,11 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
   let result = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   ctx.emit(Instruction::LocalSet(result));
   Ok(result)
 }
@@ -219,15 +208,7 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(elem));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  emit_list_store_elem(ctx, dst, write_idx, elem);
   ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
@@ -237,13 +218,11 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
   let result = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   ctx.emit(Instruction::LocalSet(result));
   Ok(result)
 }
@@ -280,21 +259,12 @@ pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u
     let sb = emit_addr_offset(ctx, src, 8);
     emit_copy_f64_loop(ctx, db, sb, count);
 
-    ctx.emit(Instruction::LocalGet(d));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(count));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Mul);
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(elem));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    emit_list_store_elem(ctx, d, count, elem);
   }
   ctx.emit(Instruction::End);
 
   let result = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   ctx.emit(Instruction::LocalSet(result));
   Ok(result)
 }
@@ -326,8 +296,7 @@ pub(super) fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   let src_base = emit_addr_offset(ctx, src, 8);
   emit_copy_f64_loop(ctx, dst_base, src_base, count);
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -371,20 +340,11 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     emit_copy_f64_loop(ctx, db, sb, count);
 
     // Append element
-    ctx.emit(Instruction::LocalGet(d));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(count));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Mul);
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(elem));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    emit_list_store_elem(ctx, d, count, elem);
   }
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -466,8 +426,7 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   }
   ctx.emit(Instruction::End);
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -517,15 +476,7 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(elem));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  emit_list_store_elem(ctx, dst, write_idx, elem);
   ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
@@ -537,12 +488,10 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -657,12 +606,10 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -711,15 +658,7 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Ne);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(elem));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  emit_list_store_elem(ctx, dst, write_idx, elem);
   ctx.i32_inc(write_idx);
   ctx.emit(Instruction::End);
 
@@ -729,12 +668,10 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::LocalGet(write_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
   Ok(())
 }
 
@@ -808,8 +745,7 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     emit_copy_f64_loop(ctx, db2, sb2, after_n);
 
     let rest_set_f64 = ctx.alloc_local();
-    ctx.emit(Instruction::LocalGet(rest_set_ptr));
-    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.ptr_to_f64(rest_set_ptr);
     ctx.emit(Instruction::LocalSet(rest_set_f64));
 
     // Allocate 2-element list [elem0, rest-set]
@@ -825,8 +761,7 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::LocalGet(rest_set_f64));
     ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
 
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.ptr_to_f64(list_ptr);
     ctx.emit(Instruction::LocalSet(result));
   }
   ctx.emit(Instruction::End);

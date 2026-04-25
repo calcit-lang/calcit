@@ -568,6 +568,22 @@ impl WasmGenCtx {
     self.emit(Instruction::I32LtS);
     self.br_if_exit();
   }
+
+  /// Push an i32 local onto the WASM stack as f64.
+  /// Common return pattern: `LocalGet(ptr) + F64ConvertI32U`.
+  pub(super) fn ptr_to_f64(&mut self, local: u32) {
+    self.emit(Instruction::LocalGet(local));
+    self.emit(Instruction::F64ConvertI32U);
+  }
+
+  /// Store an i32 local as f64 into slot at `byte_offset` relative to `ptr`.
+  /// Pattern: `LocalGet(ptr) + LocalGet(val) + F64ConvertI32U + F64Store(offset)`.
+  pub(super) fn store_i32_as_f64(&mut self, ptr: u32, val: u32, byte_offset: u64) {
+    self.emit(Instruction::LocalGet(ptr));
+    self.emit(Instruction::LocalGet(val));
+    self.emit(Instruction::F64ConvertI32U);
+    self.emit(Instruction::F64Store(mem_arg_f64(byte_offset)));
+  }
 }
 
 /// Check that `args` has exactly `n` elements and return an error if not.

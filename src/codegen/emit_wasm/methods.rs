@@ -215,8 +215,7 @@ fn emit_list_rest_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
   let src_base = emit_addr_offset(ctx, src, 16);
   emit_copy_f64_loop(ctx, dst_base, src_base, new_count);
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
 }
 
 fn emit_tuple_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
@@ -409,8 +408,7 @@ fn emit_empty_string(ctx: &mut WasmGenCtx) {
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(ptr_local);
 }
 
 fn emit_method_empty_value(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
@@ -654,8 +652,7 @@ fn emit_list_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
   ctx.emit(Instruction::LocalGet(val_local));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
 }
 
 fn emit_tuple_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32, val_local: u32) {
@@ -695,8 +692,7 @@ fn emit_tuple_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_
   ctx.emit(Instruction::LocalGet(val_local));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.ptr_to_f64(dst);
 }
 
 fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, val_local: u32) -> Result<(), String> {
