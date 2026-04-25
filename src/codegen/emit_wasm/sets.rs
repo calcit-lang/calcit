@@ -110,11 +110,7 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(max_count));
 
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(max_count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
+  let total_slots = ctx.i32_offset(max_count, 1);
   let dst = emit_alloc_with_count(ctx, max_count, total_slots, "set");
 
   let db = emit_addr_offset(ctx, dst, 8);
@@ -125,9 +121,7 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::LocalSet(write_idx));
 
-  let bi = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(bi));
+  let bi = ctx.alloc_i32(0);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -172,20 +166,12 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
 pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> Result<u32, String> {
   let a_count = emit_load_count_i32(ctx, a);
 
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
+  let total_slots = ctx.i32_offset(a_count, 1);
   let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
 
-  let write_idx = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(write_idx));
+  let write_idx = ctx.alloc_i32(0);
 
-  let ai = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(ai));
+  let ai = ctx.alloc_i32(0);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -241,16 +227,8 @@ pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
   {
-    let nc = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(count));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(nc));
-    let ts = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(nc));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(ts));
+    let nc = ctx.i32_offset(count, 1);
+    let ts = ctx.i32_offset(nc, 1);
     let d = emit_alloc_with_count(ctx, nc, ts, "set");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
@@ -321,16 +299,8 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.begin_block_if();
   {
     // Not found: append like list
-    let nc = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(count));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(nc));
-    let ts = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(nc));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(ts));
+    let nc = ctx.i32_offset(count, 1);
+    let ts = ctx.i32_offset(nc, 1);
     let d = emit_alloc_with_count(ctx, nc, ts, "set");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
@@ -369,16 +339,8 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::I32Ne);
   ctx.begin_block_if();
   {
-    let nc = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(count));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Sub);
-    ctx.emit(Instruction::LocalSet(nc));
-    let ts = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(nc));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(ts));
+    let nc = ctx.i32_offset(count, -1);
+    let ts = ctx.i32_offset(nc, 1);
     let d = emit_alloc_with_count(ctx, nc, ts, "set");
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
@@ -438,20 +400,12 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let b = emit_ptr_to_i32(ctx, &args[1])?;
 
   // Over-allocate: max possible result is a_count elements
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
+  let total_slots = ctx.i32_offset(a_count, 1);
   let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
 
-  let write_idx = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(write_idx));
+  let write_idx = ctx.alloc_i32(0);
 
-  let ai = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(ai));
+  let ai = ctx.alloc_i32(0);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -510,11 +464,7 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(max_count));
 
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(max_count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
+  let total_slots = ctx.i32_offset(max_count, 1);
   let dst = emit_alloc_with_count(ctx, max_count, total_slots, "set");
 
   // Copy all of a into result
@@ -526,9 +476,7 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::LocalGet(a_count));
   ctx.emit(Instruction::LocalSet(write_idx));
 
-  let bi = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(bi));
+  let bi = ctx.alloc_i32(0);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -547,12 +495,8 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::LocalSet(be));
 
   // Scan dst for matching element
-  let found = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(found));
-  let di = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(di));
+  let found = ctx.alloc_i32(0);
+  let di = ctx.alloc_i32(0);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -621,20 +565,12 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   let b = emit_ptr_to_i32(ctx, &args[1])?;
 
   // Max result size is a_count
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
+  let total_slots = ctx.i32_offset(a_count, 1);
   let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
 
-  let write_idx = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(write_idx));
+  let write_idx = ctx.alloc_i32(0);
 
-  let ai = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(ai));
+  let ai = ctx.alloc_i32(0);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -699,16 +635,8 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
     // rest-set = exclude(src, elem0)
     let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", src, elem0);
-    let nc = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(count));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Sub);
-    ctx.emit(Instruction::LocalSet(nc));
-    let ts = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(nc));
-    ctx.emit(Instruction::I32Const(1));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(ts));
+    let nc = ctx.i32_offset(count, -1);
+    let ts = ctx.i32_offset(nc, 1);
     let rest_set_ptr = emit_alloc_with_count(ctx, nc, ts, "set");
 
     // Copy elements before found_idx

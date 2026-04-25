@@ -120,9 +120,7 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(Instruction::LocalSet(acc));
 
   // Loop index
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(i));
+  let i = ctx.alloc_i32(0);
 
   // Temporary element local
   let elem = ctx.alloc_local();
@@ -312,9 +310,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   emit_expr(ctx, &args[2])?;
   ctx.emit(Instruction::LocalSet(result));
 
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(i));
+  let i = ctx.alloc_i32(0);
 
   let elem = ctx.alloc_local();
   let tuple_ptr = ctx.alloc_local_typed(ValType::I32);
@@ -388,11 +384,7 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::LocalSet(result));
 
   // i = count - 1 (signed i32, start from last element)
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(i));
+  let i = ctx.i32_offset(count, -1);
 
   let elem = ctx.alloc_local();
   let tuple_ptr = ctx.alloc_local_typed(ValType::I32);
@@ -455,9 +447,7 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(acc));
 
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(i));
+  let i = ctx.alloc_i32(0);
 
   let elem = ctx.alloc_local();
   let result = ctx.alloc_local();
@@ -622,23 +612,21 @@ pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
   expect_arity(2, args, "map")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_ptr = emit_alloc_with_count(ctx, count, total_slots, "list");
+  let dst_ptr = emit_alloc_list(ctx, count);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map: {e}"))?;
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add);
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
+  // write f(elem) into dst[i]: push address of dst[i] then store result
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
   emit_unary_step(ctx, &kind, elem)?;
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::F64ConvertI32U);
+  emit_list_iter_end(ctx, i);
+  ctx.ptr_to_f64(dst_ptr);
   Ok(())
 }
 
@@ -647,23 +635,21 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   expect_arity(2, args, "map-indexed")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_ptr = emit_alloc_with_count(ctx, count, total_slots, "list");
+  let dst_ptr = emit_alloc_list(ctx, count);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map-indexed: {e}"))?;
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add);
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
+  // write f(elem, i) into dst[i]
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
   emit_binary_step_ei(ctx, &kind, elem, i)?;
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::F64ConvertI32U);
+  emit_list_iter_end(ctx, i);
+  ctx.ptr_to_f64(dst_ptr);
   Ok(())
 }
 
@@ -673,17 +659,10 @@ pub(super) fn emit_each(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("each: {e}"))?;
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
   ctx.emit(Instruction::Drop);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
+  emit_list_iter_end(ctx, i);
   ctx.emit(f64_const(0.0));
   Ok(())
 }
@@ -694,29 +673,20 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter: {e}"))?;
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_ptr = emit_alloc_with_count(ctx, count, total_slots, "list");
-  let result_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(result_count));
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  let dst_ptr = emit_alloc_list(ctx, count);
+  let result_count = ctx.alloc_i32(0);
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::F64Ne);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::LocalGet(result_count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(elem)); ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(result_count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(result_count));
+  emit_list_store_elem(ctx, dst_ptr, result_count, elem);
+  ctx.i32_inc(result_count);
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::LocalGet(result_count)); ctx.emit(Instruction::F64ConvertI32U); ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::F64ConvertI32U);
+  emit_list_iter_end(ctx, i);
+  // update count header to actual result_count
+  ctx.store_i32_as_f64(dst_ptr, result_count, 0);
+  ctx.ptr_to_f64(dst_ptr);
   Ok(())
 }
 
@@ -727,21 +697,18 @@ pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("any?: {e}"))?;
   let result = ctx.alloc_local();
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::LocalSet(result));
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::F64Ne);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
-  ctx.emit(f64_const(1.0)); ctx.emit(Instruction::LocalSet(result)); ctx.emit(Instruction::Br(2));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Br(2)); // exit the block+loop
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
+  emit_list_iter_end(ctx, i);
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
@@ -753,21 +720,18 @@ pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("every?: {e}"))?;
   let result = ctx.alloc_local();
-  ctx.emit(f64_const(1.0)); ctx.emit(Instruction::LocalSet(result));
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::LocalSet(result));
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::F64Eq);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
   ctx.begin_block_if();
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::LocalSet(result)); ctx.emit(Instruction::Br(2));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Br(2)); // exit the block+loop
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
+  emit_list_iter_end(ctx, i);
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
@@ -779,21 +743,18 @@ pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find: {e}"))?;
   let result = ctx.alloc_local();
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::LocalSet(result));
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::F64Ne);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(elem)); ctx.emit(Instruction::LocalSet(result)); ctx.emit(Instruction::Br(2));
+  ctx.emit(Instruction::LocalGet(elem));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Br(2)); // exit the block+loop
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
+  emit_list_iter_end(ctx, i);
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
@@ -815,29 +776,20 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter-not: {e}"))?;
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_ptr = emit_alloc_with_count(ctx, count, total_slots, "list");
-  let result_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(result_count));
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  let dst_ptr = emit_alloc_list(ctx, count);
+  let result_count = ctx.alloc_i32(0);
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::F64Eq);  // keep when f returns falsy (== 0.0)
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq); // keep when f returns falsy (== 0.0)
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::LocalGet(result_count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(elem)); ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(result_count)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(result_count));
+  emit_list_store_elem(ctx, dst_ptr, result_count, elem);
+  ctx.i32_inc(result_count);
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::LocalGet(result_count)); ctx.emit(Instruction::F64ConvertI32U); ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(dst_ptr)); ctx.emit(Instruction::F64ConvertI32U);
+  emit_list_iter_end(ctx, i);
+  // update count header to actual result_count
+  ctx.store_i32_as_f64(dst_ptr, result_count, 0);
+  ctx.ptr_to_f64(dst_ptr);
   Ok(())
 }
 
@@ -889,21 +841,19 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find-index: {e}"))?;
   let result = ctx.alloc_local();
-  ctx.emit(f64_const(-1.0)); ctx.emit(Instruction::LocalSet(result));
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0)); ctx.emit(Instruction::LocalSet(i));
-  let elem = ctx.alloc_local();
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::LocalGet(count)); ctx.emit(Instruction::I32GeU); ctx.emit(Instruction::BrIf(1));
-  ctx.emit(Instruction::LocalGet(src_ptr)); ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Mul); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::F64Load(mem_arg_f64(0))); ctx.emit(Instruction::LocalSet(elem));
+  ctx.emit(f64_const(-1.0));
+  ctx.emit(Instruction::LocalSet(result));
+  let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
-  ctx.emit(f64_const(0.0)); ctx.emit(Instruction::F64Ne);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::F64ConvertI32U); ctx.emit(Instruction::LocalSet(result)); ctx.emit(Instruction::Br(2));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Br(2)); // exit the block+loop
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i)); ctx.br_loop();
-  ctx.end_block_loop();
+  emit_list_iter_end(ctx, i);
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
@@ -950,9 +900,7 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(acc));
 
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(i));
+  let i = ctx.alloc_i32(0);
   let key = ctx.alloc_local();
   let val = ctx.alloc_local();
   let result_ptr = ctx.alloc_local_typed(ValType::I32);

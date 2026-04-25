@@ -584,6 +584,30 @@ impl WasmGenCtx {
     self.emit(Instruction::F64ConvertI32U);
     self.emit(Instruction::F64Store(mem_arg_f64(byte_offset)));
   }
+
+  /// Allocate a new i32 local and initialise it to a constant.
+  /// Common pattern: `let x = alloc_local_typed(I32); I32Const(val); LocalSet(x)`.
+  pub(super) fn alloc_i32(&mut self, val: i32) -> u32 {
+    let local = self.alloc_local_typed(ValType::I32);
+    self.emit(Instruction::I32Const(val));
+    self.emit(Instruction::LocalSet(local));
+    local
+  }
+
+  /// Allocate a new i32 local = `src + delta` (negative delta uses I32Sub).
+  /// Replaces: `alloc_local_typed(I32) + LocalGet(src) + I32Const(|delta|) + I32Add/Sub + LocalSet`.
+  pub(super) fn i32_offset(&mut self, src: u32, delta: i32) -> u32 {
+    let local = self.alloc_local_typed(ValType::I32);
+    self.emit(Instruction::LocalGet(src));
+    self.emit(Instruction::I32Const(delta.unsigned_abs() as i32));
+    if delta >= 0 {
+      self.emit(Instruction::I32Add);
+    } else {
+      self.emit(Instruction::I32Sub);
+    }
+    self.emit(Instruction::LocalSet(local));
+    local
+  }
 }
 
 /// Check that `args` has exactly `n` elements and return an error if not.

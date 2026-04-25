@@ -38,11 +38,7 @@ pub(super) fn emit_str_alloc(ctx: &mut WasmGenCtx, len_i32: u32) -> (u32, u32) {
   ctx.ptr_to_f64(len_i32);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  let content_base = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(content_base));
+  let content_base = ctx.i32_offset(ptr, 8);
 
   (ptr, content_base)
 }
@@ -97,11 +93,7 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let (ptr_c, dst_c) = emit_str_alloc(ctx, len_c);
 
   // Copy a's bytes: memory.copy(dst_c, ptr_a+8, len_a)
-  let src_a = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_a));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(src_a));
+  let src_a = ctx.i32_offset(ptr_a, 8);
 
   ctx.emit(Instruction::LocalGet(dst_c));
   ctx.emit(Instruction::LocalGet(src_a));
@@ -115,11 +107,7 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(dst_b));
 
-  let src_b = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_b));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(src_b));
+  let src_b = ctx.i32_offset(ptr_b, 8);
 
   ctx.emit(Instruction::LocalGet(dst_b));
   ctx.emit(Instruction::LocalGet(src_b));
@@ -160,9 +148,7 @@ pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   ctx.emit(Instruction::Else);
 
-  let one = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::LocalSet(one));
+  let one = ctx.alloc_i32(1);
   let (ptr_b, dst_b) = emit_str_alloc(ctx, one);
 
   let byte = ctx.alloc_local_typed(ValType::I32);
@@ -205,20 +191,12 @@ pub(super) fn emit_str_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(old_len));
 
-  let new_len = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(old_len));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(new_len));
+  let new_len = ctx.i32_offset(old_len, -1);
 
   let (ptr_b, dst_b) = emit_str_alloc(ctx, new_len);
 
   // src = ptr_a + 8 + 1 (skip byte_len header + first byte)
-  let src = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_a));
-  ctx.emit(Instruction::I32Const(9));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(src));
+  let src = ctx.i32_offset(ptr_a, 9);
 
   ctx.emit(Instruction::LocalGet(dst_b));
   ctx.emit(Instruction::LocalGet(src));
@@ -518,11 +496,7 @@ fn concat_two_i32_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
 
   let (ptr_c, dst_c) = emit_str_alloc(ctx, len_c);
 
-  let src_a = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_a));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(src_a));
+  let src_a = ctx.i32_offset(ptr_a, 8);
   ctx.emit(Instruction::LocalGet(dst_c));
   ctx.emit(Instruction::LocalGet(src_a));
   ctx.emit(Instruction::LocalGet(len_a));
@@ -534,11 +508,7 @@ fn concat_two_i32_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(dst_b_off));
 
-  let src_b = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr_b));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(src_b));
+  let src_b = ctx.i32_offset(ptr_b, 8);
 
   ctx.emit(Instruction::LocalGet(dst_b_off));
   ctx.emit(Instruction::LocalGet(src_b));
@@ -588,9 +558,7 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
 pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() {
     // Return empty string: allocate string with length 0
-    let zero_local = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::I32Const(0));
-    ctx.emit(Instruction::LocalSet(zero_local));
+    let zero_local = ctx.alloc_i32(0);
     let (ptr, _) = emit_str_alloc(ctx, zero_local);
     ctx.ptr_to_f64(ptr);
     return Ok(());
@@ -621,18 +589,14 @@ pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 /// `str-spaced args...` — convert each arg to string, join with space separators.
 pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() {
-    let zero_local = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::I32Const(0));
-    ctx.emit(Instruction::LocalSet(zero_local));
+    let zero_local = ctx.alloc_i32(0);
     let (ptr, _) = emit_str_alloc(ctx, zero_local);
     ctx.ptr_to_f64(ptr);
     return Ok(());
   }
 
   // Allocate a 1-byte space string inline in WASM memory
-  let one_local = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::LocalSet(one_local));
+  let one_local = ctx.alloc_i32(1);
   let (space_ptr, space_content) = emit_str_alloc(ctx, one_local);
   // Write 0x20 (ASCII space) at content_base
   ctx.emit(Instruction::LocalGet(space_content));
@@ -1074,9 +1038,7 @@ pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f
   // result starts as "" (empty string in pool or alloc 0-length string)
   let result = ctx.alloc_local();
   // Alloc an empty string
-  let zero = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(zero));
+  let zero = ctx.alloc_i32(0);
   let (empty_ptr, _) = emit_str_alloc(ctx, zero);
   ctx.ptr_to_f64(empty_ptr);
   ctx.emit(Instruction::LocalSet(result));
@@ -1086,9 +1048,7 @@ pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(sep_ptr));
 
-  let i = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::LocalSet(i));
+  let i = ctx.alloc_i32(0);
 
   ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));

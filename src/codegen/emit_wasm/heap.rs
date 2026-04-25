@@ -330,3 +330,38 @@ pub(super) fn emit_list_store_elem(ctx: &mut WasmGenCtx, dst: u32, idx: u32, val
   ctx.emit(Instruction::LocalGet(val));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 }
+
+// ===========================================================================
+// HOF list-iteration skeleton
+// ===========================================================================
+
+/// Begin a standard indexed iteration loop over a list.
+///
+/// Emits: `i=0` init, `begin_block + begin_loop + loop_exit_if_ge(i, count)`,
+/// loads `src_ptr[i]` into `elem`.
+///
+/// Returns `(i, elem)` locals.  Caller emits the loop body, then calls
+/// `emit_list_iter_end(ctx, i)` to close the loop.
+///
+/// ```text
+/// let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
+/// // … body using elem and i …
+/// emit_list_iter_end(ctx, i);
+/// ```
+pub(super) fn emit_list_iter_begin(ctx: &mut WasmGenCtx, src_ptr: u32, count: u32) -> (u32, u32) {
+  let i = ctx.alloc_i32(0);
+  let elem = ctx.alloc_local();
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(i, count);
+  emit_list_load_elem(ctx, src_ptr, i);
+  ctx.emit(Instruction::LocalSet(elem));
+  (i, elem)
+}
+
+/// Close a loop opened by `emit_list_iter_begin`: `i++`, `br_loop`, `end_block_loop`.
+pub(super) fn emit_list_iter_end(ctx: &mut WasmGenCtx, i: u32) {
+  ctx.i32_inc(i);
+  ctx.br_loop();
+  ctx.end_block_loop();
+}
