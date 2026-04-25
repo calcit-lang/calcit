@@ -72,6 +72,31 @@ function checkApprox(label, expected, fn, ...args) {
   }
 }
 
+const STRING_TAG = 34;
+const HEAP_MAGIC = 0xca1c17a9 | 0;
+function readWasmStr(ptr) {
+  const mem = new DataView(inst.exports.memory.buffer);
+  const iptr = ptr | 0;
+  if (iptr < 16) return null;
+  const magic = mem.getInt32(iptr - 8, true);
+  if (magic !== HEAP_MAGIC) return null;
+  const tag = mem.getInt32(iptr - 4, true);
+  if (tag !== STRING_TAG) return null;
+  const byteLen = mem.getFloat64(iptr, true);
+  return new TextDecoder().decode(new Uint8Array(mem.buffer, iptr + 8, byteLen));
+}
+
+function checkStr(label, expected, fn, ...args) {
+  const got = fn(...args);
+  const s = readWasmStr(got);
+  if (s === expected) {
+    console.log(`  ${label} = ${JSON.stringify(s)}  OK`);
+  } else {
+    console.log(`  ${label} = ${JSON.stringify(s)}  FAIL (expected ${JSON.stringify(expected)})`);
+    fail++;
+  }
+}
+
 function getHashSlots(n) {
   const hash = e["test-map-hash-value"](n) >>> 0;
   return [hash & 31, (hash >>> 5) & 31];
@@ -317,7 +342,7 @@ check("test-str-empty-true()", 1, e["test-str-empty-true"]); // count("") == 0
 check("test-str-empty-false()", 0, e["test-str-empty-false"]); // count("hi") == 0 is false
 check("test-str-concat()", 6, e["test-str-concat"]);
 check("test-str-nth()", 1, e["test-str-nth"]); // &str:nth returns the one-character string "e"
-check("test-str-first()", 104, e["test-str-first"]); // 'h' = 0x68 = 104
+checkStr("test-str-first()", "h", e["test-str-first"]); // &str:first returns "h" as a one-character string
 check("test-str-rest()", 4, e["test-str-rest"]);
 check("test-str-slice()", 3, e["test-str-slice"]); // &str:slice "abcde" 1 4 = "bcd"
 check("test-str-compare-eq()", 0, e["test-str-compare-eq"]);

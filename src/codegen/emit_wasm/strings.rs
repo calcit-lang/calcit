@@ -173,10 +173,36 @@ pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 /// `&str:first str` — first byte value as f64.
 pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&str:first")?;
-  emit_expr(ctx, &args[0])?;
+  let ptr = emit_ptr_to_i32(ctx, &args[0])?;
+
+  let len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Load8U(mem_arg_byte(8))); // offset 8 = first byte after byte_len
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(len));
+
+  // empty string → nil
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  ctx.emit(Instruction::Else);
+
+  // allocate a 1-byte string and copy the first byte
+  let one = ctx.alloc_i32(1);
+  let (ptr_b, dst_b) = emit_str_alloc(ctx, one);
+
+  let byte = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(8))); // offset 8 = first byte after byte_len field
+  ctx.emit(Instruction::LocalSet(byte));
+
+  ctx.emit(Instruction::LocalGet(dst_b));
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+
+  ctx.ptr_to_f64(ptr_b);
+  ctx.emit(Instruction::End); // end else
   Ok(())
 }
 
@@ -443,6 +469,23 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 }
 
 pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  // Fast path: `(format-to-lisp (quote X))` — the result is a compile-time constant string.
+  // The assert= macro always calls this with a quoted expression for error display.
+  if args.len() == 1 {
+    if let Calcit::List(inner) = &args[0] {
+      if inner.len() >= 2 {
+        if let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0] {
+          let s = crate::calcit::format_to_lisp(&inner[1]);
+          // Look up in string pool (pre-interned by collect_strings_from_expr)
+          if let Some(&ptr) = ctx.string_pool.get(&s) {
+            ctx.emit(super::f64_const(ptr as f64));
+            return Ok(());
+          }
+        }
+      }
+    }
+  }
+  // Fallback: evaluate args for side-effects and return nil
   ctx.stub_proc(args)
 }
 
@@ -1266,8 +1309,7 @@ pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
     ctx.emit(Instruction::I32Or);
     ctx.emit(Instruction::LocalSet(result));
   }
-  ctx.emit(Instruction::End); // end 4-byte if
-  ctx.emit(Instruction::End); // end 3-byte elif
+  ctx.emit(Instruction::End); // end 3-byte/4-byte elif
   ctx.emit(Instruction::End); // end 2-byte elif
   ctx.emit(Instruction::End); // end ASCII if
 
@@ -1281,5 +1323,23 @@ pub(super) fn emit_parse_float(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   expect_arity(1, args, "parse-float")?;
   emit_expr(ctx, &args[0])?;
   ctx.call_rt("__rt_parse_float");
+  Ok(())
+}
+
+/// `char-from-code` — encode a Unicode codepoint as a single-character heap string.
+pub(super) fn emit_char_from_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "char-from-code")?;
+  emit_expr(ctx, &args[0])?;
+  ctx.call_rt("__rt_char_from_code");
+  Ok(())
+}
+
+/// `&str:replace s pattern replacement` — replace all occurrences of pattern in s.
+pub(super) fn emit_str_replace(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(3, args, "&str:replace")?;
+  emit_expr(ctx, &args[0])?;
+  emit_expr(ctx, &args[1])?;
+  emit_expr(ctx, &args[2])?;
+  ctx.call_rt("__rt_str_replace");
   Ok(())
 }

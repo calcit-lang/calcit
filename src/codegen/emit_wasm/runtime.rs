@@ -1,5 +1,5 @@
 use super::*;
-use wasm_encoder::BlockType;
+use wasm_encoder::{BlockType, Ieee64};
 
 pub(super) struct HostImport {
   pub(super) module: &'static str,
@@ -537,6 +537,21 @@ pub(super) fn build_runtime_fns(
   let parse_float_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_parse_float"), parse_float_idx);
   fns.push(build_rt_parse_float());
+
+  // char-from-code: __rt_char_from_code(cp: f64) → f64 (single-char string ptr)
+  let char_from_code_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_char_from_code"), char_from_code_idx);
+  fns.push(build_rt_char_from_code(string_tag));
+
+  // str-replace: __rt_str_replace(s:f64, pat:f64, rep:f64) → f64 (new string ptr)
+  let str_replace_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_str_replace"), str_replace_idx);
+  fns.push(build_rt_str_replace(string_tag));
+
+  // map-equal: __rt_map_equal(a: i32, b: i32) → i32 (1 if equal, 0 otherwise)
+  let map_equal_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_map_equal"), map_equal_idx);
+  fns.push(build_rt_map_equal(map_linearize_idx, map_get_value_idx));
 
   (fns, fn_index)
 }
@@ -2267,7 +2282,6 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   // locals: 1=raw_i64(i64), 2=neg(i32), 3=abs_i64(i64), 4=ndigits(i32),
   //          5=tmp_i64(i64), 6=payload(i32), 7=str_ptr(i32), 8=content(i32),
   //          9=pos(i32), 10=digit(i32), 11=raw_base(i32)
-  use wasm_encoder::Ieee64;
   let mut b = vec![Instruction::LocalGet(0)];
 
   // Check if value is an integer: floor(value) == value (and not NaN)
@@ -2529,7 +2543,6 @@ fn build_rt_display_by(string_tag: i32) -> CompiledFn {
   //   6=ndigits(i32), 7=prefix_len(i32), 8=total_len(i32), 9=padded(i32),
   //   10=str_ptr(i32), 11=content(i32), 12=digit_pos(i32), 13=digit(i32),
   //   14=raw_base(i32), 15=ch(i32), 16=payload(i32)
-  use wasm_encoder::Ieee64;
   let mut b: Vec<Instruction> = Vec::new();
 
   // radix_i64 = i64.trunc_f64_s(radix)
@@ -3249,7 +3262,6 @@ fn build_rt_blank() -> CompiledFn {
 /// Parses a decimal string to f64. Handles optional sign, integer digits,
 /// optional fractional digits. No scientific notation.
 fn build_rt_parse_float() -> CompiledFn {
-  use wasm_encoder::Ieee64;
   // params: 0=s(f64)
   // locals: 1=ptr(i32), 2=byte_len(i32), 3=content(i32), 4=i(i32),
   //         5=is_neg(i32), 6=b(i32), 7=result(f64), 8=frac_mult(f64)
@@ -3470,4 +3482,617 @@ fn build_rt_parse_float() -> CompiledFn {
     ],
     instructions: b,
   }
+}
+
+/// `__rt_char_from_code(cp: f64) → f64`
+///
+/// Encodes a Unicode codepoint (u32) as a UTF-8 string and allocates it on the heap.
+/// Returns the logical string pointer as f64.
+fn build_rt_char_from_code(str_tag: i32) -> CompiledFn {
+  // params: 0=cp(f64)
+  // locals: 1=code(i32), 2=raw_base(i32), 3=new_ptr(i32), 4=byte_len(i32)
+  let mut b: Vec<Instruction> = Vec::new();
+
+  // code = i32(cp)
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(1));
+
+  // Determine byte_len based on codepoint range
+  // Default: 1 byte (ASCII)
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::LocalSet(4));
+
+  // if code >= 0x80: byte_len = 2
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(2));
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::End);
+
+  // if code >= 0x800: byte_len = 3
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0x800));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(3));
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::End);
+
+  // if code >= 0x10000: byte_len = 4
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0x10000));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(4));
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::End);
+
+  // Allocate: raw_base = HEAP_PTR; write magic+tag; new_ptr = raw_base+8
+  b.push(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.push(Instruction::LocalTee(2)); // raw_base
+  b.push(Instruction::I32Const(HEAP_MAGIC));
+  b.push(Instruction::I32Store(mem_arg_i32(0)));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32Const(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Const(str_tag));
+  b.push(Instruction::I32Store(mem_arg_i32(0)));
+  // new_ptr = raw_base + 8
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32Const(8));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(3));
+  // store byte_len as f64 at new_ptr+0
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::F64ConvertI32U);
+  b.push(Instruction::F64Store(mem_arg_f64(0)));
+  // advance heap: raw_base + 16 + ((byte_len+7)&-8)
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32Const(16));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(7));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Const(-8i32));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Add);
+  b.push(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+
+  // Write UTF-8 bytes at new_ptr+8 based on byte_len
+  // content_base = new_ptr + 8
+  // byte_len == 1: store byte code (0..7F)
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Store8(mem_arg_byte(8)));
+  b.push(Instruction::End);
+
+  // byte_len == 2: 110xxxxx 10xxxxxx
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(2));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  // b0 = 0xC0 | (code >> 6)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0xC0));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(6));
+  b.push(Instruction::I32ShrU);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(8)));
+  // b1 = 0x80 | (code & 0x3F)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0x3F));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(9)));
+  b.push(Instruction::End);
+
+  // byte_len == 3: 1110xxxx 10xxxxxx 10xxxxxx
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(3));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  // b0 = 0xE0 | (code >> 12)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0xE0));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(12));
+  b.push(Instruction::I32ShrU);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(8)));
+  // b1 = 0x80 | ((code >> 6) & 0x3F)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(6));
+  b.push(Instruction::I32ShrU);
+  b.push(Instruction::I32Const(0x3F));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(9)));
+  // b2 = 0x80 | (code & 0x3F)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0x3F));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(10)));
+  b.push(Instruction::End);
+
+  // byte_len == 4: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(4));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  // b0 = 0xF0 | (code >> 18)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0xF0));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(18));
+  b.push(Instruction::I32ShrU);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(8)));
+  // b1 = 0x80 | ((code >> 12) & 0x3F)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(12));
+  b.push(Instruction::I32ShrU);
+  b.push(Instruction::I32Const(0x3F));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(9)));
+  // b2 = 0x80 | ((code >> 6) & 0x3F)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(6));
+  b.push(Instruction::I32ShrU);
+  b.push(Instruction::I32Const(0x3F));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(10)));
+  // b3 = 0x80 | (code & 0x3F)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0x3F));
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Store8(mem_arg_byte(11)));
+  b.push(Instruction::End);
+
+  // return f64(new_ptr)
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::F64ConvertI32U);
+
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64],
+    results: vec![ValType::F64],
+    locals: vec![
+      ValType::I32, // code (1)
+      ValType::I32, // raw_base (2)
+      ValType::I32, // new_ptr (3)
+      ValType::I32, // byte_len (4)
+    ],
+    instructions: b,
+  }
+}
+
+/// `__rt_str_replace(s: f64, pat: f64, rep: f64) → f64`
+///
+/// Replaces ALL non-overlapping occurrences of `pat` in `s` with `rep`.
+/// Writes output directly to heap — no separate scratch buffer needed.
+///
+/// Layout of a string logical ptr P: [byte_len:f64][utf8_bytes...]
+fn build_rt_str_replace(str_tag: i32) -> CompiledFn {
+  // params: 0=s(f64), 1=pat(f64), 2=rep(f64)
+  // locals: 3=s_ptr(i32), 4=s_len(i32), 5=s_cont(i32)
+  //         6=pat_ptr(i32), 7=pat_len(i32), 8=pat_cont(i32)
+  //         9=rep_ptr(i32), 10=rep_len(i32), 11=rep_cont(i32)
+  //         12=raw_base(i32), 13=content_base(i32)
+  //         14=out_pos(i32), 15=si(i32)
+  //         16=pi(i32), 17=matched(i32)
+  //         18=new_ptr(i32), 19=padded(i32)
+  //         20=max_out(i32), 21=tmp(i32)
+  let mut b: Vec<Instruction> = Vec::new();
+
+  // unpack s
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(3));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::F64Load(mem_arg_f64(0)));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::I32Const(8));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(5));
+
+  // unpack pat
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(6));
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::F64Load(mem_arg_f64(0)));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(8));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(8));
+
+  // if pat_len == 0: return s unchanged
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::I32Eqz);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::F64ConvertI32U);
+  b.push(Instruction::Return);
+  b.push(Instruction::End);
+
+  // unpack rep
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(9));
+  b.push(Instruction::LocalGet(9));
+  b.push(Instruction::F64Load(mem_arg_f64(0)));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(10));
+  b.push(Instruction::LocalGet(9));
+  b.push(Instruction::I32Const(8));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(11));
+
+  // max_out = s_len + (s_len + 1) * rep_len (worst case: all chars replaced)
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(10));
+  b.push(Instruction::I32Mul);
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(20));
+
+  // raw_base = HEAP_PTR (save before allocating)
+  b.push(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.push(Instruction::LocalSet(12));
+
+  // content_base = raw_base + 16 (after 8-byte header + 8-byte byte_len)
+  b.push(Instruction::LocalGet(12));
+  b.push(Instruction::I32Const(16));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(13));
+
+  // padded = (max_out + 7) & -8
+  b.push(Instruction::LocalGet(20));
+  b.push(Instruction::I32Const(7));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Const(-8i32));
+  b.push(Instruction::I32And);
+  b.push(Instruction::LocalSet(19));
+
+  // Pessimistic bump: HEAP_PTR = raw_base + 16 + padded
+  b.push(Instruction::LocalGet(12));
+  b.push(Instruction::I32Const(16));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(19));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+
+  // out_pos = 0, si = 0
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(14));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(15));
+
+  // Main scan loop: while si + pat_len <= s_len
+  b.push(Instruction::Block(BlockType::Empty));
+  b.push(Instruction::Loop(BlockType::Empty));
+  // break if si + pat_len > s_len
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32GtU);
+  b.push(Instruction::BrIf(1));
+
+  // Try to match: pi = 0, matched = 1
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(16));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::LocalSet(17));
+
+  // Inner compare loop
+  b.push(Instruction::Block(BlockType::Empty));
+  b.push(Instruction::Loop(BlockType::Empty));
+  // if pi >= pat_len: done (matched)
+  b.push(Instruction::LocalGet(16));
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::BrIf(1));
+  // if s_cont[si+pi] != pat_cont[pi]: mismatch
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(16));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::LocalGet(8));
+  b.push(Instruction::LocalGet(16));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::I32Ne);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(17)); // matched = 0
+  b.push(Instruction::Br(2));        // break out of inner block
+  b.push(Instruction::End);
+  // pi++; continue
+  b.push(Instruction::LocalGet(16));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(16));
+  b.push(Instruction::Br(0));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+
+  // if matched: copy rep → content_base+out_pos, si += pat_len, out_pos += rep_len
+  b.push(Instruction::LocalGet(17));
+  b.push(Instruction::If(BlockType::Empty));
+  // memory.copy(content_base + out_pos, rep_cont, rep_len)
+  b.push(Instruction::LocalGet(13));
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(11));
+  b.push(Instruction::LocalGet(10));
+  b.push(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::LocalGet(10));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(14)); // out_pos += rep_len
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(15)); // si += pat_len
+  b.push(Instruction::Else);
+  // not matched: copy 1 byte; si++; out_pos++
+  b.push(Instruction::LocalGet(13));
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::I32Store8(mem_arg_byte(0)));
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(14));
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(15));
+  b.push(Instruction::End);
+  b.push(Instruction::Br(0));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+
+  // Copy tail: s_cont[si..s_len] → content_base + out_pos
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::I32Sub);
+  b.push(Instruction::LocalSet(21)); // tmp = s_len - si
+  b.push(Instruction::LocalGet(21));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::I32GtU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(13));
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::LocalGet(15));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(21));
+  b.push(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::LocalGet(21));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(14));
+  b.push(Instruction::End);
+
+  // Write header: magic, str_tag, byte_len at raw_base
+  b.push(Instruction::LocalGet(12));
+  b.push(Instruction::I32Const(HEAP_MAGIC));
+  b.push(Instruction::I32Store(mem_arg_i32(0)));
+  b.push(Instruction::LocalGet(12));
+  b.push(Instruction::I32Const(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Const(str_tag));
+  b.push(Instruction::I32Store(mem_arg_i32(0)));
+  // new_ptr = raw_base + 8
+  b.push(Instruction::LocalGet(12));
+  b.push(Instruction::I32Const(8));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(18));
+  // byte_len = out_pos
+  b.push(Instruction::LocalGet(18));
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::F64ConvertI32U);
+  b.push(Instruction::F64Store(mem_arg_f64(0)));
+
+  // Correct HEAP_PTR: raw_base + 16 + ((out_pos + 7) & -8)
+  b.push(Instruction::LocalGet(14));
+  b.push(Instruction::I32Const(7));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Const(-8i32));
+  b.push(Instruction::I32And);
+  b.push(Instruction::LocalSet(19));
+  b.push(Instruction::LocalGet(12));
+  b.push(Instruction::I32Const(16));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalGet(19));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+
+  // return f64(new_ptr)
+  b.push(Instruction::LocalGet(18));
+  b.push(Instruction::F64ConvertI32U);
+
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64, ValType::F64, ValType::F64],
+    results: vec![ValType::F64],
+    locals: vec![
+      ValType::I32, // s_ptr (3)
+      ValType::I32, // s_len (4)
+      ValType::I32, // s_cont (5)
+      ValType::I32, // pat_ptr (6)
+      ValType::I32, // pat_len (7)
+      ValType::I32, // pat_cont (8)
+      ValType::I32, // rep_ptr (9)
+      ValType::I32, // rep_len (10)
+      ValType::I32, // rep_cont (11)
+      ValType::I32, // raw_base (12)
+      ValType::I32, // content_base (13)
+      ValType::I32, // out_pos (14)
+      ValType::I32, // si (15)
+      ValType::I32, // pi (16)
+      ValType::I32, // matched (17)
+      ValType::I32, // new_ptr (18)
+      ValType::I32, // padded (19)
+      ValType::I32, // max_out (20)
+      ValType::I32, // tmp (21)
+    ],
+    instructions: b,
+  }
+}
+
+/// `__rt_map_equal(a: i32, b: i32) → i32`
+/// Returns 1 if maps a and b have the same key-value pairs (shallow value equality), else 0.
+fn build_rt_map_equal(map_linearize_idx: u32, map_get_value_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2); // a=0, b=1
+  let count_a = b.alloc_i32();
+  let count_b = b.alloc_i32();
+  let flat = b.alloc_i32();
+  let i = b.alloc_i32();
+  let key = b.alloc_f64();
+  let val_a = b.alloc_f64();
+  let val_b = b.alloc_f64();
+  let all_eq = b.alloc_i32();
+  let result = b.alloc_i32();
+
+  // count_a = a[0] as i32
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(count_a));
+
+  // count_b = b[0] as i32
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(count_b));
+
+  // if count_a != count_b → return 0
+  b.emit(Instruction::LocalGet(count_a));
+  b.emit(Instruction::LocalGet(count_b));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Else);
+
+  // if count_a == 0 → return 1
+  b.emit(Instruction::LocalGet(count_a));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Else);
+
+  // linearize a → flat
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(map_linearize_idx));
+  b.emit(Instruction::LocalSet(flat));
+
+  // all_eq = 1, i = 0
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(all_eq));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+
+  // loop over pairs
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  // if i >= count_a, exit
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(count_a));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+
+  // key = flat + 8 + i*16
+  b.emit(Instruction::LocalGet(flat));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalSet(key));
+
+  // val_a = flat + 8 + i*16 + 8
+  b.emit(Instruction::LocalGet(flat));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(val_a));
+
+  // val_b = __rt_map_get_value(b_ptr, key)
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(key));
+  b.emit(Instruction::Call(map_get_value_idx));
+  b.emit(Instruction::LocalSet(val_b));
+
+  // if val_a != val_b → all_eq = 0, break
+  b.emit(Instruction::LocalGet(val_a));
+  b.emit(Instruction::LocalGet(val_b));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(all_eq));
+  b.emit(Instruction::Br(2)); // break out of block
+  b.emit(Instruction::End);
+
+  // i++
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End); // loop
+  b.emit(Instruction::End); // block
+
+  b.emit(Instruction::LocalGet(all_eq));
+  b.emit(Instruction::End); // end count_a == 0 else
+  b.emit(Instruction::End); // end count_a != count_b if
+
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }

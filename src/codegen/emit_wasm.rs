@@ -1939,6 +1939,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::IsBlank => emit_blank(ctx, args),
     CalcitProc::GetCharCode => emit_get_char_code(ctx, args),
     CalcitProc::ParseFloat => emit_parse_float(ctx, args),
+    CalcitProc::CharFromCode => emit_char_from_code(ctx, args),
+    CalcitProc::NativeStrReplace => emit_str_replace(ctx, args),
 
     // --- List higher-order and utility operations ---
     CalcitProc::NativeListDistinct => emit_list_distinct(ctx, args),
@@ -2217,6 +2219,7 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   let string_tag = *ctx.tag_index.get("string").ok_or("string tag not found")? as i32;
   let list_tag = *ctx.tag_index.get("list").ok_or("list tag not found")? as i32;
   let set_tag = *ctx.tag_index.get("set").ok_or("set tag not found")? as i32;
+  let map_tag = *ctx.tag_index.get("map").ok_or("map tag not found")? as i32;
   let rt_str_compare = *ctx
     .runtime_fn_index
     .get("__rt_str_compare")
@@ -2225,6 +2228,10 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
     .runtime_fn_index
     .get("__rt_set_find_elem")
     .ok_or("runtime helper __rt_set_find_elem not found")?;
+  let rt_map_equal = *ctx
+    .runtime_fn_index
+    .get("__rt_map_equal")
+    .ok_or("runtime helper __rt_map_equal not found")?;
 
   // Default: not equal
   ctx.emit(f64_const(0.0));
@@ -2515,6 +2522,22 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
     ctx.emit(Instruction::End); // count eq if
   }
   ctx.emit(Instruction::End); // set if
+
+  // --- Map comparison: use __rt_map_equal runtime helper ---
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::I32Const(map_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(ptr_a));
+  ctx.emit(Instruction::LocalGet(ptr_b));
+  ctx.emit(Instruction::Call(rt_map_equal));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End); // end map if
 
   ctx.emit(Instruction::End); // "not yet resolved" if
   ctx.emit(Instruction::End); // "same type tag" if
@@ -2952,6 +2975,22 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
       strings.push(t.to_string());
     }
     Calcit::List(xs) => {
+      // Pre-intern strings produced by `(format-to-lisp (quote X))` at compile time.
+      // The assert= macro expands to this pattern for the error message.
+      if xs.len() == 2 {
+        if let Calcit::Proc(p) = &xs[0] {
+          if matches!(p.as_ref(), "format-to-lisp") {
+            if let Calcit::List(inner) = &xs[1] {
+              if inner.len() >= 2 {
+                if let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0] {
+                  let s = crate::calcit::format_to_lisp(&inner[1]);
+                  strings.push(s);
+                }
+              }
+            }
+          }
+        }
+      }
       for x in xs.iter() {
         collect_strings_from_expr(x, strings);
       }

@@ -100,6 +100,44 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.emit(Instruction::LocalGet(receiver));
       Ok(())
     }
+    // .to-list — nil → empty list; otherwise return receiver as-is (already a list).
+    "to-list" => {
+      if !extra_locals.is_empty() {
+        return Err("method .to-list expects 0 arguments".into());
+      }
+      let result = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(Instruction::LocalSet(result));
+      // if receiver is nil (0.0): allocate and return empty list
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.begin_block_if();
+      emit_list_new(ctx, &[])?;
+      ctx.emit(Instruction::LocalSet(result));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::LocalGet(result));
+      Ok(())
+    }
+    // .to-map — nil → empty map; otherwise return receiver as-is (already a map).
+    "to-map" => {
+      if !extra_locals.is_empty() {
+        return Err("method .to-map expects 0 arguments".into());
+      }
+      let result = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(Instruction::LocalSet(result));
+      // if receiver is nil (0.0): allocate and return empty map
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.begin_block_if();
+      emit_map_new(ctx, &[])?;
+      ctx.emit(Instruction::LocalSet(result));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::LocalGet(result));
+      Ok(())
+    }
     // .slice start end — fallback for non-list/string types; return nil (0.0).
     // List and string cases are handled before this branch in the definition.
     "slice" => {
@@ -257,7 +295,6 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
         ctx.emit(Instruction::I32Or);
         ctx.emit(Instruction::LocalSet(result));
       }
-      ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
@@ -556,6 +593,99 @@ fn emit_sequence_extreme_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, u
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(best_local));
   ctx.emit(Instruction::End);
+}
+
+/// Allocates a 1-byte string containing the byte at (receiver+8+idx) and returns f64 ptr.
+/// Emits an inline If/Else that returns nil (0.0) when idx is out-of-range.
+fn emit_str_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
+  let str_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(receiver_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(str_len));
+
+  let idx = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(index_local));
+  ctx.emit(Instruction::I32TruncF64S);
+  ctx.emit(Instruction::LocalSet(idx));
+
+  // idx < 0 → nil
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32LtS);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::Else);
+  // idx >= str_len → nil
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::LocalGet(str_len));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::Else);
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, 16, ptr, "string"); // 8 byte_len + 8 (1 byte padded to 8)
+  // write byte_len = 1
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  // write the byte
+  let byte = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(receiver_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(8)); // skip byte_len field
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(idx));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalSet(byte));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8)); // content base offset
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  ctx.ptr_to_f64(ptr);
+
+  ctx.emit(Instruction::End); // end inner else
+  ctx.emit(Instruction::End); // end outer else
+}
+
+/// Returns a 1-byte string for the first byte of a string, or nil if empty.
+fn emit_str_first_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
+  let str_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(receiver_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(str_len));
+
+  // empty → nil
+  ctx.emit(Instruction::LocalGet(str_len));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::Else);
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, 16, ptr, "string");
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  let byte = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(receiver_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Load8U(mem_arg_byte(8))); // first byte after byte_len field
+  ctx.emit(Instruction::LocalSet(byte));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(byte));
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  ctx.ptr_to_f64(ptr);
+
+  ctx.emit(Instruction::End); // end else
 }
 
 fn emit_empty_string(ctx: &mut WasmGenCtx) {
@@ -945,6 +1075,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
 fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
   let tuple_tag = get_type_tag(ctx, "tuple");
+  let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -961,7 +1092,14 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_tuple_nth_from_local(ctx, receiver_local, index_local);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(string_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_str_nth_from_local(ctx, receiver_local, index_local);
+  ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   Ok(())
@@ -970,6 +1108,7 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
 fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
   let tuple_tag = get_type_tag(ctx, "tuple");
+  let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -989,7 +1128,14 @@ fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   ctx.emit(Instruction::LocalSet(zero));
   emit_tuple_nth_from_local(ctx, receiver_local, zero);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(string_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_str_first_from_local(ctx, receiver_local);
+  ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   Ok(())
