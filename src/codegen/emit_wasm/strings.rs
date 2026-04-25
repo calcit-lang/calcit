@@ -50,9 +50,7 @@ pub(super) fn emit_str_alloc(ctx: &mut WasmGenCtx, len_i32: u32) -> (u32, u32) {
 
 /// `count` on a string — returns byte length as f64.
 pub(super) fn emit_str_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&str:count expects 1 arg".into());
-  }
+  expect_arity(1, args, "&str:count")?;
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0))); // byte_len at logical_ptr+0
@@ -61,9 +59,7 @@ pub(super) fn emit_str_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `str-empty?` — returns 1.0 if byte_len == 0, else 0.0.
 pub(super) fn emit_str_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("str-empty? expects 1 arg".into());
-  }
+  expect_arity(1, args, "str-empty?")?;
   ctx.emit(f64_const(1.0));
   ctx.emit(f64_const(0.0));
   emit_expr(ctx, &args[0])?;
@@ -77,9 +73,7 @@ pub(super) fn emit_str_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&str:concat a b` — new string with a's bytes followed by b's bytes.
 pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&str:concat expects 2 args".into());
-  }
+  expect_arity(2, args, "&str:concat")?;
   let ptr_a = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_b = emit_ptr_to_i32(ctx, &args[1])?;
 
@@ -140,9 +134,7 @@ pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
 /// `&str:nth str idx` — one-byte string at index `idx`, or nil when out of range.
 pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&str:nth expects 2 args".into());
-  }
+  expect_arity(2, args, "&str:nth")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
   let idx = ctx.alloc_local_typed(ValType::I32);
@@ -197,9 +189,7 @@ pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 
 /// `&str:first str` — first byte value as f64.
 pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&str:first expects 1 arg".into());
-  }
+  expect_arity(1, args, "&str:first")?;
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::I32Load8U(mem_arg_byte(8))); // offset 8 = first byte after byte_len
@@ -209,9 +199,7 @@ pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&str:rest str` — new string without the first byte.
 pub(super) fn emit_str_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&str:rest expects 1 arg".into());
-  }
+  expect_arity(1, args, "&str:rest")?;
   let ptr_a = emit_ptr_to_i32(ctx, &args[0])?;
 
   let old_len = ctx.alloc_local_typed(ValType::I32);
@@ -299,26 +287,18 @@ pub(super) fn emit_str_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&str:compare a b` — lexicographic byte comparison; returns -1.0 / 0.0 / 1.0.
 pub(super) fn emit_str_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&str:compare expects 2 args".into());
-  }
+  expect_arity(2, args, "&str:compare")?;
   let ptr_a = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_b = emit_ptr_to_i32(ctx, &args[1])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_compare")
-    .ok_or_else(|| "runtime helper __rt_str_compare not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_a));
   ctx.emit(Instruction::LocalGet(ptr_b));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_compare");
   Ok(())
 }
 
 /// `&str:contains? str idx` — 1.0 if the byte index is within string length, else 0.0.
 pub(super) fn emit_str_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&str:contains? expects 2 args (str, idx)".into());
-  }
+  expect_arity(2, args, "&str:contains?")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   // byte_len as i32
   ctx.emit(Instruction::LocalGet(ptr));
@@ -335,35 +315,23 @@ pub(super) fn emit_str_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `&str:find-index haystack needle` — byte offset of first occurrence, or -1.0.
 pub(super) fn emit_str_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&str:find-index expects 2 args (haystack, needle)".into());
-  }
+  expect_arity(2, args, "&str:find-index")?;
   let ptr_h = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_n = emit_ptr_to_i32(ctx, &args[1])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_find_index")
-    .ok_or_else(|| "runtime helper __rt_str_find_index not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_h));
   ctx.emit(Instruction::LocalGet(ptr_n));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_find_index");
   Ok(())
 }
 
 /// `&str:includes? haystack needle` — 1.0 if needle appears in haystack, else 0.0.
 pub(super) fn emit_str_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&str:includes? expects 2 args (haystack, needle)".into());
-  }
+  expect_arity(2, args, "&str:includes?")?;
   let ptr_h = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_n = emit_ptr_to_i32(ctx, &args[1])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_find_index")
-    .ok_or_else(|| "runtime helper __rt_str_find_index not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_h));
   ctx.emit(Instruction::LocalGet(ptr_n));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_find_index");
   // result >= 0.0 → 1 or 0, convert to f64
   ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   ctx.emit(Instruction::F64Ge);
@@ -373,49 +341,32 @@ pub(super) fn emit_str_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `starts-with? s prefix` — returns 1.0 if s starts with prefix, else 0.0.
 pub(super) fn emit_str_starts_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("starts-with? expects 2 args (string, prefix)".into());
-  }
+  expect_arity(2, args, "starts-with?")?;
   let ptr_s = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_p = emit_ptr_to_i32(ctx, &args[1])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_starts_with")
-    .ok_or_else(|| "runtime helper __rt_str_starts_with not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_s));
   ctx.emit(Instruction::LocalGet(ptr_p));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_starts_with");
   Ok(())
 }
 
 /// `ends-with? s suffix` — returns 1.0 if s ends with suffix, else 0.0.
 pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("ends-with? expects 2 args (string, suffix)".into());
-  }
+  expect_arity(2, args, "ends-with?")?;
   let ptr_s = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_suf = emit_ptr_to_i32(ctx, &args[1])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_ends_with")
-    .ok_or_else(|| "runtime helper __rt_str_ends_with not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_s));
   ctx.emit(Instruction::LocalGet(ptr_suf));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_ends_with");
   Ok(())
 }
 
-/// `turn-string v` / `&str v` — convert any value to its string representation.
-/// Strings are returned as-is. nil/false → "". Numbers → decimal string.
+/// `turn-string v` — convert any value to its string representation.
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("turn-string expects 1 arg".into());
-  }
+  expect_arity(1, args, "turn-string")?;
 
-  let f64_to_str_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_f64_to_str")
-    .ok_or_else(|| "runtime helper __rt_f64_to_str not found".to_string())?;
+  let f64_to_str_idx = *ctx.runtime_fn_index.get("__rt_f64_to_str")
+    .unwrap_or_else(|| panic!("runtime helper __rt_f64_to_str not found"));
 
   let string_type_tag = *ctx.tag_index.get("string").ok_or("string tag missing")? as i32;
 
@@ -517,53 +468,35 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 }
 
 pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  // Evaluate args for side effects, then return nil
-  for arg in args {
-    emit_expr(ctx, arg)?;
-    ctx.emit(Instruction::Drop);
-  }
-  ctx.emit(f64_const(0.0));
-  Ok(())
+  ctx.stub_proc(args)
 }
 
 /// `&list:distinct xs` — return new list with duplicate elements removed (O(n²)).
 /// `&str:pad-left str target-size pattern` — pads str on the left.
 pub(super) fn emit_str_pad_left(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err("&str:pad-left expects 3 args (str, size, pattern)".into());
-  }
+  expect_arity(3, args, "&str:pad-left")?;
   let ptr_s = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_p = emit_ptr_to_i32(ctx, &args[2])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_pad_left")
-    .ok_or_else(|| "runtime helper __rt_str_pad_left not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_s));
   // target_size as i32
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalGet(ptr_p));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_pad_left");
   Ok(())
 }
 
 /// `&str:pad-right str target-size pattern` — pads str on the right.
 pub(super) fn emit_str_pad_right(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err("&str:pad-right expects 3 args (str, size, pattern)".into());
-  }
+  expect_arity(3, args, "&str:pad-right")?;
   let ptr_s = emit_ptr_to_i32(ctx, &args[0])?;
   let ptr_p = emit_ptr_to_i32(ctx, &args[2])?;
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_str_pad_right")
-    .ok_or_else(|| "runtime helper __rt_str_pad_right not found".to_string())?;
   ctx.emit(Instruction::LocalGet(ptr_s));
   // target_size as i32
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalGet(ptr_p));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_str_pad_right");
   Ok(())
 }
 
@@ -1228,9 +1161,7 @@ pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f
 
 /// `join-str xs sep` — call-site intercept.
 pub(super) fn emit_join_str(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err(format!("join-str expects 2 args, got {}", args.len()));
-  }
+  expect_arity(2, args, "join-str")?;
   let xs = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(xs));

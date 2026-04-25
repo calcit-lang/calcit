@@ -319,9 +319,7 @@ pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u
 
 /// `&set:includes? set value` — linear scan.
 pub(super) fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&set:includes? expects 2 args".into());
-  }
+  expect_arity(2, args, "&set:includes? expects 2 args")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -338,9 +336,7 @@ pub(super) fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `&set:to-list set` — copy set payload into a list.
 pub(super) fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&set:to-list expects 1 arg".into());
-  }
+  expect_arity(1, args, "&set:to-list expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let total_slots = ctx.alloc_local_typed(ValType::I32);
@@ -361,9 +357,7 @@ pub(super) fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
 /// `&include set value` — new set with element added (if not present).
 pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&include expects 2 args".into());
-  }
+  expect_arity(2, args, "&include expects 2 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let elem = ctx.alloc_local();
@@ -420,9 +414,7 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
 /// `&exclude set value` — new set without the element.
 pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&exclude expects 2 args".into());
-  }
+  expect_arity(2, args, "&exclude expects 2 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let target = ctx.alloc_local();
@@ -505,9 +497,7 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
 /// `&difference a b` — set of elements in `a` not in `b`.
 pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&difference expects 2 args".into());
-  }
+  expect_arity(2, args, "&difference expects 2 args")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
@@ -591,9 +581,7 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 
 /// `&union a b` — set of all elements in `a` and `b` (no duplicates).
 pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&union expects 2 args".into());
-  }
+  expect_arity(2, args, "&union expects 2 args")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
@@ -728,9 +716,7 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&set:intersection a b` — set of elements common to both a and b.
 pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&set:intersection expects 2 args".into());
-  }
+  expect_arity(2, args, "&set:intersection expects 2 args")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
@@ -811,9 +797,7 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 
 /// `&set:destruct set` — returns `[elem rest-set]` for the first entry, or nil if empty.
 pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&set:destruct expects 1 arg".into());
-  }
+  expect_arity(1, args, "&set:destruct expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
 

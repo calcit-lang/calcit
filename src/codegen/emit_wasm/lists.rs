@@ -28,9 +28,7 @@ pub(super) fn emit_list_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 
 /// `&list:nth list idx` — element at dynamic index.
 pub(super) fn emit_list_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&list:nth expects 2 args".into());
-  }
+  expect_arity(2, args, "&list:nth expects 2 args")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   // offset = (1 + idx) * 8
   emit_expr(ctx, &args[1])?;
@@ -47,9 +45,7 @@ pub(super) fn emit_list_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 
 /// `&list:first list` — first element.
 pub(super) fn emit_list_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&list:first expects 1 arg".into());
-  }
+  expect_arity(1, args, "&list:first expects 1 arg")?;
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -58,9 +54,7 @@ pub(super) fn emit_list_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
 /// `&list:last list` — last element of a list.
 pub(super) fn emit_list_last(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&list:last expects 1 arg".into());
-  }
+  expect_arity(1, args, "&list:last expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   // last element is at src + 8 + (count-1)*8
@@ -83,9 +77,7 @@ pub(super) fn emit_list_last(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&list:rest list` — new list without the first element.
 pub(super) fn emit_list_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&list:rest expects 1 arg".into());
-  }
+  expect_arity(1, args, "&list:rest expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let old_count = emit_load_count_i32(ctx, src);
 
@@ -116,9 +108,7 @@ pub(super) fn emit_list_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `append list elem` — new list with element added at end.
 pub(super) fn emit_list_append(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("append expects 2 args".into());
-  }
+  expect_arity(2, args, "append expects 2 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let old_count = emit_load_count_i32(ctx, src);
   // Evaluate element into a local BEFORE allocation
@@ -163,9 +153,7 @@ pub(super) fn emit_list_append(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
 /// `prepend list elem` — new list with element at front.
 pub(super) fn emit_list_prepend(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("prepend expects 2 args".into());
-  }
+  expect_arity(2, args, "prepend expects 2 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let old_count = emit_load_count_i32(ctx, src);
   let elem = ctx.alloc_local();
@@ -203,9 +191,7 @@ pub(super) fn emit_list_prepend(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `butlast list` — new list without the last element.
 pub(super) fn emit_list_butlast(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("butlast expects 1 arg".into());
-  }
+  expect_arity(1, args, "butlast expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let old_count = emit_load_count_i32(ctx, src);
 
@@ -290,9 +276,7 @@ pub(super) fn emit_list_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
 /// `&list:reverse list` — new list in reverse order.
 pub(super) fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&list:reverse expects 1 arg".into());
-  }
+  expect_arity(1, args, "&list:reverse expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
 
@@ -578,9 +562,7 @@ fn emit_list_concat_two(ctx: &mut WasmGenCtx, a: &Calcit, b: &Calcit) -> Result<
 
 /// `&list:assoc list idx value` — new list with element replaced at index.
 pub(super) fn emit_list_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err("&list:assoc expects 3 args".into());
-  }
+  expect_arity(3, args, "&list:assoc expects 3 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let idx = ctx.alloc_local_typed(ValType::I32);
@@ -622,9 +604,7 @@ pub(super) fn emit_list_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
 /// `&list:assoc-before list idx val` — new list with `val` inserted before position `idx`.
 pub(super) fn emit_list_assoc_before(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err("&list:assoc-before expects 3 args".into());
-  }
+  expect_arity(3, args, "&list:assoc-before expects 3 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let idx = ctx.alloc_local_typed(ValType::I32);
@@ -706,9 +686,7 @@ pub(super) fn emit_list_assoc_before(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
 
 /// `&list:assoc-after list idx val` — new list with `val` inserted after position `idx`.
 pub(super) fn emit_list_assoc_after(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err("&list:assoc-after expects 3 args".into());
-  }
+  expect_arity(3, args, "&list:assoc-after expects 3 args")?;
   // assoc-after(xs, idx, val) = assoc-before(xs, idx+1, val)
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
@@ -793,9 +771,7 @@ pub(super) fn emit_list_assoc_after(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 /// `&list:to-set list` — convert list to set, deduplicating elements.
 /// Uses same O(n²) dedup as emit_list_distinct but allocates a "set"-tagged block.
 pub(super) fn emit_list_to_set(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&list:to-set expects 1 arg".into());
-  }
+  expect_arity(1, args, "&list:to-set expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let n = emit_load_count_i32(ctx, src);
 
@@ -1014,9 +990,7 @@ pub(super) fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 /// `list? x` — true (1.0) when x is a list value.
 /// Implemented as: (type-of x) == list-tag
 pub(super) fn emit_list_q(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err(format!("list? expects 1 arg, got {}", args.len()));
-  }
+  expect_arity(1, args, "list?")?;
   let list_tag = get_type_tag(ctx, "list");
   ctx.emit(f64_const(1.0));
   ctx.emit(f64_const(0.0));
@@ -1029,9 +1003,7 @@ pub(super) fn emit_list_q(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 
 /// `&list:contains? list idx` — true if 0 ≤ idx < count.
 pub(super) fn emit_list_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&list:contains? expects 2 args".into());
-  }
+  expect_arity(2, args, "&list:contains? expects 2 args")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, ptr);
   ctx.emit(f64_const(1.0));
@@ -1046,9 +1018,7 @@ pub(super) fn emit_list_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
 /// `&list:includes? list value` — linear scan for matching f64 value.
 pub(super) fn emit_list_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&list:includes? expects 2 args".into());
-  }
+  expect_arity(2, args, "&list:includes? expects 2 args")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, ptr);
   let target = ctx.alloc_local();
@@ -1136,9 +1106,7 @@ pub(super) fn emit_buf_list_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 /// `(&buf-list:push buf item)` — mutates buf, returns buf.
 /// If count == capacity, grow to 2x capacity.
 pub(super) fn emit_buf_list_push(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&buf-list:push expects 2 args".into());
-  }
+  expect_arity(2, args, "&buf-list:push expects 2 args")?;
   let buf_ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
   // Load count
@@ -1237,9 +1205,7 @@ pub(super) fn emit_buf_list_push(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
 /// `(&buf-list:concat buf list)` — append all list elements to buf
 pub(super) fn emit_buf_list_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&buf-list:concat expects 2 args".into());
-  }
+  expect_arity(2, args, "&buf-list:concat expects 2 args")?;
   let buf_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let list_ptr = emit_ptr_to_i32(ctx, &args[1])?;
 
@@ -1392,9 +1358,7 @@ pub(super) fn emit_buf_list_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 
 /// `(&buf-list:to-list buf)` — freeze buf into an immutable list
 pub(super) fn emit_buf_list_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&buf-list:to-list expects 1 arg".into());
-  }
+  expect_arity(1, args, "&buf-list:to-list expects 1 arg")?;
   let buf_ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
   // Load count
@@ -1425,9 +1389,7 @@ pub(super) fn emit_buf_list_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 
 /// `(&buf-list:count buf)` — return count as f64
 pub(super) fn emit_buf_list_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&buf-list:count expects 1 arg".into());
-  }
+  expect_arity(1, args, "&buf-list:count expects 1 arg")?;
   let buf_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   ctx.emit(Instruction::LocalGet(buf_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8))); // count is at offset 8
@@ -1518,9 +1480,7 @@ pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 
 /// Two elements are considered equal when their f64 bit patterns are identical.
 pub(super) fn emit_list_distinct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&list:distinct expects 1 arg".into());
-  }
+  expect_arity(1, args, "&list:distinct expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let n = emit_load_count_i32(ctx, src);
 
@@ -1765,9 +1725,7 @@ pub(super) fn emit_repeat_from_locals(ctx: &mut WasmGenCtx, x_local: u32, n_loca
 
 /// `repeat x n` — call-site intercept: evaluate args and call body emitter.
 pub(super) fn emit_repeat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err(format!("repeat expects 2 args, got {}", args.len()));
-  }
+  expect_arity(2, args, "repeat")?;
   let x = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(x));
@@ -1893,9 +1851,7 @@ pub(super) fn emit_interleave_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_
 
 /// `interleave xs ys` — call-site intercept.
 pub(super) fn emit_interleave(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err(format!("interleave expects 2 args, got {}", args.len()));
-  }
+  expect_arity(2, args, "interleave")?;
   let xs = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(xs));
@@ -2020,9 +1976,7 @@ pub(super) fn emit_join_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f64: 
 
 /// `join xs sep` — call-site intercept (list join).
 pub(super) fn emit_join(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err(format!("join expects 2 args, got {}", args.len()));
-  }
+  expect_arity(2, args, "join")?;
   let xs = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(xs));

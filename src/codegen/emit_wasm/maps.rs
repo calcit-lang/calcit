@@ -35,12 +35,8 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
     ctx.emit(Instruction::F64Store(mem_arg_f64((16 + i * 16) as u64)));
   }
 
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_root_from_flat")
-    .expect("runtime helper __rt_map_root_from_flat must exist");
   ctx.emit(Instruction::LocalGet(root));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_map_root_from_flat");
   let hashed_root = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
   let ptr = emit_alloc_map_with_root(ctx, count_local, hashed_root);
@@ -51,28 +47,20 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 
 /// `&map:get map key` — linear scan for key; returns value or nil.
 pub(super) fn emit_map_get_op(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&map:get expects 2 args".into());
-  }
+  expect_arity(2, args, "&map:get")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_get_value")
-    .expect("runtime helper __rt_map_get_value must exist");
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::LocalGet(target));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_map_get_value");
   Ok(())
 }
 
 /// `&map:contains? map key` — scan for key, return bool.
 pub(super) fn emit_map_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&map:contains? expects 2 args".into());
-  }
+  expect_arity(2, args, "&map:contains?")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -87,9 +75,7 @@ pub(super) fn emit_map_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `&map:includes? map value` — scan values for match.
 pub(super) fn emit_map_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&map:includes? expects 2 args".into());
-  }
+  expect_arity(2, args, "&map:includes?")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -104,9 +90,7 @@ pub(super) fn emit_map_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
 /// `&map:assoc map key value` — new map with key-value added or updated.
 pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err("&map:assoc expects 3 args".into());
-  }
+  expect_arity(3, args, "&map:assoc")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let key = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -114,14 +98,10 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   let val = ctx.alloc_local();
   emit_expr(ctx, &args[2])?;
   ctx.emit(Instruction::LocalSet(val));
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_assoc")
-    .expect("runtime helper __rt_map_assoc must exist");
   ctx.emit(Instruction::LocalGet(src));
   ctx.emit(Instruction::LocalGet(key));
   ctx.emit(Instruction::LocalGet(val));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_map_assoc");
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
@@ -158,38 +138,28 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
     ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
     ctx.emit(Instruction::LocalSet(target));
   }
-  let fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_dissoc")
-    .expect("runtime helper __rt_map_dissoc must exist");
   ctx.emit(Instruction::LocalGet(src));
   ctx.emit(Instruction::LocalGet(target));
-  ctx.emit(Instruction::Call(fn_idx));
+  ctx.call_rt("__rt_map_dissoc");
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
 /// `to-pairs map` — convert map to list of 2-element lists.
 pub(super) fn emit_map_to_pairs(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("to-pairs expects 1 arg".into());
-  }
+  expect_arity(1, args, "to-pairs")?;
   emit_map_to_pair_list(ctx, args, "set")
 }
 
 /// `&map:to-list map` — convert map to list of `[key, value]` pairs.
 pub(super) fn emit_map_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&map:to-list expects 1 arg".into());
-  }
+  expect_arity(1, args, "&map:to-list")?;
   emit_map_to_pair_list(ctx, args, "list")
 }
 
 /// `&map:keys m` — list of all keys in the map (unordered).
 pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
-    return Err("&map:keys expects 1 arg".into());
-  }
+  expect_arity(1, args, "&map:keys")?;
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, map_ptr);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
@@ -1019,11 +989,10 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::LocalSet(val0));
 
     // rest-map = __rt_map_dissoc(src, key0)
-    let dissoc_fn = *ctx.runtime_fn_index.get("__rt_map_dissoc").expect("__rt_map_dissoc must exist");
     let rest_map = ctx.alloc_local();
     ctx.emit(Instruction::LocalGet(src));
     ctx.emit(Instruction::LocalGet(key0));
-    ctx.emit(Instruction::Call(dissoc_fn));
+    ctx.call_rt("__rt_map_dissoc");
     ctx.emit(Instruction::F64ConvertI32U);
     ctx.emit(Instruction::LocalSet(rest_map));
 
@@ -1314,11 +1283,6 @@ pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64:
   emit_map_new(ctx, &[])?;
   ctx.emit(Instruction::LocalSet(result));
 
-  let assoc_fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_assoc")
-    .expect("runtime helper __rt_map_assoc must exist");
-
   let i = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(i));
@@ -1362,7 +1326,7 @@ pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64:
   ctx.emit(Instruction::LocalGet(result_i32));
   ctx.emit(Instruction::LocalGet(k));
   ctx.emit(Instruction::LocalGet(v));
-  ctx.emit(Instruction::Call(assoc_fn_idx));
+  ctx.call_rt("__rt_map_assoc");
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(result));
 

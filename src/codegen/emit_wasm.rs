@@ -449,6 +449,37 @@ impl WasmGenCtx {
   fn emit(&mut self, instr: Instruction<'static>) {
     self.instructions.push(instr);
   }
+
+  /// Emit a `Call` to a runtime helper by name.
+  /// Caller must push the arguments onto the stack first.
+  /// Panics if the name is not registered.
+  pub(super) fn call_rt(&mut self, name: &str) {
+    let fn_idx = *self
+      .runtime_fn_index
+      .get(name)
+      .unwrap_or_else(|| panic!("runtime helper missing: {name}"));
+    self.emit(Instruction::Call(fn_idx));
+  }
+
+  /// Evaluate all `args`, dropping each result, then push nil (0.0).
+  /// Used for operations that are intentionally no-ops in WASM.
+  pub(super) fn stub_proc(&mut self, args: &[Calcit]) -> Result<(), String> {
+    for arg in args {
+      emit_expr(self, arg)?;
+      self.emit(Instruction::Drop);
+    }
+    self.emit(f64_const(0.0));
+    Ok(())
+  }
+}
+
+/// Check that `args` has exactly `n` elements and return an error if not.
+#[inline]
+fn expect_arity(n: usize, args: &[Calcit], proc_name: &str) -> Result<(), String> {
+  if args.len() != n {
+    return Err(format!("{proc_name} expects {n} arg(s), got {}", args.len()));
+  }
+  Ok(())
 }
 
 /// Compute WASM arity for a function signature.
@@ -1405,9 +1436,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
     CalcitProc::NativeCompare => {
       // &compare a b → -1.0 if a<b, 0.0 if a==b, 1.0 if a>b
-      if args.len() != 2 {
-        return Err(format!("&compare expects 2 args, got {}", args.len()));
-      }
+      expect_arity(2, args, "&compare")?;
       let a = ctx.alloc_local();
       let b = ctx.alloc_local();
       emit_expr(ctx, &args[0])?;
@@ -1433,9 +1462,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Ok(())
     }
     CalcitProc::Not => {
-      if args.len() != 1 {
-        return Err("not expects 1 arg".into());
-      }
+      expect_arity(1, args, "not")?;
       // not: 0.0 → 1.0, else → 0.0
       ctx.emit(f64_const(1.0)); // true result
       ctx.emit(f64_const(0.0)); // false result
@@ -1463,9 +1490,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::TagQuestion => emit_type_predicate(ctx, "tag", args),
     CalcitProc::SymbolQuestion => emit_type_predicate(ctx, "symbol", args),
     CalcitProc::NilQuestion => {
-      if args.len() != 1 {
-        return Err(format!("nil? expects 1 arg, got {}", args.len()));
-      }
+      expect_arity(1, args, "nil?")?;
       // Current WASM backend represents nil as 0.0.
       ctx.emit(f64_const(1.0));
       ctx.emit(f64_const(0.0));
@@ -1586,7 +1611,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeRecordGetName => emit_record_get_name(ctx, args),
     CalcitProc::NativeRecordToMap => emit_record_to_map(ctx, args),
     CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
-      Err("Record mutation (assoc/with) not yet supported in WASM codegen".into())
+      Err(format!("{proc} not yet supported in WASM codegen"))
     }
     CalcitProc::NativeRecordFromMap
     | CalcitProc::NativeRecordExtendAs
@@ -1601,15 +1626,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeTuple => emit_tuple_new(ctx, args),
     CalcitProc::NativeTupleNth => emit_tuple_nth(ctx, args),
     CalcitProc::NativeTupleCount => emit_tuple_count(ctx, args),
-    CalcitProc::NativeTupleValidateEnum => {
-      // Runtime enum validation — no-op in WASM, just evaluate args and discard
-      for arg in args {
-        emit_expr(ctx, arg)?;
-        ctx.emit(Instruction::Drop);
-      }
-      ctx.emit(f64_const(0.0)); // nil
-      Ok(())
-    }
+    CalcitProc::NativeTupleValidateEnum => ctx.stub_proc(args), // no-op in WASM
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
     CalcitProc::NativeEnumTupleNew => emit_enum_tuple_new(ctx, args),
     CalcitProc::NativeTupleImpls
@@ -1627,9 +1644,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::BitOr => emit_bitwise_binary(ctx, Instruction::I32Or, args),
     CalcitProc::BitXor => emit_bitwise_binary(ctx, Instruction::I32Xor, args),
     CalcitProc::BitNot => {
-      if args.len() != 1 {
-        return Err("bit-not expects 1 arg".into());
-      }
+      expect_arity(1, args, "bit-not")?;
       emit_expr(ctx, &args[0])?;
       ctx.emit(Instruction::I32TruncF64S);
       ctx.emit(Instruction::I32Const(-1)); // all bits set
@@ -1759,29 +1774,13 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Format (stub — only used in raise/error paths)
     CalcitProc::FormatToLisp => emit_format_to_lisp(ctx, args),
     // to-lispy-string — stub, only used in raise/error message paths
-    CalcitProc::PrStr => {
-      for arg in args {
-        emit_expr(ctx, arg)?;
-        ctx.emit(Instruction::Drop);
-      }
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
+    CalcitProc::PrStr => ctx.stub_proc(args),
     // get-env — returns nil in WASM (env vars not available)
-    CalcitProc::GetEnv => {
-      for arg in args {
-        emit_expr(ctx, arg)?;
-        ctx.emit(Instruction::Drop);
-      }
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
+    CalcitProc::GetEnv => ctx.stub_proc(args),
 
     // @atom deref: just emit the argument (which should already be a GlobalGet)
     CalcitProc::AtomDeref => {
-      if args.len() != 1 {
-        return Err(format!("&atom:deref expects 1 arg, got {}", args.len()));
-      }
+      expect_arity(1, args, "&atom:deref")?;
       emit_expr(ctx, &args[0])
     }
 
@@ -1800,23 +1799,15 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     // turn-tag — converts a string to a tag at runtime; in WASM, return the string as-is.
     CalcitProc::TurnTag => {
-      if args.len() != 1 {
-        return Err(format!("turn-tag expects 1 arg, got {}", args.len()));
-      }
+      expect_arity(1, args, "turn-tag")?;
       emit_expr(ctx, &args[0])
     }
 
     // &struct:impl-traits / &enum:impl-traits — trait registration; not supported in WASM; return nil.
-    CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => {
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
+    CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => ctx.stub_proc(args),
 
     // register-calcit-builtin-impls — builtin impl registration; not meaningful in WASM; return nil.
-    CalcitProc::RegisterCalcitBuiltinImpls => {
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
+    CalcitProc::RegisterCalcitBuiltinImpls => ctx.stub_proc(args),
 
     // sort — native sort with optional comparator; not yet supported in WASM; return first arg.
     CalcitProc::Sort => {
@@ -1836,7 +1827,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 }
 
 fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 {
+  if args.len() != 1 { // keep explicit for clarity in math ops
     return Err(format!("{instr:?} expects 1 arg, got {}", args.len()));
   }
   emit_expr(ctx, &args[0])?;

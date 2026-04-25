@@ -107,9 +107,7 @@ pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>,
 /// `foldl xs init fn` — iterate xs left-to-right, calling fn(acc, elem) each step.
 /// Only supports list collections. fn must be statically resolvable or an inline lambda.
 pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err(format!("foldl expects 3 args, got {}", args.len()));
-  }
+  expect_arity(3, args, "foldl")?;
 
   // Evaluate collection → i32 pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -312,9 +310,7 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
 /// After exhausting xs, return default.
 /// fn must be statically resolvable or an inline lambda.
 pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 4 {
-    return Err(format!("foldl-shortcut expects 4 args, got {}", args.len()));
-  }
+  expect_arity(4, args, "foldl-shortcut")?;
 
   // Evaluate collection → i32 pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -402,9 +398,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 
 /// `foldr-shortcut xs acc default fn` — like foldl-shortcut but iterates right-to-left.
 pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 4 {
-    return Err(format!("foldr-shortcut expects 4 args, got {}", args.len()));
-  }
+  expect_arity(4, args, "foldr-shortcut")?;
 
   // Resolve callee
   let fn_call_kind = resolve_callee_kind(ctx, &args[3], 0, 0) // temp indices; real ones allocated below
@@ -492,9 +486,7 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 /// Used to implement multi-arg comparison operators like `<`, `<=`, `=`, `>`, `>=`.
 /// `f` can be a static fn, inline lambda, or native proc.
 pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err(format!("foldl-compare expects 3 args, got {}", args.len()));
-  }
+  expect_arity(3, args, "foldl-compare")?;
 
   // Evaluate xs → list pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -685,7 +677,7 @@ fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKi
 
 /// `map xs f` — apply f to every element, returning new list of same length.
 pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("map expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "map")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let total_slots = ctx.alloc_local_typed(ValType::I32);
@@ -710,7 +702,7 @@ pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
 
 /// `map-indexed xs f` — apply f(elem, idx) to every element, returning new list.
 pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("map-indexed expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "map-indexed")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let total_slots = ctx.alloc_local_typed(ValType::I32);
@@ -735,7 +727,7 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
 /// `each xs f` — apply f to every element for side effects; returns 0.0 (nil).
 pub(super) fn emit_each(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("each expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "each")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("each: {e}"))?;
@@ -756,7 +748,7 @@ pub(super) fn emit_each(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
 
 /// `filter xs f` / `&list:filter xs f` — return list of elements where f returns truthy.
 pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("filter expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "filter")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter: {e}"))?;
@@ -788,7 +780,7 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 
 /// `any? xs f` — return 1.0 if any element satisfies f, else 0.0.
 pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("any? expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "any?")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("any?: {e}"))?;
@@ -814,7 +806,7 @@ pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
 
 /// `every? xs f` — return 1.0 if every element satisfies f, else 0.0.
 pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("every? expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "every?")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("every?: {e}"))?;
@@ -840,7 +832,7 @@ pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 
 /// `find xs f` — return first element satisfying f, or nil (0.0) if none.
 pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("find expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "find")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find: {e}"))?;
@@ -866,9 +858,7 @@ pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
 
 /// `mapcat xs f` — apply f to every element, then flatten results one level.
 pub(super) fn emit_mapcat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err(format!("mapcat expects 2 args, got {}", args.len()));
-  }
+  expect_arity(2, args, "mapcat")?;
   // Emit (map xs f) → leaves f64 list pointer on stack
   emit_map(ctx, args)?;
   // Store into a local, then flatten
@@ -879,7 +869,7 @@ pub(super) fn emit_mapcat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 
 /// `filter-not xs f` — return elements where f(elem) is falsy.
 pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("filter-not expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "filter-not")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter-not: {e}"))?;
@@ -912,9 +902,7 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// `update m k f` — return new map with `k` mapped to `f(m[k])`.
 /// Only supports map operand (not list/tuple).
 pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err(format!("update expects 3 args (map key f), got {}", args.len()));
-  }
+  expect_arity(3, args, "update")?;
   // Evaluate map → i32 ptr
   let map_ptr = ctx.alloc_local_typed(ValType::I32);
   emit_expr(ctx, &args[0])?;
@@ -954,7 +942,7 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 
 /// `find-index xs f` — return f64 index of first matching element, or -1.0.
 pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 { return Err(format!("find-index expects 2 args, got {}", args.len())); }
+  expect_arity(2, args, "find-index")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find-index: {e}"))?;
@@ -981,9 +969,7 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// `map-kv xs f` — apply binary `f(k, v) → [k', v']` to every entry of a map, returning a new map.
 /// Iterates via `__rt_map_linearize` which returns a flat `[n_pairs, k0, v0, k1, v1, ...]` buffer.
 pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err(format!("map-kv expects 2 args, got {}", args.len()));
-  }
+  expect_arity(2, args, "map-kv")?;
 
   // Resolve binary callee: f(k, v) → [k', v']
   let kind = if let Some((params, body)) = try_extract_inline_lambda(&args[1]) {
