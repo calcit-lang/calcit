@@ -138,7 +138,7 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(be));
 
-  let found = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", dst, be);
+  let found = emit_set_find_structural(ctx, dst, be);
   ctx.emit(Instruction::LocalGet(found));
   ctx.emit(Instruction::I32Const(-1));
   ctx.emit(Instruction::I32Eq);
@@ -160,6 +160,54 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.ptr_to_f64(dst);
   ctx.emit(Instruction::LocalSet(result));
   Ok(result)
+}
+
+/// Inline structural set-membership check.
+/// Returns i32 local: index of found element (-1 = not found).
+/// Uses structural equality (emit_equals_core) so heap objects like lists compare correctly.
+fn emit_set_find_structural(ctx: &mut WasmGenCtx, set_ptr: u32, needle: u32) -> u32 {
+  let set_count = emit_load_count_i32(ctx, set_ptr);
+  let result = ctx.alloc_i32(-1); // -1 = not found
+  let si = ctx.alloc_i32(0);
+
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(si, set_count);
+
+  // Load element at set_ptr + 8 + si*8
+  let elem_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(set_ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(si));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(elem_addr));
+
+  let elem = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(elem_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(elem));
+
+  // Structural equality: needle == elem? (shallow: no recursive set comparison)
+  let eq = emit_equals_core_shallow(ctx, needle, elem).expect("emit_equals_core_shallow in set_find_structural");
+
+  ctx.emit(Instruction::LocalGet(eq));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(si));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Br(2)); // break out of loop+block
+  ctx.emit(Instruction::End);
+
+  ctx.i32_inc(si);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End); // loop
+  ctx.emit(Instruction::End); // block
+
+  result
 }
 
 /// `&difference a b` from pre-loaded i32 pointers. Returns f64 local with result pointer.
@@ -188,7 +236,7 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(elem));
 
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", b, elem);
+  let found_idx = emit_set_find_structural(ctx, b, elem);
 
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::I32Const(-1));
@@ -216,7 +264,7 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
 /// `&include set elem` from pre-loaded i32 set pointer + f64 elem local. Returns f64 result local.
 pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u32) -> Result<u32, String> {
   let count = emit_load_count_i32(ctx, src);
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", src, elem);
+  let found_idx = emit_set_find_structural(ctx, src, elem);
 
   let dst = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(src));
@@ -254,7 +302,7 @@ pub(super) fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", ptr, target);
+  let found_idx = emit_set_find_structural(ctx, ptr, target);
   ctx.emit(f64_const(1.0));
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalGet(found_idx));
@@ -287,7 +335,7 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(elem));
 
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", src, elem);
+  let found_idx = emit_set_find_structural(ctx, src, elem);
 
   let dst = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(src));
@@ -327,7 +375,7 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
 
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", src, target);
+  let found_idx = emit_set_find_structural(ctx, src, target);
 
   // If not found, return original
   let dst = ctx.alloc_local_typed(ValType::I32);
@@ -423,7 +471,7 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(elem));
 
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", b, elem);
+  let found_idx = emit_set_find_structural(ctx, b, elem);
 
   // If not found in b, copy elem to result
   ctx.emit(Instruction::LocalGet(found_idx));
@@ -587,7 +635,7 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(elem));
 
-  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", b, elem);
+  let found_idx = emit_set_find_structural(ctx, b, elem);
 
   // If found in b, copy elem to result
   ctx.emit(Instruction::LocalGet(found_idx));
@@ -634,7 +682,7 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::LocalSet(elem0));
 
     // rest-set = exclude(src, elem0)
-    let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_set_find_elem", src, elem0);
+    let found_idx = emit_set_find_structural(ctx, src, elem0);
     let nc = ctx.i32_offset(count, -1);
     let ts = ctx.i32_offset(nc, 1);
     let rest_set_ptr = emit_alloc_with_count(ctx, nc, ts, "set");

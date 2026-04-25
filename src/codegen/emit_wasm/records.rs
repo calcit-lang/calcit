@@ -493,7 +493,11 @@ pub(super) fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
       tag_id as f64
     }
     Calcit::Bool(b) => {
-      if *b { 1.0 } else { 0.0 }
+      if *b {
+        1.0
+      } else {
+        0.0
+      }
     }
     other => return Err(format!("::: expected tag as first arg, got: {other}")),
   };

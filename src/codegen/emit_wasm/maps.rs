@@ -976,7 +976,7 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(found_di));
       let di = ctx.alloc_i32(0);
       ctx.begin_block();
-  ctx.begin_loop();
+      ctx.begin_loop();
       ctx.loop_exit_if_ge(di, write_idx);
       {
         let dk_addr = ctx.alloc_local_typed(ValType::I32);

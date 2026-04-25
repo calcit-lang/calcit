@@ -338,7 +338,9 @@ pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "turn-string")?;
 
-  let f64_to_str_idx = *ctx.runtime_fn_index.get("__rt_f64_to_str")
+  let f64_to_str_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_f64_to_str")
     .unwrap_or_else(|| panic!("runtime helper __rt_f64_to_str not found"));
 
   let string_type_tag = *ctx.tag_index.get("string").ok_or("string tag missing")? as i32;

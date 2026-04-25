@@ -1,4 +1,5 @@
 use super::*;
+use wasm_encoder::BlockType;
 
 pub(super) struct HostImport {
   pub(super) module: &'static str,
@@ -150,11 +151,7 @@ pub(super) fn build_wasm_module(
   if user_fn_count > 0 {
     let fn_indices: Vec<u32> = (0..user_fn_count).map(|i| num_imports + runtime_fn_count + i).collect();
     let mut elements = ElementSection::new();
-    elements.active(
-      Some(0),
-      &ConstExpr::i32_const(0),
-      Elements::Functions(fn_indices.as_slice().into()),
-    );
+    elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(fn_indices.as_slice().into()));
     module.section(&elements);
   }
 
@@ -424,6 +421,13 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_hash_f64"), hash_idx);
   fns.push(build_rt_hash_f64());
 
+  // __rt_hash_list_or_set(ptr: i32) -> i32
+  // XOR-based content hash over all elements (order-independent for sets, order-dependent for lists).
+  // Both sets and lists have identical memory layout, so one function suffices.
+  let hash_list_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_hash_list_or_set"), hash_list_idx);
+  fns.push(build_rt_hash_list_or_set(hash_idx));
+
   let map_root_assoc_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_assoc"), map_root_assoc_idx);
   fns.push(build_rt_map_root_assoc(*fn_index.get("__rt_copy_f64_slots").expect("copy helper")));
@@ -687,6 +691,62 @@ fn rt_emit_copy_slots(builder: &mut RuntimeFnBuilder, copy_fn_idx: u32, dst_loca
   builder.emit(Instruction::LocalGet(src_local));
   builder.emit(Instruction::LocalGet(count_local));
   builder.emit(Instruction::Call(copy_fn_idx));
+}
+
+fn build_rt_hash_list_or_set(hash_f64_idx: u32) -> CompiledFn {
+  // params: ptr: i32
+  // Returns i32 hash via XOR of each element's hash — order-independent.
+  // Layout: [count: f64 at ptr][elem0: f64 at ptr+8] ...
+  let mut b = RuntimeFnBuilder::new(1); // param: ptr (i32)
+  let count = b.alloc_i32();
+  let i = b.alloc_i32();
+  let acc = b.alloc_i32();
+  let elem_addr = b.alloc_i32();
+  // count = i32(f64.load[ptr])
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(count));
+  // i = 0; acc = 0
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(acc));
+  // loop
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  // if i >= count break
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1)); // break outer block
+  // elem_addr = ptr + 8 + i*8
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(3)); // * 8 = << 3
+  b.emit(Instruction::I32Shl);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(elem_addr));
+  // acc ^= hash_f64(f64.load[elem_addr])
+  b.emit(Instruction::LocalGet(acc));
+  b.emit(Instruction::LocalGet(elem_addr));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::Call(hash_f64_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::LocalSet(acc));
+  // i += 1
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0)); // continue loop
+  b.emit(Instruction::End); // end loop
+  b.emit(Instruction::End); // end block
+  // return acc
+  b.emit(Instruction::LocalGet(acc));
+  b.finish(vec![ValType::I32], vec![ValType::I32])
 }
 
 fn build_rt_hash_f64() -> CompiledFn {

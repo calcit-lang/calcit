@@ -16,57 +16,52 @@ pub(super) fn get_type_tag(ctx: &WasmGenCtx, name: &str) -> f64 {
     .unwrap_or_else(|| panic!("builtin type tag not registered: {name}")) as f64
 }
 
-pub(super) fn emit_hash_mix(ctx: &mut WasmGenCtx) {
-  ctx.emit(Instruction::I32Const(0x9e37_79b9u32 as i32));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Const(16));
-  ctx.emit(Instruction::I32Rotl);
-}
-
-pub(super) fn emit_hash_expr_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
-  match expr {
-    Calcit::Nil => {
-      ctx.emit(Instruction::I32Const(0x1357_2468u32 as i32));
-      Ok(())
-    }
-    Calcit::Bool(true) => {
-      ctx.emit(Instruction::I32Const(0x4210_abceu32 as i32));
-      Ok(())
-    }
-    Calcit::Bool(false) => {
-      ctx.emit(Instruction::I32Const(0x24ce_1357u32 as i32));
-      Ok(())
-    }
-    Calcit::Number(_) => {
-      emit_expr(ctx, expr)?;
-      ctx.emit(Instruction::I64ReinterpretF64);
-      ctx.emit(Instruction::I64Const(32));
-      ctx.emit(Instruction::I64ShrU);
-      ctx.emit(Instruction::I32WrapI64);
-      emit_hash_mix(ctx);
-      Ok(())
-    }
-    Calcit::Tag(_) => {
-      emit_expr(ctx, expr)?;
-      ctx.emit(Instruction::I32TruncF64U);
-      emit_hash_mix(ctx);
-      Ok(())
-    }
-    Calcit::Str(_) | Calcit::Local(_) | Calcit::List(_) | Calcit::Import(_) | Calcit::Registered(_) => {
-      emit_expr(ctx, expr)?;
-      ctx.emit(Instruction::I32TruncF64U);
-      emit_hash_mix(ctx);
-      Ok(())
-    }
-    _ => Err(format!("unsupported WASM hash expression: {expr}")),
-  }
-}
-
 pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err("&hash expects 1 arg".into());
   }
-  emit_hash_expr_i32(ctx, &args[0])?;
+  // Evaluate the argument to an f64 value.
+  emit_expr(ctx, &args[0])?;
+  let val = ctx.alloc_local(); // f64
+  ctx.emit(Instruction::LocalSet(val));
+
+  // Check at runtime if val is a heap pointer: HEAP_BASE+8 <= val < memory_size.
+  let mem_size_f64 = ctx.alloc_local(); // f64
+  ctx.emit(Instruction::MemorySize(0));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Shl);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(mem_size_f64));
+
+  let is_heap = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(val));
+  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(val));
+  ctx.emit(Instruction::LocalGet(mem_size_f64));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(is_heap));
+
+  let result_i32 = ctx.alloc_local_typed(ValType::I32);
+
+  // if is_heap: content hash via __rt_hash_list_or_set
+  ctx.emit(Instruction::LocalGet(is_heap));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(val));
+  ctx.emit(Instruction::I32TruncF64U);
+  let hash_list_idx = *ctx.runtime_fn_index.get("__rt_hash_list_or_set").expect("hash_list_or_set");
+  ctx.emit(Instruction::Call(hash_list_idx));
+  ctx.emit(Instruction::LocalSet(result_i32));
+  ctx.emit(Instruction::Else);
+  // else: scalar hash via __rt_hash_f64
+  ctx.emit(Instruction::LocalGet(val));
+  let hash_f64_idx = *ctx.runtime_fn_index.get("__rt_hash_f64").expect("hash_f64");
+  ctx.emit(Instruction::Call(hash_f64_idx));
+  ctx.emit(Instruction::LocalSet(result_i32));
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(result_i32));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }

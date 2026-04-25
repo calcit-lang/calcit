@@ -472,6 +472,13 @@ impl WasmGenCtx {
     Ok(())
   }
 
+  /// Silently ignore all args and return nil. Use for type-system procs whose
+  /// arguments may contain tags/values not representable in WASM (e.g. `:&core-number-methods`).
+  pub(super) fn silent_nil(&mut self) -> Result<(), String> {
+    self.emit(f64_const(0.0));
+    Ok(())
+  }
+
   // -----------------------------------------------------------------------
   // Integer arithmetic helpers
   // -----------------------------------------------------------------------
@@ -553,7 +560,7 @@ impl WasmGenCtx {
 
   /// Emit the "i >= count → break" guard common to all forward-indexed loops.
   /// Expects both locals to be i32. Emits: `LocalGet(i); LocalGet(count); I32GeU; BrIf(1)`.
-  pub(super) fn loop_exit_if_ge(& mut self, i: u32, count: u32) {
+  pub(super) fn loop_exit_if_ge(&mut self, i: u32, count: u32) {
     self.emit(Instruction::LocalGet(i));
     self.emit(Instruction::LocalGet(count));
     self.emit(Instruction::I32GeU);
@@ -1064,7 +1071,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "map" | "&list:map" if args_list.len() == 2 => return emit_map(ctx, &args_list),
           "map-indexed" | "&list:map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
           "each" if args_list.len() == 2 => return emit_each(ctx, &args_list),
-          "filter" | "&list:filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
+          "filter" | "&list:filter" | "&set:filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
           "any?" if args_list.len() == 2 => return emit_any(ctx, &args_list),
           "every?" if args_list.len() == 2 => return emit_every(ctx, &args_list),
           "find" if args_list.len() == 2 => return emit_find(ctx, &args_list),
@@ -1102,6 +1109,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "let" if !args_list.is_empty() => return emit_let_multi(ctx, &args_list),
           // `map-kv xs f` — apply a binary function to each map entry, returning a new map.
           "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
+          // `'` — list literal constructor (calcit.core/'), same as ([] a b c).
+          "'" => return emit_list_new(ctx, &args_list),
           _ => {}
         }
       }
@@ -1148,7 +1157,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // intra-namespace references to Import nodes (e.g. calcit.core internal calls).
       match name {
         "map" if args_list.len() == 2 => return emit_map(ctx, &args_list),
-        "filter" | "&list:filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
+        "filter" | "&list:filter" | "&set:filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
         "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
         "each" if args_list.len() == 2 => return emit_each(ctx, &args_list),
         "any?" if args_list.len() == 2 => return emit_any(ctx, &args_list),
@@ -1219,7 +1228,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       if def_ref.def_ns.as_ref() == "calcit.core" {
         match def_ref.def_name.as_ref() {
           "map" if args_list.len() == 2 => return emit_map(ctx, &args_list),
-          "filter" | "&list:filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
+          "filter" | "&list:filter" | "&set:filter" if args_list.len() == 2 => return emit_filter(ctx, &args_list),
           "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
           "each" if args_list.len() == 2 => return emit_each(ctx, &args_list),
           "any?" if args_list.len() == 2 => return emit_any(ctx, &args_list),
@@ -1615,6 +1624,33 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Ceil => emit_unary(ctx, Instruction::F64Ceil, args),
     CalcitProc::Round => emit_unary(ctx, Instruction::F64Nearest, args),
     CalcitProc::Sqrt => emit_unary(ctx, Instruction::F64Sqrt, args),
+
+    // round?: x == floor(x)
+    CalcitProc::IsRound => {
+      expect_arity(1, args, "round?")?;
+      let v = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(v));
+      ctx.emit(Instruction::LocalGet(v));
+      ctx.emit(Instruction::F64Floor);
+      ctx.emit(Instruction::LocalGet(v));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
+
+    // &number:fract: x - floor(x)
+    CalcitProc::NativeNumberFract => {
+      expect_arity(1, args, "&number:fract")?;
+      let v = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(v));
+      ctx.emit(Instruction::LocalGet(v));
+      ctx.emit(Instruction::LocalGet(v));
+      ctx.emit(Instruction::F64Floor);
+      ctx.emit(Instruction::F64Sub);
+      Ok(())
+    }
     CalcitProc::Sin => emit_host_call(ctx, "sin", args),
     CalcitProc::Cos => emit_host_call(ctx, "cos", args),
     CalcitProc::Pow => emit_host_call(ctx, "pow", args),
@@ -1941,10 +1977,22 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // &struct:impl-traits / &enum:impl-traits — trait registration; not supported in WASM; return nil.
-    CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => ctx.stub_proc(args),
+    CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => ctx.silent_nil(),
 
     // register-calcit-builtin-impls — builtin impl registration; not meaningful in WASM; return nil.
-    CalcitProc::RegisterCalcitBuiltinImpls => ctx.stub_proc(args),
+    CalcitProc::RegisterCalcitBuiltinImpls => ctx.silent_nil(),
+
+    // &impl::new — trait impl creation; args may contain unsupported tags; silently return nil.
+    CalcitProc::NativeImplNew => ctx.silent_nil(),
+
+    // &assert-traits — trait assertion; not enforced in WASM; silently return nil.
+    CalcitProc::NativeAssertTraits => ctx.silent_nil(),
+
+    // &get-os — host OS info; not available in WASM; return nil.
+    CalcitProc::NativeGetOs => ctx.stub_proc(args),
+
+    // &number:display-by / &number:format — formatting; stub in WASM.
+    CalcitProc::NativeNumberDisplayBy | CalcitProc::NativeNumberFormat => ctx.stub_proc(args),
 
     // sort — native sort with optional comparator; not yet supported in WASM; return first arg.
     CalcitProc::Sort => {
@@ -1964,7 +2012,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 }
 
 fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 1 { // keep explicit for clarity in math ops
+  if args.len() != 1 {
+    // keep explicit for clarity in math ops
     return Err(format!("{instr:?} expects 1 arg, got {}", args.len()));
   }
   emit_expr(ctx, &args[0])?;
@@ -2116,54 +2165,107 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 
   let a = ctx.alloc_local();
   let b = ctx.alloc_local();
-  let ptr_a = ctx.alloc_local_typed(ValType::I32);
-  let ptr_b = ctx.alloc_local_typed(ValType::I32);
-
-  let string_tag = *ctx
-    .tag_index
-    .get("string")
-    .ok_or_else(|| "string tag not found in WASM tag index".to_string())? as i32;
-  let rt_str_compare = *ctx
-    .runtime_fn_index
-    .get("__rt_str_compare")
-    .ok_or_else(|| "runtime helper __rt_str_compare not found".to_string())?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(a));
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(b));
 
-  // Fast path: exact value equality.
+  let result = emit_equals_core(ctx, a, b)?;
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+/// Core structural equality check given two pre-evaluated f64 locals.
+/// Returns the f64 result local (0.0 = not equal, 1.0 = equal).
+/// Uses structural set comparison (inline loop with shallow element equality).
+#[allow(private_interfaces)]
+pub(super) fn emit_equals_core(ctx: &mut WasmGenCtx, a: u32, b: u32) -> Result<u32, String> {
+  emit_equals_core_impl(ctx, a, b, true)
+}
+
+/// Shallow version of emit_equals_core: for set comparison, uses __rt_set_find_elem
+/// (pointer equality only). Call this from within emit_set_find_structural to
+/// avoid infinite mutual recursion.
+#[allow(private_interfaces)]
+pub(super) fn emit_equals_core_shallow(ctx: &mut WasmGenCtx, a: u32, b: u32) -> Result<u32, String> {
+  emit_equals_core_impl(ctx, a, b, false)
+}
+
+/// Internal implementation. When `structural_sets` is true, the set comparison
+/// uses an inline structural search (calling `emit_equals_core_impl` with
+/// `structural_sets=false` for elements, preventing infinite recursion).
+/// When false, uses __rt_set_find_elem (F64Eq for elements).
+fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: bool) -> Result<u32, String> {
+  let result = ctx.alloc_local(); // 0.0 = not equal, 1.0 = equal
+
+  let string_tag = *ctx.tag_index.get("string").ok_or("string tag not found")? as i32;
+  let list_tag = *ctx.tag_index.get("list").ok_or("list tag not found")? as i32;
+  let set_tag = *ctx.tag_index.get("set").ok_or("set tag not found")? as i32;
+  let rt_str_compare = *ctx
+    .runtime_fn_index
+    .get("__rt_str_compare")
+    .ok_or("runtime helper __rt_str_compare not found")?;
+  let rt_set_find_elem = *ctx
+    .runtime_fn_index
+    .get("__rt_set_find_elem")
+    .ok_or("runtime helper __rt_set_find_elem not found")?;
+
+  // Default: not equal
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
+
+  // --- Fast path: exact f64 equality ---
   ctx.emit(Instruction::LocalGet(a));
   ctx.emit(Instruction::LocalGet(b));
   ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.begin_block_if();
   ctx.emit(f64_const(1.0));
-  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
 
-  // if both values are in current heap range [HEAP_BASE+8, heap_ptr)
+  // Skip heap comparison if already equal
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if(); // outer: only proceed if result is still 0.0
+
+  // --- Check both values are heap pointers ---
+  // A valid heap ptr must be >= HEAP_BASE+8 AND < memory_size (in bytes).
+  // We use memory.size * 65536 as the upper bound to prevent OOB on large f64
+  // values (e.g., from &hash) that pass the lower-bound check but exceed memory.
+  let ptr_a = ctx.alloc_local_typed(ValType::I32);
+  let ptr_b = ctx.alloc_local_typed(ValType::I32);
+  let both_heap = ctx.alloc_local_typed(ValType::I32);
+  let mem_size_f64 = ctx.alloc_local();
+
+  // mem_size_f64 = f64(memory.size * 65536)
+  ctx.emit(Instruction::MemorySize(0));
+  ctx.emit(Instruction::I32Const(16)); // 2^16 = 65536
+  ctx.emit(Instruction::I32Shl);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(mem_size_f64));
+
   ctx.emit(Instruction::LocalGet(a));
   ctx.emit(f64_const((HEAP_BASE + 8) as f64));
   ctx.emit(Instruction::F64Ge);
   ctx.emit(Instruction::LocalGet(a));
-  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalGet(mem_size_f64));
   ctx.emit(Instruction::F64Lt);
   ctx.emit(Instruction::I32And);
-
   ctx.emit(Instruction::LocalGet(b));
   ctx.emit(f64_const((HEAP_BASE + 8) as f64));
   ctx.emit(Instruction::F64Ge);
   ctx.emit(Instruction::LocalGet(b));
-  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalGet(mem_size_f64));
   ctx.emit(Instruction::F64Lt);
   ctx.emit(Instruction::I32And);
-
   ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::LocalSet(both_heap));
 
-  // ptr_a = i32(a), ptr_b = i32(b)
+  ctx.emit(Instruction::LocalGet(both_heap));
+  ctx.begin_block_if(); // only proceed if both are heap ptrs
+
   ctx.emit(Instruction::LocalGet(a));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr_a));
@@ -2171,55 +2273,240 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr_b));
 
-  // Check both pointers are tagged strings.
-  ctx.emit(Instruction::LocalGet(ptr_a));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-  ctx.emit(Instruction::I32Eq);
-
+  // Read type tags
+  let tag_a = ctx.alloc_local_typed(ValType::I32);
+  let tag_b = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_a));
   ctx.emit(Instruction::I32Const(4));
   ctx.emit(Instruction::I32Sub);
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(string_tag));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32And);
-
-  ctx.emit(Instruction::LocalGet(ptr_b));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32And);
-
+  ctx.emit(Instruction::LocalSet(tag_a));
   ctx.emit(Instruction::LocalGet(ptr_b));
   ctx.emit(Instruction::I32Const(4));
   ctx.emit(Instruction::I32Sub);
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalSet(tag_b));
+
+  // Only compare if same type
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::LocalGet(tag_b));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+
+  // --- String comparison ---
+  ctx.emit(Instruction::LocalGet(tag_a));
   ctx.emit(Instruction::I32Const(string_tag));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32And);
-
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(ptr_a));
   ctx.emit(Instruction::LocalGet(ptr_b));
   ctx.emit(Instruction::Call(rt_str_compare));
   ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::F64Eq); // str_compare returns f64; 0.0 = equal
   ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::Else);
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End); // end string if
 
-  ctx.emit(Instruction::Else);
+  // Skip if already resolved
+  ctx.emit(Instruction::LocalGet(result));
   ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::I32Const(string_tag));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
 
-  ctx.emit(Instruction::End);
-  Ok(())
+  // --- List comparison: same count + each element F64Eq ---
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::I32Const(list_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  {
+    let cnt_a = ctx.alloc_local_typed(ValType::I32);
+    let cnt_b = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(ptr_a));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(cnt_a));
+    ctx.emit(Instruction::LocalGet(ptr_b));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(cnt_b));
+
+    // If counts match, compare element-by-element
+    ctx.emit(Instruction::LocalGet(cnt_a));
+    ctx.emit(Instruction::LocalGet(cnt_b));
+    ctx.emit(Instruction::I32Eq);
+    ctx.begin_block_if();
+    {
+      let all_eq = ctx.alloc_i32(1); // assume equal
+      let li = ctx.alloc_i32(0);
+      ctx.begin_block();
+      ctx.begin_loop();
+      ctx.loop_exit_if_ge(li, cnt_a);
+      // elem_a = ptr_a[(1+li)*8], elem_b = ptr_b[(1+li)*8]
+      let offset_a = ctx.alloc_local_typed(ValType::I32);
+      let offset_b = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(ptr_a));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalGet(li));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Mul);
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalSet(offset_a));
+      ctx.emit(Instruction::LocalGet(ptr_b));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalGet(li));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Mul);
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalSet(offset_b));
+      // compare elements with F64Eq
+      ctx.emit(Instruction::LocalGet(offset_a));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      ctx.emit(Instruction::LocalGet(offset_b));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::I32Eqz); // ne
+      ctx.begin_block_if();
+      // not equal → mark all_eq = 0 and break
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::LocalSet(all_eq));
+      ctx.emit(Instruction::Br(2)); // break out of block
+      ctx.emit(Instruction::End);
+      ctx.i32_inc(li);
+      ctx.emit(Instruction::Br(0));
+      ctx.emit(Instruction::End); // loop
+      ctx.emit(Instruction::End); // block
+      // result = all_eq
+      ctx.emit(Instruction::LocalGet(all_eq));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    ctx.emit(Instruction::End); // count eq if
+  }
+  ctx.emit(Instruction::End); // list if
+
+  // --- Set comparison: same count + every elem of A is in B ---
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::I32Const(set_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  {
+    let cnt_a = ctx.alloc_local_typed(ValType::I32);
+    let cnt_b = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(ptr_a));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(cnt_a));
+    ctx.emit(Instruction::LocalGet(ptr_b));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(cnt_b));
+
+    ctx.emit(Instruction::LocalGet(cnt_a));
+    ctx.emit(Instruction::LocalGet(cnt_b));
+    ctx.emit(Instruction::I32Eq);
+    ctx.begin_block_if();
+    {
+      let all_eq = ctx.alloc_i32(1);
+      let si = ctx.alloc_i32(0);
+      ctx.begin_block();
+      ctx.begin_loop();
+      ctx.loop_exit_if_ge(si, cnt_a);
+      // load elem from set A
+      let offset_a = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(ptr_a));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalGet(si));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Mul);
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalSet(offset_a));
+      ctx.emit(Instruction::LocalGet(offset_a));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      let elem_a = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(elem_a));
+      // check elem_a in set B
+      let elem_not_found = if structural_sets {
+        // Inline structural search: iterate B and compare with shallow equality
+        let bj = ctx.alloc_i32(0);
+        let found_b = ctx.alloc_i32(-1);
+        ctx.begin_block();
+        ctx.begin_loop();
+        ctx.loop_exit_if_ge(bj, cnt_b);
+        let b_off = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalGet(ptr_b));
+        ctx.emit(Instruction::I32Const(8));
+        ctx.emit(Instruction::I32Add);
+        ctx.emit(Instruction::LocalGet(bj));
+        ctx.emit(Instruction::I32Const(8));
+        ctx.emit(Instruction::I32Mul);
+        ctx.emit(Instruction::I32Add);
+        ctx.emit(Instruction::LocalSet(b_off));
+        let b_elem = ctx.alloc_local();
+        ctx.emit(Instruction::LocalGet(b_off));
+        ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+        ctx.emit(Instruction::LocalSet(b_elem));
+        let eq_r = emit_equals_core_impl(ctx, elem_a, b_elem, false)?;
+        ctx.emit(Instruction::LocalGet(eq_r));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Ne);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::LocalGet(bj));
+        ctx.emit(Instruction::LocalSet(found_b));
+        ctx.emit(Instruction::Br(2));
+        ctx.emit(Instruction::End);
+        ctx.i32_inc(bj);
+        ctx.emit(Instruction::Br(0));
+        ctx.emit(Instruction::End); // loop
+        ctx.emit(Instruction::End); // block
+        // found_b is -1 if not found, or index if found
+        ctx.emit(Instruction::LocalGet(found_b));
+        ctx.emit(Instruction::I32Const(-1));
+        ctx.emit(Instruction::I32Eq); // 1 if not found, 0 if found
+        let not_found_flag = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalSet(not_found_flag));
+        not_found_flag
+      } else {
+        // Shallow: use __rt_set_find_elem (F64Eq for elements)
+        ctx.emit(Instruction::LocalGet(ptr_b));
+        ctx.emit(Instruction::LocalGet(elem_a));
+        ctx.emit(Instruction::Call(rt_set_find_elem));
+        ctx.emit(Instruction::I32Const(-1));
+        ctx.emit(Instruction::I32Eq); // 1 if not found, 0 if found
+        let not_found_flag = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalSet(not_found_flag));
+        not_found_flag
+      };
+      ctx.emit(Instruction::LocalGet(elem_not_found));
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::LocalSet(all_eq));
+      ctx.emit(Instruction::Br(2)); // break
+      ctx.emit(Instruction::End);
+      ctx.i32_inc(si);
+      ctx.emit(Instruction::Br(0));
+      ctx.emit(Instruction::End); // loop
+      ctx.emit(Instruction::End); // block
+      ctx.emit(Instruction::LocalGet(all_eq));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    ctx.emit(Instruction::End); // count eq if
+  }
+  ctx.emit(Instruction::End); // set if
+
+  ctx.emit(Instruction::End); // "not yet resolved" if
+  ctx.emit(Instruction::End); // "same type tag" if
+  ctx.emit(Instruction::End); // "both heap" if
+  ctx.emit(Instruction::End); // "result is still 0.0" outer if
+
+  Ok(result)
 }
 
 /// Emit a binary bitwise operation: convert both args to i32, apply op, convert back to f64.

@@ -283,7 +283,10 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
       ctx.emit(Instruction::LocalGet(elem));
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(Instruction::CallIndirect { type_index: 2, table_index: 0 });
+      ctx.emit(Instruction::CallIndirect {
+        type_index: 2,
+        table_index: 0,
+      });
       Ok(())
     }
   }
@@ -316,8 +319,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let tuple_ptr = ctx.alloc_local_typed(ValType::I32);
 
   // Resolve callee (after allocating acc/elem so Proc variant has the right indices)
-  let fn_call_kind = resolve_callee_kind(ctx, &args[3], acc, elem)
-    .map_err(|e| format!("foldl-shortcut: {e}"))?;
+  let fn_call_kind = resolve_callee_kind(ctx, &args[3], acc, elem).map_err(|e| format!("foldl-shortcut: {e}"))?;
 
   // Outer block for early exit; inner loop for iteration
   ctx.begin_block();
@@ -455,8 +457,7 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::LocalSet(result));
 
   // Resolve callee after allocating acc/elem
-  let fn_call_kind = resolve_callee_kind(ctx, &args[2], acc, elem)
-    .map_err(|e| format!("foldl-compare: {e}"))?;
+  let fn_call_kind = resolve_callee_kind(ctx, &args[2], acc, elem).map_err(|e| format!("foldl-compare: {e}"))?;
 
   // Outer block (break here with false or after exhausting list)
   ctx.begin_block();
@@ -513,8 +514,12 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
       let old = ctx.locals.insert(param.clone(), arg);
       emit_body(ctx, body)?;
       match old {
-        Some(v) => { ctx.locals.insert(param.clone(), v); }
-        None => { ctx.locals.remove(param); }
+        Some(v) => {
+          ctx.locals.insert(param.clone(), v);
+        }
+        None => {
+          ctx.locals.remove(param);
+        }
       }
       Ok(())
     }
@@ -534,8 +539,12 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
       });
       let result = emit_proc_call(ctx, proc, &[expr]);
       match prev {
-        Some(v) => { ctx.locals.insert(sym.as_ref().to_owned(), v); }
-        None => { ctx.locals.remove(sym.as_ref()); }
+        Some(v) => {
+          ctx.locals.insert(sym.as_ref().to_owned(), v);
+        }
+        None => {
+          ctx.locals.remove(sym.as_ref());
+        }
       }
       result
     }
@@ -545,7 +554,10 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
       ctx.emit(Instruction::LocalGet(arg));
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(Instruction::CallIndirect { type_index: 1, table_index: 0 });
+      ctx.emit(Instruction::CallIndirect {
+        type_index: 1,
+        table_index: 0,
+      });
       Ok(())
     }
   }
@@ -567,8 +579,22 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
       let old0 = ctx.locals.insert(params[0].clone(), elem);
       let old1 = ctx.locals.insert(params[1].clone(), idx);
       emit_body(ctx, body)?;
-      match old0 { Some(v) => { ctx.locals.insert(params[0].clone(), v); } None => { ctx.locals.remove(&params[0]); } }
-      match old1 { Some(v) => { ctx.locals.insert(params[1].clone(), v); } None => { ctx.locals.remove(&params[1]); } }
+      match old0 {
+        Some(v) => {
+          ctx.locals.insert(params[0].clone(), v);
+        }
+        None => {
+          ctx.locals.remove(&params[0]);
+        }
+      }
+      match old1 {
+        Some(v) => {
+          ctx.locals.insert(params[1].clone(), v);
+        }
+        None => {
+          ctx.locals.remove(&params[1]);
+        }
+      }
       Ok(())
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
@@ -578,7 +604,10 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
       ctx.ptr_to_f64(idx);
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(Instruction::CallIndirect { type_index: 2, table_index: 0 });
+      ctx.emit(Instruction::CallIndirect {
+        type_index: 2,
+        table_index: 0,
+      });
       Ok(())
     }
   }
@@ -608,11 +637,31 @@ fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKi
 }
 
 /// `map xs f` — apply f to every element, returning new list of same length.
+/// Copy the type tag (i32 at raw_base+4 = ptr-4) from `src` to `dst`.
+/// Used by map/filter to preserve set→set or list→list semantics.
+fn emit_copy_type_tag(ctx: &mut WasmGenCtx, src_ptr: u32, dst_ptr: u32) {
+  // Read tag from src_ptr - 4
+  ctx.emit(Instruction::LocalGet(src_ptr));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  // Write tag to dst_ptr - 4
+  let tag_tmp = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(tag_tmp));
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalGet(tag_tmp));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+}
+
 pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "map")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let dst_ptr = emit_alloc_list(ctx, count);
+  // Preserve source type tag (set→set, list→list)
+  emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map: {e}"))?;
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   // write f(elem) into dst[i]: push address of dst[i] then store result
@@ -674,6 +723,7 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter: {e}"))?;
   let dst_ptr = emit_alloc_list(ctx, count);
+  emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
@@ -777,6 +827,7 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter-not: {e}"))?;
   let dst_ptr = emit_alloc_list(ctx, count);
+  emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
@@ -809,7 +860,9 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::LocalSet(key_local));
 
   // cur_val = __rt_map_get_value(map_ptr, key)
-  let get_fn_idx = *ctx.runtime_fn_index.get("__rt_map_get_value")
+  let get_fn_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_map_get_value")
     .expect("runtime helper __rt_map_get_value must exist");
   ctx.emit(Instruction::LocalGet(map_ptr));
   ctx.emit(Instruction::LocalGet(key_local));
@@ -824,7 +877,9 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::LocalSet(new_val));
 
   // result = __rt_map_assoc(map_ptr, key, new_val)
-  let assoc_fn_idx = *ctx.runtime_fn_index.get("__rt_map_assoc")
+  let assoc_fn_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_map_assoc")
     .expect("runtime helper __rt_map_assoc must exist");
   ctx.emit(Instruction::LocalGet(map_ptr));
   ctx.emit(Instruction::LocalGet(key_local));
@@ -880,7 +935,9 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::LocalSet(map_ptr));
 
   // __rt_map_linearize(map_ptr) → flat [n_pairs, k0, v0, ...] buffer (i32 ptr)
-  let linearize_idx = *ctx.runtime_fn_index.get("__rt_map_linearize")
+  let linearize_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_map_linearize")
     .ok_or("runtime __rt_map_linearize missing")?;
   ctx.emit(Instruction::LocalGet(map_ptr));
   ctx.emit(Instruction::Call(linearize_idx));
@@ -913,15 +970,23 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 
   // key = flat_ptr[8 + i*16]
   ctx.emit(Instruction::LocalGet(flat_ptr));
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(16)); ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Const(8)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(key));
 
   // val = flat_ptr[16 + i*16]
   ctx.emit(Instruction::LocalGet(flat_ptr));
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(16)); ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Const(16)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalSet(val));
 
@@ -931,8 +996,22 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
       let old0 = ctx.locals.insert(params[0].clone(), key);
       let old1 = ctx.locals.insert(params[1].clone(), val);
       emit_body(ctx, body)?;
-      match old0 { Some(v) => { ctx.locals.insert(params[0].clone(), v); } None => { ctx.locals.remove(&params[0]); } }
-      match old1 { Some(v) => { ctx.locals.insert(params[1].clone(), v); } None => { ctx.locals.remove(&params[1]); } }
+      match old0 {
+        Some(v) => {
+          ctx.locals.insert(params[0].clone(), v);
+        }
+        None => {
+          ctx.locals.remove(&params[0]);
+        }
+      }
+      match old1 {
+        Some(v) => {
+          ctx.locals.insert(params[1].clone(), v);
+        }
+        None => {
+          ctx.locals.remove(&params[1]);
+        }
+      }
     }
     _ => unreachable!(),
   }
@@ -957,7 +1036,10 @@ pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::Call(assoc_idx));
   ctx.emit(Instruction::LocalSet(acc));
 
-  ctx.emit(Instruction::LocalGet(i)); ctx.emit(Instruction::I32Const(1)); ctx.emit(Instruction::I32Add); ctx.emit(Instruction::LocalSet(i));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(i));
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);

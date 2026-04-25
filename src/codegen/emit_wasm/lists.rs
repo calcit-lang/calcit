@@ -656,15 +656,14 @@ pub(super) fn emit_list_to_set(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 pub(super) fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   use crate::calcit::CalcitSyntax;
   // Handle spread form: (&list:dissoc x & rest_list) — rest_list[0] is the index
-  let (list_arg, idx_arg): (&Calcit, Option<&Calcit>) = if args.len() == 3
-    && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _))
-  {
-    (&args[0], None) // spread form: extract idx from rest_list at runtime
-  } else if args.len() == 2 {
-    (&args[0], Some(&args[1]))
-  } else {
-    return Err("&list:dissoc expects 2 args".into());
-  };
+  let (list_arg, idx_arg): (&Calcit, Option<&Calcit>) =
+    if args.len() == 3 && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      (&args[0], None) // spread form: extract idx from rest_list at runtime
+    } else if args.len() == 2 {
+      (&args[0], Some(&args[1]))
+    } else {
+      return Err("&list:dissoc expects 2 args".into());
+    };
 
   let src = emit_ptr_to_i32(ctx, list_arg)?;
   let count = emit_load_count_i32(ctx, src);
@@ -1111,8 +1110,73 @@ pub(super) fn emit_buf_list_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 
 /// `range n` or `range a b` — create a list of numbers [0..n) or [a..b).
 pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.is_empty() || args.len() > 2 {
-    return Err("range expects 1 or 2 args".into());
+  if args.is_empty() || args.len() > 3 {
+    return Err("range expects 1, 2, or 3 args".into());
+  }
+
+  // 3-arg form: range start end step
+  if args.len() == 3 {
+    let start = ctx.alloc_local();
+    let end = ctx.alloc_local();
+    let step = ctx.alloc_local();
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::LocalSet(start));
+    emit_expr(ctx, &args[1])?;
+    ctx.emit(Instruction::LocalSet(end));
+    emit_expr(ctx, &args[2])?;
+    ctx.emit(Instruction::LocalSet(step));
+
+    // count = max(0, ceil((end - start) / step))
+    let raw_count_f = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(end));
+    ctx.emit(Instruction::LocalGet(start));
+    ctx.emit(Instruction::F64Sub);
+    ctx.emit(Instruction::LocalGet(step));
+    ctx.emit(Instruction::F64Div);
+    ctx.emit(Instruction::F64Ceil);
+    ctx.emit(Instruction::LocalSet(raw_count_f));
+
+    // clamp: if raw_count_f <= 0, count = 0
+    let count = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(raw_count_f));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Gt);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(raw_count_f));
+    ctx.emit(Instruction::I32TruncF64S);
+    ctx.emit(Instruction::LocalSet(count));
+    ctx.emit(Instruction::End);
+
+    let dst = emit_alloc_list(ctx, count);
+
+    let i = ctx.alloc_i32(0);
+
+    ctx.begin_block();
+    ctx.begin_loop();
+    ctx.loop_exit_if_ge(i, count);
+    // elem = start + i * step
+    ctx.emit(Instruction::LocalGet(dst));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(i));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    // value = start + i * step
+    ctx.emit(Instruction::LocalGet(start));
+    ctx.emit(Instruction::LocalGet(i));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.emit(Instruction::LocalGet(step));
+    ctx.emit(Instruction::F64Mul);
+    ctx.emit(Instruction::F64Add);
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.i32_inc(i);
+    ctx.emit(Instruction::Br(0));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+
+    ctx.ptr_to_f64(dst);
+    return Ok(());
   }
 
   let start = ctx.alloc_local();

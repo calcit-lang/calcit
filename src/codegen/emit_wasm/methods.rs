@@ -530,6 +530,7 @@ fn emit_method_includes(ctx: &mut WasmGenCtx, receiver_local: u32, target_local:
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
+  let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -552,11 +553,31 @@ fn emit_method_includes(ctx: &mut WasmGenCtx, receiver_local: u32, target_local:
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_set_includes_from_local(ctx, receiver_local, target_local);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(string_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_str_includes_from_local(ctx, receiver_local, target_local);
+  ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
+}
+
+/// `.includes? str needle` — string substring check via __rt_str_find_index >= 0.
+fn emit_str_includes_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, target_local: u32) {
+  use wasm_encoder::Ieee64;
+  let recv_ptr = emit_ptr_local_from_receiver(ctx, receiver_local);
+  let needle_ptr = emit_ptr_local_from_receiver(ctx, target_local);
+  ctx.emit(Instruction::LocalGet(recv_ptr));
+  ctx.emit(Instruction::LocalGet(needle_ptr));
+  ctx.call_rt("__rt_str_find_index");
+  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::F64ConvertI32U);
 }
 
 fn emit_method_min(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
