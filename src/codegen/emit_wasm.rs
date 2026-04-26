@@ -1941,6 +1941,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::ParseFloat => emit_parse_float(ctx, args),
     CalcitProc::CharFromCode => emit_char_from_code(ctx, args),
     CalcitProc::NativeStrReplace => emit_str_replace(ctx, args),
+    CalcitProc::Split => emit_split(ctx, args),
+    CalcitProc::SplitLines => emit_split_lines(ctx, args),
 
     // --- List higher-order and utility operations ---
     CalcitProc::NativeListDistinct => emit_list_distinct(ctx, args),
@@ -2386,13 +2388,76 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
       ctx.emit(Instruction::I32Mul);
       ctx.emit(Instruction::I32Add);
       ctx.emit(Instruction::LocalSet(offset_b));
-      // compare elements with F64Eq
+      // Deep element comparison: f64 fast-path, then inline string comparison.
+      let elem_a = ctx.alloc_local(); // f64
+      let elem_b = ctx.alloc_local(); // f64
+      let elems_eq = ctx.alloc_i32(0); // i32: 0=not-equal, 1=equal
+      let elem_a_i32 = ctx.alloc_local_typed(ValType::I32);
+      let elem_b_i32 = ctx.alloc_local_typed(ValType::I32);
+      let elem_tag_a = ctx.alloc_local_typed(ValType::I32);
+      let elem_tag_b = ctx.alloc_local_typed(ValType::I32);
       ctx.emit(Instruction::LocalGet(offset_a));
       ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      ctx.emit(Instruction::LocalSet(elem_a));
       ctx.emit(Instruction::LocalGet(offset_b));
       ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      ctx.emit(Instruction::LocalSet(elem_b));
+      // Fast path: pointer equality
+      ctx.emit(Instruction::LocalGet(elem_a));
+      ctx.emit(Instruction::LocalGet(elem_b));
       ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::I32Eqz); // ne
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::LocalSet(elems_eq));
+      ctx.emit(Instruction::Else);
+      // Check if both are valid heap pointers
+      let heap_min_elem = (HEAP_BASE + 8) as f64;
+      ctx.emit(Instruction::LocalGet(elem_a));
+      ctx.emit(f64_const(heap_min_elem));
+      ctx.emit(Instruction::F64Ge);
+      ctx.emit(Instruction::LocalGet(elem_b));
+      ctx.emit(f64_const(heap_min_elem));
+      ctx.emit(Instruction::F64Ge);
+      ctx.emit(Instruction::I32And);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(elem_a));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(elem_a_i32));
+      ctx.emit(Instruction::LocalGet(elem_b));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(elem_b_i32));
+      // Read type tags
+      ctx.emit(Instruction::LocalGet(elem_a_i32));
+      ctx.emit(Instruction::I32Const(4));
+      ctx.emit(Instruction::I32Sub);
+      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      ctx.emit(Instruction::LocalSet(elem_tag_a));
+      ctx.emit(Instruction::LocalGet(elem_b_i32));
+      ctx.emit(Instruction::I32Const(4));
+      ctx.emit(Instruction::I32Sub);
+      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      ctx.emit(Instruction::LocalSet(elem_tag_b));
+      // Both strings? Call str_compare
+      ctx.emit(Instruction::LocalGet(elem_tag_a));
+      ctx.emit(Instruction::I32Const(string_tag));
+      ctx.emit(Instruction::I32Eq);
+      ctx.emit(Instruction::LocalGet(elem_tag_b));
+      ctx.emit(Instruction::I32Const(string_tag));
+      ctx.emit(Instruction::I32Eq);
+      ctx.emit(Instruction::I32And);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(elem_a_i32));
+      ctx.emit(Instruction::LocalGet(elem_b_i32));
+      ctx.emit(Instruction::Call(rt_str_compare));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq); // 1 if equal
+      ctx.emit(Instruction::LocalSet(elems_eq));
+      ctx.emit(Instruction::End); // string if
+      ctx.emit(Instruction::End); // both-heap if
+      ctx.emit(Instruction::End); // fast-path if
+      // if NOT elems_eq → all_eq = 0, break
+      ctx.emit(Instruction::LocalGet(elems_eq));
+      ctx.emit(Instruction::I32Eqz);
       ctx.begin_block_if();
       // not equal → mark all_eq = 0 and break
       ctx.emit(Instruction::I32Const(0));
@@ -2964,6 +3029,36 @@ fn collect_record_field_tags_from_program(
   result
 }
 
+/// If `expr` is a literal tuple constructor `(NativeTuple :tag val0 val1...)` with only
+/// literal args (Tag, Str, Number, Bool, Nil), return its lispy string representation.
+/// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
+pub(crate) fn try_format_tuple_literal(expr: &Calcit) -> Option<String> {
+  if let Calcit::List(list) = expr {
+    if !list.is_empty() {
+      if let Calcit::Proc(p) = &list[0] {
+        if *p == CalcitProc::NativeTuple {
+          let mut s = String::from("(:: ");
+          for (i, item) in list.iter().skip(1).enumerate() {
+            if i > 0 {
+              s.push(' ');
+            }
+            match item {
+              Calcit::Tag(_) | Calcit::Str(_) | Calcit::Number(_) | Calcit::Bool(_) | Calcit::Nil => {
+                use std::fmt::Write;
+                write!(s, "{item}").ok()?;
+              }
+              _ => return None,
+            }
+          }
+          s.push(')');
+          return Some(s);
+        }
+      }
+    }
+  }
+  None
+}
+
 fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
   match expr {
     Calcit::Str(s) => {
@@ -2990,6 +3085,10 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
             }
           }
         }
+      }
+      // Pre-intern lispy strings for literal tuple constructors (used by `str`/`turn-string`).
+      if let Some(tuple_str) = try_format_tuple_literal(expr) {
+        strings.push(tuple_str);
       }
       for x in xs.iter() {
         collect_strings_from_expr(x, strings);

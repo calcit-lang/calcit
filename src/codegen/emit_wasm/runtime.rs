@@ -553,6 +553,29 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_map_equal"), map_equal_idx);
   fns.push(build_rt_map_equal(map_linearize_idx, map_get_value_idx));
 
+  // str-find-from: __rt_str_find_from(h_ptr: i32, h_start: i32, pat_ptr: i32) → i32
+  // Returns byte offset of first occurrence at or after h_start, or -1.
+  let str_find_from_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_str_find_from"), str_find_from_idx);
+  fns.push(build_rt_str_find_from());
+
+  // utf8-char-len: __rt_utf8_char_len(b: i32) → i32
+  // Returns byte width of a UTF-8 character given its first byte.
+  let utf8_char_len_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_utf8_char_len"), utf8_char_len_idx);
+  fns.push(build_rt_utf8_char_len());
+
+  // str-split: __rt_str_split(s_ptr: i32, pat_ptr: i32) → i32 (list ptr)
+  let str_split_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_str_split"), str_split_idx);
+  fns.push(build_rt_str_split(string_tag, list_tag, str_find_from_idx, utf8_char_len_idx));
+
+  // value-equal: __rt_value_equal(a: f64, b: f64) → i32 (1=equal, 0=not)
+  // Deep equality for all heap types (strings, lists). For other types: f64 equality.
+  let value_equal_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_value_equal"), value_equal_idx);
+  fns.push(build_rt_value_equal(string_tag, list_tag, str_compare_idx, value_equal_idx));
+
   (fns, fn_index)
 }
 
@@ -4095,4 +4118,657 @@ fn build_rt_map_equal(map_linearize_idx: u32, map_get_value_idx: u32) -> Compile
   b.emit(Instruction::End); // end count_a != count_b if
 
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
+}
+
+
+/// `__rt_str_find_from(h_ptr: i32, h_start: i32, pat_ptr: i32) -> i32`
+/// Searches for pat in h starting at byte offset h_start.
+/// Returns the byte offset of the first match, or -1 if not found.
+fn build_rt_str_find_from() -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(3); // h_ptr=0, h_start=1, pat_ptr=2
+  let h_len = b.alloc_i32();
+  let p_len = b.alloc_i32();
+  let h_base = b.alloc_i32();
+  let p_base = b.alloc_i32();
+  let i = b.alloc_i32();
+  let j = b.alloc_i32();
+  let limit = b.alloc_i32();
+  let bh = b.alloc_i32();
+  let bp = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(h_len));
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(p_len));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(h_base));
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(p_base));
+
+  // Block (result i32) for early-exit
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Result(ValType::I32)));
+
+  // if p_len == 0: return h_start
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Br(1));
+  b.emit(Instruction::End);
+
+  // if h_start + p_len > h_len: return -1
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(h_len));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::Br(1));
+  b.emit(Instruction::End);
+
+  // limit = h_len - p_len
+  b.emit(Instruction::LocalGet(h_len));
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(limit));
+
+  // i = h_start
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalSet(i));
+
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty)); // $exit
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));  // $outer
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(limit));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::BrIf(1)); // $exit
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(j));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty)); // $mismatch
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));  // $inner
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  // nesting: 0=If, 1=$inner, 2=$mismatch, 3=$outer, 4=$exit, 5=Block(i32)
+  b.emit(Instruction::Br(5));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(h_base));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalSet(bh));
+  b.emit(Instruction::LocalGet(p_base));
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalSet(bp));
+  b.emit(Instruction::LocalGet(bh));
+  b.emit(Instruction::LocalGet(bp));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::BrIf(1)); // $mismatch
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(j));
+  b.emit(Instruction::Br(0)); // $inner
+  b.emit(Instruction::End); // end $inner
+  b.emit(Instruction::End); // end $mismatch
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0)); // $outer
+  b.emit(Instruction::End); // end $outer
+  b.emit(Instruction::End); // end $exit
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::End); // end Block(i32)
+
+  b.finish(vec![ValType::I32, ValType::I32, ValType::I32], vec![ValType::I32])
+}
+
+/// `__rt_utf8_char_len(b: i32) -> i32`
+/// Given the first byte of a UTF-8 sequence, returns its byte width (1-4).
+fn build_rt_utf8_char_len() -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(0x80));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Br(1));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(0xE0));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::Br(1));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(0xF0));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(3));
+  b.emit(Instruction::Br(1));
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::I32], vec![ValType::I32])
+}
+
+/// `__rt_str_split(s_ptr: i32, pat_ptr: i32) -> i32` (list logical ptr)
+/// Splits string s by pat. Empty pieces are dropped. Empty pat = char-split.
+fn build_rt_str_split(string_tag: i32, list_tag: i32, find_from_idx: u32, utf8_char_len_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2); // s_ptr=0, pat_ptr=1
+  let s_len = b.alloc_i32();
+  let p_len = b.alloc_i32();
+  let s_cont = b.alloc_i32();
+  let count = b.alloc_i32();
+  let i = b.alloc_i32();
+  let prev = b.alloc_i32();
+  let list_ptr = b.alloc_i32();
+  let li = b.alloc_i32();
+  let idx = b.alloc_i32();
+  let piece_len = b.alloc_i32();
+  let str_ptr = b.alloc_i32();
+  let str_cont = b.alloc_i32();
+  let char_len = b.alloc_i32();
+  let padded = b.alloc_i32();
+  let size = b.alloc_i32();
+  let ki = b.alloc_i32();
+  let list_size = b.alloc_i32();
+
+  // load s_len, p_len, s_cont
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(s_len));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(p_len));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(s_cont));
+
+  // --- PASS 1: COUNT ---
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  // empty-pat: count UTF-8 chars
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(s_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(s_cont));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::Call(utf8_char_len_idx));
+  b.emit(Instruction::LocalSet(char_len));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(char_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  // non-empty pat: count delimited pieces
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(prev));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Call(find_from_idx));
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  // last segment
+  b.emit(Instruction::LocalGet(s_len));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(piece_len));
+  b.emit(Instruction::LocalGet(piece_len));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Br(2)); // break loop
+  b.emit(Instruction::End);
+  // mid segment
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(piece_len));
+  b.emit(Instruction::LocalGet(piece_len));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(prev));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End); // if p_len == 0
+
+  // --- ALLOCATE LIST ---
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(list_size));
+  rt_emit_alloc_dynamic(&mut b, list_size, list_ptr, list_tag);
+  b.emit(Instruction::LocalGet(list_ptr));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // --- PASS 2: FILL ---
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(li));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(prev));
+
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  // empty-pat: emit each UTF-8 char as a string
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(s_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(s_cont));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::Call(utf8_char_len_idx));
+  b.emit(Instruction::LocalSet(char_len));
+  // padded = (char_len + 7) & -8
+  b.emit(Instruction::LocalGet(char_len));
+  b.emit(Instruction::I32Const(7));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-8));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(padded));
+  b.emit(Instruction::LocalGet(padded));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(size));
+  rt_emit_alloc_dynamic(&mut b, size, str_ptr, string_tag);
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::LocalGet(char_len));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(str_cont));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(ki));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::LocalGet(char_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(str_cont));
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(s_cont));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(ki));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  // store str_ptr in list
+  b.emit(Instruction::LocalGet(list_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(li));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(li));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(li));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(char_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  // non-empty pat: emit each delimited piece
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Call(find_from_idx));
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(s_len));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(piece_len));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(piece_len));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(piece_len));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(piece_len));
+  b.emit(Instruction::I32Const(7));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-8));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(padded));
+  b.emit(Instruction::LocalGet(padded));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(size));
+  rt_emit_alloc_dynamic(&mut b, size, str_ptr, string_tag);
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::LocalGet(piece_len));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(str_cont));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(ki));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::LocalGet(piece_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(str_cont));
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(s_cont));
+  b.emit(Instruction::LocalGet(prev));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::LocalGet(ki));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(ki));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(list_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(li));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(li));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(li));
+  b.emit(Instruction::End); // if piece_len > 0
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::BrIf(1)); // exit
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::LocalGet(p_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(prev));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::End);
+  b.emit(Instruction::End); // if p_len == 0
+
+  b.emit(Instruction::LocalGet(list_ptr));
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
+}
+
+/// `__rt_value_equal(a: f64, b: f64) → i32`
+///
+/// Deep structural equality:
+/// - Numbers/booleans/nil: f64 equality.
+/// - Strings: byte-by-byte comparison via __rt_str_compare.
+/// - Lists: element-wise recursive comparison.
+/// - Other heap objects: pointer (f64) equality.
+fn build_rt_value_equal(string_tag: i32, list_tag: i32, str_compare_idx: u32, self_idx: u32) -> CompiledFn {
+  // params: 0 = a (f64), 1 = b (f64)
+  let mut b = RuntimeFnBuilder::new(2);
+  let result = b.alloc_i32();   // 0=not-equal, 1=equal
+  let ptr_a = b.alloc_i32();
+  let ptr_b = b.alloc_i32();
+  let tag_a = b.alloc_i32();
+  let tag_b = b.alloc_i32();
+  let cnt = b.alloc_i32();
+  let i = b.alloc_i32();
+  let elem_a = b.alloc_f64();
+  let elem_b = b.alloc_f64();
+  let heap_min = (HEAP_BASE + 8) as f64;
+
+  // Fast path: exact f64 equality
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Else);
+
+  // Check both are valid heap pointers
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Const(Ieee64::from(heap_min)));
+  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Const(Ieee64::from(heap_min)));
+  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+
+  // Convert to i32 pointers
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(ptr_a));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(ptr_b));
+
+  // Read type tags (ptr - 4 = raw_base + 4)
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(tag_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(tag_b));
+
+  // If different types → not equal
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::LocalGet(tag_b));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Else);
+
+  // Same type: dispatch on tag
+
+  // String comparison
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(string_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  // str_compare returns f64: 0.0 = equal
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::Call(str_compare_idx));
+  b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Else);
+
+  // List deep comparison
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(list_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  {
+    // count_a == count_b?
+    b.emit(Instruction::LocalGet(ptr_a));
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::LocalSet(cnt));
+    b.emit(Instruction::LocalGet(ptr_b));
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::LocalGet(cnt));
+    b.emit(Instruction::I32Ne);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::Else);
+    // Compare each element recursively
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::LocalSet(result));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(i));
+    // block (break-out-on-mismatch)
+    b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+    // exit when i >= cnt
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::LocalGet(cnt));
+    b.emit(Instruction::I32GeU);
+    b.emit(Instruction::BrIf(1)); // break out of block
+    // elem_a = ptr_a[8 + i*8]
+    b.emit(Instruction::LocalGet(ptr_a));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::LocalSet(elem_a));
+    // elem_b = ptr_b[8 + i*8]
+    b.emit(Instruction::LocalGet(ptr_b));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::LocalSet(elem_b));
+    // if !value_equal(elem_a, elem_b) → result=0, break
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(result));
+    b.emit(Instruction::Br(2)); // break out of block
+    b.emit(Instruction::End);
+    // i++
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Br(0)); // continue loop
+    b.emit(Instruction::End); // loop
+    b.emit(Instruction::End); // block
+    b.emit(Instruction::LocalGet(result));
+    b.emit(Instruction::End); // count_ne if
+  }
+
+  b.emit(Instruction::Else);
+  // Other heap types: not equal (different pointers already checked above)
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End); // list if
+
+  b.emit(Instruction::End); // string if
+  b.emit(Instruction::End); // tag_ne if
+  b.emit(Instruction::Else);
+  // Not both heap pointers → not equal
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End); // both_heap if
+
+  b.emit(Instruction::End); // fast-path if
+
+  b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
 }

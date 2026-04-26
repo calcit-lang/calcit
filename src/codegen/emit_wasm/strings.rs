@@ -69,8 +69,17 @@ pub(super) fn emit_str_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 /// `&str:concat a b` — new string with a's bytes followed by b's bytes.
 pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&str:concat")?;
-  let ptr_a = emit_ptr_to_i32(ctx, &args[0])?;
-  let ptr_b = emit_ptr_to_i32(ctx, &args[1])?;
+  // Evaluate each arg as f64, then convert to string (matching interpreter behavior:
+  // non-string args are turned to strings via turn_string).
+  emit_expr(ctx, &args[0])?;
+  let f_a = ctx.alloc_local_typed(ValType::F64);
+  ctx.emit(Instruction::LocalSet(f_a));
+  let ptr_a = emit_turn_string_from_local(ctx, f_a);
+
+  emit_expr(ctx, &args[1])?;
+  let f_b = ctx.alloc_local_typed(ValType::F64);
+  ctx.emit(Instruction::LocalSet(f_b));
+  let ptr_b = emit_turn_string_from_local(ctx, f_b);
 
   let len_a = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_a));
@@ -258,15 +267,28 @@ pub(super) fn emit_str_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     ctx.emit(Instruction::LocalSet(end));
   }
 
-  let new_len = ctx.alloc_local_typed(ValType::I32);
+  // new_len = max(0, end - start) — clamp to avoid underflow when start > end
+  let raw_len = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(end));
   ctx.emit(Instruction::LocalGet(start));
   ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(raw_len));
+
+  let new_len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(raw_len));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32LtS);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(new_len));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(raw_len));
+  ctx.emit(Instruction::LocalSet(new_len));
+  ctx.emit(Instruction::End);
 
   let (ptr_b, dst_b) = emit_str_alloc(ctx, new_len);
 
-  // src = ptr_a + 8 + start
+  // src = ptr_a + 8 + start; only copy if new_len > 0
   let src = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_a));
   ctx.emit(Instruction::I32Const(8));
@@ -275,10 +297,15 @@ pub(super) fn emit_str_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(src));
 
+  ctx.emit(Instruction::LocalGet(new_len));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtS);
+  ctx.emit(Instruction::If(BlockType::Empty));
   ctx.emit(Instruction::LocalGet(dst_b));
   ctx.emit(Instruction::LocalGet(src));
   ctx.emit(Instruction::LocalGet(new_len));
   ctx.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  ctx.emit(Instruction::End);
 
   ctx.ptr_to_f64(ptr_b);
   Ok(())
@@ -363,6 +390,15 @@ pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 /// `turn-string v` — convert any value to its string representation.
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "turn-string")?;
+
+  // Compile-time fast path: literal tuple constructor like `(:: :tag val0 val1 ...)`.
+  // Pre-compute the lispy string and emit it as a string-pool constant.
+  if let Some(tuple_str) = super::try_format_tuple_literal(&args[0]) {
+    if let Some(&ptr) = ctx.string_pool.get(&tuple_str) {
+      ctx.emit(super::f64_const(ptr as f64));
+      return Ok(());
+    }
+  }
 
   let f64_to_str_idx = *ctx
     .runtime_fn_index
@@ -598,10 +634,13 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
   str_i32
 }
 
-/// `str args...` — convert each arg to string and concatenate all.
+/// `str args...` — convert each non-nil arg to string and concatenate all.
 /// Intercept for the variadic `str` call, bypassing the core library definition.
 pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.is_empty() {
+  // Filter nil args at codegen time (matching interpreter behavior)
+  let non_nil: Vec<&Calcit> = args.iter().filter(|a| !matches!(a, Calcit::Nil)).collect();
+
+  if non_nil.is_empty() {
     // Return empty string: allocate string with length 0
     let zero_local = ctx.alloc_i32(0);
     let (ptr, _) = emit_str_alloc(ctx, zero_local);
@@ -610,12 +649,12 @@ pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   }
 
   // Convert first arg to string, store as i32 ptr
-  emit_turn_string(ctx, std::slice::from_ref(&args[0]))?;
+  emit_turn_string(ctx, std::slice::from_ref(non_nil[0]))?;
   let acc_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(acc_ptr));
 
-  for arg in &args[1..] {
+  for arg in &non_nil[1..] {
     emit_turn_string(ctx, std::slice::from_ref(arg))?;
     let next_ptr = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::I32TruncF64U);
@@ -631,9 +670,12 @@ pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   Ok(())
 }
 
-/// `str-spaced args...` — convert each arg to string, join with space separators.
+/// `str-spaced args...` — convert each non-nil arg to string, join with space separators.
 pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.is_empty() {
+  // Filter out nil args at codegen time (matching interpreter behavior)
+  let non_nil: Vec<&Calcit> = args.iter().filter(|a| !matches!(a, Calcit::Nil)).collect();
+
+  if non_nil.is_empty() {
     let zero_local = ctx.alloc_i32(0);
     let (ptr, _) = emit_str_alloc(ctx, zero_local);
     ctx.ptr_to_f64(ptr);
@@ -649,12 +691,12 @@ pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::I32Store8(super::mem_arg_byte(0)));
 
   // Convert first arg to string, store as i32 ptr
-  emit_turn_string(ctx, std::slice::from_ref(&args[0]))?;
+  emit_turn_string(ctx, std::slice::from_ref(non_nil[0]))?;
   let acc_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(acc_ptr));
 
-  for arg in &args[1..] {
+  for arg in &non_nil[1..] {
     // Append space: acc = acc + " "
     concat_two_i32_ptrs(ctx, acc_ptr, space_ptr);
     ctx.emit(Instruction::I32TruncF64U);
@@ -1341,5 +1383,41 @@ pub(super) fn emit_str_replace(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   emit_expr(ctx, &args[1])?;
   emit_expr(ctx, &args[2])?;
   ctx.call_rt("__rt_str_replace");
+  Ok(())
+}
+
+/// `split s pat` — split string by pattern, return list of non-empty pieces.
+pub(super) fn emit_split(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "split")?;
+  let s = emit_ptr_to_i32(ctx, &args[0])?;
+  let pat = emit_ptr_to_i32(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalGet(s));
+  ctx.emit(Instruction::LocalGet(pat));
+  ctx.call_rt("__rt_str_split");
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
+/// `split-lines s` — split string by newline ('\n'), return list of strings.
+pub(super) fn emit_split_lines(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "split-lines")?;
+  // Emit the string arg and a hardcoded "\n" literal, then call __rt_str_split.
+  let s = emit_ptr_to_i32(ctx, &args[0])?;
+  // Build a "\n" string (1 byte, value 0x0A) inline in the heap.
+  // Allocate: size = 8 (byte_len:f64) + 8 (padded 1 byte) = 16 bytes payload.
+  let nl_ptr = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
+  let one = ctx.alloc_i32(1);
+  let (ptr_nl, cont_nl) = emit_str_alloc(ctx, one);
+  // Store the '\n' byte at cont_nl + 0
+  ctx.emit(Instruction::LocalGet(cont_nl));
+  ctx.emit(Instruction::I32Const(0x0A)); // '\n'
+  ctx.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  ctx.emit(Instruction::LocalGet(ptr_nl));
+  ctx.emit(Instruction::LocalSet(nl_ptr));
+  // Call __rt_str_split(s_ptr, nl_ptr) → i32 list
+  ctx.emit(Instruction::LocalGet(s));
+  ctx.emit(Instruction::LocalGet(nl_ptr));
+  ctx.call_rt("__rt_str_split");
+  ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }

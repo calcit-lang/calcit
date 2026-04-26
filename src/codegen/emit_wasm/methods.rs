@@ -311,6 +311,46 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.call_rt("__rt_parse_float");
       Ok(())
     }
+    // .split pat — split string by pattern, return list of non-empty pieces
+    "split" => {
+      if extra_locals.len() != 1 {
+        return Err("method .split expects 1 argument (pattern)".into());
+      }
+      let s = ctx.alloc_local_typed(ValType::I32);
+      let pat = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(s));
+      ctx.emit(Instruction::LocalGet(extra_locals[0]));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(pat));
+      ctx.emit(Instruction::LocalGet(s));
+      ctx.emit(Instruction::LocalGet(pat));
+      ctx.call_rt("__rt_str_split");
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
+    // .split-lines — split string by '\n', return list of strings
+    "split-lines" => {
+      if !extra_locals.is_empty() {
+        return Err("method .split-lines expects 0 arguments".into());
+      }
+      let s = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(s));
+      // build "\n" string inline
+      let one = ctx.alloc_i32(1);
+      let (ptr_nl, cont_nl) = super::strings::emit_str_alloc(ctx, one);
+      ctx.emit(Instruction::LocalGet(cont_nl));
+      ctx.emit(Instruction::I32Const(0x0A));
+      ctx.emit(Instruction::I32Store8(super::mem_arg_byte(0)));
+      ctx.emit(Instruction::LocalGet(s));
+      ctx.emit(Instruction::LocalGet(ptr_nl));
+      ctx.call_rt("__rt_str_split");
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
     _ => Err(format!("unsupported invoke method in WASM: .{name}")),
   }
 }
