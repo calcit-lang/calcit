@@ -2559,6 +2559,7 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
 /// Converts `value` (integer f64) to a string in the given radix.
 /// Prefixes: radix 2 → "0b", radix 8 → "0o", radix 16 → "0x", else no prefix.
 /// Negative values get a "-" prefix.
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_display_by(string_tag: i32) -> CompiledFn {
   // params: 0=value(f64), 1=radix(f64)
   // locals (allocated manually to match flat vec):
@@ -2891,6 +2892,7 @@ fn emit_is_ws_check(b: &mut Vec<Instruction<'static>>, loc: u32) {
 ///
 /// Strips leading and trailing ASCII whitespace from a heap string.
 /// Returns a new heap-allocated string.
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_trim_ws(str_tag: i32) -> CompiledFn {
   // params: 0=s(f64)
   // locals: 1=ptr(i32), 2=byte_len(i32), 3=content(i32), 4=start(i32),
@@ -3048,6 +3050,7 @@ fn build_rt_trim_ws(str_tag: i32) -> CompiledFn {
 /// `__rt_trim_char(s: f64, c: f64) → f64`
 ///
 /// Strips the first byte of the `c` string from both ends of `s`.
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_trim_char(str_tag: i32) -> CompiledFn {
   // params: 0=s(f64), 1=c(f64) (char string ptr)
   // locals: 2=ptr(i32), 3=byte_len(i32), 4=content(i32), 5=start(i32),
@@ -3211,6 +3214,7 @@ fn build_rt_trim_char(str_tag: i32) -> CompiledFn {
 /// `__rt_blank(s: f64) → f64`
 ///
 /// Returns 1.0 if the string contains only ASCII whitespace (or is empty), 0.0 otherwise.
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_blank() -> CompiledFn {
   // params: 0=s(f64)
   // locals: 1=ptr(i32), 2=byte_len(i32), 3=content(i32), 4=i(i32), 5=b(i32)
@@ -3284,6 +3288,7 @@ fn build_rt_blank() -> CompiledFn {
 ///
 /// Parses a decimal string to f64. Handles optional sign, integer digits,
 /// optional fractional digits. No scientific notation.
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_parse_float() -> CompiledFn {
   // params: 0=s(f64)
   // locals: 1=ptr(i32), 2=byte_len(i32), 3=content(i32), 4=i(i32),
@@ -3511,6 +3516,7 @@ fn build_rt_parse_float() -> CompiledFn {
 ///
 /// Encodes a Unicode codepoint (u32) as a UTF-8 string and allocates it on the heap.
 /// Returns the logical string pointer as f64.
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_char_from_code(str_tag: i32) -> CompiledFn {
   // params: 0=cp(f64)
   // locals: 1=code(i32), 2=raw_base(i32), 3=new_ptr(i32), 4=byte_len(i32)
@@ -3720,6 +3726,7 @@ fn build_rt_char_from_code(str_tag: i32) -> CompiledFn {
 /// Writes output directly to heap — no separate scratch buffer needed.
 ///
 /// Layout of a string logical ptr P: [byte_len:f64][utf8_bytes...]
+#[allow(clippy::vec_init_then_push)]
 fn build_rt_str_replace(str_tag: i32) -> CompiledFn {
   // params: 0=s(f64), 1=pat(f64), 2=rep(f64)
   // locals: 3=s_ptr(i32), 4=s_len(i32), 5=s_cont(i32)
@@ -3862,7 +3869,7 @@ fn build_rt_str_replace(str_tag: i32) -> CompiledFn {
   b.push(Instruction::If(BlockType::Empty));
   b.push(Instruction::I32Const(0));
   b.push(Instruction::LocalSet(17)); // matched = 0
-  b.push(Instruction::Br(2));        // break out of inner block
+  b.push(Instruction::Br(2)); // break out of inner block
   b.push(Instruction::End);
   // pi++; continue
   b.push(Instruction::LocalGet(16));
@@ -4016,7 +4023,6 @@ fn build_rt_map_equal(map_linearize_idx: u32, map_get_value_idx: u32) -> Compile
   let val_a = b.alloc_f64();
   let val_b = b.alloc_f64();
   let all_eq = b.alloc_i32();
-  let result = b.alloc_i32();
 
   // count_a = a[0] as i32
   b.emit(Instruction::LocalGet(0));
@@ -4120,7 +4126,6 @@ fn build_rt_map_equal(map_linearize_idx: u32, map_get_value_idx: u32) -> Compile
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
-
 /// `__rt_str_find_from(h_ptr: i32, h_start: i32, pat_ptr: i32) -> i32`
 /// Searches for pat in h starting at byte offset h_start.
 /// Returns the byte offset of the first match, or -1 if not found.
@@ -4186,7 +4191,7 @@ fn build_rt_str_find_from() -> CompiledFn {
   b.emit(Instruction::LocalSet(i));
 
   b.emit(Instruction::Block(wasm_encoder::BlockType::Empty)); // $exit
-  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));  // $outer
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty)); // $outer
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::LocalGet(limit));
   b.emit(Instruction::I32GtU);
@@ -4194,7 +4199,7 @@ fn build_rt_str_find_from() -> CompiledFn {
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(j));
   b.emit(Instruction::Block(wasm_encoder::BlockType::Empty)); // $mismatch
-  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));  // $inner
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty)); // $inner
   b.emit(Instruction::LocalGet(j));
   b.emit(Instruction::LocalGet(p_len));
   b.emit(Instruction::I32GeU);
@@ -4610,7 +4615,7 @@ fn build_rt_str_split(string_tag: i32, list_tag: i32, find_from_idx: u32, utf8_c
 fn build_rt_value_equal(string_tag: i32, list_tag: i32, str_compare_idx: u32, self_idx: u32) -> CompiledFn {
   // params: 0 = a (f64), 1 = b (f64)
   let mut b = RuntimeFnBuilder::new(2);
-  let result = b.alloc_i32();   // 0=not-equal, 1=equal
+  let result = b.alloc_i32(); // 0=not-equal, 1=equal
   let ptr_a = b.alloc_i32();
   let ptr_b = b.alloc_i32();
   let tag_a = b.alloc_i32();
