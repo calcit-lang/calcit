@@ -474,6 +474,7 @@ impl WasmGenCtx {
 
   /// Silently ignore all args and return nil. Use for type-system procs whose
   /// arguments may contain tags/values not representable in WASM (e.g. `:&core-number-methods`).
+  /// NOTE: This should only be used for initialization/setup code that runs before user code.
   pub(super) fn silent_nil(&mut self) -> Result<(), String> {
     self.emit(f64_const(0.0));
     Ok(())
@@ -1941,6 +1942,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::ParseFloat => emit_parse_float(ctx, args),
     CalcitProc::CharFromCode => emit_char_from_code(ctx, args),
     CalcitProc::NativeStrReplace => emit_str_replace(ctx, args),
+    CalcitProc::NativeStrEscape => emit_str_escape(ctx, args),
     CalcitProc::Split => emit_split(ctx, args),
     CalcitProc::SplitLines => emit_split_lines(ctx, args),
 
@@ -1985,16 +1987,28 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // &struct:impl-traits / &enum:impl-traits — trait registration; not supported in WASM; return nil.
-    CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => ctx.silent_nil(),
+    CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => {
+      eprintln!("[wasm warning] trait registration via impl-traits is not supported in WASM");
+      ctx.silent_nil()
+    }
 
     // register-calcit-builtin-impls — builtin impl registration; not meaningful in WASM; return nil.
-    CalcitProc::RegisterCalcitBuiltinImpls => ctx.silent_nil(),
+    CalcitProc::RegisterCalcitBuiltinImpls => {
+      eprintln!("[wasm warning] RegisterCalcitBuiltinImpls is ignored in WASM (builtin impls already registered)");
+      ctx.silent_nil()
+    }
 
-    // &impl::new — trait impl creation; args may contain unsupported tags; silently return nil.
-    CalcitProc::NativeImplNew => ctx.silent_nil(),
+    // &impl::new — trait impl creation; args may contain unsupported tags; return nil with warning.
+    CalcitProc::NativeImplNew => {
+      eprintln!("[wasm warning] &impl::new is not supported in WASM; trait impls are ignored");
+      ctx.silent_nil()
+    }
 
-    // &assert-traits — trait assertion; not enforced in WASM; silently return nil.
-    CalcitProc::NativeAssertTraits => ctx.silent_nil(),
+    // &assert-traits — trait assertion; not enforced in WASM; return nil with warning.
+    CalcitProc::NativeAssertTraits => {
+      eprintln!("[wasm warning] &assert-traits is not enforced in WASM (trait checking disabled)");
+      ctx.silent_nil()
+    }
 
     // &get-os — host OS info; not available in WASM; return nil.
     CalcitProc::NativeGetOs => ctx.stub_proc(args),

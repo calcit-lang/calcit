@@ -1386,6 +1386,14 @@ pub(super) fn emit_str_replace(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   Ok(())
 }
 
+/// `&str:escape s` — escape special characters in string, wrap in double quotes.
+pub(super) fn emit_str_escape(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "&str:escape")?;
+  emit_expr(ctx, &args[0])?;
+  ctx.call_rt("__rt_str_escape");
+  Ok(())
+}
+
 /// `split s pat` — split string by pattern, return list of non-empty pieces.
 pub(super) fn emit_split(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "split")?;

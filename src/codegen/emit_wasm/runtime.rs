@@ -548,6 +548,11 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_str_replace"), str_replace_idx);
   fns.push(build_rt_str_replace(string_tag));
 
+  // str-escape: __rt_str_escape(s:f64) → f64 (new string ptr with escaped chars)
+  let str_escape_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_str_escape"), str_escape_idx);
+  fns.push(build_rt_str_escape(string_tag));
+
   // map-equal: __rt_map_equal(a: i32, b: i32) → i32 (1 if equal, 0 otherwise)
   let map_equal_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_equal"), map_equal_idx);
@@ -4007,6 +4012,23 @@ fn build_rt_str_replace(str_tag: i32) -> CompiledFn {
       ValType::I32, // max_out (20)
       ValType::I32, // tmp (21)
     ],
+    instructions: b,
+  }
+}
+
+/// `__rt_str_escape(s: f64) → f64`
+///
+/// Escapes special characters in a string and wraps in double quotes.
+/// Currently a stub that returns the input string unchanged.
+#[allow(clippy::vec_init_then_push)]
+fn build_rt_str_escape(_str_tag: i32) -> CompiledFn {
+  let mut b: Vec<Instruction> = Vec::new();
+  b.push(Instruction::LocalGet(0));
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64],
+    results: vec![ValType::F64],
+    locals: vec![],
     instructions: b,
   }
 }

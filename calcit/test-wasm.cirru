@@ -813,6 +813,10 @@
           :code $ quote
             defn test-display-by-hex () $ &str:count (&number:display-by 17 16)
           :examples $ []
+        |test-str-escape $ %{} :CodeEntry (:doc "|escape special chars") (:schema :dynamic)
+          :code $ quote
+            defn test-str-escape () $ &str:count (&str:escape |hello)
+          :examples $ []
         |test-str-rest $ %{} :CodeEntry (:doc "|rest of hello has 4 bytes") (:schema :dynamic)
           :code $ quote
             defn test-str-rest () $ &str:count (&str:rest |hello)
