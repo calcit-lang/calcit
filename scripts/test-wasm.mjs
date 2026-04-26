@@ -2,7 +2,7 @@
 // Verify WASM codegen: load program.wasm and check exported function results.
 // Usage: node scripts/test-wasm.mjs
 
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 
 const wasmPath = "js-out/program.wasm";
 const wasm = readFileSync(wasmPath);
@@ -46,6 +46,78 @@ const inst = new WebAssembly.Instance(mod, {
       wasmLog.push(raw);
       return 0;
     },
+    // log_str(ptr) — log a heap string directly (efficient string logging)
+    log_str: (ptr) => {
+      const s = readWasmStr(ptr);
+      if (s !== null) {
+        console.log("[wasm-println]", s);
+        wasmLog.push(s);
+      }
+      return 0;
+    },
+    // read_file_str(ptr) — read file contents as string; returns ptr to new heap string or nil (0)
+    read_file_str: (ptr) => {
+      const path = readWasmStr(ptr);
+      if (path === null) return 0;
+      try {
+        const content = readFileSync(path, "utf-8");
+        const bytes = new TextEncoder().encode(content);
+        const strPtr = allocString(bytes.length);
+        const mem = new DataView(inst.exports.memory.buffer);
+        const iptr = strPtr | 0;
+        mem.setFloat64(iptr, bytes.length, true);
+        new Uint8Array(mem.buffer, iptr + 8, bytes.length).set(bytes);
+        return strPtr;
+      } catch (e) {
+        console.error("[wasm] read_file_str failed:", e.message);
+        return 0;
+      }
+    },
+    // file_exists(ptr) — check if file exists; returns 1.0 or 0.0
+    file_exists: (ptr) => {
+      const path = readWasmStr(ptr);
+      if (path === null) return 0;
+      return existsSync(path) ? 1.0 : 0.0;
+    },
+    // parse_json(ptr) — parse JSON string; returns ptr to parsed value or nil (0)
+    parse_json: (ptr) => {
+      const jsonStr = readWasmStr(ptr);
+      if (jsonStr === null) return 0;
+      try {
+        const parsed = JSON.parse(jsonStr);
+        // For now, just return the stringified version as a debug hint
+        // Full JSON value translation would require more complex WASM data structures
+        const hint = JSON.stringify(parsed);
+        const bytes = new TextEncoder().encode(hint);
+        const strPtr = allocString(bytes.length);
+        const mem = new DataView(inst.exports.memory.buffer);
+        const iptr = strPtr | 0;
+        mem.setFloat64(iptr, bytes.length, true);
+        new Uint8Array(mem.buffer, iptr + 8, bytes.length).set(bytes);
+        return strPtr;
+      } catch (e) {
+        console.error("[wasm] parse_json failed:", e.message);
+        return 0;
+      }
+    },
+    // current_time() — get current time in milliseconds
+    current_time: () => {
+      return performance.now();
+    },
+    // get_env(ptr) — get environment variable; returns ptr to value string or nil (0)
+    get_env: (ptr) => {
+      const key = readWasmStr(ptr);
+      if (key === null) return 0;
+      const value = process.env[key];
+      if (value === undefined) return 0;
+      const bytes = new TextEncoder().encode(value);
+      const strPtr = allocString(bytes.length);
+      const mem = new DataView(inst.exports.memory.buffer);
+      const iptr = strPtr | 0;
+      mem.setFloat64(iptr, bytes.length, true);
+      new Uint8Array(mem.buffer, iptr + 8, bytes.length).set(bytes);
+      return strPtr;
+    },
   },
 });
 const e = inst.exports;
@@ -74,6 +146,25 @@ function checkApprox(label, expected, fn, ...args) {
 
 const STRING_TAG = 34;
 const HEAP_MAGIC = 0xca1c17a9 | 0;
+
+// Allocate a new heap string and return its pointer
+// String layout: [heap_ptr][ptr+0][ptr+8]
+//   [HEAP_MAGIC:i32][str_tag_id:i32][byte_len:f64][bytes:u8[]]
+// After allocation, caller writes byte_len at ptr and bytes at ptr+8
+function allocString(byteLen) {
+  const mem = new DataView(inst.exports.memory.buffer);
+  const heapPtr = inst.exports.__heap_ptr.value;
+  // Total: 16 bytes header + byteLen, aligned to 8
+  const payloadSize = 8 + byteLen; // byte_len (8) + bytes
+  const paddedPayload = (payloadSize + 7) & ~7;
+  const newHeapPtr = heapPtr + paddedPayload;
+  inst.exports.__heap_ptr.value = newHeapPtr;
+  // Set up header
+  mem.setInt32(heapPtr, HEAP_MAGIC, true);
+  mem.setInt32(heapPtr + 4, STRING_TAG, true);
+  return heapPtr + 8; // logical string ptr (after byte_len)
+}
+
 function readWasmStr(ptr) {
   const mem = new DataView(inst.exports.memory.buffer);
   const iptr = ptr | 0;

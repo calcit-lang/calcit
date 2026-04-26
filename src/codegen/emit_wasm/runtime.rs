@@ -31,6 +31,42 @@ pub(super) const HOST_IMPORTS: &[HostImport] = &[
     name: "log_value",
     arity: 1,
   },
+  // IO: log a string directly (ptr to heap string) — more efficient than log_value for strings
+  HostImport {
+    module: "io",
+    name: "log_str",
+    arity: 1,
+  },
+  // IO: read file contents as string (ptr to path in heap)
+  HostImport {
+    module: "io",
+    name: "read_file_str",
+    arity: 1,
+  },
+  // IO: check if file exists (ptr to path in heap) — returns 1.0 if exists, 0.0 otherwise
+  HostImport {
+    module: "io",
+    name: "file_exists",
+    arity: 1,
+  },
+  // IO: parse JSON string (ptr to JSON string in heap) — returns parsed value or nil on error
+  HostImport {
+    module: "io",
+    name: "parse_json",
+    arity: 1,
+  },
+  // IO: get current time in milliseconds
+  HostImport {
+    module: "io",
+    name: "current_time",
+    arity: 0,
+  },
+  // IO: get environment variable (ptr to key in heap) — returns value string or nil
+  HostImport {
+    module: "io",
+    name: "get_env",
+    arity: 1,
+  },
 ];
 
 /// Maximum arity covered by canonical call_indirect type entries.
