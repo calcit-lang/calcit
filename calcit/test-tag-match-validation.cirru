@@ -1,5 +1,5 @@
 
-{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-tag-match-validation)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tag-match-validation)
   :configs $ {} (:init-fn |test-tag-match-validation.main/main!) (:reload-fn |test-tag-match-validation.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}

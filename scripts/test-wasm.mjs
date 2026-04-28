@@ -426,6 +426,10 @@ check("test-map?-true", 1, e["test-map?-true"]);
 // --- BufList tests ---
 check("test-buf-list-push()", 3, e["test-buf-list-push"]);
 check("test-buf-list-to-list()", 3, e["test-buf-list-to-list"]);
+check("test-buf-list-each()", 3, e["test-buf-list-each"]);
+check("test-buf-list-doseq()", 4, e["test-buf-list-doseq"]);
+check("test-buf-list-map()", 3, e["test-buf-list-map"]);
+check("test-buf-list-filter()", 2, e["test-buf-list-filter"]);
 
 // --- String operation tests ---
 check("test-str-count()", 5, e["test-str-count"]);

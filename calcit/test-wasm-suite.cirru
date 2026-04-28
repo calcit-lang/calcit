@@ -1,5 +1,5 @@
 
-{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |test-wasm-suite)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-wasm-suite)
   :configs $ {} (:init-fn |test-wasm-suite.main/main!) (:reload-fn |test-wasm-suite.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru |./test-cond.cirru |./test-math.cirru |./test-set.cirru |./test-tuple.cirru |./test-fn.cirru |./test-lens.cirru |./test-edn.cirru |./test-string.cirru |./test-nil.cirru
   :entries $ {}

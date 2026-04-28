@@ -149,6 +149,8 @@ Agent 切到新窗口时，优先把 `compact.cirru` 看成一个“可执行项
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `compact.cirru`）。
 
+一般避免直接修改 `compact.cirru` 文件, 因为可能会导致格式出错整体无法解析, 如果确实认为需要修改, 要确保修改以后立即执行 `cr compact.cirru edit format` 确保能够正确格式化.
+
 启动解析顺序（实操最常用）：
 
 1. `cr`：使用 `:configs` 的 `:init-fn` / `:reload-fn` / `:modules`。

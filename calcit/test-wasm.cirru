@@ -114,6 +114,40 @@
           :code $ quote
             defn test-bit-xor (a b) (bit-xor a b)
           :examples $ []
+        |test-buf-list-doseq $ %{} :CodeEntry (:doc "||buf-list: use doseq to push 4 items, count=4") (:schema :dynamic)
+          :code $ quote
+            defn test-buf-list-doseq () $ let
+                buf $ &buf-list:new
+              &doseq
+                n $ [] 1 2 3 4
+                &buf-list:push buf n
+              &buf-list:count buf
+          :examples $ []
+        |test-buf-list-each $ %{} :CodeEntry (:doc "||buf-list: use each to push 3 items, count=3") (:schema :dynamic)
+          :code $ quote
+            defn test-buf-list-each () $ let
+                buf $ &buf-list:new
+              each ([] 10 20 30)
+                fn (x) (&buf-list:push buf x)
+              &buf-list:count buf
+          :examples $ []
+        |test-buf-list-filter $ %{} :CodeEntry (:doc "||buf-list: concat [1..5], filter even from to-list, count=2") (:schema :dynamic)
+          :code $ quote
+            defn test-buf-list-filter () $ let
+                buf $ &buf-list:new
+              &buf-list:concat buf $ [] 1 2 3 4 5
+              &list:count $ filter (&buf-list:to-list buf)
+                fn (x)
+                  &= (&number:rem x 2) 0
+          :examples $ []
+        |test-buf-list-map $ %{} :CodeEntry (:doc "||buf-list: concat 3 items, map to-list, count=3") (:schema :dynamic)
+          :code $ quote
+            defn test-buf-list-map () $ let
+                buf $ &buf-list:new
+              &buf-list:concat buf $ [] 1 2 3
+              &list:count $ map (&buf-list:to-list buf)
+                fn (x) (&* x 2)
+          :examples $ []
         |test-buf-list-push $ %{} :CodeEntry (:doc "||buf-list push 3 items, count=3") (:schema :dynamic)
           :code $ quote
             defn test-buf-list-push () $ let
@@ -151,6 +185,14 @@
         |test-cross-ns $ %{} :CodeEntry (:doc "|Cross-namespace function call") (:schema :dynamic)
           :code $ quote
             defn test-cross-ns (a b) (helper/add-and-double a b)
+          :examples $ []
+        |test-display-by-bin $ %{} :CodeEntry (:doc "|17 in binary = 0b10001, length 7") (:schema :dynamic)
+          :code $ quote
+            defn test-display-by-bin () $ &str:count (&number:display-by 17 2)
+          :examples $ []
+        |test-display-by-hex $ %{} :CodeEntry (:doc "|17 in hex = 0x11, length 4") (:schema :dynamic)
+          :code $ quote
+            defn test-display-by-hex () $ &str:count (&number:display-by 17 16)
           :examples $ []
         |test-floor $ %{} :CodeEntry (:doc "|floor function") (:schema :dynamic)
           :code $ quote
@@ -238,12 +280,6 @@
             defn test-list-dissoc () $ &let
               xs $ &list:dissoc ([] 10 20 30) 1
               &+ (&list:count xs) (&list:nth xs 1)
-          :examples $ []
-        |test-list-to-set $ %{} :CodeEntry (:doc "|list to set deduplicates elements") (:schema :dynamic)
-          :code $ quote
-            defn test-list-to-set () $ &let
-              s $ &list:to-set ([] 10 20 30 20 10)
-              &set:count s
           :examples $ []
         |test-list-empty-false $ %{} :CodeEntry (:doc "|non-empty list not empty") (:schema :dynamic)
           :code $ quote
@@ -340,6 +376,12 @@
             defn test-list-slice () $ &let
               xs $ &list:slice ([] 10 20 30 40 50) 1 4
               &+ (&list:count xs) (&list:first xs)
+          :examples $ []
+        |test-list-to-set $ %{} :CodeEntry (:doc "|list to set deduplicates elements") (:schema :dynamic)
+          :code $ quote
+            defn test-list-to-set () $ &let
+              s $ &list:to-set ([] 10 20 30 20 10)
+              &set:count s
           :examples $ []
         |test-list?-false $ %{} :CodeEntry (:doc "|list? on number returns false (0)") (:schema :dynamic)
           :code $ quote
@@ -771,6 +813,10 @@
               &str:count $ &str:rest |a
               , 0
           :examples $ []
+        |test-str-escape $ %{} :CodeEntry (:doc "|escape special chars") (:schema :dynamic)
+          :code $ quote
+            defn test-str-escape () $ &str:count (&str:escape |hello)
+          :examples $ []
         |test-str-find-index-found $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-str-find-index-found () $ &str:find-index |hello |ell
@@ -804,18 +850,6 @@
         |test-str-pad-right $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-str-pad-right () $ &str:count (&str:pad-right |hi 5 |-)
-          :examples $ []
-        |test-display-by-bin $ %{} :CodeEntry (:doc "|17 in binary = 0b10001, length 7") (:schema :dynamic)
-          :code $ quote
-            defn test-display-by-bin () $ &str:count (&number:display-by 17 2)
-          :examples $ []
-        |test-display-by-hex $ %{} :CodeEntry (:doc "|17 in hex = 0x11, length 4") (:schema :dynamic)
-          :code $ quote
-            defn test-display-by-hex () $ &str:count (&number:display-by 17 16)
-          :examples $ []
-        |test-str-escape $ %{} :CodeEntry (:doc "|escape special chars") (:schema :dynamic)
-          :code $ quote
-            defn test-str-escape () $ &str:count (&str:escape |hello)
           :examples $ []
         |test-str-rest $ %{} :CodeEntry (:doc "|rest of hello has 4 bytes") (:schema :dynamic)
           :code $ quote

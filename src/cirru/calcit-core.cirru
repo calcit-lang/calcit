@@ -1,5 +1,5 @@
 
-{} (:about "|Machine-generated snapshot. AI AGENTS: never edit this file directly — changes will be overwritten on recompile. Inspect via `cr query`; modify via `cr edit` / `cr tree`. MANDATORY first step: run `cr docs agents --full`.") (:package |calcit)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |calcit)
   :configs $ {} (:init-fn |calcit.core/println!) (:reload-fn |calcit.core/println!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -170,6 +170,56 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :ref
+        |&buf-list:concat $ %{} :CodeEntry (:doc "|internal function for appending all elements of a list onto a mutable buffer list\\nSyntax: (&buf-list:concat buf xs)\\nParams: buf (buf-list), xs (list)\\nReturns: buf-list\\nMutates buf by appending all elements from xs; returns the same buf")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:concat buf $ [] 1 2 3
+              assert= 3 $ &buf-list:count buf
+          :schema $ :: :fn
+            {} (:return :tag)
+              :args $ [] :tag :list
+        |&buf-list:count $ %{} :CodeEntry (:doc "|internal function for getting the element count of a mutable buffer list\\nSyntax: (&buf-list:count buf)\\nParams: buf (buf-list)\\nReturns: number\\nReturns the number of elements currently in the buffer")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 42
+              assert= 1 $ &buf-list:count buf
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :tag
+        |&buf-list:new $ %{} :CodeEntry (:doc "|internal function for creating a new mutable buffer list\\nSyntax: (&buf-list:new)\\nParams: none\\nReturns: buf-list\\nCreates a new empty mutable append-only buffer list, used for efficient incremental accumulation before converting to an immutable list")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= 0
+              &buf-list:count $ &buf-list:new
+          :schema $ :: :fn
+            {} (:return :tag)
+              :args $ []
+        |&buf-list:push $ %{} :CodeEntry (:doc "|internal function for pushing an item onto a mutable buffer list\\nSyntax: (&buf-list:push buf item)\\nParams: buf (buf-list), item (any)\\nReturns: buf-list\\nMutates buf by appending item to end; returns the same buf")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 10
+              &buf-list:push buf 20
+              assert= 2 $ &buf-list:count buf
+          :schema $ :: :fn
+            {} (:return :tag)
+              :args $ [] :tag :dynamic
+        |&buf-list:to-list $ %{} :CodeEntry (:doc "|internal function for converting a mutable buffer list to an immutable list\\nSyntax: (&buf-list:to-list buf)\\nParams: buf (buf-list)\\nReturns: list\\nFreezes the mutable buffer into a regular immutable list")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 1
+              &buf-list:push buf 2
+              assert= ([] 1 2) (&buf-list:to-list buf)
+          :schema $ :: :fn
+            {} (:return :list)
+              :args $ [] :tag
         |&buffer $ %{} :CodeEntry (:doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values")
           :code $ quote &runtime-implementation
           :examples $ []
