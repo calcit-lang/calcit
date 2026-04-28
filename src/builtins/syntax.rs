@@ -874,13 +874,21 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
 pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let n = {
     let mut ns_sym_dict = NS_SYMBOL_DICT.lock().expect("open symbol dict");
-    // println!("calling in ns: {}", file_ns);
-    if let Some(n) = ns_sym_dict.get_mut(file_ns) {
+    // Use a per-definition key so gensym numbers are stable regardless of preprocessing order.
+    // Key = just the compiling def path ("ns/def"); no file_ns prefix because the macro caller
+    // ns may vary. The counter is reset at the start of each def's compilation.
+    let current_def = crate::builtins::meta::CURRENT_COMPILING_DEF.with(|cell| cell.borrow().clone());
+    let key: Arc<str> = match current_def {
+      Some(cd) => Arc::from(cd.as_str()),
+      None => Arc::from(file_ns),
+    };
+
+    if let Some(n) = ns_sym_dict.get_mut(&key) {
       let v = n.to_owned();
       *n += 1;
       v
     } else {
-      ns_sym_dict.insert(file_ns.into(), 2);
+      ns_sym_dict.insert(key.clone(), 2);
       1
     }
   };

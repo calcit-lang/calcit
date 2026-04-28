@@ -33,6 +33,30 @@ static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) static NS_SYMBOL_DICT: LazyLock<Mutex<HashMap<Arc<str>, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// Tracks the current top-level def being preprocessed, keyed as "ns/def".
+// This makes gensym counters per-definition rather than per-namespace,
+// ensuring stable gensym numbers regardless of preprocessing order.
+thread_local! {
+  pub(crate) static CURRENT_COMPILING_DEF: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` with the current-compiling-def context set to `ns/def`.
+/// Restores the previous context on return (supports reentrant calls).
+/// Also resets the gensym counter for this def so gensym sequences are always stable.
+pub fn with_compiling_def<R, E>(ns: &str, def: &str, f: impl FnOnce() -> Result<R, E>) -> Result<R, E> {
+  let prev = CURRENT_COMPILING_DEF.with(|cell| cell.borrow_mut().take());
+  let key = format!("{ns}/{def}");
+  CURRENT_COMPILING_DEF.with(|cell| *cell.borrow_mut() = Some(key.clone()));
+  // Reset counter so gensym numbers within this def always start at 1.
+  NS_SYMBOL_DICT
+    .lock()
+    .expect("reset gensym counter")
+    .remove(&Arc::from(key.as_str()));
+  let result = f();
+  CURRENT_COMPILING_DEF.with(|cell| *cell.borrow_mut() = prev);
+  result
+}
+
 pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   use Calcit::*;
 

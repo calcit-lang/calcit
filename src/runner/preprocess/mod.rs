@@ -3,7 +3,7 @@ mod type_inference;
 mod type_rewriting;
 
 use crate::{
-  builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
+  builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport,
     CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTypeAnnotation,
@@ -155,8 +155,10 @@ fn ensure_ns_def_preprocessed(
 
       let mut scope_types = ScopeTypes::new();
       let context_label = format!("{ns}/{def}");
-      let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
-        preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+      let resolved_code = builtins::meta::with_compiling_def(ns, def, || {
+        calcit::with_type_annotation_warning_context(context_label, || {
+          preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+        })
       })?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
@@ -342,8 +344,10 @@ pub fn compile_source_def_for_snapshot(
 
   let mut scope_types = ScopeTypes::new();
   let context_label = format!("{ns}/{def}");
-  let resolved_code = calcit::with_type_annotation_warning_context(context_label, || {
-    preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+  let resolved_code = builtins::meta::with_compiling_def(ns, def, || {
+    calcit::with_type_annotation_warning_context(context_label, || {
+      preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+    })
   })?;
 
   store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
