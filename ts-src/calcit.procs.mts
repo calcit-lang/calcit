@@ -43,6 +43,7 @@ export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
 export * from "./js-arity-helpers.mjs";
 export * from "./js-tag-helpers.mjs";
+export * from "./js-buf-list.mjs";
 export { _$n_compare } from "./js-primes.mjs";
 
 import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
@@ -331,49 +332,7 @@ export function _$n_record_$o_nth(x: CalcitValue, idx: CalcitValue): CalcitValue
   return x.values[i];
 }
 
-// === BufList — mutable append-only list ===
-// Wrapper around a plain JS Array for O(1) push.
-export class CalcitBufList {
-  buf: CalcitValue[];
-  constructor(buf?: CalcitValue[]) {
-    this.buf = buf ?? [];
-  }
-}
 
-export function _$n_buf_list_$o_new(): CalcitBufList {
-  return new CalcitBufList();
-}
-
-export function _$n_buf_list_$o_push(buf: CalcitValue, item: CalcitValue): CalcitBufList {
-  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:push expected a buf-list, got ${buf}`);
-  buf.buf.push(item);
-  return buf;
-}
-
-export function _$n_buf_list_$o_concat(buf: CalcitValue, xs: CalcitValue): CalcitBufList {
-  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:concat expected a buf-list, got ${buf}`);
-  if (xs instanceof CalcitSliceList || xs instanceof CalcitList) {
-    const gen = xs.items();
-    let next = gen.next();
-    while (!next.done) {
-      buf.buf.push(next.value);
-      next = gen.next();
-    }
-  } else {
-    throw new Error(`&buf-list:concat expected a list, got ${xs}`);
-  }
-  return buf;
-}
-
-export function _$n_buf_list_$o_to_list(buf: CalcitValue): CalcitSliceList {
-  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:to-list expected a buf-list, got ${buf}`);
-  return new CalcitSliceList([...buf.buf]);
-}
-
-export function _$n_buf_list_$o_count(buf: CalcitValue): number {
-  if (!(buf instanceof CalcitBufList)) throw new Error(`&buf-list:count expected a buf-list, got ${buf}`);
-  return buf.buf.length;
-}
 export function _$n_set_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitSet) return x.len();
 
