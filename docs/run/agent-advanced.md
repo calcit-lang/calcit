@@ -338,9 +338,9 @@ cr query modules
   - 使用 `-e, -f, -j` 等通用参数提供替换内容
   - 逻辑：自动查找叶子节点，若唯一则替换；若不唯一则报错并列出所有位置及修改命令建议。
 - `cr tree delete <ns/def> -p '<path>'` - 删除指定路径节点（⚠️ 后续同级索引自动减小）
-  - 示例：`cr tree delete app.core/fn -p '3,2'`
+  - 示例：`cr tree delete app.core/fn -p '3.2'`
 - `cr tree insert-before <ns/def> -p '<path>'` / `cr tree insert-after` - 在路径节点的前/后插入兄弟节点
-  - 示例：`cr tree insert-before app.core/fn -p '3,2' -e 'new-expr'`
+  - 示例：`cr tree insert-before app.core/fn -p '3.2' -e 'new-expr'`
 - `cr tree insert-child <ns/def> -p '<path>'` / `cr tree append-child` - 在某节点内部最前/最后插入子节点
   - 示例：`cr tree append-child app.core/fn -p '3' --leaf -e 'new-arg'`
 - `cr tree swap-next <ns/def> -p '<path>'` / `cr tree swap-prev` - 将节点与其下一个/上一个兄弟节点交换位置
@@ -433,19 +433,19 @@ cr tree replace namespace/def -p '3.2.2.5.2.4.1.2' -e 'let ((x 1)) (+ x task)'
 - **包裹节点**（推荐用 `wrap`，`self` 作为占位符）：
 
   ```bash
-  # 将路径 "3,2" 的节点包裹在 println 中（self = 原节点）
-  cr tree wrap ns/def -p '3,2' -e 'println self'
+  # 将路径 "3.2" 的节点包裹在 println 中（self = 原节点）
+  cr tree wrap ns/def -p '3.2' -e 'println self'
 
   # 等价的完整写法（需要引用子节点时才用 rewrite）
-  cr tree rewrite ns/def -p '3,2' -e 'println self' -w 'self=.'
+  cr tree rewrite ns/def -p '3.2' -e 'println self' -w 'self=.'
   ```
 
 - **引用原节点局部**（`rhs=2` 引用子节点索引 2）：
-  - 假设原节点是 `+ 1 2`（路径 `3,1`），子节点索引 2 是 `2`
+  - 假设原节点是 `+ 1 2`（路径 `3.1`），子节点索引 2 是 `2`
   - 将其重构为 `* rhs 10`：
 
   ```bash
-  cr tree rewrite ns/def -p '3,1' -e '* rhs 10' -w 'rhs=2'
+  cr tree rewrite ns/def -p '3.1' -e '* rhs 10' -w 'rhs=2'
   ```
 
 - **多处重用原节点**：
@@ -458,8 +458,8 @@ cr tree replace namespace/def -p '3.2.2.5.2.4.1.2' -e 'let ((x 1)) (+ x task)'
 - **拆包节点**（`unwrap`）——将节点的所有子节点展开拼接到父节点中，原节点消失：
 
   ```bash
-  # 将路径 "3,2" 的节点拆包，所有子节点直接插入到原位置
-  cr tree unwrap ns/def -p '3,2'
+  # 将路径 "3.2" 的节点拆包，所有子节点直接插入到原位置
+  cr tree unwrap ns/def -p '3.2'
   ```
 
   详细参数和示例使用 `cr tree <command> --help` 查看。
@@ -467,16 +467,16 @@ cr tree replace namespace/def -p '3.2.2.5.2.4.1.2' -e 'let ((x 1)) (+ x task)'
 - **提升子节点替换父节点**（`raise`）——用某子节点整体替换掉其父节点（Paredit `raise-sexp`）：
 
   ```bash
-  # 路径 "3,2" 的节点整体替换掉其父节点 "3"
+  # 路径 "3.2" 的节点整体替换掉其父节点 "3"
   # 使用场景：去掉 let 外层只保留返回值，或去掉 if 只保留 then/else 分支
-  cr tree raise ns/def -p '3,2'
+  cr tree raise ns/def -p '3.2'
   ```
 
 - **提取子表达式为新定义**（`split-def`）——将某路径的子表达式提取为同 ns 的新定义，原位替换为新名字：
 
   ```bash
-  # 将路径 "3,2" 的子表达式提取为新定义 compute-helper（同 namespace）
-  cr edit split-def app.util/process -p '3,2' -n compute-helper
+  # 将路径 "3.2" 的子表达式提取为新定义 compute-helper（同 namespace）
+  cr edit split-def app.util/process -p '3.2' -n compute-helper
   ```
 
   详细参数使用 `cr edit split-def --help` 查看。
@@ -1138,10 +1138,10 @@ cr query search-expr 'process item' -f 'app.core/main-fn'
 # 输出：[3,1,2]
 
 # 移动（原位置消失）
-cr edit mv 'app.core/main-fn' --from '3,1,2' -p '3,2' --at before
+cr edit mv 'app.core/main-fn' --from '3.1.2' -p '3.2' --at before
 
 # 复制（原位置保留，新位置多一份）
-cr edit cp 'app.core/main-fn' --from '3,1,2' -p '3,2' --at after
+cr edit cp 'app.core/main-fn' --from '3.1.2' -p '3.2' --at after
 ```
 
 ### 包裹 / 拆包 / 提升节点（`tree wrap` / `tree unwrap` / `tree raise`）
@@ -1150,17 +1150,17 @@ cr edit cp 'app.core/main-fn' --from '3,1,2' -p '3,2' --at after
 
 ```bash
 # 包裹（wrap）：将节点包进新表达式，self = 原节点
-cr tree wrap 'app.core/main-fn' -p '3,2' -e 'println self'
+cr tree wrap 'app.core/main-fn' -p '3.2' -e 'println self'
 
 # 包裹成 let 绑定（self = 原表达式）
-cr tree wrap 'app.core/main-fn' -p '3,2' -e 'let ((result self)) result'
+cr tree wrap 'app.core/main-fn' -p '3.2' -e 'let ((result self)) result'
 
 # 拆包（unwrap）：删除该节点，所有子节点展开到原位置
-cr tree unwrap 'app.core/main-fn' -p '3,2'
+cr tree unwrap 'app.core/main-fn' -p '3.2'
 
 # 提升（raise）：用该子节点整体替换其父节点
 # 场景：去掉 if 只保留 then 分支，或去掉 let 只保留最终返回值
-cr tree raise 'app.core/main-fn' -p '3,2,1'
+cr tree raise 'app.core/main-fn' -p '3.2.1'
 ```
 
 ### 批量重命名局部变量（`tree replace-leaf` / `tree target-replace`）
@@ -1229,13 +1229,13 @@ cr tree replace-leaf 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
 cr tree replace app.main/fn -p '2' -e 'println |hello'
 
 # ✅ 替换 leaf（推荐 --leaf）
-cr tree replace app.main/fn -p '2,0' --leaf -e 'new-symbol'
+cr tree replace app.main/fn -p '2.0' --leaf -e 'new-symbol'
 
 # ✅ 替换字符串 leaf
-cr tree replace app.main/fn -p '2,1' --leaf -e '|new text'
+cr tree replace app.main/fn -p '2.1' --leaf -e '|new text'
 
 # ❌ 避免：用 -e 传单个 token（会变成 list）
-cr tree replace app.main/fn -p '2,0' -e 'symbol'  # 结果：["symbol"]
+cr tree replace app.main/fn -p '2.0' -e 'symbol'  # 结果：["symbol"]
 ```
 
 ### 3. Cirru 字符串和数据类型 ⭐⭐
