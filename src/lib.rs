@@ -66,6 +66,21 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
 pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
+  // Pre-compile all defs that contain `bind-type` calls so that global type
+  // slots (e.g. `*dispatch-op`) are populated before any component or utility
+  // def is compiled.  Without this, component defs that are compiled as
+  // transitive deps of the entry point may see an unbound type slot and
+  // produce structurally different (non-deterministic) JS output.
+  match runner::preprocess::precompile_bind_type_defs(&check_warnings, &CallStackList::default()) {
+    Ok(()) => {}
+    Err(failure) => {
+      eprintln!("\nfailed preprocessing bind-type defs, {failure}");
+      let headline = failure.headline();
+      call_stack::display_stack_with_docs(&headline, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
+      return CalcitErr::err_str(failure.kind, headline);
+    }
+  };
+
   match runner::preprocess::ensure_ns_def_compiled(&init_ns, &init_def, &check_warnings, &CallStackList::default()) {
     Ok(()) => {}
     Err(failure) => {

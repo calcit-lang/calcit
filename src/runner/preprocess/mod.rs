@@ -198,6 +198,41 @@ pub fn ensure_ns_def_compiled(
   ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)
 }
 
+/// Pre-compile all defs that contain `bind-type` calls so that global type
+/// slots (e.g. `*dispatch-op`) are populated **before** any component or
+/// utility def is preprocessed.
+///
+/// `bind-type` is processed as a compile-time side effect inside
+/// `preprocess_expr`.  If a component def (e.g. `reel.app.comp.todolist`)
+/// is compiled before the def that calls `(bind-type :dispatch-op Op)`, the
+/// type slot is unresolved and the tuple-to-enum type-rewriting is skipped,
+/// producing structurally different (and incorrect) JS on alternate runs.
+///
+/// This function scans every source-code def, identifies those whose source
+/// contains a `bind-type` call, and compiles them eagerly.
+pub fn precompile_bind_type_defs(check_warnings: &RefCell<Vec<LocatedWarning>>, call_stack: &CallStackList) -> Result<(), CalcitErr> {
+  let tasks: Vec<(Arc<str>, Arc<str>)> = {
+    let program_code = program::PROGRAM_CODE_DATA.read().expect("read program code for bind-type pre-scan");
+    let mut bind_type_defs = vec![];
+    for (ns, file) in program_code.iter() {
+      for (def, entry) in file.defs.iter() {
+        if program::calcit_contains_bind_type(&entry.code) {
+          bind_type_defs.push((ns.clone(), def.clone()));
+        }
+      }
+    }
+    // Sort for determinism
+    bind_type_defs.sort();
+    bind_type_defs
+  };
+
+  for (ns, def) in tasks {
+    ensure_ns_def_preprocessed(&ns, &def, check_warnings, call_stack)?;
+  }
+
+  Ok(())
+}
+
 fn lookup_callable_ns_def_for_preprocess(
   raw_ns: &str,
   raw_def: &str,

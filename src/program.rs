@@ -889,6 +889,21 @@ struct SnapshotFillTask {
   runtime_value: Option<Calcit>,
 }
 
+/// Recursively scan a `Calcit` AST node for a `bind-type` call.
+/// Returns `true` if any node is `Calcit::Proc(CalcitProc::BindType)` or a
+/// symbol/import whose name is `"bind-type"`.
+pub fn calcit_contains_bind_type(node: &Calcit) -> bool {
+  use crate::calcit::CalcitProc;
+  match node {
+    Calcit::Proc(CalcitProc::BindType) => true,
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "bind-type" => true,
+    Calcit::Import(imp) if imp.def.as_ref() == "bind-type" => true,
+    Calcit::List(list) => list.iter().any(calcit_contains_bind_type),
+    Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => calcit_contains_bind_type(code),
+    _ => false,
+  }
+}
+
 fn collect_snapshot_fill_tasks(compiled: &CompiledProgram) -> Vec<SnapshotFillTask> {
   let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
   let program_def_ids = PROGRAM_DEF_ID_INDEX.read().expect("read program def id index");
@@ -931,6 +946,40 @@ fn collect_snapshot_fill_tasks(compiled: &CompiledProgram) -> Vec<SnapshotFillTa
       });
     }
   }
+
+  // Sort tasks so that defs containing `bind-type` (which populate global type
+  // slots like `*dispatch-op`) are processed before all other defs.  Without
+  // this ordering, the HashMap iteration order can vary between runs: if a UI
+  // component is preprocessed before the def that calls `(bind-type :dispatch-op Op)`,
+  // the type slot is unresolved and the tuple-to-enum rewriting is skipped,
+  // producing structurally different JS output on successive runs.
+  // Within each priority group tasks are sorted by (ns, def) for full determinism.
+  tasks.sort_by(|a, b| {
+    let a_has_bind = if a.source_backed {
+      {
+        program_code
+          .get(a.ns.as_ref())
+          .and_then(|f| f.defs.get(a.def.as_ref()))
+          .is_some_and(|entry| calcit_contains_bind_type(&entry.code))
+      }
+    } else {
+      false
+    };
+    let b_has_bind = if b.source_backed {
+      {
+        program_code
+          .get(b.ns.as_ref())
+          .and_then(|f| f.defs.get(b.def.as_ref()))
+          .is_some_and(|entry| calcit_contains_bind_type(&entry.code))
+      }
+    } else {
+      false
+    };
+    // bind-type defs first (true > false when reversed for "first" priority)
+    b_has_bind
+      .cmp(&a_has_bind)
+      .then_with(|| a.ns.cmp(&b.ns).then_with(|| a.def.cmp(&b.def)))
+  });
 
   tasks
 }
