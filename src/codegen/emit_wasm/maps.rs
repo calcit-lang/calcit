@@ -815,6 +815,284 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   Ok(())
 }
 
+/// `&map:diff-triple a b` — single-pass diff returning `[drop-keys new-diff common-triples]`.
+/// - drop-keys: set of keys in `a` NOT in `b`
+/// - new-diff: map of entries in `b` NOT in `a`
+/// - common-triples: list of `[k va vb]` for keys present in both
+pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 2 {
+    return Err("&map:diff-triple expects 2 args".into());
+  }
+  let a = emit_ptr_to_i32(ctx, &args[0])?;
+  let a_count = emit_load_count_i32(ctx, a);
+  let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
+  let b = emit_ptr_to_i32(ctx, &args[1])?;
+  let b_count = emit_load_count_i32(ctx, b);
+  let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
+
+  // --- Allocate result buffers (over-allocated) ---
+
+  // drop_keys: set with up to a_count entries
+  let drop_slots = ctx.i32_offset(a_count, 1);
+  let drop_keys = emit_alloc_with_count(ctx, a_count, drop_slots, "set");
+  let drop_write = ctx.alloc_i32(0);
+
+  // common_triples: list with up to a_count entries (each entry is a [k,va,vb] list ptr)
+  let common_slots = ctx.i32_offset(a_count, 1);
+  let common_list = emit_alloc_with_count(ctx, a_count, common_slots, "list");
+  let common_write = ctx.alloc_i32(0);
+
+  // new_diff: map flat with up to b_count entries
+  let new_diff_slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(b_count));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(new_diff_slots));
+  let new_diff_flat = emit_alloc_with_count(ctx, b_count, new_diff_slots, "map");
+  let new_diff_write = ctx.alloc_i32(0);
+
+  // --- Pass 1: iterate over a ---
+  let ai = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(ai, a_count);
+
+  let ak = ctx.alloc_local(); // f64
+  let av = ctx.alloc_local(); // f64
+  let akv_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(a_flat));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(ai));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(akv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(ak));
+  ctx.emit(Instruction::LocalGet(akv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(av));
+
+  // Scan b for ak
+  let found_in_b = ctx.alloc_i32(0);
+  let found_bv = ctx.alloc_local(); // f64
+  let bi_inner = ctx.alloc_i32(0);
+
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(bi_inner, b_count);
+
+  let bkv_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(b_flat));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(bi_inner));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(bkv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(ak));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(bkv_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(found_bv));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(found_in_b));
+  ctx.emit(Instruction::Br(2));
+  ctx.emit(Instruction::End);
+
+  ctx.i32_inc(bi_inner);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  // Branch: found in b → common triple; not found → drop key
+  ctx.emit(Instruction::LocalGet(found_in_b));
+  ctx.begin_block_if();
+  {
+    // Allocate a 3-element list [ak, av, found_bv] inline (32 bytes = 4 * 8)
+    let triple_ptr = ctx.alloc_local_typed(ValType::I32);
+    emit_bump_alloc(ctx, 32, triple_ptr, "list");
+    // count = 3
+    ctx.emit(Instruction::LocalGet(triple_ptr));
+    ctx.emit(f64_const(3.0));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    // elem 0 = ak
+    ctx.emit(Instruction::LocalGet(triple_ptr));
+    ctx.emit(Instruction::LocalGet(ak));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+    // elem 1 = av
+    ctx.emit(Instruction::LocalGet(triple_ptr));
+    ctx.emit(Instruction::LocalGet(av));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+    // elem 2 = found_bv
+    ctx.emit(Instruction::LocalGet(triple_ptr));
+    ctx.emit(Instruction::LocalGet(found_bv));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(24)));
+
+    // Store ptr into common_list[8 + common_write * 8]
+    let slot_addr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(common_list));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(common_write));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(slot_addr));
+    ctx.emit(Instruction::LocalGet(slot_addr));
+    ctx.ptr_to_f64(triple_ptr);
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.i32_inc(common_write);
+  }
+  ctx.emit(Instruction::Else);
+  {
+    // Add ak to drop_keys set at [8 + drop_write * 8]
+    let slot_addr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(drop_keys));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(drop_write));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(slot_addr));
+    ctx.emit(Instruction::LocalGet(slot_addr));
+    ctx.emit(Instruction::LocalGet(ak));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.i32_inc(drop_write);
+  }
+  ctx.emit(Instruction::End);
+
+  ctx.i32_inc(ai);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  // Patch drop_keys count
+  ctx.emit(Instruction::LocalGet(drop_keys));
+  ctx.ptr_to_f64(drop_write);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // Patch common_list count
+  ctx.emit(Instruction::LocalGet(common_list));
+  ctx.ptr_to_f64(common_write);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // --- Pass 2: iterate over b, collect keys not in a → new_diff ---
+  let bi = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(bi, b_count);
+
+  let bk = ctx.alloc_local(); // f64
+  let bv = ctx.alloc_local(); // f64
+  let bkv_addr2 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(b_flat));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(bi));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(bkv_addr2));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(bk));
+  ctx.emit(Instruction::LocalGet(bkv_addr2));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(bv));
+
+  // Scan a for bk
+  let found_in_a = ctx.alloc_i32(0);
+  let ai_inner = ctx.alloc_i32(0);
+
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(ai_inner, a_count);
+
+  ctx.emit(Instruction::LocalGet(a_flat));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(ai_inner));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(bk));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(found_in_a));
+  ctx.emit(Instruction::Br(2));
+  ctx.emit(Instruction::End);
+
+  ctx.i32_inc(ai_inner);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  // If NOT found in a, add (bk, bv) to new_diff_flat
+  ctx.emit(Instruction::LocalGet(found_in_a));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  {
+    let kv_addr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(new_diff_flat));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(new_diff_write));
+    ctx.emit(Instruction::I32Const(16));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(kv_addr));
+    ctx.emit(Instruction::LocalGet(kv_addr));
+    ctx.emit(Instruction::LocalGet(bk));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalGet(kv_addr));
+    ctx.emit(Instruction::LocalGet(bv));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+    ctx.i32_inc(new_diff_write);
+  }
+  ctx.emit(Instruction::End);
+
+  ctx.i32_inc(bi);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  // Patch new_diff_flat count
+  ctx.emit(Instruction::LocalGet(new_diff_flat));
+  ctx.ptr_to_f64(new_diff_write);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  // Convert flat map to proper map
+  let new_diff_map = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", new_diff_flat);
+
+  // --- Build outer result list [drop_keys, new_diff_map, common_list] ---
+  let result_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, 32, result_ptr, "list"); // 4 * 8 = 32 bytes
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.emit(f64_const(3.0));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.ptr_to_f64(drop_keys);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.ptr_to_f64(new_diff_map);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.ptr_to_f64(common_list);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(24)));
+
+  ctx.ptr_to_f64(result_ptr);
+  Ok(())
+}
+
 /// `&map:destruct map` — returns `[key val rest-map]` for the first entry, or nil if empty.
 pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
