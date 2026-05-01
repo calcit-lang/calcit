@@ -17,7 +17,7 @@ Tuples in Calcit are tagged unions that can hold multiple values with a tag. The
 - **Create**: `:: :point 10 20`
 - **Create Typed**: `%:: Shape :circle 5`
 - **Access**: `&tuple:nth t 1`
-- **Match**: `tag-match t ((:point x y) ...)`
+- **Match**: `match t ((:point x y) ...)` (recommended) / `tag-match t ((:point x y) ...)` (legacy)
 - **Update**: `&tuple:assoc t 1 99`
 
 ## Creating Tuples
@@ -146,9 +146,24 @@ do
 
 ## Pattern Matching with Tuples
 
-### tag-match
+### match (recommended)
 
-Pattern match on enum/tuple tags:
+`match` is the preferred pattern matching syntax. It is a native syntax (not a macro) and provides compile-time exhaustiveness checking for enum types:
+
+```cirru
+let
+    MyResult $ defenum MyResult (:ok :number) (:err :string)
+    result $ %:: MyResult :ok 42
+  match result
+    (:ok v) (str |Success: v)
+    (:err msg) (str |Error: msg)
+```
+
+See [Enums](enums.md) for full details on `match` including exhaustiveness checking and migration from `tag-match`.
+
+### tag-match (legacy)
+
+`tag-match` is a macro that also branches on enum/tuple tags. It works without a static enum type and accepts a `_` wildcard, but has no compile-time checks:
 
 ```cirru
 let
@@ -159,6 +174,8 @@ let
     (:err msg) (str |Error: msg)
     _ |Unknown
 ```
+
+`tag-match` is the only option when matching plain (untyped) tuples — `match` requires an enum definition.
 
 ### list-match
 
@@ -206,7 +223,7 @@ let
         %:: MyResult :err |Division-by-zero
         %:: MyResult :ok (/ a b)
     result $ divide 10 2
-  tag-match result
+  match result
     (:ok value) (str |ok: value)
     (:err msg) (str |err: msg)
 ```
@@ -221,9 +238,9 @@ let
         fn (acc x)
           if (= x target) (%:: MaybeInt :some x) acc
     result $ find-item ([] 1 2 3) 2
-  tag-match result
+  match result
     (:some v) v
-    _ |not-found
+    (:none) |not-found
 ```
 
 ### Tagged Data

@@ -94,7 +94,13 @@ let
 
 ## Pattern Matching with `match` (recommended)
 
-`match` is a native syntax (not a macro) that branches on enum variant tags with **compile-time exhaustiveness checking**. When the matched value has a known enum type, the preprocessor verifies that all variants are covered:
+`match` is a **native syntax** (not a macro) that branches on enum variant tags. Because the compiler sees the full branch structure, it can perform:
+
+- **Exhaustiveness checking** — warns at preprocess time if any variant is not covered
+- **Variant arity check** — warns if the binding count doesn't match the variant's payload count
+- **Binding type inference** — each binding variable automatically receives the payload type from the enum definition
+
+### Basic usage
 
 ```cirru
 let
@@ -108,6 +114,26 @@ let
   ; => 78.53975
 ```
 
+### Multi-line branch bodies
+
+When a branch body needs more than one expression, indent subsequent lines under the branch:
+
+```cirru
+let
+    ApiResult $ defenum ApiResult (:ok :string) (:err :string)
+    r $ %:: ApiResult :err |network-error
+    msg
+      match r
+        (:ok v)
+          str-spaced |OK: v
+        (:err e)
+          str-spaced |Error: e
+  println msg
+  ; => Error: network-error
+```
+
+### Exhaustiveness checking
+
 If you omit a variant and don't have a wildcard `_` branch, the compiler warns:
 
 ```cirru.no-check
@@ -115,6 +141,8 @@ match c
   (:circle radius) (* radius radius 3.14159)
   ; ⚠ Warning: match on `Shape` is not exhaustive. Missing variant(s): [:rect]
 ```
+
+The check fires only when the compiler can infer the enum type of the matched value — for example, when the value is directly constructed with `%::`, or when the function parameter is annotated with an enum type in its schema. When the type cannot be inferred at preprocess time, the match still works at runtime but no compile-time warning is issued.
 
 Use `_` as a wildcard to catch remaining variants:
 
@@ -130,31 +158,60 @@ let
   ; => round
 ```
 
+### No-match runtime error
+
+If no branch matches at runtime (and no `_` wildcard is present), `match` throws:
+
+```
+match: no matching branch for tag :unknown-tag
+```
+
+This is an explicit crash, not a silent `nil`. `tag-match` has the same behavior.
+
 ### `match` vs `tag-match`
 
-| Feature             | `match`              | `tag-match`                    |
-| ------------------- | -------------------- | ------------------------------ |
-| Implementation      | Native syntax        | Macro (expands to nested `if`) |
-| Exhaustiveness      | Compile-time warning | None                           |
-| Variant arity check | Yes                  | No                             |
-| JS output           | Direct if-else chain | Nested ternaries               |
-| Recommended         | Yes                  | Legacy use                     |
+| Feature              | `match`              | `tag-match`                    |
+| -------------------- | -------------------- | ------------------------------ |
+| Implementation       | Native syntax        | Macro (expands to nested `if`) |
+| Exhaustiveness check | Compile-time warning | None                           |
+| Variant arity check  | Yes                  | No                             |
+| Binding type inference | Yes (from defenum) | No                             |
+| JS output            | Direct if-else chain | Nested ternaries               |
+| Recommended          | Yes                  | Legacy use                     |
 
 Both syntaxes share the same branch format: each branch is `(pattern body)`.
 
+### Migrating from `tag-match` to `match`
+
+The branch syntax is identical — migration is a single keyword replacement:
+
+```cirru
+; Before (tag-match)
+tag-match r
+  (:ok v) (str-spaced |ok: v)
+  (:err e) (str-spaced |err: e)
+
+; After (match)
+match r
+  (:ok v) (str-spaced |ok: v)
+  (:err e) (str-spaced |err: e)
+```
+
+After replacing the keyword, the compiler will report any uncovered variants. Either add the missing branches or append `_ <default>` to keep the wildcard behaviour.
+
 ## Zero-payload Variants
 
-When a variant has no payload, the pattern is just the tag:
+When a variant has no payload, the pattern is just the tag wrapped in parentheses:
 
 ```cirru
 let
     MaybeInt $ defenum MaybeInt (:some :number) (:none)
     some-val $ %:: MaybeInt :some 42
     none-val $ %:: MaybeInt :none
-    extracted $ tag-match some-val
-      (:some v)
-        * v 2
-      (:none) nil
+    extracted
+      match some-val
+        (:some v) (* v 2)
+        (:none) nil
   println extracted
   ; => 84
 ```
@@ -183,7 +240,7 @@ let
         %:: AppResult :ok (* x 10)
         %:: AppResult :err |negative-input
     handle $ fn (r)
-      tag-match r
+      match r
         (:ok v)
           str-spaced |result: v
         (:err e)
@@ -202,7 +259,7 @@ let
     pending $ %:: Status :pending
     done $ %:: Status :done |ok
     is-done $ fn (s)
-      tag-match s
+      match s
         (:done _) true
         (:pending) false
         (:failed _) false
