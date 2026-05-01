@@ -390,6 +390,8 @@ pub enum CalcitProc {
   NativeMapDiffKeys,
   #[strum(serialize = "&map:common-keys")]
   NativeMapCommonKeys,
+  #[strum(serialize = "&map:diff-triple")]
+  NativeMapDiffTriple,
   #[strum(serialize = "&map:keys")]
   NativeMapKeys,
   #[strum(serialize = "&map:vals")]
@@ -1014,6 +1016,10 @@ impl CalcitProc {
       }),
       NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
         return_type: some_set(),
+        arg_types: vec![some_tag("map"), some_tag("map")],
+      }),
+      NativeMapDiffTriple => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
         arg_types: vec![some_tag("map"), some_tag("map")],
       }),
       NativeMapKeys | NativeMapVals => Some(ProcTypeSignature {

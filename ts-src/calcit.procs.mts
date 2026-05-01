@@ -2075,6 +2075,40 @@ export let _$n_map_$o_common_keys = (a: CalcitValue, b: CalcitValue): CalcitSet 
   }
 };
 
+/** Single-pass diff: returns [drop-keys, new-diff, common-triples] in two traversals instead of 3+ */
+export let _$n_map_$o_diff_triple = (a: CalcitValue, b: CalcitValue): CalcitSliceList => {
+  if ((a instanceof CalcitMap || a instanceof CalcitSliceMap) && (b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
+    let dropKeys: CalcitValue[] = [];
+    let commonTriples: CalcitValue[] = [];
+
+    // One pass over a: split into drop-keys and common-triples
+    let aKeys = a.keysArray();
+    for (let i = 0; i < aKeys.length; i++) {
+      let k = aKeys[i];
+      if (b.contains(k)) {
+        commonTriples.push(new CalcitSliceList([k, a.get(k), b.get(k)]));
+      } else {
+        dropKeys.push(k);
+      }
+    }
+
+    // One pass over b: collect entries not in a
+    let newDiffPairs: CalcitValue[] = [];
+    let bKeys = b.keysArray();
+    for (let i = 0; i < bKeys.length; i++) {
+      let k = bKeys[i];
+      if (!a.contains(k)) {
+        newDiffPairs.push(k);
+        newDiffPairs.push(b.get(k));
+      }
+    }
+
+    return new CalcitSliceList([new CalcitSet(dropKeys), new CalcitSliceMap(newDiffPairs), new CalcitSliceList(commonTriples)]);
+  } else {
+    throw new Error("&map:diff-triple expected 2 maps");
+  }
+};
+
 export let bit_shr = (base: number, step: number): number => {
   return base >> step;
 };

@@ -1913,6 +1913,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeMapDiffNew => emit_map_diff_new(ctx, args),
     CalcitProc::NativeMapDiffKeys => emit_map_diff_keys(ctx, args),
     CalcitProc::NativeMapCommonKeys => emit_map_common_keys(ctx, args),
+    CalcitProc::NativeMapDiffTriple => Err("&map:diff-triple is not yet supported in WASM codegen".into()),
     CalcitProc::NativeMapDestruct => emit_map_destruct(ctx, args),
     CalcitProc::NativeMapKeys => emit_map_keys(ctx, args),
     CalcitProc::NativeMapVals => emit_map_vals(ctx, args),

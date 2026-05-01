@@ -505,6 +505,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeMapDiffNew => maps::diff_new(args),
     NativeMapDiffKeys => maps::diff_keys(args),
     NativeMapCommonKeys => maps::common_keys(args),
+    NativeMapDiffTriple => maps::diff_triple(args),
     NativeMapKeys => maps::map_keys(args),
     NativeMapVals => maps::map_vals(args),
     // sets

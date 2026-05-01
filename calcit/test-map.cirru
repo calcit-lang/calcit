@@ -34,6 +34,27 @@
               assert=
                 &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
                 #{} :a
+              let
+                  triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+                assert= (nth triple 0) (#{} :b)
+                assert= (nth triple 1) (&{} :c 3)
+                assert=
+                  count $ nth triple 2
+                  , 1
+                let
+                    first-triple $ first (nth triple 2)
+                    k $ nth first-triple 0
+                    va $ nth first-triple 1
+                    vb $ nth first-triple 2
+                  do
+                    assert= k :a
+                    assert= va 1
+                    assert= vb 2
+              let
+                  triple2 $ &map:diff-triple (&{} :a 1 :b 2 :c 3) (&{} :a 1 :b 2 :c 3)
+                assert= (nth triple2 0) (#{} )
+                assert= (nth triple2 1) (&{})
+                assert= (count (nth triple2 2)) 3
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
@@ -274,6 +295,11 @@
                 .diff-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
               assert= (#{} :a :b)
                 .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
+              let
+                  triple $ .diff-triple (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
+                assert= (nth triple 0) (#{} :c)
+                assert= (nth triple 1) (&{})
+                assert= (count (nth triple 2)) 2
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1
           :examples $ []

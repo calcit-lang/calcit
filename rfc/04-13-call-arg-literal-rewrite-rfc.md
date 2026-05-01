@@ -36,12 +36,13 @@ sum-point $ %{} Point (:x 10) (:y 20)
 
 预处理器根据函数参数的 schema 类型标注，自动将简写形式改写为完整形式：
 
-| 简写 | 改写为 | 触发条件 |
-|---|---|---|
+| 简写               | 改写为                    | 触发条件                 |
+| ------------------ | ------------------------- | ------------------------ |
 | `{} (:x 1) (:y 2)` | `%{} Point (:x 1) (:y 2)` | 参数类型为 struct/record |
-| `:: :ok` | `%:: Result0 :ok` | 参数类型为 enum |
+| `:: :ok`           | `%:: Result0 :ok`         | 参数类型为 enum          |
 
 改写后的 AST 能正常参与：
+
 - 运行时类型验证（field 校验、variant 校验）
 - 预处理阶段类型检查（`check_user_fn_arg_types`）
 - JS codegen（通过 Import 引用而非内联 Struct/Enum 值）
@@ -75,12 +76,15 @@ sum-point $ %{} Point (:x 10) (:y 20)
 defstruct Point (:x :number) (:y :number)
 
 defn sum-point (p)
-  :: :fn $ {} (:return :number)
-    :args $ [] 'app.main/Point
   &+ (:x p) (:y p)
+
+;; :schema 中标注参数类型
+:: :fn $ {} (:return :number)
+  :args $ [] 'app.main/Point
 
 ;; 简写
 sum-point $ {} (:x 10) (:y 20)
+
 ;; 预处理改写为
 sum-point $ %{} Point (:x 10) (:y 20)
 ```
@@ -109,9 +113,11 @@ sum-point $ %{} Point (:x 10) (:y 20)
 defenum Result0 (:err :string) (:ok)
 
 defn takes-result (r)
-  :: :fn $ {} (:return :dynamic)
-    :args $ [] 'app.main/Result0
   tag-match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
+
+;; :schema 中标注参数类型
+:: :fn $ {} (:return :dynamic)
+  :args $ [] 'app.main/Result0
 
 ;; 简写
 takes-result $ :: :ok
@@ -130,28 +136,28 @@ takes-result $ %:: Result0 :err |error-msg
 
 在 `CalcitTypeAnnotation` 上新增方法：
 
-| 方法 | 用途 |
-|---|---|
+| 方法                           | 用途                                      |
+| ------------------------------ | ----------------------------------------- |
 | `resolve_to_struct_with_ref()` | 解析 struct + 可选 (ns, def) 路径（已有） |
-| `resolve_to_enum_with_ref()` | 解析 enum + 可选 (ns, def) 路径（新增） |
+| `resolve_to_enum_with_ref()`   | 解析 enum + 可选 (ns, def) 路径（新增）   |
 
 两者都处理 `Struct/Record`↔`Enum/Tuple` 直接值、`TypeRef("ns/def")` 程序查找、以及 `Optional(inner)` 解包。
 
 底层依赖：
 
-| 函数 | 用途 |
-|---|---|
+| 函数                                   | 用途                                         |
+| -------------------------------------- | -------------------------------------------- |
 | `resolve_struct_from_program(ns, def)` | 从 program registry 查找 struct 定义（已有） |
-| `resolve_enum_from_program(ns, def)` | 从 program registry 查找 enum 定义（新增） |
+| `resolve_enum_from_program(ns, def)`   | 从 program registry 查找 enum 定义（新增）   |
 
 ### 4.2 改写函数
 
-| 函数 | 用途 |
-|---|---|
-| `try_rewrite_map_args_to_records()` | 遍历参数列表，对 map 字面量尝试改写（已有） |
-| `try_rewrite_single_map_to_record()` | 单个参数的 map→record 改写（已有） |
-| `try_rewrite_tuple_args_to_enum_tuples()` | 遍历参数列表，对 tuple 字面量尝试改写（新增） |
-| `try_rewrite_single_tuple_to_enum_tuple()` | 单个参数的 tuple→enum-tuple 改写（新增） |
+| 函数                                       | 用途                                          |
+| ------------------------------------------ | --------------------------------------------- |
+| `try_rewrite_map_args_to_records()`        | 遍历参数列表，对 map 字面量尝试改写（已有）   |
+| `try_rewrite_single_map_to_record()`       | 单个参数的 map→record 改写（已有）            |
+| `try_rewrite_tuple_args_to_enum_tuples()`  | 遍历参数列表，对 tuple 字面量尝试改写（新增） |
+| `try_rewrite_single_tuple_to_enum_tuple()` | 单个参数的 tuple→enum-tuple 改写（新增）      |
 
 ### 4.3 集成点
 
@@ -169,18 +175,19 @@ takes-result $ %:: Result0 :err |error-msg
 改写时若从 `TypeRef` 解析出 (ns, def) 路径，会构造 `Calcit::Import` 而非内联的 `Calcit::Struct`/`Calcit::Enum`。这是因为 JS codegen 不支持直接 emit `Struct`/`Enum` 字面量——它需要一个变量引用。
 
 Import 策略：
+
 - 同 namespace → `ImportInfo::SameFile`
 - 跨 namespace → `ImportInfo::NsReferDef`
 
 ### 修改的文件
 
-| 文件 | 变更 |
-|---|---|
-| `src/calcit/type_annotation.rs` | `resolve_to_enum_with_ref()`, `resolve_enum_from_program()` |
-| `src/runner/preprocess.rs` | `try_rewrite_tuple_args_to_enum_tuples()`, `try_rewrite_single_tuple_to_enum_tuple()`，集成到 Fn 分支 |
-| `docs/features/enums.md` | 新增 "Automatic Tuple-to-Enum Rewrite" 章节 |
-| `docs/features/records.md` | "Automatic Map-to-Record Rewrite" 章节（已有） |
-| `calcit/test-enum.cirru` | 新增 `test-tuple-to-enum` 测试 |
+| 文件                            | 变更                                                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/calcit/type_annotation.rs` | `resolve_to_enum_with_ref()`, `resolve_enum_from_program()`                                           |
+| `src/runner/preprocess.rs`      | `try_rewrite_tuple_args_to_enum_tuples()`, `try_rewrite_single_tuple_to_enum_tuple()`，集成到 Fn 分支 |
+| `docs/features/enums.md`        | 新增 "Automatic Tuple-to-Enum Rewrite" 章节                                                           |
+| `docs/features/records.md`      | "Automatic Map-to-Record Rewrite" 章节（已有）                                                        |
+| `calcit/test-enum.cirru`        | 新增 `test-tuple-to-enum` 测试                                                                        |
 
 ## 5. 测试覆盖
 

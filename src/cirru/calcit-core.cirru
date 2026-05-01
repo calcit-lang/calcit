@@ -297,7 +297,7 @@
           :examples $ []
         |&core-map-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct &map:destruct) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get &map:get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct &map:destruct) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get &map:get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
         |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number") (:schema :dynamic)
           :code $ quote
@@ -936,6 +936,21 @@
           :examples $ []
           :schema $ :: :fn
             {} (:return :map)
+              :args $ [] :map :map
+        |&map:diff-triple $ %{} :CodeEntry (:doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: list\nReturns a list of three elements:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+              [] (nth triple 0) (nth triple 1) (count (nth triple 2))
+            quote $ let
+                triple $ &map:diff-triple (&{} :x 10 :y 20) (&{} :x 10 :y 99 :z 30)
+                drop-keys $ nth triple 0
+                new-diff $ nth triple 1
+                common-triples $ nth triple 2
+              list drop-keys new-diff common-triples
+          :schema $ :: :fn
+            {} (:return :list)
               :args $ [] :map :map
         |&map:dissoc $ %{} :CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
           :code $ quote &runtime-implementation
