@@ -942,7 +942,8 @@
           :examples $ []
             quote $ let
                 triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-              [] (nth triple 0) (nth triple 1) (count (nth triple 2))
+              [] (nth triple 0) (nth triple 1)
+                count $ nth triple 2
             quote $ let
                 triple $ &map:diff-triple (&{} :x 10 :y 20) (&{} :x 10 :y 99 :z 30)
                 drop-keys $ nth triple 0
@@ -3955,7 +3956,7 @@
           :code $ quote
             defn option:map (opt f)
               tag-match opt
-                  :some value
+                (:some value)
                   %:: (&tuple:enum opt) :some $ f value
                 (:none)
                   %:: (&tuple:enum opt) :none
@@ -4212,7 +4213,7 @@
           :code $ quote
             defn result:map (res f)
               tag-match res
-                  :ok value
+                (:ok value)
                   %:: (&tuple:enum res) :ok $ f value
                 (:err err)
                   %:: (&tuple:enum res) :err err
@@ -4488,13 +4489,11 @@
           :examples $ []
             quote $ assert= 11
               tag-match (:: :ok 1)
-                  :ok v
-                  &+ v 10
+                (:ok v) (&+ v 10)
                 (:err e) (eprintln e)
             quote $ assert= |got:hello
               tag-match (:: :some |hello)
-                  :some x
-                  str x |:got
+                (:some x) (str x |:got)
                 (:none) |nothing
           :schema $ :: :macro
             {} $ :args ([] :dynamic)

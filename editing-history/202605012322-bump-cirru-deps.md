@@ -1,3 +1,0 @@
-- Updated `cirru_edn` to `0.7.5` and `cirru_parser` to `0.2.5` in runtime and build dependencies.
-- Purpose: align Calcit with the newly released Cirru formatter changes and EDN compatibility release.
-- Validation plan: refresh `Cargo.lock`, then run `cargo fmt`, `cargo clippy -- -D warnings`, `yarn compile`, `cargo test`, and `yarn check-all`.
