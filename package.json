@@ -34,7 +34,7 @@
   "dependencies": {
     "@calcit/ternary-tree": "0.0.26",
     "@cirru/parser.ts": "^0.0.9",
-    "@cirru/writer.ts": "^0.1.7"
+    "@cirru/writer.ts": "^0.1.8"
   },
   "packageManager": "yarn@4.12.0"
 }

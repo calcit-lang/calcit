@@ -11,7 +11,7 @@ __metadata:
   dependencies:
     "@calcit/ternary-tree": "npm:0.0.26"
     "@cirru/parser.ts": "npm:^0.0.9"
-    "@cirru/writer.ts": "npm:^0.1.7"
+    "@cirru/writer.ts": "npm:^0.1.8"
     "@types/node": "npm:^25.0.9"
     typescript: "npm:^6.0.2"
   languageName: unknown
@@ -31,10 +31,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cirru/writer.ts@npm:^0.1.7":
-  version: 0.1.7
-  resolution: "@cirru/writer.ts@npm:0.1.7"
-  checksum: 10c0/3548f596abef52f8d4cfe95b25fc1ded0d059869eafb403e3e340c1bcdc50fe59af9fd75f1b6d9f828129c847965f378945ed370ff9aeec9ddcc89172afad92a
+"@cirru/writer.ts@npm:^0.1.8":
+  version: 0.1.8
+  resolution: "@cirru/writer.ts@npm:0.1.8"
+  checksum: 10c0/d84bbfd9ef2de3b94b131dcab13446094b71e4d5e6a93df927dc591f73607c09316ebac33fd0859b6a0da874d024a288ec3af38105b4c938599c2c12540a67ec
   languageName: node
   linkType: hard
 
