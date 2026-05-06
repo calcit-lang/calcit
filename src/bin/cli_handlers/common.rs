@@ -56,6 +56,123 @@ pub fn format_path(path: &[usize]) -> String {
   format_path_with_separator(path, ".")
 }
 
+fn is_shell_sensitive_char(ch: char) -> bool {
+  matches!(
+    ch,
+    '>' | '<' | '|' | '&' | ';' | '(' | ')' | '$' | '*' | '?' | '[' | ']' | '{' | '}' | '!' | '`'
+  )
+}
+
+pub fn shell_quote(raw: &str) -> String {
+  format!("'{}'", raw.replace('\'', "'\"'\"'"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitionLookup {
+  pub resolved: String,
+  pub warning: Option<String>,
+}
+
+pub fn resolve_definition_lookup<'a, I>(
+  namespace: &str,
+  requested: &str,
+  definitions: I,
+  auto_correct: bool,
+) -> Result<DefinitionLookup, String>
+where
+  I: IntoIterator<Item = &'a str>,
+{
+  let definition_names: Vec<&str> = definitions.into_iter().collect();
+
+  if definition_names.contains(&requested) {
+    return Ok(DefinitionLookup {
+      resolved: requested.to_string(),
+      warning: None,
+    });
+  }
+
+  let shell_candidates: Vec<(&str, char)> = definition_names
+    .into_iter()
+    .filter_map(|candidate| {
+      let rest = candidate.strip_prefix(requested)?;
+      let next_char = rest.chars().next()?;
+      if is_shell_sensitive_char(next_char) {
+        Some((candidate, next_char))
+      } else {
+        None
+      }
+    })
+    .collect();
+
+  if shell_candidates.is_empty() {
+    return Err(format!("Definition '{requested}' not found in namespace '{namespace}'"));
+  }
+
+  let mut lines = vec![format!("Definition '{requested}' not found in namespace '{namespace}'.")];
+  lines.push("Possible cause: your shell may have interpreted part of the definition name before calcit received it.".to_string());
+  lines.push("This often happens with characters like >, <, |, &, $, *, ?, (, or ).".to_string());
+
+  if shell_candidates.len() == 1 {
+    let (candidate, shell_char) = shell_candidates[0];
+    lines.push(format!(
+      "Detected a likely intended definition: '{candidate}' (the next character after '{requested}' is shell-sensitive: '{shell_char}')."
+    ));
+    lines.push(format!(
+      "Try quoting the full target, for example: {}",
+      shell_quote(&format!("{namespace}/{candidate}"))
+    ));
+
+    if auto_correct {
+      lines.push(format!("Auto-correcting to '{candidate}' for this read-only command."));
+      return Ok(DefinitionLookup {
+        resolved: candidate.to_string(),
+        warning: Some(lines.join("\n")),
+      });
+    }
+  } else {
+    let preview = shell_candidates
+      .iter()
+      .take(4)
+      .map(|(candidate, _)| format!("'{candidate}'"))
+      .collect::<Vec<_>>()
+      .join(", ");
+    lines.push(format!(
+      "Found multiple shell-sensitive candidates starting with '{requested}': {preview}"
+    ));
+    lines.push(format!(
+      "Quote the full target to disambiguate, for example: {}",
+      shell_quote(&format!("{namespace}/{}", shell_candidates[0].0))
+    ));
+  }
+
+  Err(lines.join("\n"))
+}
+
+pub fn print_cli_warning_block(message: &str) {
+  let mut lines = message.lines();
+  if let Some(first) = lines.next() {
+    eprintln!("\n⚠️  Warning: {first}");
+    for line in lines {
+      eprintln!("   {line}");
+    }
+    eprintln!();
+  }
+}
+
+pub fn emit_cli_output(content: &str, to_stderr: bool) {
+  if to_stderr {
+    eprint!("{content}");
+    if !content.ends_with('\n') {
+      eprintln!();
+    }
+  } else {
+    print!("{content}");
+    if !content.ends_with('\n') {
+      println!();
+    }
+  }
+}
+
 pub fn format_path_bracketed(path: &[usize]) -> String {
   if path.is_empty() {
     "root".to_string()
@@ -324,7 +441,7 @@ pub fn parse_input_to_cirru(
 
 #[cfg(test)]
 mod tests {
-  use super::{format_path, format_path_bracketed, format_path_with_separator, parse_path};
+  use super::{format_path, format_path_bracketed, format_path_with_separator, parse_path, resolve_definition_lookup, shell_quote};
 
   #[test]
   fn rejects_comma_separated_paths() {
@@ -347,5 +464,35 @@ mod tests {
     assert_eq!(format_path(&[3, 2, 1]), "3.2.1");
     assert_eq!(format_path_bracketed(&[3, 2, 1]), "[3.2.1]");
     assert_eq!(format_path_with_separator(&[3, 2, 1], ","), "3,2,1");
+  }
+
+  #[test]
+  fn quotes_shell_targets_with_single_quotes() {
+    assert_eq!(shell_quote("app.main/element->node"), "'app.main/element->node'");
+  }
+
+  #[test]
+  fn auto_corrects_unique_shell_truncated_definition() {
+    let lookup = resolve_definition_lookup("respo.render.html", "element-", vec!["element->node", "render-app"], true).unwrap();
+
+    assert_eq!(lookup.resolved, "element->node");
+    let warning = lookup.warning.unwrap();
+    assert!(warning.contains("Possible cause: your shell may have interpreted part of the definition name"));
+    assert!(warning.contains("Auto-correcting to 'element->node'"));
+  }
+
+  #[test]
+  fn keeps_plain_not_found_when_no_shell_candidate_exists() {
+    let err = resolve_definition_lookup("app.main", "missing", vec!["main", "helper"], false).unwrap_err();
+    assert_eq!(err, "Definition 'missing' not found in namespace 'app.main'");
+  }
+
+  #[test]
+  fn reports_ambiguous_shell_truncated_definition() {
+    let err = resolve_definition_lookup("app.main", "value-", vec!["value->text", "value->debug", "other"], false).unwrap_err();
+
+    assert!(err.contains("Found multiple shell-sensitive candidates starting with 'value-'"));
+    assert!(err.contains("'value->text'"));
+    assert!(err.contains("'value->debug'"));
   }
 }

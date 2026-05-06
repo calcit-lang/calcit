@@ -3,7 +3,7 @@
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
-use super::common::{format_path, parse_path};
+use super::common::{emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup};
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
@@ -13,6 +13,7 @@ use calcit::util::string::strip_shebang;
 use cirru_parser::Cirru;
 use colored::Colorize;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -617,9 +618,11 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn render_chunked_display(display: &ChunkedDisplay) {
-  println!("{}", "Chunked Cirru:".bold());
-  println!(
+fn render_chunked_display(display: &ChunkedDisplay) -> String {
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "{}", "Chunked Cirru:".bold());
+  let _ = writeln!(
+    &mut out,
     "{}",
     format!(
       "nodes: {}, branches: {}, leaves: {}, max depth: {}, fragments: {}",
@@ -631,16 +634,27 @@ fn render_chunked_display(display: &ChunkedDisplay) {
     )
     .dimmed()
   );
-  println!();
+  let _ = writeln!(&mut out);
 
   for fragment in &display.fragments {
-    println!("{} {}", fragment.id.cyan().bold(), format!("at {}", fragment.coord).dimmed());
-    println!("{}", format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed());
+    let _ = writeln!(
+      &mut out,
+      "{} {}",
+      fragment.id.cyan().bold(),
+      format!("at {}", fragment.coord).dimmed()
+    );
+    let _ = writeln!(
+      &mut out,
+      "{}",
+      format!("nodes: {}, max depth: {}", fragment.nodes, fragment.depth).dimmed()
+    );
     for line in fragment.cirru.lines() {
-      println!("  {line}");
+      let _ = writeln!(&mut out, "  {line}");
     }
-    println!();
+    let _ = writeln!(&mut out);
   }
+
+  out
 }
 
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
@@ -651,34 +665,43 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
+  let render_to_stderr = lookup.warning.is_some();
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let resolved_definition = lookup.resolved;
+
   let code_entry = file_data
     .defs
-    .get(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
-  if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, definition, vec![]) {
+  let mut out = String::new();
+
+  if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![]) {
     if let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
-      println!("{} {}", "Type:".bold(), summary);
+      let _ = writeln!(&mut out, "{} {}", "Type:".bold(), summary);
     }
   }
 
   if !code_entry.doc.is_empty() {
-    println!("{} {}", "Doc:".bold(), code_entry.doc);
+    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), code_entry.doc);
   }
 
   if !code_entry.examples.is_empty() {
-    println!("\n{} {}", "Examples:".bold(), code_entry.examples.len());
+    let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
 
-  println!("\n{}", "Schema:".bold());
+  let _ = writeln!(&mut out, "\n{}", "Schema:".bold());
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
     let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
       Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
       Err(e) => format!("(schema error: {e})"),
     };
-    println!("{schema_str}");
+    let _ = writeln!(&mut out, "{schema_str}");
   } else {
-    println!("{}", "(none)".dimmed());
+    let _ = writeln!(&mut out, "{}", "(none)".dimmed());
   }
 
   if !opts.raw {
@@ -689,26 +712,27 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
       max_branches: 64,
     };
     if let Some(display) = maybe_chunk_node(&code_entry.code, &chunk_options)? {
-      println!();
-      render_chunked_display(&display);
+      let _ = writeln!(&mut out);
+      out.push_str(&render_chunked_display(&display));
     } else {
-      println!("\n{}", "Cirru:".bold());
+      let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
       let cirru_str =
         cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-      println!("{cirru_str}");
+      let _ = writeln!(&mut out, "{cirru_str}");
     }
   } else {
-    println!("\n{}", "Cirru:".bold());
+    let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
     let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-    println!("{cirru_str}");
+    let _ = writeln!(&mut out, "{cirru_str}");
   }
 
   if opts.json {
-    println!("\n{}", "JSON:".bold());
+    let _ = writeln!(&mut out, "\n{}", "JSON:".bold());
     let json = code_entry_to_json(code_entry);
-    println!("{}", serde_json::to_string(&json).unwrap());
+    let _ = writeln!(&mut out, "{}", serde_json::to_string(&json).unwrap());
   }
 
+  emit_cli_output(&out, render_to_stderr);
   Ok(())
 }
 
@@ -746,32 +770,45 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
+  let render_to_stderr = lookup.warning.is_some();
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let resolved_definition = lookup.resolved;
+
   let code_entry = file_data
     .defs
-    .get(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get(resolved_definition.as_str())
+    .expect("resolved definition exists");
+
+  let mut out = String::new();
 
   if code_entry.examples.is_empty() {
-    println!("\n{}", "(no examples)".dimmed());
+    let _ = writeln!(&mut out, "\n{}", "(no examples)".dimmed());
   } else {
-    println!("{} example(s)\n", code_entry.examples.len());
+    let _ = writeln!(&mut out, "{} example(s)\n", code_entry.examples.len());
 
     for (i, example) in code_entry.examples.iter().enumerate() {
-      println!("{}", format!("[{i}]:").bold());
+      let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
 
-      // Show Cirru format
       let cirru_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
       for line in cirru_str.lines().filter(|l| !l.trim().is_empty()) {
-        println!("  {line}");
+        let _ = writeln!(&mut out, "  {line}");
       }
 
-      // Show JSON format
       let json = cirru_to_json(example);
-      println!("  {} {}", "JSON:".dimmed(), serde_json::to_string(&json).unwrap().dimmed());
-      println!();
+      let _ = writeln!(
+        &mut out,
+        "  {} {}",
+        "JSON:".dimmed(),
+        serde_json::to_string(&json).unwrap().dimmed()
+      );
+      let _ = writeln!(&mut out);
     }
   }
 
+  emit_cli_output(&out, render_to_stderr);
   Ok(())
 }
 
@@ -784,42 +821,46 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
+  let render_to_stderr = lookup.warning.is_some();
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let resolved_definition = lookup.resolved;
+
   let code_entry = file_data
     .defs
-    .get(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
-  // Always show doc (even if empty)
+  let mut out = String::new();
+
   if code_entry.doc.is_empty() {
-    println!("{} -", "Doc:".bold());
+    let _ = writeln!(&mut out, "{} -", "Doc:".bold());
   } else {
-    println!("{} {}", "Doc:".bold(), code_entry.doc);
+    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), code_entry.doc);
   }
 
-  // Extract signature info from the code
   match &code_entry.code {
     Cirru::List(items) if !items.is_empty() => {
-      // Show entire definition as one-liner, truncated to 120 chars
       let preview = code_entry.code.format_one_liner()?;
       let display = if preview.len() > 120 {
         format!("{}...", &preview[..120])
       } else {
         preview
       };
-      println!("{} {}", "Expr:".bold(), display.dimmed());
+      let _ = writeln!(&mut out, "{} {}", "Expr:".bold(), display.dimmed());
     }
     Cirru::Leaf(_) => {
-      // Single leaf definition
       let preview = code_entry.code.format_one_liner()?;
-      println!("{} {}", "Leaf:".bold(), preview.dimmed());
+      let _ = writeln!(&mut out, "{} {}", "Leaf:".bold(), preview.dimmed());
     }
     _ => {
-      println!("{}", "(empty or invalid definition)".dimmed());
+      let _ = writeln!(&mut out, "{}", "(empty or invalid definition)".dimmed());
     }
   }
 
-  // Always show examples count
-  println!("{} {}", "Examples:".bold(), code_entry.examples.len());
+  let _ = writeln!(&mut out, "{} {}", "Examples:".bold(), code_entry.examples.len());
 
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
     let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
@@ -831,11 +872,12 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     } else {
       preview
     };
-    println!("{} {}", "Schema:".bold(), display.dimmed());
+    let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), display.dimmed());
   } else {
-    println!("{} -", "Schema:".bold());
+    let _ = writeln!(&mut out, "{} -", "Schema:".bold());
   }
 
+  emit_cli_output(&out, render_to_stderr);
   Ok(())
 }
 
@@ -848,10 +890,19 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
+  let render_to_stderr = lookup.warning.is_some();
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let resolved_definition = lookup.resolved;
+
   let code_entry = file_data
     .defs
-    .get(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get(resolved_definition.as_str())
+    .expect("resolved definition exists");
+
+  let mut out = String::new();
 
   if json {
     let schema_edn: cirru_edn::Edn = match code_entry.schema.as_ref() {
@@ -859,17 +910,19 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
       _ => cirru_edn::Edn::Nil,
     };
-    println!("{}", cirru_edn::format(&schema_edn, true)?);
+    let _ = writeln!(&mut out, "{}", cirru_edn::format(&schema_edn, true)?);
+    emit_cli_output(&out, render_to_stderr);
     return Ok(());
   }
 
   if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
     let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn())?;
-    println!("{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
+    let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
   } else {
-    println!("{} -", "Schema:".bold());
+    let _ = writeln!(&mut out, "{} -", "Schema:".bold());
   }
 
+  emit_cli_output(&out, render_to_stderr);
   Ok(())
 }
 
@@ -998,47 +1051,49 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset
 fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_deps: bool, detail_offset: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
-  // Verify the target definition exists
-  let _ = snapshot
+  let target_file = snapshot
     .files
     .get(target_ns)
-    .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?
+    .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
+  let lookup = resolve_definition_lookup(target_ns, target_def, target_file.defs.keys().map(|name| name.as_str()), true)?;
+  let render_to_stderr = lookup.warning.is_some();
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let resolved_target_def = lookup.resolved;
+
+  let _ = target_file
     .defs
-    .get(target_def)
-    .ok_or_else(|| format!("Definition '{target_def}' not found in namespace '{target_ns}'"))?;
+    .get(resolved_target_def.as_str())
+    .expect("resolved definition exists");
 
   let mut usages: RefResults = vec![]; // (ns, def, context, coords, source)
 
   for (ns_name, file_data) in &snapshot.files {
-    // Skip core namespaces unless deps is requested
     if !include_deps && (ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.")) {
       continue;
     }
 
-    // Check if this namespace imports from target_ns
-    let imports_target = check_ns_imports(&file_data.ns.code, target_ns, target_def);
+    let imports_target = check_ns_imports(&file_data.ns.code, target_ns, &resolved_target_def);
 
     for (def_name, code_entry) in &file_data.defs {
-      // Skip the definition itself
-      if ns_name == target_ns && def_name == target_def {
+      if ns_name == target_ns && def_name == &resolved_target_def {
         continue;
       }
 
-      // Search for the symbol (could be qualified or unqualified depending on import)
       let found_in_code = if imports_target || ns_name == target_ns {
-        find_symbol_in_cirru(&code_entry.code, target_def)
+        find_symbol_in_cirru(&code_entry.code, &resolved_target_def)
       } else {
-        // Check for qualified reference: target_ns/target_def
-        let qualified = format!("{target_ns}/{target_def}");
+        let qualified = format!("{target_ns}/{resolved_target_def}");
         find_symbol_in_cirru(&code_entry.code, &qualified)
       };
 
       if found_in_code {
-        let context = get_symbol_context_cirru(&code_entry.code, target_def);
+        let context = get_symbol_context_cirru(&code_entry.code, &resolved_target_def);
         let coords = if imports_target || ns_name == target_ns {
-          find_symbol_coords(&code_entry.code, target_def)
+          find_symbol_coords(&code_entry.code, &resolved_target_def)
         } else {
-          let qualified = format!("{target_ns}/{target_def}");
+          let qualified = format!("{target_ns}/{resolved_target_def}");
           find_symbol_coords(&code_entry.code, &qualified)
         };
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
@@ -1047,18 +1102,18 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
       if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
         if let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
           let found_in_schema = if imports_target || ns_name == target_ns {
-            find_symbol_in_cirru(&schema, target_def)
+            find_symbol_in_cirru(&schema, &resolved_target_def)
           } else {
-            let qualified = format!("{target_ns}/{target_def}");
+            let qualified = format!("{target_ns}/{resolved_target_def}");
             find_symbol_in_cirru(&schema, &qualified)
           };
 
           if found_in_schema {
-            let context = get_symbol_context_cirru(&schema, target_def);
+            let context = get_symbol_context_cirru(&schema, &resolved_target_def);
             let coords = if imports_target || ns_name == target_ns {
-              find_symbol_coords(&schema, target_def)
+              find_symbol_coords(&schema, &resolved_target_def)
             } else {
-              let qualified = format!("{target_ns}/{target_def}");
+              let qualified = format!("{target_ns}/{resolved_target_def}");
               find_symbol_coords(&schema, &qualified)
             };
             usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
@@ -1068,19 +1123,29 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     }
   }
 
-  println!("{} {}", "Usages:".bold(), usages.len());
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "{} {}", "Usages:".bold(), usages.len());
 
   if usages.is_empty() {
-    println!(
+    let _ = writeln!(
+      &mut out,
       "\n{}",
       "No usages found. This definition may be unused or only called externally.".yellow()
     );
   } else {
-    println!();
-    print_detail_window_hint(usages.len(), detail_offset, "usages");
+    let _ = writeln!(&mut out);
+    if usages.len() > DETAILED_RESULTS_WINDOW {
+      let (start, end) = detailed_window(detail_offset, usages.len());
+      let _ = writeln!(
+        &mut out,
+        "{}",
+        format!("Detail window for usages: [{start}, {end}) (detail-offset={detail_offset}), other entries are compressed.").dimmed()
+      );
+    }
     for (idx, (ns, def, context, coords, source)) in usages.iter().enumerate() {
       if !in_detail_window(idx, usages.len(), detail_offset) {
-        println!(
+        let _ = writeln!(
+          &mut out,
           "  ⋯ {}/{} [{}] ({} path{})",
           ns.dimmed(),
           def.dimmed(),
@@ -1091,14 +1156,19 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
         continue;
       }
 
-      // Show main line
       if !context.is_empty() {
-        println!("  {}/{} [{}]  {}", ns.cyan(), def.green(), source.dimmed(), context.dimmed());
+        let _ = writeln!(
+          &mut out,
+          "  {}/{} [{}]  {}",
+          ns.cyan(),
+          def.green(),
+          source.dimmed(),
+          context.dimmed()
+        );
       } else {
-        println!("  {}/{} [{}]", ns.cyan(), def.green(), source.dimmed());
+        let _ = writeln!(&mut out, "  {}/{} [{}]", ns.cyan(), def.green(), source.dimmed());
       }
 
-      // Show coordinates on one line with "and" separator
       if !coords.is_empty() {
         let coords_parts: Vec<String> = coords
           .iter()
@@ -1107,16 +1177,20 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
             format!("[{coord_str}]")
           })
           .collect();
-        println!("    {}", format!("at {}", coords_parts.join(" and ")).dimmed());
+        let _ = writeln!(&mut out, "    {}", format!("at {}", coords_parts.join(" and ")).dimmed());
       }
     }
   }
 
-  // Tip
   if !usages.is_empty() && command_guidance_enabled() {
-    println!("\n{}", "Tip: Modifying this definition may affect the above locations.".dimmed());
+    let _ = writeln!(
+      &mut out,
+      "\n{}",
+      "Tip: Modifying this definition may affect the above locations.".dimmed()
+    );
   }
 
+  emit_cli_output(&out, render_to_stderr);
   Ok(())
 }
 
