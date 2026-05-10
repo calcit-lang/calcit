@@ -15,8 +15,8 @@ use crate::{
 };
 
 use type_checking::{
-  check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types, check_user_fn_arg_types,
-  detect_return_type_hint_from_processed_body,
+  CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
+  check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
 };
 use type_inference::{infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value};
 use type_rewriting::{
@@ -623,9 +623,15 @@ fn preprocess_list_call(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let head = &xs[0];
+  let call_location = derive_call_expr_location(head);
   let head_form = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
   let args = xs.drop_left();
   let def_name = grab_def_name(head);
+  let call_info = CallTypeCheckInfo {
+    file_ns,
+    def_name: &def_name,
+    call_location: call_location.clone(),
+  };
 
   let head_value = match &head_form {
     Calcit::Import(CalcitImport { ns, def, .. }) => lookup_callable_ns_def_for_preprocess(ns, def, check_warnings, call_stack)?,
@@ -768,16 +774,16 @@ fn preprocess_list_call(
           }
           ys = new_ys;
         }
-        check_core_fn_arg_types(info.as_ref(), &current_args, scope_types, file_ns, &def_name, check_warnings);
-        check_user_fn_arg_types(
+        check_core_fn_arg_types(
           info.as_ref(),
-          &head_form,
           &current_args,
           scope_types,
           file_ns,
           &def_name,
+          call_location.clone(),
           check_warnings,
         );
+        check_user_fn_arg_types(info.as_ref(), &head_form, &current_args, scope_types, &call_info, check_warnings);
       }
       if has_spread {
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
@@ -1097,7 +1103,15 @@ fn preprocess_list_call(
         // Check Proc argument types if available
         if let Some(Calcit::Proc(proc)) = ys.first() {
           let processed_args = CalcitList::from(ys.drop_left());
-          check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+          check_proc_arg_types(
+            proc,
+            &processed_args,
+            scope_types,
+            file_ns,
+            &def_name,
+            call_location.clone(),
+            check_warnings,
+          );
 
           // Try predicate folding for type-predicate procs
           if let Some(specialized) =
@@ -1137,7 +1151,7 @@ fn preprocess_list_call(
           }
           if let Some(Calcit::Local(local)) = ys.first() {
             let updated_args = CalcitList::from(ys.drop_left());
-            check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, file_ns, &def_name, check_warnings);
+            check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
           }
         }
 
@@ -1442,6 +1456,20 @@ pub(crate) fn gen_check_warning_code(
   gen_check_warning_with_location_code(message, code, loc, check_warnings);
 }
 
+pub(crate) fn gen_check_warning_code_at(
+  message: String,
+  code: &'static str,
+  file_ns: &str,
+  location: Option<NodeLocation>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if let Some(location) = location {
+    gen_check_warning_with_location_code(message, code, location, check_warnings);
+  } else {
+    gen_check_warning_code(message, code, file_ns, check_warnings);
+  }
+}
+
 fn gen_check_warning_with_location(message: String, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   let mut warnings = check_warnings.borrow_mut();
   warnings.push(LocatedWarning::new(message, location));
@@ -1455,6 +1483,17 @@ fn gen_check_warning_with_location_code(
 ) {
   let mut warnings = check_warnings.borrow_mut();
   warnings.push(LocatedWarning::new_with_detail(message, location, Some(code.to_string()), None));
+}
+
+fn derive_call_expr_location(head: &Calcit) -> Option<NodeLocation> {
+  let location = head.get_location()?;
+  let mut parent_coord = (*location.coord).clone();
+  parent_coord.pop();
+  Some(NodeLocation::new(
+    location.ns.clone(),
+    location.def.clone(),
+    Arc::from(parent_coord),
+  ))
 }
 
 /// Check recur arity in function body
@@ -4675,7 +4714,12 @@ mod tests {
       }),
       def_id: None,
     });
-    check_user_fn_arg_types(&fn_info, &dummy_head, &args, &scope_types, "tests.user_fn", "demo", &warnings);
+    let call_info = CallTypeCheckInfo {
+      file_ns: "tests.user_fn",
+      def_name: "demo",
+      call_location: None,
+    };
+    check_user_fn_arg_types(&fn_info, &dummy_head, &args, &scope_types, &call_info, &warnings);
 
     // Should have warnings about type mismatches
     let warnings_vec = warnings.borrow();
@@ -4720,6 +4764,54 @@ mod tests {
       msg2.contains("number") || msg2.contains(":number"),
       "warning should mention actual type: {msg2}"
     );
+  }
+
+  #[test]
+  fn user_function_arg_warning_falls_back_to_call_location_for_literal_args() {
+    let fn_info = CalcitFn {
+      name: Arc::from("plus1"),
+      def_ns: Arc::from("tests.user_fn"),
+      def_ref: None,
+      usage: CalcitFnUsageMeta::default(),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      body: vec![Calcit::Nil],
+      generics: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::from_tag_name("number"))],
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+    };
+
+    let expr = Cirru::List(vec![Cirru::leaf("plus1"), Cirru::leaf(":tag")]);
+    let code = code_to_calcit(&expr, "tests.user_fn", "demo", vec![9]).expect("parse cirru");
+    let Calcit::List(items) = code else {
+      panic!("expected list call");
+    };
+    let head = items.first().expect("call head");
+    let args = items.drop_left();
+    let call_location = derive_call_expr_location(head).expect("source-backed call location");
+
+    let warnings = RefCell::new(vec![]);
+    let dummy_head = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.user_fn"),
+      def: Arc::from("plus1"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_ns: Arc::from("tests.user_fn"),
+        at_def: Arc::from("demo"),
+      }),
+      def_id: None,
+    });
+
+    let call_info = CallTypeCheckInfo {
+      file_ns: "tests.user_fn",
+      def_name: "demo",
+      call_location: Some(call_location.clone()),
+    };
+    check_user_fn_arg_types(&fn_info, &dummy_head, &args, &ScopeTypes::new(), &call_info, &warnings);
+
+    let warnings_vec = warnings.borrow();
+    assert_eq!(warnings_vec.len(), 1, "expected one warning, got: {warnings_vec:?}");
+    assert_eq!(warnings_vec[0].location(), &call_location);
+    assert_eq!(warnings_vec[0].location().coord.as_ref(), &vec![9]);
   }
 
   #[test]

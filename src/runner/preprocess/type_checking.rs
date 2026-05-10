@@ -16,11 +16,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::calcit::{self, Calcit, CalcitFn, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning};
+use crate::calcit::{
+  self, Calcit, CalcitFn, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, NodeLocation,
+};
 
 use super::{
-  ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code, resolve_type_value,
-  tag_annotation,
+  ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code,
+  gen_check_warning_code_at, resolve_type_value, tag_annotation,
 };
 
 // ---------------------------------------------------------------------------
@@ -33,8 +35,15 @@ struct CheckContext<'a> {
   expected_types: &'a [Arc<CalcitTypeAnnotation>],
   scope_types: &'a ScopeTypes,
   file_ns: &'a str,
+  call_location: Option<NodeLocation>,
   warning_code: &'static str,
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+}
+
+pub(crate) struct CallTypeCheckInfo<'a> {
+  pub file_ns: &'a str,
+  pub def_name: &'a str,
+  pub call_location: Option<NodeLocation>,
 }
 
 impl<'a> CheckContext<'a> {
@@ -50,10 +59,16 @@ impl<'a> CheckContext<'a> {
       self.head_form,
       self.args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
     );
-    gen_check_warning_code(
+    let warning_location = self
+      .args
+      .get(arg_idx - 1)
+      .and_then(Calcit::get_location)
+      .or_else(|| self.call_location.clone());
+    gen_check_warning_code_at(
       make_warning(arg_idx, expected_str, actual_str, expr_str),
       self.warning_code,
       self.file_ns,
+      warning_location,
       self.check_warnings,
     );
   }
@@ -118,6 +133,7 @@ pub(crate) fn check_proc_arg_types(
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
+  call_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // Get type signature for this proc
@@ -217,7 +233,8 @@ pub(crate) fn check_proc_arg_types(
       if !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings) {
         let expected_str = base_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning_code(
+        let warning_location = arg.get_location().or_else(|| call_location.clone());
+        gen_check_warning_code_at(
           format!(
             "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             proc.as_ref(),
@@ -225,6 +242,7 @@ pub(crate) fn check_proc_arg_types(
           ),
           "W_PROC_ARG_TYPE_MISMATCH",
           file_ns,
+          warning_location,
           check_warnings,
         );
       }
@@ -239,6 +257,7 @@ pub(crate) fn check_core_fn_arg_types(
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
+  call_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
@@ -265,7 +284,8 @@ pub(crate) fn check_core_fn_arg_types(
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning_code(
+        let warning_location = arg.get_location().or_else(|| call_location.clone());
+        gen_check_warning_code_at(
           format!(
             "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             fn_info.name,
@@ -273,6 +293,7 @@ pub(crate) fn check_core_fn_arg_types(
           ),
           "W_CORE_FN_ARG_TYPE_MISMATCH",
           file_ns,
+          warning_location,
           check_warnings,
         );
       }
@@ -286,8 +307,7 @@ pub(crate) fn check_local_fn_call_arg_types(
   local: &CalcitLocal,
   args: &CalcitList,
   scope_types: &ScopeTypes,
-  file_ns: &str,
-  def_name: &str,
+  call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   let local_type = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
@@ -313,14 +333,15 @@ pub(crate) fn check_local_fn_call_arg_types(
   }
 
   let local_sym = local.sym.clone();
-  let def_name = def_name.to_owned();
-  let file_ns_owned = file_ns.to_owned();
+  let def_name = call_info.def_name.to_owned();
+  let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
     head_form,
     args,
     expected_types: &fn_annot.arg_types,
     scope_types,
-    file_ns,
+    file_ns: call_info.file_ns,
+    call_location: call_info.call_location.clone(),
     warning_code: "W_LOCAL_FN_ARG_TYPE_MISMATCH",
     check_warnings,
   };
@@ -337,8 +358,7 @@ pub(crate) fn check_user_fn_arg_types(
   head_form: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
-  file_ns: &str,
-  def_name: &str,
+  call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
@@ -347,14 +367,15 @@ pub(crate) fn check_user_fn_arg_types(
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
-  let def_name = def_name.to_owned();
-  let file_ns_owned = file_ns.to_owned();
+  let def_name = call_info.def_name.to_owned();
+  let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
     head_form,
     args,
     expected_types: &fn_info.arg_types,
     scope_types,
-    file_ns,
+    file_ns: call_info.file_ns,
+    call_location: call_info.call_location.clone(),
     warning_code: "W_FN_ARG_TYPE_MISMATCH",
     check_warnings,
   };

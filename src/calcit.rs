@@ -1202,6 +1202,10 @@ impl LocatedWarning {
     self.code.as_deref()
   }
 
+  pub fn location(&self) -> &NodeLocation {
+    &self.location
+  }
+
   pub fn hint(&self) -> Option<&str> {
     self.hint.as_deref()
   }
