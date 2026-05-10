@@ -322,7 +322,7 @@ impl CalcitTypeAnnotation {
       "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
-      "unit" => Some(Self::Unit),
+      "unit" | "nil" => Some(Self::Unit),
       _ => None,
     }
   }
@@ -1647,6 +1647,7 @@ impl CalcitTypeAnnotation {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
+        Self::Unit => true, // nil is always valid for Optional types
         _ => self.matches_with_bindings(expected_inner, bindings),
       },
       (Self::Optional(_), _) => false,
