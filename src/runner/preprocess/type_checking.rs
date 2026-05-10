@@ -27,27 +27,50 @@ use super::{
 // Unified arg-type checking loop
 // ---------------------------------------------------------------------------
 
+struct CheckContext<'a> {
+  head_form: &'a Calcit,
+  args: &'a CalcitList,
+  expected_types: &'a [Arc<CalcitTypeAnnotation>],
+  scope_types: &'a ScopeTypes,
+  file_ns: &'a str,
+  warning_code: &'static str,
+  check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+}
+
+impl<'a> CheckContext<'a> {
+  fn emit_warning(
+    &self,
+    arg_idx: usize,
+    expected_str: &str,
+    actual_str: &str,
+    make_warning: impl Fn(usize, &str, &str, String) -> String,
+  ) {
+    let expr_str = format!(
+      "{} {}",
+      self.head_form,
+      self.args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
+    );
+    gen_check_warning_code(
+      make_warning(arg_idx, expected_str, actual_str, expr_str),
+      self.warning_code,
+      self.file_ns,
+      self.check_warnings,
+    );
+  }
+}
+
 /// Core loop shared by `check_user_fn_arg_types`, `check_local_fn_call_arg_types`,
 /// and the proc checking path. Walks `(arg, expected_type)` pairs, resolves
 /// actual types from `scope_types`, and emits warnings on mismatch.
 ///
 /// `make_warning` is called with `(arg_index_1based, expected_brief, actual_brief, expr_str)`
 /// and should return the full warning message string.
-fn check_arg_types_loop<F>(
-  head_form: &Calcit,
-  args: &CalcitList,
-  expected_types: &[Arc<CalcitTypeAnnotation>],
-  scope_types: &ScopeTypes,
-  file_ns: &str,
-  warning_code: &'static str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  make_warning: F,
-) where
+fn check_arg_types_loop<F>(ctx: CheckContext<'_>, make_warning: F)
+where
   F: Fn(usize, &str, &str, String) -> String,
 {
-  let expr_str = format!("{head_form} {}", args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" "));
   // Check if we have spreading args — can't check with spread
-  for arg in args.iter() {
+  for arg in ctx.args.iter() {
     if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
       return;
     }
@@ -55,40 +78,30 @@ fn check_arg_types_loop<F>(
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
-  for (idx, (arg, expected_type)) in args.iter().zip(expected_types.iter()).enumerate() {
+  for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
     }
 
     // Handle variadic argument type
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
-      for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
-        if let Some(actual_type) = resolve_type_value(rest_arg, scope_types) {
+      for (rest_idx, rest_arg) in ctx.args.iter().skip(idx).enumerate() {
+        if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
           if !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings) {
             let expected_str = inner_type.as_ref().to_brief_string();
             let actual_str = actual_type.as_ref().to_brief_string();
-            gen_check_warning_code(
-              make_warning(idx + rest_idx + 1, &expected_str, &actual_str, expr_str.clone()),
-              warning_code,
-              file_ns,
-              check_warnings,
-            );
+            ctx.emit_warning(idx + rest_idx + 1, &expected_str, &actual_str, &make_warning);
           }
         }
       }
       return; // Done after variadic
     }
 
-    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+    if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
       if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
         let expected_str = expected_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning_code(
-          make_warning(idx + 1, &expected_str, &actual_str, expr_str.clone()),
-          warning_code,
-          file_ns,
-          check_warnings,
-        );
+        ctx.emit_warning(idx + 1, &expected_str, &actual_str, &make_warning);
       }
     }
   }
@@ -302,20 +315,20 @@ pub(crate) fn check_local_fn_call_arg_types(
   let local_sym = local.sym.clone();
   let def_name = def_name.to_owned();
   let file_ns_owned = file_ns.to_owned();
-  check_arg_types_loop(
+  let ctx = CheckContext {
     head_form,
     args,
-    &fn_annot.arg_types,
+    expected_types: &fn_annot.arg_types,
     scope_types,
     file_ns,
-    "W_LOCAL_FN_ARG_TYPE_MISMATCH",
+    warning_code: "W_LOCAL_FN_ARG_TYPE_MISMATCH",
     check_warnings,
-    |arg_idx, expected_str, actual_str, expr_str| {
-      format!(
-        "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
-      )
-    },
-  );
+  };
+  check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
+    format!(
+      "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
+    )
+  });
 }
 
 /// Check user-defined function argument types against type annotations.
@@ -336,20 +349,20 @@ pub(crate) fn check_user_fn_arg_types(
   let fn_name = fn_info.name.clone();
   let def_name = def_name.to_owned();
   let file_ns_owned = file_ns.to_owned();
-  check_arg_types_loop(
+  let ctx = CheckContext {
     head_form,
     args,
-    &fn_info.arg_types,
+    expected_types: &fn_info.arg_types,
     scope_types,
     file_ns,
-    "W_FN_ARG_TYPE_MISMATCH",
+    warning_code: "W_FN_ARG_TYPE_MISMATCH",
     check_warnings,
-    |arg_idx, expected_str, actual_str, expr_str| {
-      format!(
-        "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: {expr_str}"
-      )
-    },
-  );
+  };
+  check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
+    format!(
+      "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: {expr_str}"
+    )
+  });
 }
 
 // ---------------------------------------------------------------------------
