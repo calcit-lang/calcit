@@ -769,7 +769,15 @@ fn preprocess_list_call(
           ys = new_ys;
         }
         check_core_fn_arg_types(info.as_ref(), &current_args, scope_types, file_ns, &def_name, check_warnings);
-        check_user_fn_arg_types(info.as_ref(), &current_args, scope_types, file_ns, &def_name, check_warnings);
+        check_user_fn_arg_types(
+          info.as_ref(),
+          &head_form,
+          &current_args,
+          scope_types,
+          file_ns,
+          &def_name,
+          check_warnings,
+        );
       }
       if has_spread {
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
@@ -1129,7 +1137,7 @@ fn preprocess_list_call(
           }
           if let Some(Calcit::Local(local)) = ys.first() {
             let updated_args = CalcitList::from(ys.drop_left());
-            check_local_fn_call_arg_types(local, &updated_args, scope_types, file_ns, &def_name, check_warnings);
+            check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, file_ns, &def_name, check_warnings);
           }
         }
 
@@ -4658,7 +4666,16 @@ mod tests {
     let scope_types: ScopeTypes = ScopeTypes::new();
     let warnings = RefCell::new(vec![]);
 
-    check_user_fn_arg_types(&fn_info, &args, &scope_types, "tests.user_fn", "demo", &warnings);
+    let dummy_head = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.user_fn"),
+      def: Arc::from("demo-fn"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_ns: Arc::from("tests.user_fn"),
+        at_def: Arc::from("demo-fn"),
+      }),
+      def_id: None,
+    });
+    check_user_fn_arg_types(&fn_info, &dummy_head, &args, &scope_types, "tests.user_fn", "demo", &warnings);
 
     // Should have warnings about type mismatches
     let warnings_vec = warnings.borrow();

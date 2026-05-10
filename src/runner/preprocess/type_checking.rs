@@ -31,9 +31,10 @@ use super::{
 /// and the proc checking path. Walks `(arg, expected_type)` pairs, resolves
 /// actual types from `scope_types`, and emits warnings on mismatch.
 ///
-/// `make_warning` is called with `(arg_index_1based, expected_brief, actual_brief)`
+/// `make_warning` is called with `(arg_index_1based, expected_brief, actual_brief, expr_str)`
 /// and should return the full warning message string.
 fn check_arg_types_loop<F>(
+  head_form: &Calcit,
   args: &CalcitList,
   expected_types: &[Arc<CalcitTypeAnnotation>],
   scope_types: &ScopeTypes,
@@ -42,8 +43,9 @@ fn check_arg_types_loop<F>(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   make_warning: F,
 ) where
-  F: Fn(usize, &str, &str) -> String,
+  F: Fn(usize, &str, &str, String) -> String,
 {
+  let expr_str = format!("{head_form} {}", args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" "));
   // Check if we have spreading args — can't check with spread
   for arg in args.iter() {
     if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
@@ -66,7 +68,7 @@ fn check_arg_types_loop<F>(
             let expected_str = inner_type.as_ref().to_brief_string();
             let actual_str = actual_type.as_ref().to_brief_string();
             gen_check_warning_code(
-              make_warning(idx + rest_idx + 1, &expected_str, &actual_str),
+              make_warning(idx + rest_idx + 1, &expected_str, &actual_str, expr_str.clone()),
               warning_code,
               file_ns,
               check_warnings,
@@ -82,7 +84,7 @@ fn check_arg_types_loop<F>(
         let expected_str = expected_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning_code(
-          make_warning(idx + 1, &expected_str, &actual_str),
+          make_warning(idx + 1, &expected_str, &actual_str, expr_str.clone()),
           warning_code,
           file_ns,
           check_warnings,
@@ -267,6 +269,7 @@ pub(crate) fn check_core_fn_arg_types(
 
 /// Check argument types when calling a local variable with a known Fn type.
 pub(crate) fn check_local_fn_call_arg_types(
+  head_form: &Calcit,
   local: &CalcitLocal,
   args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -300,15 +303,16 @@ pub(crate) fn check_local_fn_call_arg_types(
   let def_name = def_name.to_owned();
   let file_ns_owned = file_ns.to_owned();
   check_arg_types_loop(
+    head_form,
     args,
     &fn_annot.arg_types,
     scope_types,
     file_ns,
     "W_LOCAL_FN_ARG_TYPE_MISMATCH",
     check_warnings,
-    |arg_idx, expected_str, actual_str| {
+    |arg_idx, expected_str, actual_str, expr_str| {
       format!(
-        "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}"
+        "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
       )
     },
   );
@@ -317,6 +321,7 @@ pub(crate) fn check_local_fn_call_arg_types(
 /// Check user-defined function argument types against type annotations.
 pub(crate) fn check_user_fn_arg_types(
   fn_info: &CalcitFn,
+  head_form: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
@@ -332,15 +337,16 @@ pub(crate) fn check_user_fn_arg_types(
   let def_name = def_name.to_owned();
   let file_ns_owned = file_ns.to_owned();
   check_arg_types_loop(
+    head_form,
     args,
     &fn_info.arg_types,
     scope_types,
     file_ns,
     "W_FN_ARG_TYPE_MISMATCH",
     check_warnings,
-    |arg_idx, expected_str, actual_str| {
+    |arg_idx, expected_str, actual_str, expr_str| {
       format!(
-        "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}"
+        "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: {expr_str}"
       )
     },
   );

@@ -461,11 +461,7 @@ pub fn diff_triple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
       }
 
-      let result = CalcitList::from(&[
-        Calcit::Set(drop_keys),
-        Calcit::Map(new_diff),
-        Calcit::from(common_triples),
-      ]);
+      let result = CalcitList::from(&[Calcit::Set(drop_keys), Calcit::Map(new_diff), Calcit::from(common_triples)]);
       Ok(Calcit::from(result))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(
