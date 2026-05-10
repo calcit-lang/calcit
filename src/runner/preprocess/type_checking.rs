@@ -381,7 +381,7 @@ pub(crate) fn check_user_fn_arg_types(
   };
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
     format!(
-      "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: {expr_str}"
+      "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: `{expr_str}`"
     )
   });
 }

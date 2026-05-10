@@ -2532,7 +2532,7 @@ fn check_callable_type(
         if !is_callable_type(&type_ann) {
           let type_desc = describe_type(&type_ann);
           gen_check_warning(
-            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: {expr}, at {file_ns}/{def_name}"),
+            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: `{expr}`, at {file_ns}/{def_name}"),
             file_ns,
             check_warnings,
           );
@@ -2566,7 +2566,7 @@ fn check_callable_type(
         if !is_callable_type(&type_ann) {
           let type_desc = describe_type(&type_ann);
           gen_check_warning(
-            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: {expr}, at {file_ns}/{def_name}"),
+            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: `{expr}`, at {file_ns}/{def_name}"),
             file_ns,
             check_warnings,
           );

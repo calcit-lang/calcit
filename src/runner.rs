@@ -255,7 +255,7 @@ pub fn call_expr(
           format!(
             "method kind `{kind}` (`.{prefix}{name}`) is only available in JS codegen, not supported in Rust runtime. \
              Use `cr js` to compile to JS, or avoid `.!` / `.-` syntax in server-side code. \
-             Expression: {xs}",
+             Expression: `{xs}`",
             prefix = match kind {
               MethodKind::InvokeNative => "!",
               MethodKind::InvokeNativeOptional => "?!",
