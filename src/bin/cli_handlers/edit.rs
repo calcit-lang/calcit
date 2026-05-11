@@ -21,6 +21,7 @@ use calcit::snapshot::{
 };
 use cirru_parser::Cirru;
 use colored::Colorize;
+use semver::Version;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::Arc;
@@ -1568,48 +1569,83 @@ fn handle_rm_module(opts: &EditRmModuleCommand, snapshot_file: &str) -> Result<(
 // Config operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
+fn parse_semver_value(v: &str) -> Result<Version, String> {
+  if v.starts_with('|') {
+    return Err(format!(
+      "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
+    ));
+  }
 
-  match opts.key.as_str() {
-    "init-fn" | "init_fn" => {
-      snapshot.configs.init_fn = opts.value.clone();
+  Version::parse(v).map_err(|_| format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"))
+}
+
+fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
+  let mut version = parse_semver_value(current)?;
+
+  match level {
+    "patch" => {
+      version.patch += 1;
     }
-    "reload-fn" | "reload_fn" => {
-      snapshot.configs.reload_fn = opts.value.clone();
+    "minor" => {
+      version.minor += 1;
+      version.patch = 0;
     }
-    "version" => {
-      let v = opts.value.as_str();
-      if v.starts_with('|') {
-        return Err(format!(
-          "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
-        ));
-      }
-      // Validate semver-like format (x.y.z with optional pre-release suffix)
-      let is_valid_semver = {
-        let parts: Vec<&str> = v.splitn(4, '.').collect();
-        parts.len() >= 3
-          && parts
-            .iter()
-            .take(3)
-            .all(|p| !p.is_empty() && p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
-      };
-      if !is_valid_semver {
-        return Err(format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"));
-      }
-      snapshot.configs.version = opts.value.clone();
+    "major" => {
+      version.major += 1;
+      version.minor = 0;
+      version.patch = 0;
     }
     _ => {
-      return Err(format!(
-        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version",
-        opts.key
-      ));
+      return Err(format!("Unknown bump level '{level}'. Valid levels: patch, minor, major"));
     }
   }
 
+  version.pre = semver::Prerelease::EMPTY;
+  version.build = semver::BuildMetadata::EMPTY;
+
+  Ok(version.to_string())
+}
+
+fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  let message = match opts.key.as_str() {
+    "init-fn" | "init_fn" => {
+      snapshot.configs.init_fn = opts.value.clone();
+      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+    }
+    "reload-fn" | "reload_fn" => {
+      snapshot.configs.reload_fn = opts.value.clone();
+      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+    }
+    "version" => {
+      parse_semver_value(&opts.value)?;
+      snapshot.configs.version = opts.value.clone();
+      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+    }
+    "bump-version" | "bump_version" => {
+      let previous = snapshot.configs.version.clone();
+      let next = bump_semver_value(&previous, &opts.value)?;
+      snapshot.configs.version = next.clone();
+      format!(
+        "{} Bumped config '{}' from '{}' to '{}'",
+        "✓".green(),
+        "version".cyan(),
+        previous,
+        next
+      )
+    }
+    _ => {
+      return Err(format!(
+        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version, bump-version",
+        opts.key
+      ));
+    }
+  };
+
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value);
+  println!("{message}");
 
   Ok(())
 }
@@ -1863,5 +1899,38 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
         );
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::bump_semver_value;
+
+  #[test]
+  fn bumps_patch_version() {
+    assert_eq!(bump_semver_value("0.0.0", "patch"), Ok("0.0.1".to_string()));
+  }
+
+  #[test]
+  fn bumps_minor_version() {
+    assert_eq!(bump_semver_value("1.2.3", "minor"), Ok("1.3.0".to_string()));
+  }
+
+  #[test]
+  fn bumps_major_version() {
+    assert_eq!(bump_semver_value("1.2.3", "major"), Ok("2.0.0".to_string()));
+  }
+
+  #[test]
+  fn rejects_unknown_bump_level() {
+    assert_eq!(
+      bump_semver_value("1.2.3", "build"),
+      Err("Unknown bump level 'build'. Valid levels: patch, minor, major".to_string())
+    );
+  }
+
+  #[test]
+  fn clears_prerelease_and_build_metadata_when_bumping() {
+    assert_eq!(bump_semver_value("1.2.3-alpha.1+build.2", "patch"), Ok("1.2.4".to_string()));
   }
 }

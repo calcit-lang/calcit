@@ -1090,12 +1090,12 @@ pub struct EditRmModuleCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "config")]
-/// update project config values
+/// update project config values; use `cr edit config bump-version patch|minor|major` to increment semver
 pub struct EditConfigCommand {
-  /// config key: "init-fn", "reload-fn", "version"
+  /// config key: "init-fn", "reload-fn", "version", "bump-version"
   #[argh(positional)]
   pub key: String,
-  /// config value
+  /// config value, or bump level for "bump-version": "patch", "minor", "major"
   #[argh(positional)]
   pub value: String,
 }

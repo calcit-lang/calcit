@@ -602,7 +602,8 @@ cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}",
 
 - `cr edit add-module <module-path>` - 添加模块依赖
 - `cr edit rm-module <module-path>` - 删除模块依赖
-- `cr edit config <key> <value>` - 设置配置（key: init-fn, reload-fn, version）
+- `cr edit config <key> <value>` - 设置配置（key: init-fn, reload-fn, version, bump-version）
+- `cr edit config bump-version patch|minor|major` - 递增项目语义化版本号
 
 **增量变更导出：**
 
