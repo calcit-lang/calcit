@@ -139,7 +139,7 @@ pub fn format_program_diff(result: &ProgramDiffResult) -> String {
   output
 }
 
-fn resolve_input_path(cwd: &Path, input_path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_input_path(cwd: &Path, input_path: &str) -> Result<PathBuf, String> {
   let input = Path::new(input_path);
   let full_path = if input.is_absolute() {
     input.to_path_buf()
@@ -151,7 +151,7 @@ fn resolve_input_path(cwd: &Path, input_path: &str) -> Result<PathBuf, String> {
     .map_err(|e| format!("Failed to resolve input path '{}': {e}", full_path.display()))
 }
 
-fn git_root(cwd: &Path) -> Result<PathBuf, String> {
+pub(crate) fn git_root(cwd: &Path) -> Result<PathBuf, String> {
   let output = Command::new("git")
     .current_dir(cwd)
     .args(["rev-parse", "--show-toplevel"])
@@ -167,7 +167,7 @@ fn git_root(cwd: &Path) -> Result<PathBuf, String> {
   Ok(PathBuf::from(stdout.trim()))
 }
 
-fn repo_relative_path(input_abs: &Path, repo_root: &Path) -> Result<PathBuf, String> {
+pub(crate) fn repo_relative_path(input_abs: &Path, repo_root: &Path) -> Result<PathBuf, String> {
   input_abs.strip_prefix(repo_root).map(|path| path.to_path_buf()).map_err(|_| {
     format!(
       "Input file '{}' is not inside git repository '{}'",
@@ -177,7 +177,7 @@ fn repo_relative_path(input_abs: &Path, repo_root: &Path) -> Result<PathBuf, Str
   })
 }
 
-fn git_show_file(repo_root: &Path, git_ref: &str, repo_rel_path: &Path) -> Result<String, String> {
+pub(crate) fn git_show_file(repo_root: &Path, git_ref: &str, repo_rel_path: &Path) -> Result<String, String> {
   let git_path = repo_rel_path.to_string_lossy().replace('\\', "/");
   let object = format!("{git_ref}:{git_path}");
   let output = Command::new("git")
@@ -194,7 +194,7 @@ fn git_show_file(repo_root: &Path, git_ref: &str, repo_rel_path: &Path) -> Resul
   String::from_utf8(output.stdout).map_err(|e| format!("Failed to decode git show output: {e}"))
 }
 
-fn parse_snapshot(content: &str, error_label: &str, snapshot_path: &str) -> Result<Snapshot, String> {
+pub(crate) fn parse_snapshot(content: &str, error_label: &str, snapshot_path: &str) -> Result<Snapshot, String> {
   let mut content = content.to_string();
   strip_shebang(&mut content);
   let parsed: Edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse '{error_label}' as Cirru EDN: {e}"))?;
@@ -299,7 +299,7 @@ fn diff_defs(label: &str, old: &HashMap<String, CodeEntry>, new: &HashMap<String
   DiffNode::new(label, aggregate_status(&children)).with_children(children)
 }
 
-fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<&CodeEntry>) -> DiffNode {
+pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<&CodeEntry>) -> DiffNode {
   match (old, new) {
     (Some(old), Some(new)) => {
       let children = vec![
@@ -878,7 +878,7 @@ fn cirru_similarity(old: &Cirru, new: &Cirru) -> f64 {
   }
 }
 
-fn collect_stats(root: &DiffNode) -> ProgramDiffStats {
+pub(crate) fn collect_stats(root: &DiffNode) -> ProgramDiffStats {
   fn walk(node: &DiffNode, stats: &mut ProgramDiffStats, include_self: bool) {
     if include_self {
       match node.status {
@@ -902,7 +902,7 @@ fn descendant_count(node: &DiffNode) -> usize {
   node.children.iter().map(|child| 1 + descendant_count(child)).sum()
 }
 
-fn format_tree_node(node: &DiffNode, output: &mut String, prefix: &str, is_last: bool, expand: bool, is_root: bool) {
+pub(crate) fn format_tree_node(node: &DiffNode, output: &mut String, prefix: &str, is_last: bool, expand: bool, is_root: bool) {
   let is_old_new_block = node.label.starts_with("OLD@") || node.label.starts_with("NEW@");
   let connector = if is_root || is_old_new_block {
     ""

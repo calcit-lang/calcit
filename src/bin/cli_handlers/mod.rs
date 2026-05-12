@@ -2,11 +2,13 @@
 //!
 //! These handlers implement: query, docs, cirru, libs, edit, tree subcommands
 
+mod call_graph_diff;
 mod chunk_display;
 mod cirru;
 mod cirru_validator;
 mod command_echo;
 mod common;
+mod def_diff;
 mod docs;
 mod edit;
 mod libs;
@@ -16,8 +18,10 @@ mod query;
 mod tips;
 mod tree;
 
+pub use call_graph_diff::handle_call_graph_diff_command;
 pub use cirru::handle_cirru_command;
 pub use command_echo::{print_command_echo, should_echo_command};
+pub use def_diff::handle_def_diff_command;
 pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
 pub use libs::handle_libs_command;

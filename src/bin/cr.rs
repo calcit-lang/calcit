@@ -83,11 +83,18 @@ fn main() -> Result<(), String> {
     Some(CalcitCommand::Tree(tree_cmd)) => {
       return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
     }
-    Some(CalcitCommand::Analyze(analyze_cmd)) => {
-      if let AnalyzeSubcommand::ProgramDiff(diff_cmd) = &analyze_cmd.subcommand {
+    Some(CalcitCommand::Analyze(analyze_cmd)) => match &analyze_cmd.subcommand {
+      AnalyzeSubcommand::ProgramDiff(diff_cmd) => {
         return cli_handlers::handle_program_diff_command(diff_cmd, &cli_args.input);
       }
-    }
+      AnalyzeSubcommand::CallGraphDiff(diff_cmd) => {
+        return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
+      }
+      AnalyzeSubcommand::DefDiff(diff_cmd) => {
+        return cli_handlers::handle_def_diff_command(diff_cmd, &cli_args.input);
+      }
+      _ => {}
+    },
     _ => {}
   }
 
@@ -265,7 +272,9 @@ fn main() -> Result<(), String> {
     eval_once = true;
     match &analyze_cmd.subcommand {
       AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
+      AnalyzeSubcommand::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
+      AnalyzeSubcommand::DefDiff(diff_options) => cli_handlers::handle_def_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),

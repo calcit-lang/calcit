@@ -2,10 +2,12 @@ pub mod data;
 
 pub mod builtins;
 pub mod calcit;
+pub mod call_graph_diff;
 pub mod call_stack;
 pub mod call_tree;
 pub mod cli_args;
 pub mod codegen;
+pub mod def_diff;
 pub mod detailed_snapshot;
 pub mod program;
 pub mod program_diff;

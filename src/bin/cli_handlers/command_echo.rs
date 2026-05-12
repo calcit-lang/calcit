@@ -234,6 +234,14 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       switch "show-unused" => opts.show_unused,
       value "format" => &opts.format; default "text"
     ),
+    AnalyzeSubcommand::CallGraphDiff(opts) => echo_items!(
+      tokens,
+      pos "git-ref" => &opts.git_ref,
+      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
+      switch "include-core" => opts.include_core,
+      value "max-depth" => opts.max_depth; default "0"
+    ),
     AnalyzeSubcommand::CountCalls(opts) => echo_items!(
       tokens,
       opt "root" => opts.root.as_deref(); default "config.init-fn",
@@ -242,6 +250,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "format" => &opts.format; default "text",
       value "sort" => &opts.sort; default "count"
     ),
+    AnalyzeSubcommand::DefDiff(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "git-ref" => &opts.git_ref),
     AnalyzeSubcommand::ProgramDiff(opts) => echo_items!(tokens, pos "git-ref" => &opts.git_ref),
     AnalyzeSubcommand::CheckExamples(opts) => echo_items!(tokens, value "ns" => &opts.ns),
     AnalyzeSubcommand::CheckTypes(opts) => echo_items!(
@@ -535,7 +544,9 @@ fn cirru_name(subcommand: &CirruSubcommand) -> &'static str {
 fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
   match subcommand {
     AnalyzeSubcommand::CallGraph(_) => "call-graph",
+    AnalyzeSubcommand::CallGraphDiff(_) => "call-graph-diff",
     AnalyzeSubcommand::CountCalls(_) => "count-calls",
+    AnalyzeSubcommand::DefDiff(_) => "def-diff",
     AnalyzeSubcommand::ProgramDiff(_) => "program-diff",
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
