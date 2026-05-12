@@ -121,7 +121,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, count-calls, check-examples, check-types, js-escape)
+/// analyze code structure and helpers (call-graph, count-calls, program-diff, check-examples, check-types, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -134,6 +134,8 @@ pub enum AnalyzeSubcommand {
   CallGraph(CallGraphCommand),
   /// count call occurrences from entry point
   CountCalls(CountCallsCommand),
+  /// compare current snapshot against a Git ref with structured tree diff
+  ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
   /// check type-information coverage in namespace definitions
@@ -232,6 +234,15 @@ pub struct CountCallsCommand {
   /// sort by: "count" (default, descending) or "name"
   #[argh(option, default = "String::from(\"count\")")]
   pub sort: String,
+}
+
+/// compare current snapshot against a Git ref with structured tree diff
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "program-diff")]
+pub struct ProgramDiffCommand {
+  /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
+  #[argh(positional)]
+  pub git_ref: String,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

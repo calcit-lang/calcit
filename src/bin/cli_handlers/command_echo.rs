@@ -242,6 +242,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "format" => &opts.format; default "text",
       value "sort" => &opts.sort; default "count"
     ),
+    AnalyzeSubcommand::ProgramDiff(opts) => echo_items!(tokens, pos "git-ref" => &opts.git_ref),
     AnalyzeSubcommand::CheckExamples(opts) => echo_items!(tokens, value "ns" => &opts.ns),
     AnalyzeSubcommand::CheckTypes(opts) => echo_items!(
       tokens,
@@ -535,6 +536,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
   match subcommand {
     AnalyzeSubcommand::CallGraph(_) => "call-graph",
     AnalyzeSubcommand::CountCalls(_) => "count-calls",
+    AnalyzeSubcommand::ProgramDiff(_) => "program-diff",
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
