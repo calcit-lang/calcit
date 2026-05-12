@@ -470,51 +470,8 @@ fn render_text(text: &str) -> String {
   format!("{shortened:?}")
 }
 
-const CIRRU_ALLOWED_CHARS: &str = "$-:<>[]{}*=+.,\\/!?~_@#&%^|;'";
-
-fn is_cirru_simple_char(c: char) -> bool {
-  c.is_ascii_alphanumeric()
-}
-
-fn is_cirru_char_allowed(c: char) -> bool {
-  is_cirru_simple_char(c) || CIRRU_ALLOWED_CHARS.contains(c)
-}
-
-/// Copied from `cirru_parser` writer internals so program-diff can render leaf nodes
-/// with the same quoting behavior as the official Cirru formatter.
-///
-/// Keep this helper in sync with `parser.rs/src/writer.rs` until it becomes reusable
-/// from the dependency directly.
-fn generate_cirru_leaf(s: &str) -> String {
-  let mut all_allowed = true;
-  for c in s.chars() {
-    if !is_cirru_char_allowed(c) {
-      all_allowed = false;
-      break;
-    }
-  }
-
-  if all_allowed {
-    s.to_string()
-  } else {
-    let mut ret = String::with_capacity(s.len() + 2);
-    ret.push('"');
-    for c in s.chars() {
-      match c {
-        '\n' => ret.push_str("\\n"),
-        '\t' => ret.push_str("\\t"),
-        '"' => ret.push_str("\\\""),
-        '\\' => ret.push_str("\\\\"),
-        _ => ret.push(c),
-      }
-    }
-    ret.push('"');
-    ret
-  }
-}
-
 fn render_cirru_leaf_value(text: &str) -> String {
-  truncate_preview(&generate_cirru_leaf(text), 72)
+  truncate_preview(&cirru_parser::generate_leaf(text), 72)
 }
 
 fn cirru_list_summary(items: &[Cirru]) -> String {
@@ -523,17 +480,19 @@ fn cirru_list_summary(items: &[Cirru]) -> String {
 }
 
 fn list_head(items: &[Cirru]) -> Option<String> {
-  match items.first() {
-    Some(Cirru::Leaf(text)) => Some(render_cirru_leaf_value(text)),
-    Some(Cirru::List(_)) => Some("<list>".to_string()),
-    None => None,
-  }
+  items.first().map(|node| match node.as_leaf_str() {
+    Some(text) => render_cirru_leaf_value(text),
+    None => "<list>".to_string(),
+  })
 }
 
 fn format_cirru_preview(node: &Cirru) -> String {
-  match node {
-    Cirru::Leaf(text) => format!(", {}", render_cirru_leaf_value(text)),
-    Cirru::List(items) => format_cirru_list_preview(items),
+  if let Some(text) = node.as_leaf_str() {
+    format!(", {}", render_cirru_leaf_value(text))
+  } else if let Cirru::List(items) = node {
+    format_cirru_list_preview(items)
+  } else {
+    unreachable!()
   }
 }
 
@@ -707,26 +666,20 @@ fn render_change_lines(kind: &str, coord: &str, body: &str, status: DiffStatus, 
 }
 
 fn render_context_node(node: &Cirru, depth: usize, expand_depth: usize, starts_expression: bool) -> Vec<String> {
-  match node {
-    Cirru::Leaf(text) => vec![indent(depth, &format_cirru_leaf(text, starts_expression).dimmed().to_string())],
-    Cirru::List(items) => {
-      if expand_depth == 0 {
-        return vec![indent(depth, &format_cirru_list_preview(items).dimmed().to_string())];
-      }
-
-      if items.is_empty() {
-        return vec![indent(depth, &format_cirru_list_preview(items).dimmed().to_string())];
-      }
-
-      let max_children = if depth <= 1 { 8 } else { 4 };
-      let shown = items.len().min(max_children);
-      let mut lines = render_context_children(&items[..shown], 0, depth + 1, expand_depth - 1);
-      if items.len() > shown {
-        lines.push(indent(depth + 1, &"...".dimmed().to_string()));
-      }
-      lines
-    }
+  if let Some(text) = node.as_leaf_str() {
+    return vec![indent(depth, &format_cirru_leaf(text, starts_expression).dimmed().to_string())];
   }
+  let Cirru::List(items) = node else { unreachable!() };
+  if expand_depth == 0 || items.is_empty() {
+    return vec![indent(depth, &format_cirru_list_preview(items).dimmed().to_string())];
+  }
+  let max_children = if depth <= 1 { 8 } else { 4 };
+  let shown = items.len().min(max_children);
+  let mut lines = render_context_children(&items[..shown], 0, depth + 1, expand_depth - 1);
+  if items.len() > shown {
+    lines.push(indent(depth + 1, &"...".dimmed().to_string()));
+  }
+  lines
 }
 
 fn render_context_children(children: &[Cirru], start_index: usize, depth: usize, expand_depth: usize) -> Vec<String> {
@@ -737,20 +690,22 @@ fn render_context_children(children: &[Cirru], start_index: usize, depth: usize,
     let child_index = start_index + cursor;
     let child = &children[cursor];
 
-    if let Cirru::Leaf(text) = child {
+    if let Some(text) = child.as_leaf_str() {
       if !child_starts_expression(child_index, child) {
         let mut parts = vec![render_cirru_leaf_value(text)];
         cursor += 1;
 
         while cursor < children.len() {
           let sibling_index = start_index + cursor;
-          match &children[cursor] {
-            Cirru::Leaf(sibling) if !child_starts_expression(sibling_index, &children[cursor]) => {
-              parts.push(render_cirru_leaf_value(sibling));
+          let sibling = &children[cursor];
+          if !child_starts_expression(sibling_index, sibling) {
+            if let Some(sib_text) = sibling.as_leaf_str() {
+              parts.push(render_cirru_leaf_value(sib_text));
               cursor += 1;
+              continue;
             }
-            _ => break,
           }
+          break;
         }
 
         lines.push(indent(depth + 1, &format!(", {}", parts.join(" ")).dimmed().to_string()));
@@ -771,7 +726,7 @@ fn render_context_children(children: &[Cirru], start_index: usize, depth: usize,
 }
 
 fn child_starts_expression(index: usize, node: &Cirru) -> bool {
-  index == 0 || matches!(node, Cirru::List(_))
+  index == 0 || node.is_list()
 }
 
 fn nested_child_depth(parent_depth: usize, starts_expression: bool) -> usize {
@@ -784,9 +739,9 @@ fn format_cirru_leaf(text: &str, starts_expression: bool) -> String {
 }
 
 fn format_cirru_block_for_role(node: &Cirru, starts_expression: bool) -> String {
-  match node {
-    Cirru::Leaf(text) => format_cirru_leaf(text, starts_expression),
-    Cirru::List(_) => format_cirru_block(node),
+  match node.as_leaf_str() {
+    Some(text) => format_cirru_leaf(text, starts_expression),
+    None => format_cirru_block(node),
   }
 }
 
@@ -1054,7 +1009,7 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 
 #[cfg(test)]
 mod tests {
-  use super::{DiffStatus, SeqEdit, align_sequence, cirru_similarity, diff_cirru, generate_cirru_leaf, render_cirru_diff, render_text};
+  use super::{DiffStatus, SeqEdit, align_sequence, cirru_similarity, diff_cirru, render_cirru_diff, render_text};
   use cirru_parser::Cirru;
 
   fn leaf(text: &str) -> Cirru {
@@ -1170,8 +1125,8 @@ mod tests {
 
   #[test]
   fn uses_cirru_leaf_quoting_rules() {
-    assert_eq!(generate_cirru_leaf("defn"), "defn");
-    assert_eq!(generate_cirru_leaf("hello world"), "\"hello world\"");
-    assert_eq!(generate_cirru_leaf("line\nbreak"), "\"line\\nbreak\"");
+    assert_eq!(cirru_parser::generate_leaf("defn"), "defn");
+    assert_eq!(cirru_parser::generate_leaf("hello world"), "\"hello world\"");
+    assert_eq!(cirru_parser::generate_leaf("line\nbreak"), "\"line\\nbreak\"");
   }
 }
