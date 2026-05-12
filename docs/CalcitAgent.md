@@ -26,6 +26,8 @@ entry_for:
 - 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
 - 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
 - 调试 JS 变量改名：`cr analyze js-escape '<symbol>'` / `cr analyze js-unescape '<escaped>'`（`js-unescape` 当前为 best-effort）
+- 比较与 Git ref 的代码差异：`cr analyze program-diff <git-ref>`（全量）或加 `--def <ns/def>`（单定义）
+- 比较调用图变化：`cr analyze call-graph-diff <git-ref>`（标注新增/删除/变更的调用关系）
 - 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
 - 看进阶手册全文：`cr docs read agent-advanced.md --full`
 
@@ -500,7 +502,7 @@ cr js
 
 - 运行与编译：`cr`, `cr js`, `cr ir`, `cr-wasm`（实验性）, `-w/--watch`
 - 查询与定位：`cr query defs/def/search/search-expr/usages/schema/examples`
-- 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`
+- 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`, `cr analyze program-diff <git-ref>`, `cr analyze call-graph-diff <git-ref>`
 - 结构化编辑：`cr tree show/replace/target-replace/cp/wrap/unwrap/raise/rewrite`
 - 定义级编辑：`cr edit mv/def/add-import/imports/...`
 - 文档与指南：`cr docs list/read/search/agents`
@@ -512,6 +514,9 @@ cr js
 cr docs list
 cr analyze call-graph
 cr analyze count-calls
+cr analyze program-diff HEAD~1          # 对比当前快照与上一 commit 的结构差异（AST tree-diff）
+cr analyze program-diff HEAD~1 --def app.main/main!  # 只看某个定义的差异
+cr analyze call-graph-diff HEAD~1       # 对比调用图，标注新增/删除/变更的调用关系
 cr docs search 'tree rewrite'
 cr docs read run/edit-tree.md rewrite
 cr docs search 'query search-expr'

@@ -121,7 +121,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, def-diff, program-diff, check-examples, check-types, js-escape)
+/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -136,9 +136,7 @@ pub enum AnalyzeSubcommand {
   CallGraphDiff(CallGraphDiffCommand),
   /// count call occurrences from entry point
   CountCalls(CountCallsCommand),
-  /// compare one definition against a Git ref with structured tree diff
-  DefDiff(DefDiffCommand),
-  /// compare current snapshot against a Git ref with structured tree diff
+  /// compare current snapshot (or one definition) against a Git ref with structured tree diff
   ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
@@ -261,25 +259,16 @@ pub struct CountCallsCommand {
   pub sort: String,
 }
 
-/// compare one definition against a Git ref with structured tree diff
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "def-diff")]
-pub struct DefDiffCommand {
-  /// target definition in format ns/def
-  #[argh(positional)]
-  pub target: String,
-  /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
-  #[argh(positional)]
-  pub git_ref: String,
-}
-
-/// compare current snapshot against a Git ref with structured tree diff
+/// compare current snapshot against a Git ref with structured tree diff; use --def to narrow to one definition
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "program-diff")]
 pub struct ProgramDiffCommand {
   /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
   #[argh(positional)]
   pub git_ref: String,
+  /// narrow diff to a single definition in format ns/def
+  #[argh(option)]
+  pub def: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
