@@ -490,15 +490,20 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
     }
   }
 
-  let calcit_version_upgrade = deps.calcit_version.as_ref().and_then(|version| {
-    let expected = Version::parse(version).ok()?;
-    let current = Version::parse(CALCIT_VERSION).ok()?;
-    if expected < current { Some(version.to_owned()) } else { None }
-  });
+  // Check if calcit-version needs to be added (missing) or upgraded (outdated).
+  // old_calcit_version is None when the field is absent from deps.cirru.
+  let old_calcit_version = deps.calcit_version.as_deref();
+  let calcit_version_needs_update = match old_calcit_version {
+    None => true,
+    Some(version) => match (Version::parse(version).ok(), Version::parse(CALCIT_VERSION).ok()) {
+      (Some(expected), Some(current)) => expected < current,
+      _ => false,
+    },
+  };
 
-  if !outdated_packages.is_empty() || calcit_version_upgrade.is_some() {
+  if !outdated_packages.is_empty() || calcit_version_needs_update {
     if auto_yes {
-      update_deps_file(&outdated_packages, calcit_version_upgrade.as_deref(), deps_file)?;
+      update_deps_file(&outdated_packages, calcit_version_needs_update, deps_file)?;
       println!("deps.cirru updated successfully!");
       return Ok(true);
     }
@@ -508,8 +513,11 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
     if !outdated_packages.is_empty() {
       changes.push(format!("{} outdated package(s)", outdated_packages.len()));
     }
-    if let Some(version) = &calcit_version_upgrade {
-      changes.push(format!("calcit-version {version} -> {CALCIT_VERSION}"));
+    if calcit_version_needs_update {
+      match old_calcit_version {
+        None => changes.push(format!("calcit-version missing, will set to {CALCIT_VERSION}")),
+        Some(v) => changes.push(format!("calcit-version {v} -> {CALCIT_VERSION}")),
+      }
     }
     print!("Found {}. Update deps.cirru? (y/N): ", changes.join(", "));
     std::io::stdout().flush().map_err(|e| e.to_string())?;
@@ -519,7 +527,7 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
     let input = input.trim();
 
     if input.is_empty() || input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
-      update_deps_file(&outdated_packages, calcit_version_upgrade.as_deref(), deps_file)?;
+      update_deps_file(&outdated_packages, calcit_version_needs_update, deps_file)?;
       println!("deps.cirru updated successfully!");
       return Ok(true);
     }
@@ -559,7 +567,7 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
 
 fn update_deps_file(
   outdated_packages: &[(Arc<str>, Arc<str>, String)],
-  calcit_version_upgrade: Option<&str>,
+  update_calcit_version: bool,
   deps_file: &str,
 ) -> Result<(), String> {
   if !Path::new(deps_file).exists() {
@@ -574,8 +582,8 @@ fn update_deps_file(
   })?;
   let mut deps: PackageDeps = parsed.try_into()?;
 
-  if let Some(version) = calcit_version_upgrade {
-    deps.calcit_version = Some(version.to_string());
+  if update_calcit_version {
+    deps.calcit_version = Some(CALCIT_VERSION.to_string());
   }
 
   // Update the dependencies in the parsed structure
