@@ -1619,25 +1619,27 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
       format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "version" => {
-      parse_semver_value(&opts.value)?;
-      snapshot.configs.version = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-    }
-    "bump-version" | "bump_version" => {
-      let previous = snapshot.configs.version.clone();
-      let next = bump_semver_value(&previous, &opts.value)?;
-      snapshot.configs.version = next.clone();
-      format!(
-        "{} Bumped config '{}' from '{}' to '{}'",
-        "✓".green(),
-        "version".cyan(),
-        previous,
-        next
-      )
+      let message = if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
+        let previous = snapshot.configs.version.clone();
+        let next = bump_semver_value(&previous, &opts.value)?;
+        snapshot.configs.version = next.clone();
+        format!(
+          "{} Bumped config '{}' from '{}' to '{}'",
+          "✓".green(),
+          "version".cyan(),
+          previous,
+          next
+        )
+      } else {
+        parse_semver_value(&opts.value)?;
+        snapshot.configs.version = opts.value.clone();
+        format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+      };
+      message
     }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version, bump-version",
+        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
         opts.key
       ));
     }

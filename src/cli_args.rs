@@ -1127,12 +1127,12 @@ pub struct EditRmModuleCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "config")]
-/// update project config values; use `cr edit config bump-version patch|minor|major` to increment semver
+/// update project config values; use `cr edit config version patch|minor|major` to increment semver
 pub struct EditConfigCommand {
-  /// config key: "init-fn", "reload-fn", "version", "bump-version"
+  /// config key: "init-fn", "reload-fn", "version"
   #[argh(positional)]
   pub key: String,
-  /// config value, or bump level for "bump-version": "patch", "minor", "major"
+  /// config value; for "version", accepts a semver string or one of: patch, minor, major
   #[argh(positional)]
   pub value: String,
 }
