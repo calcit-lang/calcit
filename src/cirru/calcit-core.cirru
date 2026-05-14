@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |calcit)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |calcit)
   :configs $ {} (:init-fn |calcit.core/println!) (:reload-fn |calcit.core/println!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -7,18 +7,18 @@
     |calcit.core $ %{} :FileEntry
       :defs $ {}
         |#{} $ %{} :CodeEntry (:doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :set)
               :args $ []
         |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:impl-traits to attach impls)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tuple)
               :args $ [] :dynamic :dynamic
-        |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order") (:schema nil)
+        |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order") (:schema :dynamic)
           :code $ quote
             defmacro %<- (& xs)
               if (&list:empty? xs) (raise "|%<- expects at least 1 expression")
@@ -89,41 +89,41 @@
               assert= nil $ :y p
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-        |& $ %{} :CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |& $ %{} :CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&%{} $ %{} :CodeEntry (:doc "|internal function for native record creation\nSyntax: (&%{} name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates native record with name and fields") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&%{} $ %{} :CodeEntry (:doc "|internal function for native record creation\nSyntax: (&%{} name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates native record with name and fields") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&%{}? $ %{} :CodeEntry (:doc "|internal function for partial record construction\nSyntax: (&%{}? proto & key-value-pairs)\nParams: proto (struct), key-value-pairs (any, variadic)\nReturns: record\nMissing fields default to nil.") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&%{}? $ %{} :CodeEntry (:doc "|internal function for partial record construction\nSyntax: (&%{}? proto & key-value-pairs)\nParams: proto (struct), key-value-pairs (any, variadic)\nReturns: record\nMissing fields default to nil.") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&* $ %{} :CodeEntry (:doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |&+ $ %{} :CodeEntry (:doc "|internal function for addition\nSyntax: (&+ a b)\nParams: a (number), b (number)\nReturns: number\nAdds two numbers together, supports integers and floats")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |&- $ %{} :CodeEntry (:doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |&/ $ %{} :CodeEntry (:doc "|internal function for division\nSyntax: (&/ a b)\nParams: a (number), b (number)\nReturns: number\nDivides first number by second, returns float result")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |&< $ %{} :CodeEntry (:doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -141,13 +141,13 @@
             {} (:return :bool)
               :args $ [] :number :number
         |&= $ %{} :CodeEntry (:doc "|internal function for equality comparison\nSyntax: (&= a b & values)\nParams: a (any), b (any), values (any, variadic)\nReturns: boolean\nReturns true if all values are equal using deep comparison")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :dynamic :dynamic
         |&> $ %{} :CodeEntry (:doc "|internal function for greater than comparison\nSyntax: (&> a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in descending order")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -165,19 +165,69 @@
             {} (:return :bool)
               :args $ [] :number :number
         |&atom:deref $ %{} :CodeEntry (:doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :ref
+        |&buf-list:concat $ %{} :CodeEntry (:doc "|internal function for appending all elements of a list onto a mutable buffer list\\nSyntax: (&buf-list:concat buf xs)\\nParams: buf (buf-list), xs (list)\\nReturns: buf-list\\nMutates buf by appending all elements from xs; returns the same buf")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:concat buf $ [] 1 2 3
+              assert= 3 $ &buf-list:count buf
+          :schema $ :: :fn
+            {} (:return :tag)
+              :args $ [] :tag :list
+        |&buf-list:count $ %{} :CodeEntry (:doc "|internal function for getting the element count of a mutable buffer list\\nSyntax: (&buf-list:count buf)\\nParams: buf (buf-list)\\nReturns: number\\nReturns the number of elements currently in the buffer")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 42
+              assert= 1 $ &buf-list:count buf
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :tag
+        |&buf-list:new $ %{} :CodeEntry (:doc "|internal function for creating a new mutable buffer list\\nSyntax: (&buf-list:new)\\nParams: none\\nReturns: buf-list\\nCreates a new empty mutable append-only buffer list, used for efficient incremental accumulation before converting to an immutable list")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= 0
+              &buf-list:count $ &buf-list:new
+          :schema $ :: :fn
+            {} (:return :tag)
+              :args $ []
+        |&buf-list:push $ %{} :CodeEntry (:doc "|internal function for pushing an item onto a mutable buffer list\\nSyntax: (&buf-list:push buf item)\\nParams: buf (buf-list), item (any)\\nReturns: buf-list\\nMutates buf by appending item to end; returns the same buf")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 10
+              &buf-list:push buf 20
+              assert= 2 $ &buf-list:count buf
+          :schema $ :: :fn
+            {} (:return :tag)
+              :args $ [] :tag :dynamic
+        |&buf-list:to-list $ %{} :CodeEntry (:doc "|internal function for converting a mutable buffer list to an immutable list\\nSyntax: (&buf-list:to-list buf)\\nParams: buf (buf-list)\\nReturns: list\\nFreezes the mutable buffer into a regular immutable list")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 1
+              &buf-list:push buf 2
+              assert= ([] 1 2) (&buf-list:to-list buf)
+          :schema $ :: :fn
+            {} (:return :list)
+              :args $ [] :tag
         |&buffer $ %{} :CodeEntry (:doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :buffer)
               :args $ [] :dynamic
-        |&call-spread $ %{} :CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&call-spread $ %{} :CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&case $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -196,34 +246,34 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic :dynamic)
         |&cirru-nth $ %{} :CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node or nil\nGets nth element from Cirru list node, returns nil if index out of bounds")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :number
         |&cirru-quote:to-list $ %{} :CodeEntry (:doc "|internal function for converting Cirru quote to list\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list\nConverts Cirru quote structure to regular list")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :dynamic
         |&cirru-type $ %{} :CodeEntry (:doc "|internal function for getting Cirru type\nSyntax: (&cirru-type cirru-node)\nParams: cirru-node (cirru quote)\nReturns: keyword (:leaf or :list)\nReturns type of Cirru node, either :leaf for atoms or :list for expressions")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :dynamic
         |&compare $ %{} :CodeEntry (:doc "|internal function for native comparison\nSyntax: (&compare a b)\nParams: a (any), b (any)\nReturns: number (-1, 0, or 1)\nPerforms three-way comparison returning -1 (less), 0 (equal), or 1 (greater)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :dynamic :dynamic
-        |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn") (:schema nil)
+        |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn") (:schema :dynamic)
           :code $ quote
             def &core-fn-impls $ [] &core-fn-methods internal/&core-show-impl
           :examples $ []
-        |&core-fn-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&core-fn-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def &core-fn-methods $ &impl::new :&core-fn-methods
               :: :call $ defn &fn:call (f & args) (f & args)
@@ -233,51 +283,76 @@
               :: :mappend &fn:mappend
               :: :apply &fn:apply
           :examples $ []
-        |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.") (:schema nil)
+        |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.") (:schema :dynamic)
           :code $ quote
             def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl
           :examples $ []
-        |&core-list-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&core-list-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get &list:nth) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth &list:nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first &list:first) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
-        |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map") (:schema nil)
+        |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map") (:schema :dynamic)
           :code $ quote
             def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl internal/&core-mappable-map-impl
           :examples $ []
-        |&core-map-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&core-map-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct &map:destruct) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get &map:get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct &map:destruct) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get &map:get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
-        |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number") (:schema nil)
+        |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number") (:schema :dynamic)
           :code $ quote
             def &core-number-impls $ [] &core-number-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-number-impl internal/&core-multiply-number-impl
           :examples $ []
-        |&core-number-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&core-number-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem)
           :examples $ []
-        |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set") (:schema nil)
+        |&core-record-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for record") (:schema :dynamic)
+          :code $ quote
+            def &core-record-impls $ [] &core-record-methods internal/&core-show-impl internal/&core-eq-impl
+          :examples $ []
+        |&core-record-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            def &core-record-methods $ &impl::new :&core-record-methods (:: :count &record:count) (:: :contains? &record:contains?) (:: :get &record:get) (:: :nth &record:nth) (:: :assoc &record:assoc) (:: :to-map &record:to-map)
+              :: :empty? $ defn &record:empty?-impl (x)
+                &= 0 $ &record:count x
+          :examples $ []
+        |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set") (:schema :dynamic)
           :code $ quote
             def &core-set-impls $ [] &core-set-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-set-impl
           :examples $ []
-        |&core-set-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&core-set-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def &core-set-methods $ &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct &set:destruct) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
-        |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string") (:schema nil)
+        |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string") (:schema :dynamic)
           :code $ quote
             def &core-string-impls $ [] &core-string-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-string-impl internal/&core-len-string-impl
           :examples $ []
-        |&core-string-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&core-string-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat)
           :examples $ []
-        |&data-to-code $ %{} :CodeEntry (:doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&core-tuple-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for tuple") (:schema :dynamic)
+          :code $ quote
+            def &core-tuple-impls $ [] &core-tuple-methods internal/&core-show-impl internal/&core-eq-impl
+          :examples $ []
+        |&core-tuple-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            def &core-tuple-methods $ &impl::new :&core-tuple-methods (:: :count &tuple:count) (:: :nth &tuple:nth) (:: :get &tuple:nth) (:: :assoc &tuple:assoc)
+              :: :first $ defn &tuple:first-impl (x) (&tuple:nth x 0)
+              :: :empty? $ defn &tuple:empty?-impl (x)
+                &= 0 $ &tuple:count x
+              :: :contains? $ defn &tuple:contains?-impl (x k)
+                if (&>= k 0)
+                  &< k $ &tuple:count x
+                  , false
+          :examples $ []
+        |&data-to-code $ %{} :CodeEntry (:doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&difference $ %{} :CodeEntry (:doc "|internal function for set difference\nSyntax: (&difference set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements in set1 but not in set2")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -285,7 +360,7 @@
               :generics $ [] 'T
               :return $ :: :set 'T
         |&display-stack $ %{} :CodeEntry (:doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: string representation of call stack\nReturns formatted string showing current call stack for debugging")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
@@ -311,23 +386,23 @@
               assert= ([] 1 2) (deref *seen)
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-        |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ &enum::new :Result ([] :ok :number) ([] :err :string)
-        |&enum:impl-traits $ %{} :CodeEntry (:doc "|internal function for enum trait impl attachment\nSyntax: (&enum:impl-traits enum impls)\nParams: enum (enum), impls (record)\nReturns: enum value with trait implementations\nAttaches impls info to an enum prototype") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&enum:impl-traits $ %{} :CodeEntry (:doc "|internal function for enum trait impl attachment\nSyntax: (&enum:impl-traits enum impls)\nParams: enum (enum), impls (record)\nReturns: enum value with trait implementations\nAttaches impls info to an enum prototype") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&exclude $ %{} :CodeEntry (:doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
               :args $ [] (:: :set 'T) 'T
               :generics $ [] 'T
               :return $ :: :set 'T
-        |&extract-code-into-edn $ %{} :CodeEntry (:doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&extract-code-into-edn $ %{} :CodeEntry (:doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&fn:apply $ %{} :CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote
@@ -392,35 +467,35 @@
                 :: :fn $ {} (:return 'B)
                   :args $ [] 'A
               :generics $ [] 'A 'B
-        |&format-ternary-tree $ %{} :CodeEntry (:doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&format-ternary-tree $ %{} :CodeEntry (:doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&get-calcit-backend $ %{} :CodeEntry (:doc "|internal function for getting Calcit backend\nSyntax: (&get-calcit-backend)\nParams: none\nReturns: keyword indicating backend\nReturns current backend like :cr (Calcit Runner) or :js (JavaScript)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ []
         |&get-calcit-running-mode $ %{} :CodeEntry (:doc "|internal function for getting Calcit running mode\nSyntax: (&get-calcit-running-mode)\nParams: none\nReturns: keyword indicating mode\nReturns current running mode like :dev, :release, or :test")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ []
         |&get-os $ %{} :CodeEntry (:doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ []
         |&hash $ %{} :CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :dynamic
-        |&impl::new $ %{} :CodeEntry (:doc "|internal function for creating trait impl records\nSyntax: (&impl::new trait-or-name (method value) ...)\nParams: trait-or-name (trait/tag/symbol/string), method entries (pairs)\nReturns: impl\nAccepts method key as .method, :tag, symbol, or string") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&impl::new $ %{} :CodeEntry (:doc "|internal function for creating trait impl records\nSyntax: (&impl::new trait-or-name (method value) ...)\nParams: trait-or-name (trait/tag/symbol/string), method entries (pairs)\nReturns: impl\nAccepts method key as .method, :tag, symbol, or string") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ do
               deftrait DemoTrait $ .show :fn
@@ -429,7 +504,7 @@
             quote $ &impl::new :DemoImpl
               [] :show $ fn (x) x
         |&impl:get $ %{} :CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol/.method)\nReturns: any\nReturns impl entry value by method name")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ do
               deftrait DemoTrait $ .show :fn
@@ -440,29 +515,29 @@
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic
         |&impl:nth $ %{} :CodeEntry (:doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :number
         |&include $ %{} :CodeEntry (:doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
               :args $ [] (:: :set 'T) 'T
               :generics $ [] 'T
               :return $ :: :set 'T
-        |&init-builtin-impls! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |&init-builtin-impls! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-tuple-impls) (identity &core-record-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
-                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls
+                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :tuple &core-tuple-impls :record &core-record-impls
                 , nil
           :examples $ []
-        |&let $ %{} :CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&let $ %{} :CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= 6
               &let
@@ -473,7 +548,7 @@
         |&list-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &list-match-internal (v branch1 pair branch2)
-              quasiquote $ if (empty? ~v)
+              quasiquote $ if (&list:empty? ~v)
                 &let () ~@branch1
                 &let
                     ~ $ first pair
@@ -485,6 +560,9 @@
           :examples $ []
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic :dynamic :dynamic)
+        |&list:append $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
           :code $ quote
             defn &list:apply (xs fs)
@@ -498,49 +576,52 @@
               :generics $ [] 'T 'U
               :return $ :: :list 'U
         |&list:assoc $ %{} :CodeEntry (:doc "|internal function for list association\nSyntax: (&list:assoc list index element)\nParams: list (list), index (number), element (any)\nReturns: list\nReturns new list with element at specified index")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list :number :tag
         |&list:assoc-after $ %{} :CodeEntry (:doc "|internal function for associating after element\nSyntax: (&list:assoc-after list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element after first occurrence of target")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list :number :tag
         |&list:assoc-before $ %{} :CodeEntry (:doc "|internal function for associating before element\nSyntax: (&list:assoc-before list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element before first occurrence of target")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list :number :tag
+        |&list:butlast $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&list:concat $ %{} :CodeEntry (:doc "|internal function for concatenating lists\nSyntax: (&list:concat list1 list2)\nParams: list1 (list), list2 (list)\nReturns: list\nReturns new list with elements from both lists")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list :list
         |&list:contains? $ %{} :CodeEntry (:doc "|internal function for checking if list contains element\nSyntax: (&list:contains? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list contains element")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :list :number
         |&list:count $ %{} :CodeEntry (:doc "|internal function for counting list elements\nSyntax: (&list:count list)\nParams: list (list)\nReturns: number\nReturns number of elements in list")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :list
         |&list:dissoc $ %{} :CodeEntry (:doc "|internal function for list dissociation\nSyntax: (&list:dissoc list index)\nParams: list (list), index (number)\nReturns: list\nReturns new list without element at specified index")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list :number
         |&list:distinct $ %{} :CodeEntry (:doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -557,7 +638,7 @@
               :generics $ [] 'T
               :return $ :: :list 'T
         |&list:empty? $ %{} :CodeEntry (:doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -619,7 +700,7 @@
               :generics $ [] 'T
               :return $ :: :optional :number
         |&list:first $ %{} :CodeEntry (:doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -636,13 +717,22 @@
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list
+        |&list:foldl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
+        |&list:foldl-shortcut $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&list:includes? $ %{} :CodeEntry (:doc "|internal function for checking if list includes element\nSyntax: (&list:includes? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list includes element (alias for contains?)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] (:: :list 'T) 'T
               :generics $ [] 'T
+        |&list:last $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&list:last-index-of $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:last-index-of (xs item)
@@ -698,33 +788,55 @@
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:max (xs)
-              list-match xs
-                () nil
-                (x0 xss)
-                  reduce xss x0 $ defn %max (acc x) (&max acc x)
+              if (&list:empty? xs) nil $ &list:max-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :list
+        |&list:max-loop $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn &list:max-loop (xs acc)
+              if (&list:empty? xs) acc $ &let
+                x $ &list:first xs
+                recur (&list:rest xs)
+                  if (&> x acc) x acc
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :list :number
         |&list:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:min (xs)
-              list-match xs
-                () nil
-                (x0 xss)
-                  reduce xss x0 $ defn %min (acc x) (&min acc x)
+              if (&list:empty? xs) nil $ &list:min-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :list
+        |&list:min-loop $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn &list:min-loop (xs acc)
+              if (&list:empty? xs) acc $ &let
+                x $ &list:first xs
+                recur (&list:rest xs)
+                  if (&< x acc) x acc
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ [] :list :number
         |&list:nth $ %{} :CodeEntry (:doc "|internal function for getting nth list element\nSyntax: (&list:nth list index)\nParams: list (list), index (number)\nReturns: any or nil\nReturns element at index, nil if index out of bounds")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :list :number
+        |&list:prepend $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
+        |&list:range $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&list:rest $ %{} :CodeEntry (:doc "|internal function for getting rest of list\nSyntax: (&list:rest list)\nParams: list (list)\nReturns: list\nReturns list without first element")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -732,7 +844,7 @@
               :generics $ [] 'T
               :return $ :: :list 'T
         |&list:reverse $ %{} :CodeEntry (:doc "|internal function for reversing lists\nSyntax: (&list:reverse list)\nParams: list (list)\nReturns: list\nReturns new list with elements in reverse order")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -740,13 +852,16 @@
               :generics $ [] 'T
               :return $ :: :list 'T
         |&list:slice $ %{} :CodeEntry (:doc "|internal function for slicing lists\nSyntax: (&list:slice list start end)\nParams: list (list), start (number), end (number)\nReturns: list\nReturns sublist from start to end index")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
               :args $ [] (:: :list 'T) :number :number
               :generics $ [] 'T
               :return $ :: :list 'T
+        |&list:sort $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&list:sort-by $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:sort-by (xs f)
@@ -762,7 +877,7 @@
               :generics $ [] 'T
               :return $ :: :list 'T
         |&list:to-set $ %{} :CodeEntry (:doc "|internal function for converting list to set\nSyntax: (&list:to-set list)\nParams: list (list)\nReturns: set\nConverts list to set, removing duplicates")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :set)
@@ -778,7 +893,7 @@
             {} (:return :map)
               :args $ [] :map :list
         |&map:assoc $ %{} :CodeEntry (:doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -786,44 +901,60 @@
               :generics $ [] 'K 'V
               :return $ :: :map 'K 'V
         |&map:common-keys $ %{} :CodeEntry (:doc "|internal function for map common keys\nSyntax: (&map:common-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys common to both maps")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :map :map
         |&map:contains? $ %{} :CodeEntry (:doc "|internal function for checking if map contains key\nSyntax: (&map:contains? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map contains key")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] (:: :map 'K 'V) 'K
               :generics $ [] 'K 'V
         |&map:count $ %{} :CodeEntry (:doc "|internal function for counting map entries\nSyntax: (&map:count map)\nParams: map (map)\nReturns: number\nReturns number of key-value pairs in map")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :map
         |&map:destruct $ %{} :CodeEntry (:doc "|internal function for map destructuring\nSyntax: (&map:destruct map pattern)\nParams: map (map), pattern (any)\nReturns: map\nDestructs map according to pattern")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :map
         |&map:diff-keys $ %{} :CodeEntry (:doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :map :map
         |&map:diff-new $ %{} :CodeEntry (:doc "|internal function for map diff new\nSyntax: (&map:diff-new map1 map2)\nParams: map1 (map), map2 (map)\nReturns: map\nReturns new entries in map2 not in map1")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :map)
               :args $ [] :map :map
+        |&map:diff-triple $ %{} :CodeEntry (:doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: list\nReturns a list of three elements:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+              [] (nth triple 0) (nth triple 1)
+                count $ nth triple 2
+            quote $ let
+                triple $ &map:diff-triple (&{} :x 10 :y 20) (&{} :x 10 :y 99 :z 30)
+                drop-keys $ nth triple 0
+                new-diff $ nth triple 1
+                common-triples $ nth triple 2
+              list drop-keys new-diff common-triples
+          :schema $ :: :fn
+            {} (:return :list)
+              :args $ [] :map :map
         |&map:dissoc $ %{} :CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -838,7 +969,7 @@
             {} (:return :bool)
               :args $ [] :map
         |&map:empty? $ %{} :CodeEntry (:doc "|internal function for checking if map is empty\nSyntax: (&map:empty? map)\nParams: map (map)\nReturns: boolean\nReturns true if map has no entries")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -883,7 +1014,7 @@
               :generics $ [] 'K 'V
               :return $ :: :map 'K 'V
         |&map:get $ %{} :CodeEntry (:doc "|internal function for getting map value\nSyntax: (&map:get map key) or (&map:get map key default)\nParams: map (map), key (any), default (any, optional)\nReturns: any\nGets value for key, returns default if key not found")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -891,12 +1022,15 @@
               :generics $ [] 'K 'V
               :return $ :: :optional 'V
         |&map:includes? $ %{} :CodeEntry (:doc "|internal function for checking if map includes key\nSyntax: (&map:includes? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map includes key (alias for contains?)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] (:: :map 'K 'V) 'K
               :generics $ [] 'K 'V
+        |&map:keys $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&map:map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &map:map (xs f)
@@ -938,11 +1072,14 @@
               :generics $ [] 'K 'V 'P 'U
               :return $ :: :list 'U
         |&map:to-list $ %{} :CodeEntry (:doc "|internal function for converting map to list\nSyntax: (&map:to-list map)\nParams: map (map)\nReturns: list\nConverts map to list of [key value] pairs")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :map
+        |&map:vals $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote (&runtime-implementation)
+          :examples $ []
         |&max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &max (a b)
@@ -953,13 +1090,13 @@
             {} (:return :number)
               :args $ [] :number :number
         |&merge $ %{} :CodeEntry (:doc "|internal function for merging maps\nSyntax: (&merge map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges multiple maps, later values override earlier ones")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :map)
               :args $ [] :map :map
         |&merge-non-nil $ %{} :CodeEntry (:doc "|internal function for merging non-nil values\nSyntax: (&merge-non-nil map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges maps, skipping nil values")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :map)
@@ -974,7 +1111,7 @@
             {} (:return :number)
               :args $ [] :number :number
         |&number:display-by $ %{} :CodeEntry (:doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (number), base (integer)\nReturns: string\nDisplays number in specified base (2-36)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
@@ -987,16 +1124,16 @@
             {} (:return :number)
               :args $ [] :number
         |&number:format $ %{} :CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n)\nParams: n (number)\nReturns: string\nFormats number as string representation")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :number
-        |&number:fract $ %{} :CodeEntry (:doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&number:fract $ %{} :CodeEntry (:doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&number:rem $ %{} :CodeEntry (:doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (number), b (number)\nReturns: number\nReturns remainder of a divided by b") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&number:rem $ %{} :CodeEntry (:doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (number), b (number)\nReturns: number\nReturns remainder of a divided by b") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&record-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1029,72 +1166,72 @@
           :examples $ []
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-        |&record:assoc $ %{} :CodeEntry (:doc "|internal function for record field association\nSyntax: (&record:assoc record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with field associations") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:assoc $ %{} :CodeEntry (:doc "|internal function for record field association\nSyntax: (&record:assoc record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with field associations") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&record:contains? $ %{} :CodeEntry (:doc "|internal function for checking if record contains field\nSyntax: (&record:contains? record key)\nParams: record (record), key (any)\nReturns: boolean\nReturns true if record contains field") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:contains? $ %{} :CodeEntry (:doc "|internal function for checking if record contains field\nSyntax: (&record:contains? record key)\nParams: record (record), key (any)\nReturns: boolean\nReturns true if record contains field") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&record:count $ %{} :CodeEntry (:doc "|internal function for counting record fields\nSyntax: (&record:count record)\nParams: record (record)\nReturns: number\nReturns number of fields in record")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :tag
-        |&record:extend-as $ %{} :CodeEntry (:doc "|internal function for extending record as new type\nSyntax: (&record:extend-as record new-name)\nParams: record (record), new-name (keyword)\nReturns: record\nExtends record as new type with different name") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:extend-as $ %{} :CodeEntry (:doc "|internal function for extending record as new type\nSyntax: (&record:extend-as record new-name)\nParams: record (record), new-name (keyword)\nReturns: record\nExtends record as new type with different name") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&record:from-map $ %{} :CodeEntry (:doc "|internal function for creating record from map\nSyntax: (&record:from-map name map)\nParams: name (keyword), map (map)\nReturns: record\nCreates record from map with specified name") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:from-map $ %{} :CodeEntry (:doc "|internal function for creating record from map\nSyntax: (&record:from-map name map)\nParams: name (keyword), map (map)\nReturns: record\nCreates record from map with specified name") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&record:get $ %{} :CodeEntry (:doc "|internal function for getting record field\nSyntax: (&record:get record key) or (&record:get record key default)\nParams: record (record), key (any), default (any, optional)\nReturns: any\nGets field value, returns default if field not found")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :tag :tag
         |&record:get-name $ %{} :CodeEntry (:doc "|internal function for getting record name\nSyntax: (&record:get-name record)\nParams: record (record)\nReturns: keyword\nReturns name of record")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :tag
-        |&record:impl-traits $ %{} :CodeEntry (:doc "|internal function for record trait impl attachment\nSyntax: (&record:impl-traits record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:impl-traits $ %{} :CodeEntry (:doc "|internal function for record trait impl attachment\nSyntax: (&record:impl-traits record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&record:struct $ %{} :CodeEntry (:doc "|internal function for getting record source struct\nSyntax: (&record:struct record)\nParams: record (record)\nReturns: struct or nil\nReturns source struct definition of record, or nil when unavailable") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:struct $ %{} :CodeEntry (:doc "|internal function for getting record source struct\nSyntax: (&record:struct record)\nParams: record (record)\nReturns: struct or nil\nReturns source struct definition of record, or nil when unavailable") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ let
                 User $ defstruct User (:name :string)
                 u $ %{} User (:name |Alice)
               assert= User $ &record:struct u
         |&record:to-map $ %{} :CodeEntry (:doc "|internal function for converting record to map\nSyntax: (&record:to-map record)\nParams: record (record)\nReturns: map\nConverts record to map")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :map)
               :args $ [] :tag
-        |&record:with $ %{} :CodeEntry (:doc "|internal function for record with operation\nSyntax: (&record:with record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with updated fields") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&record:with $ %{} :CodeEntry (:doc "|internal function for record with operation\nSyntax: (&record:with record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with updated fields") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&reset-gensym-index! $ %{} :CodeEntry (:doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&reset-gensym-index! $ %{} :CodeEntry (:doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&set:count $ %{} :CodeEntry (:doc "|internal function for counting set elements\nSyntax: (&set:count set)\nParams: set (set)\nReturns: number\nReturns number of elements in set")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :set
         |&set:destruct $ %{} :CodeEntry (:doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
@@ -1107,7 +1244,7 @@
             {} (:return :set)
               :args $ [] :set
         |&set:empty? $ %{} :CodeEntry (:doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -1130,14 +1267,14 @@
               :generics $ [] 'T
               :return $ :: :set 'T
         |&set:includes? $ %{} :CodeEntry (:doc "|internal function for checking if set includes element\nSyntax: (&set:includes? set element)\nParams: set (set), element (any)\nReturns: boolean\nReturns true if set includes element")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] (:: :set 'T) 'T
               :generics $ [] 'T
         |&set:intersection $ %{} :CodeEntry (:doc "|internal function for set intersection\nSyntax: (&set:intersection set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements common to both sets")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -1147,10 +1284,7 @@
         |&set:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &set:max (xs)
-              &let
-                pair $ &set:destruct xs
-                if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
-                  defn %max (acc x) (&max acc x)
+              &list:max $ &set:to-list xs
           :examples $ []
           :schema $ :: :fn
             {}
@@ -1160,10 +1294,7 @@
         |&set:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &set:min (xs)
-              &let
-                pair $ &set:destruct xs
-                if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
-                  defn %min (acc x) (&min acc x)
+              &list:min $ &set:to-list xs
           :examples $ []
           :schema $ :: :fn
             {}
@@ -1171,15 +1302,15 @@
               :generics $ [] 'T
               :return $ :: :optional 'T
         |&set:to-list $ %{} :CodeEntry (:doc "|internal function for converting set to list\nSyntax: (&set:to-list set)\nParams: set (set)\nReturns: list\nConverts set to list of elements")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
               :args $ [] (:: :set 'T)
               :generics $ [] 'T
               :return $ :: :list 'T
-        |&str $ %{} :CodeEntry (:doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&str $ %{} :CodeEntry (:doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&str-spaced $ %{} :CodeEntry (:doc "|Internal function for joining strings with spaces, used by str-spaced")
           :code $ quote
@@ -1197,25 +1328,25 @@
             {} (:rest :dynamic) (:return :string)
               :args $ [] :bool :dynamic
         |&str:compare $ %{} :CodeEntry (:doc "|internal function for string comparison\nSyntax: (&str:compare a b)\nParams: a (string), b (string)\nReturns: number\nCompares strings lexicographically, returns -1, 0, or 1")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :string :string
         |&str:concat $ %{} :CodeEntry (:doc "|internal function for string concatenation\nSyntax: (&str:concat a b)\nParams: a (string), b (string)\nReturns: string\nConcatenates two strings together")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :string
         |&str:contains? $ %{} :CodeEntry (:doc "|internal function for checking if string contains substring\nSyntax: (&str:contains? s substring)\nParams: s (string), substring (string)\nReturns: boolean\nReturns true if string contains substring")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :string :string
         |&str:count $ %{} :CodeEntry (:doc "|internal function for string character count\nSyntax: (&str:count s)\nParams: s (string)\nReturns: number\nReturns number of characters in string")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
@@ -1228,138 +1359,138 @@
             {} (:return :string)
               :args $ [] :string
         |&str:empty? $ %{} :CodeEntry (:doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :string
         |&str:escape $ %{} :CodeEntry (:doc "|internal function for string escaping\nSyntax: (&str:escape s)\nParams: s (string)\nReturns: string\nEscapes special characters in string for safe output")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
         |&str:find-index $ %{} :CodeEntry (:doc "|internal function for finding string index\nSyntax: (&str:find-index s pattern)\nParams: s (string), pattern (string)\nReturns: number or nil\nFinds first index of pattern in string, returns nil if not found")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :string :dynamic
         |&str:first $ %{} :CodeEntry (:doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
         |&str:includes? $ %{} :CodeEntry (:doc "|internal function for checking if string includes substring\nSyntax: (&str:includes? s substring)\nParams: s (string), substring (string)\nReturns: boolean\nReturns true if string includes substring (alias for contains?)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :string :string
         |&str:nth $ %{} :CodeEntry (:doc "|internal function for getting nth character\nSyntax: (&str:nth s index)\nParams: s (string), index (number)\nReturns: string or nil\nReturns character at index, nil if index out of bounds")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :number
         |&str:pad-left $ %{} :CodeEntry (:doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to specified length with pad character")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :number :string
         |&str:pad-right $ %{} :CodeEntry (:doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :number :string
         |&str:replace $ %{} :CodeEntry (:doc "|internal function for string replacement\nSyntax: (&str:replace s pattern replacement)\nParams: s (string), pattern (string), replacement (string)\nReturns: string\nReplaces all occurrences of pattern with replacement")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :string :string
         |&str:rest $ %{} :CodeEntry (:doc "|internal function for getting rest of string\nSyntax: (&str:rest s)\nParams: s (string)\nReturns: string\nReturns string without first character")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
         |&str:slice $ %{} :CodeEntry (:doc "|internal function for string slicing\nSyntax: (&str:slice s start end)\nParams: s (string), start (number), end (number)\nReturns: string\nExtracts substring from start to end index")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :number :number
-        |&struct::new $ %{} :CodeEntry (:doc "|internal function for creating struct definitions\nSyntax: (&struct::new name (field type) ...)\nParams: name (tag), field pairs (list)\nReturns: struct definition value\nCreates a struct definition with fields and type annotations") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&struct::new $ %{} :CodeEntry (:doc "|internal function for creating struct definitions\nSyntax: (&struct::new name (field type) ...)\nParams: name (tag), field pairs (list)\nReturns: struct definition value\nCreates a struct definition with fields and type annotations") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ &struct::new :Person ([] :name :string) ([] :age :number)
-        |&struct:impl-traits $ %{} :CodeEntry (:doc "|internal function for struct trait impl attachment\nSyntax: (&struct:impl-traits struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&struct:impl-traits $ %{} :CodeEntry (:doc "|internal function for struct trait impl attachment\nSyntax: (&struct:impl-traits struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&tuple:assoc $ %{} :CodeEntry (:doc "|internal function for tuple assoc operation\nSyntax: (&tuple:assoc tuple index value)\nParams: tuple (tuple), index (number), value (any)\nReturns: new tuple with updated value\nReturns new tuple with value at index updated")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tuple)
               :args $ [] :tuple :number :tag
         |&tuple:count $ %{} :CodeEntry (:doc "|internal function for tuple count operation\nSyntax: (&tuple:count tuple)\nParams: tuple (tuple)\nReturns: number of elements\nReturns the number of elements in the tuple")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :tuple
         |&tuple:enum $ %{} :CodeEntry (:doc "|Get the enum prototype from a tuple\nSyntax: (&tuple:enum tuple)\nParams: tuple (tuple)\nReturns: enum value or nil if not an enum tuple")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :tuple
-        |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (enum), tag (tag)\nReturns: bool - true if variant exists") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (enum), tag (tag)\nReturns: bool - true if variant exists") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (enum), tag (tag)\nReturns: number - number of payload fields for the variant") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (enum), tag (tag)\nReturns: number - number of payload fields for the variant") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&tuple:impl-traits $ %{} :CodeEntry (:doc "|internal function for tuple trait impl attachment\nSyntax: (&tuple:impl-traits tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&tuple:impl-traits $ %{} :CodeEntry (:doc "|internal function for tuple trait impl attachment\nSyntax: (&tuple:impl-traits tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |&tuple:impls $ %{} :CodeEntry (:doc "|internal function for getting tuple impls\nSyntax: (&tuple:impls tuple)\nParams: tuple (tuple)\nReturns: impls of the tuple\nReturns the impls/type identifier of the tuple") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&tuple:impls $ %{} :CodeEntry (:doc "|internal function for getting tuple impls\nSyntax: (&tuple:impls tuple)\nParams: tuple (tuple)\nReturns: impls of the tuple\nReturns the impls/type identifier of the tuple") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&tuple:nth $ %{} :CodeEntry (:doc "|internal function for tuple nth operation\nSyntax: (&tuple:nth tuple index)\nParams: tuple (tuple), index (number)\nReturns: value at index or nil\nGets the value at specified index in tuple, returns nil if out of bounds")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :tuple :number
         |&tuple:params $ %{} :CodeEntry (:doc "|internal function for getting tuple params\nSyntax: (&tuple:params tuple)\nParams: tuple (tuple)\nReturns: list of parameter values\nReturns the parameter values of the tuple as a list")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :tuple
-        |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |&union $ %{} :CodeEntry (:doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
               :args $ [] (:: :set 'T) (:: :set 'T)
               :generics $ [] 'T
               :return $ :: :set 'T
-        |&{} $ %{} :CodeEntry (:doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |&{} $ %{} :CodeEntry (:doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |' $ %{} :CodeEntry (:doc "|alias for []") (:schema nil)
+        |' $ %{} :CodeEntry (:doc "|alias for []") (:schema :dynamic)
           :code $ quote (def ' [])
           :examples $ []
         |* $ %{} :CodeEntry (:doc "|Multiply numbers together")
@@ -1487,8 +1618,8 @@
             quote $ assert= (:: :name |calcit) (: |name |calcit)
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-        |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: impls & values)\nParams: impls (any), values (any, variable number)\nReturns: tuple with impls and values\nCreates a tuple with specified impls and values") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: impls & values)\nParams: impls (any), values (any, variable number)\nReturns: tuple with impls and values\nCreates a tuple with specified impls and values") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |;nil $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1507,7 +1638,7 @@
           :schema $ :: :fn
             {} (:rest :number) (:return :bool)
               :args $ [] :number
-        |<- $ %{} :CodeEntry (:doc |) (:schema nil)
+        |<- $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defmacro <- (& xs)
               if (&list:empty? xs) (raise "|<- expects at least 1 expression")
@@ -1572,93 +1703,93 @@
           :schema $ :: :fn
             {} (:rest :number) (:return :bool)
               :args $ [] :number
-        |? $ %{} :CodeEntry (:doc "|internal syntax for optional argument in function definition\nSyntax: (? optional-arg) in parameter list\nParams: optional-arg (symbol)\nReturns: parameter marker\nMarks optional parameters in function definitions") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |? $ %{} :CodeEntry (:doc "|internal syntax for optional argument in function definition\nSyntax: (? optional-arg) in parameter list\nParams: optional-arg (symbol)\nReturns: parameter marker\nMarks optional parameters in function definitions") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |Add $ %{} :CodeEntry (:doc "|Core trait: Add") (:schema nil)
+        |Add $ %{} :CodeEntry (:doc "|Core trait: Add") (:schema :dynamic)
           :code $ quote
             deftrait Add $ .add
               :: :fn $ {} (:return 'T)
                 :generics $ [] 'T
                 :args $ [] 'T 'T
           :examples $ []
-        |Contains $ %{} :CodeEntry (:doc "|Core trait: Contains") (:schema nil)
+        |Contains $ %{} :CodeEntry (:doc "|Core trait: Contains") (:schema :dynamic)
           :code $ quote
             deftrait Contains $ .contains?
               :: :fn $ {} (:return :bool)
                 :generics $ [] 'T
                 :args $ [] 'T :dynamic
           :examples $ []
-        |Countable $ %{} :CodeEntry (:doc "|Core trait: Countable") (:schema nil)
+        |Countable $ %{} :CodeEntry (:doc "|Core trait: Countable") (:schema :dynamic)
           :code $ quote
             deftrait Countable $ .count
               :: :fn $ {} (:return :number)
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-        |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize") (:schema nil)
+        |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize") (:schema :dynamic)
           :code $ quote
             deftrait Deserialize $ .deserialize
               :: :fn $ {} (:return 'T)
                 :generics $ [] 'T
                 :args $ [] :string
           :examples $ []
-        |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq") (:schema nil)
+        |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq") (:schema :dynamic)
           :code $ quote
             deftrait Eq $ .eq?
               :: :fn $ {} (:return :bool)
                 :generics $ [] 'T
                 :args $ [] 'T 'T
           :examples $ []
-        |Len $ %{} :CodeEntry (:doc "|Core trait: Len") (:schema nil)
+        |Len $ %{} :CodeEntry (:doc "|Core trait: Len") (:schema :dynamic)
           :code $ quote
             deftrait Len $ .len
               :: :fn $ {} (:return :number)
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-        |Mappable $ %{} :CodeEntry (:doc "|Core trait: Mappable") (:schema nil)
+        |Mappable $ %{} :CodeEntry (:doc "|Core trait: Mappable") (:schema :dynamic)
           :code $ quote
             deftrait Mappable $ .map
               :: :fn $ {} (:return 'T)
                 :generics $ [] 'T
                 :args $ [] 'T :fn
           :examples $ []
-        |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply") (:schema nil)
+        |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply") (:schema :dynamic)
           :code $ quote
             deftrait Multiply $ .multiply
               :: :fn $ {} (:return 'T)
                 :generics $ [] 'T
                 :args $ [] 'T 'T
           :examples $ []
-        |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum") (:schema nil)
+        |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum") (:schema :dynamic)
           :code $ quote
             def Option $ impl-traits
               defenum Option (:some :dynamic) (:none)
               , internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
           :examples $ []
-        |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option") (:schema nil)
+        |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option") (:schema :dynamic)
           :code $ quote
             defimpl OptionMappableImpl Mappable $ .map option:map
           :examples $ []
-        |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum") (:schema nil)
+        |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum") (:schema :dynamic)
           :code $ quote
             def Result $ impl-traits
               defenum Result (:ok :dynamic) (:err :dynamic)
               , internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
           :examples $ []
-        |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result") (:schema nil)
+        |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result") (:schema :dynamic)
           :code $ quote
             defimpl ResultMappableImpl Mappable $ .map result:map
           :examples $ []
-        |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize") (:schema nil)
+        |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize") (:schema :dynamic)
           :code $ quote
             deftrait Serialize $ .serialize
               :: :fn $ {} (:return :string)
                 :generics $ [] 'T
                 :args $ [] 'T
           :examples $ []
-        |Show $ %{} :CodeEntry (:doc "|Core trait: Show") (:schema nil)
+        |Show $ %{} :CodeEntry (:doc "|Core trait: Show") (:schema :dynamic)
           :code $ quote
             deftrait Show $ .show
               :: :fn $ {} (:return :string)
@@ -1675,8 +1806,8 @@
           :examples $ []
           :schema $ :: :macro
             {} $ :args ([])
-        |[] $ %{} :CodeEntry (:doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |[] $ %{} :CodeEntry (:doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |[][] $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1737,12 +1868,12 @@
             {} (:return :number)
               :args $ [] :number
         |add-watch $ %{} :CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: atom\nAdds watcher function to atom")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)
               :args $ [] :ref :dynamic :fn
-        |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.") (:schema nil)
+        |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.") (:schema :dynamic)
           :code $ quote
             defmacro and (& xs)
               if (&list:empty? xs) (raise "|and expects at least 1 expression")
@@ -1786,7 +1917,7 @@
             {} (:return :bool)
               :args $ [] :dynamic :fn
         |append $ %{} :CodeEntry (:doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
@@ -1864,8 +1995,8 @@
             quote $ assert-detect even? (* 2 5)
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-        |assert-type $ %{} :CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |assert-type $ %{} :CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |assert= $ %{} :CodeEntry (:doc "|asserts that two values are equal, raises error showing both values if not")
           :code $ quote
@@ -1890,13 +2021,10 @@
             {} $ :args ([] :dynamic :dynamic)
         |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
-            defn assoc (x & args)
+            defn assoc (x k v)
               if (nil? x)
-                raise $ str-spaced "|assoc does not work on nil for:" args
-                if (tuple? x) (&tuple:assoc x & args)
-                  if (list? x) (&list:assoc x & args)
-                    if (record? x) (&record:assoc x & args)
-                      if (map? x) (&map:assoc x & args) (.assoc x & args)
+                raise $ str-spaced "|assoc does not work on nil for:" k v
+                if (list? x) (&list:assoc x k v) (.assoc x k v)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -1905,8 +2033,8 @@
             quote $ assert= (&{} :a 1 :b 3)
               assoc (&{} :a 1 :b 2) :b 3
           :schema $ :: :fn
-            {} (:rest :dynamic) (:return :dynamic)
-              :args $ [] :dynamic
+            {} (:return :dynamic)
+              :args $ [] :dynamic :dynamic :dynamic
         |assoc-in $ %{} :CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
@@ -1935,57 +2063,55 @@
             {} (:return :dynamic)
               :args $ [] :dynamic :list :dynamic
         |atom $ %{} :CodeEntry (:doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :ref)
               :args $ [] :dynamic
         |bit-and $ %{} :CodeEntry (:doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |bit-not $ %{} :CodeEntry (:doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
         |bit-or $ %{} :CodeEntry (:doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |bit-shl $ %{} :CodeEntry (:doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |bit-shr $ %{} :CodeEntry (:doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |bit-xor $ %{} :CodeEntry (:doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |blank? $ %{} :CodeEntry (:doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :string
         |bool? $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn bool? (x)
-              &= (type-of x) :bool
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -1999,7 +2125,7 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
@@ -2082,13 +2208,13 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
         |ceil $ %{} :CodeEntry (:doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
         |char-from-code $ %{} :CodeEntry (:doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
@@ -2116,7 +2242,7 @@
               :generics $ [] 'T
               :rest $ :: :list 'T
               :return $ :: :list 'T
-        |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.") (:schema nil)
+        |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.") (:schema :dynamic)
           :code $ quote
             defmacro cond (& pairs)
               if (&list:empty? pairs) (raise "|cond expects at least 1 (condition branch) pair")
@@ -2220,14 +2346,7 @@
         |contains? $ %{} :CodeEntry (:doc "|Checks whether a collection contains a key or index at the current level. Supports lists, tuples, maps, and records while treating nil as false.")
           :code $ quote
             defn contains? (x k)
-              if (nil? x) false $ if (list? x) (&list:contains? x k)
-                if (record? x) (&record:contains? x k)
-                  if (tuple? x)
-                    and (&>= k 0)
-                      &< k $ &tuple:count x
-                    if (map? x) (&map:contains? x k)
-                      if (set? x) (&set:includes? x k)
-                        if (string? x) (&str:contains? x k) (.contains? x k)
+              if (nil? x) false $ if (list? x) (&list:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -2242,7 +2361,7 @@
             {} (:return :bool)
               :args $ [] :dynamic :dynamic
         |cos $ %{} :CodeEntry (:doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
@@ -2250,12 +2369,7 @@
         |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
             defn count (x)
-              if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
-                if (list? x) (&list:count x)
-                  if (record? x) (&record:count x)
-                    if (map? x) (&map:count x)
-                      if (set? x) (&set:count x)
-                        if (string? x) (&str:count x) (.count x)
+              if (nil? x) 0 $ if (list? x) (&list:count x) (.count x)
           :examples $ []
             quote $ assert= 4
               count $ [] 1 2 3 4
@@ -2265,7 +2379,7 @@
             {} (:return :number)
               :args $ [] :dynamic
         |cpu-time $ %{} :CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
@@ -2287,7 +2401,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
         |defatom $ %{} :CodeEntry (:doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ ; defatom *my-atom
               {} $ :a 1
@@ -2415,7 +2529,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ do
               defmacro identity-macro (x) (quasiquote ~x)
@@ -2424,7 +2538,7 @@
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic :dynamic
         |defn $ %{} :CodeEntry (:doc "|internal syntax for defining functions\nSyntax: (defn name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: function definition\nDefines a named function with parameters and body expression")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ defn my-add (p1 p2) (+ p1 p2)
           :schema $ :: :fn
@@ -2643,7 +2757,7 @@
               :args $ [] (:: :list 'T)
               :generics $ [] 'T
               :return $ :: :list 'T
-        |do $ %{} :CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.") (:schema nil)
+        |do $ %{} :CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.") (:schema :dynamic)
           :code $ quote
             defmacro do (& body)
               ; println |body: $ format-to-lisp body
@@ -2678,7 +2792,7 @@
                 :: :fn $ {} (:return :dynamic)
                   :args $ [] 'T
               :generics $ [] 'T
-        |either $ %{} :CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.") (:schema nil)
+        |either $ %{} :CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.") (:schema :dynamic)
           :code $ quote
             defmacro either (& xs)
               if (&list:empty? xs) (raise "|either expects at least 1 expression")
@@ -2715,15 +2829,7 @@
         |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
           :code $ quote
             defn empty? (x)
-              if (nil? x) true $ if (list? x) (&list:empty? x)
-                if (map? x) (&map:empty? x)
-                  if (set? x) (&set:empty? x)
-                    if (string? x) (&str:empty? x)
-                      if (record? x)
-                        &= 0 $ &record:count x
-                        if (tuple? x)
-                          &= 0 $ &tuple:count x
-                          .empty? x
+              if (nil? x) true $ if (list? x) (&list:empty? x) (.empty? x)
           :examples $ []
             quote $ assert= true
               empty? $ []
@@ -2733,7 +2839,7 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |ends-with? $ %{} :CodeEntry (:doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -2750,8 +2856,8 @@
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :dynamic
-        |eval $ %{} :CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |eval $ %{} :CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |even? $ %{} :CodeEntry (:doc "|check if number is even?")
           :code $ quote
@@ -2807,9 +2913,7 @@
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f)
-              if (nil? xs) nil $ if (list? xs) (&list:filter xs f)
-                if (map? xs) (&map:filter xs f)
-                  if (set? xs) (&set:filter xs f) (.filter xs f)
+              if (nil? xs) nil $ if (list? xs) (&list:filter xs f) (.filter xs f)
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -2872,9 +2976,7 @@
         |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
-              if (nil? x) nil $ if (tuple? x) (&tuple:nth x 0)
-                if (list? x) (&list:first x)
-                  if (string? x) (&str:first x) (.first x)
+              if (nil? x) nil $ if (list? x) (&list:first x) (.first x)
           :examples $ []
             quote $ assert= 1
               first $ [] 1 2 3
@@ -2892,7 +2994,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |floor $ %{} :CodeEntry (:doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
@@ -2914,11 +3016,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |fn? $ %{} :CodeEntry (:doc "|Check if a value is a function")
-          :code $ quote
-            defn fn? (x)
-              if
-                &= (type-of x) :fn
-                , true $ &= (type-of x) :proc
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (fn? inc)
             quote $ assert= false (fn? 123)
@@ -2927,7 +3025,7 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |foldl $ %{} :CodeEntry (:doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
@@ -2965,43 +3063,43 @@
                   :args $ [] 'T 'T
               :generics $ [] 'T
         |foldl-shortcut $ %{} :CodeEntry (:doc "|internal function for left fold with shortcut\nSyntax: (foldl-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with early termination support")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic :dynamic :fn
         |foldr-shortcut $ %{} :CodeEntry (:doc "|internal function for right fold with shortcut\nSyntax: (foldr-shortcut list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from right with early termination support")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :list :dynamic :fn
         |format-cirru $ %{} :CodeEntry (:doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :list
         |format-cirru-edn $ %{} :CodeEntry (:doc "|internal function for formatting Cirru EDN\nSyntax: (format-cirru-edn data)\nParams: data (any)\nReturns: string\nFormats Calcit data structures into Cirru EDN format text")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :dynamic
         |format-cirru-one-liner $ %{} :CodeEntry (:doc "|internal function for formatting Cirru as one-liner\nSyntax: (format-cirru-one-liner data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru one-liner syntax text")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :list
         |format-to-cirru $ %{} :CodeEntry (:doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :dynamic
         |format-to-lisp $ %{} :CodeEntry (:doc "|internal function for formatting to Lisp syntax\nSyntax: (format-to-lisp value)\nParams: value (any)\nReturns: string in Lisp format\nConverts Calcit data structures to Lisp-style string representation")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
@@ -3027,23 +3125,18 @@
             {} (:return :map)
               :args $ [] :list
         |generate-id! $ %{} :CodeEntry (:doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ []
-        |gensym $ %{} :CodeEntry (:doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |gensym $ %{} :CodeEntry (:doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |get $ %{} :CodeEntry (:doc "|Reads a value from collections or strings by key or index. Handles maps, lists, tuples, records, and strings; nil bases return nil.")
           :code $ quote
             defn get (base k)
-              if (nil? base) nil $ if (string? base) (&str:nth base k)
-                if (map? base) (&map:get base k)
-                  if (list? base) (&list:nth base k)
-                    if (tuple? base) (&tuple:nth base k)
-                      if (record? base) (&record:get base k)
-                        raise $ str-spaced "|Expected map or list for get, got:" base k
+              if (nil? base) nil $ if (list? base) (&list:nth base k) (.get base k)
           :examples $ []
             quote $ assert= 2
               get ([] 0 2 4) 1
@@ -3053,13 +3146,13 @@
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic
         |get-char-code $ %{} :CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :string
         |get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
@@ -3122,11 +3215,11 @@
                   :args $ [] 'T
               :generics $ [] 'T 'K
               :return $ :: :map 'K (:: :list 'T)
-        |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (used for async and generics)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (keyword or list), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and generic type metadata (type-vars, return-type)") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (used for async and generics)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (keyword or list), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and generic type metadata (type-vars, return-type)") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |identical? $ %{} :CodeEntry (:doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -3138,8 +3231,8 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-        |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ if (> x 0) |positive |non-positive
             quote $ if (empty? xs) 0 (count xs)
@@ -3169,7 +3262,7 @@
                 , v |missing
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-        |if-not $ %{} :CodeEntry (:doc |) (:schema nil)
+        |if-not $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defmacro if-not (& xs)
               if
@@ -3227,10 +3320,7 @@
         |includes? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn includes? (x k)
-              if (nil? x) false $ if (list? x) (&list:includes? x k)
-                if (map? x) (&map:includes? x k)
-                  if (set? x) (&set:includes? x k)
-                    if (string? x) (&str:includes? x k) (.includes? x k)
+              if (nil? x) false $ if (list? x) (&list:includes? x k) (.includes? x k)
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -3284,7 +3374,7 @@
             {} (:rest :set) (:return :set)
               :args $ [] :set
         |is-spreading-mark? $ %{} :CodeEntry (:doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -3333,7 +3423,7 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :list :string
-        |js-object $ %{} :CodeEntry (:doc |) (:schema nil)
+        |js-object $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defmacro js-object (& xs)
               if
@@ -3348,6 +3438,34 @@
                 ys $ &list:concat & xs
                 quasiquote $ &js-object ~@ys
           :examples $ []
+        |json-parse $ %{} :CodeEntry (:doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert=
+              {} $ :a 1
+              json-parse "|{\"a\":1}"
+            quote $ assert= ([] true nil)
+              get (json-parse "|{\"items\":[true,null]}") :items
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :string
+        |json-pretty $ %{} :CodeEntry (:doc "|internal function for pretty-printing JSON\nSyntax: (json-pretty value)\nParams: value (any JSON-compatible Calcit data)\nReturns: string\nConverts Calcit data into formatted JSON text using 2-space indentation")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= "|{\n  \"a\": 1\n}"
+              json-pretty $ {} (:a 1)
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :dynamic
+        |json-stringify $ %{} :CodeEntry (:doc "|internal function for encoding JSON\nSyntax: (json-stringify value)\nParams: value (any JSON-compatible Calcit data)\nReturns: string\nConverts Calcit data into compact JSON text. Tags and symbols are encoded as plain JSON strings")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= "|\"ok\"" (json-stringify :ok)
+            quote $ assert= "|{\"a\":1}"
+              json-stringify $ {} (:a 1)
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :dynamic
         |keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn keys (x)
@@ -3529,7 +3647,7 @@
           :examples $ []
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-        |list-match $ %{} :CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.") (:schema nil)
+        |list-match $ %{} :CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.") (:schema :dynamic)
           :code $ quote
             defmacro list-match (& values)
               if
@@ -3581,9 +3699,7 @@
                 () nil
                 (head tail) head
         |list? $ %{} :CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
-          :code $ quote
-            defn list? (x)
-              &= (type-of x) :list
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ list? ([] 1 2 3)
             quote $ list? ({})
@@ -3626,14 +3742,14 @@
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :dynamic
-        |macroexpand $ %{} :CodeEntry (:doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |macroexpand $ %{} :CodeEntry (:doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |macroexpand-1 $ %{} :CodeEntry (:doc "|internal syntax for expanding macro just once for debugging\nSyntax: (macroexpand-1 expr)\nParams: expr (macro call)\nReturns: one-level expanded code\nExpands macro only one level for debugging purposes") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |macroexpand-1 $ %{} :CodeEntry (:doc "|internal syntax for expanding macro just once for debugging\nSyntax: (macroexpand-1 expr)\nParams: expr (macro call)\nReturns: one-level expanded code\nExpands macro only one level for debugging purposes") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |macroexpand-all $ %{} :CodeEntry (:doc "|internal syntax for expanding macro until macros inside are resolved\nSyntax: (macroexpand-all expr)\nParams: expr (code with macros)\nReturns: fully expanded code\nExpands all macros including nested ones") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |macroexpand-all $ %{} :CodeEntry (:doc "|internal syntax for expanding macro until macros inside are resolved\nSyntax: (macroexpand-all expr)\nParams: expr (code with macros)\nReturns: fully expanded code\nExpands all macros including nested ones") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |map $ %{} :CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
           :code $ quote
@@ -3646,8 +3762,7 @@
                         :args $ [] :set :dynamic
                         :return :set
                       include acc $ f x
-                  if (map? xs) (&map:map xs f)
-                    raise $ str-spaced "|expected list or set for map function, got:" xs
+                  .map xs f
           :examples $ []
             quote $ assert= ([] 2 3 4)
               map ([] 1 2 3) inc
@@ -3707,9 +3822,7 @@
                   :args $ [] 'K 'V
               :generics $ [] 'K 'V 'R
         |map? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a map")
-          :code $ quote
-            defn map? (x)
-              &= (type-of x) :map
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               map? $ {} (:a 1)
@@ -3781,9 +3894,7 @@
             {} (:return :number)
               :args $ [] :number
         |nil? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is nil")
-          :code $ quote
-            defn nil? (x)
-              &= (type-of x) :nil
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (nil? nil)
             quote $ assert= false (nil? 0)
@@ -3799,7 +3910,7 @@
             {} (:return :dynamic)
               :args $ [] :dynamic
         |not $ %{} :CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (any)\nReturns: boolean\nReturns true if value is falsy (nil or false), false otherwise")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -3824,9 +3935,7 @@
         |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
             defn nth (x i)
-              if (tuple? x) (&tuple:nth x i)
-                if (list? x) (&list:nth x i)
-                  if (string? x) (&str:nth x i) (.nth x i)
+              if (list? x) (&list:nth x i) (.nth x i)
           :examples $ []
             quote $ assert= 2
               nth ([] 1 2 3) 1
@@ -3835,9 +3944,7 @@
             {} (:return :dynamic)
               :args $ [] :dynamic :number
         |number? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
-          :code $ quote
-            defn number? (x)
-              &= (type-of x) :number
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (number? 123)
             quote $ assert= true (number? 3.14)
@@ -3849,7 +3956,7 @@
           :code $ quote
             defn option:map (opt f)
               tag-match opt
-                  :some value
+                (:some value)
                   %:: (&tuple:enum opt) :some $ f value
                 (:none)
                   %:: (&tuple:enum opt) :none
@@ -3868,7 +3975,7 @@
           :schema $ :: :fn
             {} (:return :tuple)
               :args $ [] :dynamic
-        |or $ %{} :CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.") (:schema nil)
+        |or $ %{} :CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.") (:schema :dynamic)
           :code $ quote
             defmacro or (item & xs)
               if (&list:empty? xs) item $ if (list? item)
@@ -3879,7 +3986,7 @@
                       or
                         ~ $ &list:first xs
                         ~@ $ &list:rest xs
-                      if (= false ~v1#)
+                      if (&= false ~v1#)
                         or
                           ~ $ &list:first xs
                           ~@ $ &list:rest xs
@@ -3888,7 +3995,7 @@
                   or
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
-                  if (= false ~item)
+                  if (&= false ~item)
                     or
                       ~ $ &list:first xs
                       ~@ $ &list:rest xs
@@ -3914,64 +4021,64 @@
             {} (:return :map)
               :args $ [] :list
         |parse-cirru $ %{} :CodeEntry (:doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :string
         |parse-cirru-edn $ %{} :CodeEntry (:doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :string
         |parse-cirru-list $ %{} :CodeEntry (:doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :string
         |parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {}
               :args $ [] :string
               :return $ :: :optional :number
         |pow $ %{} :CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
         |prepend $ %{} :CodeEntry (:doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list :dynamic
-        |quasiquote $ %{} :CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |quasiquote $ %{} :CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ quasiquote (&+ ~x 1)
             quote $ quasiquote ([] ~x ~@xs)
         |quit! $ %{} :CodeEntry (:doc "|internal function for quitting program\nSyntax: (quit! exit-code)\nParams: exit-code (number, optional, defaults to 0)\nReturns: never returns (exits program)\nTerminates the program with specified exit code")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)
               :args $ [] (:: :optional :number)
-        |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |raise $ %{} :CodeEntry (:doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :string
         |range $ %{} :CodeEntry (:doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
@@ -3992,7 +4099,7 @@
               :args $ [] :number (:: :optional :number)
               :return $ :: :list :number
         |read-file $ %{} :CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
@@ -4029,17 +4136,15 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct-based record (created with defstruct + %{}).")
-          :code $ quote
-            defn record? (x)
-              &= (type-of x) :record
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= false
               record? $ {} (:x 1)
           :schema $ :: :fn
             {} (:return :bool)
               :args $ [] :dynamic
-        |recur $ %{} :CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |recur $ %{} :CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
@@ -4059,7 +4164,7 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |remove-watch $ %{} :CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: atom\nRemoves watcher with specified key from atom")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)
@@ -4085,7 +4190,7 @@
               :generics $ [] 'T
               :return $ :: :list 'T
         |reset! $ %{} :CodeEntry (:doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ ; reset! *my-atom
               {} $ :a 2
@@ -4108,7 +4213,7 @@
           :code $ quote
             defn result:map (res f)
               tag-match res
-                  :ok value
+                (:ok value)
                   %:: (&tuple:enum res) :ok $ f value
                 (:err err)
                   %:: (&tuple:enum res) :err err
@@ -4133,13 +4238,13 @@
               :generics $ [] 'T
               :return $ :: :list 'T
         |round $ %{} :CodeEntry (:doc "|internal function for rounding numbers\nSyntax: (round n)\nParams: n (number)\nReturns: number\nRounds number to nearest integer")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
         |round? $ %{} :CodeEntry (:doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -4178,9 +4283,7 @@
             {} (:return :map)
               :args $ [] :map :list
         |set? $ %{} :CodeEntry (:doc "|Check if a value is a set")
-          :code $ quote
-            defn set? (x)
-              &= (type-of x) :set
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               set? $ #{} 1 2 3
@@ -4192,7 +4295,7 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |sin $ %{} :CodeEntry (:doc "|internal function for sine\nSyntax: (sin n)\nParams: n (number, radians)\nReturns: number\nReturns sine of angle in radians")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
@@ -4240,31 +4343,31 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |sort $ %{} :CodeEntry (:doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :list (:: :optional :fn)
         |split $ %{} :CodeEntry (:doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :string :string
         |split-lines $ %{} :CodeEntry (:doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
               :args $ [] :string
         |sqrt $ %{} :CodeEntry (:doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
         |starts-with? $ %{} :CodeEntry (:doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -4292,9 +4395,7 @@
             {} (:rest :dynamic) (:return :string)
               :args $ []
         |string? $ %{} :CodeEntry (:doc "|checks if value is a string")
-          :code $ quote
-            defn string? (x)
-              &= (type-of x) :string
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (string? |hello)
             quote $ assert= false (string? 123)
@@ -4353,9 +4454,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
         |symbol? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
-          :code $ quote
-            defn symbol? (x)
-              &= (type-of x) :symbol
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               symbol? $ quote item
@@ -4390,20 +4489,16 @@
           :examples $ []
             quote $ assert= 11
               tag-match (:: :ok 1)
-                  :ok v
-                  &+ v 10
+                (:ok v) (&+ v 10)
                 (:err e) (eprintln e)
             quote $ assert= |got:hello
               tag-match (:: :some |hello)
-                  :some x
-                  str x |:got
+                (:some x) (str x |:got)
                 (:none) |nothing
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |tag? $ %{} :CodeEntry (:doc "|Check if a value is a tag (keyword)")
-          :code $ quote
-            defn tag? (x)
-              &= (type-of x) :tag
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true (tag? :keyword)
             quote $ assert= false (tag? |string)
@@ -4455,19 +4550,19 @@
               :args $ [] (:: :list 'T) :number
               :generics $ [] 'T
               :return $ :: :list 'T
-        |thread-as $ %{} :CodeEntry (:doc "|a alias for `->%`") (:schema nil)
+        |thread-as $ %{} :CodeEntry (:doc "|a alias for `->%`") (:schema :dynamic)
           :code $ quote
             defmacro thread-as (& xs)
               if (&list:empty? xs) (raise "|thread-as expects at least 1 expression")
               quasiquote $ ->% ~@xs
           :examples $ []
-        |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`") (:schema nil)
+        |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`") (:schema :dynamic)
           :code $ quote
             defmacro thread-first (& xs)
               if (&list:empty? xs) (raise "|thread-first expects at least 1 expression")
               quasiquote $ -> ~@xs
           :examples $ []
-        |thread-last $ %{} :CodeEntry (:doc "|a alias for `->>`") (:schema nil)
+        |thread-last $ %{} :CodeEntry (:doc "|a alias for `->>`") (:schema :dynamic)
           :code $ quote
             defmacro thread-last (& xs)
               if (&list:empty? xs) (raise "|thread-last expects at least 1 expression")
@@ -4484,30 +4579,28 @@
             {} (:return :bool)
               :args $ [] :dynamic
         |to-lispy-string $ %{} :CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :dynamic
         |to-pairs $ %{} :CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :set)
               :args $ [] :map
         |trim $ %{} :CodeEntry (:doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
-        |try $ %{} :CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |try $ %{} :CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
         |tuple? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a tuple literal created with the `::` form.")
-          :code $ quote
-            defn tuple? (x)
-              &= (type-of x) :tuple
+          :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= true
               tuple? $ :: :a :b
@@ -4524,25 +4617,25 @@
             {} (:return :string)
               :args $ [] :dynamic
         |turn-string $ %{} :CodeEntry (:doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :dynamic
         |turn-symbol $ %{} :CodeEntry (:doc "|internal function for converting to symbol\nSyntax: (turn-symbol value)\nParams: value (string, tag, or symbol)\nReturns: symbol\nConverts string, tag, or existing symbol to symbol type")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
         |turn-tag $ %{} :CodeEntry (:doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
               :args $ [] :dynamic
         |type-of $ %{} :CodeEntry (:doc "|internal function for getting type of value\nSyntax: (type-of value)\nParams: value (any)\nReturns: tag representing the type\nReturns type tag like :nil, :bool, :number, :string, :list, :map, :set, :fn, etc.")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :tag)
@@ -4651,12 +4744,12 @@
             defn vals (x)
               map (to-pairs x) last
           :examples $ []
-            quote $ assert= ([] 1 2)
+            quote $ assert= (#{} 1 2)
               vals $ {} (:a 1) (:b 2)
-            quote $ assert= ([])
+            quote $ assert= (#{})
               vals $ {}
           :schema $ :: :fn
-            {} (:return :list)
+            {} (:return :set)
               :args $ [] :map
         |w-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -4799,7 +4892,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |write-file $ %{} :CodeEntry (:doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: nil or error\nWrites string content to file, creates directories if needed")
-          :code $ quote &runtime-inplementation
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)
@@ -4823,7 +4916,7 @@
               :args $ [] (:: :list 'K) (:: :list 'V)
               :generics $ [] 'K 'V
               :return $ :: :map 'K 'V
-        |{,} $ %{} :CodeEntry (:doc |) (:schema nil)
+        |{,} $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defmacro {,} (& body)
               &let
@@ -4851,63 +4944,62 @@
             quote $ {} (:name |Alice) (:age 30)
           :schema $ :: :macro
             {} $ :args ([])
-        |~ $ %{} :CodeEntry (:doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |~ $ %{} :CodeEntry (:doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-        |~@ $ %{} :CodeEntry (:doc "|internal syntax for spreading interpolate value in macro\nSyntax: (~@ list-expr) inside quasiquote\nParams: list-expr (expression that evaluates to list)\nReturns: spliced list elements\nUnquotes and splices list elements inside quasiquote") (:schema nil)
-          :code $ quote &runtime-inplementation
+        |~@ $ %{} :CodeEntry (:doc "|internal syntax for spreading interpolate value in macro\nSyntax: (~@ list-expr) inside quasiquote\nParams: list-expr (expression that evaluates to list)\nReturns: spliced list elements\nUnquotes and splices list elements inside quasiquote") (:schema :dynamic)
+          :code $ quote &runtime-implementation
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc "|built-in function and macros in `calcit.core`") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|built-in function and macros in `calcit.core`")
         :code $ quote
           ns calcit.core $ :require (calcit.internal :as internal)
-        :examples $ []
     |calcit.internal $ %{} :FileEntry
       :defs $ {}
-        |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list") (:schema nil)
+        |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list") (:schema :dynamic)
           :code $ quote
             def &core-add-list-impl $ &impl::new :&core-add-list-impl (:: :add &list:concat)
           :examples $ []
-        |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number") (:schema nil)
+        |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number") (:schema :dynamic)
           :code $ quote
             def &core-add-number-impl $ &impl::new :&core-add-number-impl (:: :add &+)
           :examples $ []
-        |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string") (:schema nil)
+        |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string") (:schema :dynamic)
           :code $ quote
             def &core-add-string-impl $ &impl::new :&core-add-string-impl (:: :add &str:concat)
           :examples $ []
-        |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq") (:schema nil)
+        |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq") (:schema :dynamic)
           :code $ quote
             def &core-eq-impl $ &impl::new :&core-eq-impl (:: :eq? &=)
           :examples $ []
-        |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list") (:schema nil)
+        |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list") (:schema :dynamic)
           :code $ quote
             def &core-len-list-impl $ &impl::new :&core-len-list-impl (:: :len &list:count)
           :examples $ []
-        |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map") (:schema nil)
+        |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map") (:schema :dynamic)
           :code $ quote
             def &core-len-map-impl $ &impl::new :&core-len-map-impl (:: :len &map:count)
           :examples $ []
-        |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set") (:schema nil)
+        |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set") (:schema :dynamic)
           :code $ quote
             def &core-len-set-impl $ &impl::new :&core-len-set-impl (:: :len &set:count)
           :examples $ []
-        |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string") (:schema nil)
+        |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string") (:schema :dynamic)
           :code $ quote
             def &core-len-string-impl $ &impl::new :&core-len-string-impl (:: :len &str:count)
           :examples $ []
-        |&core-mappable-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on list") (:schema nil)
+        |&core-mappable-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on list") (:schema :dynamic)
           :code $ quote
             def &core-mappable-list-impl $ &impl::new :&core-mappable-list-impl (:: :map &list:map)
           :examples $ []
-        |&core-mappable-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on map") (:schema nil)
+        |&core-mappable-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on map") (:schema :dynamic)
           :code $ quote
             def &core-mappable-map-impl $ &impl::new :&core-mappable-map-impl (:: :map &map:map)
           :examples $ []
-        |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number") (:schema nil)
+        |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number") (:schema :dynamic)
           :code $ quote
             def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
           :examples $ []
-        |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show") (:schema nil)
+        |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show") (:schema :dynamic)
           :code $ quote
             def &core-show-impl $ &impl::new :&core-show-impl (:: :show &str)
           :examples $ []
@@ -4977,7 +5069,7 @@
           :examples $ []
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-        |normalize-trait-type $ %{} :CodeEntry (:doc |) (:schema nil)
+        |normalize-trait-type $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn normalize-trait-type (t0)
               if (list? t0)
@@ -5009,7 +5101,6 @@
                                   , t0
                 , t0
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc "|internal function and macros for `calcit.core`") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|internal function and macros for `calcit.core`")
         :code $ quote
           ns calcit.internal $ :require
-        :examples $ []

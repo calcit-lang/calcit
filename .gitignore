@@ -6,6 +6,7 @@ calcit/.compact-inc.cirru
 js-out/
 
 node_modules/
+.yarn/*.gz
 
 lib
 builds/
@@ -27,3 +28,7 @@ demos/
 .yarn
 
 .calcit-snippets/
+
+.tmp-profiles/
+
+profiling/*.gz

@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-cond)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-cond)
   :configs $ {} (:init-fn |test-cond.main/main!) (:reload-fn |test-cond.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
   :entries $ {}
@@ -165,8 +165,7 @@
               assert= 1 $ when-not false 1
               assert= 1 $ when-not false 2 1
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-cond.main $ :require
             [] util.core :refer $ [] inside-eval:
-        :examples $ []

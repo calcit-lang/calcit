@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-tag-match-validation)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tag-match-validation)
   :configs $ {} (:init-fn |test-tag-match-validation.main/main!) (:reload-fn |test-tag-match-validation.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -81,6 +81,5 @@
                       do (println "|  ✗ Unexpected error type")
                         raise $ str "|Unexpected error:" e
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-tag-match-validation.main)
-        :examples $ []

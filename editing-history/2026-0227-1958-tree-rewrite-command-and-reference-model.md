@@ -12,7 +12,7 @@
 - `tree` handler：将 `handle_structural` 更名为 `handle_rewrite`，并更新输出提示与错误信息。
 - 结构引用处理：在 `tree` 中统一使用 `parse_with_references` + `process_node_with_references`。
 - 文档更新：`docs/CalcitAgent.md` 与 `Agents.md` 全部改用 `tree rewrite` 与 `--with` 示例。
-- 真实命令验证（基于 `demos/compact.cirru`）：
+- 真实命令验证（基于 `demos/calcit.cirru`）：
   - `tree replace` 可执行普通替换；
   - `tree rewrite` 无 `--with` 会按预期报错；
   - `tree rewrite` 携带 `--with` 可按预期执行。

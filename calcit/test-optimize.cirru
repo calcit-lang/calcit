@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-optimize)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-optimize)
   :configs $ {} (:init-fn |test-optimize.main/main!) (:reload-fn |test-optimize.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -57,7 +57,6 @@
                 assert-traits lp ShowTrait
                 println $ .show lp
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-optimize.main $ :require
-        :examples $ []

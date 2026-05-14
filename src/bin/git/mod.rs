@@ -49,12 +49,14 @@ impl GitRepo {
     }
   }
 
-  /// get unix timestamp of a commit
+  /// get unix timestamp of the commit resolved from a ref/tag/sha
   /// ```bash
-  /// git show -s --format=%ct <SHA>
+  /// git rev-list -n 1 <REF>
+  /// git show -s --format=%ct <COMMIT>
   /// ```
   pub fn timestamp(&self, sha: &str) -> Result<u32, String> {
-    let timestamp = self.run_command(&["show", "-s", "--format=%ct", sha])?;
+    let commit = self.run_command(&["rev-list", "-n", "1", sha])?;
+    let timestamp = self.run_command(&["show", "-s", "--format=%ct", commit.trim()])?;
     let v = timestamp.trim().parse::<u32>().map_err(|e| e.to_string())?;
     Ok(v)
   }

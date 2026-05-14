@@ -86,7 +86,7 @@ pub struct CalcitImport {
   /// from npm package, use `default` and asterisk in js
   pub def: Arc<str>,
   pub info: Arc<ImportInfo>,
-  pub coord: Option<(u16, u16)>,
+  pub def_id: Option<u32>,
 }
 
 /// compare at namespace level, ignore at_def

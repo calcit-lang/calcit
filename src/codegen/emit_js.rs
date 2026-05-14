@@ -30,11 +30,19 @@ use crate::codegen::skip_arity_check;
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 use args::{gen_args_code, gen_call_args_with_temps};
-use deps::{contains_symbol, sort_by_deps};
+use deps::{contains_symbol, sort_compiled_defs_by_deps};
 use helpers::{cirru_to_js, is_js_unavailable_procs, write_file_if_changed};
 use paths::{to_js_import_name, to_mjs_filename};
 use runtime::{get_proc_prefix, is_cirru_string};
 use symbols::{escape_cirru_str, escape_var};
+
+pub fn escape_symbol_for_js(name: &str) -> String {
+  escape_var(name)
+}
+
+pub fn unescape_symbol_from_js(name: &str) -> String {
+  symbols::unescape_var(name)
+}
 
 thread_local! {
   static INLINE_ALL_ARGS: Cell<bool> = const { Cell::new(false) };
@@ -87,6 +95,31 @@ fn is_preferred_js_proc(name: &str) -> bool {
       | "starts-with?"
       | "ends-with?"
   )
+}
+
+fn is_quote_head(value: &Calcit) -> bool {
+  matches!(value, Calcit::Syntax(CalcitSyntax::Quote, _))
+    || matches!(value, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+    || matches!(value, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "quote")
+}
+
+fn is_runtime_placeholder_form(value: &Calcit) -> bool {
+  matches!(value, Calcit::Symbol { sym, .. } if sym.as_ref() == "&runtime-implementation")
+}
+
+fn is_runtime_placeholder_quote(value: &Calcit) -> bool {
+  let Calcit::List(items) = value else {
+    return false;
+  };
+  items.len() == 2 && items.first().is_some_and(is_quote_head) && items.get(1).is_some_and(is_runtime_placeholder_form)
+}
+
+fn should_skip_core_def_codegen(def: &str, compiled_def: &program::CompiledDef) -> bool {
+  if CalcitSyntax::is_valid(def) || is_proc_name(def) || is_js_syntax_procs(def) {
+    return true;
+  }
+
+  compiled_def.source_code.as_ref().is_some_and(is_runtime_placeholder_quote)
 }
 
 fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -> Result<String, String> {
@@ -164,6 +197,12 @@ fn indent_block(body: &str, indent: &str) -> String {
     })
     .collect::<Vec<_>>()
     .join("\n")
+}
+
+fn raw_syntax_codegen_error(syntax: &CalcitSyntax) -> String {
+  format!(
+    "invalid JS codegen: raw syntax node `{syntax}` cannot be emitted as a standalone JS value. LLM hint: special forms must start an expression, for example `(if cond a b)`, or appear at the beginning of a line / after `$`, instead of being left as a separate argument node."
+  )
 }
 
 fn to_js_code(
@@ -261,10 +300,7 @@ fn to_js_code(
           info.def_ns, info.name, info.usage.used_in_impl
         ))
       }
-      Calcit::Syntax(s, ..) => {
-        let proc_prefix = get_proc_prefix(ns);
-        Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
-      }
+      Calcit::Syntax(s, ..) => Err(raw_syntax_codegen_error(s)),
       Calcit::Str(s) => Ok(escape_cirru_str(s)),
       Calcit::Bool(b) => Ok(b.to_string()),
       Calcit::Number(n) => Ok(n.to_string()),
@@ -386,10 +422,24 @@ fn gen_call_code(
           }
           (_, _) => Err(format!("try expected 2 nodes, got: {body}")),
         },
+        CalcitSyntax::Eval => {
+          let (prelude, args_code) =
+            gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
+          let call_code = format!("{proc_prefix}{}({args_code})", escape_var("eval"));
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
+        }
+        CalcitSyntax::Reset => {
+          let (prelude, args_code) =
+            gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
+          let call_code = format!("{proc_prefix}{}({args_code})", escape_var("reset!"));
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
+        }
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
+        CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
+        CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
           let (prelude, args_code) =
             gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
@@ -417,6 +467,63 @@ fn gen_call_code(
           }
         }
         None => Err(format!("raise expected 1~2 arguments, got: {body}")),
+      }
+    }
+    // deftype-slot and bind-type are preprocessing-only; they have no JS runtime effect.
+    Calcit::Proc(CalcitProc::DeftypeSlot) | Calcit::Proc(CalcitProc::BindType) => Ok(format!("{return_code}null")),
+    // &record:nth: with 3 args (record, idx, :field-tag), use record.get(tag) for JS
+    // because JS CalcitRecord fields are sorted by tag.idx (registration order), not alphabetically.
+    // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).
+    Calcit::Proc(CalcitProc::NativeRecordNth) => {
+      if body.len() == 3 {
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
+        Ok(format!("{return_code}{record_code}.get({tag_code})"))
+      } else if body.len() == 2 {
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
+        Ok(format!("{return_code}{record_code}.values[{idx_code}]"))
+      } else {
+        Err(format!("&record:nth expected 2-3 arguments, got: {body}"))
+      }
+    }
+    // &record:assoc-at: optimized assoc with pre-resolved index.
+    // JS uses record.assoc(tag, value) since JS field ordering differs from Rust.
+    Calcit::Proc(CalcitProc::NativeRecordAssocAt) => {
+      if body.len() == 4 {
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
+        let value_code = to_js_code(&body[3], ns, local_defs, file_imports, tags, None)?;
+        Ok(format!("{return_code}{record_code}.assoc({tag_code}, {value_code})"))
+      } else {
+        Err(format!("&record:assoc-at expected 4 arguments, got: {body}"))
+      }
+    }
+    // &record:with-at: optimized with pre-resolved indices.
+    // JS ignores indices and calls the same _$n_record_$o_with(proto, tag, val, ...) function.
+    Calcit::Proc(CalcitProc::NativeRecordWithAt) => {
+      if body.len() >= 3 && (body.len() - 1) % 3 == 0 {
+        let proc_prefix = get_proc_prefix(ns);
+        let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+        let triple_count = (body.len() - 1) / 3;
+        let mut all_args = vec![record_code];
+        for i in 0..triple_count {
+          let base = 1 + i * 3;
+          // Skip index (body[base]), emit tag and value for JS
+          let tag_code = to_js_code(&body[base + 1], ns, local_defs, file_imports, tags, None)?;
+          let value_code = to_js_code(&body[base + 2], ns, local_defs, file_imports, tags, None)?;
+          all_args.push(tag_code);
+          all_args.push(value_code);
+        }
+        Ok(format!(
+          "{return_code}{proc_prefix}{}({})",
+          escape_var("&record:with"),
+          all_args.join(", ")
+        ))
+      } else {
+        Err(format!(
+          "&record:with-at expected (record, idx, tag, val, ...) triples, got: {body}"
+        ))
       }
     }
     Calcit::Proc(_) => {
@@ -823,6 +930,126 @@ fn gen_let_code(
   }
 }
 
+/// Generate JS code for `match` syntax.
+/// After preprocessing, `body` is: [<value>, (<pattern1> <body1>), (<pattern2> <body2>), ...]
+/// Generated JS is an IIFE with if-else chain checking tuple tag and arity.
+fn gen_match_code(
+  body: &CalcitList,
+  local_defs: &HashSet<Arc<str>>,
+  _xs: &Calcit,
+  ns: &str,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  base_return_label: Option<&str>,
+) -> Result<String, String> {
+  if body.is_empty() {
+    return Err("match expected value and branches".to_owned());
+  }
+
+  let has_await = detect_await(body);
+  let return_label = base_return_label.unwrap_or("return ");
+  let proc_prefix = get_proc_prefix(ns);
+
+  let value_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+  let val_var = js_gensym("match_v");
+  let tag_var = js_gensym("match_t");
+
+  let mut chunk = String::new();
+  writeln!(chunk, "let {val_var} = {value_code};").expect("write");
+  writeln!(chunk, "let {tag_var} = {proc_prefix}_$n_tuple_$o_nth({val_var}, 0);").expect("write");
+
+  let mut first = true;
+  for branch_idx in 1..body.len() {
+    let branch = match &body[branch_idx] {
+      Calcit::List(xs) if xs.len() == 2 => xs,
+      other => return Err(format!("match branch expected a pair, got: {other}")),
+    };
+
+    let pattern = &branch[0];
+    let branch_body = &branch[1];
+
+    match pattern {
+      // Wildcard
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
+        let body_code = to_js_code(branch_body, ns, local_defs, file_imports, tags, Some(return_label))?;
+        if first {
+          writeln!(chunk, "{{ {body_code} }}").expect("write");
+        } else {
+          writeln!(chunk, " else {{ {body_code} }}").expect("write");
+        }
+        first = false;
+      }
+      Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_" => {
+        let body_code = to_js_code(branch_body, ns, local_defs, file_imports, tags, Some(return_label))?;
+        if first {
+          writeln!(chunk, "{{ {body_code} }}").expect("write");
+        } else {
+          writeln!(chunk, " else {{ {body_code} }}").expect("write");
+        }
+        first = false;
+      }
+      // Tag pattern: (:tag binding1 binding2 ...)
+      Calcit::List(pat_xs) if !pat_xs.is_empty() => {
+        let tag_name = match &pat_xs[0] {
+          Calcit::Tag(t) => t,
+          other => return Err(format!("match pattern expected tag, got: {other}")),
+        };
+
+        tags.borrow_mut().insert(tag_name.to_owned());
+        let tag_code = tags::tag_access(tag_name.ref_str());
+        let arity = pat_xs.len(); // includes tag, so total tuple count
+
+        let else_mark = if first { "" } else { " else " };
+        write!(
+          chunk,
+          "{else_mark}if ({tag_var} === {tag_code} && {proc_prefix}_$n_tuple_$o_count({val_var}) === {arity}) {{"
+        )
+        .expect("write");
+
+        // Generate binding code
+        let mut scoped_defs = local_defs.to_owned();
+        for (i, binding) in pat_xs.iter().skip(1).enumerate() {
+          let bind_name = match binding {
+            Calcit::Local(CalcitLocal { sym, .. }) => escape_var(sym),
+            Calcit::Symbol { sym, .. } => escape_var(sym),
+            other => return Err(format!("match binding expected symbol, got: {other}")),
+          };
+          if let Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } = binding {
+            scoped_defs.insert(sym.to_owned());
+          }
+          write!(chunk, "\nlet {bind_name} = {proc_prefix}_$n_tuple_$o_nth({val_var}, {});", i + 1).expect("write");
+        }
+
+        let body_code = to_js_code(branch_body, ns, &scoped_defs, file_imports, tags, Some(return_label))?;
+        writeln!(chunk, "\n{body_code} }}").expect("write");
+        first = false;
+      }
+      other => return Err(format!("match unexpected pattern: {other}")),
+    }
+  }
+
+  // Add fallthrough error if no wildcard
+  if !body.iter().skip(1).any(|b| {
+    matches!(b,
+      Calcit::List(xs) if xs.len() == 2 && matches!(&xs[0],
+        Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) if sym.as_ref() == "_"
+      )
+    )
+  }) {
+    write!(
+      chunk,
+      " else {{ throw new Error(\"match: no matching branch for tag \" + {tag_var}); }}"
+    )
+    .expect("write");
+  }
+
+  if base_return_label.is_some() {
+    Ok(chunk)
+  } else {
+    Ok(make_fn_wrapper(&chunk, has_await))
+  }
+}
+
 fn gen_if_code(
   body: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
@@ -1108,6 +1335,11 @@ fn gen_js_func(
       if is_hint {
         if hinted_async(xs) {
           async_prefix = String::from("async ")
+        } else if xs.len() > 1 && !xs.iter().skip(1).any(is_schema_map_form) {
+          eprintln!(
+            "[Warn] hint-fn args not in recognized schema map form in {}/{name}; correct usage: `hint-fn $ {{}} (:async true)`",
+            passed_defs.ns
+          );
         }
         continue;
       }
@@ -1212,6 +1444,35 @@ fn hinted_async(xs: &CalcitList) -> bool {
   xs.iter().skip(1).any(schema_marks_async)
 }
 
+/// Returns true when a value is in the schema map form recognised by hint-fn:
+/// either an already-evaluated `Calcit::Map` or a list-literal starting with
+/// `{}` / `NativeMap`.  Used to distinguish valid schema annotations (which
+/// should never warn) from malformed async hints.
+fn is_schema_map_form(form: &Calcit) -> bool {
+  match form {
+    Calcit::Map(_) => true,
+    Calcit::List(list) => {
+      matches!(list.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}")
+        || matches!(list.first(), Some(Calcit::Proc(CalcitProc::NativeMap)))
+    }
+    _ => false,
+  }
+}
+
+fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
+  let Calcit::List(items) = code else {
+    return Err(format!("expected preprocessed defn list, got: {code}"));
+  };
+
+  match (items.first(), items.get(1), items.get(2)) {
+    (Some(Calcit::Syntax(CalcitSyntax::Defn, _)), Some(Calcit::Symbol { .. }), Some(Calcit::List(args))) => {
+      let raw_args = get_raw_args_fn(args)?;
+      Ok((raw_args, items.drop_left().drop_left().drop_left().to_vec()))
+    }
+    _ => Err(format!("expected preprocessed defn form, got: {code}")),
+  }
+}
+
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let code_emit_path = Path::new(emit_path);
   if !code_emit_path.exists() {
@@ -1220,7 +1481,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
   let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
 
-  let program = program::clone_evaled_program();
+  let program = program::clone_compiled_program_snapshot()?;
   for (ns, file) in program.iter() {
     // println!("\nstart handling: {}\n", ns);
     // side-effects, reset tracking state
@@ -1237,7 +1498,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       let app_pkg_name = entry_ns.split('.').collect::<Vec<&str>>()[0];
       let pkg_name = ns.split('.').collect::<Vec<&str>>()[0]; // TODO simpler
       if app_pkg_name != pkg_name {
-        match internal_states::lookup_prev_ns_cache(&ns) {
+        match internal_states::lookup_prev_ns_cache(ns) {
           Some(v) if v == defs_in_current => {
             // same as last time, skip
             continue;
@@ -1247,7 +1508,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       }
     }
     // remember defs of each ns for comparing
-    internal_states::write_as_ns_cache(&ns, defs_in_current);
+    internal_states::write_as_ns_cache(ns, defs_in_current);
 
     // reset index each file
     reset_js_gensym_index();
@@ -1259,7 +1520,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let mut direct_code = String::from(""); // dirty code to run directly
     let mut tags_code = String::new();
 
-    let mut import_code = if &*ns == "calcit.core" {
+    let mut import_code = if &**ns == "calcit.core" {
       snippets::tmpl_import_procs(wrap_js_str("@calcit/procs"))
     } else {
       format!("\nimport * as $clt from {core_lib};")
@@ -1272,11 +1533,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       def_names.insert(def.to_owned());
     }
 
-    let deps_in_order = sort_by_deps(&file.to_hashmap());
+    let deps_in_order = sort_compiled_defs_by_deps(file);
     // println!("deps order: {:?}", deps_in_order);
 
     for def in deps_in_order {
-      if &*ns == calcit::CORE_NS {
+      let compiled_def = file.get(&def).expect("compiled def for codegen");
+
+      if &**ns == calcit::CORE_NS {
+        if should_skip_core_def_codegen(&def, compiled_def) {
+          continue;
+        }
         // some defs from core can be replaced by calcit.procs
         if is_js_unavailable_procs(&def) {
           continue;
@@ -1287,58 +1553,52 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
 
-      let f = file.lookup(&def).unwrap().0.to_owned();
-
-      match &f {
+      match &compiled_def.kind {
         // probably not work here
-        Calcit::Proc(..) => {
+        program::CompiledDefKind::Proc => {
           writeln!(defs_code, "\nvar {} = $procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
-        Calcit::Fn { info, .. } => {
-          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), &[]);
+        program::CompiledDefKind::Fn => {
+          let (raw_args, raw_body) = extract_preprocessed_fn_parts(&compiled_def.preprocessed_code)?;
+          gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.preprocessed_code.to_owned(), &[]);
           let passed_defs = PassedDefs {
-            ns: &ns,
+            ns,
             local_defs: &def_names,
             file_imports: &file_imports,
           };
-          defs_code.push_str(&gen_js_func(
-            &def,
-            &info.args,
-            &info.body,
-            &passed_defs,
-            true,
-            &collected_tags,
-            &ns,
-          )?);
+          defs_code.push_str(&gen_js_func(&def, &raw_args, &raw_body, &passed_defs, true, &collected_tags, ns)?);
           gen_stack::pop_call_stack();
         }
-        Calcit::Thunk(thunk) => {
+        program::CompiledDefKind::LazyValue => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, thunk.get_code().to_owned(), &[]);
+          gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.codegen_form.to_owned(), &[]);
           writeln!(
             vals_code,
             "\nexport var {} = {};",
             escape_var(&def),
-            to_js_code(thunk.get_code(), &ns, &def_names, &file_imports, &collected_tags, None)?
+            to_js_code(&compiled_def.codegen_form, ns, &def_names, &file_imports, &collected_tags, None)?
           )
           .expect("write");
           gen_stack::pop_call_stack()
         }
         // macro are not traced in codegen since already expanded
-        Calcit::Macro { .. } => {}
-        Calcit::Syntax(_, _) => {
+        program::CompiledDefKind::Macro => {}
+        program::CompiledDefKind::Syntax => {
           // should he handled inside compiler
         }
-        Calcit::Bool(_) | Calcit::Number(_) => {
-          eprintln!("[Warn] expected thunk, got macro. skipped `{ns}/{def} {f}`")
+        program::CompiledDefKind::Value if matches!(&compiled_def.codegen_form, Calcit::Bool(_) | Calcit::Number(_)) => {
+          eprintln!(
+            "[Warn] expected thunk, got macro. skipped `{ns}/{def} {}`",
+            compiled_def.codegen_form
+          )
         }
-        _ => {
-          eprintln!("[Warn] expected thunk for js, skipped `{ns}/{def} {f}`")
+        program::CompiledDefKind::Value => {
+          eprintln!("[Warn] expected thunk for js, skipped `{ns}/{def} {}`", compiled_def.codegen_form)
         }
       }
     }
-    if &*ns == calcit::CORE_NS {
+    if &**ns == calcit::CORE_NS {
       // add at end of file to register builtin classes
       direct_code.push_str(&snippets::tmpl_classes_registering())
     }
@@ -1387,7 +1647,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       }
     }
 
-    let tag_prefix = if &*ns == "calcit.core" { "" } else { "$clt." };
+    let tag_prefix = if &**ns == "calcit.core" { "" } else { "$clt." };
     let mut tag_arr = String::from("[");
     let mut ordered_tags: Vec<EdnTag> = vec![];
     for k in collected_tags.borrow().iter() {
@@ -1403,7 +1663,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     tag_arr.push(']');
     tags_code.push_str(&snippets::tmpl_tags_init(&tag_arr, tag_prefix));
 
-    let js_file_path = code_emit_path.join(to_mjs_filename(&ns));
+    let js_file_path = code_emit_path.join(to_mjs_filename(ns));
     let wrote_new = write_file_if_changed(
       &js_file_path,
       &format!("{import_code}{tags_code}\n{defs_code}\n\n{vals_code}\n{direct_code}"),
@@ -1428,6 +1688,29 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
+
+  fn runtime_placeholder_quote() -> Calcit {
+    Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from(calcit::CORE_NS)),
+      symbol("&runtime-implementation"),
+    ])))
+  }
+
+  fn compiled_def_for_codegen_test(kind: program::CompiledDefKind, source_code: Option<Calcit>) -> program::CompiledDef {
+    program::CompiledDef {
+      def_id: program::DefId(0),
+      version_id: 0,
+      kind,
+      preprocessed_code: Calcit::Nil,
+      codegen_form: Calcit::Nil,
+      deps: vec![],
+      type_summary: None,
+      source_code,
+      schema: calcit::DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+    }
+  }
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
@@ -1464,5 +1747,68 @@ mod tests {
     ])));
     let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
     assert!(!hinted_async(&hint));
+  }
+
+  #[test]
+  fn core_codegen_skips_runtime_placeholder_defs() {
+    let compiled = compiled_def_for_codegen_test(program::CompiledDefKind::LazyValue, Some(runtime_placeholder_quote()));
+    assert!(should_skip_core_def_codegen("range", &compiled));
+  }
+
+  #[test]
+  fn core_codegen_skips_syntax_names_even_without_runtime_placeholder_source() {
+    let compiled = compiled_def_for_codegen_test(program::CompiledDefKind::LazyValue, None);
+    assert!(should_skip_core_def_codegen("eval", &compiled));
+  }
+
+  #[test]
+  fn raw_syntax_nodes_fail_js_codegen_with_llm_hint() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let failure = to_js_code(
+      &Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.emit-js")),
+      "tests.emit-js",
+      &local_defs,
+      &file_imports,
+      &tags,
+      None,
+    )
+    .expect_err("raw syntax should be rejected in JS codegen");
+
+    assert!(failure.contains("raw syntax node `if`"), "unexpected error: {failure}");
+    assert!(failure.contains("LLM hint"), "unexpected error: {failure}");
+  }
+
+  #[test]
+  fn reset_syntax_call_codegen_uses_runtime_proc() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Reset, Arc::from("tests.emit-js")),
+      symbol("state"),
+      Calcit::Number(1.0),
+    ])));
+
+    let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("reset! should compile");
+
+    assert_eq!(code, "$clt.reset_$x_(state, 1)");
+  }
+
+  #[test]
+  fn eval_syntax_call_codegen_uses_runtime_proc() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Eval, Arc::from("tests.emit-js")),
+      symbol("code"),
+    ])));
+
+    let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("eval should compile");
+
+    assert_eq!(code, "$clt.eval(code)");
   }
 }

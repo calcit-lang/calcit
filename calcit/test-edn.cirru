@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-edn)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-edn)
   :configs $ {} (:init-fn |test-edn.main/main!) (:reload-fn |test-edn.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -146,8 +146,7 @@
                   code $ quote (+ 1 2)
                 assert= code $ eval (&data-to-code code)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-edn.main $ :require
             [] util.core :refer $ [] inside-eval:
-        :examples $ []

@@ -7,9 +7,6 @@ pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct ToplevelCalcit {
   #[argh(subcommand)]
   pub subcommand: Option<CalcitCommand>,
-  /// run once and exit (kept for compatibility)
-  #[argh(switch, short = '1')]
-  pub once: bool,
   /// enable watch mode for direct run mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
@@ -25,6 +22,9 @@ pub struct ToplevelCalcit {
   /// warn on dynamic method calls that cannot be monomorphized
   #[argh(switch)]
   pub warn_dyn_method: bool,
+  /// print FFI dylib calls and callbacks for debugging native crashes
+  #[argh(switch)]
+  pub trace_ffi: bool,
   /// entry file path, defaults to "js-out/"
   #[argh(option, default = "String::from(\"js-out/\")")]
   pub emit_path: String,
@@ -43,15 +43,18 @@ pub struct ToplevelCalcit {
   #[argh(option)]
   /// specify a path to watch assets changes
   pub watch_dir: Option<String>,
-  /// input source file, defaults to "compact.cirru"
-  #[argh(positional, default = "String::from(\"compact.cirru\")")]
+  /// input source file, defaults to "calcit.cirru" and falls back to "compact.cirru"
+  #[argh(positional, default = "String::from(crate::DEFAULT_SNAPSHOT_FILE)")]
   pub input: String,
   /// print version only
   #[argh(switch)]
   pub version: bool,
-  /// suppress tips output in all commands
+  /// show full tips output in all commands
   #[argh(switch)]
-  pub no_tips: bool,
+  pub tips: bool,
+  /// control tips verbosity: minimal (default), full, none
+  #[argh(option)]
+  pub tips_level: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -63,7 +66,7 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
-  /// analyze code structure (call-graph, count-calls, check-examples)
+  /// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, def-diff, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -83,9 +86,6 @@ pub enum CalcitCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "js")]
 pub struct EmitJsCommand {
-  /// run once and exit (kept for compatibility)
-  #[argh(switch, short = '1')]
-  pub once: bool,
   /// enable watch mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
@@ -98,9 +98,6 @@ pub struct EmitJsCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
-  /// run once and exit (kept for compatibility)
-  #[argh(switch, short = '1')]
-  pub once: bool,
   /// enable watch mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
@@ -124,7 +121,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure (call-graph, count-calls, check-examples, check-types)
+/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -135,12 +132,38 @@ pub struct AnalyzeCommand {
 pub enum AnalyzeSubcommand {
   /// analyze call graph structure from entry point
   CallGraph(CallGraphCommand),
+  /// compare call graph structure against a Git ref and annotate code changes
+  CallGraphDiff(CallGraphDiffCommand),
   /// count call occurrences from entry point
   CountCalls(CountCallsCommand),
+  /// compare current snapshot (or one definition) against a Git ref with structured tree diff
+  ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
   /// check type-information coverage in namespace definitions
   CheckTypes(CheckTypesCommand),
+  /// escape a Calcit symbol into JavaScript-safe identifier form
+  JsEscape(JsEscapeCommand),
+  /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+  JsUnescape(JsUnescapeCommand),
+}
+
+/// escape a Calcit symbol into JavaScript-safe identifier form
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "js-escape")]
+pub struct JsEscapeCommand {
+  /// original Calcit symbol
+  #[argh(positional)]
+  pub symbol: String,
+}
+
+/// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "js-unescape")]
+pub struct JsUnescapeCommand {
+  /// escaped JavaScript identifier
+  #[argh(positional)]
+  pub symbol: String,
 }
 
 /// check type-information coverage in namespace definitions
@@ -194,6 +217,27 @@ pub struct CallGraphCommand {
   pub format: String,
 }
 
+/// compare call graph structure against a Git ref and annotate code changes
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "call-graph-diff")]
+pub struct CallGraphDiffCommand {
+  /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
+  #[argh(positional)]
+  pub git_ref: String,
+  /// directly specify root definition to analyze (format: ns/def). If omitted, uses current config init-fn
+  #[argh(option)]
+  pub root: Option<String>,
+  /// only show definitions whose namespace starts with this prefix
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// include core/library calls in the output
+  #[argh(switch)]
+  pub include_core: bool,
+  /// maximum depth to traverse (0 = unlimited)
+  #[argh(option, default = "0")]
+  pub max_depth: usize,
+}
+
 /// count call occurrences from entry point
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "count-calls")]
@@ -213,6 +257,18 @@ pub struct CountCallsCommand {
   /// sort by: "count" (default, descending) or "name"
   #[argh(option, default = "String::from(\"count\")")]
   pub sort: String,
+}
+
+/// compare current snapshot against a Git ref with structured tree diff; use --def to narrow to one definition
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "program-diff")]
+pub struct ProgramDiffCommand {
+  /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
+  #[argh(positional)]
+  pub git_ref: String,
+  /// narrow diff to a single definition in format ns/def
+  #[argh(option)]
+  pub def: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -270,9 +326,6 @@ pub struct QuerySchemaCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
-  /// do not display helpful usage tips
-  #[argh(switch)]
-  pub no_tips: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -328,6 +381,18 @@ pub struct QueryDefCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// preferred nodes per display fragment when large expressions are chunked
+  #[argh(option, default = "56")]
+  pub chunk_target_nodes: usize,
+  /// stop recursive chunk splitting once fragments fall below this node count
+  #[argh(option, default = "68")]
+  pub chunk_max_nodes: usize,
+  /// only enable chunked display when total expression nodes reach this threshold
+  #[argh(option, default = "88")]
+  pub chunk_trigger_nodes: usize,
+  /// force raw full-definition display without chunking
+  #[argh(switch)]
+  pub raw: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -364,6 +429,9 @@ pub struct QueryFindCommand {
   /// maximum number of results (default 20)
   #[argh(option, short = 'n', default = "20")]
   pub limit: usize,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -376,6 +444,9 @@ pub struct QueryUsagesCommand {
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -394,12 +465,15 @@ pub struct QuerySearchCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
-  /// start search from specific path (comma-separated indices, e.g. "2,1,0")
+  /// start search from specific path (dot-separated indices preferred, e.g. "2.1.0")
   #[argh(option, short = 'p', long = "start-path")]
   pub start_path: Option<String>,
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -424,6 +498,9 @@ pub struct QuerySearchExprCommand {
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
   pub entry: Option<String>,
+  /// start index for detailed display window (3 detailed items)
+  #[argh(option, long = "detail-offset", default = "0")]
+  pub detail_offset: usize,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -468,6 +545,12 @@ pub struct DocsSearchCommand {
   /// filter by filename (optional)
   #[argh(option, short = 'f')]
   pub filename: Option<String>,
+  /// search scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// search docs for a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -489,6 +572,12 @@ pub struct DocsReadCommand {
   /// show line numbers in heading list and section titles
   #[argh(switch)]
   pub with_lines: bool,
+  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -525,6 +614,12 @@ pub struct DocsReadLinesCommand {
   /// number of lines to read (default: 80)
   #[argh(option, short = 'n', default = "80")]
   pub lines: usize,
+  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
+  #[argh(option)]
+  pub scope: Option<String>,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -539,10 +634,10 @@ pub struct DocsCheckMdCommand {
   /// path to the markdown file to check
   #[argh(positional)]
   pub file: String,
-  /// entry .cirru file for eval context (default: demos/compact.cirru)
-  #[argh(option, short = 'd', default = "String::from(\"demos/compact.cirru\")")]
+  /// entry .cirru file for eval context (default: demos/calcit.cirru)
+  #[argh(option, short = 'd', default = "String::from(\"demos/calcit.cirru\")")]
   pub entry: String,
-  /// dependency module path for eval context, can be provided multiple times; paths ending with '/' load compact.cirru
+  /// dependency module path for eval context, can be provided multiple times; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]
   pub dep: Vec<String>,
 }
@@ -1032,12 +1127,12 @@ pub struct EditRmModuleCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "config")]
-/// update project config values
+/// update project config values; use `cr edit config version patch|minor|major` to increment semver
 pub struct EditConfigCommand {
   /// config key: "init-fn", "reload-fn", "version"
   #[argh(positional)]
   pub key: String,
-  /// config value
+  /// config value; for "version", accepts a semver string or one of: patch, minor, major
   #[argh(positional)]
   pub value: String,
 }
@@ -1105,7 +1200,7 @@ pub struct TreeShowCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated preferred, comma-separated also accepted; e.g. "2.1.0")
   #[argh(option, short = 'p')]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -1114,6 +1209,21 @@ pub struct TreeShowCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// preferred nodes per display fragment when large expressions are chunked
+  #[argh(option, default = "56")]
+  pub chunk_target_nodes: usize,
+  /// stop recursive chunk splitting once fragments fall below this node count
+  #[argh(option, default = "68")]
+  pub chunk_max_nodes: usize,
+  /// only enable chunked display when total expression nodes reach this threshold
+  #[argh(option, default = "88")]
+  pub chunk_trigger_nodes: usize,
+  /// nested chunk layers to expand beyond ROOT (default 1 shows ROOT + direct chunks only)
+  #[argh(option, default = "1")]
+  pub chunk_expand_depth: usize,
+  /// force raw subtree display without chunking
+  #[argh(switch)]
+  pub raw: bool,
 }
 
 /// copy node from one path to another within a definition

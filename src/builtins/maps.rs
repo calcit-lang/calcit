@@ -171,6 +171,28 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn map_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
+    Some(Calcit::Map(ys)) => {
+      let keys: Vec<Calcit> = ys.keys().map(|k| k.to_owned()).collect();
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(keys))))
+    }
+    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:keys expected a map, but received: {a}")),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:keys expected 1 argument, but received none"),
+  }
+}
+
+pub fn map_vals(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
+    Some(Calcit::Map(ys)) => {
+      let vals: Vec<Calcit> = ys.values().map(|v| v.to_owned()).collect();
+      Ok(Calcit::List(Arc::new(CalcitList::Vector(vals))))
+    }
+    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:vals expected a map, but received: {a}")),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:vals expected 1 argument, but received none"),
+  }
+}
+
 pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
@@ -352,13 +374,14 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn diff_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let zs = &mut xs.to_owned();
-      for k in ys.keys() {
-        if zs.contains_key(k) {
-          zs.remove_mut(k);
+      // Build result directly instead of cloning xs and removing keys
+      let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
+      for (k, v) in xs.iter() {
+        if !ys.contains_key(k) {
+          zs.insert_mut(k.to_owned(), v.to_owned());
         }
       }
-      Ok(Calcit::Map(zs.to_owned()))
+      Ok(Calcit::Map(zs))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:diff-new expected 2 maps, but received: {a} {b}")),
     (..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:diff-new expected 2 arguments, but received:", xs),
@@ -400,5 +423,51 @@ pub fn common_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       format!("&map:common-keys expected 2 maps, but received: {a} {b}"),
     ),
     (..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:common-keys expected 2 arguments, but received:", xs),
+  }
+}
+
+/// Single-pass diff: `(&map:diff-triple a b)` → `[drop-keys new-diff common-triples]`
+///
+/// - `drop-keys`: Set of keys in `a` but not in `b`
+/// - `new-diff`: Map of entries in `b` but not in `a`
+/// - `common-triples`: List of `[k va vb]` for every key present in both maps
+///
+/// Replaces three separate calls to `&map:diff-keys`, `&map:diff-new`, and `&map:common-keys`
+/// followed by `&map:to-list` + per-key `&map:get`, reducing map traversals from 3+ to 2.
+pub fn diff_triple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
+    (Some(Calcit::Map(a)), Some(Calcit::Map(b))) => {
+      let mut drop_keys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
+      let mut common_triples: Vec<Calcit> = Vec::new();
+
+      // One pass over a: split into drop-keys and common-triples
+      for (k, va) in a.iter() {
+        match b.get(k) {
+          Some(vb) => {
+            let triple = Calcit::from(CalcitList::from(&[k.to_owned(), va.to_owned(), vb.to_owned()]));
+            common_triples.push(triple);
+          }
+          None => {
+            drop_keys.insert_mut(k.to_owned());
+          }
+        }
+      }
+
+      // One pass over b: collect entries not in a
+      let mut new_diff: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
+      for (k, vb) in b.iter() {
+        if !a.contains_key(k) {
+          new_diff.insert_mut(k.to_owned(), vb.to_owned());
+        }
+      }
+
+      let result = CalcitList::from(&[Calcit::Set(drop_keys), Calcit::Map(new_diff), Calcit::from(common_triples)]);
+      Ok(Calcit::from(result))
+    }
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&map:diff-triple expected 2 maps, but received: {a} {b}"),
+    ),
+    (..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:diff-triple expected 2 arguments, but received:", xs),
   }
 }

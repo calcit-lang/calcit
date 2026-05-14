@@ -40,7 +40,7 @@ pub fn main() -> io::Result<()> {
         return Err(io_err(format!("expected *.cirru file, got: {ext_str}")));
       }
     }
-    None => out_path.join("compact.cirru"),
+    None => out_path.join(calcit::DEFAULT_SNAPSHOT_FILE),
   };
   let inc_file_path = out_path.join(".compact-inc.cirru");
   let no_watcher = cli_args.once;

@@ -2,15 +2,70 @@ use colored::Colorize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static TIPS_SUPPRESSED: AtomicBool = AtomicBool::new(false);
+static TIPS_FULL: AtomicBool = AtomicBool::new(false);
+static COMMAND_GUIDANCE_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
-/// Suppress all tips output globally (set once at startup via --no-tips)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipsLevel {
+  Minimal,
+  Full,
+  None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TipPriority {
+  Normal,
+  High,
+}
+
+impl TipsLevel {
+  fn parse(raw: &str) -> Option<Self> {
+    match raw {
+      "minimal" => Some(Self::Minimal),
+      "full" => Some(Self::Full),
+      "none" => Some(Self::None),
+      _ => None,
+    }
+  }
+}
+
+/// Suppress all tips output globally
 pub fn suppress_tips() {
   TIPS_SUPPRESSED.store(true, Ordering::Relaxed);
+  TIPS_FULL.store(false, Ordering::Relaxed);
+}
+
+pub fn suppress_command_guidance() {
+  COMMAND_GUIDANCE_SUPPRESSED.store(true, Ordering::Relaxed);
+  suppress_tips();
+}
+
+pub fn command_guidance_enabled() -> bool {
+  !COMMAND_GUIDANCE_SUPPRESSED.load(Ordering::Relaxed)
+}
+
+pub fn set_tips_level(raw: &str) -> Result<(), String> {
+  let level =
+    TipsLevel::parse(raw).ok_or_else(|| format!("Invalid --tips-level value '{raw}'. Expected one of: minimal, full, none"))?;
+
+  match level {
+    TipsLevel::Minimal => {
+      TIPS_SUPPRESSED.store(false, Ordering::Relaxed);
+      TIPS_FULL.store(false, Ordering::Relaxed);
+    }
+    TipsLevel::Full => {
+      TIPS_SUPPRESSED.store(false, Ordering::Relaxed);
+      TIPS_FULL.store(true, Ordering::Relaxed);
+    }
+    TipsLevel::None => suppress_tips(),
+  }
+
+  Ok(())
 }
 
 /// Simple helper to collect and print tips consistently across commands
 pub struct Tips {
-  items: Vec<String>,
+  items: Vec<(TipPriority, String)>,
 }
 
 impl Tips {
@@ -19,7 +74,11 @@ impl Tips {
   }
 
   pub fn add(&mut self, tip: impl Into<String>) {
-    self.items.push(tip.into());
+    self.items.push((TipPriority::Normal, tip.into()));
+  }
+
+  pub fn add_with_priority(&mut self, priority: TipPriority, tip: impl Into<String>) {
+    self.items.push((priority, tip.into()));
   }
 
   #[allow(dead_code)]
@@ -31,7 +90,7 @@ impl Tips {
 
   pub fn append(&mut self, tips: Vec<String>) {
     for t in tips {
-      self.items.push(t);
+      self.items.push((TipPriority::Normal, t));
     }
   }
 
@@ -40,7 +99,21 @@ impl Tips {
     if self.items.is_empty() || TIPS_SUPPRESSED.load(Ordering::Relaxed) {
       return;
     }
-    println!("{}: {}", "Tips".blue().bold(), self.items.join("; "));
+
+    if TIPS_FULL.load(Ordering::Relaxed) {
+      let all = self
+        .items
+        .iter()
+        .map(|(_, message)| message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ");
+      println!("{}: {}", "Tips".blue().bold(), all);
+      return;
+    }
+
+    if let Some((_, message)) = self.items.iter().find(|(priority, _)| *priority == TipPriority::High) {
+      println!("{}: {}", "Tips".blue().bold(), message);
+    }
   }
 }
 
@@ -61,24 +134,11 @@ pub fn tip_prefer_oneliner_json(show_json: bool) -> Vec<String> {
 /// Tip for discouraging root-level edits when path is empty during editing
 pub fn tip_root_edit(path_is_empty: bool) -> Option<String> {
   if path_is_empty {
-    Some("Editing root path; prefer local updates to avoid unintended changes".to_string())
+    Some(
+      "Editing root path; prefer cr edit def --overwrite -f <file> for whole-definition rewrites, and keep tree replace for intentional root-node surgery"
+        .to_string(),
+    )
   } else {
     None
   }
-}
-
-/// Tips for `cr query ns` when listing namespaces
-pub fn tip_query_ns_list(include_deps: bool) -> Vec<String> {
-  let mut tips = Vec::new();
-  tips.push("Use `cr query ns <namespace>` to show namespace details.".to_string());
-  tips.push("Use `cr query defs <namespace>` to list definitions.".to_string());
-  if !include_deps {
-    tips.push("Use `--deps` to include dependency and core namespaces.".to_string());
-  }
-  tips
-}
-
-/// Tips for `cr query defs` when showing definitions list
-pub fn tip_query_defs_list() -> Vec<String> {
-  vec!["Use `cr query peek <ns/def>` for signature, `cr query def <ns/def>` for full code.".to_string()]
 }

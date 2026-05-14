@@ -5,7 +5,7 @@
 use calcit::cli_args::{DocsCommand, DocsSubcommand};
 use colored::Colorize;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,12 +21,99 @@ use calcit::snapshot;
 use calcit::util;
 
 use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
+use super::tips::command_guidance_enabled;
+
+const VALID_DOC_CATEGORIES: &[&str] = &[
+  "run",
+  "features",
+  "installation",
+  "data",
+  "intro",
+  "syntax",
+  "tools",
+  "ecosystem",
+  "reference",
+  "docs",
+];
 
 #[derive(Debug, Clone)]
 pub struct GuideDoc {
   filename: String,
   path: String,
   content: String,
+  scope: GuideDocScope,
+  frontmatter: GuideDocFrontmatter,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct GuideDocFrontmatter {
+  title: Option<String>,
+  scope: Option<String>,
+  kind: Option<String>,
+  category: Option<String>,
+  aliases: Vec<String>,
+  entry_for: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GuideDocScope {
+  Core,
+  Module(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DocsSearchScope {
+  Core,
+  Modules,
+  All,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchResult {
+  doc_index: usize,
+  merged_ranges: Vec<(usize, usize)>,
+  score: usize,
+}
+
+impl GuideDoc {
+  fn display_title(&self) -> String {
+    let base_title = self.frontmatter.title.as_deref().unwrap_or(&self.filename);
+    match &self.scope {
+      GuideDocScope::Core => base_title.to_string(),
+      GuideDocScope::Module(module) => format!("{base_title} [module:{module}]"),
+    }
+  }
+}
+
+fn match_score(value: &str, query_lower: &str, exact_score: usize, contains_score: usize) -> usize {
+  let value_lower = value.to_lowercase();
+  if value_lower == query_lower {
+    exact_score
+  } else if value_lower.contains(query_lower) {
+    contains_score
+  } else {
+    0
+  }
+}
+
+fn accumulate_match_score(total: &mut usize, matched: &mut bool, value: &str, query_lower: &str, exact: usize, contains: usize) {
+  let score = match_score(value, query_lower, exact, contains);
+  if score > 0 {
+    *total += score;
+    *matched = true;
+  }
+}
+
+fn parse_guide_doc(filename: String, path: String, raw_content: &str, scope: GuideDocScope) -> Result<GuideDoc, String> {
+  let (frontmatter, content) = parse_doc_frontmatter(raw_content);
+  validate_doc_frontmatter(&path, &frontmatter)?;
+  Ok(GuideDoc {
+    filename,
+    path,
+    content,
+    scope,
+    frontmatter,
+  })
 }
 
 struct ReadRenderOptions<'a> {
@@ -43,10 +130,30 @@ struct ReadRenderOptions<'a> {
 
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
-    DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
-    DocsSubcommand::Read(opts) => handle_read(&opts.filename, &opts.headings, !opts.no_subheadings, opts.full, opts.with_lines),
+    DocsSubcommand::Search(opts) => handle_search(
+      &opts.keyword,
+      opts.context,
+      opts.filename.as_deref(),
+      opts.scope.as_deref(),
+      opts.module.as_deref(),
+    ),
+    DocsSubcommand::Read(opts) => handle_read(
+      &opts.filename,
+      &opts.headings,
+      !opts.no_subheadings,
+      opts.full,
+      opts.with_lines,
+      opts.scope.as_deref(),
+      opts.module.as_deref(),
+    ),
     DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
-    DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines),
+    DocsSubcommand::ReadLines(opts) => handle_read_lines(
+      &opts.filename,
+      opts.start,
+      opts.lines,
+      opts.scope.as_deref(),
+      opts.module.as_deref(),
+    ),
     DocsSubcommand::List(_) => handle_list(),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
   }
@@ -76,7 +183,7 @@ fn needs_agents_refresh(cache_path: &Path) -> bool {
 
   let now = SystemTime::now();
   match now.duration_since(modified) {
-    Ok(age) => age > Duration::from_secs(24 * 60 * 60),
+    Ok(age) => age > Duration::from_secs(60 * 60),
     Err(_) => true,
   }
 }
@@ -129,118 +236,446 @@ fn handle_read_content(options: ReadRenderOptions<'_>) -> Result<(), String> {
   )
 }
 
-fn find_doc_by_filename<'a>(guide_docs: &'a HashMap<String, GuideDoc>, filename: &str) -> Result<&'a GuideDoc, String> {
-  guide_docs
-    .values()
-    .find(|d| d.filename == filename || d.filename.contains(filename))
-    .ok_or_else(|| format!("Document '{filename}' not found. Use 'cr docs list' to see available documents."))
+fn score_doc_query(doc: &GuideDoc, query_lower: &str) -> usize {
+  let mut score: usize = 0;
+  score += match_score(&doc.filename, query_lower, 320, 180);
+  score += match_score(&doc.path, query_lower, 280, 140);
+
+  if let Some(title) = &doc.frontmatter.title {
+    score += match_score(title, query_lower, 260, 150);
+  }
+
+  for alias in &doc.frontmatter.aliases {
+    score += match_score(alias, query_lower, 220, 120);
+  }
+
+  for entry in &doc.frontmatter.entry_for {
+    score += match_score(entry, query_lower, 180, 96);
+  }
+
+  score.saturating_add_signed(score_doc_shape(doc))
 }
 
-fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
+fn find_doc_by_query<'a>(guide_docs: &'a [GuideDoc], query: &str) -> Result<&'a GuideDoc, String> {
+  let query_lower = query.to_lowercase();
+  guide_docs
+    .iter()
+    .filter_map(|doc| {
+      let score = score_doc_query(doc, &query_lower);
+      (score > 0).then_some((doc, score))
+    })
+    .max_by(|(left_doc, left_score), (right_doc, right_score)| {
+      left_score.cmp(right_score).then_with(|| right_doc.path.cmp(&left_doc.path))
+    })
+    .map(|(doc, _)| doc)
+    .ok_or_else(|| {
+      format!("Document '{query}' not found. Use 'cr docs list' or 'cr docs search {query}' to locate matching documents.")
+    })
+}
+
+fn get_guidebook_dir() -> Result<PathBuf, String> {
   let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable")?;
-  let docs_dir = Path::new(&home_dir).join(".config/calcit/guidebook-repo/docs");
+  let docs_dir = Path::new(&home_dir).join(".config/calcit/docs");
 
   if !docs_dir.exists() {
+    let calcit_repo_dir = Path::new(&home_dir).join(".config/calcit/calcit");
     return Err(format!(
-      "Guidebook documentation directory not found: {docs_dir:?}\n\n\
-       To set up guidebook documentation, please run:\n\
-       git clone https://github.com/calcit-lang/guidebook-repo.git ~/.config/calcit/guidebook-repo"
+      "Guidebook documentation directory not found: {docs_dir:?}\n\nDownload the Calcit docs repo with git, then create a symlink for the docs directory:\nmkdir -p ~/.config/calcit\ngit clone https://github.com/calcit-lang/calcit.git {}\nln -s {}/docs {}",
+      calcit_repo_dir.display(),
+      calcit_repo_dir.display(),
+      docs_dir.display()
     ));
   }
 
   Ok(docs_dir)
 }
 
-fn load_guidebook_docs() -> Result<HashMap<String, GuideDoc>, String> {
-  let docs_dir = get_guidebook_dir()?;
-  let mut guide_docs = HashMap::new();
-
-  fn visit_dir(dir: &Path, base_dir: &Path, docs: &mut HashMap<String, GuideDoc>) -> Result<(), String> {
-    for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {e}"))? {
-      let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
-      let path = entry.path();
-
-      if path.is_dir() {
-        visit_dir(&path, base_dir, docs)?;
-      } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
-        let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read file {path:?}: {e}"))?;
-        let relative_path = path.strip_prefix(base_dir).map_err(|_| "Unable to get relative path")?;
-        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
-
-        docs.insert(
-          filename.clone(),
-          GuideDoc {
-            filename,
-            path: relative_path.to_string_lossy().to_string(),
-            content,
-          },
-        );
-      }
+fn trim_frontmatter_value(raw: &str) -> String {
+  let value = raw.trim();
+  if value.len() >= 2 {
+    let first = value.chars().next().unwrap_or_default();
+    let last = value.chars().last().unwrap_or_default();
+    if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+      return value[1..value.len() - 1].to_string();
     }
-    Ok(())
+  }
+  value.to_string()
+}
+
+fn validate_doc_frontmatter(path: &str, frontmatter: &GuideDocFrontmatter) -> Result<(), String> {
+  if let Some(category) = frontmatter.category.as_deref() {
+    if !VALID_DOC_CATEGORIES.contains(&category) {
+      return Err(format!(
+        "Invalid frontmatter category '{category}' in {path}. Use one of: {}. See docs/docs-indexing.md.",
+        VALID_DOC_CATEGORIES.join(", ")
+      ));
+    }
   }
 
-  visit_dir(&docs_dir, &docs_dir, &mut guide_docs)?;
+  Ok(())
+}
+
+fn parse_doc_frontmatter(raw: &str) -> (GuideDocFrontmatter, String) {
+  if !raw.starts_with("---\n") {
+    return (GuideDocFrontmatter::default(), raw.to_string());
+  }
+
+  let mut frontmatter = GuideDocFrontmatter::default();
+  let mut body_lines = Vec::new();
+  let mut in_frontmatter = true;
+  let mut saw_closing = false;
+  let mut active_list: Option<&str> = None;
+
+  for (index, line) in raw.lines().enumerate() {
+    if index == 0 {
+      continue;
+    }
+
+    if in_frontmatter {
+      if line.trim() == "---" {
+        in_frontmatter = false;
+        saw_closing = true;
+        active_list = None;
+        continue;
+      }
+
+      let trimmed = line.trim();
+      if let Some(item) = trimmed.strip_prefix("- ") {
+        let value = trim_frontmatter_value(item);
+        match active_list {
+          Some("aliases") => frontmatter.aliases.push(value),
+          Some("entry_for") => frontmatter.entry_for.push(value),
+          _ => {}
+        }
+        continue;
+      }
+
+      if let Some((key, value)) = trimmed.split_once(':') {
+        let key = key.trim();
+        let value = value.trim();
+        active_list = None;
+        match key {
+          "title" => frontmatter.title = Some(trim_frontmatter_value(value)),
+          "scope" => frontmatter.scope = Some(trim_frontmatter_value(value)),
+          "kind" => frontmatter.kind = Some(trim_frontmatter_value(value)),
+          "category" => frontmatter.category = Some(trim_frontmatter_value(value)),
+          "aliases" if value.is_empty() => active_list = Some("aliases"),
+          "entry_for" if value.is_empty() => active_list = Some("entry_for"),
+          "aliases" => frontmatter.aliases.push(trim_frontmatter_value(value)),
+          "entry_for" => frontmatter.entry_for.push(trim_frontmatter_value(value)),
+          _ => {}
+        }
+        continue;
+      }
+
+      active_list = None;
+    } else {
+      body_lines.push(line);
+    }
+  }
+
+  if !saw_closing {
+    return (GuideDocFrontmatter::default(), raw.to_string());
+  }
+
+  let body = body_lines.join("\n").trim_start_matches('\n').to_string();
+  (frontmatter, body)
+}
+
+fn visit_markdown_dir(dir: &Path, base_dir: &Path, docs: &mut Vec<GuideDoc>, scope: &GuideDocScope) -> Result<(), String> {
+  for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {e}"))? {
+    let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
+    let path = entry.path();
+
+    if path.is_dir() {
+      visit_markdown_dir(&path, base_dir, docs, scope)?;
+    } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
+      let raw_content = fs::read_to_string(&path).map_err(|e| format!("Failed to read file {path:?}: {e}"))?;
+      let relative_path = path.strip_prefix(base_dir).map_err(|_| "Unable to get relative path")?;
+      let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
+      let relative_path_str = relative_path.to_string_lossy().to_string();
+      docs.push(parse_guide_doc(filename, relative_path_str, &raw_content, scope.clone())?);
+    }
+  }
+  Ok(())
+}
+
+fn load_guidebook_docs() -> Result<Vec<GuideDoc>, String> {
+  let docs_dir = get_guidebook_dir()?;
+  let mut guide_docs = Vec::new();
+  visit_markdown_dir(&docs_dir, &docs_dir, &mut guide_docs, &GuideDocScope::Core)?;
   Ok(guide_docs)
 }
 
-fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&str>) -> Result<(), String> {
-  let guide_docs = load_guidebook_docs()?;
+fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
+  let mut docs = Vec::new();
+  let mut seen_modules = HashSet::new();
 
-  let mut found_any = false;
+  for entry in fs::read_dir(modules_dir).map_err(|e| format!("Failed to read modules directory {modules_dir:?}: {e}"))? {
+    let entry = entry.map_err(|e| format!("Failed to read modules directory entry: {e}"))?;
+    let path = entry.path();
+    if !path.is_dir() {
+      continue;
+    }
 
-  for doc in guide_docs.values() {
-    // Skip SUMMARY files
+    let module_name = match path.file_name().and_then(|s| s.to_str()) {
+      Some(name) if !name.starts_with('.') => name.to_string(),
+      _ => continue,
+    };
+
+    if let Some(filter) = module_filter {
+      if module_name != filter {
+        continue;
+      }
+    }
+
+    seen_modules.insert(module_name.clone());
+    let scope = GuideDocScope::Module(module_name.clone());
+
+    let agents_path = path.join("Agents.md");
+    if agents_path.exists() {
+      let raw_content = fs::read_to_string(&agents_path).map_err(|e| format!("Failed to read file {agents_path:?}: {e}"))?;
+      let agents_doc_path = format!("{module_name}/Agents.md");
+      docs.push(parse_guide_doc(
+        "Agents.md".to_string(),
+        agents_doc_path,
+        &raw_content,
+        scope.clone(),
+      )?);
+    }
+
+    let docs_path = path.join("docs");
+    if docs_path.exists() {
+      visit_markdown_dir(&docs_path, &path, &mut docs, &scope)?;
+    }
+  }
+
+  if let Some(filter) = module_filter {
+    if !seen_modules.contains(filter) {
+      return Err(format!(
+        "Module '{filter}' not found under {modules_dir:?}. Use 'cr libs scan-md <module>' or inspect ~/.config/calcit/modules/."
+      ));
+    }
+  }
+
+  Ok(docs)
+}
+
+fn load_module_docs(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
+  let modules_dir = module_folder()?;
+  load_module_docs_from_dir(&modules_dir, module_filter)
+}
+
+fn resolve_search_scope(scope: Option<&str>, module_filter: Option<&str>) -> Result<DocsSearchScope, String> {
+  match (scope, module_filter) {
+    (None, Some(_)) => Ok(DocsSearchScope::Modules),
+    (None, None) => Ok(DocsSearchScope::Core),
+    (Some(value), _) => match value {
+      "core" => Ok(DocsSearchScope::Core),
+      "modules" => Ok(DocsSearchScope::Modules),
+      "all" => Ok(DocsSearchScope::All),
+      other => Err(format!("Invalid docs search scope '{other}'. Use one of: core, modules, all.")),
+    },
+  }
+}
+
+fn collect_search_docs(scope: DocsSearchScope, module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
+  let mut docs = Vec::new();
+  match scope {
+    DocsSearchScope::Core => docs.extend(load_guidebook_docs()?),
+    DocsSearchScope::Modules => docs.extend(load_module_docs(module_filter)?),
+    DocsSearchScope::All => {
+      docs.extend(load_guidebook_docs()?);
+      docs.extend(load_module_docs(module_filter)?);
+    }
+  }
+  docs.sort_by(|a, b| a.path.cmp(&b.path));
+  Ok(docs)
+}
+
+fn score_metadata_hit(doc: &GuideDoc, keyword_lower: &str) -> (usize, bool) {
+  let mut score = 0;
+  let mut matched = false;
+
+  if let Some(title) = &doc.frontmatter.title {
+    accumulate_match_score(&mut score, &mut matched, title, keyword_lower, 240, 160);
+  }
+
+  for alias in &doc.frontmatter.aliases {
+    accumulate_match_score(&mut score, &mut matched, alias, keyword_lower, 220, 120);
+  }
+
+  for entry in &doc.frontmatter.entry_for {
+    accumulate_match_score(&mut score, &mut matched, entry, keyword_lower, 180, 90);
+  }
+
+  (score, matched)
+}
+
+fn score_doc_shape(doc: &GuideDoc) -> isize {
+  let kind_score = match doc.frontmatter.kind.as_deref() {
+    Some("reference") => 18,
+    Some("guide") => 14,
+    Some("hub") => 8,
+    Some("agent") => 4,
+    Some("spec") => -6,
+    Some(_) | None => 0,
+  };
+
+  let category_score = match doc.frontmatter.category.as_deref() {
+    Some("run") | Some("features") | Some("installation") | Some("data") | Some("intro") => 4,
+    Some("docs") => -2,
+    Some(_) | None => 0,
+  };
+
+  let scope_score = match (&doc.scope, doc.frontmatter.scope.as_deref()) {
+    (GuideDocScope::Module(_), Some("module")) => 4,
+    (GuideDocScope::Core, Some("core")) => 2,
+    _ => 0,
+  };
+
+  kind_score + category_score + scope_score
+}
+
+fn score_search_hit(doc: &GuideDoc, lines: &[&str], keyword_lower: &str, matching_lines: &[usize]) -> usize {
+  let (mut score, _) = score_metadata_hit(doc, keyword_lower);
+  score = score.saturating_add_signed(score_doc_shape(doc));
+  score += match_score(&doc.filename, keyword_lower, 140, 80);
+  score += match_score(&doc.path, keyword_lower, 120, 36);
+
+  for line_index in matching_lines {
+    let line = lines[*line_index];
+    let lower = line.to_lowercase();
+    let trimmed = line.trim_start();
+    let trimmed_lower = lower.trim_start();
+
+    if trimmed.starts_with('#') {
+      score += 48;
+    } else {
+      score += 10;
+    }
+
+    if trimmed_lower == keyword_lower {
+      score += 36;
+    }
+
+    if trimmed_lower.starts_with(keyword_lower) {
+      score += 18;
+    }
+
+    if lower.contains(&format!("`{keyword_lower}`")) {
+      score += 14;
+    }
+
+    if *line_index < 40 {
+      score += 6;
+    }
+  }
+
+  score
+}
+
+fn merge_ranges(mut matching_ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+  matching_ranges.sort_by_key(|range| range.0);
+  let mut merged_ranges: Vec<(usize, usize)> = Vec::new();
+
+  for (start, end) in matching_ranges {
+    if let Some(last) = merged_ranges.last_mut() {
+      if start <= last.1 {
+        last.1 = last.1.max(end);
+        continue;
+      }
+    }
+    merged_ranges.push((start, end));
+  }
+
+  merged_ranges
+}
+
+fn collect_search_results(
+  guide_docs: &[GuideDoc],
+  keyword_lower: &str,
+  context_lines: usize,
+  filename_filter: Option<&str>,
+) -> Vec<SearchResult> {
+  let mut results = Vec::new();
+
+  for (doc_index, doc) in guide_docs.iter().enumerate() {
     if doc.filename.to_uppercase().contains("SUMMARY") {
       continue;
     }
 
-    // Apply filename filter if provided
     if let Some(filter) = filename_filter {
-      if !doc.filename.contains(filter) {
+      if !doc.filename.contains(filter) && !doc.path.contains(filter) {
         continue;
       }
     }
 
     let lines: Vec<&str> = doc.content.lines().collect();
     let mut matching_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut matching_lines: Vec<usize> = Vec::new();
+    let (_, metadata_matched) = score_metadata_hit(doc, keyword_lower);
 
-    // Find all matching lines
     for (line_num, line) in lines.iter().enumerate() {
-      if line.contains(keyword) {
+      if line.to_lowercase().contains(keyword_lower) {
         let start = line_num.saturating_sub(context_lines);
         let end = (line_num + context_lines + 1).min(lines.len());
         matching_ranges.push((start, end));
+        matching_lines.push(line_num);
       }
     }
 
-    if matching_ranges.is_empty() {
+    if matching_ranges.is_empty() && !metadata_matched {
       continue;
     }
 
-    found_any = true;
-
-    // Merge overlapping ranges
-    matching_ranges.sort_by_key(|r| r.0);
-    let mut merged_ranges: Vec<(usize, usize)> = Vec::new();
-    for (start, end) in matching_ranges {
-      if let Some(last) = merged_ranges.last_mut() {
-        if start <= last.1 {
-          last.1 = last.1.max(end);
-          continue;
-        }
+    if matching_ranges.is_empty() {
+      let preview_end = lines.len().min(context_lines.saturating_mul(2).max(6));
+      if preview_end > 0 {
+        matching_ranges.push((0, preview_end));
       }
-      merged_ranges.push((start, end));
     }
 
-    // Display matches
-    println!("{} ({})", doc.filename.cyan().bold(), doc.path.dimmed());
+    results.push(SearchResult {
+      doc_index,
+      merged_ranges: merge_ranges(matching_ranges),
+      score: score_search_hit(doc, &lines, keyword_lower, &matching_lines),
+    });
+  }
+
+  results.sort_by(|a, b| {
+    b.score
+      .cmp(&a.score)
+      .then_with(|| guide_docs[a.doc_index].path.cmp(&guide_docs[b.doc_index].path))
+  });
+
+  results
+}
+
+fn handle_search(
+  keyword: &str,
+  context_lines: usize,
+  filename_filter: Option<&str>,
+  scope: Option<&str>,
+  module_filter: Option<&str>,
+) -> Result<(), String> {
+  let resolved_scope = resolve_search_scope(scope, module_filter)?;
+  let guide_docs = collect_search_docs(resolved_scope, module_filter)?;
+  let keyword_lower = keyword.to_lowercase();
+
+  let results = collect_search_results(&guide_docs, &keyword_lower, context_lines, filename_filter);
+
+  for result in &results {
+    let doc = &guide_docs[result.doc_index];
+    let lines: Vec<&str> = doc.content.lines().collect();
+
+    println!("{} ({})", doc.display_title().cyan().bold(), doc.path.dimmed());
     println!("{}", "-".repeat(60).dimmed());
 
-    for (start, end) in merged_ranges {
-      for (idx, line) in lines[start..end].iter().enumerate() {
-        let line_num = start + idx + 1;
-        if line.contains(keyword) {
+    for (start, end) in &result.merged_ranges {
+      for (idx, line) in lines[*start..*end].iter().enumerate() {
+        let line_num = *start + idx + 1;
+        if line.to_lowercase().contains(&keyword_lower) {
           println!("{} {}", format!("{line_num:4}:").yellow(), line);
         } else {
           println!("{} {}", format!("{line_num:4}:").dimmed(), line.dimmed());
@@ -250,9 +685,9 @@ fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&s
     }
   }
 
-  if !found_any {
+  if results.is_empty() {
     println!("{}", "No matching content found.".yellow());
-  } else {
+  } else if command_guidance_enabled() {
     println!(
       "{}",
       "Tip: Use -c <num> to show more context lines (e.g., 'cr docs search <keyword> -c 20')".dimmed()
@@ -261,6 +696,12 @@ fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&s
       println!(
         "{}",
         "     Use -f <filename> to filter by file (e.g., 'cr docs search <keyword> -f syntax.md')".dimmed()
+      );
+    }
+    if scope.is_none() {
+      println!(
+        "{}",
+        "     Use --scope modules|all or --module <name> to search installed module docs.".dimmed()
       );
     }
   }
@@ -284,6 +725,8 @@ fn handle_agents(
     }
   }
   let content = fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read Agents cache {cache_path:?}: {e}"))?;
+  let (frontmatter, content) = parse_doc_frontmatter(&content);
+  validate_doc_frontmatter(&cache_path.to_string_lossy(), &frontmatter)?;
   let byte_len = content.len();
   let line_len = content.lines().count();
 
@@ -297,7 +740,7 @@ fn handle_agents(
 
   let cache_display = cache_path.to_string_lossy().to_string();
   handle_read_content(ReadRenderOptions {
-    display_title: "Agents.md",
+    display_title: frontmatter.title.as_deref().unwrap_or("Agents.md"),
     display_path: &cache_display,
     command_hint: "agents",
     no_match_error: "No heading matched in Agents.md. Run 'cr docs agents' to list available headings.",
@@ -315,11 +758,14 @@ fn handle_read(
   include_subheadings: bool,
   full: bool,
   with_lines: bool,
+  scope: Option<&str>,
+  module_filter: Option<&str>,
 ) -> Result<(), String> {
-  let guide_docs = load_guidebook_docs()?;
-  let doc = find_doc_by_filename(&guide_docs, filename)?;
+  let resolved_scope = resolve_search_scope(scope, module_filter)?;
+  let guide_docs = collect_search_docs(resolved_scope, module_filter)?;
+  let doc = find_doc_by_query(&guide_docs, filename)?;
   let result = handle_read_content(ReadRenderOptions {
-    display_title: &doc.filename,
+    display_title: &doc.display_title(),
     display_path: &doc.path,
     command_hint: "read",
     no_match_error: "No heading matched in document.",
@@ -340,25 +786,29 @@ fn handle_read(
   result
 }
 
-fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize) -> Result<(), String> {
-  let guide_docs = load_guidebook_docs()?;
-
-  let doc = find_doc_by_filename(&guide_docs, filename)?;
+fn handle_read_lines(
+  filename: &str,
+  start: usize,
+  lines_to_read: usize,
+  scope: Option<&str>,
+  module_filter: Option<&str>,
+) -> Result<(), String> {
+  let resolved_scope = resolve_search_scope(scope, module_filter)?;
+  let guide_docs = collect_search_docs(resolved_scope, module_filter)?;
+  let doc = find_doc_by_query(&guide_docs, filename)?;
 
   let all_lines: Vec<&str> = doc.content.lines().collect();
   let total_lines = all_lines.len();
   let end = (start + lines_to_read).min(total_lines);
 
-  println!("{} ({})", doc.filename.cyan().bold(), doc.path.dimmed());
+  println!("{} ({})", doc.display_title().cyan().bold(), doc.path.dimmed());
   println!("{}", "=".repeat(60).dimmed());
 
-  // Display lines with line numbers
   for (idx, line) in all_lines[start..end].iter().enumerate() {
     let line_num = start + idx + 1;
     println!("{} {}", format!("{line_num:4}:").dimmed(), line);
   }
 
-  // Show tips
   println!();
   println!(
     "{}",
@@ -369,16 +819,18 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize) -> Resu
     let remaining = total_lines - end;
     println!(
       "{}",
-      format!("More content available ({remaining} lines remaining). Use -s {end} -n {lines_to_read} to continue reading.").yellow()
+      format!("More content available ({remaining} lines remaining). Next start line: {end}.").yellow()
     );
   } else {
     println!("{}", "End of document.".green());
   }
 
-  println!(
-    "{}",
-    "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read-lines file.md -s 20 -n 30')".dimmed()
-  );
+  if command_guidance_enabled() {
+    println!(
+      "{}",
+      "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read-lines file.md -s 20 -n 30')".dimmed()
+    );
+  }
 
   Ok(())
 }
@@ -388,7 +840,7 @@ fn handle_list() -> Result<(), String> {
 
   println!("{}", "Available Guidebook Documentation:".bold());
 
-  let mut docs: Vec<&GuideDoc> = guide_docs.values().collect();
+  let mut docs: Vec<&GuideDoc> = guide_docs.iter().collect();
   docs.sort_by_key(|d| &d.path);
 
   for doc in &docs {
@@ -402,19 +854,25 @@ fn handle_list() -> Result<(), String> {
   }
 
   println!("\n{} {} topics", "Total:".dimmed(), docs.len());
-  println!("{}", "Use 'cr docs read <filename>' to list headings in a document".dimmed());
-  println!(
-    "{}",
-    "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
-  );
-  println!(
-    "{}",
-    "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()
-  );
-  println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
+  if command_guidance_enabled() {
+    println!("{}", "Use 'cr docs read <filename>' to list headings in a document".dimmed());
+    println!(
+      "{}",
+      "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
+    );
+    println!(
+      "{}",
+      "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()
+    );
+    println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
+  }
 
   Ok(())
 }
+
+#[cfg(test)]
+#[path = "docs_tests.rs"]
+mod tests;
 
 /// Check mode for a cirru code block in markdown.
 ///
@@ -454,7 +912,7 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
     if !in_block && !in_non_cirru_block && trimmed.starts_with("```") {
       if trimmed == "```cirru" {
         in_block = true;
-        block_start_line = idx + 1; // 1-based
+        block_start_line = idx + 1;
         block_mode = CirruCheckMode::Run;
         block_lines.clear();
       } else if trimmed == "```cirru.no-run" {
@@ -468,7 +926,6 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
         block_mode = CirruCheckMode::NoCheck;
         block_lines.clear();
       } else {
-        // other fenced block (```json, ```bash, etc.) — skip entirely
         in_non_cirru_block = true;
       }
     } else if (in_block || in_non_cirru_block) && trimmed == "```" {
@@ -497,25 +954,6 @@ fn ensure_runtime_initialized() {
 fn module_folder() -> Result<PathBuf, String> {
   let home = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
   Ok(Path::new(&home).join(".config/calcit/modules/"))
-}
-
-fn display_path_with_default_modules(path: &str, default_modules: &Path) -> String {
-  if let Ok(stripped) = Path::new(path).strip_prefix(default_modules) {
-    format!("<mods>/{}", stripped.display())
-  } else {
-    path.to_owned()
-  }
-}
-
-fn display_path_for_check_md(path: &str, default_modules: &Path, cwd: Option<&Path>) -> String {
-  let raw = Path::new(path);
-  if raw.is_absolute()
-    && let Some(current_dir) = cwd
-    && let Ok(stripped) = raw.strip_prefix(current_dir)
-  {
-    return stripped.display().to_string();
-  }
-  display_path_with_default_modules(path, default_modules)
 }
 
 fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMap<String, snapshot::FileInSnapShot>, String> {
@@ -578,7 +1016,7 @@ fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSn
   }
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-  runner::preprocess::preprocess_ns_def(
+  runner::preprocess::ensure_ns_def_compiled(
     calcit::calcit::CORE_NS,
     calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
@@ -592,10 +1030,10 @@ fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSn
 fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
+  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
     .map_err(|failure| failure.msg)?;
 
-  runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
+  runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
     .map_err(|failure| failure.msg)?;
 
   let warnings = check_warnings.borrow();
@@ -647,29 +1085,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
 
   let shared_files = load_shared_files_for_check_md(entry, deps)?;
 
-  let default_modules = module_folder()?;
-  let current_dir = std::env::current_dir().ok();
-
-  let entry_preview = display_path_for_check_md(entry, &default_modules, current_dir.as_deref());
-
-  let deps_preview = if deps.is_empty() {
-    "none".dimmed().to_string()
-  } else {
-    deps
-      .iter()
-      .map(|dep| display_path_for_check_md(dep, &default_modules, current_dir.as_deref()))
-      .collect::<Vec<_>>()
-      .join(", ")
-      .dimmed()
-      .to_string()
-  };
-  println!(
-    "{} {} (entry: {}, deps: {})",
-    "Checking".bold(),
-    file_path.cyan(),
-    entry_preview.dimmed(),
-    deps_preview
-  );
+  println!("{} {}", "Checking".bold(), file_path.cyan());
   println!("{}", "-".repeat(60).dimmed());
 
   let mut passed = 0;
@@ -691,7 +1107,6 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
   }
 
   for (line_num, mode, code) in &blocks {
-    // Show a brief preview of the code block
     let preview: String = code.lines().next().unwrap_or("").chars().take(60).collect();
     let preview_suffix = if code.lines().count() > 1 || preview.len() >= 60 {
       "..."

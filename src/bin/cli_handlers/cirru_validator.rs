@@ -51,7 +51,7 @@ fn validate_leaf(s: &Arc<str>, path: &[usize], in_comment: bool) -> Result<(), S
       return Err(format!(
         "Invalid tag at path [{}]: Tags cannot contain spaces\n\
          Found: {:?}\n\
-         Hint: Tags like :tag should be single tokens without spaces",
+         Hint: Tags like :tag should be single tokens without spaces; if this is literal text, use a string such as |text or \"|text with spaces\"",
         format_path(path),
         text
       ));
@@ -91,7 +91,7 @@ fn validate_leaf(s: &Arc<str>, path: &[usize], in_comment: bool) -> Result<(), S
     return Err(format!(
       "Invalid leaf node at path [{}]: Contains parentheses which are structural characters\n\
        Found: {:?}\n\
-       Hint: Parentheses ( ) are only for list structure, not leaf content",
+         Hint: Parentheses ( ) are only for list structure, not leaf content; if you need literal parentheses in text, wrap the value as a string such as |text(with-parens) or \"|text with (parens)\"",
       format_path(path),
       text
     ));
@@ -111,7 +111,7 @@ fn validate_leaf(s: &Arc<str>, path: &[usize], in_comment: bool) -> Result<(), S
       return Err(format!(
         "Invalid number format at path [{}]: Starts with digit but cannot be parsed as number\n\
          Found: {:?}\n\
-         Hint: Valid formats include: 123, -456, 3.14, 1e10, 0x1F, 0b1010, 0o77",
+         Hint: Valid formats include: 123, -456, 3.14, 1e10, 0x1F, 0b1010, 0o77; if this is a literal token rather than a number, wrap it as a string",
         format_path(path),
         text
       ));
@@ -128,7 +128,7 @@ fn validate_leaf(s: &Arc<str>, path: &[usize], in_comment: bool) -> Result<(), S
         return Err(format!(
           "Invalid number format at path [{}]: Starts with {}{} but cannot be parsed as number\n\
            Found: {:?}\n\
-           Hint: Valid formats include: +123, -456, +3.14, -1e10",
+           Hint: Valid formats include: +123, -456, +3.14, -1e10; if this is not meant to be a number, write it as a string instead of a bare leaf",
           format_path(path),
           first_char,
           second_char,
@@ -145,7 +145,7 @@ fn validate_leaf(s: &Arc<str>, path: &[usize], in_comment: bool) -> Result<(), S
     return Err(format!(
       "Suspicious leaf node at path [{}]: Contains spaces but is not a string\n\
        Found: {:?}\n\
-       Hint: If this is meant to be a string, prefix with | or \"\n\
+       Hint: If this is meant to be a string, prefix with | for simple text, or use \"|...\" for one-line text with spaces/special characters\n\
        If it's multiple tokens, it should be a list (separate expressions)",
       format_path(path),
       text
@@ -311,6 +311,31 @@ mod tests {
     let result = validate_cirru_syntax(&leaf("123abc"));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("cannot be parsed as number"));
+  }
+
+  #[test]
+  fn test_invalid_non_numeric_token_starting_with_digits_has_string_hint() {
+    let result = validate_cirru_syntax(&leaf("100vh"));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("literal token rather than a number"));
+  }
+
+  #[test]
+  fn test_parentheses_hint_mentions_literal_parentheses_strings() {
+    let result = validate_cirru_syntax(&leaf("text(with-parens)"));
+    assert!(result.is_err());
+    let message = result.unwrap_err();
+    assert!(message.contains("literal parentheses in text"));
+    assert!(message.contains("|text(with-parens)"));
+  }
+
+  #[test]
+  fn test_parentheses_hint_mentions_string_wrapping() {
+    let result = validate_cirru_syntax(&leaf("text with (parens)"));
+    assert!(result.is_err());
+    let message = result.unwrap_err();
+    assert!(message.contains("wrap the value as a string") || message.contains("string such as"));
+    assert!(message.contains("\"|text with (parens)\""));
   }
 
   #[test]

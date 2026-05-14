@@ -22,18 +22,24 @@ use std::sync::{LazyLock, OnceLock};
 // to avoid a circular dependency: type_annotation → program → snapshot → calcit.
 // ---------------------------------------------------------------------------
 type LookupFn = fn(&str, &str) -> Option<Calcit>;
-static LOOKUP_EVALED_DEF: OnceLock<LookupFn> = OnceLock::new();
+type SchemaLookupFn = fn(&str, &str) -> Arc<CalcitTypeAnnotation>;
+static LOOKUP_RUNTIME_READY_DEF: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
+static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
+  /// Global type-slot registry: maps slot names to their bound type annotations.
+  /// A slot is declared via `deftype-slot` (value = None) and bound via `bind-type` (value = Some).
+  static TYPE_SLOTS: RefCell<HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
 }
 
 /// Register program-level lookup functions.  Must be called once at startup
 /// (e.g. from `program::extract_program_data`) before any type-annotation
 /// resolution that needs import-chain traversal.
-pub fn register_program_lookups(evaled_lookup: LookupFn, code_lookup: LookupFn) {
-  let _ = LOOKUP_EVALED_DEF.set(evaled_lookup);
+pub fn register_program_lookups(runtime_ready_lookup: LookupFn, code_lookup: LookupFn, schema_lookup: SchemaLookupFn) {
+  let _ = LOOKUP_RUNTIME_READY_DEF.set(runtime_ready_lookup);
   let _ = LOOKUP_DEF_CODE.set(code_lookup);
+  let _ = LOOKUP_DEF_SCHEMA.set(schema_lookup);
 }
 
 pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: impl FnOnce() -> T) -> T {
@@ -47,6 +53,55 @@ pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: im
 
 fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
+}
+
+// ---------------------------------------------------------------------------
+// Type-slot public API
+// ---------------------------------------------------------------------------
+
+/// Declare a type slot. Returns Err if the slot name is already declared.
+pub fn register_type_slot(name: Arc<str>) -> Result<(), String> {
+  TYPE_SLOTS.with(|slots| {
+    let mut map = slots.borrow_mut();
+    if map.contains_key(&name) {
+      return Err(format!("type slot already declared: {name}"));
+    }
+    map.insert(name, None);
+    Ok(())
+  })
+}
+
+/// Bind a concrete type to a declared slot. Auto-registers the slot if not yet declared.
+/// Returns Err if the slot is already bound (double-bind).
+pub fn bind_type_slot(name: &str, ty: Arc<CalcitTypeAnnotation>) -> Result<(), String> {
+  TYPE_SLOTS.with(|slots| {
+    let mut map = slots.borrow_mut();
+    match map.get_mut(name) {
+      Some(slot) if slot.is_some() => Err(format!(
+        "type slot '{name}' already bound — each slot can only be bound once per program"
+      )),
+      Some(slot) => {
+        *slot = Some(ty);
+        Ok(())
+      }
+      None => {
+        // Auto-register and bind in one step if the slot was never declared
+        map.insert(Arc::from(name), Some(ty));
+        Ok(())
+      }
+    }
+  })
+}
+
+/// Look up the type bound to a slot. Returns `None` if the slot is unknown or not yet bound.
+pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
+}
+
+/// Clear all type slots. Called at program startup/shutdown to avoid stale state across runs.
+#[allow(dead_code)]
+pub fn clear_type_slots() {
+  TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
 }
 
 fn truncate_type_form_preview(raw: &str) -> String {
@@ -70,12 +125,30 @@ fn emit_legacy_fn_type_syntax_warning(schema_hint: &str, form: &Calcit) {
   }
 }
 
-fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
-  LOOKUP_EVALED_DEF.get().and_then(|f| f(ns, def))
+fn lookup_runtime_ready_registered(ns: &str, def: &str) -> Option<Calcit> {
+  LOOKUP_RUNTIME_READY_DEF.get().and_then(|f| f(ns, def))
 }
 
 fn lookup_def_code_registered(ns: &str, def: &str) -> Option<Calcit> {
   LOOKUP_DEF_CODE.get().and_then(|f| f(ns, def))
+}
+
+/// Look up a definition's schema type annotation by namespace and definition name.
+/// Returns `None` if the lookup function is not registered, or the schema is `Dynamic`.
+fn lookup_schema_registered(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let schema = LOOKUP_DEF_SCHEMA.get().map(|f| f(ns, def))?;
+  if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    None
+  } else {
+    Some(schema)
+  }
+}
+
+/// Try to resolve a TypeRef name (formatted as "ns/def") as a schema-based type alias.
+/// This allows definitions with non-Dynamic schemas to serve as named type aliases.
+fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (ns, def) = name.split_once('/')?;
+  lookup_schema_registered(ns, def)
 }
 
 thread_local! {
@@ -85,6 +158,16 @@ thread_local! {
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+
+#[derive(Default)]
+struct FnSchemaFields<'a> {
+  has_any: bool,
+  generics: Option<&'a Calcit>,
+  args: Option<&'a Calcit>,
+  returns: Option<&'a Calcit>,
+  rest: Option<&'a Calcit>,
+  kind: Option<&'a Calcit>,
+}
 
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,9 +223,83 @@ pub enum CalcitTypeAnnotation {
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
   /// Unit/nil type — for side-effectful functions that explicitly return nil
   Unit,
+  /// A type slot reference declared via `deftype-slot` and bound via `bind-type`.
+  /// At type-checking time, this is resolved by looking up the global TYPE_SLOTS registry.
+  TypeSlot(Arc<str>),
 }
 
 impl CalcitTypeAnnotation {
+  pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
+    match self {
+      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Variadic(inner) | Self::Optional(inner) => {
+        inner.validate_applied_type_args()
+      }
+      Self::Map(key, value) => {
+        key.validate_applied_type_args()?;
+        value.validate_applied_type_args()
+      }
+      Self::Fn(signature) => signature.validate_applied_type_args(),
+      Self::Struct(base, args) => {
+        for arg in args.iter() {
+          arg.validate_applied_type_args()?;
+        }
+
+        let expected = base.generics.len();
+        let actual = args.len();
+        if expected == 0 {
+          if actual > 0 {
+            return Err(format!(
+              "struct `{}` is not generic but received {actual} type argument(s)",
+              base.name
+            ));
+          }
+        } else if actual != expected {
+          return Err(format!(
+            "struct `{}` expects {expected} type argument(s), but received {actual}",
+            base.name
+          ));
+        }
+
+        Ok(())
+      }
+      Self::Enum(enum_def, args) => {
+        for arg in args.iter() {
+          arg.validate_applied_type_args()?;
+        }
+
+        if !args.is_empty() {
+          return Err(format!(
+            "enum `{}` is not generic but received {} type argument(s)",
+            enum_def.name(),
+            args.len()
+          ));
+        }
+
+        Ok(())
+      }
+      Self::TypeRef(_, args) => {
+        for arg in args.iter() {
+          arg.validate_applied_type_args()?;
+        }
+        Ok(())
+      }
+      Self::Record(_) | Self::Tuple(_) | Self::Trait(_) | Self::TraitSet(_) | Self::Custom(_) => Ok(()),
+      Self::Bool
+      | Self::Number
+      | Self::String
+      | Self::Symbol
+      | Self::Tag
+      | Self::DynTuple
+      | Self::DynFn
+      | Self::Buffer
+      | Self::CirruQuote
+      | Self::Dynamic
+      | Self::TypeVar(_)
+      | Self::Unit
+      | Self::TypeSlot(_) => Ok(()),
+    }
+  }
+
   fn custom_keyword_matches(custom: &Calcit, keyword: &str) -> bool {
     match custom {
       Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == keyword,
@@ -165,7 +322,7 @@ impl CalcitTypeAnnotation {
       "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
-      "unit" => Some(Self::Unit),
+      "unit" | "nil" => Some(Self::Unit),
       _ => None,
     }
   }
@@ -265,24 +422,31 @@ impl CalcitTypeAnnotation {
   }
 
   /// If `form` is a `hint-fn` expression, return its argument items (everything after the head).
-  fn get_hint_fn_items(form: &Calcit) -> Option<CalcitList> {
+  fn get_hint_fn_items(form: &Calcit) -> Option<&CalcitList> {
     let Calcit::List(list) = form else { return None };
     if !Self::is_hint_fn_form(list) {
       return None;
     }
-    list.skip(1).ok()
+    Some(list)
   }
 
-  fn is_schema_key(form: &Calcit, name: &str) -> bool {
+  fn schema_key_name(form: &Calcit) -> Option<&str> {
     match form {
-      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == name,
+      Calcit::Tag(tag) => {
+        let raw = tag.ref_str();
+        Some(raw.strip_prefix(':').unwrap_or(raw))
+      }
       Calcit::Symbol { sym, .. } => {
         let raw = sym.as_ref();
-        raw == name || raw.trim_start_matches(':') == name
+        Some(raw.strip_prefix(':').unwrap_or(raw))
       }
-      Calcit::Str(text) => text.as_ref() == name,
-      _ => false,
+      Calcit::Str(text) => Some(text.as_ref()),
+      _ => None,
     }
+  }
+
+  fn schema_key_matches(form: &Calcit, key: &str) -> bool {
+    matches!(Self::schema_key_name(form), Some(name) if name == key)
   }
 
   fn is_schema_map_literal_head(form: &Calcit) -> bool {
@@ -294,11 +458,11 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn extract_schema_value<'a>(form: &'a Calcit, keys: &[&str]) -> Option<&'a Calcit> {
+  fn extract_schema_value_single<'a>(form: &'a Calcit, key: &str) -> Option<&'a Calcit> {
     match form {
       Calcit::Map(xs) => {
-        for (key, value) in xs {
-          if keys.iter().any(|name| Self::is_schema_key(key, name)) {
+        for (entry_key, value) in xs {
+          if Self::schema_key_matches(entry_key, key) {
             return Some(value);
           }
         }
@@ -316,13 +480,13 @@ impl CalcitTypeAnnotation {
           if pair.len() < 2 {
             continue;
           }
-          let Some(key) = pair.get(0) else {
+          let Some(entry_key) = pair.get(0) else {
             continue;
           };
           let Some(value) = pair.get(1) else {
             continue;
           };
-          if keys.iter().any(|name| Self::is_schema_key(key, name)) {
+          if Self::schema_key_matches(entry_key, key) {
             return Some(value);
           }
         }
@@ -332,11 +496,82 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  fn collect_fn_schema_fields<'a>(form: &'a Calcit) -> FnSchemaFields<'a> {
+    let mut fields = FnSchemaFields::default();
+
+    let mut visit_pair = |key: &'a Calcit, value: &'a Calcit| {
+      let Some(key_name) = Self::schema_key_name(key) else {
+        return;
+      };
+      match key_name {
+        "generics" => {
+          fields.has_any = true;
+          if fields.generics.is_none() {
+            fields.generics = Some(value);
+          }
+        }
+        "args" => {
+          fields.has_any = true;
+          if fields.args.is_none() {
+            fields.args = Some(value);
+          }
+        }
+        "return" => {
+          fields.has_any = true;
+          if fields.returns.is_none() {
+            fields.returns = Some(value);
+          }
+        }
+        "rest" => {
+          fields.has_any = true;
+          if fields.rest.is_none() {
+            fields.rest = Some(value);
+          }
+        }
+        "kind" => {
+          fields.has_any = true;
+          if fields.kind.is_none() {
+            fields.kind = Some(value);
+          }
+        }
+        _ => {}
+      }
+    };
+
+    match form {
+      Calcit::Map(xs) => {
+        for (key, value) in xs {
+          visit_pair(key, value);
+        }
+      }
+      Calcit::List(xs) => {
+        if !matches!(xs.first(), Some(head) if Self::is_schema_map_literal_head(head)) {
+          return FnSchemaFields::default();
+        }
+        for entry in xs.iter().skip(1) {
+          let Calcit::List(pair) = entry else {
+            continue;
+          };
+          let Some(key) = pair.get(0) else {
+            continue;
+          };
+          let Some(value) = pair.get(1) else {
+            continue;
+          };
+          visit_pair(key, value);
+        }
+      }
+      _ => return FnSchemaFields::default(),
+    }
+
+    fields
+  }
+
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter() {
-      if let Some(type_expr) = Self::extract_schema_value(item, &["return"]) {
+    for item in items.iter().skip(1) {
+      if let Some(type_expr) = Self::extract_schema_value_single(item, "return") {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
           type_expr,
           generics.as_slice(),
@@ -348,8 +583,8 @@ impl CalcitTypeAnnotation {
 
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter() {
-      if let Some(value) = Self::extract_schema_value(item, &["generics"]) {
+    for item in items.iter().skip(1) {
+      if let Some(value) = Self::extract_schema_value_single(item, "generics") {
         if let Some(vars) = Self::parse_generics_list(value) {
           return Some(vars);
         }
@@ -456,26 +691,25 @@ impl CalcitTypeAnnotation {
     generics: &[Arc<str>],
     strict_named_refs: bool,
   ) -> Option<Arc<CalcitTypeAnnotation>> {
-    let has_schema_fields = ["args", "return", "generics", "rest", "kind"]
-      .iter()
-      .any(|key| Self::extract_schema_value(form, &[*key]).is_some());
-    if !has_schema_fields {
+    let fields = Self::collect_fn_schema_fields(form);
+    if !fields.has_any {
       return Self::infer_malformed_fn_schema(form, generics, strict_named_refs);
     }
 
-    let local_generics = Self::extract_schema_value(form, &["generics"])
-      .and_then(Self::parse_generics_list)
-      .unwrap_or_default();
+    let local_generics = fields.generics.and_then(Self::parse_generics_list).unwrap_or_default();
     let scope = Self::extend_generics_scope(generics, local_generics.as_slice());
-    let arg_types = Self::extract_schema_value(form, &["args"])
+    let arg_types = fields
+      .args
       .map(|args_form| Self::parse_schema_args_list(args_form, scope.as_slice(), strict_named_refs))
       .unwrap_or_default();
-    let return_type = Self::extract_schema_value(form, &["return"])
+    let return_type = fields
+      .returns
       .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs))
       .unwrap_or_else(|| Arc::new(Self::Dynamic));
-    let rest_type = Self::extract_schema_value(form, &["rest"])
+    let rest_type = fields
+      .rest
       .map(|item| Self::parse_type_annotation_form_inner(item, scope.as_slice(), strict_named_refs));
-    let fn_kind = match Self::extract_schema_value(form, &["kind"]) {
+    let fn_kind = match fields.kind {
       Some(Calcit::Tag(tag)) if tag.ref_str() == "macro" => SchemaKind::Macro,
       Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), ":macro" | "macro") => SchemaKind::Macro,
       _ => SchemaKind::Fn,
@@ -497,8 +731,8 @@ impl CalcitTypeAnnotation {
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter() {
-      if let Some(args_form) = Self::extract_schema_value(item, &["args"]) {
+    for item in items.iter().skip(1) {
+      if let Some(args_form) = Self::extract_schema_value_single(item, "args") {
         let types = Self::parse_schema_args_types(args_form, params.len(), generics.as_slice());
         return Some(types);
       }
@@ -953,6 +1187,13 @@ impl CalcitTypeAnnotation {
           Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)))
         };
       }
+      // Type slot reference: *name → TypeSlot(name)
+      if sym.starts_with('*') {
+        let slot_name = sym.trim_start_matches('*');
+        if !slot_name.is_empty() {
+          return Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_name)));
+        }
+      }
       if strict_named_refs && Self::generics_contains(generics, sym) {
         return Arc::new(CalcitTypeAnnotation::TypeVar(sym.to_owned()));
       }
@@ -1266,6 +1507,7 @@ impl CalcitTypeAnnotation {
       Self::Record(struct_def) => format!("struct {}", struct_def.name),
       Self::Tuple(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
+      Self::TypeSlot(name) => format!("type-slot({name})"),
       _ => "unknown".to_string(),
     }
   }
@@ -1325,6 +1567,76 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Try to resolve this type annotation to a concrete `CalcitStruct` definition.
+  /// Works for `Struct(def, _)`, `Record(def)`, and `TypeRef("ns/name", _)` that can be
+  /// looked up from the program registry.
+  pub fn resolve_to_struct(&self) -> Option<CalcitStruct> {
+    self.resolve_to_struct_with_ref().map(|(s, _)| s)
+  }
+
+  /// Resolve to struct, also returning the (ns, def) path when available from a TypeRef.
+  /// The path can be used to construct an Import reference for JS codegen compatibility.
+  #[allow(clippy::type_complexity)]
+  pub fn resolve_to_struct_with_ref(&self) -> Option<(CalcitStruct, Option<(Arc<str>, Arc<str>)>)> {
+    match self {
+      Self::Struct(base, _) => Some((base.as_ref().clone(), None)),
+      Self::Record(base) => Some((base.as_ref().clone(), None)),
+      Self::TypeRef(name, _) => {
+        // TypeRef name may be "ns/def" or just "def" — try to split on '/'
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        if let Some((ns, def)) = stripped.rsplit_once('/') {
+          resolve_struct_from_program(ns, def).map(|s| (s, Some((Arc::from(ns), Arc::from(def)))))
+        } else {
+          None
+        }
+      }
+      Self::Optional(inner) => inner.resolve_to_struct_with_ref(),
+      _ => None,
+    }
+  }
+
+  /// Try to resolve this type annotation to a concrete `CalcitEnum` definition.
+  /// Works for `Enum(def, _)`, `Tuple(def)`, and `TypeRef("ns/name", _)` that can be
+  /// looked up from the program registry.
+  pub fn resolve_to_enum(&self) -> Option<CalcitEnum> {
+    self.resolve_to_enum_with_ref().map(|(e, _)| e)
+  }
+
+  /// Resolve to enum, also returning the (ns, def) path when available from a TypeRef.
+  /// The path can be used to construct an Import reference for JS codegen compatibility.
+  #[allow(clippy::type_complexity)]
+  pub fn resolve_to_enum_with_ref(&self) -> Option<(CalcitEnum, Option<(Arc<str>, Arc<str>)>)> {
+    match self {
+      Self::Enum(base, _) => Some((base.as_ref().clone(), None)),
+      Self::Tuple(base) => Some((base.as_ref().clone(), None)),
+      Self::TypeRef(name, _) => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        if let Some((ns, def)) = stripped.rsplit_once('/') {
+          resolve_enum_from_program(ns, def).map(|e| (e, Some((Arc::from(ns), Arc::from(def)))))
+        } else {
+          None
+        }
+      }
+      Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_enum_with_ref()),
+      _ => None,
+    }
+  }
+
+  /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
+  pub fn resolve_to_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
+    match self {
+      Self::Fn(fn_annot) => Some(fn_annot.clone()),
+      Self::Optional(inner) => inner.resolve_to_fn(),
+      Self::TypeRef(name, _) => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        resolve_type_ref_as_schema(stripped).and_then(|schema| schema.resolve_to_fn())
+      }
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_fn()),
+      _ => None,
+    }
+  }
+
   pub fn matches_annotation(&self, expected: &CalcitTypeAnnotation) -> bool {
     let mut bindings = TypeBindings::new();
     self.matches_with_bindings(expected, &mut bindings)
@@ -1335,6 +1647,7 @@ impl CalcitTypeAnnotation {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
+        Self::Unit => true, // nil is always valid for Optional types
         _ => self.matches_with_bindings(expected_inner, bindings),
       },
       (Self::Optional(_), _) => false,
@@ -1471,8 +1784,24 @@ impl CalcitTypeAnnotation {
       (Self::Record(a), Self::Struct(b, _)) => a.name == b.name,
       (Self::Record(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "record") => true,
       (Self::Tuple(a), Self::Tuple(b)) => a.name() == b.name(),
-      (Self::Tuple(a), Self::Enum(b, _)) => a.name() == b.name(),
+      (Self::Tuple(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::Tuple(a)) => a.name() == b.name(),
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) => true,
+      // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
+      // try to resolve it as a type alias by looking up the definition's schema.
+      (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => {
+        if let Some(resolved) = resolve_type_ref_as_schema(name) {
+          return resolved.matches_with_bindings(other, bindings);
+        }
+        false
+      }
+      // TypeSlot: resolve the bound type from the global registry and delegate
+      (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
+        if let Some(resolved) = resolve_type_slot(name) {
+          return resolved.matches_with_bindings(other, bindings);
+        }
+        // Slot not yet bound — treat as Dynamic (no checking)
+        true
+      }
       _ => false,
     }
   }
@@ -1520,7 +1849,7 @@ impl CalcitTypeAnnotation {
       Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
-          Self::from_function_parts(signature.arg_types, signature.return_type)
+          Self::from_function_parts(signature.arg_types.clone(), signature.return_type.clone())
         } else {
           Self::Dynamic
         }
@@ -1577,7 +1906,7 @@ impl CalcitTypeAnnotation {
       return None;
     }
 
-    let resolved = lookup_evaled_def(import.ns.as_ref(), import.def.as_ref())
+    let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
       .or_else(|| lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref()))
       .map(|value| CalcitTypeAnnotation::from_calcit(&value));
 
@@ -1749,6 +2078,7 @@ impl CalcitTypeAnnotation {
       Self::Enum(e, _) => Edn::Tag(e.name().clone()),
       Self::Record(struct_def) => Edn::Tag(struct_def.name.clone()),
       Self::Tuple(enum_def) => Edn::Tag(enum_def.name().clone()),
+      Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
       // Anything else falls back to dynamic
       _ => Edn::tag("dynamic"),
     }
@@ -1855,6 +2185,7 @@ impl CalcitTypeAnnotation {
       Self::Record(struct_def) => format!("struct {}", struct_def.name),
       Self::Tuple(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
+      Self::TypeSlot(name) => format!("type-slot({name})"),
       _ => "unknown".to_string(),
     }
   }
@@ -1888,6 +2219,7 @@ impl CalcitTypeAnnotation {
       Self::Trait(_) => 25,
       Self::TraitSet(_) => 26,
       Self::Unit => 27,
+      Self::TypeSlot(_) => 28,
     }
   }
 }
@@ -1918,6 +2250,51 @@ fn resolve_struct_def(form: &Calcit) -> Option<CalcitStruct> {
       _ => None,
     }),
   }
+}
+
+/// Resolve a struct definition by namespace and definition name from the program registry.
+/// Used by `CalcitTypeAnnotation::resolve_to_struct` to look up `TypeRef("ns/def")` at compile time.
+fn resolve_struct_from_program(ns: &str, def: &str) -> Option<CalcitStruct> {
+  lookup_runtime_ready_registered(ns, def)
+    .and_then(|value| match &value {
+      Calcit::Struct(s) => Some(s.to_owned()),
+      _ => resolve_type_def_from_code(&value).and_then(|resolved| match resolved {
+        Calcit::Struct(s) => Some(s),
+        _ => None,
+      }),
+    })
+    .or_else(|| {
+      lookup_def_code_registered(ns, def).and_then(|code| {
+        resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
+          Calcit::Struct(s) => Some(s),
+          _ => None,
+        })
+      })
+    })
+}
+
+/// Resolve an enum definition by namespace and definition name from the program registry.
+/// Used by `CalcitTypeAnnotation::resolve_to_enum` to look up `TypeRef("ns/def")` at compile time.
+fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnum> {
+  lookup_runtime_ready_registered(ns, def)
+    .and_then(|value| match &value {
+      Calcit::Enum(e) => Some(e.to_owned()),
+      Calcit::Record(record) => CalcitEnum::from_record(record.to_owned()).ok(),
+      _ => resolve_type_def_from_code(&value).and_then(|resolved| match resolved {
+        Calcit::Enum(e) => Some(e),
+        Calcit::Record(record) => CalcitEnum::from_record(record).ok(),
+        _ => None,
+      }),
+    })
+    .or_else(|| {
+      lookup_def_code_registered(ns, def).and_then(|code| {
+        resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
+          Calcit::Enum(e) => Some(e),
+          Calcit::Record(record) => CalcitEnum::from_record(record).ok(),
+          _ => None,
+        })
+      })
+    })
 }
 
 fn resolve_enum_def(form: &Calcit) -> Option<CalcitEnum> {
@@ -2129,7 +2506,7 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
         return None;
       }
 
-      let resolved = lookup_evaled_def(import.ns.as_ref(), import.def.as_ref())
+      let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
         .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
         .or_else(|| {
           lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref())
@@ -2145,7 +2522,7 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
 
       resolved
     }
-    Calcit::Symbol { sym, info, .. } => lookup_evaled_def(info.at_ns.as_ref(), sym)
+    Calcit::Symbol { sym, info, .. } => lookup_runtime_ready_registered(info.at_ns.as_ref(), sym)
       .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
       .or_else(|| {
         lookup_def_code_registered(info.at_ns.as_ref(), sym).map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
@@ -2545,6 +2922,46 @@ mod tests {
       CalcitTypeAnnotation::Dynamic
     ));
   }
+
+  #[test]
+  fn rejects_type_args_on_non_generic_struct_annotation() {
+    let pair = CalcitStruct {
+      name: EdnTag::new("Pair"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![]),
+      impls: vec![],
+    };
+    let annotation = CalcitTypeAnnotation::Struct(
+      Arc::new(pair),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+
+    let err = annotation
+      .validate_applied_type_args()
+      .expect_err("non-generic struct should reject type args");
+    assert!(err.contains("struct `Pair` is not generic"), "unexpected error: {err}");
+  }
+
+  #[test]
+  fn rejects_wrong_arity_on_generic_struct_annotation() {
+    let pair = CalcitStruct {
+      name: EdnTag::new("Pair"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![Arc::from("A"), Arc::from("B")]),
+      impls: vec![],
+    };
+    let annotation = CalcitTypeAnnotation::Struct(Arc::new(pair), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+
+    let err = annotation
+      .validate_applied_type_args()
+      .expect_err("generic struct should enforce arity");
+    assert!(
+      err.contains("expects 2 type argument(s), but received 1"),
+      "unexpected error: {err}"
+    );
+  }
 }
 
 impl fmt::Display for CalcitTypeAnnotation {
@@ -2643,6 +3060,10 @@ impl Hash for CalcitTypeAnnotation {
         }
       }
       Self::Unit => "unit".hash(state),
+      Self::TypeSlot(name) => {
+        "type-slot".hash(state);
+        name.hash(state);
+      }
     }
   }
 }
@@ -2715,6 +3136,17 @@ pub struct CalcitFnTypeAnnotation {
 }
 
 impl CalcitFnTypeAnnotation {
+  pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
+    for arg in &self.arg_types {
+      arg.validate_applied_type_args()?;
+    }
+    self.return_type.validate_applied_type_args()?;
+    if let Some(rest) = &self.rest_type {
+      rest.validate_applied_type_args()?;
+    }
+    Ok(())
+  }
+
   fn to_inline_type_schema_edn(&self) -> Edn {
     let args: Vec<Edn> = self.arg_types.iter().map(|t| t.to_type_edn()).collect();
     let mut map = EdnMapView::default();
@@ -2925,6 +3357,13 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     // Generic type variables cannot be checked at runtime; allow any value
     CalcitTypeAnnotation::TypeVar(_) => true,
     CalcitTypeAnnotation::Variadic(inner) => matches!(value, Calcit::List(_)) || value_matches_type_annotation(value, inner),
+    CalcitTypeAnnotation::TypeSlot(name) => {
+      if let Some(resolved) = resolve_type_slot(name) {
+        value_matches_type_annotation(value, &resolved)
+      } else {
+        true // unbound slot: permissive like Dynamic
+      }
+    }
   }
 }
 

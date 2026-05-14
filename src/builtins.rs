@@ -1,4 +1,5 @@
 pub mod effects;
+mod json;
 mod lists;
 mod logics;
 mod maps;
@@ -325,6 +326,18 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeDataToCode => meta::data_to_code(args),
     NativeCirruNth => meta::cirru_nth(args),
     NativeCirruType => meta::cirru_type(args),
+    ListQuestion => meta::list_question(args),
+    TagQuestion => meta::tag_question(args),
+    SymbolQuestion => meta::symbol_question(args),
+    NilQuestion => meta::nil_question(args),
+    StringQuestion => meta::string_question(args),
+    MapQuestion => meta::map_question(args),
+    NumberQuestion => meta::number_question(args),
+    BoolQuestion => meta::bool_question(args),
+    SetQuestion => meta::set_question(args),
+    TupleQuestion => meta::tuple_question(args),
+    RecordQuestion => meta::record_question(args),
+    FnQuestion => meta::fn_question(args),
     IsSpreadingMark => meta::is_spreading_mark(args),
     // tuple
     NativeTuple => meta::new_tuple(args), // unstable solution for the name
@@ -371,6 +384,9 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     ParseCirruEdn => meta::parse_cirru_edn(args),
     FormatCirruEdn => meta::format_cirru_edn(args),
     NativeCirruQuoteToList => meta::cirru_quote_to_list(args),
+    JsonParse => json::parse(args),
+    JsonStringify => json::stringify(args),
+    JsonPretty => json::pretty(args),
     // time
     CpuTime => effects::cpu_time(args),
     // logics
@@ -446,6 +462,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeListSlice => lists::slice(args),
     NativeListAssocBefore => lists::assoc_before(args),
     NativeListAssocAfter => lists::assoc_after(args),
+    NativeListQ => lists::list_ques(args),
     NativeListCount => lists::count(args),
     NativeListEmpty => lists::empty_ques(args),
     NativeListContains => lists::contains_ques(args),
@@ -457,6 +474,20 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeListDissoc => lists::dissoc(args),
     NativeListToSet => lists::list_to_set(args),
     NativeListDistinct => lists::distinct(args),
+    NativeListLast => lists::last(args),
+    NativeListAppend => lists::append(args),
+    NativeListPrepend => lists::prepend(args),
+    NativeListButlast => lists::butlast(args),
+    NativeListSort => lists::sort(args, call_stack),
+    NativeListRange => lists::range(args),
+    NativeListFoldl => lists::foldl(args, call_stack),
+    NativeListFoldlShortcut => lists::foldl_shortcut(args, call_stack),
+    // buf-list
+    NativeBufListNew => lists::buf_list_new(args),
+    NativeBufListPush => lists::buf_list_push(args),
+    NativeBufListConcat => lists::buf_list_concat(args),
+    NativeBufListToList => lists::buf_list_to_list(args),
+    NativeBufListCount => lists::buf_list_count(args),
     // maps
     NativeMap => maps::call_new_map(args),
     NativeMerge => maps::call_merge(args),
@@ -474,6 +505,9 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeMapDiffNew => maps::diff_new(args),
     NativeMapDiffKeys => maps::diff_keys(args),
     NativeMapCommonKeys => maps::common_keys(args),
+    NativeMapDiffTriple => maps::diff_triple(args),
+    NativeMapKeys => maps::map_keys(args),
+    NativeMapVals => maps::map_vals(args),
     // sets
     Set => sets::new_set(args),
     NativeInclude => sets::call_include(args),
@@ -492,6 +526,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     AddWatch => refs::add_watch(args),
     RemoveWatch => refs::remove_watch(args),
     // records
+    NativeLooseRecord => records::call_loose_record(args),
     NativeRecord => records::call_record(args),
     NativeRecordPartial => records::call_record_partial(args),
     NativeRecordWith => records::record_with(args),
@@ -504,8 +539,14 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeRecordCount => records::count(args),
     NativeRecordContains => records::contains_ques(args),
     NativeRecordGet => records::get(args),
+    NativeRecordNth => records::record_nth(args),
+    NativeRecordFieldTag => records::record_field_tag(args),
     NativeRecordAssoc => records::assoc(args),
+    NativeRecordAssocAt => records::record_assoc_at(args),
+    NativeRecordWithAt => records::record_with_at(args),
     NativeRecordExtendAs => records::extend_as(args),
+    DeftypeSlot => meta::deftype_slot(args),
+    BindType => meta::bind_type(args),
   }
 }
 
@@ -560,6 +601,7 @@ pub fn handle_syntax(
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
     AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),
     AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
+    Match => syntax::syntax_match(nodes, scope, file_ns, call_stack),
   }
 }
 

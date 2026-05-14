@@ -14,19 +14,17 @@
         |v $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote (def v 100)
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns macro-ns.lib $ :require
             [] util.core :refer $ [] log-title inside-eval:
-        :examples $ []
     |macro-ns.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
             defn main! () $ expand-1 1
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns macro-ns.main $ :require
             macro-ns.lib :refer $ expand-1
-        :examples $ []

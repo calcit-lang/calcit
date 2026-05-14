@@ -3,7 +3,8 @@ use crate::{
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
-    brief_type_of_value, format_proc_examples_hint, gen_core_id, value_matches_type_annotation,
+    bind_type_slot, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, resolve_type_slot,
+    value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -32,6 +33,30 @@ static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) static NS_SYMBOL_DICT: LazyLock<Mutex<HashMap<Arc<str>, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// Tracks the current top-level def being preprocessed, keyed as "ns/def".
+// This makes gensym counters per-definition rather than per-namespace,
+// ensuring stable gensym numbers regardless of preprocessing order.
+thread_local! {
+  pub(crate) static CURRENT_COMPILING_DEF: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` with the current-compiling-def context set to `ns/def`.
+/// Restores the previous context on return (supports reentrant calls).
+/// Also resets the gensym counter for this def so gensym sequences are always stable.
+pub fn with_compiling_def<R, E>(ns: &str, def: &str, f: impl FnOnce() -> Result<R, E>) -> Result<R, E> {
+  let prev = CURRENT_COMPILING_DEF.with(|cell| cell.borrow_mut().take());
+  let key = format!("{ns}/{def}");
+  CURRENT_COMPILING_DEF.with(|cell| *cell.borrow_mut() = Some(key.clone()));
+  // Reset counter so gensym numbers within this def always start at 1.
+  NS_SYMBOL_DICT
+    .lock()
+    .expect("reset gensym counter")
+    .remove(&Arc::from(key.as_str()));
+  let result = f();
+  CURRENT_COMPILING_DEF.with(|cell| *cell.borrow_mut() = prev);
+  result
+}
+
 pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   use Calcit::*;
 
@@ -46,6 +71,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Ref(..) => Ok(Calcit::tag("ref")),
     Tuple { .. } => Ok(Calcit::tag("tuple")),
     Buffer(..) => Ok(Calcit::tag("buffer")),
+    BufList(..) => Ok(Calcit::tag("buf-list")),
     CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
     Recur(..) => Ok(Calcit::tag("recur")),
     List(..) => Ok(Calcit::tag("list")),
@@ -307,7 +333,10 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn format_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
+    Some(a) => {
+      let raw = edn::calcit_to_edn(a)?;
+      Ok(Calcit::Str(cirru_edn::format(&edn::sanitize_edn_for_format(&raw), true)?.into()))
+    }
     None => {
       let hint = format_proc_examples_hint(&CalcitProc::FormatCirruEdn).unwrap_or_default();
       CalcitErr::err_str_with_hint(
@@ -1030,8 +1059,26 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   use Calcit::*;
   match v0 {
     // user-defined values: impl-traits appends, so later impls override earlier ones
-    Tuple(tuple) => method_call_impls(tuple.impls(), v0, name, method_args, call_stack, true),
-    Record(record) => method_call_impls(&record.struct_ref.impls, v0, name, method_args, call_stack, true),
+    Tuple(tuple) => {
+      let user_impls = tuple.impls();
+      let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
+      if has_user_method {
+        method_call_impls(user_impls, v0, name, method_args, call_stack, true)
+      } else {
+        let impls_value = runner::evaluate_symbol_from_program("&core-tuple-impls", calcit::CORE_NS, None, call_stack)?;
+        method_call(&impls_value, v0, name, method_args, call_stack)
+      }
+    }
+    Record(record) => {
+      let user_impls = &record.struct_ref.impls;
+      let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
+      if has_user_method {
+        method_call_impls(user_impls, v0, name, method_args, call_stack, true)
+      } else {
+        let impls_value = runner::evaluate_symbol_from_program("&core-record-impls", calcit::CORE_NS, None, call_stack)?;
+        method_call(&impls_value, v0, name, method_args, call_stack)
+      }
+    }
 
     // builtin values should already be preprocessed
     List(..) => {
@@ -1780,6 +1827,90 @@ pub fn cirru_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn list_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::List(_))))
+}
+
+pub fn tag_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "tag? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Tag(_))))
+}
+
+pub fn symbol_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "symbol? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Symbol { .. })))
+}
+
+pub fn nil_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "nil? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Nil)))
+}
+
+pub fn string_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "string? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Str(_))))
+}
+
+pub fn map_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "map? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Map(_))))
+}
+
+pub fn number_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "number? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Number(_))))
+}
+
+pub fn bool_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "bool? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Bool(_))))
+}
+
+pub fn set_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "set? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Set(_))))
+}
+
+pub fn tuple_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "tuple? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Tuple { .. })))
+}
+
+pub fn record_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "record? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Record { .. })))
+}
+
+pub fn fn_question(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "fn? expected 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::Fn { .. } | Calcit::Proc(_))))
+}
+
 pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "is-spreading-mark? expected 1 argument, but received:", xs);
@@ -1788,4 +1919,71 @@ pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(Calcit::Bool(true)),
     _ => Ok(Calcit::Bool(false)),
   }
+}
+
+/// `deftype-slot` proc: declare a named type slot for late binding.
+/// Usage: `(deftype-slot :dispatch-op)`
+pub fn deftype_slot(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "deftype-slot expected 1 argument (tag name), but received:",
+      xs,
+    );
+  }
+  let name: Arc<str> = match &xs[0] {
+    Calcit::Tag(t) => Arc::from(t.ref_str()),
+    Calcit::Str(s) => Arc::from(s.as_ref()),
+    a => {
+      return CalcitErr::err_str(CalcitErrKind::Type, format!("deftype-slot expected a tag or string name, got: {a}"));
+    }
+  };
+  register_type_slot(name).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
+  Ok(Calcit::Nil)
+}
+
+/// `bind-type` proc: bind a concrete type (enum/struct) to a declared type slot.
+/// Usage: `(bind-type :dispatch-op Op)` where `Op` is a defenum definition.
+///
+/// At runtime this is a no-op when the slot was already bound during preprocessing —
+/// the preprocessing phase eagerly resolves and binds the slot, so the runtime call
+/// simply returns nil to avoid a "double-bind" error.
+pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "bind-type expected 2 arguments (slot-name, type-value), but received:",
+      xs,
+    );
+  }
+  let name: &str = match &xs[0] {
+    Calcit::Tag(t) => t.ref_str(),
+    Calcit::Str(s) => s.as_ref(),
+    a => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("bind-type expected a tag or string as slot name, got: {a}"),
+      );
+    }
+  };
+  // If the slot was already bound (typically by preprocessing), skip the runtime bind.
+  if resolve_type_slot(name).is_some() {
+    return Ok(Calcit::Nil);
+  }
+  let ty: Arc<CalcitTypeAnnotation> = match &xs[1] {
+    Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
+    Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
+    Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+    a => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!(
+          "bind-type expected an enum, struct, or record as type value, got: {}",
+          brief_type_of_value(a)
+        ),
+      );
+    }
+  };
+  bind_type_slot(name, ty).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
+  Ok(Calcit::Nil)
 }

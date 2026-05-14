@@ -36,7 +36,7 @@
 
 每批次均执行：
 
-- `cargo run --bin cr -- demos/compact.cirru edit format`
+- `cargo run --bin cr -- demos/calcit.cirru edit format`
 - `yarn check-all`
 
 结果均通过（尾部稳定为 `... and 24 files not changed.`）。

@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-generics)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-generics)
   :configs $ {} (:init-fn |test-generics.main/main!) (:reload-fn |test-generics.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -20,9 +20,7 @@
           :examples $ []
         |Wrapped $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
-            defenum Wrapped
-              :pair $ :: Pair :number :string
-              :none
+            defenum Wrapped (:pair Pair) (:none)
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema nil)
           :code $ quote
@@ -69,6 +67,5 @@
               &inspect-type b
               &inspect-type h
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-generics.main)
-        :examples $ []

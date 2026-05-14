@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
 
-const SNAPSHOT_ABOUT_MESSAGE: &str = "file is generated - never edit directly; learn cr edit/tree workflows before changing";
+const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
 
 fn default_version() -> String {
   "0.0.0".to_owned()
@@ -94,8 +94,14 @@ pub struct SnapshotConfigs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NsEntry {
+  pub doc: String,
+  pub code: Cirru,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInSnapShot {
-  pub ns: CodeEntry,
+  pub ns: NsEntry,
   pub defs: HashMap<String, CodeEntry>,
 }
 
@@ -111,7 +117,7 @@ struct RawCodeEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct RawFileInSnapShot {
-  pub ns: RawCodeEntry,
+  pub ns: NsEntry,
   pub defs: HashMap<String, RawCodeEntry>,
 }
 
@@ -145,8 +151,7 @@ pub fn decode_binary_snapshot(bytes: &[u8]) -> Result<Snapshot, String> {
   let mut files: HashMap<String, FileInSnapShot> = HashMap::with_capacity(raw.files.len());
 
   for (file_name, raw_file) in raw.files {
-    let ns_owner = format!("{file_name}/:ns");
-    let ns = raw_file.ns.into_code_entry(&ns_owner)?;
+    let ns = raw_file.ns;
     let mut defs: HashMap<String, CodeEntry> = HashMap::with_capacity(raw_file.defs.len());
 
     for (def_name, raw_entry) in raw_file.defs {
@@ -216,6 +221,67 @@ impl From<FileInSnapShot> for Edn {
       defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
     }
     Edn::map_from_iter([("defs".into(), Edn::from(defs_map)), ("ns".into(), data.ns.into())])
+  }
+}
+
+impl TryFrom<Edn> for NsEntry {
+  type Error = String;
+  fn try_from(data: Edn) -> Result<Self, String> {
+    let mut doc = String::new();
+    let mut code: Option<Cirru> = None;
+
+    match data {
+      Edn::Record(record) => {
+        for (key, value) in &record.pairs {
+          match key.arc_str().as_ref() {
+            "doc" => {
+              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+            }
+            "code" => {
+              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+            }
+            _ => {}
+          }
+        }
+      }
+      Edn::Map(map) => {
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
+          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
+          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+        }
+      }
+      other => {
+        return Err(format!("failed to parse NsEntry: expected record/map, got: {other:?}"));
+      }
+    }
+
+    Ok(NsEntry {
+      doc,
+      code: code.ok_or_else(|| "failed to parse NsEntry: missing code field".to_owned())?,
+    })
+  }
+}
+
+impl From<NsEntry> for Edn {
+  fn from(data: NsEntry) -> Self {
+    Edn::record_from_pairs(
+      "NsEntry".into(),
+      &[("doc".into(), data.doc.into()), ("code".into(), data.code.into())],
+    )
+  }
+}
+
+impl From<&NsEntry> for Edn {
+  fn from(data: &NsEntry) -> Self {
+    Edn::record_from_pairs(
+      "NsEntry".into(),
+      &[
+        ("doc".into(), data.doc.to_owned().into()),
+        ("code".into(), data.code.to_owned().into()),
+      ],
+    )
   }
 }
 
@@ -544,8 +610,6 @@ fn validate_snapshot_schemas_for_write(snapshot: &Snapshot) -> Result<(), String
       continue;
     }
 
-    validate_schema_for_snapshot_write(&format!("{ns_name}/:ns"), &file_data.ns.schema)?;
-
     for (def_name, code_entry) in &file_data.defs {
       validate_schema_for_snapshot_write(&format!("{ns_name}/{def_name}"), &code_entry.schema)?;
     }
@@ -864,11 +928,11 @@ impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
     let schema = normalize_schema_for_code(&data.code, &data.schema);
     let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::Nil,
+      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
       other => {
         // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::Nil)
+        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
       }
     };
     Edn::record_from_pairs(
@@ -887,11 +951,11 @@ impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
     let schema = normalize_schema_for_code(&data.code, &data.schema);
     let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::Nil,
+      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
       CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
       other => {
         // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::Nil)
+        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
       }
     };
     Edn::record_from_pairs(
@@ -939,7 +1003,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
   })))
 }
 
-/// structure of `compact.cirru` file
+/// structure of runtime snapshot files such as `calcit.cirru` (legacy: `compact.cirru`)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
   pub package: String,
@@ -952,8 +1016,69 @@ pub struct Snapshot {
 impl TryFrom<Edn> for SnapshotConfigs {
   type Error = String;
   fn try_from(data: Edn) -> Result<SnapshotConfigs, String> {
-    from_edn(data)
+    parse_snapshot_configs_with_context(data, "configs")
   }
+}
+
+fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str) -> Result<String, String> {
+  let value = data.get(&Edn::tag(key)).ok_or_else(|| format!("{owner}: missing `:{key}` field"))?;
+
+  let text: Arc<str> = value
+    .to_owned()
+    .try_into()
+    .map_err(|e| format!("{owner}.{key}: {e}; got {}", format_edn_preview(value)))?;
+
+  if key == "version" && (text.trim().is_empty() || text.as_ref() == "|") {
+    return Err(format!(
+      "{owner}.version cannot be empty; check `:configs (:version ...)`; got {}",
+      format_edn_preview(value)
+    ));
+  }
+
+  Ok(text.to_string())
+}
+
+fn parse_snapshot_configs_with_context(data: Edn, owner: &str) -> Result<SnapshotConfigs, String> {
+  let data = data
+    .view_map()
+    .map_err(|e| format!("{owner}: failed to parse config map: {e}; got {}", format_edn_preview(&data)))?;
+
+  let init_fn = parse_snapshot_config_string_field(&data, "init-fn", owner)?;
+  let reload_fn = parse_snapshot_config_string_field(&data, "reload-fn", owner)?;
+
+  let version = match data.get(&Edn::tag("version")) {
+    Some(_) => parse_snapshot_config_string_field(&data, "version", owner)?,
+    None => default_version(),
+  };
+
+  let modules = match data.get(&Edn::tag("modules")) {
+    Some(value) => from_edn(value.to_owned()).map_err(|e| format!("{owner}.modules: {e}; got {}", format_edn_preview(value)))?,
+    None => Vec::new(),
+  };
+
+  Ok(SnapshotConfigs {
+    init_fn,
+    reload_fn,
+    modules,
+    version,
+  })
+}
+
+fn parse_entries_with_context(data: &Edn) -> Result<HashMap<String, SnapshotConfigs>, String> {
+  let entries_map = data
+    .view_map()
+    .map_err(|e| format!("entries: failed to parse entries map: {e}; got {}", format_edn_preview(data)))?;
+
+  let mut entries = HashMap::with_capacity(entries_map.0.len());
+  for (entry_key, entry_value) in entries_map.0.iter() {
+    let entry_name: String = from_edn(entry_key.to_owned())
+      .map_err(|e| format!("entries: failed to parse entry name: {e}; got {}", format_edn_preview(entry_key)))?;
+    let owner = format!("entries.{entry_name}");
+    let entry = parse_snapshot_configs_with_context(entry_value.to_owned(), &owner)?;
+    entries.insert(entry_name, entry);
+  }
+
+  Ok(entries)
 }
 
 /// parse snapshot
@@ -973,8 +1098,8 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let s = Snapshot {
     package: pkg.to_string(),
     about,
-    configs: from_edn(data.get_or_nil("configs"))?,
-    entries: data.get_or_nil("entries").try_into()?,
+    configs: parse_snapshot_configs_with_context(data.get_or_nil("configs"), "configs")?,
+    entries: parse_entries_with_context(&data.get_or_nil("entries"))?,
     files,
   };
   Ok(s)
@@ -994,7 +1119,10 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
         .get(&Edn::tag("defs"))
         .ok_or_else(|| format!("{file_name}: missing `:defs` field in FileEntry"))?;
 
-      let ns = parse_code_entry_with_context(ns_value.to_owned(), &format!("{file_name}/:ns"))?;
+      let ns: NsEntry = ns_value
+        .to_owned()
+        .try_into()
+        .map_err(|e: String| format!("{file_name}/:ns: {e}"))?;
       let defs_map = defs_value.view_map().map_err(|e| {
         format!(
           "{file_name}: failed to parse `:defs` as map: {e}; got {}",
@@ -1013,13 +1141,13 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
       Ok(FileInSnapShot { ns, defs })
     }
     Edn::Record(record) => {
-      let mut ns = None;
+      let mut ns: Option<NsEntry> = None;
       let mut defs = HashMap::new();
 
       for (key, value) in record.pairs.iter() {
         match key.arc_str().as_ref() {
           "ns" => {
-            ns = Some(parse_code_entry_with_context(value.to_owned(), &format!("{file_name}/:ns"))?);
+            ns = Some(value.to_owned().try_into().map_err(|e: String| format!("{file_name}/:ns: {e}"))?);
           }
           "defs" => {
             let defs_map = value.view_map().map_err(|e| {
@@ -1084,11 +1212,9 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   ]);
 
   FileInSnapShot {
-    ns: CodeEntry {
+    ns: NsEntry {
       doc: "".to_owned(),
-      examples: vec![],
       code: vec!["ns", ns].into(),
-      schema: DYNAMIC_TYPE.clone(),
     },
     defs: def_dict,
   }
@@ -1140,7 +1266,10 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()),
       );
       Ok(FileInSnapShot {
-        ns: CodeEntry::from_code(ns_code),
+        ns: NsEntry {
+          doc: "".to_owned(),
+          code: ns_code,
+        },
         defs: def_dict,
       })
     }
@@ -1261,9 +1390,9 @@ impl TryFrom<ChangesDict> for Edn {
   }
 }
 
-/// Save snapshot to compact.cirru file
+/// Render snapshot content for runtime snapshot files such as `calcit.cirru`
 /// This is a shared utility function used by CLI edit commands
-pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &Snapshot) -> Result<(), String> {
+pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   validate_snapshot_schemas_for_write(snapshot)?;
 
   // Build root level Edn mapping
@@ -1321,13 +1450,37 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
 
   let edn_data = Edn::from(edn_map);
 
-  // Format Edn as Cirru string
-  let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
+  // Normalize on AST directly, avoiding parse-after-format roundtrip.
+  let normalized = normalize_pipe_prefixed_leaf(edn_data.cirru());
+  let content = cirru_parser::format(std::slice::from_ref(&normalized), true.into())
+    .map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
 
   validate_serialized_snapshot_content(&content)?;
 
+  Ok(content)
+}
+
+fn normalize_pipe_prefixed_leaf(node: Cirru) -> Cirru {
+  match node {
+    Cirru::Leaf(token) => {
+      if let Some(rest) = token.strip_prefix('"') {
+        Cirru::leaf(format!("|{rest}"))
+      } else {
+        Cirru::Leaf(token)
+      }
+    }
+    Cirru::List(items) => Cirru::List(items.into_iter().map(normalize_pipe_prefixed_leaf).collect()),
+  }
+}
+
+/// Save snapshot to a runtime snapshot file such as `calcit.cirru`
+/// This is a shared utility function used by CLI edit commands
+pub fn save_snapshot_to_file<P: AsRef<Path>>(snapshot_path: P, snapshot: &Snapshot) -> Result<(), String> {
+  let content = render_snapshot_content(snapshot)?;
+
   // Write to file
-  std::fs::write(compact_cirru_path, content).map_err(|e| format!("Failed to write compact.cirru: {e}"))?;
+  std::fs::write(&snapshot_path, content)
+    .map_err(|e| format!("Failed to write snapshot file {}: {e}", snapshot_path.as_ref().display()))?;
 
   Ok(())
 }
@@ -1339,6 +1492,44 @@ mod tests {
   use cirru_edn::EdnListView;
 
   use std::fs;
+
+  #[test]
+  fn normalizes_simple_quoted_tokens_to_pipe_prefix() {
+    let input = "{} (:a \"|&\") (:b \"|56px\") (:c \"|hello-world\")";
+    let nodes = cirru_parser::parse(input).expect("input should parse");
+    let output_node = normalize_pipe_prefixed_leaf(nodes[0].to_owned());
+    let output = cirru_parser::format(std::slice::from_ref(&output_node), true.into()).expect("output should format");
+    assert_eq!(output.trim(), "{} (:a |&) (:b |56px) (:c |hello-world)");
+  }
+
+  #[test]
+  fn normalizes_all_quote_prefixed_leaves_from_ast() {
+    let input = "{} (:a \"|hello world\") (:b \"|line\\nfeed\") (:c \"|x(y)\")";
+    let nodes = cirru_parser::parse(input).expect("input should parse");
+    let output_node = normalize_pipe_prefixed_leaf(nodes[0].to_owned());
+    let output = cirru_parser::format(std::slice::from_ref(&output_node), true.into()).expect("output should format");
+
+    let nodes = cirru_parser::parse(&output).expect("normalized output should still be parseable");
+    let Cirru::List(root_items) = &nodes[0] else {
+      panic!("expected one root list");
+    };
+
+    for pair in root_items.iter().skip(1) {
+      let Cirru::List(pair_items) = pair else {
+        continue;
+      };
+      if pair_items.len() < 2 {
+        continue;
+      }
+      let Cirru::Leaf(value) = &pair_items[1] else {
+        continue;
+      };
+      assert!(
+        value.starts_with('|'),
+        "expected string leaf to be normalized to pipe-prefix in AST, got: {value}"
+      );
+    }
+  }
 
   #[test]
   fn test_examples_field_parsing() {
@@ -2125,6 +2316,32 @@ mod tests {
     let err = validate_serialized_snapshot_content(content).expect_err("serialized snapshot should reject double-quoted generics");
     assert!(
       err.contains("serialized snapshot has invalid `:schema`") && err.contains("excess leading quotes"),
+      "unexpected error: {err}"
+    );
+  }
+
+  #[test]
+  fn test_load_snapshot_reports_empty_configs_version_with_field_context() {
+    let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version ||)
+    :modules $ []
+  :entries $ {}
+  :files $ {}
+    |mini $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn main! () nil)
+          :examples $ []
+          :schema nil
+"#;
+
+    let edn_data = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
+    let err = load_snapshot_data(&edn_data, "mini.cirru").expect_err("empty configs.version should fail on load");
+
+    assert!(err.contains("configs.version cannot be empty"), "unexpected error: {err}");
+    assert!(
+      err.contains(":configs (:version ...)") || err.contains("got ||"),
       "unexpected error: {err}"
     );
   }

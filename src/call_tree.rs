@@ -367,10 +367,6 @@ impl CallTreeAnalyzer {
         crate::calcit::CalcitThunk::Code { code, .. } => {
           Self::extract_calls_recursive(code, current_ns, calls);
         }
-        crate::calcit::CalcitThunk::Evaled { code, value } => {
-          Self::extract_calls_recursive(code, current_ns, calls);
-          Self::extract_calls_recursive(value, current_ns, calls);
-        }
       },
       Calcit::Tuple(tuple) => {
         for item in &tuple.extra {

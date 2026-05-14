@@ -14,8 +14,15 @@ mod injection;
 mod cli_handlers;
 
 #[cfg(test)]
+static GLOBAL_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
+#[cfg(test)]
 #[path = "cr_tests/type_fail.rs"]
 mod cr_type_fail_tests;
+
+#[cfg(test)]
+#[path = "cr_tests/cirru_suite.rs"]
+mod cr_cirru_suite_tests;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
@@ -42,8 +49,18 @@ fn main() -> Result<(), String> {
 
   let cli_args: ToplevelCalcit = argh::from_env();
 
-  if cli_args.no_tips {
-    cli_handlers::suppress_tips();
+  if let Some(level) = cli_args.tips_level.as_deref() {
+    cli_handlers::set_tips_level(level)?;
+  }
+
+  if cli_args.tips {
+    cli_handlers::set_tips_level("full")?;
+  }
+
+  if cli_handlers::should_echo_command(&cli_args) {
+    cli_handlers::suppress_command_guidance();
+    calcit::set_quiet_tool_output(true);
+    cli_handlers::print_command_echo(&cli_args);
   }
 
   // Handle standalone commands that don't need full program loading
@@ -66,14 +83,23 @@ fn main() -> Result<(), String> {
     Some(CalcitCommand::Tree(tree_cmd)) => {
       return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
     }
+    Some(CalcitCommand::Analyze(analyze_cmd)) => match &analyze_cmd.subcommand {
+      AnalyzeSubcommand::ProgramDiff(diff_cmd) => {
+        return cli_handlers::handle_program_diff_command(diff_cmd, &cli_args.input);
+      }
+      AnalyzeSubcommand::CallGraphDiff(diff_cmd) => {
+        return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
+      }
+      _ => {}
+    },
     _ => {}
   }
 
-  let mut eval_once = cli_args.once;
+  let mut eval_once = false;
   let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
-  if !cli_args.version {
+  if !cli_args.version && !calcit::quiet_tool_output() {
     eprintln!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
   }
   if cli_args.version {
@@ -82,6 +108,8 @@ fn main() -> Result<(), String> {
   }
 
   // get dirty functions injected
+  #[cfg(not(target_arch = "wasm32"))]
+  injection::set_trace_ffi(cli_args.trace_ffi);
   #[cfg(not(target_arch = "wasm32"))]
   injection::inject_platform_apis();
 
@@ -92,17 +120,22 @@ fn main() -> Result<(), String> {
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
-  eprintln!(
-    "{}",
-    format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
-  );
+  if !calcit::quiet_tool_output() {
+    eprintln!(
+      "{}",
+      format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
+    );
+  }
 
   if cli_args.disable_stack {
     call_stack::set_using_stack(false);
-    println!("stack trace disabled.")
+    if !calcit::quiet_tool_output() {
+      println!("stack trace disabled.")
+    }
   }
 
-  let input_path = PathBuf::from(&cli_args.input);
+  let input_path = calcit::resolve_snapshot_path_alias(&PathBuf::from(&cli_args.input));
+  let input_path_str = input_path.to_string_lossy().to_string();
   let base_dir = input_path.parent().expect("extract parent");
 
   if let Some(CalcitCommand::Eval(ref command)) = cli_args.subcommand {
@@ -125,24 +158,26 @@ fn main() -> Result<(), String> {
       }
     }
   } else {
-    if !Path::new(&cli_args.input).exists() {
-      return Err(format!("{} does not exist", cli_args.input));
+    if !input_path.exists() {
+      return Err(format!("{} does not exist", input_path.display()));
     }
     // load entry file
-    let mut content = fs::read_to_string(&cli_args.input).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", cli_args.input));
+    let mut content = fs::read_to_string(&input_path).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", input_path.display()));
     strip_shebang(&mut content);
     let data = cirru_edn::parse(&content).map_err(|e| {
-      eprintln!("\nFailed to parse entry file '{}':", cli_args.input);
+      eprintln!("\nFailed to parse entry file '{}':", input_path.display());
       eprintln!("{e}");
-      format!("Failed to parse entry file '{}'", cli_args.input)
+      format!("Failed to parse entry file '{}'", input_path.display())
     })?;
     // println!("reading: {}", content);
-    snapshot = snapshot::load_snapshot_data(&data, &cli_args.input)?;
+    snapshot = snapshot::load_snapshot_data(&data, &input_path_str)?;
 
     // config in entry will overwrite default configs
     if let Some(entry) = cli_args.entry.to_owned() {
       if snapshot.entries.contains_key(entry.as_str()) {
-        println!("running entry: {entry}");
+        if !calcit::quiet_tool_output() {
+          println!("running entry: {entry}");
+        }
         snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
       } else {
         return Err(format!(
@@ -195,7 +230,7 @@ fn main() -> Result<(), String> {
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
 
   // make sure builtin classes are touched
-  runner::preprocess::preprocess_ns_def(
+  runner::preprocess::ensure_ns_def_compiled(
     calcit::calcit::CORE_NS,
     calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
@@ -221,10 +256,6 @@ fn main() -> Result<(), String> {
       // `cr js` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
-    if js_options.once {
-      // kept for compatibility, force once mode
-      eval_once = true;
-    }
     if cli_args.skip_arity_check {
       codegen::set_code_gen_skip_arity_check(true);
     }
@@ -234,18 +265,18 @@ fn main() -> Result<(), String> {
       // `cr ir` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
-    if ir_options.once {
-      // kept for compatibility, force once mode
-      eval_once = true;
-    }
     run_codegen(&entries, &cli_args.emit_path, true)
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
       AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
+      AnalyzeSubcommand::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
+      AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
+      AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
+      AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),
     }
   } else {
     if !cli_args.watch {
@@ -282,6 +313,18 @@ fn main() -> Result<(), String> {
     std::thread::spawn(move || watch_files(entries, args, assets_watch));
   }
   runner::track::exit_when_cleared();
+  Ok(())
+}
+
+fn run_js_escape(symbol: &str) -> Result<(), String> {
+  let escaped = calcit::codegen::emit_js::escape_symbol_for_js(symbol);
+  println!("{escaped}");
+  Ok(())
+}
+
+fn run_js_unescape(symbol: &str) -> Result<(), String> {
+  let restored = calcit::codegen::emit_js::unescape_symbol_from_js(symbol);
+  println!("{restored}");
   Ok(())
 }
 
@@ -343,7 +386,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
 
   // Steps:
   // 1. load changes file, and patch to program_code
-  // 2. clears evaled states, gensym counter
+  // 2. clears runtime caches, gensym counter
   // 3. rerun program, and catch error
 
   let data = cirru_edn::parse(content).map_err(|e| {
@@ -392,10 +435,10 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   program::apply_code_changes(&changes)?;
   println!("{} Changes applied to program", "✓".green());
 
-  // clear data in evaled states
-  program::clear_all_program_evaled_defs(entries.init_ns.to_owned(), entries.reload_ns.to_owned(), settings.reload_libs)?;
+  // clear invalidated runtime cache entries
+  program::clear_runtime_caches_for_changes(&changes, settings.reload_libs)?;
   builtins::meta::force_reset_gensym_index()?;
-  println!("cleared evaled states and reset gensym index.");
+  println!("cleared runtime caches and reset gensym index.");
 
   // Create a minimal snapshot for documentation lookup during incremental updates
   // In practice, this could be enhanced to maintain documentation state
@@ -413,7 +456,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
       if let Err(e) =
-        runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
       {
         return Err(e.to_string());
       }
@@ -448,7 +491,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   eprintln!("{}", "Check-only mode: validating code...".dimmed());
 
   // preprocess init_fn
-  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => {
       println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
     }
@@ -461,7 +504,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   }
 
   // preprocess reload_fn
-  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => {
       println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());
     }
@@ -512,7 +555,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
@@ -528,7 +571,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+  match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
@@ -551,7 +594,6 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        eprintln!("\nfailed codegen, {failure}");
         call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
@@ -561,7 +603,6 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        eprintln!("\nfailed codegen, {failure}");
         call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
@@ -780,12 +821,6 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
     println!("{json}");
   } else {
     println!("{}", calcit::call_tree::format_for_llm(&result));
-
-    // Helpful tips to guide follow-up commands (top 3)
-    println!("\n{}", "Tips".bold());
-    println!("- Focus by namespace: cr analyze call-graph --ns-prefix <ns>");
-    println!("- Quantify hotspots: cr analyze count-calls [--ns-prefix <ns>] [--include-core]");
-    println!("- Explore details: cr query peek <ns/def> | cr query def <ns/def>");
   }
 
   Ok(())
@@ -1151,14 +1186,14 @@ fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverage
 
 /// Validate that a code entry matches its schema (kind, arity, rest param presence).
 /// Returns a list of warning/error messages. Empty means no issues.
-/// - `&runtime-inplementation` = builtin proc/syntax → always skipped.
+/// - `&runtime-implementation` = builtin proc/syntax → always skipped.
 /// - Schema `:kind :fn`   → code must use `defn`.
 /// - Schema `:kind :macro` → code must use `defmacro`.
 /// - Schema `:args` length must match required param count in code.
 /// - Schema `:rest` presence must match `&` rest param in code.
 fn validate_def_vs_schema(ns: &str, def_name: &str, code: &Cirru, schema: &CalcitTypeAnnotation) -> Vec<String> {
   // builtin proc/syntax — skip structural checks
-  if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-inplementation") {
+  if matches!(code, Cirru::Leaf(s) if s.as_ref() == "&runtime-implementation") {
     return vec![];
   }
 
@@ -1252,7 +1287,7 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
   if ns == calcit::calcit::CORE_NS {
     if let Ok(proc) = (*def_name).parse::<CalcitProc>() {
       if let Some(sig) = proc.get_type_signature() {
-        return analyze_builtin_proc(def_name, &sig);
+        return analyze_builtin_proc(def_name, sig);
       }
     }
     // Then check if this is a builtin syntax
@@ -1776,9 +1811,9 @@ mod tests {
   #[test]
   fn validate_runtime_impl_is_skipped() {
     let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
-    let code = Cirru::Leaf(Arc::from("&runtime-inplementation"));
+    let code = Cirru::Leaf(Arc::from("&runtime-implementation"));
     let issues = validate_def_vs_schema("calcit.core", "some-proc", &code, &schema);
-    assert!(issues.is_empty(), "runtime-inplementation should be skipped: {issues:?}");
+    assert!(issues.is_empty(), "runtime-implementation should be skipped: {issues:?}");
   }
 
   #[test]

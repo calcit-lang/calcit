@@ -119,6 +119,29 @@ export let new_impl_record = (impl: CalcitImpl, name: CalcitValue, ...fields: Ar
   return new CalcitRecord(nameTag, fieldNames, undefined, structRef);
 };
 
+/** Loose record: `?{} :field1 val1 :field2 val2` – record without a declared struct.
+ *  Fields are sorted by tag index. The record name is "?" (sentinel). */
+export let _$q__$M_ = (...xs: Array<CalcitValue>): CalcitValue => {
+  if (xs.length % 2 !== 0) {
+    throw new Error("?{} expected pairs of :field value");
+  }
+  let pairs: Array<[CalcitTag, CalcitValue]> = [];
+  for (let i = 0; i < xs.length; i += 2) {
+    pairs.push([castTag(xs[i]), xs[i + 1]]);
+  }
+  pairs.sort((a, b) => a[0].idx - b[0].idx);
+  // Check for duplicate fields after sorting
+  for (let i = 1; i < pairs.length; i++) {
+    if (pairs[i][0].idx === pairs[i - 1][0].idx) {
+      throw new Error(`?{} received duplicate field: :${getStringName(pairs[i][0])}`);
+    }
+  }
+  let fieldNames = pairs.map((p) => p[0]);
+  let values = pairs.map((p) => p[1]);
+  let looseTag = newTag("?");
+  return new CalcitRecord(looseTag, fieldNames, values);
+};
+
 export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean => {
   if (xs === ys) {
     return true; // special case, referential equal

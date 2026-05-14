@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-method-errors)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-method-errors)
   :configs $ {} (:init-fn |test-method-errors.main/main!) (:reload-fn |test-method-errors.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -21,6 +21,5 @@
                 by-set $ .to-set (vals src)
               .map by-set $ fn (x) false
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc "|Namespace for standalone repro") (:schema nil)
+      :ns $ %{} :NsEntry (:doc "|Namespace for standalone repro")
         :code $ quote (ns test-method-errors.main)
-        :examples $ []

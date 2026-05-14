@@ -1,5 +1,7 @@
 use colored::Colorize;
 
+use super::tips::command_guidance_enabled;
+
 pub struct RenderMarkdownOptions<'a> {
   pub include_subheadings: bool,
   pub full: bool,
@@ -179,6 +181,10 @@ pub fn print_selected_sections(
 }
 
 pub fn print_markdown_read_tips(command_prefix: &str, with_file_option: bool) {
+  if !command_guidance_enabled() {
+    return;
+  }
+
   println!(
     "{}",
     format!("Tip: Use '{command_prefix} <heading-keyword> [more-keywords...]' for fuzzy heading matching.").dimmed()

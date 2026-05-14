@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-recursion)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-recursion)
   :configs $ {} (:init-fn |test-recursion.main/main!) (:reload-fn |test-recursion.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
@@ -12,7 +12,7 @@
         |hole-series $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn hole-series (x) (assert-type x :number)
-              if (&<= x 0) (raise "\"unexpected small number")
+              if (&<= x 0) (raise "|unexpected small number")
                 if (&= x 1) 0 $ if (&= x 2) 1
                   let
                       extra $ .rem x 3
@@ -77,7 +77,6 @@
                     recur $ dec x
               assert= 6 @*count-effects
           :examples $ []
-      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+      :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-recursion.main $ :require
-        :examples $ []

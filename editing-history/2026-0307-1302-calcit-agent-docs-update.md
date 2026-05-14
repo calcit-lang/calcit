@@ -8,7 +8,7 @@
 
 ```
 - `cr --no-tips <subcommand> ...` - 隐藏所有编辑/查询命令输出的 "Tips:" 提示行（适合脚本/Agent 使用）
-  - 示例：`cr --no-tips demos/compact.cirru query def calcit.core/foldl`
+  - 示例：`cr --no-tips demos/calcit.cirru query def calcit.core/foldl`
 ```
 
 **背景**：`aa21b3a` 提交新增了 `--no-tips` 全局开关（`TIPS_SUPPRESSED: AtomicBool`，通过 `suppress_tips()` 设置），文档中缺少记录。

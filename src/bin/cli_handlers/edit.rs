@@ -16,16 +16,21 @@ use calcit::cli_args::{
   EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{
-  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file, validate_schema_for_write,
+  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
+  validate_schema_for_write,
 };
 use cirru_parser::Cirru;
 use colored::Colorize;
+use semver::Version;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::Arc;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, read_code_input};
-use super::tips::Tips;
+use super::common::{
+  ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
+  resolve_definition_lookup,
+};
+use super::tips::{Tips, command_guidance_enabled};
 
 /// Parse "namespace/definition" format into (namespace, definition)
 /// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
@@ -85,10 +90,18 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
 }
 
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
+  let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let snapshot = load_snapshot(snapshot_file)?;
-  save_snapshot(&snapshot, snapshot_file)?;
+  let formatted_content = render_snapshot_content(&snapshot)?;
 
-  println!("{} Refreshed snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  if formatted_content == original_content {
+    println!("{} No formatting changes for '{}'", "·".dimmed(), snapshot_file.dimmed());
+    return Ok(());
+  }
+
+  fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
+
+  println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
   Ok(())
 }
 
@@ -144,45 +157,91 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  // Check if definition exists
-  let exists = file_data.defs.contains_key(definition);
+  let exact_exists = file_data.defs.contains_key(definition);
+  let lookup = if exact_exists {
+    None
+  } else {
+    match resolve_definition_lookup(
+      namespace,
+      definition,
+      file_data.defs.keys().map(|name| name.as_str()),
+      opts.overwrite,
+    ) {
+      Ok(lookup) => Some(lookup),
+      Err(err) if err == format!("Definition '{definition}' not found in namespace '{namespace}'") => None,
+      Err(err) => return Err(err),
+    }
+  };
+  if let Some(warning) = lookup.as_ref().and_then(|it| it.warning.as_deref()) {
+    print_cli_warning_block(warning);
+  }
+  let resolved_definition = lookup.as_ref().map(|it| it.resolved.as_str()).unwrap_or(definition);
+
+  let exists = file_data.defs.contains_key(resolved_definition);
 
   if exists && !opts.overwrite {
     return Err(format!(
-      "Definition '{definition}' already exists in namespace '{namespace}'.\n\
-       Use --overwrite to replace it, or use: cr tree replace {namespace}/{definition} -p '' -e '<code>'"
+      "Definition '{resolved_definition}' already exists in namespace '{namespace}'.\n\
+       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite -f <file>"
     ));
   }
 
-  // Create definition
-  let code_entry = CodeEntry::from_code(syntax_tree);
-  file_data.defs.insert(definition.to_string(), code_entry);
+  // Create or overwrite definition.
+  // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
+  let code_entry = if exists {
+    if let Some(previous_entry) = file_data.defs.get(resolved_definition).cloned() {
+      let mut updated_entry = previous_entry;
+      updated_entry.code = syntax_tree;
+      updated_entry
+    } else {
+      CodeEntry::from_code(syntax_tree)
+    }
+  } else {
+    CodeEntry::from_code(syntax_tree)
+  };
+  file_data.defs.insert(resolved_definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
+  let action_label = if exists { "Updated" } else { "Created" };
+
   println!(
-    "{} Created definition '{}' in namespace '{}'",
+    "{} {} definition '{}' in namespace '{}'",
     "✓".green(),
-    definition.cyan(),
+    action_label,
+    resolved_definition.cyan(),
     namespace
   );
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
-  println!(
-    "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
-    "cr edit add-import".cyan(),
-    namespace,
-    definition
-  );
-  println!();
-  let mut tips = Tips::new();
-  tips.add(format!(
-    "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
-  ));
-  tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
-  tips.print();
+  if command_guidance_enabled() {
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!(
+      "  • View definition: {} '{}/{}'",
+      "cr query def".cyan(),
+      namespace,
+      resolved_definition
+    );
+    println!("  • Check errors: {}", "cr query error".cyan());
+    println!(
+      "  • Find usages: {} '{}/{}'",
+      "cr query usages".cyan(),
+      namespace,
+      resolved_definition
+    );
+    println!(
+      "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
+      "cr edit add-import".cyan(),
+      namespace,
+      resolved_definition
+    );
+    println!();
+    let mut tips = Tips::new();
+    tips.add(format!(
+      "Use single quotes around '{namespace}/{resolved_definition}' to avoid shell escaping issues."
+    ));
+    tips.add(format!("Example: cr tree show '{namespace}/{resolved_definition}'"));
+    tips.print();
+  }
   Ok(())
 }
 
@@ -249,10 +308,13 @@ fn handle_cp_node(opts: &EditCpCommand, snapshot_file: &str) -> Result<(), Strin
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
   let new_code = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
@@ -267,7 +329,7 @@ fn handle_cp_node(opts: &EditCpCommand, snapshot_file: &str) -> Result<(), Strin
     opts.path,
     opts.at,
     namespace,
-    definition
+    resolved_definition
   );
   Ok(())
 }
@@ -300,10 +362,13 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   // Step 1: read source node
   let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
@@ -327,7 +392,7 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
     opts.path,
     opts.at,
     namespace,
-    definition
+    resolved_definition
   );
   Ok(())
 }
@@ -343,9 +408,8 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  if !file_data.defs.contains_key(definition) {
-    return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
-  }
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
   if file_data.defs.contains_key(&opts.new_name) {
     return Err(format!(
       "Definition '{}' already exists in namespace '{}'. Use 'cr edit mv-def' to move to a different namespace.",
@@ -353,7 +417,10 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     ));
   }
 
-  let entry = file_data.defs.remove(definition).expect("checked exists");
+  let entry = file_data
+    .defs
+    .remove(resolved_definition.as_str())
+    .expect("resolved definition exists");
   file_data.defs.insert(opts.new_name.clone(), entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -361,7 +428,7 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
   println!(
     "{} Renamed '{}' to '{}' in namespace '{}'",
     "✓".green(),
-    definition.cyan(),
+    resolved_definition.cyan(),
     opts.new_name.cyan(),
     namespace
   );
@@ -392,9 +459,8 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  if !file_data.defs.contains_key(definition) {
-    return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
-  }
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
   if file_data.defs.contains_key(new_name) {
     return Err(format!(
       "Definition '{new_name}' already exists in namespace '{namespace}'. Choose a different name or remove the existing one first."
@@ -402,14 +468,18 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
   }
 
   // Extract the sub-expression at path
-  let extracted = navigate_to_path(&file_data.defs[definition].code, &path)?.clone();
+  let extracted = navigate_to_path(&file_data.defs[resolved_definition.as_str()].code, &path)?.clone();
 
   // Replace the path in the original definition with the new name (a leaf)
   let new_ref = Cirru::Leaf(Arc::from(new_name));
-  let updated_code = apply_operation_at_path(&file_data.defs[definition].code, &path, "replace", Some(&new_ref))?;
+  let updated_code = apply_operation_at_path(&file_data.defs[resolved_definition.as_str()].code, &path, "replace", Some(&new_ref))?;
 
   // Write updated code back to original definition
-  file_data.defs.get_mut(definition).expect("checked exists").code = updated_code;
+  file_data
+    .defs
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists")
+    .code = updated_code;
 
   // Create the new definition with the extracted sub-expression as its body
   let new_entry = CodeEntry::from_code(extracted);
@@ -422,20 +492,27 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
     "✓".green(),
     opts.path,
     namespace,
-    definition.cyan(),
+    resolved_definition.cyan(),
     new_name.cyan()
   );
-  println!();
-  println!("{}", "Next steps:".blue().bold());
-  println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
-  println!("  • Inspect source:   {} '{}/{}'", "cr query def".cyan(), namespace, definition);
-  println!(
-    "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
-    "cr tree replace".cyan(),
-    namespace,
-    new_name,
-    new_name
-  );
+  if command_guidance_enabled() {
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
+    println!(
+      "  • Inspect source:   {} '{}/{}'",
+      "cr query def".cyan(),
+      namespace,
+      resolved_definition
+    );
+    println!(
+      "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
+      "cr tree replace".cyan(),
+      namespace,
+      new_name,
+      new_name
+    );
+  }
   Ok(())
 }
 
@@ -452,16 +529,19 @@ fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), Str
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  if file_data.defs.remove(definition).is_none() {
-    return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
-  }
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+  file_data
+    .defs
+    .remove(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
     "{} Deleted definition '{}' from namespace '{}'",
     "✓".green(),
-    definition.cyan(),
+    resolved_definition.cyan(),
     namespace
   );
 
@@ -477,7 +557,15 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
   check_ns_editable(&snapshot, source_ns)?;
   check_ns_editable(&snapshot, target_ns)?;
 
-  if source_ns == target_ns && source_def == target_def {
+  let resolved_source_def = {
+    let source_file = snapshot
+      .files
+      .get(source_ns)
+      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
+    resolve_definition_lookup(source_ns, source_def, source_file.defs.keys().map(|name| name.as_str()), false)?.resolved
+  };
+
+  if source_ns == target_ns && resolved_source_def == target_def {
     return Err("Source and target are identical; nothing to move.".to_string());
   }
 
@@ -487,26 +575,16 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
       .get_mut(source_ns)
       .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
 
-    if !file_data.defs.contains_key(source_def) {
-      return Err(format!("Definition '{source_def}' not found in namespace '{source_ns}'"));
-    }
     if file_data.defs.contains_key(target_def) {
       return Err(format!("Definition '{target_def}' already exists in namespace '{source_ns}'"));
     }
 
-    let entry = file_data.defs.remove(source_def).expect("checked definition exists");
+    let entry = file_data
+      .defs
+      .remove(resolved_source_def.as_str())
+      .expect("resolved definition exists");
     file_data.defs.insert(target_def.to_string(), entry);
   } else {
-    let source_exists = snapshot
-      .files
-      .get(source_ns)
-      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?
-      .defs
-      .contains_key(source_def);
-    if !source_exists {
-      return Err(format!("Definition '{source_def}' not found in namespace '{source_ns}'"));
-    }
-
     let target_exists = snapshot
       .files
       .get(target_ns)
@@ -522,7 +600,10 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
         .files
         .get_mut(source_ns)
         .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
-      source_file.defs.remove(source_def).expect("checked definition exists")
+      source_file
+        .defs
+        .remove(resolved_source_def.as_str())
+        .expect("resolved definition exists")
     };
 
     let target_file = snapshot
@@ -537,7 +618,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
   println!(
     "{} Moved definition '{}' from '{}' to '{}'",
     "✓".green(),
-    source_def.cyan(),
+    resolved_source_def.cyan(),
     source_ns.cyan(),
     format!("{target_ns}/{target_def}").cyan()
   );
@@ -558,10 +639,13 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   code_entry.doc = opts.doc.clone();
 
@@ -570,7 +654,7 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",
     "✓".green(),
-    definition.cyan(),
+    resolved_definition.cyan(),
     namespace
   );
 
@@ -659,10 +743,13 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   if opts.clear {
     code_entry.schema = DYNAMIC_TYPE.clone();
@@ -670,7 +757,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     println!(
       "{} Cleared schema for '{}' in namespace '{}'",
       "✓".green(),
-      definition.cyan(),
+      resolved_definition.cyan(),
       namespace
     );
     return Ok(());
@@ -691,7 +778,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     println!(
       "{} Updated schema for '{}' in namespace '{}'",
       "✓".green(),
-      definition.cyan(),
+      resolved_definition.cyan(),
       namespace
     );
     return Ok(());
@@ -708,7 +795,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   println!(
     "{} Updated schema for '{}' in namespace '{}'",
     "✓".green(),
-    definition.cyan(),
+    resolved_definition.cyan(),
     namespace
   );
 
@@ -728,10 +815,13 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   // Handle --clear flag
   if opts.clear {
@@ -742,7 +832,7 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
       "{} Cleared {} example(s) for '{}' in namespace '{}'",
       "✓".green(),
       old_count,
-      definition.cyan(),
+      resolved_definition.cyan(),
       namespace
     );
     return Ok(());
@@ -778,7 +868,7 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     "{} Set {} example(s) for '{}' in namespace '{}'",
     "✓".green(),
     count,
-    definition.cyan(),
+    resolved_definition.cyan(),
     namespace
   );
 
@@ -798,10 +888,13 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   // Read example input
   let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
@@ -828,7 +921,7 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     "{} Added example at position {} for '{}' in namespace '{}' (total: {})",
     "✓".green(),
     position,
-    definition.cyan(),
+    resolved_definition.cyan(),
     namespace,
     total_count
   );
@@ -849,10 +942,13 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
     .get_mut(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
   let code_entry = file_data
     .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    .get_mut(resolved_definition.as_str())
+    .expect("resolved definition exists");
 
   // Validate index
   if opts.index >= code_entry.examples.len() {
@@ -874,7 +970,7 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
     "{} Removed example at index {} from '{}' in namespace '{}' (remaining: {})",
     "✓".green(),
     opts.index,
-    definition.cyan(),
+    resolved_definition.cyan(),
     namespace,
     remaining_count
   );
@@ -1074,7 +1170,10 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   };
 
   let file_entry = FileInSnapShot {
-    ns: CodeEntry::from_code(ns_code),
+    ns: NsEntry {
+      doc: String::new(),
+      code: ns_code,
+    },
     defs: HashMap::new(),
   };
 
@@ -1470,30 +1569,85 @@ fn handle_rm_module(opts: &EditRmModuleCommand, snapshot_file: &str) -> Result<(
 // Config operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
+fn parse_semver_value(v: &str) -> Result<Version, String> {
+  if v.starts_with('|') {
+    return Err(format!(
+      "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
+    ));
+  }
 
-  match opts.key.as_str() {
-    "init-fn" | "init_fn" => {
-      snapshot.configs.init_fn = opts.value.clone();
+  Version::parse(v).map_err(|_| format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"))
+}
+
+fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
+  let mut version = parse_semver_value(current)?;
+
+  match level {
+    "patch" => {
+      version.patch += 1;
     }
-    "reload-fn" | "reload_fn" => {
-      snapshot.configs.reload_fn = opts.value.clone();
+    "minor" => {
+      version.minor += 1;
+      version.patch = 0;
     }
-    "version" => {
-      snapshot.configs.version = opts.value.clone();
+    "major" => {
+      version.major += 1;
+      version.minor = 0;
+      version.patch = 0;
     }
     _ => {
-      return Err(format!(
-        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version",
-        opts.key
-      ));
+      return Err(format!("Unknown bump level '{level}'. Valid levels: patch, minor, major"));
     }
   }
 
+  version.pre = semver::Prerelease::EMPTY;
+  version.build = semver::BuildMetadata::EMPTY;
+
+  Ok(version.to_string())
+}
+
+fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  let message = match opts.key.as_str() {
+    "init-fn" | "init_fn" => {
+      snapshot.configs.init_fn = opts.value.clone();
+      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+    }
+    "reload-fn" | "reload_fn" => {
+      snapshot.configs.reload_fn = opts.value.clone();
+      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+    }
+    "version" => {
+      let message = if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
+        let previous = snapshot.configs.version.clone();
+        let next = bump_semver_value(&previous, &opts.value)?;
+        snapshot.configs.version = next.clone();
+        format!(
+          "{} Bumped config '{}' from '{}' to '{}'",
+          "✓".green(),
+          "version".cyan(),
+          previous,
+          next
+        )
+      } else {
+        parse_semver_value(&opts.value)?;
+        snapshot.configs.version = opts.value.clone();
+        format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+      };
+      message
+    }
+    _ => {
+      return Err(format!(
+        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
+        opts.key
+      ));
+    }
+  };
+
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value);
+  println!("{message}");
 
   Ok(())
 }
@@ -1533,7 +1687,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
     let file = snapshot
       .files
       .get(ns)
-      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru (or legacy compact.cirru)?"))?;
     changes.added.insert(Arc::from(ns.as_str()), file.clone());
   }
 
@@ -1547,7 +1701,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
     let file = snapshot
       .files
       .get(ns)
-      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru (or legacy compact.cirru)?"))?;
     let entry = ensure_change_entry(&mut changed_entries, ns);
     entry.ns = Some(file.ns.code.clone());
   }
@@ -1559,12 +1713,11 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
       .files
       .get(namespace)
       .ok_or_else(|| format!("Namespace '{namespace}' not found in snapshot"))?;
-    let code_entry = file
-      .defs
-      .get(definition)
-      .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    let resolved_definition =
+      resolve_definition_lookup(namespace, definition, file.defs.keys().map(|name| name.as_str()), false)?.resolved;
+    let code_entry = file.defs.get(resolved_definition.as_str()).expect("resolved definition exists");
     let entry = ensure_change_entry(&mut changed_entries, namespace);
-    entry.added_defs.insert(definition.to_string(), code_entry.code.clone());
+    entry.added_defs.insert(resolved_definition, code_entry.code.clone());
   }
 
   for target in &opts.changed {
@@ -1574,12 +1727,11 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
       .files
       .get(namespace)
       .ok_or_else(|| format!("Namespace '{namespace}' not found in snapshot"))?;
-    let code_entry = file
-      .defs
-      .get(definition)
-      .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    let resolved_definition =
+      resolve_definition_lookup(namespace, definition, file.defs.keys().map(|name| name.as_str()), false)?.resolved;
+    let code_entry = file.defs.get(resolved_definition.as_str()).expect("resolved definition exists");
     let entry = ensure_change_entry(&mut changed_entries, namespace);
-    entry.changed_defs.insert(definition.to_string(), code_entry.code.clone());
+    entry.changed_defs.insert(resolved_definition, code_entry.code.clone());
   }
 
   for target in &opts.removed {
@@ -1594,7 +1746,9 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
   }
 
   if changes.added.is_empty() && changes.removed.is_empty() && changes.changed.is_empty() {
-    return Err("No change data collected. Confirm the flags match definitions saved in compact.cirru.".to_string());
+    return Err(
+      "No change data collected. Confirm the flags match definitions saved in calcit.cirru (or legacy compact.cirru).".to_string(),
+    );
   }
 
   let namespace_total = changes.added.len() + changes.removed.len() + changes.changed.len();
@@ -1749,5 +1903,38 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
         );
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::bump_semver_value;
+
+  #[test]
+  fn bumps_patch_version() {
+    assert_eq!(bump_semver_value("0.0.0", "patch"), Ok("0.0.1".to_string()));
+  }
+
+  #[test]
+  fn bumps_minor_version() {
+    assert_eq!(bump_semver_value("1.2.3", "minor"), Ok("1.3.0".to_string()));
+  }
+
+  #[test]
+  fn bumps_major_version() {
+    assert_eq!(bump_semver_value("1.2.3", "major"), Ok("2.0.0".to_string()));
+  }
+
+  #[test]
+  fn rejects_unknown_bump_level() {
+    assert_eq!(
+      bump_semver_value("1.2.3", "build"),
+      Err("Unknown bump level 'build'. Valid levels: patch, minor, major".to_string())
+    );
+  }
+
+  #[test]
+  fn clears_prerelease_and_build_metadata_when_bumping() {
+    assert_eq!(bump_semver_value("1.2.3-alpha.1+build.2", "patch"), Ok("1.2.4".to_string()));
   }
 }

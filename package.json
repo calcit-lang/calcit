@@ -1,10 +1,10 @@
 {
   "name": "@calcit/procs",
-  "version": "0.12.1",
+  "version": "0.12.35",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
-    "@types/node": "^25.0.9",
-    "typescript": "^5.9.3"
+    "@types/node": "^25.7.0",
+    "typescript": "^6.0.3"
   },
   "scripts": {
     "compile": "rm -rf lib && tsc",
@@ -16,23 +16,25 @@
     "test-rs": "cargo test -q",
     "test-fail": "cargo test -q --bin cr type_fail_",
     "test-snippets": "cargo test -q snippets::tests",
-    "bench-recur-smoke": "cargo run --bin cr -- calcit/test.cirru -1 js && node --input-type=module -e \"import { test_loop } from './js-out/test-recursion.main.mjs'; const n=3000; const t0=process.hrtime.bigint(); for(let i=0;i<n;i++) test_loop(); const dt=Number(process.hrtime.bigint()-t0)/1e6; console.log('test_loop_ms='+dt.toFixed(3));\"",
+    "bench-recur-smoke": "cargo run --bin cr -- calcit/test.cirru js && node --input-type=module -e \"import { test_loop } from './js-out/test-recursion.main.mjs'; const n=3000; const t0=process.hrtime.bigint(); for(let i=0;i<n;i++) test_loop(); const dt=Number(process.hrtime.bigint()-t0)/1e6; console.log('test_loop_ms='+dt.toFixed(3));\"",
     "check-smooth": "yarn fmt-rs && yarn lint-rs && yarn test-rs && yarn check-all",
-    "check-all": "yarn compile && yarn try-rs && yarn try-js && yarn try-ir",
-    "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
-    "warn-dyn-method": "cargo run --bin cr -- calcit/test.cirru -1 --warn-dyn-method",
-    "try-js-brk": "cargo run --bin cr -- calcit/test.cirru -1 js && node --inspect-brk js-out/main.mjs",
-    "try-js": "cargo run --bin cr -- calcit/test.cirru -1 js && node js-out/main.mjs",
-    "try-ir": "cargo run --bin cr -- calcit/test.cirru -1 js"
+    "check-all": "yarn compile && yarn try-rs && yarn try-js && yarn try-ir && yarn try-wasm",
+    "try-all": "yarn check-all",
+    "try-rs": "cargo run --bin cr -- calcit/test.cirru",
+    "warn-dyn-method": "cargo run --bin cr -- calcit/test.cirru --warn-dyn-method",
+    "try-js-brk": "cargo run --bin cr -- calcit/test.cirru js && node --inspect-brk js-out/main.mjs",
+    "try-js": "cargo run --bin cr -- calcit/test.cirru js && node js-out/main.mjs",
+    "try-ir": "cargo run --bin cr -- calcit/test.cirru js",
+    "try-wasm": "bash scripts/test-wasm.sh"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/calcit-lang/calcit.git"
   },
   "dependencies": {
-    "@calcit/ternary-tree": "0.0.25",
-    "@cirru/parser.ts": "^0.0.8",
-    "@cirru/writer.ts": "^0.1.7"
+    "@calcit/ternary-tree": "0.0.26",
+    "@cirru/parser.ts": "^0.0.9",
+    "@cirru/writer.ts": "^0.1.9"
   },
   "packageManager": "yarn@4.12.0"
 }

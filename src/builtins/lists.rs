@@ -105,6 +105,26 @@ pub fn slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn last(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:last expected 1 argument (a list), but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::List(ys) => {
+      let n = ys.len();
+      if n == 0 {
+        Ok(Calcit::Nil)
+      } else {
+        match ys.get(n - 1) {
+          Some(v) => Ok((*v).to_owned()),
+          None => Ok(Calcit::Nil),
+        }
+      }
+    }
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:last expected a list, but received: {a}")),
+  }
+}
+
 pub fn append(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(
@@ -688,6 +708,13 @@ pub fn assoc_after(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn list_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list? expects exactly 1 argument, but received:", xs);
+  }
+  Ok(Calcit::Bool(matches!(&xs[0], Calcit::List(_))))
+}
+
 pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:empty? expected a list, but received:", xs);
@@ -804,6 +831,79 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::from(CalcitList::List(zs)))
     }
     a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:distinct expected a list, but received: {a}")),
+  }
+}
+
+// === BufList (mutable append-only list) ===
+
+use std::sync::Mutex;
+
+/// Create a new empty BufList: `(&buf-list:new)`
+pub fn buf_list_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if !xs.is_empty() {
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&buf-list:new expects 0 args, got {}", xs.len()));
+  }
+  Ok(Calcit::BufList(Arc::new(Mutex::new(Vec::new()))))
+}
+
+/// Push a single element: `(&buf-list:push buf item)` — mutates and returns the same buf
+pub fn buf_list_push(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&buf-list:push expects 2 args, got {}", xs.len()));
+  }
+  match &xs[0] {
+    Calcit::BufList(buf) => {
+      let mut items = buf.lock().expect("BufList lock");
+      items.push(xs[1].to_owned());
+      Ok(xs[0].to_owned())
+    }
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&buf-list:push expects a buf-list, got: {a}")),
+  }
+}
+
+/// Append all elements from a list: `(&buf-list:concat buf list)` — mutates and returns the same buf
+pub fn buf_list_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&buf-list:concat expects 2 args, got {}", xs.len()));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::BufList(buf), Calcit::List(list)) => {
+      let mut items = buf.lock().expect("BufList lock");
+      for item in list.iter() {
+        items.push(item.to_owned());
+      }
+      Ok(xs[0].to_owned())
+    }
+    (Calcit::BufList(_), b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&buf-list:concat expects list as 2nd arg, got: {b}")),
+    (a, _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&buf-list:concat expects a buf-list, got: {a}")),
+  }
+}
+
+/// Freeze into an immutable list: `(&buf-list:to-list buf)`
+pub fn buf_list_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&buf-list:to-list expects 1 arg, got {}", xs.len()));
+  }
+  match &xs[0] {
+    Calcit::BufList(buf) => {
+      let items = buf.lock().expect("BufList lock");
+      Ok(Calcit::from(items.clone()))
+    }
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&buf-list:to-list expects a buf-list, got: {a}")),
+  }
+}
+
+/// Get element count: `(&buf-list:count buf)`
+pub fn buf_list_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&buf-list:count expects 1 arg, got {}", xs.len()));
+  }
+  match &xs[0] {
+    Calcit::BufList(buf) => {
+      let items = buf.lock().expect("BufList lock");
+      Ok(Calcit::Number(items.len() as f64))
+    }
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&buf-list:count expects a buf-list, got: {a}")),
   }
 }
 
