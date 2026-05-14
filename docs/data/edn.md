@@ -119,7 +119,7 @@ let
 
 ### Quotes
 
-For quoted data, there's a special semantics for representing them, since that was neccessary for `compact.cirru` usage, where code lives inside a piece of data, marked as:
+For quoted data, there's a special semantics for representing them, since that was neccessary for runtime snapshot usage (`calcit.cirru`, legacy `compact.cirru`), where code lives inside a piece of data, marked as:
 
 ```cirru
 quote $ def a 1

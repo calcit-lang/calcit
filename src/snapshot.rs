@@ -1003,7 +1003,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
   })))
 }
 
-/// structure of `compact.cirru` file
+/// structure of runtime snapshot files such as `calcit.cirru` (legacy: `compact.cirru`)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
   pub package: String,
@@ -1390,7 +1390,7 @@ impl TryFrom<ChangesDict> for Edn {
   }
 }
 
-/// Save snapshot to compact.cirru file
+/// Render snapshot content for runtime snapshot files such as `calcit.cirru`
 /// This is a shared utility function used by CLI edit commands
 pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   validate_snapshot_schemas_for_write(snapshot)?;
@@ -1473,13 +1473,14 @@ fn normalize_pipe_prefixed_leaf(node: Cirru) -> Cirru {
   }
 }
 
-/// Save snapshot to compact.cirru file
+/// Save snapshot to a runtime snapshot file such as `calcit.cirru`
 /// This is a shared utility function used by CLI edit commands
-pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &Snapshot) -> Result<(), String> {
+pub fn save_snapshot_to_file<P: AsRef<Path>>(snapshot_path: P, snapshot: &Snapshot) -> Result<(), String> {
   let content = render_snapshot_content(snapshot)?;
 
   // Write to file
-  std::fs::write(compact_cirru_path, content).map_err(|e| format!("Failed to write compact.cirru: {e}"))?;
+  std::fs::write(&snapshot_path, content)
+    .map_err(|e| format!("Failed to write snapshot file {}: {e}", snapshot_path.as_ref().display()))?;
 
   Ok(())
 }

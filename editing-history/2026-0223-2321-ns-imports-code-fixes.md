@@ -2,7 +2,7 @@
 
 ## 背景
 
-通过在 `demos/compact.cirru` 上逐一测试 `cr edit` 的 namespace 相关子命令，发现三处导致 Agent 频繁用错的根本原因。
+通过在 `demos/calcit.cirru` 上逐一测试 `cr edit` 的 namespace 相关子命令，发现三处导致 Agent 频繁用错的根本原因。
 
 ## 发现的 Bug
 

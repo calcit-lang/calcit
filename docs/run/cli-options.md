@@ -32,11 +32,11 @@ Quick note: `cr edit format` rewrites the target snapshot using canonical serial
 ### Input File
 
 ```bash
-# Run default compact.cirru
+# Run default calcit.cirru
 cr
 
 # Run specific file
-cr demos/compact.cirru
+cr demos/calcit.cirru
 ```
 
 ### Run Mode (default once)
@@ -45,7 +45,7 @@ By default, `cr` runs once and exits. Use `--watch` (`-w`) to enable watch mode:
 
 ```bash
 cr --watch
-cr -w demos/compact.cirru
+cr -w demos/calcit.cirru
 ```
 
 ### Error Stack Trace (--disable-stack)
@@ -100,7 +100,7 @@ cr --reload-libs
 
 ### Config Entry (--entry)
 
-Use specific config entry from `compact.cirru`:
+Use specific config entry from `calcit.cirru` (legacy filename: `compact.cirru`):
 
 ```bash
 cr --entry test

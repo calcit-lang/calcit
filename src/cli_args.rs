@@ -43,8 +43,8 @@ pub struct ToplevelCalcit {
   #[argh(option)]
   /// specify a path to watch assets changes
   pub watch_dir: Option<String>,
-  /// input source file, defaults to "compact.cirru"
-  #[argh(positional, default = "String::from(\"compact.cirru\")")]
+  /// input source file, defaults to "calcit.cirru" and falls back to "compact.cirru"
+  #[argh(positional, default = "String::from(crate::DEFAULT_SNAPSHOT_FILE)")]
   pub input: String,
   /// print version only
   #[argh(switch)]
@@ -66,7 +66,7 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
-  /// analyze code structure and helpers (call-graph, count-calls, check-examples)
+  /// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, def-diff, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -634,10 +634,10 @@ pub struct DocsCheckMdCommand {
   /// path to the markdown file to check
   #[argh(positional)]
   pub file: String,
-  /// entry .cirru file for eval context (default: demos/compact.cirru)
-  #[argh(option, short = 'd', default = "String::from(\"demos/compact.cirru\")")]
+  /// entry .cirru file for eval context (default: demos/calcit.cirru)
+  #[argh(option, short = 'd', default = "String::from(\"demos/calcit.cirru\")")]
   pub entry: String,
-  /// dependency module path for eval context, can be provided multiple times; paths ending with '/' load compact.cirru
+  /// dependency module path for eval context, can be provided multiple times; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]
   pub dep: Vec<String>,
 }

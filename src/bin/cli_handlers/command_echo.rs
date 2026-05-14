@@ -191,7 +191,7 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
     ),
     DocsSubcommand::List(_) => {}
     DocsSubcommand::CheckMd(opts) => {
-      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "demos/compact.cirru", list "dep" => &opts.dep)
+      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "demos/calcit.cirru", list "dep" => &opts.dep)
     }
   }
 }

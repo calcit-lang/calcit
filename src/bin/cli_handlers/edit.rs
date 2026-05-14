@@ -1687,7 +1687,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
     let file = snapshot
       .files
       .get(ns)
-      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru (or legacy compact.cirru)?"))?;
     changes.added.insert(Arc::from(ns.as_str()), file.clone());
   }
 
@@ -1701,7 +1701,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
     let file = snapshot
       .files
       .get(ns)
-      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save calcit.cirru (or legacy compact.cirru)?"))?;
     let entry = ensure_change_entry(&mut changed_entries, ns);
     entry.ns = Some(file.ns.code.clone());
   }
@@ -1746,7 +1746,9 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
   }
 
   if changes.added.is_empty() && changes.removed.is_empty() && changes.changed.is_empty() {
-    return Err("No change data collected. Confirm the flags match definitions saved in compact.cirru.".to_string());
+    return Err(
+      "No change data collected. Confirm the flags match definitions saved in calcit.cirru (or legacy compact.cirru).".to_string(),
+    );
   }
 
   let namespace_total = changes.added.len() + changes.removed.len() + changes.changed.len();

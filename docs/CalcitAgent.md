@@ -120,9 +120,9 @@ a
 - 分支/函数最后一行若是“值”而非调用，是否使用了 `, value`。
 - 只要对缩进有不确定，先用 `cr cirru parse '<code>'` 看 AST，再执行结构化编辑。
 
-#### 先理解启动文件：`compact.cirru` 的 EDN 结构（Agent 快速模型）
+#### 先理解启动文件：`calcit.cirru` 的 EDN 结构（兼容旧文件名 `compact.cirru`）
 
-Agent 切到新窗口时，优先把 `compact.cirru` 看成一个“可执行项目快照”，其顶层 EDN 结构通常是：
+Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compact.cirru`）看成一个“可执行项目快照”，其顶层 EDN 结构通常是：
 
 ```cirru.no-check
 {}
@@ -149,9 +149,9 @@ Agent 切到新窗口时，优先把 `compact.cirru` 看成一个“可执行项
 - `:configs`：默认运行入口（`cr` / `cr js` / `cr ir` 不指定 `--entry` 时使用）。
 - `:entries`：命名入口集合（`cr --entry <name>` 走这里）。
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
-- `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `compact.cirru`）。
+- `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `calcit.cirru`，并回退到 `compact.cirru`）。
 
-一般避免直接修改 `compact.cirru` 文件, 因为可能会导致格式出错整体无法解析, 如果确实认为需要修改, 要确保修改以后立即执行 `cr compact.cirru edit format` 确保能够正确格式化.
+一般避免直接修改 `calcit.cirru` 文件（兼容旧文件名 `compact.cirru`）, 因为可能会导致格式出错整体无法解析, 如果确实认为需要修改, 要确保修改以后立即执行 `cr calcit.cirru edit format` 确保能够正确格式化.
 
 启动解析顺序（实操最常用）：
 
@@ -167,12 +167,12 @@ cr query ns <target-ns>
 cr query defs <target-ns>
 ```
 
-#### `deps.cirru` 与 `compact.cirru` 的关系（简版）
+#### `deps.cirru` 与运行时快照文件的关系（简版）
 
 给 Agent 一个最小心智就够：
 
 - `deps.cirru`：声明“要下载哪些外部模块 + 期望的 calcit 版本”。
-- `compact.cirru`：声明“运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）”。
+- `calcit.cirru`（兼容旧文件名 `compact.cirru`）：声明“运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）”。
 
 常见升级动作（最少命令）：
 
@@ -282,7 +282,7 @@ cr js
 cr src/cirru/calcit-core.cirru edit format
 ```
 
-说明：`edit format` 作用于“当前输入 snapshot 文件”，在这个仓库里不要直接假设根目录有 `compact.cirru`。
+说明：`edit format` 作用于“当前输入 snapshot 文件”，在这个仓库里不要直接假设根目录有 `calcit.cirru` 以外的旧文件名 `compact.cirru`。
 
 ### 小改动优先 `cr tree`（避免整段重置）
 

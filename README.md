@@ -54,23 +54,24 @@ cr eval 'range 100'
 cr eval 'thread-first 100 range (map $ \ * % %)'
 ```
 
-Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/main/compact.cirru):
+Run with a runtime snapshot such as [calcit.cirru](https://github.com/calcit-lang/lilac/blob/main/compact.cirru) (legacy filename: `compact.cirru`):
 
 ```bash
-cr compact.cirru # run once (default)
+cr calcit.cirru # run once (default)
+cr compact.cirru # legacy filename still works
 
-cr # by default, it picks `compact.cirru`
+cr # by default, it picks `calcit.cirru`, then falls back to `compact.cirru`
 
 cr -w # watch mode (explicit flag required)
 ```
 
-By default Calcit reads `:init-fn` and `:reload-fn` inside `compact.cirru` configs. You may also specify functions,
+By default Calcit reads `:init-fn` and `:reload-fn` inside `calcit.cirru` configs (falling back to `compact.cirru`). You may also specify functions,
 
 ```bash
 cr --init-fn='app.main/main!' --reload-fn='app.main/reload!'
 ```
 
-and even configure `:entries` in `compact.cirru`:
+and even configure `:entries` in `calcit.cirru`:
 
 ```bash
 cr --entry server
@@ -81,7 +82,7 @@ cr --entry server
 It compiles to JavaScript and runs in consistet semantics. However it might require a lot of JavaScript interop.
 
 ```bash
-cr js # compile to js, also picks `compact.cirru` by default
+cr js # compile to js, also picks `calcit.cirru` by default
 cr js --emit-path=out/ # compile to js and save in `out/`
 ```
 
@@ -95,7 +96,7 @@ main_$x_(); // which corresponds to `main!` function in calcit
 ### Calcit Editor & Bundler
 
 Install [Calcit Editor](https://github.com/calcit-lang/editor) and run `ct` to launch editor server,
-which writes `compact.cirru` and `.compact-inc.cirru` on saving. Try launching example by cloning [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
+which writes `calcit.cirru` and `.compact-inc.cirru` on saving. Legacy `compact.cirru` remains compatible. Try launching example by cloning [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
 
 Read more in [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md) to learn how to code Calcit with a plain text editor.
 
@@ -116,10 +117,10 @@ When using the Calcit Runner through MCP:
 
 1. **Start Runner**: Use `start_calcit_runner` to launch the background process. This automatically:
    - Creates a `.calcit-tmp/` directory
-   - Copies the current `compact.cirru` as a temporary baseline
+   - Copies the current runtime snapshot (`calcit.cirru`, or legacy `compact.cirru`) as a temporary baseline
 
 2. **Generate Incremental Updates**: After making changes to your code, use `generate_calcit_incremental` to:
-   - Compare current `compact.cirru` with the temporary baseline
+   - Compare current runtime snapshot with the temporary baseline
    - Generate a `.compact-inc.cirru` file with only the changes
    - Apply incremental updates to the running process
 
@@ -143,17 +144,17 @@ Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`.
 
 `:calcit-version` helps in check version, and provides hints in [CI](https://github.com/calcit-lang/setup-cr) environment.
 
-To load modules, use `:modules` configuration and `compact.cirru`(which normally generated from `calcit.cirru`):
+To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 
 ```cirru
 :configs $ {}
-  :modules $ [] |memof/compact.cirru |lilac/
+  :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
 Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`,
-i.e. `~/.config/calcit/modules/memof/compact.cirru`.
+i.e. `~/.config/calcit/modules/memof/calcit.cirru`.
 
-Modules that ends with `/`s are automatically suffixed `compact.cirru` since it's the default entry.
+Modules that ends with `/`s are automatically suffixed `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 
 ### Development
 
@@ -169,13 +170,13 @@ cargo run --bin cr -- calcit/test.cirru js && yarn try-js
 # run snippet
 cargo run --bin cr -- eval 'range 100'
 
-cr compact.cirru ir # compiles intermediate representation into program-ir.cirru
+cr calcit.cirru ir # compiles intermediate representation into program-ir.cirru
 
 cr-wasm calcit/test-wasm.cirru # compile standalone wasm target to js-out/program.wasm
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
-- [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for `compact.cirru` file parsing.
+- [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for runtime snapshot file parsing (`calcit.cirru` / legacy `compact.cirru`).
 - [Ternary Tree](https://github.com/calcit-lang/ternary-tree.rs) for immutable list data structure.
 
 Other tools:

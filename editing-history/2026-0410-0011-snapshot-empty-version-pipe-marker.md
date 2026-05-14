@@ -2,7 +2,7 @@
 
 ## 背景
 
-PR `snapshot-format` 新增了空 `configs.version` 的回归测试，但 GitHub Actions 上加载 `compact.cirru` 时，`(:version ||)` 会解析成字符串 `"|"`，没有命中原先仅检查空白字符串的校验。
+PR `snapshot-format` 新增了空 `configs.version` 的回归测试，但 GitHub Actions 上加载运行时快照文件（`calcit.cirru` / legacy `compact.cirru`）时，`(:version ||)` 会解析成字符串 `"|"`，没有命中原先仅检查空白字符串的校验。
 
 ## 知识点
 

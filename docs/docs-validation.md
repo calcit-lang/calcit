@@ -31,7 +31,7 @@ cr docs search polymorphism
 cr docs search edit-tree -f run.md
 cr docs search target-replace
 cr docs search watch mode
-cr docs search compact.cirru
+cr docs search calcit.cirru
 ```
 
 ## Module Search Checks

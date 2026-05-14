@@ -146,9 +146,10 @@ pub(crate) fn resolve_input_path(cwd: &Path, input_path: &str) -> Result<PathBuf
   } else {
     cwd.join(input)
   };
-  full_path
+  let resolved = crate::resolve_snapshot_path_alias(&full_path);
+  resolved
     .canonicalize()
-    .map_err(|e| format!("Failed to resolve input path '{}': {e}", full_path.display()))
+    .map_err(|e| format!("Failed to resolve input path '{}': {e}", resolved.display()))
 }
 
 pub(crate) fn git_root(cwd: &Path) -> Result<PathBuf, String> {

@@ -24,16 +24,16 @@ aliases:
 
 Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`. If a module contains `build.sh`, it will be executed mostly for compiling Rust dylibs.
 
-To load modules, use `:modules` configuration in `calcit.cirru` and `compact.cirru`:
+To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename: `compact.cirru`):
 
 ```cirru
 :configs $ {}
-  :modules $ [] |memof/compact.cirru |lilac/
+  :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`, i.e. `~/.config/calcit/modules/memof/compact.cirru`.
+Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`, i.e. `~/.config/calcit/modules/memof/calcit.cirru`.
 
-Modules that ends with `/`s are automatically suffixed `compact.cirru` since it's the default filename.
+Modules that ends with `/`s are automatically suffixed `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 
 ### Outdated
 

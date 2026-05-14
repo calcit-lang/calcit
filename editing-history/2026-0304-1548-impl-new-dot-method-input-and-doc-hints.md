@@ -27,7 +27,7 @@
 - `yarn compile`
 - `cargo test`
 - `yarn check-all`
-- `cargo run --bin cr -- demos/compact.cirru query examples 'calcit.core/&impl::new'`
-- `cargo run --bin cr -- demos/compact.cirru query examples 'calcit.core/&impl:get'`
+- `cargo run --bin cr -- demos/calcit.cirru query examples 'calcit.core/&impl::new'`
+- `cargo run --bin cr -- demos/calcit.cirru query examples 'calcit.core/&impl:get'`
 
 以上在本次改动后均通过。

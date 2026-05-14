@@ -11,7 +11,7 @@
 
 ## 经验与注意事项
 
-- 对 `compact.cirru` 的修改必须通过 `cr edit`/`cr tree` 完成，避免文本直接编辑破坏结构。
+- 对运行时快照文件（`calcit.cirru` / legacy `compact.cirru`）的修改必须通过 `cr edit`/`cr tree` 完成，避免文本直接编辑破坏结构。
 - 在多项目联动（calcit + recollect）场景下，发布前验证至少应覆盖：
   - calcit: `yarn check-all`
   - recollect: `yarn test:cr`、`yarn test:js`、`yarn test:wasm`

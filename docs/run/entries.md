@@ -11,19 +11,19 @@ aliases:
 ---
 # Entries
 
-By default Calcit reads `:init-fn` and `:reload-fn` inside `compact.cirru` configs. You may also specify functions,
+By default Calcit reads `:init-fn` and `:reload-fn` inside `calcit.cirru` configs (legacy filename: `compact.cirru`). You may also specify functions,
 
 ```bash
-cr compact.cirru --init-fn='app.main/main!' --reload-fn='app.main/reload!'
+cr calcit.cirru --init-fn='app.main/main!' --reload-fn='app.main/reload!'
 ```
 
-and even configure `:entries` in `compact.cirru`:
+and even configure `:entries` in `calcit.cirru`:
 
 ```bash
-cr compact.cirru --entry server
+cr calcit.cirru --entry server
 ```
 
-Here's an example, first lines of a `compact.cirru` file may look like:
+Here's an example, first lines of a `calcit.cirru` file may look like:
 
 ```cirru
 {} (:package |app)

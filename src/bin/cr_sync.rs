@@ -11,10 +11,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(FromArgs)]
-/// Sync changes from compact.cirru to calcit.cirru while preserving metadata
+/// Legacy sync tool: copy changes from a compact runtime snapshot into calcit.cirru while preserving metadata
 struct Args {
   #[argh(option, short = 'c', default = "PathBuf::from(\"compact.cirru\")")]
-  /// path to compact.cirru file
+  /// path to legacy compact runtime snapshot file
   compact_path: PathBuf,
 
   #[argh(option, short = 'f', default = "PathBuf::from(\"calcit.cirru\")")]
@@ -49,9 +49,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
 
   // Read both files
-  let compact_content = fs::read_to_string(&args.compact_path).map_err(|e| format!("Failed to read compact.cirru: {e}"))?;
+  let compact_content = fs::read_to_string(&args.compact_path)
+    .map_err(|e| format!("Failed to read legacy compact snapshot {}: {e}", args.compact_path.display()))?;
 
-  let calcit_content = fs::read_to_string(&args.calcit_path).map_err(|e| format!("Failed to read calcit.cirru: {e}"))?;
+  let calcit_content =
+    fs::read_to_string(&args.calcit_path).map_err(|e| format!("Failed to read calcit snapshot {}: {e}", args.calcit_path.display()))?;
 
   // Parse compact file as Snapshot
   let compact_data = cirru_edn::parse(&compact_content).map_err(|e| format!("Failed to parse compact file: {e}"))?;

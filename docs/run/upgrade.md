@@ -22,13 +22,13 @@ aliases:
 
 升级前先检查以下文件与配置是否齐全：
 
-- 运行入口与快照：`compact.cirru`
+- 运行入口与快照：`calcit.cirru`（兼容旧文件名 `compact.cirru`）
   - `:configs`（默认入口）
   - `:entries`（额外入口）
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
-- 结构化编辑优先使用 `cr edit` / `cr tree`；若直接改过 `compact.cirru`，提交前执行一次 `cr edit format`
+- 结构化编辑优先使用 `cr edit` / `cr tree`；若直接改过 `calcit.cirru`（或旧文件名 `compact.cirru`），提交前执行一次 `cr edit format`
 
 ---
 

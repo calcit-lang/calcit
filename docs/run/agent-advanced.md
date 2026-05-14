@@ -90,7 +90,7 @@ cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶
 
 以下文件**严格禁止使用文本替换或直接编辑**：
 
-- **`compact.cirru`** - 这是 Calcit 程序的紧凑快照格式，必须使用 `cr edit` 相关命令进行修改
+- **`calcit.cirru` / `compact.cirru`** - 这是 Calcit 程序的运行时快照格式；推荐使用 `calcit.cirru`，旧文件名 `compact.cirru` 仍兼容，必须使用 `cr edit` 相关命令进行修改
 
 这两个文件的格式对空格和结构极其敏感，直接文本修改会破坏文件结构。请使用下面文档中的 CLI 命令进行代码查询和修改。
 
@@ -102,7 +102,7 @@ cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶
 
 **具体体现：**
 
-- `compact.cirru` 使用 Cirru 语法存储, 尽量用 `cr edit` 和 `cr tree` 命令修改
+- `calcit.cirru`（兼容旧文件名 `compact.cirru`）使用 Cirru 语法存储, 尽量用 `cr edit` 和 `cr tree` 命令修改
 - `cr cirru` 工具用于 Cirru 语法与 JSON 的转换（帮助理解和生成代码）
 - Cirru 语法特点：
   - 用缩进代替括号（类似 Python/YAML）
@@ -124,21 +124,21 @@ Calcit 程序使用 `cr` 命令：
 
 ### 主要运行命令
 
-- `cr` 或 `cr compact.cirru` - 代码解释执行，默认读取 config 执行 init-fn 定义的入口（默认单次执行后退出）
+- `cr` 或 `cr calcit.cirru` - 代码解释执行，默认优先读取 `calcit.cirru`，找不到时回退到 `compact.cirru`（默认单次执行后退出）
 - `cr -w` 或 `cr --watch` - 解释执行监听模式（显式启用监听）
-- `cr compact.cirru js` - 编译生成 JavaScript 代码（默认单次编译）
-- `cr compact.cirru js -w` / `cr compact.cirru js --watch` - JS 监听编译模式
-- `cr compact.cirru ir` - 生成 program-ir.cirru（默认单次生成）
-- `cr compact.cirru ir -w` / `cr compact.cirru ir --watch` - IR 监听生成模式
+- `cr calcit.cirru js` - 编译生成 JavaScript 代码（默认单次编译）
+- `cr calcit.cirru js -w` / `cr calcit.cirru js --watch` - JS 监听编译模式
+- `cr calcit.cirru ir` - 生成 program-ir.cirru（默认单次生成）
+- `cr calcit.cirru ir -w` / `cr calcit.cirru ir --watch` - IR 监听生成模式
 - `cr --check-only` - 仅检查代码正确性，不执行程序
   - 对 init_fn 和 reload_fn 进行预处理验证
   - 输出：预处理进度、warnings、检查耗时
   - 用于 CI/CD 或快速验证代码修改
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
 - `cr --tips <subcommand> ...` - 主动显示完整 tips（教学/排障时）
-  - 示例：`cr --tips demos/compact.cirru query def calcit.core/foldl`
+  - 示例：`cr --tips demos/calcit.cirru query def calcit.core/foldl`
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
-  - **不需要**项目 `compact.cirru`：core 内置函数（`range`、`+`、`map` 等）直接可用
+-  - **不需要**项目运行时快照文件（`calcit.cirru` / `compact.cirru`）：core 内置函数（`range`、`+`、`map` 等）直接可用
   - 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块
   - `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名），可多次使用
   - 示例：`cr eval 'range 5'`、`cr eval 'echo 1' --dep calcit.std`
@@ -169,7 +169,7 @@ Calcit 程序使用 `cr` 命令：
 - `cr query pkg` - 获取项目包名
 - `cr query config` - 读取项目配置（init_fn, reload_fn, version）
 - `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
-- `cr query modules` - 列出项目依赖的模块（来自 compact.cirru 配置）
+- `cr query modules` - 列出项目依赖的模块（来自 calcit.cirru 配置，兼容旧文件名 `compact.cirru`）
 
 **渐进式代码探索（Progressive Disclosure）：**
 
@@ -524,7 +524,7 @@ cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}",
 
 ### 代码编辑 (`cr edit`)
 
-直接编辑 compact.cirru 项目代码，支持两种输入方式：
+直接编辑 calcit.cirru 项目代码（兼容旧文件名 `compact.cirru`），支持两种输入方式：
 
 - `--file <path>` 或 `-f <path>` - 从文件读取（默认 Cirru 格式，使用 `-J` 指定 JSON）
 - `--json <string>` 或 `-j <string>` - 内联 JSON 字符串
@@ -560,7 +560,7 @@ cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}",
 
 - `cr edit format` - 不修改语义，按当前快照序列化逻辑重写 **snapshot 文件**（用于刷新格式）
   - 也会把旧的 namespace `CodeEntry` 写法收敛成当前的 `NsEntry` 结构
-  - 适用：普通 `compact.cirru` / 项目 snapshot 文件
+  - 适用：普通 `calcit.cirru` / 项目 snapshot 文件（兼容旧文件名 `compact.cirru`）
   - 不适用：calcit-editor 专用的 `calcit.cirru` 结构文件
 - `cr edit def <namespace/definition>` - 添加新定义（默认若已存在会报错；加 `--overwrite` 可强制覆盖）
   - 经验语义：**不带 `--overwrite` = create-only；带 `--overwrite` = replace existing definition**

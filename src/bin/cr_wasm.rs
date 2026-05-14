@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -36,8 +36,8 @@ struct WasmArgs {
   /// print version only
   #[argh(switch)]
   version: bool,
-  /// input source file, defaults to "compact.cirru"
-  #[argh(positional, default = "String::from(\"compact.cirru\")")]
+  /// input source file, defaults to "calcit.cirru" and falls back to "compact.cirru"
+  #[argh(positional, default = "String::from(calcit::DEFAULT_SNAPSHOT_FILE)")]
   input: String,
 }
 
@@ -56,18 +56,20 @@ fn main() -> Result<(), String> {
 
   let core_snapshot = calcit::load_core_snapshot()?;
 
-  if !Path::new(&cli_args.input).exists() {
-    return Err(format!("{} does not exist", cli_args.input));
+  let input_path = calcit::resolve_snapshot_path_alias(&PathBuf::from(&cli_args.input));
+  let input_path_str = input_path.to_string_lossy().to_string();
+  if !input_path.exists() {
+    return Err(format!("{} does not exist", input_path.display()));
   }
 
-  let mut content = fs::read_to_string(&cli_args.input).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", cli_args.input));
+  let mut content = fs::read_to_string(&input_path).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", input_path.display()));
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| {
-    eprintln!("\nFailed to parse entry file '{}':", cli_args.input);
+    eprintln!("\nFailed to parse entry file '{}':", input_path.display());
     eprintln!("{e}");
-    format!("Failed to parse entry file '{}'", cli_args.input)
+    format!("Failed to parse entry file '{}'", input_path.display())
   })?;
-  let mut snapshot = snapshot::load_snapshot_data(&data, &cli_args.input)?;
+  let mut snapshot = snapshot::load_snapshot_data(&data, &input_path_str)?;
 
   if let Some(entry) = cli_args.entry.to_owned() {
     if snapshot.entries.contains_key(entry.as_str()) {
@@ -82,7 +84,6 @@ fn main() -> Result<(), String> {
     }
   }
 
-  let input_path = PathBuf::from(&cli_args.input);
   let base_dir = input_path.parent().expect("extract parent");
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))

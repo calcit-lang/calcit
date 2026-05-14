@@ -84,7 +84,7 @@ Use these categories for core docs unless there is a strong reason not to:
 - `installation`: installation, modules directory, CI setup, runtime bindings
 - `data`: data literals and data structures, such as strings, EDN, persistent collections
 - `intro`: onboarding and conceptual overview pages
-- `syntax`: Cirru syntax and `compact.cirru`/indentation-oriented structure docs
+- `syntax`: Cirru syntax and `calcit.cirru`/indentation-oriented structure docs
 - `tools`: deprecated or auxiliary tooling docs, such as editor-oriented pages
 - `ecosystem`: library landscape and surrounding projects
 - `reference`: cross-cutting lookup pages such as cheatsheets

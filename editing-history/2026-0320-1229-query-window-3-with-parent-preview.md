@@ -56,17 +56,17 @@
 ## 验证
 
 - `cargo check --bin cr` 通过。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query find --help`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query find --help`
   - 可见 `--detail-offset` 参数。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query search --help`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query search --help`
   - `--start-path` 示例为点号格式。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query search state -f respo.app.comp.todolist/comp-todolist --detail-offset 5`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query search state -f respo.app.comp.todolist/comp-todolist --detail-offset 5`
   - 输出降噪，路径为点号，窗口外压缩。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query search state -f respo.app.comp.todolist/comp-todolist --detail-offset 0`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query search state -f respo.app.comp.todolist/comp-todolist --detail-offset 0`
   - 详情窗口为 `[0, 3)`，每条命中仅展示一行（优先父节点预览）。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query search state -f respo.app.comp.todolist/comp-todolist --detail-offset 0 --exact`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query search state -f respo.app.comp.todolist/comp-todolist --detail-offset 0 --exact`
   - 精确命中不再把 `states` 视觉误判为 `state`；且不显示“add --exact”提示。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query search-expr state -f respo.app.comp.todolist/comp-todolist --detail-offset 0`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query search-expr state -f respo.app.comp.todolist/comp-todolist --detail-offset 0`
   - 输出样式一致（单行预览）。
-- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/compact.cirru query search-expr state -f respo.app.comp.todolist/comp-todolist --detail-offset 0 --exact`
+- `cargo run --bin cr -- /Users/jon.chen/repo/respo/respo/calcit.cirru query search-expr state -f respo.app.comp.todolist/comp-todolist --detail-offset 0 --exact`
   - 结果为 `No matches found`，符合结构精确匹配预期。

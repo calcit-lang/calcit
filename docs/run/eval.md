@@ -53,18 +53,18 @@ Eval can access definitions from a loaded program:
 
 ```bash
 # Load from specific file and eval with its context
-cr demos/compact.cirru eval 'range 3'
+cr demos/calcit.cirru eval 'range 3'
 # Output: ([] 0 1 2)
 
 # Use let bindings
-cr demos/compact.cirru eval 'let ((x 1)) (+ x 2)'
+cr demos/calcit.cirru eval 'let ((x 1)) (+ x 2)'
 # Output: 3
 ```
 
 You can load external modules with repeatable `--dep` options:
 
 ```bash
-cr demos/compact.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'
+cr demos/calcit.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'
 ```
 
 If the first expression in a snippet is `ns`, its `:require` rules are merged into runtime `ns app.main`, so imported symbols can be used in the same snippet.
@@ -75,11 +75,11 @@ Type annotations and static checks work in eval mode:
 
 ```bash
 # Type mismatch will cause error
-cr demos/compact.cirru eval 'let ((x 1)) (assert-type x :string) x'
+cr demos/calcit.cirru eval 'let ((x 1)) (assert-type x :string) x'
 # Error: Type mismatch...
 
 # Correct type passes
-cr demos/compact.cirru eval 'let ((x 1)) (assert-type x :number) x'
+cr demos/calcit.cirru eval 'let ((x 1)) (assert-type x :number) x'
 # Output: 1
 ```
 
@@ -140,8 +140,8 @@ cr eval '-> (range 5) (map inc) (filter (fn (x) (> x 2)))'
 Use `cr query examples` to see usage examples:
 
 ```bash
-cr demos/compact.cirru query examples calcit.core/let
-cr demos/compact.cirru query examples calcit.core/defn
+cr demos/calcit.cirru query examples calcit.core/let
+cr demos/calcit.cirru query examples calcit.core/defn
 ```
 
 For markdown snippet validation (`docs check-md`), see [CLI Options](./cli-options.md#markdown-code-checking).

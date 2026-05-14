@@ -62,8 +62,8 @@
 - `cargo run --bin cr -- calcit/test.cirru query find render`
 - `cargo run --bin cr -- calcit/test.cirru tree show app.main/test-json -p ''`
 - `cargo run --bin cr -- calcit/test.cirru docs search chunk -f agent-advanced.md`
-- `cargo run --bin cr -- demos/compact.cirru docs check-md docs/CalcitAgent.md`
-- `cargo run --bin cr -- /tmp/calcit-cli-demo/compact.cirru tree replace ...` 多次人工检查 replace 输出形态
+- `cargo run --bin cr -- demos/calcit.cirru docs check-md docs/CalcitAgent.md`
+- `cargo run --bin cr -- /tmp/calcit-cli-demo/calcit.cirru tree replace ...` 多次人工检查 replace 输出形态
 
 ## 经验
 

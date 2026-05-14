@@ -278,27 +278,11 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
 
 /// Load a module silently (without println)
 fn load_module_silent(path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
-  let mut file_path = String::from(path);
-  if file_path.ends_with('/') {
-    file_path.push_str("compact.cirru");
-  }
-
-  let fullpath = if file_path.starts_with("./") {
-    base_dir.join(&file_path).to_owned()
-  } else if file_path.starts_with('/') {
-    Path::new(&file_path).to_owned()
-  } else {
-    module_folder.join(&file_path).to_owned()
-  };
-
-  let mut content = fs::read_to_string(&fullpath).map_err(|e| format!("Failed to read {}: {}", fullpath.display(), e))?;
-  strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content).map_err(|e| {
-    eprintln!("\nFailed to parse file '{}':", fullpath.display());
-    eprintln!("{e}");
-    format!("Failed to parse file '{}'", fullpath.display())
-  })?;
-  snapshot::load_snapshot_data(&data, &fullpath.display().to_string())
+  let previous = calcit::quiet_tool_output();
+  calcit::set_quiet_tool_output(true);
+  let result = calcit::load_module(path, base_dir, module_folder);
+  calcit::set_quiet_tool_output(previous);
+  result
 }
 
 fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
@@ -306,18 +290,20 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
 }
 
 fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
-  if !Path::new(input_path).exists() {
-    return Err(format!("{input_path} does not exist"));
+  let resolved_input_path = calcit::resolve_snapshot_path_alias(Path::new(input_path));
+  let resolved_input_str = resolved_input_path.to_string_lossy().to_string();
+  if !resolved_input_path.exists() {
+    return Err(format!("{} does not exist", resolved_input_path.display()));
   }
 
-  let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
+  let mut content = fs::read_to_string(&resolved_input_path).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| {
-    eprintln!("\nFailed to parse file '{input_path}':");
+    eprintln!("\nFailed to parse file '{}':", resolved_input_path.display());
     eprintln!("{e}");
-    format!("Failed to parse file '{input_path}'")
+    format!("Failed to parse file '{}'", resolved_input_path.display())
   })?;
-  let mut snapshot = snapshot::load_snapshot_data(&data, input_path)?;
+  let mut snapshot = snapshot::load_snapshot_data(&data, &resolved_input_str)?;
 
   let mut modules_to_load = snapshot.configs.modules.clone();
   if let Some(entry_name) = entry {

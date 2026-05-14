@@ -105,13 +105,13 @@
 主示例：
 
 ```bash
-cr demos/compact.cirru cirru parse-edn "(:: :fn ({} (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))"
+cr demos/calcit.cirru cirru parse-edn "(:: :fn ({} (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T)))))"
 ```
 
 运行时数据验证：
 
 ```bash
-cr demos/compact.cirru eval "let ((schema (:: :fn ({} (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T))))))) (println schema) (println (type-of schema)) , schema"
+cr demos/calcit.cirru eval "let ((schema (:: :fn ({} (:generics ([] 'T 'U)) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)) (:where ([] (:: 'Eq 'T))))))) (println schema) (println (type-of schema)) , schema"
 ```
 
 ## 顶层定义与局部定义的分工

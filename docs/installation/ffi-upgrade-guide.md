@@ -64,7 +64,7 @@ sed -i "s/:calcit-version |.*/:calcit-version |$CR_VER/" deps.cirru
 ```bash
 cargo build --release
 rm -rf dylibs/* && mkdir -p dylibs && cp target/release/*.* dylibs/
-cr compact.cirru
+cr calcit.cirru
 ```
 
 三步缺一不可：构建 → 复制产物 → 运行验证。如果只更新了 `target/release/` 而未复制到 `dylibs/`，运行时仍会加载旧库。

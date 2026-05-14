@@ -32,7 +32,7 @@ cr eval "echo |done"
 
 ## Core Commands
 
-- `cr` - Run Calcit program (default: `compact.cirru`)
+- `cr` - Run Calcit program (default: `calcit.cirru`, fallback: `compact.cirru`)
 - `cr eval "code"` - Evaluate code snippet
 - `cr js` - Generate JavaScript
 - `cr ir` - Generate IR representation
@@ -177,8 +177,8 @@ let
 
 ## File Structure
 
-- `calcit.cirru` - Editor snapshot (source for structural editing)
-- `compact.cirru` - Runtime format (compiled, `cr` command actually uses this)
+- `calcit.cirru` - Preferred runtime snapshot and structural-editing source
+- `compact.cirru` - Legacy runtime snapshot filename kept for compatibility
 - `deps.cirru` - Dependencies
 - `.compact-inc.cirru` - Hot reload trigger, including incremental changes
 

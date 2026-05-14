@@ -19,7 +19,7 @@ use calcit::{CalcitErrKind, LocatedWarning};
 use call_stack::CallStackList;
 use std::cell::RefCell;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -28,6 +28,9 @@ pub use calcit::{
 };
 
 use crate::util::string::strip_shebang;
+
+pub const DEFAULT_SNAPSHOT_FILE: &str = "calcit.cirru";
+pub const LEGACY_SNAPSHOT_FILE: &str = "compact.cirru";
 
 static QUIET_TOOL_OUTPUT: AtomicBool = AtomicBool::new(false);
 
@@ -64,6 +67,93 @@ pub struct ProgramEntries {
 
 pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> Result<Calcit, CalcitErr> {
   run_program_with_docs(init_ns, init_def, params)
+}
+
+pub fn resolve_snapshot_path_alias(path: &Path) -> PathBuf {
+  if path.exists() {
+    return path.to_path_buf();
+  }
+
+  match path.file_name().and_then(|name| name.to_str()) {
+    Some(DEFAULT_SNAPSHOT_FILE) => {
+      let fallback = path.with_file_name(LEGACY_SNAPSHOT_FILE);
+      if fallback.exists() { fallback } else { path.to_path_buf() }
+    }
+    _ => path.to_path_buf(),
+  }
+}
+
+fn module_path_candidates(path: &str) -> Vec<String> {
+  if path.ends_with('/') {
+    vec![format!("{path}{DEFAULT_SNAPSHOT_FILE}"), format!("{path}{LEGACY_SNAPSHOT_FILE}")]
+  } else if path.ends_with(DEFAULT_SNAPSHOT_FILE) {
+    vec![
+      path.to_string(),
+      format!(
+        "{}{}",
+        path.strip_suffix(DEFAULT_SNAPSHOT_FILE).unwrap_or(path),
+        LEGACY_SNAPSHOT_FILE
+      ),
+    ]
+  } else {
+    vec![path.to_string()]
+  }
+}
+
+fn materialize_module_path(file_path: &str, base_dir: &Path, module_folder: &Path) -> PathBuf {
+  if file_path.starts_with("./") {
+    base_dir.join(file_path)
+  } else if file_path.starts_with('/') {
+    Path::new(file_path).to_owned()
+  } else {
+    module_folder.join(file_path)
+  }
+}
+
+fn module_candidate_display_path(file_path: &str, fullpath: &Path, module_folder: &Path) -> String {
+  if file_path.starts_with("./") {
+    file_path.to_string()
+  } else if file_path.starts_with('/') {
+    if let Ok(stripped) = fullpath.strip_prefix(module_folder) {
+      format!("<mods>/{}", stripped.display())
+    } else {
+      file_path.to_string()
+    }
+  } else {
+    format!("<mods>/{file_path}")
+  }
+}
+
+pub fn resolve_module_snapshot_candidates(path: &str, base_dir: &Path, module_folder: &Path) -> Vec<(String, PathBuf, String)> {
+  let candidates = module_path_candidates(path);
+  let mut items = candidates
+    .iter()
+    .map(|candidate| {
+      let fullpath = materialize_module_path(candidate, base_dir, module_folder);
+      let display_path = module_candidate_display_path(candidate, &fullpath, module_folder);
+      (candidate.clone(), fullpath, display_path)
+    })
+    .collect::<Vec<_>>();
+
+  if !items.iter().any(|(_, fullpath, _)| fullpath.exists())
+    && let Some((file_path, fullpath, display_path)) = items.first().cloned()
+  {
+    return vec![(file_path, fullpath, display_path)];
+  }
+
+  items.retain(|(_, fullpath, _)| fullpath.exists());
+  items
+}
+
+pub fn resolve_module_snapshot_path(path: &str, base_dir: &Path, module_folder: &Path) -> (String, PathBuf, String) {
+  resolve_module_snapshot_candidates(path, base_dir, module_folder)
+    .into_iter()
+    .next()
+    .unwrap_or_else(|| {
+      let fullpath = materialize_module_path(path, base_dir, module_folder);
+      let display_path = module_candidate_display_path(path, &fullpath, module_folder);
+      (path.to_string(), fullpath, display_path)
+    })
 }
 
 pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -129,43 +219,39 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
 }
 
 pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
-  let mut file_path = String::from(path);
-  if file_path.ends_with('/') {
-    file_path.push_str("compact.cirru");
-  }
+  let candidates = resolve_module_snapshot_candidates(path, base_dir, module_folder);
+  let mut last_error: Option<String> = None;
 
-  let fullpath = if file_path.starts_with("./") {
-    base_dir.join(&file_path).as_path().to_owned()
-  } else if file_path.starts_with('/') {
-    Path::new(&file_path).to_owned()
-  } else {
-    module_folder.join(&file_path).as_path().to_owned()
-  };
+  for (_, fullpath, display_path) in candidates {
+    let mut content = match fs::read_to_string(&fullpath) {
+      Ok(content) => content,
+      Err(e) => {
+        last_error = Some(format!("Failed to read {}: {e}", fullpath.display()));
+        continue;
+      }
+    };
 
-  let display_path = if file_path.starts_with("./") {
-    file_path.clone()
-  } else if file_path.starts_with('/') {
-    if let Ok(stripped) = Path::new(&file_path).strip_prefix(module_folder) {
-      format!("<mods>/{}", stripped.display())
-    } else {
-      file_path.clone()
+    strip_shebang(&mut content);
+    let data = match cirru_edn::parse(&content) {
+      Ok(data) => data,
+      Err(e) => {
+        last_error = Some(format!("Failed to parse file '{}': {e}", fullpath.display()));
+        continue;
+      }
+    };
+
+    match snapshot::load_snapshot_data(&data, &fullpath.display().to_string()) {
+      Ok(snapshot) => {
+        if !quiet_tool_output() {
+          println!("loading: {display_path}");
+        }
+        return Ok(snapshot);
+      }
+      Err(e) => {
+        last_error = Some(format!("Failed to load snapshot '{}': {e}", fullpath.display()));
+      }
     }
-  } else {
-    format!("<mods>/{file_path}")
-  };
-
-  if !quiet_tool_output() {
-    println!("loading: {display_path}");
   }
 
-  let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
-  strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content).map_err(|e| {
-    eprintln!("\nFailed to parse file '{}':", fullpath.display());
-    eprintln!("{e}");
-    format!("Failed to parse file '{}'", fullpath.display())
-  })?;
-  // println!("reading: {}", content);
-  let snapshot = snapshot::load_snapshot_data(&data, &fullpath.display().to_string())?;
-  Ok(snapshot)
+  Err(last_error.unwrap_or_else(|| format!("expected Cirru snapshot for module path: {path}")))
 }
