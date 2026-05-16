@@ -1619,7 +1619,7 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
       format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "version" => {
-      let message = if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
+      if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
         let previous = snapshot.configs.version.clone();
         let next = bump_semver_value(&previous, &opts.value)?;
         snapshot.configs.version = next.clone();
@@ -1634,8 +1634,7 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
         parse_semver_value(&opts.value)?;
         snapshot.configs.version = opts.value.clone();
         format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-      };
-      message
+      }
     }
     _ => {
       return Err(format!(
