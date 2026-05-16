@@ -12,10 +12,16 @@ Core design:
 
 - Interpreter runs on Rust, extensible with Rust FFI
 - Persistent Data Structure
-- Structural Editor(with indentation-based syntax as a fallback)
+- Indentation-based Cirru syntax, friendly to plain text editing
 - Lisp macros, functional style
 - Compiles to JavaScript in ES Modules, JavaScript Interop
 - Hot code swapping friendly
+
+Current direction:
+
+- `calcit.cirru` is the primary source snapshot; legacy `compact.cirru` is still compatible
+- CLI-first development with `cr` and `caps`, designed to work well with AI agents in terminal workflows
+- Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
 
 ### Install ![GitHub Release](https://img.shields.io/github/v/release/calcit-lang/calcit)
 
@@ -29,12 +35,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install calcit
 ```
 
-4 binaries are installed:
+Installed binaries:
 
 - `calcit`, the runtime and js compiler
 - `cr-wasm`, standalone WASM codegen tool
 - `caps`, for downloading dependencies declared in `deps.cirru`
-- `bundle_calcit`, bundle code if you don't want to use Calcit Editor
+- `bundle_calcit`, bundle code for distribution
 
 When installing from source, explicitly include both runners:
 
@@ -44,9 +50,9 @@ cargo install --path . --bin cr --bin cr-wasm --bin caps --bin bundle_calcit
 
 To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/setup-cr).
 
-### Usage
+### Quick Start
 
-Snippets evaluating:
+Evaluate snippets:
 
 ```bash
 cr eval 'range 100'
@@ -54,7 +60,7 @@ cr eval 'range 100'
 cr eval 'thread-first 100 range (map $ \ * % %)'
 ```
 
-Run with a runtime snapshot such as [calcit.cirru](https://github.com/calcit-lang/lilac/blob/main/compact.cirru) (legacy filename: `compact.cirru`):
+Run with a runtime snapshot such as `calcit.cirru` (legacy filename: `compact.cirru`):
 
 ```bash
 cr calcit.cirru # run once (default)
@@ -65,13 +71,13 @@ cr # by default, it picks `calcit.cirru`, then falls back to `compact.cirru`
 cr -w # watch mode (explicit flag required)
 ```
 
-By default Calcit reads `:init-fn` and `:reload-fn` inside `calcit.cirru` configs (falling back to `compact.cirru`). You may also specify functions,
+By default Calcit reads `:init-fn` and `:reload-fn` from `calcit.cirru` configs (falling back to `compact.cirru`). You may also specify functions:
 
 ```bash
 cr --init-fn='app.main/main!' --reload-fn='app.main/reload!'
 ```
 
-and even configure `:entries` in `calcit.cirru`:
+You may also configure `:entries` in `calcit.cirru`:
 
 ```bash
 cr --entry server
@@ -79,7 +85,7 @@ cr --entry server
 
 ### JavaScript codegen
 
-It compiles to JavaScript and runs in consistet semantics. However it might require a lot of JavaScript interop.
+Calcit compiles to JavaScript with consistent semantics. In browser or Node projects, JavaScript interop is still expected.
 
 ```bash
 cr js # compile to js, also picks `calcit.cirru` by default
@@ -93,40 +99,28 @@ import { main_$x_, reload_$x_ } from "./js-out/app.main.mjs";
 main_$x_(); // which corresponds to `main!` function in calcit
 ```
 
-### Calcit Editor & Bundler
+### CLI and Agent Workflow
 
-Install [Calcit Editor](https://github.com/calcit-lang/editor) and run `ct` to launch editor server,
-which writes `calcit.cirru` and `.compact-inc.cirru` on saving. Legacy `compact.cirru` remains compatible. Try launching example by cloning [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
+The recommended workflow is plain text editing plus CLI validation, often driven by an AI agent in terminal.
 
-Read more in [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md) to learn how to code Calcit with a plain text editor.
+Common commands:
 
-Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit-workflow) to learn to create an MVC webpage with [Respo](http://respo-mvc.org/).
+```bash
+cr docs agents --full   # read the current agent workflow guide
+cr query search 'foo'   # locate code by symbol or string
+cr edit ...             # structured edits for defs, imports, config, modules
+cr js                   # compile once
+cr js -w                # watch mode
+caps                    # install/update dependencies from deps.cirru
+```
 
-### MCP (Model Context Protocol) Support
+Calcit Editor is no longer the recommended path for everyday development. If you still need the older editor workflow, see [Calcit Editor](https://github.com/calcit-lang/editor).
 
-Calcit provides MCP server functionality for integration with AI assistants and development tools. The MCP server offers tools for:
+Related examples and workflows:
 
-- **Code Management**: Read, write, and modify Calcit namespaces and definitions
-- **Project Operations**: Manage modules, dependencies, and configurations
-- **Calcit Runner**: Start/stop background runner processes with incremental updates
-- **Documentation**: Query API docs, reference materials, and dependency documentation
-
-#### Incremental File Processing
-
-When using the Calcit Runner through MCP:
-
-1. **Start Runner**: Use `start_calcit_runner` to launch the background process. This automatically:
-   - Creates a `.calcit-tmp/` directory
-   - Copies the current runtime snapshot (`calcit.cirru`, or legacy `compact.cirru`) as a temporary baseline
-
-2. **Generate Incremental Updates**: After making changes to your code, use `generate_calcit_incremental` to:
-   - Compare current runtime snapshot with the temporary baseline
-   - Generate a `.compact-inc.cirru` file with only the changes
-   - Apply incremental updates to the running process
-
-3. **Check Results**: After generating the incremental file, always check the runner logs using `grab_calcit_runner_logs` to verify that updates were applied successfully.
-
-This workflow enables efficient hot-reloading during development without restarting the entire application.
+- [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md)
+- [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit-workflow)
+- [setup-cr](https://github.com/calcit-lang/setup-cr) for GitHub Actions
 
 ### Modules
 
@@ -142,7 +136,7 @@ This workflow enables efficient hot-reloading during development without restart
 
 Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`. If a module contains `build.sh`, it will be executed mostly for compiling Rust dylibs.
 
-`:calcit-version` helps in check version, and provides hints in [CI](https://github.com/calcit-lang/setup-cr) environment.
+`:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-cr).
 
 To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 
@@ -154,11 +148,11 @@ To load modules, use `:modules` configuration and the runtime snapshot file `cal
 Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`,
 i.e. `~/.config/calcit/modules/memof/calcit.cirru`.
 
-Modules that ends with `/`s are automatically suffixed `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+Modules ending with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 
 ### Development
 
-I use these commands to run local examples:
+Local validation commands:
 
 ```bash
 # run tests in Rust
@@ -173,6 +167,16 @@ cargo run --bin cr -- eval 'range 100'
 cr calcit.cirru ir # compiles intermediate representation into program-ir.cirru
 
 cr-wasm calcit/test-wasm.cirru # compile standalone wasm target to js-out/program.wasm
+```
+
+For repository development, the usual validation flow is:
+
+```bash
+cargo fmt
+cargo clippy -- -D warnings
+yarn compile
+cargo test
+yarn check-all
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
