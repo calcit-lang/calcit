@@ -1635,12 +1635,20 @@ pub enum ConfigSubcommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "show")]
 /// show project configuration values and entries
-pub struct ConfigShowCommand {}
+pub struct ConfigShowCommand {
+  /// show config for a named entry (e.g. "test") instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "modules")]
 /// list modules included in the project
-pub struct ConfigModulesCommand {}
+pub struct ConfigModulesCommand {
+  /// list modules for a named entry (e.g. "test") instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "version")]
@@ -1655,6 +1663,9 @@ pub struct ConfigVersionCommand {
 #[argh(subcommand, name = "set")]
 /// set a configuration key (init-fn, reload-fn, version)
 pub struct ConfigSetCommand {
+  /// apply to a named entry (e.g. "test") instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
   /// config key: init-fn, reload-fn, version
   #[argh(positional)]
   pub key: String,
@@ -1667,6 +1678,9 @@ pub struct ConfigSetCommand {
 #[argh(subcommand, name = "add-module")]
 /// add a module path to configs.modules
 pub struct ConfigAddModuleCommand {
+  /// add to a named entry (e.g. "test") instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
   /// module path to add (e.g. "calcit-test/")
   #[argh(positional)]
   pub module_path: String,
@@ -1676,6 +1690,9 @@ pub struct ConfigAddModuleCommand {
 #[argh(subcommand, name = "rm-module")]
 /// remove a module path from configs.modules
 pub struct ConfigRmModuleCommand {
+  /// remove from a named entry (e.g. "test") instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
   /// module path to remove
   #[argh(positional)]
   pub module_path: String,

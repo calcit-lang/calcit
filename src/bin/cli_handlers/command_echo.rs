@@ -613,10 +613,20 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
 
 fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
   match &cmd.subcommand {
-    ConfigSubcommand::Show(_) | ConfigSubcommand::Modules(_) => {}
+    ConfigSubcommand::Show(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
+    ConfigSubcommand::Modules(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
     ConfigSubcommand::Version(opts) => echo_items!(tokens, opt "value" => opts.value.as_deref(); default "none"),
-    ConfigSubcommand::Set(opts) => echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value),
-    ConfigSubcommand::AddModule(opts) => echo_items!(tokens, pos "module_path" => &opts.module_path),
-    ConfigSubcommand::RmModule(opts) => echo_items!(tokens, pos "module_path" => &opts.module_path),
+    ConfigSubcommand::Set(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value);
+    }
+    ConfigSubcommand::AddModule(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "module_path" => &opts.module_path);
+    }
+    ConfigSubcommand::RmModule(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "module_path" => &opts.module_path);
+    }
   }
 }

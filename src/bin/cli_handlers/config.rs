@@ -3,7 +3,8 @@
 //! Consolidates: cr query config, cr query modules, cr edit config, cr edit add-module, cr edit rm-module
 
 use calcit::cli_args::{
-  ConfigAddModuleCommand, ConfigCommand, ConfigRmModuleCommand, ConfigSetCommand, ConfigSubcommand, ConfigVersionCommand,
+  ConfigAddModuleCommand, ConfigCommand, ConfigModulesCommand, ConfigRmModuleCommand, ConfigSetCommand, ConfigShowCommand,
+  ConfigSubcommand, ConfigVersionCommand,
 };
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -29,8 +30,8 @@ fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, Str
 
 pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
-    ConfigSubcommand::Show(_) => handle_show(snapshot_file),
-    ConfigSubcommand::Modules(_) => handle_modules(snapshot_file),
+    ConfigSubcommand::Show(opts) => handle_show(opts, snapshot_file),
+    ConfigSubcommand::Modules(opts) => handle_modules(opts, snapshot_file),
     ConfigSubcommand::Version(opts) => handle_version(opts, snapshot_file),
     ConfigSubcommand::Set(opts) => handle_set(opts, snapshot_file),
     ConfigSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
@@ -38,8 +39,23 @@ pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result
   }
 }
 
-fn handle_show(input_path: &str) -> Result<(), String> {
+fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_display(input_path)?;
+
+  if let Some(name) = &opts.entry {
+    let entry = snapshot.entries.get(name).ok_or_else(|| {
+      format!(
+        "Entry '{name}' not found. Available: {}",
+        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
+      )
+    })?;
+    println!("{}", format!("Entry '{name}' Configs:").bold());
+    println!("  {}: {}", "init_fn".cyan(), entry.init_fn);
+    println!("  {}: {}", "reload_fn".cyan(), entry.reload_fn);
+    println!("  {}: {}", "version".cyan(), entry.version);
+    println!("  {}: {:?}", "modules".cyan(), entry.modules);
+    return Ok(());
+  }
 
   println!("{}", "Project Configs:".bold());
   println!("  {}: {}", "init_fn".cyan(), snapshot.configs.init_fn);
@@ -70,7 +86,7 @@ fn handle_show(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_modules(input_path: &str) -> Result<(), String> {
+fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_display(input_path)?;
 
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
@@ -78,10 +94,24 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .unwrap_or_else(|| Path::new(".").to_owned());
 
-  println!("{}", "Modules in project:".bold());
-  println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
+  let (label, modules) = if let Some(name) = &opts.entry {
+    let entry = snapshot.entries.get(name).ok_or_else(|| {
+      format!(
+        "Entry '{name}' not found. Available: {}",
+        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
+      )
+    })?;
+    (format!("Modules in entry '{name}':"), entry.modules.clone())
+  } else {
+    ("Modules in project:".to_string(), snapshot.configs.modules.clone())
+  };
 
-  for module_path in &snapshot.configs.modules {
+  println!("{}", label.bold());
+  if opts.entry.is_none() {
+    println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
+  }
+
+  for module_path in &modules {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
         println!("  {} {}", module_snapshot.package.cyan(), format!("({module_path})").dimmed());
@@ -92,7 +122,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
     }
   }
 
-  if !snapshot.entries.is_empty() {
+  if opts.entry.is_none() && !snapshot.entries.is_empty() {
     println!("\n{}", "Entries:".bold());
     for name in snapshot.entries.keys() {
       println!("  {}", name.cyan());
@@ -153,31 +183,44 @@ fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<()
 fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  if let Some(name) = &opts.entry {
+    if !snapshot.entries.contains_key(name) {
+      let available: Vec<_> = snapshot.entries.keys().cloned().collect();
+      return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    }
+  }
+
+  let entry_label = opts.entry.as_deref().unwrap_or("configs");
+
+  let configs = match &opts.entry {
+    Some(name) => snapshot.entries.get_mut(name).unwrap(),
+    None => &mut snapshot.configs,
+  };
+
   let message = match opts.key.as_str() {
     "init-fn" | "init_fn" => {
-      snapshot.configs.init_fn = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+      configs.init_fn = opts.value.clone();
+      format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "reload-fn" | "reload_fn" => {
-      snapshot.configs.reload_fn = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+      configs.reload_fn = opts.value.clone();
+      format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "version" => {
       if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
-        let previous = snapshot.configs.version.clone();
+        let previous = configs.version.clone();
         let next = bump_semver_value(&previous, &opts.value)?;
-        snapshot.configs.version = next.clone();
+        configs.version = next.clone();
         format!(
-          "{} Bumped config '{}' from '{}' to '{}'",
+          "{} Bumped [{entry_label}] version: {} → {}",
           "✓".green(),
-          "version".cyan(),
-          previous,
-          next
+          previous.yellow(),
+          next.green()
         )
       } else {
         parse_semver_value(&opts.value)?;
-        snapshot.configs.version = opts.value.clone();
-        format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
+        configs.version = opts.value.clone();
+        format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
       }
     }
     _ => {
@@ -196,28 +239,54 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
 fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
-  if snapshot.configs.modules.contains(&opts.module_path) {
-    return Err(format!("Module '{}' already exists in configs", opts.module_path));
+  if let Some(name) = &opts.entry {
+    if !snapshot.entries.contains_key(name) {
+      let available: Vec<_> = snapshot.entries.keys().cloned().collect();
+      return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    }
   }
 
-  snapshot.configs.modules.push(opts.module_path.clone());
+  let configs = match &opts.entry {
+    Some(name) => snapshot.entries.get_mut(name).unwrap(),
+    None => &mut snapshot.configs,
+  };
+
+  if configs.modules.contains(&opts.module_path) {
+    return Err(format!("Module '{}' already exists", opts.module_path));
+  }
+
+  configs.modules.push(opts.module_path.clone());
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Added module '{}'", "✓".green(), opts.module_path.cyan());
+  let scope = opts.entry.as_deref().unwrap_or("configs");
+  println!("{} Added module '{}' to [{scope}]", "✓".green(), opts.module_path.cyan());
   Ok(())
 }
 
 fn handle_rm_module(opts: &ConfigRmModuleCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
-  let original_len = snapshot.configs.modules.len();
-  snapshot.configs.modules.retain(|m| m != &opts.module_path);
+  if let Some(name) = &opts.entry {
+    if !snapshot.entries.contains_key(name) {
+      let available: Vec<_> = snapshot.entries.keys().cloned().collect();
+      return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+    }
+  }
 
-  if snapshot.configs.modules.len() == original_len {
-    return Err(format!("Module '{}' not found in configs", opts.module_path));
+  let configs = match &opts.entry {
+    Some(name) => snapshot.entries.get_mut(name).unwrap(),
+    None => &mut snapshot.configs,
+  };
+
+  let original_len = configs.modules.len();
+  configs.modules.retain(|m| m != &opts.module_path);
+
+  if configs.modules.len() == original_len {
+    return Err(format!("Module '{}' not found", opts.module_path));
   }
 
   save_snapshot(&snapshot, snapshot_file)?;
-  println!("{} Removed module '{}'", "✓".green(), opts.module_path.cyan());
+  let scope = opts.entry.as_deref().unwrap_or("configs");
+  println!("{} Removed module '{}' from [{scope}]", "✓".green(), opts.module_path.cyan());
   Ok(())
 }
