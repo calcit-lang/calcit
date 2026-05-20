@@ -10,10 +10,10 @@
 
 use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
-  EditDefCommand, EditDocCommand, EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
-  EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand,
-  EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
+  EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
+  EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand,
+  EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
+  EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
@@ -82,9 +82,6 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::AddImport(opts) => handle_add_import(opts, snapshot_file),
     EditSubcommand::RmImport(opts) => handle_rm_import(opts, snapshot_file),
     EditSubcommand::NsDoc(opts) => handle_ns_doc(opts, snapshot_file),
-    EditSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
-    EditSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
-    EditSubcommand::Config(opts) => handle_config(opts, snapshot_file),
     EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
   }
 }
@@ -1529,59 +1526,20 @@ fn handle_ns_doc(opts: &EditNsDocCommand, snapshot_file: &str) -> Result<(), Str
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Module operations
+// Semver helpers (pub(crate) so cr config can reuse them)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_add_module(opts: &EditAddModuleCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  if snapshot.configs.modules.contains(&opts.module_path) {
-    return Err(format!("Module '{}' already exists in configs", opts.module_path));
-  }
-
-  snapshot.configs.modules.push(opts.module_path.clone());
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{} Added module '{}'", "✓".green(), opts.module_path.cyan());
-
-  Ok(())
-}
-
-fn handle_rm_module(opts: &EditRmModuleCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  let original_len = snapshot.configs.modules.len();
-  snapshot.configs.modules.retain(|m| m != &opts.module_path);
-
-  if snapshot.configs.modules.len() == original_len {
-    return Err(format!("Module '{}' not found in configs", opts.module_path));
-  }
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{} Deleted module '{}'", "✓".green(), opts.module_path.cyan());
-
-  Ok(())
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Config operations
-// ═══════════════════════════════════════════════════════════════════════════════
-
-fn parse_semver_value(v: &str) -> Result<Version, String> {
+pub(crate) fn parse_semver_value(v: &str) -> Result<Version, String> {
   if v.starts_with('|') {
     return Err(format!(
       "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
     ));
   }
-
   Version::parse(v).map_err(|_| format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"))
 }
 
-fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
+pub(crate) fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
   let mut version = parse_semver_value(current)?;
-
   match level {
     "patch" => {
       version.patch += 1;
@@ -1599,56 +1557,9 @@ fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
       return Err(format!("Unknown bump level '{level}'. Valid levels: patch, minor, major"));
     }
   }
-
   version.pre = semver::Prerelease::EMPTY;
   version.build = semver::BuildMetadata::EMPTY;
-
   Ok(version.to_string())
-}
-
-fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  let message = match opts.key.as_str() {
-    "init-fn" | "init_fn" => {
-      snapshot.configs.init_fn = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-    }
-    "reload-fn" | "reload_fn" => {
-      snapshot.configs.reload_fn = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-    }
-    "version" => {
-      if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
-        let previous = snapshot.configs.version.clone();
-        let next = bump_semver_value(&previous, &opts.value)?;
-        snapshot.configs.version = next.clone();
-        format!(
-          "{} Bumped config '{}' from '{}' to '{}'",
-          "✓".green(),
-          "version".cyan(),
-          previous,
-          next
-        )
-      } else {
-        parse_semver_value(&opts.value)?;
-        snapshot.configs.version = opts.value.clone();
-        format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-      }
-    }
-    _ => {
-      return Err(format!(
-        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
-        opts.key
-      ));
-    }
-  };
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{message}");
-
-  Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

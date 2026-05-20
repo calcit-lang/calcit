@@ -80,6 +80,8 @@ pub enum CalcitCommand {
   Edit(EditCommand),
   /// fine-grained tree operations (view and modify AST nodes)
   Tree(TreeCommand),
+  /// manage project configuration (show, set, modules, add-module, rm-module)
+  Config(ConfigCommand),
 }
 
 /// emit JavaScript rather than interpreting
@@ -815,12 +817,6 @@ pub enum EditSubcommand {
   RmImport(EditRmImportCommand),
   /// update namespace documentation
   NsDoc(EditNsDocCommand),
-  /// create a new module
-  AddModule(EditAddModuleCommand),
-  /// delete a module
-  RmModule(EditRmModuleCommand),
-  /// update project configs
-  Config(EditConfigCommand),
   /// describe incremental code changes and export them to .calcit-error.cirru
   Inc(EditIncCommand),
   /// copy node from one path to another within a definition
@@ -1103,40 +1099,6 @@ pub struct EditNsDocCommand {
   pub doc: String,
 }
 
-// --- Module operations ---
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "add-module")]
-/// create a new module (adds to configs.modules)
-pub struct EditAddModuleCommand {
-  /// module path to add (e.g. "calcit-test/")
-  #[argh(positional)]
-  pub module_path: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "rm-module")]
-/// delete a module
-pub struct EditRmModuleCommand {
-  /// module path to delete
-  #[argh(positional)]
-  pub module_path: String,
-}
-
-// --- Config operations ---
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "config")]
-/// update project config values; use `cr edit config version patch|minor|major` to increment semver
-pub struct EditConfigCommand {
-  /// config key: "init-fn", "reload-fn", "version"
-  #[argh(positional)]
-  pub key: String,
-  /// config value; for "version", accepts a semver string or one of: patch, minor, major
-  #[argh(positional)]
-  pub value: String,
-}
-
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "inc")]
 /// record incremental changes (defs and namespaces) for downstream tooling
@@ -1200,9 +1162,9 @@ pub struct TreeShowCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (dot-separated preferred, comma-separated also accepted; e.g. "2.1.0")
+  /// path to the node (dot-separated preferred; e.g. "2.1.0"); omit to show from root
   #[argh(option, short = 'p')]
-  pub path: String,
+  pub path: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1639,4 +1601,82 @@ pub struct TreeWrapCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Config command — top-level shortcut for configuration management
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// manage project configuration
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "config")]
+pub struct ConfigCommand {
+  #[argh(subcommand)]
+  pub subcommand: ConfigSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum ConfigSubcommand {
+  /// show project configuration values and entries
+  Show(ConfigShowCommand),
+  /// list modules included in the project
+  Modules(ConfigModulesCommand),
+  /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
+  Version(ConfigVersionCommand),
+  /// set a configuration key to a value (init-fn, reload-fn, version)
+  Set(ConfigSetCommand),
+  /// add a module path to configs.modules
+  AddModule(ConfigAddModuleCommand),
+  /// remove a module path from configs.modules
+  RmModule(ConfigRmModuleCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "show")]
+/// show project configuration values and entries
+pub struct ConfigShowCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "modules")]
+/// list modules included in the project
+pub struct ConfigModulesCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "version")]
+/// show or bump the project version
+pub struct ConfigVersionCommand {
+  /// patch | minor | major to bump, or a semver string to set explicitly; omit to show current version
+  #[argh(positional)]
+  pub value: Option<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set")]
+/// set a configuration key (init-fn, reload-fn, version)
+pub struct ConfigSetCommand {
+  /// config key: init-fn, reload-fn, version
+  #[argh(positional)]
+  pub key: String,
+  /// config value; for "version" accepts semver string or patch|minor|major
+  #[argh(positional)]
+  pub value: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-module")]
+/// add a module path to configs.modules
+pub struct ConfigAddModuleCommand {
+  /// module path to add (e.g. "calcit-test/")
+  #[argh(positional)]
+  pub module_path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rm-module")]
+/// remove a module path from configs.modules
+pub struct ConfigRmModuleCommand {
+  /// module path to remove
+  #[argh(positional)]
+  pub module_path: String,
 }

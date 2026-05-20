@@ -83,6 +83,9 @@ fn main() -> Result<(), String> {
     Some(CalcitCommand::Tree(tree_cmd)) => {
       return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
     }
+    Some(CalcitCommand::Config(config_cmd)) => {
+      return cli_handlers::handle_config_command(config_cmd, &cli_args.input);
+    }
     Some(CalcitCommand::Analyze(analyze_cmd)) => match &analyze_cmd.subcommand {
       AnalyzeSubcommand::ProgramDiff(diff_cmd) => {
         return cli_handlers::handle_program_diff_command(diff_cmd, &cli_args.input);

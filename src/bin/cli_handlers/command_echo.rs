@@ -57,6 +57,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Libs(_))
       | Some(CalcitCommand::Edit(_))
       | Some(CalcitCommand::Tree(_))
+      | Some(CalcitCommand::Config(_))
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
   )
@@ -78,6 +79,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("cr edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("cr tree {}", tree_name(&cmd.subcommand)),
+    CalcitCommand::Config(cmd) => format!("cr config {}", config_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("cr analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("cr cirru {}", cirru_name(&cmd.subcommand)),
     _ => return None,
@@ -89,6 +91,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Libs(cmd) => push_libs(&mut tokens, cmd.subcommand.as_ref()?),
     CalcitCommand::Edit(cmd) => push_edit(&mut tokens, cmd),
     CalcitCommand::Tree(cmd) => push_tree(&mut tokens, cmd),
+    CalcitCommand::Config(cmd) => push_config(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
     CalcitCommand::Cirru(cmd) => push_cirru(&mut tokens, cmd),
     _ => return None,
@@ -289,9 +292,6 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
     }
     EditSubcommand::RmImport(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, pos "source-ns" => &opts.source_ns),
     EditSubcommand::NsDoc(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, pos "doc" => &opts.doc),
-    EditSubcommand::AddModule(opts) => echo_items!(tokens, pos "module-path" => &opts.module_path),
-    EditSubcommand::RmModule(opts) => echo_items!(tokens, pos "module-path" => &opts.module_path),
-    EditSubcommand::Config(opts) => echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value),
     EditSubcommand::Inc(opts) => {
       echo_items!(tokens, list "added-ns" => &opts.added_ns, list "removed-ns" => &opts.removed_ns, list "ns-updated" => &opts.ns_updated, list "added" => &opts.added, list "removed" => &opts.removed, list "changed" => &opts.changed)
     }
@@ -313,7 +313,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
     TreeSubcommand::Show(opts) => echo_items!(
       tokens,
       pos "target" => &opts.target,
-      value "path" => &opts.path,
+      opt "path" => opts.path.as_deref(); default "none",
       value "depth" => opts.depth; default "2",
       switch "json" => opts.json,
       value "chunk-target-nodes" => opts.chunk_target_nodes; default "56",
@@ -572,9 +572,6 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::AddImport(_) => "add-import",
     EditSubcommand::RmImport(_) => "rm-import",
     EditSubcommand::NsDoc(_) => "ns-doc",
-    EditSubcommand::AddModule(_) => "add-module",
-    EditSubcommand::RmModule(_) => "rm-module",
-    EditSubcommand::Config(_) => "config",
     EditSubcommand::Inc(_) => "inc",
     EditSubcommand::Cp(_) => "cp",
     EditSubcommand::Mv(_) => "mv",
@@ -600,5 +597,26 @@ fn tree_name(subcommand: &TreeSubcommand) -> &'static str {
     TreeSubcommand::Wrap(_) => "wrap",
     TreeSubcommand::TargetReplace(_) => "target-replace",
     TreeSubcommand::Rewrite(_) => "rewrite",
+  }
+}
+
+fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
+  match subcommand {
+    ConfigSubcommand::Show(_) => "show",
+    ConfigSubcommand::Modules(_) => "modules",
+    ConfigSubcommand::Version(_) => "version",
+    ConfigSubcommand::Set(_) => "set",
+    ConfigSubcommand::AddModule(_) => "add-module",
+    ConfigSubcommand::RmModule(_) => "rm-module",
+  }
+}
+
+fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
+  match &cmd.subcommand {
+    ConfigSubcommand::Show(_) | ConfigSubcommand::Modules(_) => {}
+    ConfigSubcommand::Version(opts) => echo_items!(tokens, opt "value" => opts.value.as_deref(); default "none"),
+    ConfigSubcommand::Set(opts) => echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value),
+    ConfigSubcommand::AddModule(opts) => echo_items!(tokens, pos "module_path" => &opts.module_path),
+    ConfigSubcommand::RmModule(opts) => echo_items!(tokens, pos "module_path" => &opts.module_path),
   }
 }

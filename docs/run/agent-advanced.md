@@ -599,12 +599,12 @@ cr tree replace ns/def -p '4.0.2' -j '["if", ["=", "x", "1"], "{{TRUE_BRANCH}}",
 - `cr edit rm-import <namespace> <source_ns>` - 移除指定来源的 import 规则
 - `cr edit ns-doc <namespace> '<doc>'` - 更新命名空间文档
 
-**模块和配置：**
+**模块和配置（统一使用 `cr config`）：**
 
-- `cr edit add-module <module-path>` - 添加模块依赖
-- `cr edit rm-module <module-path>` - 删除模块依赖
-- `cr edit config <key> <value>` - 设置配置（key: init-fn, reload-fn, version
-- `cr edit config version patch|minor|major` - 递增项目语义化版本号
+- `cr config add-module <module-path>` - 添加模块依赖
+- `cr config rm-module <module-path>` - 删除模块依赖
+- `cr config set <key> <value>` - 设置配置（key: init-fn, reload-fn, version）
+- `cr config version patch|minor|major` - 递增项目语义化版本号
 
 **增量变更导出：**
 
@@ -1066,7 +1066,7 @@ cr edit imports app.main -f my-imports.cirru                    # 多条（每�
 cr edit imports app.main -j '[["app.lib",":as","lib"],["app.util",":refer",["helper"]]]'  # JSON
 
 # 更新项目配置
-cr edit config init-fn app.main/main!
+cr config set init-fn app.main/main!
 ```
 
 ---

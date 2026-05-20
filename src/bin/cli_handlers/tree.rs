@@ -248,7 +248,16 @@ fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -
 
 fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
-  let path = parse_path(&opts.path)?;
+  let path = match &opts.path {
+    Some(p) => parse_path(p)?,
+    None => {
+      eprintln!(
+        "{}",
+        "[Warn] No path (-p) specified; showing from root. Use -p '0' to start from a child node.".yellow()
+      );
+      vec![]
+    }
+  };
 
   let snapshot = load_snapshot(snapshot_file)?;
 

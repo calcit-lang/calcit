@@ -505,6 +505,7 @@ cr js
 - 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`, `cr analyze program-diff <git-ref>`, `cr analyze call-graph-diff <git-ref>`
 - 结构化编辑：`cr tree show/replace/target-replace/cp/wrap/unwrap/raise/rewrite`
 - 定义级编辑：`cr edit mv/def/add-import/imports/...`
+- 配置管理：`cr config show/modules/version/set/add-module/rm-module`
 - 文档与指南：`cr docs list/read/search/agents`
 - 语法学习：`cr cirru show-guide`
 
