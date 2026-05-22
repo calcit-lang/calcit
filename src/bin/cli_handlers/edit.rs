@@ -15,6 +15,7 @@ use calcit::cli_args::{
   EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
   EditSplitDefCommand, EditSubcommand,
 };
+use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
   validate_schema_for_write,
@@ -175,8 +176,25 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   let resolved_definition = lookup.as_ref().map(|it| it.resolved.as_str()).unwrap_or(definition);
 
   let exists = file_data.defs.contains_key(resolved_definition);
+  let previous_entry = if exists {
+    file_data.defs.get(resolved_definition).cloned()
+  } else {
+    None
+  };
+  let existing_edit_advice = previous_entry
+    .as_ref()
+    .and_then(|entry| format_existing_definition_advice(namespace, resolved_definition, &entry.code, &syntax_tree));
+
+  if opts.overwrite {
+    if let Some(advice) = existing_edit_advice.as_deref() {
+      print_cli_warning_block(advice);
+    }
+  }
 
   if exists && !opts.overwrite {
+    if let Some(advice) = existing_edit_advice.as_deref() {
+      print_cli_warning_block(advice);
+    }
     return Err(format!(
       "Definition '{resolved_definition}' already exists in namespace '{namespace}'.\n\
        Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite -f <file>"
@@ -185,14 +203,9 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
 
   // Create or overwrite definition.
   // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
-  let code_entry = if exists {
-    if let Some(previous_entry) = file_data.defs.get(resolved_definition).cloned() {
-      let mut updated_entry = previous_entry;
-      updated_entry.code = syntax_tree;
-      updated_entry
-    } else {
-      CodeEntry::from_code(syntax_tree)
-    }
+  let code_entry = if let Some(mut updated_entry) = previous_entry {
+    updated_entry.code = syntax_tree;
+    updated_entry
   } else {
     CodeEntry::from_code(syntax_tree)
   };
@@ -240,6 +253,58 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     tips.print();
   }
   Ok(())
+}
+
+fn format_existing_definition_advice(namespace: &str, definition: &str, existing: &Cirru, incoming: &Cirru) -> Option<String> {
+  let advice = analyze_cirru_edit_advice(existing, incoming)?;
+  let changed_nodes = advice.stats.added + advice.stats.removed + advice.stats.modified;
+  let target = format!("{namespace}/{definition}");
+  let mut lines = vec![format!(
+    "Incoming code is {:.0}% structurally similar to the existing definition (changed nodes: ~{} +{} -{}).",
+    advice.similarity * 100.0,
+    advice.stats.modified,
+    advice.stats.added,
+    advice.stats.removed,
+  )];
+
+  match advice.strategy {
+    CirruEditStrategy::Identical => {
+      lines.push("The incoming definition is identical. Prefer skipping the write and inspect the current code first.".to_string());
+      lines.push(format!("Inspect: cr query def '{target}'"));
+    }
+    CirruEditStrategy::Replace => {
+      lines.push("Most differences are replacements. Prefer a local tree edit instead of a full overwrite.".to_string());
+      lines.push(format!(
+        "Try: cr tree target-replace '{target}' --pattern '<leaf>' --leaf -e '<new-leaf>'"
+      ));
+      lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
+    }
+    CirruEditStrategy::Insert => {
+      lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
+      lines.push(format!("Try: cr tree insert-before '{target}' -p '<path>' -e '<node>'"));
+      lines.push(format!(
+        "Or: cr tree insert-after '{target}' -p '<path>' -e '<node>' / cr tree append-child '{target}' -p '<path>' -e '<node>'"
+      ));
+    }
+    CirruEditStrategy::Delete => {
+      lines.push("Most differences are removals. Prefer deleting or lifting nodes from the existing tree.".to_string());
+      lines.push(format!("Try: cr tree delete '{target}' -p '<path>'"));
+      lines.push(format!("Or: cr tree raise '{target}' -p '<child-path>'"));
+    }
+    CirruEditStrategy::Rewrite => {
+      lines.push("The trees are still close, but the change mixes insert/remove/replace. Prefer a structural rewrite over a blind full overwrite.".to_string());
+      lines.push(format!("Try: cr tree rewrite '{target}' -p '<path>' --with self=. -e '<code>'"));
+      lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
+    }
+  }
+
+  if advice.strategy != CirruEditStrategy::Identical || changed_nodes > 0 {
+    lines.push(format!(
+      "Locate the smallest path first: cr query search '<keyword>' -f '{target}' && cr tree show '{target}' -p '<path>'"
+    ));
+  }
+
+  Some(lines.join("\n"))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

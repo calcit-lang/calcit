@@ -82,7 +82,7 @@ impl DiffNode {
   }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProgramDiffStats {
   pub unchanged: usize,
   pub added: usize,
@@ -96,6 +96,22 @@ pub struct ProgramDiffResult {
   pub file_path: String,
   pub root: DiffNode,
   pub stats: ProgramDiffStats,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CirruEditStrategy {
+  Identical,
+  Replace,
+  Insert,
+  Delete,
+  Rewrite,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CirruEditAdvice {
+  pub similarity: f64,
+  pub stats: ProgramDiffStats,
+  pub strategy: CirruEditStrategy,
 }
 
 pub fn analyze_program_diff(git_ref: &str, input_path: &str) -> Result<ProgramDiffResult, String> {
@@ -137,6 +153,111 @@ pub fn format_program_diff(result: &ProgramDiffResult) -> String {
   output.push_str("## Tree Diff\n\n");
   format_tree_node(&result.root, &mut output, "", true, true, true);
   output
+}
+
+pub fn analyze_cirru_edit_advice(old: &Cirru, new: &Cirru) -> Option<CirruEditAdvice> {
+  if old == new {
+    return Some(CirruEditAdvice {
+      similarity: 1.0,
+      stats: ProgramDiffStats::default(),
+      strategy: CirruEditStrategy::Identical,
+    });
+  }
+
+  let similarity = cirru_similarity(old, new);
+  if similarity < 0.58 {
+    return None;
+  }
+
+  let stats = collect_cirru_change_stats(old, new);
+  let total_changed = stats.added + stats.removed + stats.modified;
+  if total_changed == 0 {
+    return Some(CirruEditAdvice {
+      similarity,
+      stats,
+      strategy: CirruEditStrategy::Identical,
+    });
+  }
+
+  let added_ratio = stats.added as f64 / total_changed as f64;
+  let removed_ratio = stats.removed as f64 / total_changed as f64;
+  let modified_ratio = stats.modified as f64 / total_changed as f64;
+  let has_mixed_add_remove = stats.added > 0 && stats.removed > 0;
+  let mixed_change_floor = stats.added.min(stats.removed);
+
+  let strategy = if has_mixed_add_remove && mixed_change_floor >= 3 {
+    CirruEditStrategy::Rewrite
+  } else if modified_ratio >= 0.58 && added_ratio <= 0.22 && removed_ratio <= 0.22 {
+    CirruEditStrategy::Replace
+  } else if added_ratio >= 0.55 && removed_ratio <= 0.10 {
+    CirruEditStrategy::Insert
+  } else if removed_ratio >= 0.55 && added_ratio <= 0.10 {
+    CirruEditStrategy::Delete
+  } else {
+    CirruEditStrategy::Rewrite
+  };
+
+  Some(CirruEditAdvice {
+    similarity,
+    stats,
+    strategy,
+  })
+}
+
+fn collect_cirru_change_stats(old: &Cirru, new: &Cirru) -> ProgramDiffStats {
+  let mut stats = ProgramDiffStats::default();
+  tally_cirru_changes(old, new, &mut stats);
+  stats
+}
+
+fn tally_cirru_changes(old: &Cirru, new: &Cirru, stats: &mut ProgramDiffStats) {
+  if old == new {
+    stats.unchanged += count_cirru_nodes(new);
+    return;
+  }
+
+  match (old, new) {
+    (Cirru::Leaf(_), Cirru::Leaf(_)) => {
+      stats.modified += 1;
+    }
+    (Cirru::List(old_items), Cirru::List(new_items)) => {
+      let edits = align_sequence(old_items, new_items);
+      for edit in edits {
+        match edit {
+          SeqEdit::Match(i, j) => tally_cirru_changes(&old_items[i], &new_items[j], stats),
+          SeqEdit::Replace(i, j) => match (&old_items[i], &new_items[j]) {
+            (Cirru::Leaf(_), Cirru::Leaf(_)) => {
+              stats.modified += 1;
+            }
+            (Cirru::List(_), Cirru::List(_)) if cirru_similarity(&old_items[i], &new_items[j]) >= 0.58 => {
+              tally_cirru_changes(&old_items[i], &new_items[j], stats);
+            }
+            _ => {
+              stats.removed += count_cirru_nodes(&old_items[i]);
+              stats.added += count_cirru_nodes(&new_items[j]);
+            }
+          },
+          SeqEdit::Remove(i) => {
+            stats.removed += count_cirru_nodes(&old_items[i]);
+          }
+          SeqEdit::Insert(j) => {
+            stats.added += count_cirru_nodes(&new_items[j]);
+          }
+        }
+      }
+    }
+    _ => {
+      stats.removed += count_cirru_nodes(old);
+      stats.added += count_cirru_nodes(new);
+    }
+  }
+}
+
+fn count_cirru_nodes(node: &Cirru) -> usize {
+  match node {
+    Cirru::Leaf(_) => 1,
+    Cirru::List(items) => 1 + items.iter().map(count_cirru_nodes).sum::<usize>(),
+  }
 }
 
 pub(crate) fn resolve_input_path(cwd: &Path, input_path: &str) -> Result<PathBuf, String> {
@@ -1010,7 +1131,10 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 
 #[cfg(test)]
 mod tests {
-  use super::{DiffStatus, SeqEdit, align_sequence, cirru_similarity, diff_cirru, render_cirru_diff, render_text};
+  use super::{
+    CirruEditStrategy, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, cirru_similarity, diff_cirru, render_cirru_diff,
+    render_text,
+  };
   use cirru_parser::Cirru;
 
   fn leaf(text: &str) -> Cirru {
@@ -1069,6 +1193,60 @@ mod tests {
     let diff = diff_cirru("code", Some(&old), Some(&new), "0");
     assert_eq!(diff.status, DiffStatus::Modified);
     assert!(diff.body.is_some());
+  }
+
+  #[test]
+  fn classifies_additive_similar_edits_as_insert_strategy() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let new = list(vec![leaf("defn"), leaf("demo"), leaf("x"), leaf("y")]);
+    let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for similar edit");
+    assert_eq!(advice.strategy, CirruEditStrategy::Insert);
+  }
+
+  #[test]
+  fn classifies_leaf_updates_as_replace_strategy() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let new = list(vec![leaf("defn"), leaf("demo"), leaf("y")]);
+    let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for similar edit");
+    assert_eq!(advice.strategy, CirruEditStrategy::Replace);
+  }
+
+  #[test]
+  fn reports_identical_trees() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let advice = analyze_cirru_edit_advice(&old, &old).expect("expected advice for identical trees");
+    assert_eq!(advice.strategy, CirruEditStrategy::Identical);
+  }
+
+  #[test]
+  fn classifies_large_mixed_add_remove_as_rewrite_strategy() {
+    let old = list(vec![
+      leaf("defn"),
+      leaf("main!"),
+      list(vec![]),
+      list(vec![leaf("println"), leaf("|a")]),
+      list(vec![leaf("println"), leaf("|b")]),
+      list(vec![leaf("println"), leaf("|c")]),
+      list(vec![leaf("println"), leaf("|d")]),
+      list(vec![leaf("println"), leaf("|e")]),
+      list(vec![leaf("println"), leaf("|f")]),
+      list(vec![leaf("do"), leaf("true")]),
+    ]);
+    let new = list(vec![
+      leaf("defn"),
+      leaf("main!"),
+      list(vec![]),
+      list(vec![leaf("println"), leaf("|a")]),
+      list(vec![leaf("println"), leaf("|extra-1")]),
+      list(vec![leaf("println"), leaf("|extra-2")]),
+      list(vec![leaf("println"), leaf("|extra-3")]),
+      list(vec![leaf("println"), leaf("|extra-4")]),
+      list(vec![leaf("println"), leaf("|extra-5")]),
+      list(vec![leaf("println"), leaf("|extra-6")]),
+      list(vec![leaf("do"), leaf("true")]),
+    ]);
+    let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for mixed structural edit");
+    assert_eq!(advice.strategy, CirruEditStrategy::Rewrite);
   }
 
   #[test]
