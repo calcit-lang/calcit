@@ -8,6 +8,7 @@ aliases:
   - "pattern examples"
   - "common tasks"
 ---
+
 # Common Patterns
 
 This document provides practical examples and patterns for common programming tasks in Calcit.
@@ -79,7 +80,7 @@ let
         %:: MyResult :err "|Division by zero"
         %:: MyResult :ok (/ a b)
     handle-result $ fn (result)
-      tag-match result
+      match result
         (:ok v) (println $ str "|Result: " v)
         (:err msg) (println $ str "|Error: " msg)
   handle-result $ safe-divide 10 2
@@ -409,7 +410,7 @@ let
 
 1. **Use type annotations** for function parameters and return values
 2. **Prefer immutable data** - use `swap!` instead of manual mutation
-3. **Use pattern matching** (`tag-match`, `record-match`) for control flow
+3. **Use pattern matching** (`match`, `record-match`) for control flow; `match` also works on plain tuples, while `tag-match` is mainly for legacy code
 4. **Leverage threading macros** (`->`, `->>`) for data pipelines
 5. **Use enums for result types** instead of exceptions
 6. **Keep functions small** and focused on a single responsibility

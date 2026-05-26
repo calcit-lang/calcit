@@ -18,7 +18,7 @@ Calcit enums are tagged unions — each variant has a tag (keyword) and zero or 
 - **Define**: `defenum Shape (:circle :number) (:rect :number :number)`
 - **Create**: `%:: Shape :circle 5`
 - **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Match** (legacy): `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
+- **Legacy Fallback**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape :enum`
 
 ## Defining Enums
@@ -170,14 +170,14 @@ This is an explicit crash, not a silent `nil`. `tag-match` has the same behavior
 
 ### `match` vs `tag-match`
 
-| Feature              | `match`              | `tag-match`                    |
-| -------------------- | -------------------- | ------------------------------ |
-| Implementation       | Native syntax        | Macro (expands to nested `if`) |
-| Exhaustiveness check | Compile-time warning | None                           |
-| Variant arity check  | Yes                  | No                             |
-| Binding type inference | Yes (from defenum) | No                             |
-| JS output            | Direct if-else chain | Nested ternaries               |
-| Recommended          | Yes                  | Legacy use                     |
+| Feature                | `match`              | `tag-match`                    |
+| ---------------------- | -------------------- | ------------------------------ |
+| Implementation         | Native syntax        | Macro (expands to nested `if`) |
+| Exhaustiveness check   | Compile-time warning | None                           |
+| Variant arity check    | Yes                  | No                             |
+| Binding type inference | Yes (from defenum)   | No                             |
+| JS output              | Direct if-else chain | Nested ternaries               |
+| Recommended            | Yes                  | Legacy use                     |
 
 Both syntaxes share the same branch format: each branch is `(pattern body)`.
 
@@ -296,7 +296,7 @@ defenum Result0 (:err :string) (:ok)
 defn takes-result (r)
   :: :fn $ {} (:return :dynamic)
     :args $ [] 'app.main/Result0
-  tag-match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
+  match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
 
 ; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
 takes-result $ :: :ok
@@ -316,7 +316,7 @@ If any condition is not met, the argument is left unchanged (no error is raised)
 
 - Enum instances are immutable tuples with a class reference.
 - `match` is the recommended pattern matching syntax with exhaustiveness checking.
-- `tag-match` is a legacy macro; unmatched tags raise a runtime error without compile-time warning.
+- `tag-match` is a legacy macro; keep it for legacy code paths or when you explicitly want the old syntax.
 - Use `&tuple:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
 - Enums vs plain tuples: plain `:: :tag val` tuples have no class; `%:: Enum :tag val` tuples carry their enum class for origin checking.
 

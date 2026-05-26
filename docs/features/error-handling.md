@@ -8,6 +8,7 @@ aliases:
   - "exception handling"
   - "errors"
 ---
+
 # Error Handling
 
 Calcit uses `try` / `raise` for exception-based error handling. Errors are string values (or tags) propagated up the call stack.
@@ -114,7 +115,7 @@ let
         %:: AppResult :ok (* x 10)
         %:: AppResult :err |negative-input
     handle $ fn (r)
-      tag-match r
+      match r
         (:ok v)
           str-spaced |result: v
         (:err msg)

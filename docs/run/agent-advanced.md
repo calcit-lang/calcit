@@ -138,10 +138,10 @@ Calcit 程序使用 `cr` 命令：
 - `cr --tips <subcommand> ...` - 主动显示完整 tips（教学/排障时）
   - 示例：`cr --tips demos/calcit.cirru query def calcit.core/foldl`
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
--  - **不需要**项目运行时快照文件（`calcit.cirru` / `compact.cirru`）：core 内置函数（`range`、`+`、`map` 等）直接可用
-  - 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块
-  - `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名），可多次使用
-  - 示例：`cr eval 'range 5'`、`cr eval 'echo 1' --dep calcit.std`
+- - **不需要**项目运行时快照文件（`calcit.cirru` / `compact.cirru`）：core 内置函数（`range`、`+`、`map` 等）直接可用
+- 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块
+- `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名），可多次使用
+- 示例：`cr eval 'range 5'`、`cr eval 'echo 1' --dep calcit.std`
 
 ### 查询子命令 (`cr query`)
 
@@ -663,19 +663,21 @@ Calcit 特有的两种序列类型：
 
 **Tuple (`::`)** - 不可变、用于模式匹配
 
-```cirru
+```cirru.no-check
 ; 创建 tuple
 :: :event/type data
 
-; 模式匹配
-tag-match event
+; plain tuple 也可以直接用原生 match
+match event
   (:event/click data) (handle-click data)
   (:event/input text) (handle-input text)
 ```
 
+无论是 plain tuple 还是 `defenum` 生成的 tuple，优先使用原生 `match`；`tag-match` 主要保留给遗留代码或需要兼容旧写法的场景。
+
 **Vector (`[]`)** - 可变、用于列表操作
 
-```cirru
+```cirru.no-check
 ; 创建 vector
 [] item1 item2 item3
 
@@ -687,7 +689,7 @@ div {} $ []
 
 **常见错误：**
 
-```cirru
+```cirru.no-check
 ; ❌ 错误：用 vector 传事件
 send-event! $ [] :clipboard/read text
 ; 报错：tag-match expected tuple
@@ -1255,7 +1257,7 @@ cr tree replace app.main/fn -p '2.0' -e 'symbol'  # 结果：["symbol"]
 
 **Tuple vs Vector：**
 
-```cirru
+```cirru.no-check
 ; ✅ Tuple - 用于事件、模式匹配
 :: :clipboard/read text
 

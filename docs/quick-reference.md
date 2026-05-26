@@ -286,7 +286,8 @@ let
 - `struct?`, `enum?` - predicates
 - `&tuple:enum-has-variant?` - check variant
 - `&tuple:enum-variant-arity` - get variant arity
-- `tag-match` - pattern matching on enums
+- `match` - native pattern matching on enums and tuples
+- `tag-match` - legacy enum/tuple matching syntax
 
 ## Traits & Methods
 
@@ -323,7 +324,8 @@ let
 - `cond` - multi-way conditional
 - `case` - pattern matching on values
 - `&case` - internal case macro
-- `tag-match` - enum/tuple pattern matching
+- `match` - preferred enum/tuple pattern matching
+- `tag-match` - legacy enum/tuple pattern matching
 - `record-match` - record pattern matching
 - `list-match` - list destructuring match
 - `field-match` - map field matching

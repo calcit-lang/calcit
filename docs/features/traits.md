@@ -8,6 +8,7 @@ aliases:
   - "trait impl"
   - "assert-traits"
 ---
+
 # Traits
 
 Calcit provides a lightweight trait system for attaching method implementations to struct/enum definitions (and using them from constructed instances and built-in types).
@@ -204,7 +205,7 @@ do
           :return :string
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
-          tag-match x
+          match x
             (:ok v) (str |ok: v)
             (:err v) (str |err: v)
       Result0 $ defenum Result0 (:ok :string) (:err :string)

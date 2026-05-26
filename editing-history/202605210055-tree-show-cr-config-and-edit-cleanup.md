@@ -7,11 +7,13 @@
 **动机**: Agent 调用 `cr tree show ns/def` 时若忘记 `-p`，原来直接报错导致 token 浪费。
 
 **变更文件**:
+
 - `src/cli_args.rs`: `TreeShowCommand.path` 类型从 `String` → `Option<String>`，doc 注释更新
 - `src/bin/cli_handlers/tree.rs`: `handle_show` 中对 `None` 输出黄色 `[Warn]`，默认使用空路径（root）
 - `src/bin/cli_handlers/command_echo.rs`: `push_tree` Show 分支改用 `opt "path"` 宏处理 Option 类型
 
 **效果**:
+
 ```
 $ cr calcit.cirru tree show "ns/def"
 [Warn] No path (-p) specified; showing from root. Use -p '0' to start from a child node.
@@ -38,6 +40,7 @@ Type: list (4 items)
 `cr config version` 可独立使用（无参数显示当前版本，传 `patch/minor/major` 递增，传 semver 直接设置）。
 
 **变更文件**:
+
 - `src/cli_args.rs`: 添加 `CalcitCommand::Config`、`ConfigCommand`、`ConfigSubcommand`（含 `ConfigVersionCommand`）及各子命令 struct
 - `src/bin/cli_handlers/config.rs`: 新建，实现 `handle_config_command` 及各子命令处理函数（含 `handle_version`）
 - `src/bin/cli_handlers/edit.rs`: `parse_semver_value`、`bump_semver_value` 改为 `pub(crate)`
@@ -52,15 +55,18 @@ Type: list (4 items)
 **动机**: `cr edit add-module`、`cr edit rm-module`、`cr edit config` 与新增的 `cr config` 重复，保持单一职责。
 
 **删除内容**:
+
 - `EditSubcommand::AddModule / RmModule / Config` 及对应 struct（`cli_args.rs`）
 - `handle_add_module / handle_rm_module / handle_config` 函数体（`edit.rs`）
 - `command_echo.rs` 中 `edit_name` 和 `push_edit` 两处 match 的三个变体
 
 **保留**（被 `config.rs` 和单元测试引用）:
+
 - `pub(crate) fn parse_semver_value` — semver 字符串解析
 - `pub(crate) fn bump_semver_value` — patch/minor/major 递增
 
 **文档更新**:
+
 - `docs/run/agent-advanced.md` "模块和配置" 章节、快速参考示例 → 全部改为 `cr config` 命令
 - `docs/CalcitAgent.md` 第 9 节"cr 能力地图" → 新增"配置管理"条目
 
