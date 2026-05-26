@@ -6,6 +6,7 @@ use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node
 use super::common::{emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup};
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
+use calcit::calcit::DYNAMIC_TYPE;
 use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
@@ -16,6 +17,7 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::edit::navigate_to_path;
 
@@ -34,6 +36,104 @@ struct SearchCommonOpts<'a> {
 }
 
 const DETAILED_RESULTS_WINDOW: usize = 3;
+
+struct SpecialBuiltinQueryMeta {
+  doc: &'static str,
+  schema: Arc<CalcitTypeAnnotation>,
+  examples: Vec<Cirru>,
+  expr_preview: &'static str,
+  cirru_note: &'static str,
+}
+
+fn special_builtin_dynamic_fn(arg_types: Vec<Arc<CalcitTypeAnnotation>>) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::from_function_parts(arg_types, DYNAMIC_TYPE.clone()))
+}
+
+fn parse_special_builtin_examples(snippets: &[&str]) -> Result<Vec<Cirru>, String> {
+  let mut examples = Vec::with_capacity(snippets.len());
+  for snippet in snippets {
+    let parsed = cirru_parser::parse(snippet).map_err(|e| format!("Failed to parse builtin example `{snippet}`: {e}"))?;
+    let Some(example) = parsed.into_iter().next() else {
+      return Err(format!("Builtin example is empty: {snippet}"));
+    };
+    examples.push(example);
+  }
+  Ok(examples)
+}
+
+fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Result<Option<SpecialBuiltinQueryMeta>, String> {
+  if namespace != calcit::calcit::CORE_NS {
+    return Ok(None);
+  }
+
+  let meta = match definition {
+    "to-calcit-data" => Some(SpecialBuiltinQueryMeta {
+      doc: "convert JS arrays and plain objects into Calcit data recursively",
+      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      examples: parse_special_builtin_examples(&[
+        "to-calcit-data $ js-array 1 ([] 2 3) (:: :quote $ [] 'a 'b)",
+        "to-calcit-data $ &js-object |a 1 |:b 2 :c ([] 3 4)",
+      ])?,
+      expr_preview: "builtin proc to-calcit-data (JS interop helper)",
+      cirru_note: "(builtin proc; runtime helper without snapshot source)",
+    }),
+    "to-js-data" => Some(SpecialBuiltinQueryMeta {
+      doc: "convert Calcit data into JS-compatible arrays and plain objects recursively",
+      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      examples: parse_special_builtin_examples(&["to-js-data $ [] 1 2 3", "to-js-data $ &{} |a 1 :b ([] 2 3)"])?,
+      expr_preview: "builtin proc to-js-data (JS interop helper)",
+      cirru_note: "(builtin proc; runtime helper without snapshot source)",
+    }),
+    "to-cirru-edn" => Some(SpecialBuiltinQueryMeta {
+      doc: "convert Calcit data into Cirru EDN data",
+      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      examples: vec![],
+      expr_preview: "builtin proc to-cirru-edn (data conversion helper)",
+      cirru_note: "(builtin proc; runtime helper without snapshot source)",
+    }),
+    "extract-cirru-edn" => Some(SpecialBuiltinQueryMeta {
+      doc: "extract Cirru EDN data into regular Calcit values when possible",
+      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      examples: vec![],
+      expr_preview: "builtin proc extract-cirru-edn (data conversion helper)",
+      cirru_note: "(builtin proc; runtime helper without snapshot source)",
+    }),
+    "js-array" => Some(SpecialBuiltinQueryMeta {
+      doc: "build a JS array value in JS interop contexts",
+      schema: special_builtin_dynamic_fn(vec![Arc::new(CalcitTypeAnnotation::Variadic(DYNAMIC_TYPE.clone()))]),
+      examples: vec![],
+      expr_preview: "builtin proc js-array (JS interop helper)",
+      cirru_note: "(builtin proc; runtime helper without snapshot source)",
+    }),
+    "&js-object" => Some(SpecialBuiltinQueryMeta {
+      doc: "build a plain JS object value in JS interop contexts",
+      schema: special_builtin_dynamic_fn(vec![Arc::new(CalcitTypeAnnotation::Variadic(DYNAMIC_TYPE.clone()))]),
+      examples: vec![],
+      expr_preview: "builtin proc &js-object (JS interop helper)",
+      cirru_note: "(builtin proc; runtime helper without snapshot source)",
+    }),
+    _ => None,
+  };
+
+  Ok(meta)
+}
+
+fn format_query_schema(annotation: &CalcitTypeAnnotation, wrapped: bool) -> String {
+  match annotation {
+    CalcitTypeAnnotation::Fn(fn_annot) => {
+      let schema_edn = if wrapped {
+        fn_annot.to_wrapped_schema_edn()
+      } else {
+        fn_annot.to_schema_edn()
+      };
+      match snapshot::schema_edn_to_cirru(&schema_edn) {
+        Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
+        Err(e) => format!("(schema error: {e})"),
+      }
+    }
+    _ => "(none)".to_string(),
+  }
+}
 
 fn detailed_window(detail_offset: usize, total: usize) -> (usize, usize) {
   if total == 0 {
@@ -651,6 +751,44 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  if !file_data.defs.contains_key(definition)
+    && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
+  {
+    let mut out = String::new();
+    let _ = writeln!(&mut out, "{} {}", "Type:".bold(), meta.expr_preview);
+    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), meta.doc);
+    let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), meta.examples.len());
+    let _ = writeln!(&mut out, "\n{}", "Schema:".bold());
+    let _ = writeln!(&mut out, "{}", format_query_schema(meta.schema.as_ref(), true));
+    let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
+    let _ = writeln!(&mut out, "{}", meta.cirru_note.dimmed());
+
+    if opts.json {
+      let _ = writeln!(&mut out, "\n{}", "JSON:".bold());
+      let _ = writeln!(
+        &mut out,
+        "{}",
+        serde_json::json!({
+          "doc": meta.doc,
+          "examples": meta.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
+          "code": serde_json::Value::Null,
+          "schema": cirru_to_json(&snapshot::schema_edn_to_cirru(
+            &meta
+              .schema
+              .as_function()
+              .map(|annot| annot.to_schema_edn())
+              .unwrap_or(cirru_edn::Edn::Nil)
+          ).unwrap_or_else(|_| Cirru::Leaf(Arc::from("nil")))),
+          "builtin": true,
+          "kind": "special-proc"
+        })
+      );
+    }
+
+    emit_cli_output(&out, false);
+    return Ok(());
+  }
+
   let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
   let render_to_stderr = lookup.warning.is_some();
   if let Some(warning) = lookup.warning.as_deref() {
@@ -756,6 +894,36 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  if !file_data.defs.contains_key(definition)
+    && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
+  {
+    let mut out = String::new();
+
+    if meta.examples.is_empty() {
+      let _ = writeln!(&mut out, "\n{}", "(no examples)".dimmed());
+    } else {
+      let _ = writeln!(&mut out, "{} example(s)\n", meta.examples.len());
+
+      for (i, example) in meta.examples.iter().enumerate() {
+        let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
+        let cirru_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+        for line in cirru_str.lines().filter(|line| !line.trim().is_empty()) {
+          let _ = writeln!(&mut out, "  {line}");
+        }
+        let _ = writeln!(
+          &mut out,
+          "  {} {}",
+          "JSON:".dimmed(),
+          serde_json::to_string(&cirru_to_json(example)).unwrap().dimmed()
+        );
+        let _ = writeln!(&mut out);
+      }
+    }
+
+    emit_cli_output(&out, false);
+    return Ok(());
+  }
+
   let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
   let render_to_stderr = lookup.warning.is_some();
   if let Some(warning) = lookup.warning.as_deref() {
@@ -806,6 +974,23 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
     .files
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  if !file_data.defs.contains_key(definition)
+    && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
+  {
+    let mut out = String::new();
+    let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), meta.doc);
+    let _ = writeln!(&mut out, "{} {}", "Expr:".bold(), meta.expr_preview.dimmed());
+    let _ = writeln!(&mut out, "{} {}", "Examples:".bold(), meta.examples.len());
+    let _ = writeln!(
+      &mut out,
+      "{} {}",
+      "Schema:".bold(),
+      format_query_schema(meta.schema.as_ref(), true).replace('\n', " ").dimmed()
+    );
+    emit_cli_output(&out, false);
+    return Ok(());
+  }
 
   let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
   let render_to_stderr = lookup.warning.is_some();
@@ -875,6 +1060,29 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
     .files
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  if !file_data.defs.contains_key(definition)
+    && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
+  {
+    let mut out = String::new();
+    if json {
+      let schema_edn = meta
+        .schema
+        .as_function()
+        .map(|annot| annot.to_schema_edn())
+        .unwrap_or(cirru_edn::Edn::Nil);
+      let _ = writeln!(&mut out, "{}", cirru_edn::format(&schema_edn, true)?);
+    } else {
+      let _ = writeln!(
+        &mut out,
+        "{} {}",
+        "Schema:".bold(),
+        format_query_schema(meta.schema.as_ref(), true).replace('\n', " ").dimmed()
+      );
+    }
+    emit_cli_output(&out, false);
+    return Ok(());
+  }
 
   let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), true)?;
   let render_to_stderr = lookup.warning.is_some();

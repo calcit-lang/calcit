@@ -75,7 +75,13 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let subcommand = cli_args.subcommand.as_ref()?;
   let mut tokens = vec![match subcommand {
     CalcitCommand::Query(cmd) => format!("cr query {}", query_name(&cmd.subcommand)),
-    CalcitCommand::Docs(cmd) => format!("cr docs {}", docs_name(&cmd.subcommand)),
+    CalcitCommand::Docs(cmd) => match &cmd.subcommand {
+      DocsSubcommand::RemoteLibs(opts) => match opts.subcommand.as_ref() {
+        Some(subcommand) => format!("cr docs remote-libs {}", libs_name(subcommand)),
+        None => "cr docs remote-libs".to_string(),
+      },
+      other => format!("cr docs {}", docs_name(other)),
+    },
     CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("cr edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("cr tree {}", tree_name(&cmd.subcommand)),
@@ -158,13 +164,25 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
 
 fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
   match &cmd.subcommand {
+    DocsSubcommand::Scopes(_) => {}
+    DocsSubcommand::RemoteLibs(opts) => {
+      if let Some(subcommand) = opts.subcommand.as_ref() {
+        push_libs(tokens, subcommand);
+      }
+    }
     DocsSubcommand::Search(opts) => echo_items!(
       tokens,
       pos "keyword" => &opts.keyword,
       value "context" => opts.context; default "5",
       opt "filename" => opts.filename.as_deref(); default "none",
-      opt "scope" => opts.scope.as_deref(); default "none",
       opt "module" => opts.module.as_deref(); default "none"
+    ),
+    DocsSubcommand::List(opts) => echo_items!(tokens, opt "module" => opts.module.as_deref(); default "none"),
+    DocsSubcommand::Sections(opts) => echo_items!(
+      tokens,
+      pos "filename" => &opts.filename,
+      opt "module" => opts.module.as_deref(); default "none",
+      switch "with-lines" => opts.with_lines
     ),
     DocsSubcommand::Read(opts) => echo_items!(
       tokens,
@@ -173,7 +191,6 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       switch "no-subheadings" => opts.no_subheadings,
       switch "full" => opts.full,
       switch "with-lines" => opts.with_lines,
-      opt "scope" => opts.scope.as_deref(); default "none",
       opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::Agents(opts) => echo_items!(
@@ -189,10 +206,8 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       pos "filename" => &opts.filename,
       value "start" => opts.start; default "0",
       value "lines" => opts.lines; default "80",
-      opt "scope" => opts.scope.as_deref(); default "none",
       opt "module" => opts.module.as_deref(); default "none"
     ),
-    DocsSubcommand::List(_) => {}
     DocsSubcommand::CheckMd(opts) => {
       echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "demos/calcit.cirru", list "dep" => &opts.dep)
     }
@@ -516,11 +531,14 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
 
 fn docs_name(subcommand: &DocsSubcommand) -> &'static str {
   match subcommand {
+    DocsSubcommand::Scopes(_) => "scopes",
+    DocsSubcommand::RemoteLibs(_) => "remote-libs",
     DocsSubcommand::Search(_) => "search",
+    DocsSubcommand::List(_) => "list",
+    DocsSubcommand::Sections(_) => "sections",
     DocsSubcommand::Read(_) => "read",
     DocsSubcommand::Agents(_) => "agents",
     DocsSubcommand::ReadLines(_) => "read-lines",
-    DocsSubcommand::List(_) => "list",
     DocsSubcommand::CheckMd(_) => "check-md",
   }
 }

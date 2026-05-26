@@ -138,24 +138,19 @@ Examples:
 
 ## Search Behavior
 
-`cr docs search` now supports 3 scopes:
-
-- `--scope core`
-- `--scope modules`
-- `--scope all`
-
-It also supports narrowing to one installed module:
+`cr docs search` defaults to built-in `calcit` docs and supports narrowing to one installed module:
 
 ```bash
 cr docs search render --module respo.calcit
 ```
 
-When `--module` is provided without `--scope`, the default scope becomes `modules`.
-Without both flags, the default scope stays `core`.
-
 ## Read Behavior
 
-`cr docs read` now uses the same document resolver style as `search`.
+`cr docs list` lists files in the current doc scope.
+
+`cr docs sections <file>` lists headings in one file.
+
+`cr docs read` uses the same document resolver style as `search`.
 
 `cr docs read-lines` uses the same resolver too.
 
@@ -167,14 +162,14 @@ It can resolve a page by:
 - frontmatter `aliases`
 - frontmatter `entry_for`
 
-It also supports:
-
-- `--scope core|modules|all`
-- `--module <name>`
+It also supports narrowing to one module with `--module <name>`.
 
 Examples:
 
 ```bash
+cr docs scopes
+cr docs list
+cr docs sections target-replace
 cr docs read target-replace
 cr docs read "CLI Code Editing"
 cr docs read Respo-Agent --module respo.calcit

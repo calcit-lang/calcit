@@ -41,7 +41,12 @@ cr query ns calcit.core
 ```bash
 # Show full source code of a definition
 cr query def calcit.core/assoc
+
+# Builtin helpers without snapshot source still return metadata
+cr query def calcit.core/to-js-data
 ```
+
+For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
 ### Peek Signature (`peek`)
 
@@ -55,6 +60,9 @@ cr query peek calcit.core/map
 ```bash
 # Extract only the examples section
 cr query examples calcit.core/let
+
+# Builtin helpers can also expose curated examples when available
+cr query examples calcit.core/to-js-data
 ```
 
 ### Find Symbol (`find`)

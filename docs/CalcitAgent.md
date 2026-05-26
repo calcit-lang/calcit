@@ -30,6 +30,10 @@ entry_for:
 - 比较调用图变化：`cr analyze call-graph-diff <git-ref>`（标注新增/删除/变更的调用关系）
 - 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
 - 看进阶手册全文：`cr docs read agent-advanced.md --full`
+- 先看可查文档范围：`cr docs scopes`
+- 查某个模块的文档目录：`cr docs list --module <module-name>`
+- 看某个文件有哪些章节：`cr docs sections <file> [--module <module-name>]`
+- 查远程库 README / registry：`cr docs remote-libs search <keyword>` / `cr docs remote-libs readme <package>`
 
 补充：仓库文件路径是 `docs/run/agent-advanced.md`，用 `cr docs read` 查询时文件名参数写 `agent-advanced.md`。
 
@@ -485,7 +489,10 @@ cr js
 - 复杂重构 / 大规模替换 / rewrite 组合：`cr docs read agent-advanced.md rewrite`
 - 命名空间导入、输入格式与路径漂移陷阱：`cr docs read agent-advanced.md 命名空间`、`cr docs read agent-advanced.md 输入格式`
 - 运行模式、eval 细节、CLI 约束：`Agents.md`
-- 浏览所有可查文档：`cr docs list`
+- 浏览可查 scope：`cr docs scopes`
+- 浏览 calcit 文档文件：`cr docs list`
+- 浏览某个模块文档：`cr docs list --module <module-name>`
+- 浏览文件章节：`cr docs sections <file> [--module <module-name>]`
 - 语言章节与 Cirru 语法细节：`cr docs read <file>` / `cr cirru show-guide`
 
 ---
@@ -506,13 +513,17 @@ cr js
 - 结构化编辑：`cr tree show/replace/target-replace/cp/wrap/unwrap/raise/rewrite`
 - 定义级编辑：`cr edit mv/def/add-import/imports/...`
 - 配置管理：`cr config show/modules/version/set/add-module/rm-module`
-- 文档与指南：`cr docs list/read/search/agents`
+- 文档与指南：`cr docs scopes/list/sections/read/search/agents`
 - 语法学习：`cr cirru show-guide`
 
 ### Agent 自学习最短路径
 
 ```bash
+cr docs scopes
 cr docs list
+cr docs list --module respo.calcit
+cr docs sections agent-advanced.md
+cr docs remote-libs search respo
 cr analyze call-graph
 cr analyze count-calls
 cr analyze program-diff HEAD~1          # 对比当前快照与上一 commit 的结构差异（AST tree-diff）

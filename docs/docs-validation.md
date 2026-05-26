@@ -38,16 +38,9 @@ cr docs search calcit.cirru
 
 ```bash
 cr docs search render --module respo.calcit
-cr docs search clear-cache --scope modules
+cr docs search clear-cache --module respo.calcit
 cr docs search defstyle --module respo.calcit
 cr docs search hook --module respo.calcit
-```
-
-## Cross-scope Checks
-
-```bash
-cr docs search render --scope all
-cr docs search agents --scope all
 ```
 
 ## Ranking Checks
@@ -77,7 +70,7 @@ cr docs agents
 
 # Module Agents and module docs should both participate in ranking
 cr docs search render --module respo.calcit
-cr docs search clear-cache --scope modules
+cr docs search clear-cache --module respo.calcit
 ```
 
 ## Read Checks

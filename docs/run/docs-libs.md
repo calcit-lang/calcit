@@ -13,22 +13,28 @@ entry_for:
   - "cr docs search"
   - "cr docs read"
   - "cr docs read-lines"
-  - "cr libs scan-md"
+  - "cr docs remote-libs scan-md"
 ---
 
 # Documentation & Libraries
 
-Calcit includes built-in commands to navigate the language guidebook and discover community libraries.
+Calcit includes built-in commands to navigate the language guidebook, installed module docs, and discover community libraries.
 
 ## Guidebook Access (`docs`)
 
-The `docs` subcommand allows you to read the language guidebook (like this one) without leaving the terminal.
+The `docs` subcommand uses a progressive disclosure flow: scope -> file -> sections -> content. Scope is either built-in `calcit` docs or one installed module selected with `--module`.
 
 ### Reading Chapters
 
 ```bash
-# List all chapters in the guidebook
+# List available documentation scopes first
+cr docs scopes
+
+# List all chapters in the built-in calcit guidebook
 cr docs list
+
+# List docs from one installed module
+cr docs list --module respo.calcit
 
 # Read the local Agent guide (frontmatter, if present, is hidden automatically)
 cr docs agents
@@ -41,7 +47,7 @@ cr docs read target-replace
 cr docs read "CLI Code Editing"
 
 # List headings in a file (best first step before narrowing)
-cr docs read run.md
+cr docs sections run.md
 
 # Jump by heading keyword(s)
 cr docs read run.md quick start
@@ -51,11 +57,14 @@ cr docs search "polymorphism"
 
 # Search installed module docs only
 cr docs search render --module respo.calcit
+
+# Read a specific installed module doc directly
+cr docs read Respo-Agent --module respo.calcit
 ```
 
 ### Advanced Navigation (`read`)
 
-`cr docs read` supports fuzzy heading matching to jump straight to a section:
+`cr docs read` supports fuzzy heading matching to jump straight to a section, while `cr docs sections` is the dedicated heading discovery step:
 
 ```bash
 # Display the "Quick start" section of run.md
@@ -78,14 +87,9 @@ cr docs read-lines target-replace --start 48 --lines 8
 
 # Read a module document by title/alias with the same resolver
 cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
-```
 
-## Fast Navigation Patterns
-
-### Pattern 1: Discover headings first, then narrow
-
-```bash
-cr docs read query.md
+# Discover headings first, then narrow
+cr docs sections query.md
 cr docs read query.md usages
 ```
 
@@ -99,12 +103,6 @@ cr docs read traits.md
 ### Pattern 3: Search by documentation scope
 
 ```bash
-# Search only the built-in guidebook
-cr docs search hot-swapping --scope core
-
-# Search installed modules
-cr docs search clear-cache --scope modules
-
 # Search one installed module directly
 cr docs search defstyle --module respo.calcit
 
@@ -115,15 +113,15 @@ cr docs search render --module respo.calcit
 cr docs read Respo-Agent --module respo.calcit
 ```
 
-## Library Discovery (`libs`)
+## Library Discovery (`docs remote-libs`)
 
-The `libs` subcommand helps you find and understand Calcit modules.
+Use `cr docs remote-libs` for package registry discovery and package README retrieval. If you are querying calcit/module docs content, stay under `cr docs ...`.
 
 ### Searching Registry
 
 ```bash
 # Search for libraries related to "web"
-cr libs search web
+cr docs remote-libs search web
 ```
 
 ### Reading Readmes
@@ -132,17 +130,20 @@ You can read the documentation of any official library, even if not installed lo
 
 ```bash
 # Show README of 'respo' module
-cr libs readme respo
+cr docs remote-libs readme respo
 
 # Read a specific markdown file inside package
-cr libs readme respo -f Skills.md
+cr docs remote-libs readme respo -f Skills.md
 ```
 
-### Scanning for Documentation
+### Low-Level File Listing
 
 ```bash
-# List all markdown files inside the local 'memof' module
-cr libs scan-md memof
+# Prefer `cr docs list --module memof` for installed module docs
+cr docs list --module memof
+
+# `cr docs remote-libs scan-md` remains available as a low-level compatibility shortcut
+cr docs remote-libs scan-md memof
 ```
 
 ## Collaborative validation (`check-md`)

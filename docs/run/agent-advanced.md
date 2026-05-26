@@ -246,26 +246,31 @@ Calcit 程序使用 `cr` 命令：
 
 ### 文档子命令 (`cr docs`)
 
-查询 Calcit 语言文档（guidebook）：
+文档查询采用渐进披露的四层路径：scope -> file -> sections -> content。
 
-- `cr docs search <keyword> [-c <num>] [-f <filename>]` - 按关键词搜索文档内容
+- `cr docs scopes` - 列出可查 scope（`calcit` 与已安装模块目录名）
+- `cr docs list [--module <name>]` - 列出当前 scope 下的文档文件
+- `cr docs sections <filename> [--module <name>]` - 列出某个文件中的章节标题
+- `cr docs read <filename> [<heading> ...] [--module <name>]` - 读取整份文档，或按标题关键词跳到章节
+
+- `cr docs search <keyword> [-c <num>] [-f <filename>] [--module <name>]` - 按关键词搜索文档内容
   - `-c <num>` - 显示匹配行的上下文行数（默认 5）
   - `-f <filename>` - 按文件名过滤搜索结果
+  - `--module <name>` - 搜索某个已安装模块文档
   - 输出：匹配行及其上下文，带行号和高亮
   - 示例：`cr docs search 'macro' -c 10` 或 `cr docs search 'defn' -f macros.md`
 
-- `cr docs read <filename> [<heading> ...]` - 按 Markdown 标题阅读文档
-  - 不传标题时：列出文档内所有标题
+- `cr docs read <filename> [<heading> ...] [--module <name>]` - 按 Markdown 标题阅读文档
+  - 不传标题时：读取整份文档内容
   - 传入一个或多个标题关键词时：按标题做模糊匹配并输出对应章节内容
-  - 示例：`cr docs read macros.md` 或 `cr docs read run.md eval options`
+  - 示例：`cr docs read macros.md`、`cr docs read Respo-Agent --module respo.calcit`
 
-- `cr docs read-lines <filename> [-s <start>] [-n <lines>]` - 按行读取文档（兼容旧行为）
+- `cr docs read-lines <filename> [-s <start>] [-n <lines>] [--module <name>]` - 按行读取文档（兼容旧行为）
   - `-s <start>` - 起始行号（默认 0）
   - `-n <lines>` - 读取行数（默认 80）
   - 输出：文档内容、当前范围、是否有更多内容
   - 示例：`cr docs read-lines intro.md -s 20 -n 30`
 
-- `cr docs list` - 列出所有可用文档
 - `cr docs agents [<heading> ...] [--full]` - 读取 Agent 指南（即本文档，优先本地缓存，按天自动刷新）
   - 不传标题时列出所有标题；传关键词时按标题模糊匹配输出对应章节
 
@@ -275,20 +280,19 @@ Calcit 程序使用 `cr` 命令：
 
 若缩进结构不确定，先执行 `cr cirru parse '<cirru_code>'` 预检 AST/JSON，再继续 `cr tree` 或 `cr edit` 修改。
 
-### 库管理 (`cr libs`)
+### 远程库文档 (`cr docs remote-libs`)
 
 查询和了解 Calcit 官方库：
 
-- `cr libs` - 列出所有官方库
-- `cr libs search <keyword>` - 按关键词搜索库（搜索名称、描述、分类）
-- `cr libs readme <package> [-f <file>]` - 查看库的文档
+- `cr docs remote-libs` - 列出所有官方库
+- `cr docs remote-libs search <keyword>` - 按关键词搜索库（搜索名称、描述、分类）
+- `cr docs remote-libs readme <package> [-f <file>]` - 查看库的文档
   - 优先从本地 `~/.config/calcit/modules/<package>` 读取
   - 本地不存在时从 GitHub 仓库获取
   - `-f` 参数可指定其他文档文件（如 `-f Skills.md`）
   - 默认读取 `README.md`
-- `cr libs scan-md <module>` - 扫描本地模块目录下的所有 `.md` 文件
-  - 递归扫描子目录
-  - 显示相对路径列表
+- 模块文档查询统一优先使用 `cr docs scopes/list/sections/read/search ...`
+- `cr docs remote-libs scan-md <module>` - 兼容性低层入口，按目录扫描本地模块下的 `.md` 文件
 - `caps` - 安装/更新依赖（默认读取 `deps.cirru`，也可传自定义文件路径）
   - 独立工具（非 `cr` 子命令）
   - `caps`：按 `deps.cirru` 当前依赖执行更新
@@ -993,10 +997,13 @@ cr        # 或 cr js
 
 - `cr docs search <keyword>` - 搜索 Calcit 教程内容
 - `cr docs agents [<heading> ...] [--full]` - 读取 Agent 指南（优先本地缓存，按天自动刷新）
-- `cr docs read <filename> [<heading> ...]` - 按标题查看章节（不传标题时列标题）
+- `cr docs scopes` - 查看可查 scope
+- `cr docs list [--module <name>]` - 查看当前 scope 的文档文件
+- `cr docs sections <filename> [--module <name>]` - 查看章节标题
+- `cr docs read <filename> [<heading> ...]` - 读取整份文档或按标题查看章节
 - `cr docs read <filename> --full` - 直接读取整份文档内容
 - `cr docs read-lines <filename> -s <start> -n <lines>` - 按行读取文档
-- `cr docs list` - 查看所有可用文档
+- `cr docs remote-libs [search|readme|scan-md]` - 访问远程库 registry/README
 - `cr query ns <ns>` - 查看命名空间说明和函数文档
 - `cr query peek <ns/def>` - 快速查看定义签名
 - `cr query def <ns/def>` - 读取完整语法树

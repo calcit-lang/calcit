@@ -1,6 +1,6 @@
 use super::{
-  DocsSearchScope, GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_search_results, find_doc_by_query, load_module_docs_from_dir,
-  parse_doc_frontmatter, resolve_search_scope, score_doc_query, score_doc_shape, validate_doc_frontmatter,
+  GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_docs_for_query, collect_search_results, find_doc_by_query,
+  load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -19,20 +19,9 @@ fn write_file(path: &Path, content: &str) {
 }
 
 #[test]
-fn resolve_scope_defaults_to_core_without_module() {
-  assert_eq!(resolve_search_scope(None, None).unwrap(), DocsSearchScope::Core);
-}
-
-#[test]
-fn resolve_scope_defaults_to_modules_with_module_filter() {
-  assert_eq!(resolve_search_scope(None, Some("respo.calcit")).unwrap(), DocsSearchScope::Modules);
-}
-
-#[test]
-fn resolve_scope_accepts_all_variants() {
-  assert_eq!(resolve_search_scope(Some("core"), None).unwrap(), DocsSearchScope::Core);
-  assert_eq!(resolve_search_scope(Some("modules"), None).unwrap(), DocsSearchScope::Modules);
-  assert_eq!(resolve_search_scope(Some("all"), None).unwrap(), DocsSearchScope::All);
+fn collect_docs_for_query_uses_guidebook_without_module() {
+  let err = collect_docs_for_query(None).unwrap_err();
+  assert!(err.contains("Guidebook documentation directory not found") || err.contains("Failed to read directory"));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Docs subcommand handlers
 //!
-//! Handles: cr docs search, read, read-lines, list
+//! Handles: cr docs scopes, search, list, sections, read, read-lines
 
 use calcit::cli_args::{DocsCommand, DocsSubcommand};
 use colored::Colorize;
@@ -20,6 +20,7 @@ use calcit::runner;
 use calcit::snapshot;
 use calcit::util;
 
+use super::libs::handle_libs_command;
 use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
 use super::tips::command_guidance_enabled;
 
@@ -59,13 +60,6 @@ struct GuideDocFrontmatter {
 enum GuideDocScope {
   Core,
   Module(String),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DocsSearchScope {
-  Core,
-  Modules,
-  All,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,31 +124,23 @@ struct ReadRenderOptions<'a> {
 
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
-    DocsSubcommand::Search(opts) => handle_search(
-      &opts.keyword,
-      opts.context,
-      opts.filename.as_deref(),
-      opts.scope.as_deref(),
-      opts.module.as_deref(),
-    ),
+    DocsSubcommand::Scopes(_) => handle_scopes(),
+    DocsSubcommand::RemoteLibs(opts) => handle_libs_command(&calcit::cli_args::LibsCommand {
+      subcommand: opts.subcommand.clone(),
+    }),
+    DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref(), opts.module.as_deref()),
+    DocsSubcommand::List(opts) => handle_list(opts.module.as_deref()),
+    DocsSubcommand::Sections(opts) => handle_sections(&opts.filename, opts.module.as_deref(), opts.with_lines),
     DocsSubcommand::Read(opts) => handle_read(
       &opts.filename,
       &opts.headings,
       !opts.no_subheadings,
       opts.full,
       opts.with_lines,
-      opts.scope.as_deref(),
       opts.module.as_deref(),
     ),
     DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
-    DocsSubcommand::ReadLines(opts) => handle_read_lines(
-      &opts.filename,
-      opts.start,
-      opts.lines,
-      opts.scope.as_deref(),
-      opts.module.as_deref(),
-    ),
-    DocsSubcommand::List(_) => handle_list(),
+    DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
   }
 }
@@ -388,6 +374,9 @@ fn visit_markdown_dir(dir: &Path, base_dir: &Path, docs: &mut Vec<GuideDoc>, sco
     let path = entry.path();
 
     if path.is_dir() {
+      if path.file_name().and_then(|s| s.to_str()).is_some_and(|name| name.starts_with('.')) {
+        continue;
+      }
       visit_markdown_dir(&path, base_dir, docs, scope)?;
     } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
       let raw_content = fs::read_to_string(&path).map_err(|e| format!("Failed to read file {path:?}: {e}"))?;
@@ -453,7 +442,7 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
   if let Some(filter) = module_filter {
     if !seen_modules.contains(filter) {
       return Err(format!(
-        "Module '{filter}' not found under {modules_dir:?}. Use 'cr libs scan-md <module>' or inspect ~/.config/calcit/modules/."
+        "Module '{filter}' not found under {modules_dir:?}. Use 'cr docs list --module <module>' or inspect ~/.config/calcit/modules/."
       ));
     }
   }
@@ -466,31 +455,37 @@ fn load_module_docs(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String
   load_module_docs_from_dir(&modules_dir, module_filter)
 }
 
-fn resolve_search_scope(scope: Option<&str>, module_filter: Option<&str>) -> Result<DocsSearchScope, String> {
-  match (scope, module_filter) {
-    (None, Some(_)) => Ok(DocsSearchScope::Modules),
-    (None, None) => Ok(DocsSearchScope::Core),
-    (Some(value), _) => match value {
-      "core" => Ok(DocsSearchScope::Core),
-      "modules" => Ok(DocsSearchScope::Modules),
-      "all" => Ok(DocsSearchScope::All),
-      other => Err(format!("Invalid docs search scope '{other}'. Use one of: core, modules, all.")),
-    },
-  }
-}
-
-fn collect_search_docs(scope: DocsSearchScope, module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
-  let mut docs = Vec::new();
-  match scope {
-    DocsSearchScope::Core => docs.extend(load_guidebook_docs()?),
-    DocsSearchScope::Modules => docs.extend(load_module_docs(module_filter)?),
-    DocsSearchScope::All => {
-      docs.extend(load_guidebook_docs()?);
-      docs.extend(load_module_docs(module_filter)?);
-    }
-  }
+fn collect_docs_for_query(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
+  let mut docs = if module_filter.is_some() {
+    load_module_docs(module_filter)?
+  } else {
+    load_guidebook_docs()?
+  };
   docs.sort_by(|a, b| a.path.cmp(&b.path));
   Ok(docs)
+}
+
+fn list_doc_scopes() -> Result<Vec<String>, String> {
+  let modules_dir = module_folder()?;
+  let mut scopes = vec!["calcit".to_string()];
+
+  for entry in fs::read_dir(&modules_dir).map_err(|e| format!("Failed to read modules directory {modules_dir:?}: {e}"))? {
+    let entry = entry.map_err(|e| format!("Failed to read modules directory entry: {e}"))?;
+    let path = entry.path();
+    if !path.is_dir() {
+      continue;
+    }
+
+    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+      if !name.starts_with('.') {
+        scopes.push(name.to_string());
+      }
+    }
+  }
+
+  scopes.sort();
+  scopes.dedup();
+  Ok(scopes)
 }
 
 fn score_metadata_hit(doc: &GuideDoc, keyword_lower: &str) -> (usize, bool) {
@@ -652,15 +647,35 @@ fn collect_search_results(
   results
 }
 
+fn handle_scopes() -> Result<(), String> {
+  let scopes = list_doc_scopes()?;
+
+  println!("{}", "Available Documentation Scopes:".bold());
+  println!("{}", "calcit".cyan().bold());
+
+  for scope in scopes.iter().filter(|scope| scope.as_str() != "calcit") {
+    println!("  {}", scope.cyan());
+  }
+
+  println!("\n{} {} scopes", "Total:".dimmed(), scopes.len());
+  if command_guidance_enabled() {
+    println!("{}", "Use 'cr docs list' to list guidebook files in calcit.".dimmed());
+    println!(
+      "{}",
+      "    Use 'cr docs list --module <module>' to list files in an installed module.".dimmed()
+    );
+  }
+
+  Ok(())
+}
+
 fn handle_search(
   keyword: &str,
   context_lines: usize,
   filename_filter: Option<&str>,
-  scope: Option<&str>,
   module_filter: Option<&str>,
 ) -> Result<(), String> {
-  let resolved_scope = resolve_search_scope(scope, module_filter)?;
-  let guide_docs = collect_search_docs(resolved_scope, module_filter)?;
+  let guide_docs = collect_docs_for_query(module_filter)?;
   let keyword_lower = keyword.to_lowercase();
 
   let results = collect_search_results(&guide_docs, &keyword_lower, context_lines, filename_filter);
@@ -698,15 +713,32 @@ fn handle_search(
         "     Use -f <filename> to filter by file (e.g., 'cr docs search <keyword> -f syntax.md')".dimmed()
       );
     }
-    if scope.is_none() {
+    if module_filter.is_none() {
       println!(
         "{}",
-        "     Use --scope modules|all or --module <name> to search installed module docs.".dimmed()
+        "     Use --module <name> to search one installed module instead of calcit docs.".dimmed()
       );
     }
   }
 
   Ok(())
+}
+
+fn handle_sections(filename: &str, module_filter: Option<&str>, with_lines: bool) -> Result<(), String> {
+  let guide_docs = collect_docs_for_query(module_filter)?;
+  let doc = find_doc_by_query(&guide_docs, filename)?;
+
+  handle_read_content(ReadRenderOptions {
+    display_title: &doc.display_title(),
+    display_path: &doc.path,
+    command_hint: "sections",
+    no_match_error: "No sections found in document.",
+    content: &doc.content,
+    heading_queries: &[],
+    include_subheadings: true,
+    full: false,
+    with_lines,
+  })
 }
 
 fn handle_agents(
@@ -758,27 +790,26 @@ fn handle_read(
   include_subheadings: bool,
   full: bool,
   with_lines: bool,
-  scope: Option<&str>,
   module_filter: Option<&str>,
 ) -> Result<(), String> {
-  let resolved_scope = resolve_search_scope(scope, module_filter)?;
-  let guide_docs = collect_search_docs(resolved_scope, module_filter)?;
+  let guide_docs = collect_docs_for_query(module_filter)?;
   let doc = find_doc_by_query(&guide_docs, filename)?;
+  let read_full = full || heading_queries.is_empty();
   let result = handle_read_content(ReadRenderOptions {
     display_title: &doc.display_title(),
     display_path: &doc.path,
     command_hint: "read",
-    no_match_error: "No heading matched in document.",
+    no_match_error: "No section matched in document.",
     content: &doc.content,
     heading_queries,
     include_subheadings,
-    full,
+    full: read_full,
     with_lines,
   });
 
   if result.is_err() && !heading_queries.is_empty() {
     return Err(format!(
-      "No heading matched: {}. Use 'cr docs read {filename}' to list available headings.",
+      "No section matched: {}. Use 'cr docs sections {filename}' to list available headings.",
       heading_queries.join(", ")
     ));
   }
@@ -786,15 +817,8 @@ fn handle_read(
   result
 }
 
-fn handle_read_lines(
-  filename: &str,
-  start: usize,
-  lines_to_read: usize,
-  scope: Option<&str>,
-  module_filter: Option<&str>,
-) -> Result<(), String> {
-  let resolved_scope = resolve_search_scope(scope, module_filter)?;
-  let guide_docs = collect_search_docs(resolved_scope, module_filter)?;
+fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_filter: Option<&str>) -> Result<(), String> {
+  let guide_docs = collect_docs_for_query(module_filter)?;
   let doc = find_doc_by_query(&guide_docs, filename)?;
 
   let all_lines: Vec<&str> = doc.content.lines().collect();
@@ -835,10 +859,14 @@ fn handle_read_lines(
   Ok(())
 }
 
-fn handle_list() -> Result<(), String> {
-  let guide_docs = load_guidebook_docs()?;
+fn handle_list(module_filter: Option<&str>) -> Result<(), String> {
+  let guide_docs = collect_docs_for_query(module_filter)?;
+  let header = match module_filter {
+    Some(module) => format!("Available Documentation Files for module {module}:"),
+    None => "Available Documentation Files for calcit:".to_string(),
+  };
 
-  println!("{}", "Available Guidebook Documentation:".bold());
+  println!("{}", header.bold());
 
   let mut docs: Vec<&GuideDoc> = guide_docs.iter().collect();
   docs.sort_by_key(|d| &d.path);
@@ -855,11 +883,12 @@ fn handle_list() -> Result<(), String> {
 
   println!("\n{} {} topics", "Total:".dimmed(), docs.len());
   if command_guidance_enabled() {
-    println!("{}", "Use 'cr docs read <filename>' to list headings in a document".dimmed());
+    println!("{}", "Use 'cr docs sections <filename>' to list headings in a document".dimmed());
     println!(
       "{}",
       "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
     );
+    println!("{}", "    'cr docs read <filename>' to read the full document".dimmed());
     println!(
       "{}",
       "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()

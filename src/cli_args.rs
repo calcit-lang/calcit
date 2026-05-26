@@ -70,11 +70,11 @@ pub enum CalcitCommand {
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
-  /// documentation tools (API docs, guidebook)
+  /// documentation tools for guidebook, installed module docs, and local markdown docs
   Docs(DocsCommand),
   /// Cirru syntax tools (parse, format)
   Cirru(CirruCommand),
-  /// fetch available Calcit libraries from registry
+  /// legacy alias for docs remote-libs
   Libs(LibsCommand),
   /// edit project code (definitions, namespaces, modules, configs)
   Edit(EditCommand),
@@ -279,7 +279,7 @@ pub struct ProgramDiffCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "query")]
-/// query project information (namespaces, definitions, configs)
+/// query project and builtin information (namespaces, definitions, configs)
 pub struct QueryCommand {
   #[argh(subcommand)]
   pub subcommand: QuerySubcommand,
@@ -375,7 +375,7 @@ pub struct QueryModulesCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "def")]
-/// read a definition's full code
+/// read a definition's full code, or builtin metadata when source is unavailable
 pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -399,7 +399,7 @@ pub struct QueryDefCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "peek")]
-/// peek definition signature without full body
+/// peek definition signature or builtin metadata without full body
 pub struct QueryPeekCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -408,7 +408,7 @@ pub struct QueryPeekCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "examples")]
-/// read examples of a definition
+/// read examples of a definition or builtin helper
 pub struct QueryExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -511,7 +511,7 @@ pub struct QuerySearchExprCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "docs")]
-/// documentation tools (guidebook)
+/// documentation tools for calcit guidebook and installed module docs
 pub struct DocsCommand {
   #[argh(subcommand)]
   pub subcommand: DocsSubcommand,
@@ -520,23 +520,42 @@ pub struct DocsCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
 pub enum DocsSubcommand {
-  /// search guidebook documentation by keyword
+  /// list available doc scopes (calcit and installed modules)
+  Scopes(DocsScopesCommand),
+  /// browse remote library registry and read remote library docs
+  RemoteLibs(DocsRemoteLibsCommand),
+  /// search calcit guidebook or installed module docs by keyword
   Search(DocsSearchCommand),
-  /// read markdown headings or sections by heading query
+  /// list available files in calcit guidebook or one installed module
+  List(DocsListCommand),
+  /// list markdown section headings in one file
+  Sections(DocsSectionsCommand),
+  /// read markdown content from calcit guidebook or one installed module
   Read(DocsReadCommand),
   /// read cached Agents guide (auto-refresh daily)
   Agents(DocsAgentsCommand),
-  /// read a specific line range from a guidebook document
+  /// read a specific line range from calcit guidebook or installed module docs
   ReadLines(DocsReadLinesCommand),
-  /// list all guidebook documentation topics
-  List(DocsListCommand),
   /// check ```cirru code blocks in a markdown file via eval
   CheckMd(DocsCheckMdCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "scopes")]
+/// list available doc scopes (calcit and installed modules)
+pub struct DocsScopesCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "remote-libs")]
+/// browse remote library registry and read remote library docs
+pub struct DocsRemoteLibsCommand {
+  #[argh(subcommand)]
+  pub subcommand: Option<LibsSubcommand>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "search")]
-/// search guidebook documentation by keyword
+/// search calcit guidebook by default, or switch to one installed module with --module
 pub struct DocsSearchCommand {
   /// keyword to search
   #[argh(positional)]
@@ -547,22 +566,43 @@ pub struct DocsSearchCommand {
   /// filter by filename (optional)
   #[argh(option, short = 'f')]
   pub filename: Option<String>,
-  /// search scope: core, modules, or all (default: core; with --module defaults to modules)
-  #[argh(option)]
-  pub scope: Option<String>,
   /// search docs for a specific installed module (e.g. respo.calcit)
   #[argh(option)]
   pub module: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "list")]
+/// list available files in calcit guidebook or one installed module
+pub struct DocsListCommand {
+  /// limit listing to one installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "sections")]
+/// list markdown section headings in one file
+pub struct DocsSectionsCommand {
+  /// filename to inspect (e.g., "intro.md")
+  #[argh(positional)]
+  pub filename: String,
+  /// read docs from a specific installed module (e.g. respo.calcit)
+  #[argh(option)]
+  pub module: Option<String>,
+  /// show line numbers in section titles
+  #[argh(switch)]
+  pub with_lines: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "read")]
-/// read markdown headings or sections by heading query
+/// read markdown content from calcit guidebook by default, or from one installed module with --module
 pub struct DocsReadCommand {
   /// filename to read (e.g., "syntax.md")
   #[argh(positional)]
   pub filename: String,
-  /// heading keyword(s) for fuzzy match, can pass multiple; if omitted, list all markdown headings
+  /// optional section heading keyword(s) for fuzzy match, can pass multiple; omit to read full file
   #[argh(positional)]
   pub headings: Vec<String>,
   /// do not include nested subheadings when showing matched parent heading content
@@ -574,9 +614,6 @@ pub struct DocsReadCommand {
   /// show line numbers in heading list and section titles
   #[argh(switch)]
   pub with_lines: bool,
-  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
-  #[argh(option)]
-  pub scope: Option<String>,
   /// read docs from a specific installed module (e.g. respo.calcit)
   #[argh(option)]
   pub module: Option<String>,
@@ -605,7 +642,7 @@ pub struct DocsAgentsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "read-lines")]
-/// read a specific line range from a guidebook document
+/// read a specific line range from calcit guidebook by default, or from one installed module with --module
 pub struct DocsReadLinesCommand {
   /// filename to read (e.g., "syntax.md")
   #[argh(positional)]
@@ -616,18 +653,10 @@ pub struct DocsReadLinesCommand {
   /// number of lines to read (default: 80)
   #[argh(option, short = 'n', default = "80")]
   pub lines: usize,
-  /// read scope: core, modules, or all (default: core; with --module defaults to modules)
-  #[argh(option)]
-  pub scope: Option<String>,
   /// read docs from a specific installed module (e.g. respo.calcit)
   #[argh(option)]
   pub module: Option<String>,
 }
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "list")]
-/// list all guidebook documentation topics
-pub struct DocsListCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "check-md")]
@@ -713,7 +742,7 @@ pub struct CirruShowGuideCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "libs")]
-/// fetch available Calcit libraries from registry
+/// legacy alias for docs remote-libs
 pub struct LibsCommand {
   #[argh(subcommand)]
   pub subcommand: Option<LibsSubcommand>,
@@ -768,7 +797,7 @@ pub struct LibsSearchCommand {
 /// scan markdown files in a module directory
 pub struct LibsScanMdCommand {
   /// module name to scan
-  #[argh(positional)]
+  #[argh(positional, default = "String::new()")]
   pub module: String,
 }
 
@@ -886,7 +915,7 @@ pub struct EditRmDefCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "doc")]
-/// update definition documentation
+/// documentation tools for guidebook, installed module docs, and local markdown docs
 pub struct EditDocCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
