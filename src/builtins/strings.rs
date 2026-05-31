@@ -301,7 +301,7 @@ pub fn parse_float(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match s.parse::<f64>() {
       Ok(n) => Ok(Calcit::Number(n)),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("parse-float failed: {e}")),
+      Err(_) => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-float expected 1 string, but received: {a}")),
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "parse-float expected 1 argument, but received none"),

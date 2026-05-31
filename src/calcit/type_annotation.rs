@@ -265,6 +265,23 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  fn bind_declared_generics_from_applied_args(
+    declared_generics: &[Arc<str>],
+    applied_args: &[Arc<CalcitTypeAnnotation>],
+    bindings: &mut TypeBindings,
+  ) -> bool {
+    for (idx, arg) in applied_args.iter().enumerate() {
+      let Some(var_name) = declared_generics.get(idx) else {
+        return false;
+      };
+      let var = Arc::new(CalcitTypeAnnotation::TypeVar(var_name.to_owned()));
+      if !arg.matches_with_bindings(var.as_ref(), bindings) {
+        return false;
+      }
+    }
+    true
+  }
+
   pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
     match self {
       Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Variadic(inner) | Self::Optional(inner) => {
@@ -2055,14 +2072,18 @@ impl CalcitTypeAnnotation {
         if !Self::type_ref_name_matches(name, base.name.ref_str()) {
           return false;
         }
-        if args.is_empty() || other_args.is_empty() {
-          return true;
+        match (args.is_empty(), other_args.is_empty()) {
+          (true, true) => true,
+          (false, false) => {
+            args.len() == other_args.len()
+              && args
+                .iter()
+                .zip(other_args.iter())
+                .all(|(x, y)| x.matches_with_bindings(y, bindings))
+          }
+          (true, false) => Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), other_args.as_ref(), bindings),
+          (false, true) => Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), args.as_ref(), bindings),
         }
-        args.len() == other_args.len()
-          && args
-            .iter()
-            .zip(other_args.iter())
-            .all(|(x, y)| x.matches_with_bindings(y, bindings))
       }
       (Self::TypeRef(name, args), Self::Enum(base, other_args)) | (Self::Enum(base, other_args), Self::TypeRef(name, args)) => {
         if !Self::type_ref_name_matches(name, base.name().ref_str()) {
@@ -2095,15 +2116,7 @@ impl CalcitTypeAnnotation {
           _ => {
             // one applied, one bare — bind generics from the applied side
             let (base, args) = if !a_args.is_empty() { (a, a_args) } else { (b, b_args) };
-            for (idx, arg) in args.iter().enumerate() {
-              if let Some(var_name) = base.generics.get(idx) {
-                let var = Arc::new(CalcitTypeAnnotation::TypeVar(var_name.to_owned()));
-                if !arg.matches_with_bindings(var.as_ref(), bindings) {
-                  return false;
-                }
-              }
-            }
-            true
+            Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), args.as_ref(), bindings)
           }
         }
       }
@@ -3462,6 +3475,48 @@ mod tests {
       err.contains("expects 2 type argument(s), but received 1"),
       "unexpected error: {err}"
     );
+  }
+
+  #[test]
+  fn matching_named_struct_ref_binds_generic_args_from_struct_annotation() {
+    let pair = Arc::new(CalcitStruct {
+      name: EdnTag::new("Pair"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![Arc::from("A"), Arc::from("B")]),
+      impls: vec![],
+    });
+    let actual = CalcitTypeAnnotation::Struct(
+      pair.clone(),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    let expected = CalcitTypeAnnotation::TypeRef(Arc::from("Pair"), Arc::new(vec![]));
+    let mut bindings = TypeBindings::new();
+
+    assert!(actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(matches!(bindings.get("A"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
+    assert!(matches!(bindings.get("B"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
+  }
+
+  #[test]
+  fn matching_bare_struct_annotation_binds_generic_args_from_named_struct_ref() {
+    let pair = Arc::new(CalcitStruct {
+      name: EdnTag::new("Pair"),
+      fields: Arc::new(vec![]),
+      field_types: Arc::new(vec![]),
+      generics: Arc::new(vec![Arc::from("A"), Arc::from("B")]),
+      impls: vec![],
+    });
+    let actual = CalcitTypeAnnotation::TypeRef(
+      Arc::from("Pair"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    let expected = CalcitTypeAnnotation::Struct(pair, Arc::new(vec![]));
+    let mut bindings = TypeBindings::new();
+
+    assert!(actual.matches_with_bindings(&expected, &mut bindings));
+    assert!(matches!(bindings.get("A"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
+    assert!(matches!(bindings.get("B"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
   }
 }
 

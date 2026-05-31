@@ -138,6 +138,17 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   call_expr: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  if ns == calcit::CORE_NS && def == "get" {
+    if let Some(inferred) = infer_core_get_return_type(call_expr, scope_types) {
+      return Some(inferred);
+    }
+  }
+  if ns == calcit::CORE_NS && def == "get-in" {
+    if let Some(inferred) = infer_core_get_in_return_type(call_expr, scope_types) {
+      return Some(inferred);
+    }
+  }
+
   let compiled = program::lookup_compiled_def(ns, def)?;
 
   // Avoid evaluating compiled payloads during preprocess type inference.
@@ -152,6 +163,74 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     Calcit::Proc(proc) => proc.get_type_signature().map(|type_sig| type_sig.return_type.clone()),
     _ => None,
   }
+}
+
+fn infer_core_get_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let base_arg = call_expr.get(1)?;
+  let base_type = resolve_type_value(base_arg, scope_types)?;
+  let key_arg = call_expr.get(2);
+  infer_get_return_type_from_type(base_type.as_ref(), key_arg)
+}
+
+fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let base_arg = call_expr.get(1)?;
+  let path_arg = call_expr.get(2)?;
+  let path_items = extract_literal_list_items(path_arg)?;
+  let mut current_type = resolve_type_value(base_arg, scope_types)?;
+
+  if path_items.is_empty() {
+    return Some(current_type);
+  }
+
+  for key in path_items {
+    current_type = infer_get_return_type_from_type(current_type.as_ref(), Some(key))?;
+  }
+
+  Some(current_type)
+}
+
+fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
+  match base_type {
+    CalcitTypeAnnotation::Optional(inner) => infer_get_return_type_from_type(inner.as_ref(), key_arg),
+    CalcitTypeAnnotation::List(element_type) => Some(wrap_optional_type(element_type.clone())),
+    CalcitTypeAnnotation::Map(_, value_type) => Some(wrap_optional_type(value_type.clone())),
+    CalcitTypeAnnotation::String => Some(wrap_optional_type(tag_annotation("string"))),
+    CalcitTypeAnnotation::Record(_) => {
+      if let Some(field_name) = key_arg.and_then(extract_field_name)
+        && let Some(struct_def) = base_type.resolve_to_struct()
+        && let Some(idx) = struct_def.index_of(field_name)
+        && let Some(field_type) = struct_def.field_types.get(idx)
+      {
+        return Some(wrap_optional_type(field_type.clone()));
+      }
+      Some(wrap_optional_type(calcit::DYNAMIC_TYPE.clone()))
+    }
+    _ => None,
+  }
+}
+
+fn wrap_optional_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match inner.as_ref() {
+    CalcitTypeAnnotation::Optional(_) => inner,
+    _ => Arc::new(CalcitTypeAnnotation::Optional(inner)),
+  }
+}
+
+fn extract_literal_list_items(form: &Calcit) -> Option<Vec<&Calcit>> {
+  let Calcit::List(items) = form else {
+    return None;
+  };
+
+  let head = items.first()?;
+  let is_list_literal = matches!(head, Calcit::Proc(CalcitProc::List))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "[]");
+
+  if !is_list_literal {
+    return None;
+  }
+
+  Some(items.iter().skip(1).collect())
 }
 
 // ---------------------------------------------------------------------------

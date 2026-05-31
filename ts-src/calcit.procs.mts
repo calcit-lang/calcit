@@ -1283,8 +1283,12 @@ export let _$n_str_$o_find_index = (x: string, y: string): number => {
   return x.indexOf(y);
 };
 
-export let parse_float = (x: string): number => {
-  return parseFloat(x);
+export let parse_float = (x: string): number | null => {
+  const value = parseFloat(x);
+  if (Number.isNaN(value)) {
+    return null;
+  }
+  return value;
 };
 export let trim = (x: string, c: string): string => {
   if (c != null) {
