@@ -1,0 +1,3 @@
+- fixed docs query test to be stable both with and without ~/.config/calcit/docs configured, matching CI runner behavior
+- tightened calcit.core fn helper schemas for &fn:apply / &fn:bind / &fn:map to reduce nested schema-dynamic usage
+- validated with focused docs test, full cargo test, runtime cr calcit/test.cirru, weak-types analyze, and yarn check-all

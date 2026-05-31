@@ -437,10 +437,10 @@
           :schema $ :: :fn
             {} (:return :fn)
               :args $ []
-                :: :fn $ {} (:return :dynamic)
-                  :args $ []
-                :: :fn $ {} (:return :dynamic)
-                  :args $ []
+                :: :fn $ {} (:return 'B)
+                  :args $ [] 'A
+                :: :fn $ {} (:return 'C)
+                  :args $ [] 'A 'B
               :generics $ [] 'A 'B 'C
         |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
           :code $ quote
@@ -451,10 +451,10 @@
           :schema $ :: :fn
             {} (:return :fn)
               :args $ []
-                :: :fn $ {} (:return :dynamic)
-                  :args $ []
-                :: :fn $ {} (:return :dynamic)
-                  :args $ []
+                :: :fn $ {} (:return 'B)
+                  :args $ [] 'A
+                :: :fn $ {} (:return 'C)
+                  :args $ [] 'B 'A
               :generics $ [] 'A 'B 'C
         |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote
@@ -465,10 +465,10 @@
           :schema $ :: :fn
             {} (:return :fn)
               :args $ []
-                :: :fn $ {} (:return :dynamic)
-                  :args $ []
-                :: :fn $ {} (:return :dynamic)
-                  :args $ []
+                :: :fn $ {} (:return 'C)
+                  :args $ [] 'B
+                :: :fn $ {} (:return 'B)
+                  :args $ [] 'A
               :generics $ [] 'A 'B 'C
         |&fn:mappend $ %{} :CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote
