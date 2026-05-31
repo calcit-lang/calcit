@@ -1,0 +1,6 @@
+- refined weak-types reporting in `cr analyze weak-types` to classify schema/code hits with detail paths
+- tightened builtin proc signatures for list/map/set/buf-list helpers toward generic compound types
+- kept `field-match` / `record-match` macro schema inputs precise in `calcit-core` while preserving round-trip behavior
+- fixed macro schema serialization to keep non-dynamic returns like `:record` instead of dropping them during snapshot save/load
+- aligned bare marker tag parsing for `:record` and related special tags with schema normalization behavior
+- updated docs and parser tests to current wrapped schema / guidebook-loading behavior

@@ -619,11 +619,13 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
         Some(Cirru::Leaf(head)) if head.as_ref() == "::" && items.len() >= 2 => {
           let tag = cirru_schema_to_edn(&items[1])?;
           let extra: Option<Vec<Edn>> = items.iter().skip(2).map(cirru_schema_to_edn).collect();
-          extra.map(|xs| Edn::Tuple(cirru_edn::EdnTupleView {
-            tag: Arc::new(tag),
-            enum_tag: None,
-            extra: xs,
-          }))
+          extra.map(|xs| {
+            Edn::Tuple(cirru_edn::EdnTupleView {
+              tag: Arc::new(tag),
+              enum_tag: None,
+              extra: xs,
+            })
+          })
         }
         _ => {
           let values: Option<Vec<Edn>> = items.iter().map(cirru_schema_to_edn).collect();
@@ -1741,12 +1743,16 @@ mod tests {
     ]);
     assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
 
-    let valid_with_where = cirru_parser::parse("{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)")
-      .expect("schema should parse")
-      .into_iter()
-      .next()
-      .expect("schema should have one node");
-    assert!(validate_schema_for_write(&valid_with_where).is_ok(), "schema with :where should pass");
+    let valid_with_where =
+      cirru_parser::parse("{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)")
+        .expect("schema should parse")
+        .into_iter()
+        .next()
+        .expect("schema should have one node");
+    assert!(
+      validate_schema_for_write(&valid_with_where).is_ok(),
+      "schema with :where should pass"
+    );
 
     let wrapped_macro = Cirru::List(vec![
       Cirru::leaf("::"),
@@ -1949,8 +1955,8 @@ mod tests {
     validate_schema_for_write(&schema_cirru).expect("schema with where should be writable");
 
     let schema_edn = schema_cirru_to_edn(schema_cirru);
-    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
-      .unwrap_or_else(|| panic!("must parse where schema: {schema_edn:?}"));
+    let fn_schema =
+      CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).unwrap_or_else(|| panic!("must parse where schema: {schema_edn:?}"));
     assert_eq!(fn_schema.where_bounds.len(), 1, "schema_edn={schema_edn:?}");
     assert_eq!(fn_schema.where_bounds[0].name.as_ref(), "T");
     assert_eq!(fn_schema.where_bounds[0].traits[0].name.ref_str(), "Show");
@@ -1960,7 +1966,10 @@ mod tests {
     validate_schema_for_write(&saved_cirru).expect("saved where schema should still be writable");
     let saved_text = cirru_parser::format(&[saved_cirru], true.into()).expect("format schema");
     assert!(saved_text.contains(":where"), "saved schema should keep :where: {saved_text}");
-    assert!(saved_text.contains("Show"), "saved schema should keep trait bound payload: {saved_text}");
+    assert!(
+      saved_text.contains("Show"),
+      "saved schema should keep trait bound payload: {saved_text}"
+    );
   }
 
   #[test]
@@ -2134,8 +2143,8 @@ mod tests {
       "macro schema should use wrapped :macro tag: {cirru_text}"
     );
     assert!(
-      !cirru_text.contains(":return"),
-      "macro schema should omit redundant return field during serialization: {cirru_text}"
+      cirru_text.contains(":return :bool"),
+      "macro schema should preserve non-dynamic return field during serialization: {cirru_text}"
     );
     let parsed_edn = cirru_edn::parse(&cirru_text).expect("parse should succeed");
 
@@ -2240,6 +2249,46 @@ mod tests {
     );
     assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit redundant return");
     assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
+  }
+
+  #[test]
+  fn test_code_entry_serializes_macro_non_dynamic_return() {
+    use crate::calcit::SchemaKind;
+
+    let entry = CodeEntry {
+      doc: "wrapped macro schema".to_owned(),
+      examples: vec![],
+      code: vec!["defmacro", "wrapped", "(x)", "x"].into(),
+      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+        generics: std::sync::Arc::new(vec![]),
+        where_bounds: std::sync::Arc::new(vec![]),
+        arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+        return_type: std::sync::Arc::new(CalcitTypeAnnotation::Custom(std::sync::Arc::new(crate::calcit::Calcit::tag(
+          "record",
+        )))),
+        fn_kind: SchemaKind::Macro,
+        rest_type: None,
+      }))),
+    };
+
+    let entry_edn: Edn = Edn::from(&entry);
+    let schema = match entry_edn {
+      Edn::Record(record) => record
+        .pairs
+        .iter()
+        .find(|(k, _)| k.arc_str().as_ref() == "schema")
+        .map(|(_, v)| v.to_owned())
+        .expect("schema field should exist"),
+      _ => panic!("expected record edn"),
+    };
+
+    let Edn::Tuple(view) = schema else {
+      panic!("top-level schema should serialize as wrapped macro tuple");
+    };
+    let Some(Edn::Map(map)) = view.extra.first() else {
+      panic!("wrapped schema payload should be a map");
+    };
+    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "record"));
   }
 
   #[test]

@@ -73,6 +73,7 @@
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
+              &init-builtin-impls!
               println $ &get-os
               println "|gen id:" $ generate-id!
               inside-js: $ load-console-formatter!

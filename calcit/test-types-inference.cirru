@@ -113,6 +113,7 @@
               assert-type r $ :: :ref :number
               let
                   x $ &atom:deref r
+                assert-type x :number
                 &inspect-type r
                 &inspect-type x
           :examples $ []

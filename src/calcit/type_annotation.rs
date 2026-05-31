@@ -2176,6 +2176,8 @@ impl CalcitTypeAnnotation {
         let tag_name = tag.ref_str().trim_start_matches(':');
         if tag_name == "dynamic" {
           Self::Dynamic
+        } else if matches!(tag_name, "record" | "struct" | "enum" | "trait" | "impl") {
+          Self::Custom(Arc::new(Calcit::tag(tag_name)))
         } else if let Some(builtin) = Self::builtin_type_from_tag_name(tag_name) {
           builtin
         } else {
@@ -3003,12 +3005,8 @@ mod tests {
       Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
       symbol("T"),
     ])));
-    let form_items = vec![
+    let payload_items = vec![
       symbol("{}"),
-      Calcit::List(Arc::new(CalcitList::from(&[
-        Calcit::Tag(EdnTag::from("kind")),
-        Calcit::Tag(EdnTag::from("fn")),
-      ]))),
       Calcit::List(Arc::new(CalcitList::from(&[
         Calcit::Tag(EdnTag::from("generics")),
         Calcit::List(Arc::new(CalcitList::from(&[symbol("[]"), symbol("T")]))),
@@ -3019,7 +3017,12 @@ mod tests {
       ]))),
       Calcit::List(Arc::new(CalcitList::from(&[Calcit::Tag(EdnTag::from("return")), type_var_t]))),
     ];
-    let form = Calcit::List(Arc::new(CalcitList::from(form_items.as_slice())));
+    let payload = Calcit::List(Arc::new(CalcitList::from(payload_items.as_slice())));
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::Tag(EdnTag::from("fn")),
+      payload,
+    ])));
 
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&form);
     assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.generics.as_ref() == &[Arc::from("T")]));
@@ -3148,7 +3151,7 @@ mod tests {
       panic!("fn payload should be schema map: {edn:?}");
     };
     assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "macro"));
-    assert!(map.tag_get("return").is_none(), "macro payload should omit return field: {edn:?}");
+    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "bool"));
   }
 
   #[test]
@@ -3385,6 +3388,27 @@ mod tests {
     );
     assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit return field");
     assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
+  }
+
+  #[test]
+  fn wrapped_top_level_macro_schema_keeps_non_dynamic_return() {
+    let schema = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+      return_type: Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("record")))),
+      fn_kind: SchemaKind::Macro,
+      rest_type: None,
+    };
+
+    let edn = schema.to_wrapped_schema_edn();
+    let Edn::Tuple(view) = edn else {
+      panic!("wrapped schema should serialize as tuple");
+    };
+    let Some(Edn::Map(map)) = view.extra.first() else {
+      panic!("wrapped schema payload should be a map");
+    };
+    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "record"));
   }
 
   #[test]
@@ -3651,7 +3675,7 @@ impl CalcitFnTypeAnnotation {
       map.insert_key("kind", Edn::tag("macro"));
     }
     map.insert_key("args", Edn::List(EdnListView(args)));
-    if !matches!(self.fn_kind, SchemaKind::Macro) {
+    if !matches!(self.fn_kind, SchemaKind::Macro) || !matches!(self.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       map.insert_key("return", self.return_type.to_type_edn());
     }
     if !self.generics.is_empty() {
@@ -3710,7 +3734,7 @@ impl CalcitFnTypeAnnotation {
     let args: Vec<Edn> = self.arg_types.iter().map(|t| t.to_type_edn()).collect();
     let mut map = EdnMapView::default();
     map.insert_key("args", Edn::List(EdnListView(args)));
-    if !matches!(self.fn_kind, SchemaKind::Macro) {
+    if !matches!(self.fn_kind, SchemaKind::Macro) || !matches!(self.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       map.insert_key("return", self.return_type.to_type_edn());
     }
     if !self.generics.is_empty() {

@@ -26,7 +26,9 @@ mod cr_cirru_suite_tests;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit, WeakTypesCommand};
+use calcit::cli_args::{
+  AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit, WeakTypesCommand,
+};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -278,7 +280,7 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
-        AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
+      AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
       AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),
     }
@@ -932,6 +934,7 @@ impl WeakTypeKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WeakTypeOccurrence {
   kind: WeakTypeKind,
+  detail: String,
   path: String,
 }
 
@@ -976,59 +979,185 @@ fn format_cirru_path(root: &str, path: &[usize]) -> String {
   rendered
 }
 
+fn weak_type_detail(kind: WeakTypeKind, detail: &str) -> String {
+  format!("{}:{}", kind.as_str(), detail)
+}
+
+fn push_weak_type_occurrence(
+  occurrences: &mut Vec<WeakTypeOccurrence>,
+  kind: WeakTypeKind,
+  detail: impl Into<String>,
+  path: impl Into<String>,
+) {
+  occurrences.push(WeakTypeOccurrence {
+    kind,
+    detail: detail.into(),
+    path: path.into(),
+  });
+}
+
+fn scan_schema_dynamic_annotation(
+  annotation: &CalcitTypeAnnotation,
+  path: &str,
+  detail: &str,
+  occurrences: &mut Vec<WeakTypeOccurrence>,
+) {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic => {
+      push_weak_type_occurrence(
+        occurrences,
+        WeakTypeKind::SchemaDynamic,
+        weak_type_detail(WeakTypeKind::SchemaDynamic, detail),
+        path.to_owned(),
+      );
+    }
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Variadic(inner)
+    | CalcitTypeAnnotation::Optional(inner) => {
+      scan_schema_dynamic_annotation(inner, &format!("{path}.item"), detail, occurrences);
+    }
+    CalcitTypeAnnotation::Map(key, value) => {
+      scan_schema_dynamic_annotation(key, &format!("{path}.key"), detail, occurrences);
+      scan_schema_dynamic_annotation(value, &format!("{path}.value"), detail, occurrences);
+    }
+    CalcitTypeAnnotation::Fn(fn_annot) => {
+      for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
+        scan_schema_dynamic_annotation(arg, &format!("{path}.args[{idx}]"), detail, occurrences);
+      }
+      scan_schema_dynamic_annotation(&fn_annot.return_type, &format!("{path}.return"), detail, occurrences);
+      if let Some(rest) = &fn_annot.rest_type {
+        scan_schema_dynamic_annotation(rest, &format!("{path}.rest"), detail, occurrences);
+      }
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      for (idx, arg) in args.iter().enumerate() {
+        scan_schema_dynamic_annotation(arg, &format!("{path}.type-arg[{idx}]"), detail, occurrences);
+      }
+    }
+    _ => {}
+  }
+}
+
+#[derive(Debug, Clone)]
+struct WeakCodeParent {
+  head: Option<String>,
+  child_index: usize,
+}
+
+fn classify_code_dynamic(parent: Option<&WeakCodeParent>) -> &'static str {
+  match parent.and_then(|it| it.head.as_deref()) {
+    Some("assert-type") => "assert-type",
+    Some("hint-fn") => "hint-fn",
+    Some("::") => "schema-tag",
+    Some("defstruct") => "defstruct",
+    Some("defenum") => "defenum",
+    Some("deftrait") => "deftrait",
+    Some("quote") | Some("quasiquote") => "quoted",
+    Some("[]") => "list-item",
+    _ => "literal",
+  }
+}
+
+fn classify_code_nil(parent: Option<&WeakCodeParent>) -> &'static str {
+  match parent.and_then(|it| it.head.as_deref()) {
+    Some("if") if parent.is_some_and(|it| it.child_index == 2) => "if-then",
+    Some("if") if parent.is_some_and(|it| it.child_index == 3) => "if-else",
+    Some("let") | Some("&let") => "let-binding",
+    Some("do") => "do-step",
+    Some("[]") => "list-item",
+    Some("{}") | Some("&{}") | Some("#{}") => "collection-item",
+    Some("cond") | Some("case") | Some("case-default") => "branch",
+    _ => "literal",
+  }
+}
+
 fn scan_cirru_weak_types(
   node: &Cirru,
   root: &str,
   path: &mut Vec<usize>,
+  parent: Option<&WeakCodeParent>,
   selected: &BTreeSet<WeakTypeKind>,
   occurrences: &mut Vec<WeakTypeOccurrence>,
 ) {
   match node {
     Cirru::Leaf(text) => {
       if text.as_ref() == ":dynamic" && root == "schema" && selected.contains(&WeakTypeKind::SchemaDynamic) {
-        occurrences.push(WeakTypeOccurrence {
-          kind: WeakTypeKind::SchemaDynamic,
-          path: format_cirru_path(root, path),
-        });
+        push_weak_type_occurrence(
+          occurrences,
+          WeakTypeKind::SchemaDynamic,
+          weak_type_detail(WeakTypeKind::SchemaDynamic, "raw-schema"),
+          format_cirru_path(root, path),
+        );
       } else if text.as_ref() == ":dynamic" && root == "code" && selected.contains(&WeakTypeKind::CodeDynamic) {
-        occurrences.push(WeakTypeOccurrence {
-          kind: WeakTypeKind::CodeDynamic,
-          path: format_cirru_path(root, path),
-        });
+        push_weak_type_occurrence(
+          occurrences,
+          WeakTypeKind::CodeDynamic,
+          weak_type_detail(WeakTypeKind::CodeDynamic, classify_code_dynamic(parent)),
+          format_cirru_path(root, path),
+        );
       } else if text.as_ref() == "nil" && root == "code" && selected.contains(&WeakTypeKind::CodeNil) {
-        occurrences.push(WeakTypeOccurrence {
-          kind: WeakTypeKind::CodeNil,
-          path: format_cirru_path(root, path),
-        });
+        push_weak_type_occurrence(
+          occurrences,
+          WeakTypeKind::CodeNil,
+          weak_type_detail(WeakTypeKind::CodeNil, classify_code_nil(parent)),
+          format_cirru_path(root, path),
+        );
       }
     }
     Cirru::List(items) => {
+      let head = items.first().and_then(|item| match item {
+        Cirru::Leaf(text) => Some(text.to_string()),
+        _ => None,
+      });
       for (idx, item) in items.iter().enumerate() {
         path.push(idx);
-        scan_cirru_weak_types(item, root, path, selected, occurrences);
+        let next_parent = WeakCodeParent {
+          head: head.clone(),
+          child_index: idx,
+        };
+        scan_cirru_weak_types(item, root, path, Some(&next_parent), selected, occurrences);
         path.pop();
       }
     }
   }
 }
 
-fn analyze_weak_types_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry, selected: &BTreeSet<WeakTypeKind>) -> Option<WeakTypeRow> {
+fn analyze_weak_types_entry(
+  ns: &str,
+  def_name: &str,
+  entry: &snapshot::CodeEntry,
+  selected: &BTreeSet<WeakTypeKind>,
+) -> Option<WeakTypeRow> {
   let mut occurrences: Vec<WeakTypeOccurrence> = vec![];
 
   if matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) && selected.contains(&WeakTypeKind::SchemaDynamic) {
-    occurrences.push(WeakTypeOccurrence {
-      kind: WeakTypeKind::SchemaDynamic,
-      path: "schema".to_owned(),
-    });
-  } else if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref()
-    && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+    push_weak_type_occurrence(
+      &mut occurrences,
+      WeakTypeKind::SchemaDynamic,
+      weak_type_detail(WeakTypeKind::SchemaDynamic, "root"),
+      "schema".to_owned(),
+    );
+  } else if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() {
+    if selected.contains(&WeakTypeKind::SchemaDynamic) {
+      for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
+        scan_schema_dynamic_annotation(arg, &format!("schema.args[{idx}]"), "arg", &mut occurrences);
+      }
+      scan_schema_dynamic_annotation(&fn_annot.return_type, "schema.return", "return", &mut occurrences);
+      if let Some(rest) = &fn_annot.rest_type {
+        scan_schema_dynamic_annotation(rest, "schema.rest", "rest", &mut occurrences);
+      }
+    }
+  } else if selected.contains(&WeakTypeKind::SchemaDynamic)
+    && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&entry.schema.to_type_edn())
   {
     let mut path = vec![];
-    scan_cirru_weak_types(&schema_cirru, "schema", &mut path, selected, &mut occurrences);
+    scan_cirru_weak_types(&schema_cirru, "schema", &mut path, None, selected, &mut occurrences);
   }
 
   let mut code_path = vec![];
-  scan_cirru_weak_types(&entry.code, "code", &mut code_path, selected, &mut occurrences);
+  scan_cirru_weak_types(&entry.code, "code", &mut code_path, None, selected, &mut occurrences);
 
   if occurrences.is_empty() {
     None
@@ -1089,6 +1218,7 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
   }
 
   let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut detail_count: BTreeMap<&'static str, BTreeMap<String, usize>> = BTreeMap::new();
   let mut ns_set: BTreeSet<&str> = BTreeSet::new();
   let mut def_count = 0usize;
 
@@ -1097,12 +1227,17 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
     ns_set.insert(row.ns.as_str());
     for occurrence in &row.occurrences {
       *kind_count.entry(occurrence.kind.as_str()).or_insert(0) += 1;
+      *detail_count
+        .entry(occurrence.kind.as_str())
+        .or_default()
+        .entry(occurrence.detail.clone())
+        .or_insert(0) += 1;
     }
   }
 
   println!("Weak type usage check");
   println!("- namespaces: {}", ns_set.len());
-  println!("- defs with hits: {}", def_count);
+  println!("- defs with hits: {def_count}");
   if let Some(raw) = &options.only {
     println!("- only: {raw}");
   }
@@ -1112,6 +1247,15 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
     kind_count.get("code-dynamic").copied().unwrap_or(0),
     kind_count.get("code-nil").copied().unwrap_or(0)
   );
+  println!("- detail:");
+  for kind in ["schema-dynamic", "code-dynamic", "code-nil"] {
+    println!("  - {kind}");
+    if let Some(items) = detail_count.get(kind) {
+      for (detail, count) in items {
+        println!("    - {detail}={count}");
+      }
+    }
+  }
   println!();
 
   let mut current_ns: Option<&str> = None;
@@ -1123,7 +1267,7 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
 
     println!("- def: {}", row.def);
     for occurrence in &row.occurrences {
-      println!("  - {} @ {}", occurrence.kind.as_str(), occurrence.path);
+      println!("  - {} ({}) @ {}", occurrence.kind.as_str(), occurrence.detail, occurrence.path);
     }
     println!();
   }
@@ -2162,9 +2306,44 @@ mod tests {
 
     let row = analyze_weak_types_entry("app.main", "demo", &entry, &WeakTypeKind::all()).expect("should find hits");
     let kinds = row.occurrences.iter().map(|item| item.kind).collect::<Vec<_>>();
+    let details = row.occurrences.iter().map(|item| item.detail.as_str()).collect::<Vec<_>>();
 
     assert!(kinds.contains(&WeakTypeKind::SchemaDynamic), "kinds: {kinds:?}");
     assert!(kinds.contains(&WeakTypeKind::CodeDynamic), "kinds: {kinds:?}");
     assert!(kinds.contains(&WeakTypeKind::CodeNil), "kinds: {kinds:?}");
+    assert!(details.contains(&"schema-dynamic:arg"), "details: {details:?}");
+    assert!(details.contains(&"schema-dynamic:return"), "details: {details:?}");
+    assert!(details.contains(&"code-dynamic:assert-type"), "details: {details:?}");
+    assert!(details.contains(&"code-nil:literal"), "details: {details:?}");
+  }
+
+  #[test]
+  fn analyze_weak_types_entry_classifies_nil_branches_and_schema_rest() {
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      code: list(vec![
+        leaf("defn"),
+        leaf("branchy"),
+        list(vec![]),
+        list(vec![leaf("if"), leaf("flag"), leaf("nil"), leaf("nil")]),
+      ]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+        return_type: Arc::new(CalcitTypeAnnotation::Bool),
+        fn_kind: SchemaKind::Fn,
+        rest_type: Some(calcit::calcit::DYNAMIC_TYPE.clone()),
+      }))
+      .into(),
+    };
+
+    let row = analyze_weak_types_entry("app.main", "branchy", &entry, &WeakTypeKind::all()).expect("should find hits");
+    let details = row.occurrences.iter().map(|item| item.detail.as_str()).collect::<Vec<_>>();
+
+    assert!(details.contains(&"schema-dynamic:rest"), "details: {details:?}");
+    assert!(details.contains(&"code-nil:if-then"), "details: {details:?}");
+    assert!(details.contains(&"code-nil:if-else"), "details: {details:?}");
   }
 }
