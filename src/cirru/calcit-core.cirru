@@ -981,8 +981,10 @@
               &map:assoc xs (nth pair 0) (nth pair 1)
           :examples $ []
           :schema $ :: :fn
-            {} (:return :map)
-              :args $ [] :map :list
+            {}
+              :args $ [] (:: :map 'K 'V) :list
+              :generics $ [] 'K 'V
+              :return $ :: :map 'K 'V
         |&map:assoc $ %{} :CodeEntry (:doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1216,8 +1218,10 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
-            {} (:return :map)
-              :args $ [] :map :map
+            {}
+              :args $ [] (:: :map 'K 'V) (:: :map 'K 'V)
+              :generics $ [] 'K 'V
+              :return $ :: :map 'K 'V
         |&min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &min (a b)

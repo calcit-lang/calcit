@@ -1011,8 +1011,8 @@ impl CalcitProc {
         ],
       }),
       NativeMergeNonNil => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), some_tag("map")],
+        return_type: map_of(type_var("K"), type_var("V")),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("V"))],
       }),
       ToPairs => Some(ProcTypeSignature {
         return_type: some_set(),

@@ -1,0 +1,3 @@
+- tightened calcit.core `&map:add-entry` to preserve map key/value generics while keeping the heterogeneous pair list broad
+- tightened `&merge-non-nil` in both calcit-core snapshot and Rust proc signature to generic `map<K, V>` input/output
+- verified new weak-types baseline at schema-dynamic=332 and re-ran cargo test plus yarn check-all
