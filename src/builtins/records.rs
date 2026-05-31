@@ -47,10 +47,23 @@ fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
     return None;
   };
 
+  let start = if matches!(items.first(), Some(Calcit::Proc(CalcitProc::List))) {
+    1
+  } else {
+    0
+  };
+
   let mut vars = Vec::with_capacity(items.len());
-  for item in items.iter() {
-    let name = parse_type_var_form(item)?;
-    vars.push(name);
+  for item in items.iter().skip(start) {
+    if let Some(name) = parse_type_var_form(item) {
+      vars.push(name);
+      continue;
+    }
+    if let Calcit::Symbol { sym, .. } = item {
+      vars.push(sym.to_owned());
+      continue;
+    }
+    return None;
   }
   Some(vars)
 }
@@ -271,8 +284,15 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   };
 
+  let mut generics: Vec<Arc<str>> = vec![];
+  let mut start_idx = 1;
+  if let Some(generics_form) = xs.get(1).and_then(parse_generics_list) {
+    generics = generics_form;
+    start_idx = 2;
+  }
+
   let mut variants: Vec<(EdnTag, Calcit)> = vec![];
-  for item in xs.iter().skip(1) {
+  for item in xs.iter().skip(start_idx) {
     match item {
       Calcit::List(xs) => {
         let tag = match xs.first() {
@@ -319,6 +339,9 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
 
   let mut struct_ref = CalcitStruct::from_fields(name_id, fields);
+  generics.sort();
+  generics.dedup();
+  struct_ref.generics = Arc::new(generics);
   struct_ref.impls = vec![Arc::new(enum_prototype_marker())];
 
   let record = CalcitRecord {

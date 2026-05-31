@@ -527,6 +527,7 @@ impl Hash for Calcit {
       Enum(enum_def) => {
         "enum:".hash(_state);
         enum_def.name().hash(_state);
+        enum_def.generics().hash(_state);
         for v in enum_def.variants() {
           v.tag.hash(_state);
           for t in v.payload_types() {

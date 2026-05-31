@@ -127,7 +127,7 @@ fn compare_struct_impls(a: &[Arc<CalcitImpl>], b: &[Arc<CalcitImpl>]) -> Orderin
 
 pub(super) fn compare_calcit_enum_values(a: &CalcitEnum, b: &CalcitEnum) -> Ordering {
   match a.name().cmp(b.name()) {
-    Equal => {
+    Equal => a.generics().cmp(b.generics()).then_with(|| {
       let av = a.variants();
       let bv = b.variants();
       av.len().cmp(&bv.len()).then_with(|| {
@@ -151,7 +151,7 @@ pub(super) fn compare_calcit_enum_values(a: &CalcitEnum, b: &CalcitEnum) -> Orde
         }
         Equal
       })
-    }
+    }),
     ord => ord,
   }
 }

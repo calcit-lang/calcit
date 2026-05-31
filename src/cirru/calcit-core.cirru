@@ -2808,7 +2808,10 @@
                       and
                         not $ empty? first-pair
                         not $ tag? (&list:first first-pair)
-                      , first-pair $ []
+                      if
+                        &= [] $ &list:first first-pair
+                        &list:rest first-pair
+                        , first-pair
                     , []
                   &let
                     field-pairs $ if (empty? generics) pairs (&list:rest pairs)
@@ -2833,8 +2836,17 @@
                               &let
                                 type-form $ last items
                                 if (list? type-form)
-                                  quasiquote $ [] (~ field-name)
-                                    quote $ ~ type-form
+                                  if
+                                    and
+                                      &= 2 $ count type-form
+                                      syntax? $ &list:first type-form
+                                    if
+                                      includes? generics type-form
+                                      quasiquote $ [] (~ field-name)
+                                        quote $ ~ type-form
+                                      quasiquote $ [] (~ field-name) (~ type-form)
+                                    quasiquote $ [] (~ field-name)
+                                      quote $ ~ type-form
                                   quasiquote $ [] (~ field-name) (~ type-form)
                       if (empty? generics)
                         quasiquote $ &struct::new
@@ -2842,7 +2854,7 @@
                           ~@ normalized
                         quasiquote $ &struct::new
                           ~ $ turn-tag name
-                          ~ $ &list:concat ([]) generics
+                          [] ~@generics
                           ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name :string) (:age :number)

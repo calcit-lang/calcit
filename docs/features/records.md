@@ -35,6 +35,26 @@ Each field is a pair of `(:field-name :type)`. Supported types include `:number`
 defstruct Person (:name :string) (:age :number) (:position :tag)
 ```
 
+## Generic Structs
+
+`defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `(:: 'TypeName ...)`.
+
+```cirru
+let
+    Box $ defstruct Box ([] 'T) (:value 'T)
+    keep $ fn (box)
+      hint-fn $ {}
+        :generics $ [] 'T
+        :args $ [] (:: 'Box 'T)
+        :return 'T
+      :value box
+    b $ %{} Box (:value 1)
+  assert-type b $ :: 'Box :number
+  assert= 1 $ keep b
+```
+
+Use this pattern when the struct definition owns the type variable. Function-level constraints such as `:where` still stay on the function schema, not on `defstruct` itself.
+
 ## Creating Records
 
 Use the `%{}` macro to instantiate a struct:

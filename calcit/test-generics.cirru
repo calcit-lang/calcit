@@ -24,7 +24,13 @@
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            defn main! () (println "|Testing generics...") (test-struct-generics) (test-fn-generics) (println "|Generics tests passed")
+            defn main! () $ do
+              println "|Testing generics..."
+              println "|  - data structure baseline"
+              test-struct-generics
+              println "|  - function generics and where-bounds"
+              test-fn-generics
+              println "|Generics tests passed"
           :examples $ []
         |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
@@ -74,16 +80,19 @@
           :examples $ []
         |test-struct-generics $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            defn test-struct-generics () $ let
-                p $ %{} Pair (:left 1) (:right |hi)
-                b $ %{} Box (:value 2)
-                h $ %{} Holder (:box b)
-              assert-type p Pair
-              assert-type b Box
-              assert-type h Holder
-              &inspect-type p
-              &inspect-type b
-              &inspect-type h
+            defn test-struct-generics () $ do
+              println "|Testing generic data structure baseline..."
+              let
+                  p $ %{} Pair (:left 1) (:right |hi)
+                  b $ %{} Box (:value 2)
+                  h $ %{} Holder (:box b)
+                assert-type p Pair
+                assert-type b Box
+                assert-type h Holder
+                &inspect-type p
+                &inspect-type b
+                &inspect-type h
+              println "|Generic data structure baseline passed"
           :examples $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-generics.main)

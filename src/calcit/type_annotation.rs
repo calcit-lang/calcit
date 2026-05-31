@@ -320,11 +320,20 @@ impl CalcitTypeAnnotation {
           arg.validate_applied_type_args()?;
         }
 
-        if !args.is_empty() {
+        let expected = enum_def.generics().len();
+        let actual = args.len();
+        if expected == 0 {
+          if actual > 0 {
+            return Err(format!(
+              "enum `{}` is not generic but received {} type argument(s)",
+              enum_def.name(),
+              actual
+            ));
+          }
+        } else if actual != expected {
           return Err(format!(
-            "enum `{}` is not generic but received {} type argument(s)",
+            "enum `{}` expects {expected} type argument(s), but received {actual}",
             enum_def.name(),
-            args.len()
           ));
         }
 
@@ -425,6 +434,7 @@ impl CalcitTypeAnnotation {
         }
         Some(Arc::from(stripped))
       }
+      Some(Calcit::List(_)) => Self::parse_type_var_form(list.get(1)?),
       _ => None,
     }
   }
@@ -2826,9 +2836,18 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStruct> {
 fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnum> {
   let name_form = items.get(1)?;
   let name = parse_type_name(name_form)?;
+  let mut generics: Vec<Arc<str>> = vec![];
+  let mut start_idx = 2;
+
+  if let Some(generics_form) = items.get(2) {
+    if let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form) {
+      generics = vars;
+      start_idx = 3;
+    }
+  }
 
   let mut variants: Vec<(EdnTag, Calcit)> = Vec::new();
-  for item in items.iter().skip(2) {
+  for item in items.iter().skip(start_idx) {
     let Calcit::List(variant) = item else {
       return None;
     };
@@ -2852,7 +2871,10 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnum> {
 
   let fields: Vec<EdnTag> = variants.iter().map(|(tag, _)| tag.to_owned()).collect();
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
-  let struct_ref = CalcitStruct::from_fields(name, fields);
+  generics.sort();
+  generics.dedup();
+  let mut struct_ref = CalcitStruct::from_fields(name, fields);
+  struct_ref.generics = Arc::new(generics);
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),

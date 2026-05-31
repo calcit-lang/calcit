@@ -44,6 +44,23 @@ let
   ; => (%:: :rect 3 4 (:enum Shape))
 ```
 
+## Generic Enums
+
+Generic enum payloads are available through the runtime constructor `&enum::new`. This keeps the generic variables explicit in the variant payload declarations, while use sites still annotate values with the normal applied named type syntax.
+
+```cirru
+let
+    ResultX $ &enum::new :ResultX ([] (quote T) (quote E)) ([] :ok (quote T)) ([] :err (quote E))
+    ok $ %:: ResultX :ok 1
+    err $ %:: ResultX :err |oops
+  assert-type ok $ :: 'ResultX :number :string
+  assert-type err $ :: 'ResultX :number :string
+  assert= 1 $ &tuple:nth ok 1
+  assert= |oops $ &tuple:nth err 1
+```
+
+At the type level, `(:: 'ResultX :number :string)` means the first slot is bound to `T` and the second slot is bound to `E`.
+
 ## Creating Instances
 
 Use `%::` with the enum definition, the variant tag, and then the payload values:
