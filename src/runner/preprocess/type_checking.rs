@@ -16,12 +16,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::type_inference::infer_record_field_type;
 use crate::calcit::{
   self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
   NodeLocation,
 };
 use crate::program;
-use super::type_inference::infer_record_field_type;
 
 use super::{
   ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code,
@@ -558,7 +558,7 @@ pub(crate) fn check_function_return_type(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitLocal, CalcitSymbolInfo, CalcitStruct};
+  use crate::calcit::{CalcitLocal, CalcitStruct, CalcitSymbolInfo};
   use cirru_edn::EdnTag;
 
   fn make_local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
@@ -609,7 +609,13 @@ mod tests {
     let args = CalcitList::from(&[
       make_local("task", Arc::new(CalcitTypeAnnotation::Record(task_struct))),
       Calcit::Tag(EdnTag::new("done?")),
-      make_local("not", Arc::new(CalcitTypeAnnotation::from_function_parts(vec![tag_annotation("bool")], tag_annotation("bool")))),
+      make_local(
+        "not",
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![tag_annotation("bool")],
+          tag_annotation("bool"),
+        )),
+      ),
     ]);
 
     let scope_types = ScopeTypes::new();
