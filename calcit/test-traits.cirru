@@ -6,67 +6,67 @@
   :files $ {}
     |test-traits.main $ %{} :FileEntry
       :defs $ {}
-        |Demo0 $ %{} :CodeEntry (:doc "|Enum prototype for tuple trait tests") (:schema nil)
+        |Demo0 $ %{} :CodeEntry (:doc "|Enum prototype for tuple trait tests") (:schema :dynamic)
           :code $ quote
             defenum Demo $ :demo :dynamic
           :examples $ []
-        |DemoBar $ %{} :CodeEntry (:doc "|Enum with MyBar impls") (:schema nil)
+        |DemoBar $ %{} :CodeEntry (:doc "|Enum with MyBar impls") (:schema :dynamic)
           :code $ quote
             def DemoBar $ impl-traits Demo0 MyBarImpl MyBarImpl2
           :examples $ []
-        |DemoZap $ %{} :CodeEntry (:doc "|Enum with MyZapA/MyZapB") (:schema nil)
+        |DemoZap $ %{} :CodeEntry (:doc "|Enum with MyZapA/MyZapB") (:schema :dynamic)
           :code $ quote
             def DemoZap $ impl-traits Demo0 MyZapAImpl MyZapBImpl
           :examples $ []
-        |DemoZapA $ %{} :CodeEntry (:doc "|Enum with MyZapA then MyZapB") (:schema nil)
+        |DemoZapA $ %{} :CodeEntry (:doc "|Enum with MyZapA then MyZapB") (:schema :dynamic)
           :code $ quote
             def DemoZapA $ impl-traits Demo0 MyZapAImpl MyZapBImpl
           :examples $ []
-        |DemoZapB $ %{} :CodeEntry (:doc "|Enum with MyZapB then MyZapA") (:schema nil)
+        |DemoZapB $ %{} :CodeEntry (:doc "|Enum with MyZapB then MyZapA") (:schema :dynamic)
           :code $ quote
             def DemoZapB $ impl-traits Demo0 MyZapBImpl MyZapAImpl
           :examples $ []
-        |MyBar $ %{} :CodeEntry (:doc "|Trait for tuple override test") (:schema nil)
+        |MyBar $ %{} :CodeEntry (:doc "|Trait for tuple override test") (:schema :dynamic)
           :code $ quote
             deftrait MyBar $ .bar :fn
           :examples $ []
-        |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test") (:schema nil)
+        |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test") (:schema :dynamic)
           :code $ quote
             defimpl MyBarImpl MyBar $ .bar mybar:bar1
           :examples $ []
-        |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test") (:schema nil)
+        |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test") (:schema :dynamic)
           :code $ quote
             defimpl MyBarImpl2 MyBar $ .bar mybar:bar2
           :examples $ []
-        |MyFoo $ %{} :CodeEntry (:doc "|Trait for deftrait test") (:schema nil)
+        |MyFoo $ %{} :CodeEntry (:doc "|Trait for deftrait test") (:schema :dynamic)
           :code $ quote
             deftrait MyFoo $ .foo :fn
           :examples $ []
-        |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test") (:schema nil)
+        |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test") (:schema :dynamic)
           :code $ quote
             defimpl MyFooImpl MyFoo $ .foo myfoo:foo
           :examples $ []
-        |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test") (:schema nil)
+        |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test") (:schema :dynamic)
           :code $ quote
             defimpl MyFooImpl2 MyFoo $ .foo myfoo:foo2
           :examples $ []
-        |MyZapA $ %{} :CodeEntry (:doc "|Trait A for cross-trait method conflict test") (:schema nil)
+        |MyZapA $ %{} :CodeEntry (:doc "|Trait A for cross-trait method conflict test") (:schema :dynamic)
           :code $ quote
             deftrait MyZapA $ .zap :fn
           :examples $ []
-        |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test") (:schema nil)
+        |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test") (:schema :dynamic)
           :code $ quote
             defimpl MyZapAImpl MyZapA $ .zap myzap:a
           :examples $ []
-        |MyZapB $ %{} :CodeEntry (:doc "|Trait B for cross-trait method conflict test") (:schema nil)
+        |MyZapB $ %{} :CodeEntry (:doc "|Trait B for cross-trait method conflict test") (:schema :dynamic)
           :code $ quote
             deftrait MyZapB $ .zap :fn
           :examples $ []
-        |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test") (:schema nil)
+        |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test") (:schema :dynamic)
           :code $ quote
             defimpl MyZapBImpl MyZapB $ .zap myzap:b
           :examples $ []
-        |Person0 $ %{} :CodeEntry (:doc "|Struct used in trait tests") (:schema nil)
+        |Person0 $ %{} :CodeEntry (:doc "|Struct used in trait tests") (:schema :dynamic)
           :code $ quote
             defstruct Person0 $ :name :string
           :examples $ []
@@ -147,6 +147,7 @@
                   x 1
                   xs $ [] 1 2 3
                   m $ {} (:a 1) (:b 2)
+                  st $ #{} 1 2 3
                   s |hello
                   opt $ %some 1
                   Person $ impl-traits Person0 MyFooImpl
@@ -157,6 +158,8 @@
                 assert= xs $ assert-traits xs calcit.core/Mappable calcit.core/Show
                 assert= m $ assert-traits m calcit.core/Mappable
                 assert= m $ assert-traits m calcit.core/Mappable calcit.core/Show
+                assert= st $ assert-traits st calcit.core/Mappable
+                assert= st $ assert-traits st calcit.core/Mappable calcit.core/Show
                 assert= s $ assert-traits s calcit.core/Show
                 assert= s $ assert-traits s calcit.core/Show calcit.core/Eq
                 assert= opt $ assert-traits opt calcit.core/Mappable

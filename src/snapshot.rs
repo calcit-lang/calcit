@@ -45,6 +45,7 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "return" => Some("return"),
     "rest" => Some("rest"),
     "generics" => Some("generics"),
+    "where" => Some("where"),
     _ => None,
   }
 }
@@ -572,14 +573,67 @@ pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
 /// `cr edit format` normalises old quote-wrapped schemas to this format.
 /// Returns `Edn::Nil` if conversion fails (should not happen for valid schemas).
 pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
-  let text = match cirru_parser::format(&[schema], true.into()) {
-    Ok(t) => t,
-    Err(_) => return Edn::Nil,
-  };
-  match cirru_edn::parse(&text) {
-    Ok(edn) => edn,
-    Err(_) => Edn::Nil,
+  fn cirru_schema_to_edn(node: &Cirru) -> Option<Edn> {
+    match node {
+      Cirru::Leaf(text) => {
+        let value = text.as_ref();
+        if let Some(stripped) = value.strip_prefix(':') {
+          Some(Edn::Tag(EdnTag::new(stripped)))
+        } else if let Some(stripped) = value.strip_prefix('\'') {
+          Some(Edn::Symbol(Arc::from(stripped)))
+        } else if let Some(stripped) = value.strip_prefix('|') {
+          Some(Edn::str(stripped))
+        } else {
+          Some(Edn::Symbol(text.clone()))
+        }
+      }
+      Cirru::List(items) => match items.first() {
+        Some(Cirru::Leaf(head)) if head.as_ref() == "quote" && items.len() == 2 => match items.get(1) {
+          Some(Cirru::Leaf(name)) => Some(Edn::Symbol(name.clone())),
+          _ => None,
+        },
+        Some(Cirru::Leaf(head)) if head.as_ref() == "{}" => {
+          let mut map = EdnMapView::default();
+          for pair in items.iter().skip(1) {
+            let Cirru::List(xs) = pair else {
+              return None;
+            };
+            if xs.len() < 2 {
+              return None;
+            }
+            let key = cirru_schema_to_edn(&xs[0])?;
+            let value_node = if xs.len() == 2 {
+              xs[1].clone()
+            } else {
+              Cirru::List(xs.iter().skip(1).cloned().collect())
+            };
+            let value = cirru_schema_to_edn(&value_node)?;
+            map.insert(key, value);
+          }
+          Some(Edn::Map(map))
+        }
+        Some(Cirru::Leaf(head)) if head.as_ref() == "[]" => {
+          let values: Option<Vec<Edn>> = items.iter().skip(1).map(cirru_schema_to_edn).collect();
+          values.map(|xs| Edn::List(cirru_edn::EdnListView(xs)))
+        }
+        Some(Cirru::Leaf(head)) if head.as_ref() == "::" && items.len() >= 2 => {
+          let tag = cirru_schema_to_edn(&items[1])?;
+          let extra: Option<Vec<Edn>> = items.iter().skip(2).map(cirru_schema_to_edn).collect();
+          extra.map(|xs| Edn::Tuple(cirru_edn::EdnTupleView {
+            tag: Arc::new(tag),
+            enum_tag: None,
+            extra: xs,
+          }))
+        }
+        _ => {
+          let values: Option<Vec<Edn>> = items.iter().map(cirru_schema_to_edn).collect();
+          values.map(|xs| Edn::List(cirru_edn::EdnListView(xs)))
+        }
+      },
+    }
   }
+
+  cirru_schema_to_edn(&schema).unwrap_or(Edn::Nil)
 }
 
 fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnotation>) -> Result<(), String> {
@@ -652,7 +706,7 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
 }
 
 /// Valid top-level field names accepted in a schema map.
-pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics"];
+pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics", ":where"];
 
 /// Recursively check a Cirru schema tree for deprecated `:nil` type annotations.
 fn check_no_nil_type(node: &Cirru) -> Result<(), String> {
@@ -857,6 +911,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut args_node: Option<&Cirru> = None;
   let mut return_node: Option<&Cirru> = None;
   let mut rest_node: Option<&Cirru> = None;
+  let mut where_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair {
@@ -866,6 +921,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
           ":args" => args_node = Some(val),
           ":return" => return_node = Some(val),
           ":rest" => rest_node = Some(val),
+          ":where" => where_node = Some(val),
           _ => {}
         }
       }
@@ -884,6 +940,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = where_node {
       collect_type_vars(node, &mut used);
     }
 
@@ -914,6 +973,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = where_node {
       collect_type_vars(node, &mut used);
     }
     if let Some(var) = used.iter().next() {
@@ -996,6 +1058,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
 
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     generics: fn_annot.generics.clone(),
+    where_bounds: fn_annot.where_bounds.clone(),
     arg_types: fn_annot.arg_types.clone(),
     return_type: fn_annot.return_type.clone(),
     fn_kind: SchemaKind::Macro,
@@ -1678,6 +1741,13 @@ mod tests {
     ]);
     assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
 
+    let valid_with_where = cirru_parser::parse("{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)")
+      .expect("schema should parse")
+      .into_iter()
+      .next()
+      .expect("schema should have one node");
+    assert!(validate_schema_for_write(&valid_with_where).is_ok(), "schema with :where should pass");
+
     let wrapped_macro = Cirru::List(vec![
       Cirru::leaf("::"),
       Cirru::leaf(":macro"),
@@ -1865,6 +1935,32 @@ mod tests {
       !saved_text.contains("''T"),
       "saved schema must not contain double-leading-quote generics: {saved_text}"
     );
+  }
+
+  #[test]
+  fn test_schema_where_round_trip_is_preserved() {
+    let schema_text = "{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+
+    validate_schema_for_write(&schema_cirru).expect("schema with where should be writable");
+
+    let schema_edn = schema_cirru_to_edn(schema_cirru);
+    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
+      .unwrap_or_else(|| panic!("must parse where schema: {schema_edn:?}"));
+    assert_eq!(fn_schema.where_bounds.len(), 1, "schema_edn={schema_edn:?}");
+    assert_eq!(fn_schema.where_bounds[0].name.as_ref(), "T");
+    assert_eq!(fn_schema.where_bounds[0].traits[0].name.ref_str(), "Show");
+
+    let saved_edn = fn_schema.to_schema_edn();
+    let saved_cirru = schema_edn_to_cirru(&saved_edn).expect("schema edn to cirru");
+    validate_schema_for_write(&saved_cirru).expect("saved where schema should still be writable");
+    let saved_text = cirru_parser::format(&[saved_cirru], true.into()).expect("format schema");
+    assert!(saved_text.contains(":where"), "saved schema should keep :where: {saved_text}");
+    assert!(saved_text.contains("Show"), "saved schema should keep trait bound payload: {saved_text}");
   }
 
   #[test]
@@ -2070,6 +2166,7 @@ mod tests {
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),
+        where_bounds: std::sync::Arc::new(vec![]),
         arg_types: vec![],
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Fn,
@@ -2111,6 +2208,7 @@ mod tests {
       code: vec!["defmacro", "wrapped", "(& body)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),
+        where_bounds: std::sync::Arc::new(vec![]),
         arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Macro,

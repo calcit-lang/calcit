@@ -123,7 +123,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, js-escape)
+/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, weak-types, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -144,6 +144,8 @@ pub enum AnalyzeSubcommand {
   CheckExamples(CheckExamplesCommand),
   /// check type-information coverage in namespace definitions
   CheckTypes(CheckTypesCommand),
+  /// locate weakly-typed hotspots such as :dynamic schema usage and nil literals
+  WeakTypes(WeakTypesCommand),
   /// escape a Calcit symbol into JavaScript-safe identifier form
   JsEscape(JsEscapeCommand),
   /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
@@ -179,6 +181,24 @@ pub struct CheckTypesCommand {
   #[argh(option)]
   pub ns_prefix: Option<String>,
   /// coverage levels to include, comma-separated: none,partial,full
+  #[argh(option)]
+  pub only: Option<String>,
+  /// include dependency/core namespaces
+  #[argh(switch)]
+  pub deps: bool,
+}
+
+/// locate weakly-typed hotspots in schema and code
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "weak-types")]
+pub struct WeakTypesCommand {
+  /// exact namespace to analyze
+  #[argh(option)]
+  pub ns: Option<String>,
+  /// namespace prefix scope filter
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// match kinds to include, comma-separated: schema-dynamic,code-dynamic,code-nil
   #[argh(option)]
   pub only: Option<String>,
   /// include dependency/core namespaces

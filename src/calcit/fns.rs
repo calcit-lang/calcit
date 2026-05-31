@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use crate::Calcit;
 
-use super::{CalcitLocal, CalcitTypeAnnotation};
+use super::{CalcitGenericBound, CalcitLocal, CalcitTypeAnnotation};
 
 /// structure of a function arguments
 #[derive(Debug, Clone)]
@@ -60,6 +60,8 @@ pub struct CalcitFn {
   pub body: Vec<Calcit>,
   /// generics declared by hint-fn
   pub generics: Arc<Vec<Arc<str>>>,
+  /// generic trait bounds declared by hint-fn/:schema :where
+  pub where_bounds: Arc<Vec<CalcitGenericBound>>,
   /// return type declared by hint-fn
   pub return_type: Arc<CalcitTypeAnnotation>,
   /// argument types declared by assert-type

@@ -42,6 +42,48 @@ pub fn quiet_tool_output() -> bool {
   QUIET_TOOL_OUTPUT.load(Ordering::Relaxed)
 }
 
+fn core_snapshot_schema_needs_fallback(snapshot: &snapshot::Snapshot) -> bool {
+  let Some(core_file) = snapshot.files.get("calcit.core") else {
+    return true;
+  };
+  let Some(map_entry) = core_file.defs.get("map") else {
+    return true;
+  };
+  let CalcitTypeAnnotation::Fn(fn_annot) = map_entry.schema.as_ref() else {
+    return true;
+  };
+
+  fn_annot.where_bounds.is_empty() || !matches!(fn_annot.arg_types.get(1).map(|arg| arg.as_ref()), Some(CalcitTypeAnnotation::Fn(_)))
+}
+
+fn load_core_snapshot_from_embedded_source() -> Result<snapshot::Snapshot, String> {
+  let content = include_str!("../src/cirru/calcit-core.cirru");
+  let data = cirru_edn::parse(content).map_err(|e| format!("Failed to parse embedded core snapshot source: {e}"))?;
+  snapshot::load_snapshot_data(&data, "calcit-internal://calcit-core.cirru")
+}
+
+fn overlay_core_schemas_from_source(snapshot: &mut snapshot::Snapshot) -> Result<(), String> {
+  let source_snapshot = load_core_snapshot_from_embedded_source()?;
+
+  for (ns, source_file) in &source_snapshot.files {
+    let Some(target_file) = snapshot.files.get_mut(ns) else {
+      continue;
+    };
+
+    for (def, source_entry) in &source_file.defs {
+      let Some(target_entry) = target_file.defs.get_mut(def) else {
+        continue;
+      };
+
+      if !matches!(source_entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+        target_entry.schema = source_entry.schema.clone();
+      }
+    }
+  }
+
+  Ok(())
+}
+
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   // load core libs
   let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
@@ -49,6 +91,9 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
     eprintln!("\n{e}");
     "Failed to deserialize core snapshot".to_string()
   })?;
+  if core_snapshot_schema_needs_fallback(&snapshot) {
+    overlay_core_schemas_from_source(&mut snapshot)?;
+  }
   let path = "calcit-internal://calcit-core.cirru";
   let meta_ns = format!("{}.$meta", snapshot.package);
   snapshot.files.insert(meta_ns.to_owned(), snapshot::gen_meta_ns(&meta_ns, path));

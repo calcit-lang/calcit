@@ -4186,6 +4186,7 @@ mod tests {
             args: Arc::new(CalcitFnArgs::Args(vec![CalcitLocal::track_sym(&Arc::from("x"))])),
             body: vec![],
             generics: Arc::new(vec![generic_name.clone()]),
+            where_bounds: Arc::new(vec![]),
             return_type: Arc::new(CalcitTypeAnnotation::TypeVar(generic_name.clone())),
             arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic_name))],
           }),
@@ -4687,6 +4688,7 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![0, 1])), // two args
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types: vec![
         Arc::new(CalcitTypeAnnotation::from_tag_name("number")),
         Arc::new(CalcitTypeAnnotation::from_tag_name("string")),
@@ -4777,6 +4779,7 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![0])),
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::from_tag_name("number"))],
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
     };
@@ -4812,6 +4815,244 @@ mod tests {
     assert_eq!(warnings_vec.len(), 1, "expected one warning, got: {warnings_vec:?}");
     assert_eq!(warnings_vec[0].location(), &call_location);
     assert_eq!(warnings_vec[0].location().coord.as_ref(), &vec![9]);
+  }
+
+  #[test]
+  fn user_function_where_bounds_warn_on_missing_trait_impl() {
+    let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
+      EdnTag::new("Show"),
+      vec![EdnTag::new("show")],
+      vec![crate::calcit::DYNAMIC_TYPE.clone()],
+    ));
+    let hint_generics = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Symbol {
+        sym: Arc::from("[]"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.where"),
+          at_def: Arc::from("print-it"),
+        }),
+        location: None,
+      },
+      Calcit::Symbol {
+        sym: Arc::from("T"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.where"),
+          at_def: Arc::from("print-it"),
+        }),
+        location: None,
+      },
+    ])));
+    let where_map = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Symbol {
+        sym: Arc::from("{}"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.where"),
+          at_def: Arc::from("print-it"),
+        }),
+        location: None,
+      },
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Symbol {
+          sym: Arc::from("T"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("tests.where"),
+            at_def: Arc::from("print-it"),
+          }),
+          location: None,
+        },
+        Calcit::Trait((*show_trait).clone()),
+      ]))),
+    ])));
+    let hint_schema = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Symbol {
+        sym: Arc::from("{}"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.where"),
+          at_def: Arc::from("print-it"),
+        }),
+        location: None,
+      },
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::tag("generics"), hint_generics]))),
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::tag("where"), where_map]))),
+    ])));
+    let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests.where")),
+      hint_schema,
+    ])));
+
+    let fn_info = CalcitFn {
+      name: Arc::from("print-it"),
+      def_ns: Arc::from("tests.where"),
+      def_ref: None,
+      usage: crate::calcit::CalcitFnUsageMeta::default(),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      body: vec![hint_form],
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![crate::calcit::CalcitGenericBound {
+        name: Arc::from("T"),
+        traits: Arc::new(vec![show_trait.clone()]),
+      }]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+    };
+
+    let arg_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("value")),
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.where"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+    });
+    let args = CalcitList::from(&[arg_local] as &[Calcit]);
+
+    let mut shown_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Shown"), vec![EdnTag::new("name")]);
+    shown_struct.impls = vec![Arc::new(crate::calcit::CalcitImpl {
+      name: EdnTag::new("ShowImpl"),
+      origin: Some(show_trait.clone()),
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    })];
+    let plain_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Plain"), vec![EdnTag::new("name")]);
+
+    let mut ok_scope_types: ScopeTypes = ScopeTypes::new();
+    ok_scope_types.insert(
+      Arc::from("value"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(shown_struct), Arc::new(vec![]))),
+    );
+    let ok_warnings = RefCell::new(vec![]);
+    let dummy_head = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.where"),
+      def: Arc::from("print-it"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_ns: Arc::from("tests.where"),
+        at_def: Arc::from("demo"),
+      }),
+      def_id: None,
+    });
+    let call_info = CallTypeCheckInfo {
+      file_ns: "tests.where",
+      def_name: "demo",
+      call_location: None,
+    };
+    check_user_fn_arg_types(&fn_info, &dummy_head, &args, &ok_scope_types, &call_info, &ok_warnings);
+    assert!(
+      ok_warnings.borrow().is_empty(),
+      "satisfied where-bound should not warn: {:?}",
+      ok_warnings.borrow()
+    );
+
+    let mut bad_scope_types: ScopeTypes = ScopeTypes::new();
+    bad_scope_types.insert(
+      Arc::from("value"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(plain_struct), Arc::new(vec![]))),
+    );
+    let bad_warnings = RefCell::new(vec![]);
+    check_user_fn_arg_types(&fn_info, &dummy_head, &args, &bad_scope_types, &call_info, &bad_warnings);
+    let warnings_vec = bad_warnings.borrow();
+    assert_eq!(
+      warnings_vec.len(),
+      1,
+      "missing trait impl should emit one warning: {warnings_vec:?}"
+    );
+    let message = warnings_vec[0].to_string();
+    assert!(
+      message.contains("trait bound") && message.contains("Show"),
+      "warning should mention missing where-bound: {message}"
+    );
+  }
+
+  #[test]
+  fn local_function_where_bounds_warn_on_missing_trait_impl() {
+    let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
+      EdnTag::new("Show"),
+      vec![EdnTag::new("show")],
+      vec![crate::calcit::DYNAMIC_TYPE.clone()],
+    ));
+
+    let local_fn = CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("printer")),
+      sym: Arc::from("printer"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.where"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![crate::calcit::CalcitGenericBound {
+          name: Arc::from("T"),
+          traits: Arc::new(vec![show_trait.clone()]),
+        }]),
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+        return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+      }))),
+    };
+    let head_form = Calcit::Local(local_fn.clone());
+
+    let arg_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("value")),
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.where"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: crate::calcit::DYNAMIC_TYPE.clone(),
+    });
+    let args = CalcitList::from(&[arg_local] as &[Calcit]);
+
+    let mut shown_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Shown"), vec![EdnTag::new("name")]);
+    shown_struct.impls = vec![Arc::new(CalcitImpl {
+      name: EdnTag::new("ShowImpl"),
+      origin: Some(show_trait.clone()),
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    })];
+    let plain_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Plain"), vec![EdnTag::new("name")]);
+
+    let call_info = CallTypeCheckInfo {
+      file_ns: "tests.where",
+      def_name: "demo",
+      call_location: None,
+    };
+
+    let mut ok_scope_types: ScopeTypes = ScopeTypes::new();
+    ok_scope_types.insert(
+      Arc::from("value"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(shown_struct), Arc::new(vec![]))),
+    );
+    let ok_warnings = RefCell::new(vec![]);
+    check_local_fn_call_arg_types(&head_form, &local_fn, &args, &ok_scope_types, &call_info, &ok_warnings);
+    assert!(
+      ok_warnings.borrow().is_empty(),
+      "satisfied local fn where-bound should not warn: {:?}",
+      ok_warnings.borrow()
+    );
+
+    let mut bad_scope_types: ScopeTypes = ScopeTypes::new();
+    bad_scope_types.insert(
+      Arc::from("value"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(plain_struct), Arc::new(vec![]))),
+    );
+    let bad_warnings = RefCell::new(vec![]);
+    check_local_fn_call_arg_types(&head_form, &local_fn, &args, &bad_scope_types, &call_info, &bad_warnings);
+    let warnings_vec = bad_warnings.borrow();
+    assert_eq!(
+      warnings_vec.len(),
+      1,
+      "missing local fn trait impl should emit one warning: {warnings_vec:?}"
+    );
+    let message = warnings_vec[0].to_string();
+    assert!(
+      message.contains("trait bound") && message.contains("Show"),
+      "local fn warning should mention missing where-bound: {message}"
+    );
   }
 
   #[test]
@@ -4937,6 +5178,7 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number)],
     });
@@ -5301,6 +5543,7 @@ mod tests {
     }
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types,
       return_type: Arc::new(CalcitTypeAnnotation::Number),
       fn_kind: kind,
@@ -5393,6 +5636,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       fn_kind: SchemaKind::Fn,
@@ -5430,6 +5674,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       fn_kind: SchemaKind::Macro,

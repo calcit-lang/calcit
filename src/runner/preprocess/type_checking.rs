@@ -17,8 +17,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::calcit::{
-  self, Calcit, CalcitFn, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, NodeLocation,
+  self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
+  NodeLocation,
 };
+use crate::program;
 
 use super::{
   ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code,
@@ -33,11 +35,63 @@ struct CheckContext<'a> {
   head_form: &'a Calcit,
   args: &'a CalcitList,
   expected_types: &'a [Arc<CalcitTypeAnnotation>],
+  where_bounds: &'a [CalcitGenericBound],
   scope_types: &'a ScopeTypes,
   file_ns: &'a str,
   call_location: Option<NodeLocation>,
   warning_code: &'static str,
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+}
+
+fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
+  if ctx.where_bounds.is_empty() {
+    return;
+  }
+
+  let expr_str = format!(
+    "{} {}",
+    ctx.head_form,
+    ctx.args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
+  );
+
+  for bound in ctx.where_bounds {
+    let Some(actual_type) = bindings.get(&bound.name) else {
+      continue;
+    };
+    if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+      continue;
+    }
+
+    let required = bound.as_type_annotation();
+    if actual_type.as_ref().matches_annotation(required.as_ref()) {
+      continue;
+    }
+
+    let warning_location = ctx
+      .call_location
+      .clone()
+      .or_else(|| ctx.args.first().and_then(Calcit::get_location));
+    gen_check_warning_code_at(
+      format!(
+        "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy trait bound `{}` at {}/{}\n  Expression: `{}`",
+        bound.name,
+        actual_type.to_brief_string(),
+        required.to_brief_string(),
+        ctx.file_ns,
+        match ctx.head_form {
+          Calcit::Import(import) => import.def.as_ref(),
+          Calcit::Symbol { sym, .. } => sym.as_ref(),
+          Calcit::Local(local) => local.sym.as_ref(),
+          _ => "<call>",
+        },
+        expr_str
+      ),
+      "W_GENERIC_WHERE_BOUND_MISMATCH",
+      ctx.file_ns,
+      warning_location,
+      ctx.check_warnings,
+    );
+  }
 }
 
 pub(crate) struct CallTypeCheckInfo<'a> {
@@ -120,6 +174,8 @@ where
       }
     }
   }
+
+  check_generic_trait_bounds(&ctx, &bindings);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,6 +395,7 @@ pub(crate) fn check_local_fn_call_arg_types(
     head_form,
     args,
     expected_types: &fn_annot.arg_types,
+    where_bounds: fn_annot.where_bounds.as_ref(),
     scope_types,
     file_ns: call_info.file_ns,
     call_location: call_info.call_location.clone(),
@@ -361,9 +418,32 @@ pub(crate) fn check_user_fn_arg_types(
   call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
-    return;
-  }
+  let effective_schema = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name);
+  let schema_fn_annot = match effective_schema.as_ref() {
+    CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.as_ref()),
+    _ => None,
+  };
+
+  let expected_types = if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic))
+  {
+    let Some(fn_annot) = schema_fn_annot else {
+      return;
+    };
+    if fn_annot.arg_types.is_empty() || fn_annot.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
+      return;
+    }
+    fn_annot.arg_types.as_slice()
+  } else {
+    fn_info.arg_types.as_slice()
+  };
+
+  let where_bounds = if fn_info.where_bounds.is_empty() {
+    schema_fn_annot
+      .map(|fn_annot| fn_annot.where_bounds.as_slice())
+      .unwrap_or(fn_info.where_bounds.as_ref())
+  } else {
+    fn_info.where_bounds.as_ref()
+  };
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
@@ -372,7 +452,8 @@ pub(crate) fn check_user_fn_arg_types(
   let ctx = CheckContext {
     head_form,
     args,
-    expected_types: &fn_info.arg_types,
+    expected_types,
+    where_bounds,
     scope_types,
     file_ns: call_info.file_ns,
     call_location: call_info.call_location.clone(),

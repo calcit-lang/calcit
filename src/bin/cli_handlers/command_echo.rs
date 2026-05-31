@@ -279,6 +279,13 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "only" => opts.only.as_deref(); default "all",
       switch "deps" => opts.deps
     ),
+    AnalyzeSubcommand::WeakTypes(opts) => echo_items!(
+      tokens,
+      opt "ns" => opts.ns.as_deref(); default "none",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
+      opt "only" => opts.only.as_deref(); default "all",
+      switch "deps" => opts.deps
+    ),
     AnalyzeSubcommand::JsEscape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
     AnalyzeSubcommand::JsUnescape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
   }
@@ -568,6 +575,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::ProgramDiff(_) => "program-diff",
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
+    AnalyzeSubcommand::WeakTypes(_) => "weak-types",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
     AnalyzeSubcommand::JsUnescape(_) => "js-unescape",
   }

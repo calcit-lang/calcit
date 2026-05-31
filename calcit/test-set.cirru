@@ -104,6 +104,9 @@
                 map (#{} 1 2 3)
                   fn (x) (inc x)
                 #{} 2 3 4
+              assert=
+                .map (#{} 1 2 3) inc
+                #{} 2 3 4
               assert-detect identity $ every? (#{} 1 2 3) (\ > % 0)
               assert= (#{} 1 2 3)
                 #{} 1 2 $ + 1 2

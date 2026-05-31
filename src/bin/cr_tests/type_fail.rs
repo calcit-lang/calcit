@@ -126,6 +126,85 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
+fn type_fail_generic_where_bound_fixture_reports_warning_code() {
+  let _guard = lock_fixture_tests();
+  let entries = load_fixture_entries("calcit/type-fail/generic-where-bound-mismatch.cirru");
+  let require_schema = program::lookup_def_schema("type-fail-generic-where-bound.main", "require-mappable");
+  let CalcitTypeAnnotation::Fn(require_fn_annot) = require_schema.as_ref() else {
+    panic!("require-mappable schema should load as fn, got {require_schema:?}");
+  };
+  assert_eq!(
+    require_fn_annot.where_bounds.len(),
+    1,
+    "require-mappable should carry one where-bound, got {require_schema:?}"
+  );
+  let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+    .expect("generic where-bound fixture should preprocess with warnings, not hard errors");
+
+  let warnings = warnings.borrow();
+  let matched: Vec<&LocatedWarning> = warnings
+    .iter()
+    .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+    .collect();
+  assert_eq!(
+    matched.len(),
+    1,
+    "expected exactly one generic where-bound warning, got: {warnings:?}"
+  );
+  let warning = matched[0];
+  assert_eq!(warning.code(), Some("W_GENERIC_WHERE_BOUND_MISMATCH"));
+  assert!(
+    warning.message().contains("`:number`")
+      && warning.message().contains("Mappable")
+      && warning.message().contains("require-mappable 1"),
+    "warning message was: {}",
+    warning.message()
+  );
+}
+
+#[test]
+fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
+  let _guard = lock_fixture_tests();
+  let entries = load_fixture_entries("calcit/type-fail/core-map-where-bound-mismatch.cirru");
+  let map_schema = program::lookup_def_schema("calcit.core", "map");
+  let CalcitTypeAnnotation::Fn(map_fn_annot) = map_schema.as_ref() else {
+    panic!("core map schema should load as fn, got {map_schema:?}");
+  };
+  assert_eq!(
+    map_fn_annot.where_bounds.len(),
+    1,
+    "core map should carry one where-bound, got {map_schema:?}"
+  );
+  let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+    .expect("core map where-bound fixture should preprocess with warnings, not hard errors");
+
+  let warnings = warnings.borrow();
+  let matched: Vec<&LocatedWarning> = warnings
+    .iter()
+    .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+    .collect();
+  assert_eq!(
+    matched.len(),
+    1,
+    "expected exactly one generic where-bound warning, got: {warnings:?}"
+  );
+  let warning = matched[0];
+  assert_eq!(warning.code(), Some("W_GENERIC_WHERE_BOUND_MISMATCH"));
+  assert!(
+    warning.message().contains("`:number`")
+      && warning.message().contains("Mappable")
+      && warning.message().contains("calcit.core/map")
+      && warning.message().contains("calcit.core/inc"),
+    "warning message was: {}",
+    warning.message()
+  );
+}
+
+#[test]
 fn type_fail_type_slot_fixtures_report_errors() {
   let _guard = lock_fixture_tests();
 

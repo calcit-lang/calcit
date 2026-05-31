@@ -26,7 +26,7 @@ mod cr_cirru_suite_tests;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit, WeakTypesCommand};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -278,6 +278,7 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
+        AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
       AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),
     }
@@ -907,15 +908,156 @@ struct TypeCoverageRow {
   schema_issues: Vec<String>,
 }
 
-fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum WeakTypeKind {
+  SchemaDynamic,
+  CodeDynamic,
+  CodeNil,
+}
+
+impl WeakTypeKind {
+  fn as_str(&self) -> &'static str {
+    match self {
+      Self::SchemaDynamic => "schema-dynamic",
+      Self::CodeDynamic => "code-dynamic",
+      Self::CodeNil => "code-nil",
+    }
+  }
+
+  fn all() -> BTreeSet<Self> {
+    BTreeSet::from([Self::SchemaDynamic, Self::CodeDynamic, Self::CodeNil])
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WeakTypeOccurrence {
+  kind: WeakTypeKind,
+  path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WeakTypeRow {
+  ns: String,
+  def: String,
+  occurrences: Vec<WeakTypeOccurrence>,
+}
+
+fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String> {
+  let mut selected = BTreeSet::new();
+
+  for item in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    let kind = match item {
+      "schema-dynamic" => WeakTypeKind::SchemaDynamic,
+      "code-dynamic" => WeakTypeKind::CodeDynamic,
+      "code-nil" => WeakTypeKind::CodeNil,
+      other => {
+        return Err(format!(
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, code-dynamic, code-nil"
+        ));
+      }
+    };
+    selected.insert(kind);
+  }
+
+  if selected.is_empty() {
+    return Err("Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, code-dynamic, code-nil".to_owned());
+  }
+
+  Ok(selected)
+}
+
+fn format_cirru_path(root: &str, path: &[usize]) -> String {
+  let mut rendered = root.to_owned();
+  for idx in path {
+    rendered.push('[');
+    rendered.push_str(&idx.to_string());
+    rendered.push(']');
+  }
+  rendered
+}
+
+fn scan_cirru_weak_types(
+  node: &Cirru,
+  root: &str,
+  path: &mut Vec<usize>,
+  selected: &BTreeSet<WeakTypeKind>,
+  occurrences: &mut Vec<WeakTypeOccurrence>,
+) {
+  match node {
+    Cirru::Leaf(text) => {
+      if text.as_ref() == ":dynamic" && root == "schema" && selected.contains(&WeakTypeKind::SchemaDynamic) {
+        occurrences.push(WeakTypeOccurrence {
+          kind: WeakTypeKind::SchemaDynamic,
+          path: format_cirru_path(root, path),
+        });
+      } else if text.as_ref() == ":dynamic" && root == "code" && selected.contains(&WeakTypeKind::CodeDynamic) {
+        occurrences.push(WeakTypeOccurrence {
+          kind: WeakTypeKind::CodeDynamic,
+          path: format_cirru_path(root, path),
+        });
+      } else if text.as_ref() == "nil" && root == "code" && selected.contains(&WeakTypeKind::CodeNil) {
+        occurrences.push(WeakTypeOccurrence {
+          kind: WeakTypeKind::CodeNil,
+          path: format_cirru_path(root, path),
+        });
+      }
+    }
+    Cirru::List(items) => {
+      for (idx, item) in items.iter().enumerate() {
+        path.push(idx);
+        scan_cirru_weak_types(item, root, path, selected, occurrences);
+        path.pop();
+      }
+    }
+  }
+}
+
+fn analyze_weak_types_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry, selected: &BTreeSet<WeakTypeKind>) -> Option<WeakTypeRow> {
+  let mut occurrences: Vec<WeakTypeOccurrence> = vec![];
+
+  if matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) && selected.contains(&WeakTypeKind::SchemaDynamic) {
+    occurrences.push(WeakTypeOccurrence {
+      kind: WeakTypeKind::SchemaDynamic,
+      path: "schema".to_owned(),
+    });
+  } else if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref()
+    && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+  {
+    let mut path = vec![];
+    scan_cirru_weak_types(&schema_cirru, "schema", &mut path, selected, &mut occurrences);
+  }
+
+  let mut code_path = vec![];
+  scan_cirru_weak_types(&entry.code, "code", &mut code_path, selected, &mut occurrences);
+
+  if occurrences.is_empty() {
+    None
+  } else {
+    Some(WeakTypeRow {
+      ns: ns.to_owned(),
+      def: def_name.to_owned(),
+      occurrences,
+    })
+  }
+}
+
+fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
   if let Some(ns) = &options.ns
     && !snapshot.files.contains_key(ns)
   {
     return Err(format!("Namespace not found: {ns}"));
   }
 
-  let mut rows: Vec<TypeCoverageRow> = Vec::new();
+  let selected = options
+    .only
+    .as_deref()
+    .map(parse_weak_type_kinds)
+    .transpose()?
+    .unwrap_or_else(WeakTypeKind::all);
+
   let pkg = snapshot.package.as_str();
+  let explicit_scope = options.ns.is_some() || options.ns_prefix.is_some();
+  let mut rows: Vec<WeakTypeRow> = vec![];
 
   for (ns, file) in &snapshot.files {
     if let Some(exact) = &options.ns
@@ -928,7 +1070,90 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
     {
       continue;
     }
-    if !(options.deps || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
+    if !(options.deps || explicit_scope || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
+      continue;
+    }
+
+    for (def_name, entry) in &file.defs {
+      if let Some(row) = analyze_weak_types_entry(ns, def_name, entry, &selected) {
+        rows.push(row);
+      }
+    }
+  }
+
+  rows.sort_by(|a, b| a.ns.cmp(&b.ns).then(a.def.cmp(&b.def)));
+
+  if rows.is_empty() {
+    println!("No weak type usage found in selected namespace scope.");
+    return Ok(());
+  }
+
+  let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut ns_set: BTreeSet<&str> = BTreeSet::new();
+  let mut def_count = 0usize;
+
+  for row in &rows {
+    def_count += 1;
+    ns_set.insert(row.ns.as_str());
+    for occurrence in &row.occurrences {
+      *kind_count.entry(occurrence.kind.as_str()).or_insert(0) += 1;
+    }
+  }
+
+  println!("Weak type usage check");
+  println!("- namespaces: {}", ns_set.len());
+  println!("- defs with hits: {}", def_count);
+  if let Some(raw) = &options.only {
+    println!("- only: {raw}");
+  }
+  println!(
+    "- hits: schema-dynamic={} code-dynamic={} code-nil={}",
+    kind_count.get("schema-dynamic").copied().unwrap_or(0),
+    kind_count.get("code-dynamic").copied().unwrap_or(0),
+    kind_count.get("code-nil").copied().unwrap_or(0)
+  );
+  println!();
+
+  let mut current_ns: Option<&str> = None;
+  for row in &rows {
+    if current_ns != Some(row.ns.as_str()) {
+      println!("namespace: {}", row.ns);
+      current_ns = Some(row.ns.as_str());
+    }
+
+    println!("- def: {}", row.def);
+    for occurrence in &row.occurrences {
+      println!("  - {} @ {}", occurrence.kind.as_str(), occurrence.path);
+    }
+    println!();
+  }
+
+  Ok(())
+}
+
+fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  if let Some(ns) = &options.ns
+    && !snapshot.files.contains_key(ns)
+  {
+    return Err(format!("Namespace not found: {ns}"));
+  }
+
+  let mut rows: Vec<TypeCoverageRow> = Vec::new();
+  let pkg = snapshot.package.as_str();
+  let explicit_scope = options.ns.is_some() || options.ns_prefix.is_some();
+
+  for (ns, file) in &snapshot.files {
+    if let Some(exact) = &options.ns
+      && ns != exact
+    {
+      continue;
+    }
+    if let Some(prefix) = &options.ns_prefix
+      && !ns.starts_with(prefix)
+    {
+      continue;
+    }
+    if !(options.deps || explicit_scope || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
       continue;
     }
 
@@ -1790,6 +2015,7 @@ mod tests {
     };
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types,
       return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
       fn_kind: kind,
@@ -1911,5 +2137,34 @@ mod tests {
       "include schema should match code: {issues:?}; code={:?}",
       entry.code
     );
+  }
+
+  #[test]
+  fn parse_weak_type_kinds_rejects_unknown_values() {
+    let err = parse_weak_type_kinds("schema-dynamic,unknown").expect_err("unknown filters should fail");
+    assert!(err.contains("unknown"), "err: {err}");
+  }
+
+  #[test]
+  fn analyze_weak_types_entry_finds_schema_and_code_hits() {
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      code: list(vec![
+        leaf("defn"),
+        leaf("demo"),
+        list(vec![]),
+        list(vec![leaf("assert-type"), leaf("x"), leaf(":dynamic")]),
+        leaf("nil"),
+      ]),
+      schema: fn_schema_annotation(SchemaKind::Fn, 1, false).into(),
+    };
+
+    let row = analyze_weak_types_entry("app.main", "demo", &entry, &WeakTypeKind::all()).expect("should find hits");
+    let kinds = row.occurrences.iter().map(|item| item.kind).collect::<Vec<_>>();
+
+    assert!(kinds.contains(&WeakTypeKind::SchemaDynamic), "kinds: {kinds:?}");
+    assert!(kinds.contains(&WeakTypeKind::CodeDynamic), "kinds: {kinds:?}");
+    assert!(kinds.contains(&WeakTypeKind::CodeNil), "kinds: {kinds:?}");
   }
 }

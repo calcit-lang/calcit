@@ -24,6 +24,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
       let body_items = expr.skip(2)?.to_vec();
       let return_type = detect_return_type_hint(&body_items);
       let generics = detect_fn_generics(&body_items);
+      let where_bounds = detect_fn_where_bounds(&body_items);
       let parsed_args = get_raw_args_fn(xs)?;
       let param_symbols = match collect_param_symbols(xs) {
         Ok(params) => params,
@@ -69,6 +70,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
           args: Arc::new(parsed_args),
           body: body_items,
           generics,
+          where_bounds,
           return_type,
           arg_types,
         }),
@@ -123,6 +125,15 @@ fn detect_fn_generics(forms: &[Calcit]) -> Arc<Vec<Arc<str>>> {
   for form in forms {
     if let Some(vars) = CalcitTypeAnnotation::extract_generics_from_hint_form(form) {
       return Arc::new(vars);
+    }
+  }
+  Arc::new(vec![])
+}
+
+fn detect_fn_where_bounds(forms: &[Calcit]) -> Arc<Vec<crate::calcit::CalcitGenericBound>> {
+  for form in forms {
+    if let Some(bounds) = CalcitTypeAnnotation::extract_where_bounds_from_hint_form(form) {
+      return Arc::new(bounds);
     }
   }
   Arc::new(vec![])

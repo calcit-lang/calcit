@@ -44,8 +44,9 @@ pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
-  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, bind_type_slot, brief_type_of_value, clear_type_slots,
-  register_program_lookups, register_type_slot, resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
+  CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, bind_type_slot, brief_type_of_value,
+  clear_type_slots, register_program_lookups, register_type_slot, resolve_type_slot, value_matches_type_annotation,
+  with_type_annotation_warning_context,
 };
 
 use compare::{
@@ -1510,6 +1511,7 @@ mod tests {
           args: Arc::new(CalcitFnArgs::Args(vec![])),
           body: vec![Calcit::Str(Arc::from("ok"))],
           generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
           return_type: DYNAMIC_TYPE.clone(),
           arg_types: vec![],
         }),

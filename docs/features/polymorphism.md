@@ -122,6 +122,52 @@ let
 
 If the trait is missing or required methods are not implemented, `assert-traits` raises an error.
 
+## Generic `:where` bounds on functions
+
+When a function is generic but still requires trait capabilities, keep type variables in `:generics` and place trait constraints in `:where`.
+
+This mirrors the main reason Rust has `where` clauses: parameter declaration and bound declaration stay separate, and multiple constraints remain readable instead of being packed into the first mention of the type variable.
+
+Top-level definitions use `:schema`:
+
+```cirru
+%{} :CodeEntry
+  :code $ quote
+    defn show-it (x)
+      .show x
+  :schema $ :: :fn
+    {}
+      :generics $ [] 'T
+      :where $ {}
+        'T Show
+      :args $ [] 'T
+      :return :string
+```
+
+Local functions use `hint-fn` with the same shape:
+
+```cirru
+let
+    show-it $ fn (x)
+      hint-fn $ {}
+        :generics $ [] 'T
+        :where $ {}
+          'T Show
+        :args $ [] 'T
+        :return :string
+      .show x
+  show-it 1
+```
+
+For multiple constraints on the same variable, use a list value:
+
+```cirru
+:where $ {}
+  'T $ [] Show Eq
+```
+
+Do not use the old tuple form like `:where $ [] (:: 'Show 'T)`.
+
 ## Built-in traits
 
 Core types provide built-in trait implementations (e.g. `Show`, `Eq`, `Compare`, `Add`, `Len`, `Mappable`). These are registered by the runtime, so values like numbers, strings, lists, maps, and records already satisfy common traits.

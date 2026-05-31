@@ -71,6 +71,8 @@ Use `hint-fn` with schema map at the start of a local function body:
 
 Legacy clause syntax such as `(hint-fn (return-type ...))`, `(generics ...)`, and `(type-vars ...)` is no longer supported and now fails during preprocessing.
 
+Generic trait bounds use the same schema map. Follow the Rust-style split: declare variables in `:generics`, then put trait constraints in `:where`.
+
 ```cirru
 let
     get-name $ fn (user)
@@ -78,6 +80,21 @@ let
       , |demo
   get-name nil
 ```
+
+```cirru
+let
+    print-it $ fn (x)
+      hint-fn $ {}
+        :generics $ [] 'T
+        :where $ {}
+          'T Show
+        :args $ [] 'T
+        :return :string
+      .show x
+  print-it 1
+```
+
+Do not use the old tuple/list form such as `:where $ [] (:: 'Show 'T)`.
 
 #### 2. Compact Hint (Trailing Label)
 
