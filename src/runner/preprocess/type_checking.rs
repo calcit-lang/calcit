@@ -21,6 +21,7 @@ use crate::calcit::{
   NodeLocation,
 };
 use crate::program;
+use super::type_inference::infer_record_field_type;
 
 use super::{
   ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code,
@@ -98,6 +99,33 @@ pub(crate) struct CallTypeCheckInfo<'a> {
   pub file_ns: &'a str,
   pub def_name: &'a str,
   pub call_location: Option<NodeLocation>,
+}
+
+fn specialize_update_expected_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if fn_info.def_ns.as_ref() != calcit::CORE_NS || fn_info.name.as_ref() != "update" {
+    return None;
+  }
+  if expected_types.len() < 3 || args.len() < 3 {
+    return None;
+  }
+
+  let receiver = args.first()?;
+  let field_name = match args.get(1)? {
+    Calcit::Tag(tag) => tag.ref_str(),
+    Calcit::Str(text) => text.as_ref(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
+    _ => return None,
+  };
+
+  let field_type = infer_record_field_type(receiver, field_name, scope_types)?;
+  let mut specialized = expected_types.to_vec();
+  specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![field_type.clone()], field_type));
+  Some(specialized)
 }
 
 impl<'a> CheckContext<'a> {
@@ -445,6 +473,9 @@ pub(crate) fn check_user_fn_arg_types(
     fn_info.where_bounds.as_ref()
   };
 
+  let specialized_expected_types = specialize_update_expected_types(fn_info, args, scope_types, expected_types);
+  let expected_types = specialized_expected_types.as_deref().unwrap_or(expected_types);
+
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
   let def_name = call_info.def_name.to_owned();
@@ -521,5 +552,74 @@ pub(crate) fn check_function_return_type(
       file_ns,
       check_warnings,
     );
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitLocal, CalcitSymbolInfo, CalcitStruct};
+  use cirru_edn::EdnTag;
+
+  fn make_local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
+    let sym: Arc<str> = Arc::from(name);
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym: sym.clone(),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.update"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info,
+    })
+  }
+
+  #[test]
+  fn specialize_update_uses_record_field_type_for_callback() {
+    let task_struct = Arc::new(CalcitStruct {
+      name: EdnTag::new("Task"),
+      fields: Arc::new(vec![EdnTag::new("done?")]),
+      field_types: Arc::new(vec![tag_annotation("bool")]),
+      generics: Arc::new(vec![]),
+      impls: vec![],
+    });
+
+    let fn_info = CalcitFn {
+      name: Arc::from("update"),
+      def_ns: Arc::from(calcit::CORE_NS),
+      def_ref: None,
+      usage: Default::default(),
+      scope: Arc::new(Default::default()),
+      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
+      body: vec![],
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      arg_types: vec![
+        Arc::new(CalcitTypeAnnotation::Record(task_struct.clone())),
+        crate::calcit::DYNAMIC_TYPE.clone(),
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        )),
+      ],
+    };
+
+    let args = CalcitList::from(&[
+      make_local("task", Arc::new(CalcitTypeAnnotation::Record(task_struct))),
+      Calcit::Tag(EdnTag::new("done?")),
+      make_local("not", Arc::new(CalcitTypeAnnotation::from_function_parts(vec![tag_annotation("bool")], tag_annotation("bool")))),
+    ]);
+
+    let scope_types = ScopeTypes::new();
+    let specialized = specialize_update_expected_types(&fn_info, &args, &scope_types, fn_info.arg_types.as_slice())
+      .expect("update callback type should specialize from record field");
+
+    let CalcitTypeAnnotation::Fn(callback) = specialized[2].as_ref() else {
+      panic!("specialized callback should be fn type");
+    };
+    assert!(matches!(callback.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Bool)));
+    assert!(matches!(callback.return_type.as_ref(), CalcitTypeAnnotation::Bool));
   }
 }

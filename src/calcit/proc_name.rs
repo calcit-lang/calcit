@@ -777,7 +777,7 @@ impl CalcitProc {
       }),
       Not => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![optional_tag("bool")],
+        arg_types: vec![dynamic_tag()],
       }),
 
       // === String operations ===

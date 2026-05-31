@@ -608,7 +608,7 @@ pub(crate) fn infer_record_field_type(
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   let type_info = resolve_type_value(receiver, scope_types)?;
-  let struct_def = type_info.as_ref().as_struct()?;
+  let struct_def = type_info.as_ref().resolve_to_struct()?;
   let idx = struct_def.index_of(field_name)?;
   struct_def.field_types.get(idx).cloned()
 }
