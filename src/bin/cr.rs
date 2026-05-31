@@ -983,6 +983,40 @@ fn weak_type_detail(kind: WeakTypeKind, detail: &str) -> String {
   format!("{}:{}", kind.as_str(), detail)
 }
 
+fn extract_schema_dynamic_position(detail: &str) -> Option<String> {
+  let mut parts = detail.split(':');
+  match (parts.next(), parts.next()) {
+    (Some("schema-dynamic"), Some(position)) => Some(position.to_owned()),
+    _ => None,
+  }
+}
+
+fn extract_schema_dynamic_shape(detail: &str) -> Option<String> {
+  let mut parts = detail.split(':');
+  match (parts.next(), parts.next(), parts.next()) {
+    (Some("schema-dynamic"), Some(_position), Some(shape)) => {
+      let mut result = shape.to_owned();
+      for part in parts {
+        result.push(':');
+        result.push_str(part);
+      }
+      Some(result)
+    }
+    _ => None,
+  }
+}
+
+fn extract_schema_dynamic_family(detail: &str) -> Option<String> {
+  let shape = extract_schema_dynamic_shape(detail)?;
+  let family = shape.split(':').next()?;
+  let family = family.split('-').next()?;
+  Some(family.to_owned())
+}
+
+fn extend_schema_dynamic_detail(detail: &str, segment: &str) -> String {
+  format!("{detail}:{segment}")
+}
+
 fn push_weak_type_occurrence(
   occurrences: &mut Vec<WeakTypeOccurrence>,
   kind: WeakTypeKind,
@@ -1016,24 +1050,39 @@ fn scan_schema_dynamic_annotation(
     | CalcitTypeAnnotation::Ref(inner)
     | CalcitTypeAnnotation::Variadic(inner)
     | CalcitTypeAnnotation::Optional(inner) => {
-      scan_schema_dynamic_annotation(inner, &format!("{path}.item"), detail, occurrences);
+      let segment = match annotation {
+        CalcitTypeAnnotation::List(_) => "list-item",
+        CalcitTypeAnnotation::Set(_) => "set-item",
+        CalcitTypeAnnotation::Ref(_) => "ref-item",
+        CalcitTypeAnnotation::Variadic(_) => "variadic-item",
+        CalcitTypeAnnotation::Optional(_) => "optional-item",
+        _ => unreachable!("composite item annotation should be covered by the match arm"),
+      };
+      let nested_detail = extend_schema_dynamic_detail(detail, segment);
+      scan_schema_dynamic_annotation(inner, &format!("{path}.item"), &nested_detail, occurrences);
     }
     CalcitTypeAnnotation::Map(key, value) => {
-      scan_schema_dynamic_annotation(key, &format!("{path}.key"), detail, occurrences);
-      scan_schema_dynamic_annotation(value, &format!("{path}.value"), detail, occurrences);
+      let key_detail = extend_schema_dynamic_detail(detail, "map-key");
+      let value_detail = extend_schema_dynamic_detail(detail, "map-value");
+      scan_schema_dynamic_annotation(key, &format!("{path}.key"), &key_detail, occurrences);
+      scan_schema_dynamic_annotation(value, &format!("{path}.value"), &value_detail, occurrences);
     }
     CalcitTypeAnnotation::Fn(fn_annot) => {
       for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
-        scan_schema_dynamic_annotation(arg, &format!("{path}.args[{idx}]"), detail, occurrences);
+        let arg_detail = extend_schema_dynamic_detail(detail, "fn-arg");
+        scan_schema_dynamic_annotation(arg, &format!("{path}.args[{idx}]"), &arg_detail, occurrences);
       }
-      scan_schema_dynamic_annotation(&fn_annot.return_type, &format!("{path}.return"), detail, occurrences);
+      let return_detail = extend_schema_dynamic_detail(detail, "fn-return");
+      scan_schema_dynamic_annotation(&fn_annot.return_type, &format!("{path}.return"), &return_detail, occurrences);
       if let Some(rest) = &fn_annot.rest_type {
-        scan_schema_dynamic_annotation(rest, &format!("{path}.rest"), detail, occurrences);
+        let rest_detail = extend_schema_dynamic_detail(detail, "fn-rest");
+        scan_schema_dynamic_annotation(rest, &format!("{path}.rest"), &rest_detail, occurrences);
       }
     }
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
       for (idx, arg) in args.iter().enumerate() {
-        scan_schema_dynamic_annotation(arg, &format!("{path}.type-arg[{idx}]"), detail, occurrences);
+        let type_arg_detail = extend_schema_dynamic_detail(detail, "type-arg");
+        scan_schema_dynamic_annotation(arg, &format!("{path}.type-arg[{idx}]"), &type_arg_detail, occurrences);
       }
     }
     _ => {}
@@ -1149,11 +1198,16 @@ fn analyze_weak_types_entry(
         scan_schema_dynamic_annotation(rest, "schema.rest", "rest", &mut occurrences);
       }
     }
-  } else if selected.contains(&WeakTypeKind::SchemaDynamic)
-    && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&entry.schema.to_type_edn())
-  {
-    let mut path = vec![];
-    scan_cirru_weak_types(&schema_cirru, "schema", &mut path, None, selected, &mut occurrences);
+  } else if selected.contains(&WeakTypeKind::SchemaDynamic) {
+    let before = occurrences.len();
+    scan_schema_dynamic_annotation(entry.schema.as_ref(), "schema", "root", &mut occurrences);
+
+    if occurrences.len() == before
+      && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&entry.schema.to_type_edn())
+    {
+      let mut path = vec![];
+      scan_cirru_weak_types(&schema_cirru, "schema", &mut path, None, selected, &mut occurrences);
+    }
   }
 
   let mut code_path = vec![];
@@ -1219,12 +1273,20 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
 
   let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
   let mut detail_count: BTreeMap<&'static str, BTreeMap<String, usize>> = BTreeMap::new();
+  let mut schema_shape_count: BTreeMap<String, usize> = BTreeMap::new();
+  let mut schema_shape_positions: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+  let mut schema_shape_defs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+  let mut schema_shape_position_defs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+  let mut schema_family_count: BTreeMap<String, usize> = BTreeMap::new();
+  let mut schema_family_positions: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+  let mut schema_family_defs: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
   let mut ns_set: BTreeSet<&str> = BTreeSet::new();
   let mut def_count = 0usize;
 
   for row in &rows {
     def_count += 1;
     ns_set.insert(row.ns.as_str());
+    let def_label = format!("{}/{}", row.ns, row.def);
     for occurrence in &row.occurrences {
       *kind_count.entry(occurrence.kind.as_str()).or_insert(0) += 1;
       *detail_count
@@ -1232,6 +1294,42 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
         .or_default()
         .entry(occurrence.detail.clone())
         .or_insert(0) += 1;
+      let schema_position = if occurrence.kind == WeakTypeKind::SchemaDynamic {
+        extract_schema_dynamic_position(&occurrence.detail)
+      } else {
+        None
+      };
+      if occurrence.kind == WeakTypeKind::SchemaDynamic
+        && let Some(shape) = extract_schema_dynamic_shape(&occurrence.detail)
+      {
+        *schema_shape_count.entry(shape.clone()).or_insert(0) += 1;
+        if let Some(position) = &schema_position {
+          *schema_shape_positions
+            .entry(shape.clone())
+            .or_default()
+            .entry(position.clone())
+            .or_insert(0) += 1;
+          *schema_shape_position_defs
+            .entry(format!("{shape}@{position}"))
+            .or_default()
+            .entry(def_label.clone())
+            .or_insert(0) += 1;
+        }
+        *schema_shape_defs.entry(shape).or_default().entry(def_label.clone()).or_insert(0) += 1;
+      }
+      if occurrence.kind == WeakTypeKind::SchemaDynamic
+        && let Some(family) = extract_schema_dynamic_family(&occurrence.detail)
+      {
+        *schema_family_count.entry(family.clone()).or_insert(0) += 1;
+        if let Some(position) = &schema_position {
+          *schema_family_positions
+            .entry(family.clone())
+            .or_default()
+            .entry(position.clone())
+            .or_insert(0) += 1;
+        }
+        *schema_family_defs.entry(family).or_default().entry(def_label.clone()).or_insert(0) += 1;
+      }
     }
   }
 
@@ -1253,6 +1351,59 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
     if let Some(items) = detail_count.get(kind) {
       for (detail, count) in items {
         println!("    - {detail}={count}");
+      }
+    }
+  }
+  if !schema_shape_count.is_empty() {
+    println!("- schema-shapes:");
+    for (shape, count) in &schema_shape_count {
+      println!("  - {shape}={count}");
+    }
+    println!("- schema-shape-positions:");
+    for (shape, positions) in &schema_shape_positions {
+      println!("  - {shape}");
+      for (position, count) in positions {
+        println!("    - {position}={count}");
+      }
+    }
+    println!("- schema-shape-defs:");
+    for (shape, defs) in &schema_shape_defs {
+      println!("  - {shape}");
+      let mut items = defs.iter().collect::<Vec<_>>();
+      items.sort_by(|(a_name, a_count), (b_name, b_count)| b_count.cmp(a_count).then(a_name.cmp(b_name)));
+      for (def_name, count) in items {
+        println!("    - {def_name}={count}");
+      }
+    }
+    println!("- schema-shape-position-defs:");
+    for (shape_position, defs) in &schema_shape_position_defs {
+      println!("  - {shape_position}");
+      let mut items = defs.iter().collect::<Vec<_>>();
+      items.sort_by(|(a_name, a_count), (b_name, b_count)| b_count.cmp(a_count).then(a_name.cmp(b_name)));
+      for (def_name, count) in items {
+        println!("    - {def_name}={count}");
+      }
+    }
+  }
+  if !schema_family_count.is_empty() {
+    println!("- schema-families:");
+    for (family, count) in &schema_family_count {
+      println!("  - {family}={count}");
+    }
+    println!("- schema-family-positions:");
+    for (family, positions) in &schema_family_positions {
+      println!("  - {family}");
+      for (position, count) in positions {
+        println!("    - {position}={count}");
+      }
+    }
+    println!("- schema-family-defs:");
+    for (family, defs) in &schema_family_defs {
+      println!("  - {family}");
+      let mut items = defs.iter().collect::<Vec<_>>();
+      items.sort_by(|(a_name, a_count), (b_name, b_count)| b_count.cmp(a_count).then(a_name.cmp(b_name)));
+      for (def_name, count) in items {
+        println!("    - {def_name}={count}");
       }
     }
   }
@@ -2345,5 +2496,102 @@ mod tests {
     assert!(details.contains(&"schema-dynamic:rest"), "details: {details:?}");
     assert!(details.contains(&"code-nil:if-then"), "details: {details:?}");
     assert!(details.contains(&"code-nil:if-else"), "details: {details:?}");
+  }
+
+  #[test]
+  fn analyze_weak_types_entry_classifies_nested_schema_dynamic_shapes() {
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      code: list(vec![leaf("defn"), leaf("nested"), list(vec![]), leaf("x")]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::List(calcit::calcit::DYNAMIC_TYPE.clone()))],
+        return_type: Arc::new(CalcitTypeAnnotation::Map(
+          Arc::new(CalcitTypeAnnotation::Tag),
+          calcit::calcit::DYNAMIC_TYPE.clone(),
+        )),
+        fn_kind: SchemaKind::Fn,
+        rest_type: Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(
+          calcit::calcit::CalcitFnTypeAnnotation {
+            generics: Arc::new(vec![]),
+            where_bounds: Arc::new(vec![]),
+            arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
+            return_type: Arc::new(CalcitTypeAnnotation::Bool),
+            fn_kind: SchemaKind::Fn,
+            rest_type: None,
+          },
+        )))),
+      }))
+      .into(),
+    };
+
+    let row = analyze_weak_types_entry("app.main", "nested", &entry, &WeakTypeKind::all()).expect("should find hits");
+    let details = row.occurrences.iter().map(|item| item.detail.as_str()).collect::<Vec<_>>();
+
+    assert!(details.contains(&"schema-dynamic:arg:list-item"), "details: {details:?}");
+    assert!(details.contains(&"schema-dynamic:return:map-value"), "details: {details:?}");
+    assert!(details.contains(&"schema-dynamic:rest:fn-arg"), "details: {details:?}");
+  }
+
+  #[test]
+  fn analyze_weak_types_entry_classifies_non_fn_composite_root_shapes() {
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      code: leaf("demo"),
+      schema: Arc::new(CalcitTypeAnnotation::Map(
+        Arc::new(CalcitTypeAnnotation::Tag),
+        Arc::new(CalcitTypeAnnotation::List(calcit::calcit::DYNAMIC_TYPE.clone())),
+      )),
+    };
+
+    let row = analyze_weak_types_entry("app.main", "map-root", &entry, &WeakTypeKind::all()).expect("should find hits");
+    let details = row.occurrences.iter().map(|item| item.detail.as_str()).collect::<Vec<_>>();
+
+    assert!(details.contains(&"schema-dynamic:root:map-value:list-item"), "details: {details:?}");
+  }
+
+  #[test]
+  fn extract_schema_dynamic_shape_keeps_nested_suffix() {
+    assert_eq!(
+      extract_schema_dynamic_position("schema-dynamic:arg:list-item"),
+      Some("arg".to_owned())
+    );
+    assert_eq!(extract_schema_dynamic_position("schema-dynamic:return"), Some("return".to_owned()));
+    assert_eq!(extract_schema_dynamic_position("code-dynamic:list-item"), None);
+
+    assert_eq!(
+      extract_schema_dynamic_shape("schema-dynamic:arg:list-item"),
+      Some("list-item".to_owned())
+    );
+    assert_eq!(
+      extract_schema_dynamic_shape("schema-dynamic:root:map-value:list-item"),
+      Some("map-value:list-item".to_owned())
+    );
+    assert_eq!(extract_schema_dynamic_shape("schema-dynamic:arg"), None);
+    assert_eq!(extract_schema_dynamic_shape("code-dynamic:list-item"), None);
+  }
+
+  #[test]
+  fn extract_schema_dynamic_family_collapses_shape_variants() {
+    assert_eq!(
+      extract_schema_dynamic_family("schema-dynamic:arg:list-item"),
+      Some("list".to_owned())
+    );
+    assert_eq!(
+      extract_schema_dynamic_family("schema-dynamic:return:map-value"),
+      Some("map".to_owned())
+    );
+    assert_eq!(
+      extract_schema_dynamic_family("schema-dynamic:rest:fn-return"),
+      Some("fn".to_owned())
+    );
+    assert_eq!(
+      extract_schema_dynamic_family("schema-dynamic:root:map-value:list-item"),
+      Some("map".to_owned())
+    );
+    assert_eq!(extract_schema_dynamic_family("schema-dynamic:return"), None);
   }
 }

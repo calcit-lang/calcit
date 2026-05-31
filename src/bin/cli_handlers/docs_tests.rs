@@ -23,7 +23,11 @@ fn collect_docs_for_query_uses_guidebook_without_module() {
   match collect_docs_for_query(None) {
     Ok(docs) => {
       assert!(!docs.is_empty());
-      assert!(docs.iter().any(|doc| doc.filename == "CalcitAgent.md" || doc.path.ends_with("CalcitAgent.md")));
+      assert!(
+        docs
+          .iter()
+          .any(|doc| doc.filename == "CalcitAgent.md" || doc.path.ends_with("CalcitAgent.md"))
+      );
     }
     Err(err) => {
       assert!(err.contains("Guidebook documentation directory not found") || err.contains("Failed to read directory"));

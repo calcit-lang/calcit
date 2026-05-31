@@ -1,3 +1,5 @@
-- tightened calcit.core `&map:add-entry` to preserve map key/value generics while keeping the heterogeneous pair list broad
-- tightened `&merge-non-nil` in both calcit-core snapshot and Rust proc signature to generic `map<K, V>` input/output
-- verified new weak-types baseline at schema-dynamic=332 and re-ran cargo test plus yarn check-all
+- tightened multiple calcit.core snapshot schemas that safely remove weak composite internals without narrowing runtime behavior: typed path lists for `assoc-in`/`get-in`/`dissoc-in`/`update-in`/`contains-in?`, typed collection helpers like `apply`, `join-str`, `foldr-shortcut`, and explicit output map generics for `map-kv` and `pairs-map`
+- corrected one weak-types false lead by changing `keys` from returning `:list` to `:set`, matching runtime/tests and moving that hit out of the list family
+- extended `cr analyze weak-types` to classify nested schema-dynamic shapes/families, include per-definition summaries, split family/shape counts by `arg`/`return` position, and show per-definition `shape@position` contributors for the remaining hotspots
+- confirmed the current lower-bound weak hits under the existing type system: `&record:to-map` for heterogeneous record values; `&tuple:params`, `&cirru-quote:to-list`, `parse-cirru-list`, `&format-ternary-tree`, `&list:flatten`, `format-cirru`, and `format-cirru-one-liner` for mixed list payloads that cannot be soundly collapsed to `list<'T>`
+- verified the final baseline at schema-dynamic=290 with `cargo test --bin cr analyze_weak_types -- --nocapture`, repeated `cargo run --bin cr -- calcit/test.cirru analyze weak-types --ns calcit.core --only schema-dynamic`, and runtime suite checks via `cargo run --bin cr -- calcit/test.cirru`

@@ -128,14 +128,20 @@ fn normalize_schema_map(map: &EdnMapView) -> Edn {
   for (key, value) in &map.0 {
     let normalized_key = match key {
       Edn::Tag(tag) => Edn::tag(tag.ref_str()),
-      Edn::Str(text) => canonical_schema_field_name(text.as_ref()).map(Edn::tag).unwrap_or_else(|| key.clone()),
-      Edn::Symbol(text) => canonical_schema_field_name(text.as_ref()).map(Edn::tag).unwrap_or_else(|| key.clone()),
+      Edn::Str(text) => canonical_schema_field_name(text.as_ref())
+        .map(Edn::tag)
+        .unwrap_or_else(|| key.clone()),
+      Edn::Symbol(text) => canonical_schema_field_name(text.as_ref())
+        .map(Edn::tag)
+        .unwrap_or_else(|| key.clone()),
       _ => key.clone(),
     };
 
     let normalized_value = match (&normalized_key, value) {
       (Edn::Tag(tag), Edn::Str(text)) | (Edn::Tag(tag), Edn::Symbol(text)) if tag.ref_str() == "kind" => {
-        canonical_schema_kind_name(text.as_ref()).map(Edn::tag).unwrap_or_else(|| value.clone())
+        canonical_schema_kind_name(text.as_ref())
+          .map(Edn::tag)
+          .unwrap_or_else(|| value.clone())
       }
       _ => value.clone(),
     };
@@ -170,9 +176,7 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
         Edn::Map(map) => map,
         _ => unreachable!(),
       };
-      if normalized.tag_get("kind").is_none()
-        && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro")
-      {
+      if normalized.tag_get("kind").is_none() && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro") {
         normalized.insert_key("kind", Edn::tag("macro"));
       }
       let normalized = Edn::Map(normalized);
