@@ -46,11 +46,11 @@ let
 
 ## Generic Enums
 
-Generic enum payloads are available through the runtime constructor `&enum::new`. This keeps the generic variables explicit in the variant payload declarations, while use sites still annotate values with the normal applied named type syntax.
+`defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then use the applied named type syntax `(:: 'TypeName ...)` in schemas and assertions.
 
 ```cirru
 let
-    ResultX $ &enum::new :ResultX ([] (quote T) (quote E)) ([] :ok (quote T)) ([] :err (quote E))
+    ResultX $ defenum ResultX ([] 'T 'E) (:ok 'T) (:err 'E)
     ok $ %:: ResultX :ok 1
     err $ %:: ResultX :err |oops
   assert-type ok $ :: 'ResultX :number :string

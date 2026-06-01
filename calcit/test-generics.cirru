@@ -6,32 +6,31 @@
   :files $ {}
     |test-generics.main $ %{} :FileEntry
       :defs $ {}
-        |Box $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |Box $ %{} :CodeEntry (:doc "|Generic box struct") (:schema :dynamic)
           :code $ quote
-            defstruct Box $ :value :number
+            defstruct Box ([] 'T) (:value 'T)
           :examples $ []
-        |Holder $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |Holder $ %{} :CodeEntry (:doc "|Generic holder wrapping Box") (:schema :dynamic)
           :code $ quote
-            defstruct Holder $ :box Box
+            defstruct Holder ([] 'T)
+              :box $ :: 'Box 'T
           :examples $ []
-        |Pair $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |Pair $ %{} :CodeEntry (:doc "|Generic pair struct") (:schema :dynamic)
           :code $ quote
-            defstruct Pair (:left :number) (:right :string)
-          :examples $ []
-        |Wrapped $ %{} :CodeEntry (:doc |) (:schema :dynamic)
-          :code $ quote
-            defenum Wrapped (:pair Pair) (:none)
+            defstruct Pair ([] 'T 'U) (:left 'T) (:right 'U)
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            defn main! () $ do
-              println "|Testing generics..."
-              println "|  - data structure baseline"
-              test-struct-generics
-              println "|  - function generics and where-bounds"
-              test-fn-generics
-              println "|Generics tests passed"
+            defn main! () $ do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
+        |pair-right $ %{} :CodeEntry (:doc "|Return the right value from a generic pair")
+          :code $ quote
+            defn pair-right (pair) (:right pair)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return 'U)
+              :args $ [] (:: 'test-generics.main/Pair 'T 'U)
+              :generics $ [] 'T 'U
         |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () $ :: :unit
@@ -80,19 +79,27 @@
           :examples $ []
         |test-struct-generics $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            defn test-struct-generics () $ do
-              println "|Testing generic data structure baseline..."
-              let
-                  p $ %{} Pair (:left 1) (:right |hi)
-                  b $ %{} Box (:value 2)
-                  h $ %{} Holder (:box b)
-                assert-type p Pair
-                assert-type b Box
-                assert-type h Holder
-                &inspect-type p
-                &inspect-type b
-                &inspect-type h
-              println "|Generic data structure baseline passed"
+            defn test-struct-generics () $ do (println "|Testing generic struct support...")
+              assert= 2 $ unbox (&%{} Box :value 2)
+              assert= |hi $ pair-right (&%{} Pair :left 1 :right |hi)
+              assert-type
+                unbox $ &%{} Box :value 2
+                , :number
+              assert-type
+                pair-right $ &%{} Pair :left 1 :right |hi
+                , :string
+              &inspect-type $ &%{} Pair :left 1 :right |hi
+              &inspect-type $ &%{} Box :value 2
+              &inspect-type $ &%{} Holder :box (&%{} Box :value 2)
+              println "|Generic struct support passed"
           :examples $ []
+        |unbox $ %{} :CodeEntry (:doc "|Return value from a generic box")
+          :code $ quote
+            defn unbox (box) (:value box)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return 'T)
+              :args $ [] (:: 'test-generics.main/Box 'T)
+              :generics $ [] 'T
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-generics.main)

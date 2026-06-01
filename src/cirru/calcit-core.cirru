@@ -2628,41 +2628,61 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic
-        |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name :variant type... ...)\nParams: Name (symbol/tag), variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")
+        |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name [('T 'E)] (:variant type...) ...)\nParams: Name (symbol/tag), optional generics list, variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")
           :code $ quote
             defmacro defenum (name & variants)
               assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
               assert "|defenum expects variants in list" $ and (list? variants) (every? variants list?)
-              assert "|defenum expects (variant & payloads)" $ every? variants
-                fn (variant)
-                  &let
-                    items $ if
-                      &= [] $ &list:first variant
-                      &list:rest variant
-                      , variant
-                    &>= (count items) 1
               &let
-                normalized $ map variants
-                  fn (variant)
-                    &let
-                      items $ if
-                        &= [] $ &list:first variant
-                        &list:rest variant
-                        , variant
-                      &let
-                        variant-tag $ &list:first items
+                first-variant $ if (empty? variants) (;nil) (&list:first variants)
+                &let
+                  generics $ if (list? first-variant)
+                    if
+                      and
+                        not $ empty? first-variant
+                        not $ tag? (&list:first first-variant)
+                      if
+                        &= [] $ &list:first first-variant
+                        &list:rest first-variant
+                        , first-variant
+                    , []
+                  &let
+                    variant-forms $ if (empty? generics) variants (&list:rest variants)
+                    assert "|defenum expects (variant & payloads)" $ every? variant-forms
+                      fn (variant)
                         &let
-                          payload-forms $ map (&list:rest items)
-                            fn (t)
-                              if (list? t)
-                                quasiquote $ quote (~ t)
-                                , t
-                          quasiquote $ [] (~ variant-tag) (~@ payload-forms)
-                quasiquote $ &enum::new
-                  ~ $ turn-tag name
-                  ~@ normalized
+                          items $ if
+                            &= [] $ &list:first variant
+                            &list:rest variant
+                            , variant
+                          &>= (count items) 1
+                    &let
+                      normalized $ map variant-forms
+                        fn (variant)
+                          &let
+                            items $ if
+                              &= [] $ &list:first variant
+                              &list:rest variant
+                              , variant
+                            &let
+                              variant-tag $ &list:first items
+                              &let
+                                payload-forms $ map (&list:rest items)
+                                  fn (t)
+                                    if (list? t)
+                                      quasiquote $ quote (~ t)
+                                      , t
+                                quasiquote $ [] (~ variant-tag) (~@ payload-forms)
+                      if (empty? generics)
+                        quasiquote $ &enum::new
+                          ~ $ turn-tag name
+                          ~@ normalized
+                        quasiquote $ &enum::new
+                          ~ $ turn-tag name
+                          [] ~@generics
+                          ~@ normalized
           :examples $ []
-            quote $ defenum Result (:ok :number) (:err :string)
+            quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
         |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (.method value) ...), (defimpl ImplName Trait (:: .method value) ...), or legacy (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")

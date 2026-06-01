@@ -195,13 +195,11 @@ fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Op
     CalcitTypeAnnotation::List(element_type) => Some(wrap_optional_type(element_type.clone())),
     CalcitTypeAnnotation::Map(_, value_type) => Some(wrap_optional_type(value_type.clone())),
     CalcitTypeAnnotation::String => Some(wrap_optional_type(tag_annotation("string"))),
-    CalcitTypeAnnotation::Record(_) => {
+    CalcitTypeAnnotation::Record(_) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::TypeRef(_, _) => {
       if let Some(field_name) = key_arg.and_then(extract_field_name)
-        && let Some(struct_def) = base_type.resolve_to_struct()
-        && let Some(idx) = struct_def.index_of(field_name)
-        && let Some(field_type) = struct_def.field_types.get(idx)
+        && let Some(field_type) = resolve_struct_field_type(base_type, field_name)
       {
-        return Some(wrap_optional_type(field_type.clone()));
+        return Some(wrap_optional_type(field_type));
       }
       Some(wrap_optional_type(calcit::DYNAMIC_TYPE.clone()))
     }
@@ -261,7 +259,17 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
       Some(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Tuple(enum_def.clone()))),
       None => Some(Arc::new(CalcitTypeAnnotation::DynTuple)),
     },
-    Calcit::Record(record) => Some(Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone()))),
+    Calcit::Record(record) => {
+      if record.struct_ref.generics.is_empty() {
+        Some(Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())))
+      } else {
+        let applied_args = infer_struct_applied_args(record.struct_ref.as_ref(), record.values.iter(), scope_types);
+        Some(Arc::new(CalcitTypeAnnotation::Struct(
+          record.struct_ref.clone(),
+          Arc::new(applied_args),
+        )))
+      }
+    }
     Calcit::Struct(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(
       Arc::new(struct_def.to_owned()),
       Arc::new(vec![]),
@@ -570,9 +578,58 @@ fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     _ => return None,
   };
 
-  let _ = tag_arg; // tag_arg no longer needed since Tuple carries the full enum definition
+  if enum_proto.generics().is_empty() {
+    return Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(enum_proto))));
+  }
 
-  Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(enum_proto))))
+  let applied_args = infer_enum_tuple_applied_args(&enum_proto, tag_arg, xs.iter().skip(3), scope_types).unwrap_or_else(|| {
+    enum_proto
+      .generics()
+      .iter()
+      .map(|_| calcit::DYNAMIC_TYPE.clone())
+      .collect::<Vec<_>>()
+  });
+
+  Some(Arc::new(CalcitTypeAnnotation::Enum(
+    Arc::new(enum_proto),
+    Arc::new(applied_args),
+  )))
+}
+
+fn infer_enum_tuple_applied_args<'a>(
+  enum_proto: &CalcitEnum,
+  tag_arg: Option<&Calcit>,
+  payload_args: impl Iterator<Item = &'a Calcit>,
+  scope_types: &ScopeTypes,
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if enum_proto.generics().is_empty() {
+    return Some(vec![]);
+  }
+
+  let tag_name = match tag_arg? {
+    Calcit::Tag(tag) => tag.ref_str(),
+    _ => return None,
+  };
+  let variant = enum_proto.find_variant_by_name(tag_name)?;
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+
+  for (payload, expected_type) in payload_args.zip(variant.payload_types().iter()) {
+    let actual_type = resolve_type_value(payload, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+  }
+
+  Some(
+    enum_proto
+      .generics()
+      .iter()
+      .map(|name| {
+        bindings
+          .get(name)
+          .cloned()
+          .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
+      })
+      .collect(),
+  )
 }
 
 fn infer_record_get_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -597,8 +654,7 @@ fn infer_record_nth_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
     _ => return None,
   };
   let type_info = resolve_type_value(record_arg, scope_types)?;
-  let struct_def = type_info.as_ref().as_struct()?;
-  struct_def.field_types.get(idx).cloned()
+  resolve_struct_field_type_by_index(type_info.as_ref(), idx)
 }
 
 fn infer_record_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -607,7 +663,16 @@ fn infer_record_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Optio
   }
   let proto_arg = xs.get(1)?;
   let record = resolve_record_value(proto_arg, scope_types)?;
-  Some(Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())))
+  if record.struct_ref.generics.is_empty() {
+    return Some(Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())));
+  }
+
+  let field_values = collect_record_literal_values(xs, &record)?;
+  let applied_args = infer_struct_applied_args(record.struct_ref.as_ref(), field_values.iter(), scope_types);
+  Some(Arc::new(CalcitTypeAnnotation::Struct(
+    record.struct_ref.clone(),
+    Arc::new(applied_args),
+  )))
 }
 
 fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -687,9 +752,97 @@ pub(crate) fn infer_record_field_type(
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   let type_info = resolve_type_value(receiver, scope_types)?;
-  let struct_def = type_info.as_ref().resolve_to_struct()?;
-  let idx = struct_def.index_of(field_name)?;
-  struct_def.field_types.get(idx).cloned()
+  resolve_struct_field_type(type_info.as_ref(), field_name)
+}
+
+fn resolve_struct_field_type(type_info: &CalcitTypeAnnotation, field_name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let idx = type_info.resolve_to_struct()?.index_of(field_name)?;
+  resolve_struct_field_type_by_index(type_info, idx)
+}
+
+fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usize) -> Option<Arc<CalcitTypeAnnotation>> {
+  match type_info {
+    CalcitTypeAnnotation::Optional(inner) => resolve_struct_field_type_by_index(inner.as_ref(), idx),
+    CalcitTypeAnnotation::Record(struct_def) => struct_def.field_types.get(idx).cloned(),
+    CalcitTypeAnnotation::Struct(struct_def, args) => {
+      let field_type = struct_def.field_types.get(idx)?.clone();
+      Some(substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref()))
+    }
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      let struct_def = type_info.resolve_to_struct()?;
+      let field_type = struct_def.field_types.get(idx)?.clone();
+      Some(substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref()))
+    }
+    _ => None,
+  }
+}
+
+fn substitute_declared_generics(
+  declared_generics: &[Arc<str>],
+  applied_args: &[Arc<CalcitTypeAnnotation>],
+  field_type: &CalcitTypeAnnotation,
+) -> Arc<CalcitTypeAnnotation> {
+  if declared_generics.is_empty() || applied_args.is_empty() {
+    return Arc::new(field_type.to_owned());
+  }
+
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  for (name, arg) in declared_generics.iter().zip(applied_args.iter()) {
+    bindings.insert(name.to_owned(), arg.to_owned());
+  }
+  field_type.substitute_type_vars(&bindings)
+}
+
+fn infer_struct_applied_args<'a>(
+  struct_def: &CalcitStruct,
+  values: impl Iterator<Item = &'a Calcit>,
+  scope_types: &ScopeTypes,
+) -> Vec<Arc<CalcitTypeAnnotation>> {
+  if struct_def.generics.is_empty() {
+    return vec![];
+  }
+
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  for (value, expected_type) in values.zip(struct_def.field_types.iter()) {
+    let actual_type = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+  }
+
+  struct_def
+    .generics
+    .iter()
+    .map(|name| {
+      bindings
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
+    })
+    .collect()
+}
+
+fn collect_record_literal_values(xs: &CalcitList, record: &CalcitRecord) -> Option<Vec<Calcit>> {
+  if xs.len() < 2 {
+    return None;
+  }
+
+  let mut values = vec![Calcit::Nil; record.struct_ref.fields.len()];
+  let pair_count = (xs.len().saturating_sub(2)) / 2;
+  for idx in 0..pair_count {
+    let k_idx = idx * 2 + 2;
+    let v_idx = k_idx + 1;
+    let key = xs.get(k_idx)?;
+    let value = xs.get(v_idx)?;
+    let field_name = match key {
+      Calcit::Tag(tag) => tag.ref_str(),
+      Calcit::Symbol { sym, .. } | Calcit::Str(sym) => sym,
+      _ => continue,
+    };
+    if let Some(pos) = record.index_of(field_name) {
+      values[pos] = value.to_owned();
+    }
+  }
+
+  Some(values)
 }
 
 pub(crate) fn extract_field_name(field_arg: &Calcit) -> Option<&str> {
