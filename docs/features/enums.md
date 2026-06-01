@@ -61,6 +61,29 @@ let
 
 At the type level, `(:: 'ResultX :number :string)` means the first slot is bound to `T` and the second slot is bound to `E`.
 
+### Generic Enums with `where` Bounds
+
+After the optional generics list, `defenum` may also take a `where` map to constrain type variables with traits. This is useful when enum payloads must support methods like `.show`.
+
+```cirru
+let
+    ShownMaybe $ defenum ShownMaybe ([] 'T)
+      {} ('T Show)
+      :some 'T
+      :none
+    some-val $ %:: ShownMaybe :some 1
+    none-val $ %:: ShownMaybe :none
+  assert-type some-val $ :: 'ShownMaybe :number
+  assert= |1 $ match some-val
+    (:some item) (.show item)
+    (:none) |none
+  assert= |none $ match none-val
+    (:some item) (.show item)
+    (:none) |none
+```
+
+The `where` map uses type variables as keys and trait names as values. `%::` checks the variant payloads against those bounds at runtime, so invalid type arguments are rejected when the enum value is created.
+
 ## Enums with Struct Payloads
 
 Enum payload slots can reference named structs, not just primitive tags. Use the same applied named type syntax that `defstruct` uses in schemas.
@@ -331,7 +354,7 @@ defenum Shape2 (:point Point) (:circle :number)
 
 ; generic struct payloads use applied named types
 defstruct Box ([] 'T) (:value 'T)
-defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
+defenum Wrapped ('T) (:box (:: 'Box 'T)) (:empty)
 
 ; (:none) means no payload
 defenum MaybeInt (:some :number) (:none)

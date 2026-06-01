@@ -55,6 +55,22 @@ let
 
 Use this pattern when the struct definition owns the type variable. Function-level constraints such as `:where` still stay on the function schema, not on `defstruct` itself.
 
+### Generic Structs with `where` Bounds
+
+`defstruct` may also take a `where` map right after the optional generics list. This lets the struct definition itself require that a type variable implements one or more traits.
+
+```cirru
+let
+    ShownBox $ defstruct ShownBox ([] 'T)
+      {} ('T Show)
+      :value 'T
+    box $ %{} ShownBox (:value 1)
+  assert-type box $ :: 'ShownBox :number
+  assert= |1 $ .show $ get box :value
+```
+
+Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a record instance, so the constraint lives on the data definition rather than on each individual function schema.
+
 ## Creating Records
 
 Use the `%{}` macro to instantiate a struct:
