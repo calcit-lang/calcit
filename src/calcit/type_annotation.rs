@@ -1995,21 +1995,23 @@ impl CalcitTypeAnnotation {
   fn builtin_type_satisfies_trait(&self, expected_trait: &CalcitTrait) -> bool {
     match expected_trait.name.ref_str() {
       "Mappable" => matches!(self, Self::List(_) | Self::Map(_, _) | Self::Set(_) | Self::Optional(_)),
-      "Show" => matches!(
-        self,
-        Self::Bool
-          | Self::Number
-          | Self::String
-          | Self::Symbol
-          | Self::Tag
-          | Self::Unit
-          | Self::Buffer
-          | Self::CirruQuote
-          | Self::DynTuple
-          | Self::List(_)
-          | Self::Map(_, _)
-          | Self::Set(_)
-      ) || matches!(self, Self::Optional(inner) if inner.builtin_type_satisfies_trait(expected_trait)),
+      "Show" => {
+        matches!(
+          self,
+          Self::Bool
+            | Self::Number
+            | Self::String
+            | Self::Symbol
+            | Self::Tag
+            | Self::Unit
+            | Self::Buffer
+            | Self::CirruQuote
+            | Self::DynTuple
+            | Self::List(_)
+            | Self::Map(_, _)
+            | Self::Set(_)
+        ) || matches!(self, Self::Optional(inner) if inner.builtin_type_satisfies_trait(expected_trait))
+      }
       _ => false,
     }
   }
@@ -4127,18 +4129,10 @@ fn infer_runtime_enum_applied_args(enum_def: &CalcitEnum, tuple: &CalcitTuple) -
   }
 
   let Some(Calcit::Tag(tag)) = Some(tuple.tag.as_ref()) else {
-    return enum_def
-      .generics()
-      .iter()
-      .map(|_| crate::calcit::DYNAMIC_TYPE.clone())
-      .collect();
+    return enum_def.generics().iter().map(|_| crate::calcit::DYNAMIC_TYPE.clone()).collect();
   };
   let Some(variant) = enum_def.find_variant(tag) else {
-    return enum_def
-      .generics()
-      .iter()
-      .map(|_| crate::calcit::DYNAMIC_TYPE.clone())
-      .collect();
+    return enum_def.generics().iter().map(|_| crate::calcit::DYNAMIC_TYPE.clone()).collect();
   };
 
   let mut bindings: TypeBindings = HashMap::new();
@@ -4176,7 +4170,12 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
     )),
     Calcit::Proc(proc) => proc
       .get_type_signature()
-      .map(|signature| Arc::new(CalcitTypeAnnotation::from_function_parts(signature.arg_types.clone(), signature.return_type.clone())))
+      .map(|signature| {
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          signature.arg_types.clone(),
+          signature.return_type.clone(),
+        ))
+      })
       .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::DynFn)),
     Calcit::Record(record) => {
       if record.struct_ref.generics.is_empty() {
@@ -4184,7 +4183,10 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
       } else {
         Arc::new(CalcitTypeAnnotation::Struct(
           record.struct_ref.clone(),
-          Arc::new(infer_runtime_struct_applied_args(record.struct_ref.as_ref(), record.values.as_ref())),
+          Arc::new(infer_runtime_struct_applied_args(
+            record.struct_ref.as_ref(),
+            record.values.as_ref(),
+          )),
         ))
       }
     }
@@ -4202,19 +4204,12 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
   }
 }
 
-pub fn collect_runtime_type_bindings(
-  value: &Calcit,
-  expected: &CalcitTypeAnnotation,
-  bindings: &mut TypeBindings,
-) -> bool {
+pub fn collect_runtime_type_bindings(value: &Calcit, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
   let actual = infer_runtime_value_type(value);
   actual.as_ref().matches_with_bindings(expected, bindings)
 }
 
-pub fn validate_runtime_generic_where_bounds(
-  bindings: &TypeBindings,
-  where_bounds: &[CalcitGenericBound],
-) -> Result<(), String> {
+pub fn validate_runtime_generic_where_bounds(bindings: &TypeBindings, where_bounds: &[CalcitGenericBound]) -> Result<(), String> {
   for bound in where_bounds {
     let Some(actual_type) = bindings.get(&bound.name) else {
       continue;

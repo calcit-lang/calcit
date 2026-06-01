@@ -590,10 +590,7 @@ fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       .collect::<Vec<_>>()
   });
 
-  Some(Arc::new(CalcitTypeAnnotation::Enum(
-    Arc::new(enum_proto),
-    Arc::new(applied_args),
-  )))
+  Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_proto), Arc::new(applied_args))))
 }
 
 fn infer_enum_tuple_applied_args<'a>(
@@ -622,12 +619,7 @@ fn infer_enum_tuple_applied_args<'a>(
     enum_proto
       .generics()
       .iter()
-      .map(|name| {
-        bindings
-          .get(name)
-          .cloned()
-          .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
-      })
+      .map(|name| bindings.get(name).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
       .collect(),
   )
 }
@@ -767,12 +759,20 @@ fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usi
     CalcitTypeAnnotation::Record(struct_def) => struct_def.field_types.get(idx).cloned(),
     CalcitTypeAnnotation::Struct(struct_def, args) => {
       let field_type = struct_def.field_types.get(idx)?.clone();
-      Some(substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref()))
+      Some(substitute_declared_generics(
+        struct_def.generics.as_ref(),
+        args.as_ref(),
+        field_type.as_ref(),
+      ))
     }
     CalcitTypeAnnotation::TypeRef(_, args) => {
       let struct_def = type_info.resolve_to_struct()?;
       let field_type = struct_def.field_types.get(idx)?.clone();
-      Some(substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref()))
+      Some(substitute_declared_generics(
+        struct_def.generics.as_ref(),
+        args.as_ref(),
+        field_type.as_ref(),
+      ))
     }
     _ => None,
   }
@@ -812,12 +812,7 @@ fn infer_struct_applied_args<'a>(
   struct_def
     .generics
     .iter()
-    .map(|name| {
-      bindings
-        .get(name)
-        .cloned()
-        .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
-    })
+    .map(|name| bindings.get(name).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
     .collect()
 }
 

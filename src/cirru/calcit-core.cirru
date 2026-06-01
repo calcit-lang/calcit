@@ -2628,6 +2628,40 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic
+        |data-definition-form $ %{} :CodeEntry (:doc "|Normalize wrapped forms used by data-definition macros")
+          :code $ quote
+            defn data-definition-form (entry)
+              if
+                and
+                  list? entry
+                  not $ empty? entry
+                  &= [] $ &list:first entry
+                &list:rest entry
+                if
+                  and
+                    list? entry
+                    &= 1 $ count entry
+                    list? $ &list:first entry
+                  &list:first entry
+                  , entry
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
+        |data-definition-where-form? $ %{} :CodeEntry (:doc "|Detect optional where-map form after generic parameters in data-definition macros")
+          :code $ quote
+            defn data-definition-where-form? (tail-forms)
+              if (empty? tail-forms) false
+                &let
+                  candidate $ data-definition-form $ &list:first tail-forms
+                  and
+                    list? candidate
+                    not $ empty? candidate
+                    &= :map $ type-of (&list:first candidate)
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :bool)
+              :args $ [] :dynamic
         |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name [('T 'E)] (:variant type...) ...)\nParams: Name (symbol/tag), optional generics list, variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")
           :code $ quote
             defmacro defenum (name & variants)
@@ -2647,40 +2681,51 @@
                         , first-variant
                     , []
                   &let
-                    variant-forms $ if (empty? generics) variants (&list:rest variants)
-                    assert "|defenum expects (variant & payloads)" $ every? variant-forms
-                      fn (variant)
-                        &let
-                          items $ if
-                            &= [] $ &list:first variant
-                            &list:rest variant
-                            , variant
-                          &>= (count items) 1
+                    tail-forms $ if (empty? generics) variants (&list:rest variants)
                     &let
-                      normalized $ map variant-forms
-                        fn (variant)
-                          &let
-                            items $ if
-                              &= [] $ &list:first variant
-                              &list:rest variant
-                              , variant
-                            &let
-                              variant-tag $ &list:first items
+                      has-where-form? $ data-definition-where-form? tail-forms
+                      &let
+                        where-form $ if has-where-form? (data-definition-form $ &list:first tail-forms) $ {}
+                        &let
+                          variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
+                          assert "|defenum expects (variant & payloads)" $ every? variant-forms
+                            fn (variant)
                               &let
-                                payload-forms $ map (&list:rest items)
-                                  fn (t)
-                                    if (list? t)
-                                      quasiquote $ quote (~ t)
-                                      , t
-                                quasiquote $ [] (~ variant-tag) (~@ payload-forms)
-                      if (empty? generics)
-                        quasiquote $ &enum::new
-                          ~ $ turn-tag name
-                          ~@ normalized
-                        quasiquote $ &enum::new
-                          ~ $ turn-tag name
-                          [] ~@generics
-                          ~@ normalized
+                                items $ data-definition-form variant
+                                &>= (count items) 1
+                          &let
+                            normalized $ map variant-forms
+                              fn (variant)
+                                &let
+                                  items $ data-definition-form variant
+                                  &let
+                                    variant-tag $ &list:first items
+                                    &let
+                                      payload-forms $ map (&list:rest items)
+                                        fn (t)
+                                          if (list? t)
+                                            quasiquote $ quote (~ t)
+                                            , t
+                                      quasiquote $ [] (~ variant-tag) (~@ payload-forms)
+                            if (empty? generics)
+                              if has-where-form?
+                                quasiquote $ &enum::new
+                                  ~ $ turn-tag name
+                                  ~ where-form
+                                  ~@ normalized
+                                quasiquote $ &enum::new
+                                  ~ $ turn-tag name
+                                  ~@ normalized
+                              if has-where-form?
+                                quasiquote $ &enum::new
+                                  ~ $ turn-tag name
+                                  [] ~@generics
+                                  ~ where-form
+                                  ~@ normalized
+                                quasiquote $ &enum::new
+                                  ~ $ turn-tag name
+                                  [] ~@generics
+                                  ~@ normalized
           :examples $ []
             quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
           :schema $ :: :macro
@@ -2834,48 +2879,59 @@
                         , first-pair
                     , []
                   &let
-                    field-pairs $ if (empty? generics) pairs (&list:rest pairs)
-                    assert "|defstruct expects (field type) pairs" $ every? field-pairs
-                      fn (pair)
-                        &let
-                          items $ if
-                            &= [] $ &list:first pair
-                            &list:rest pair
-                            , pair
-                          &= 2 $ count items
+                    tail-forms $ if (empty? generics) pairs (&list:rest pairs)
                     &let
-                      normalized $ map field-pairs
-                        fn (pair)
-                          &let
-                            items $ if
-                              &= [] $ &list:first pair
-                              &list:rest pair
-                              , pair
-                            &let
-                              field-name $ &list:first items
+                      has-where-form? $ data-definition-where-form? tail-forms
+                      &let
+                        where-form $ if has-where-form? (data-definition-form $ &list:first tail-forms) $ {}
+                        &let
+                          field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
+                          assert "|defstruct expects (field type) pairs" $ every? field-pairs
+                            fn (pair)
                               &let
-                                type-form $ last items
-                                if (list? type-form)
-                                  if
-                                    and
-                                      &= 2 $ count type-form
-                                      syntax? $ &list:first type-form
-                                    if
-                                      includes? generics type-form
-                                      quasiquote $ [] (~ field-name)
-                                        quote $ ~ type-form
-                                      quasiquote $ [] (~ field-name) (~ type-form)
-                                    quasiquote $ [] (~ field-name)
-                                      quote $ ~ type-form
-                                  quasiquote $ [] (~ field-name) (~ type-form)
-                      if (empty? generics)
-                        quasiquote $ &struct::new
-                          ~ $ turn-tag name
-                          ~@ normalized
-                        quasiquote $ &struct::new
-                          ~ $ turn-tag name
-                          [] ~@generics
-                          ~@ normalized
+                                items $ data-definition-form pair
+                                &= 2 $ count items
+                          &let
+                            normalized $ map field-pairs
+                              fn (pair)
+                                &let
+                                  items $ data-definition-form pair
+                                  &let
+                                    field-name $ &list:first items
+                                    &let
+                                      type-form $ last items
+                                      if (list? type-form)
+                                        if
+                                          and
+                                            &= 2 $ count type-form
+                                            syntax? $ &list:first type-form
+                                          if
+                                            includes? generics type-form
+                                            quasiquote $ [] (~ field-name)
+                                              quote $ ~ type-form
+                                            quasiquote $ [] (~ field-name) (~ type-form)
+                                          quasiquote $ [] (~ field-name)
+                                            quote $ ~ type-form
+                                        quasiquote $ [] (~ field-name) (~ type-form)
+                            if (empty? generics)
+                              if has-where-form?
+                                quasiquote $ &struct::new
+                                  ~ $ turn-tag name
+                                  ~ where-form
+                                  ~@ normalized
+                                quasiquote $ &struct::new
+                                  ~ $ turn-tag name
+                                  ~@ normalized
+                              if has-where-form?
+                                quasiquote $ &struct::new
+                                  ~ $ turn-tag name
+                                  [] ~@generics
+                                  ~ where-form
+                                  ~@ normalized
+                                quasiquote $ &struct::new
+                                  ~ $ turn-tag name
+                                  [] ~@generics
+                                  ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name :string) (:age :number)
           :schema $ :: :macro

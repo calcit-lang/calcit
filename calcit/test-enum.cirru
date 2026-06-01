@@ -16,16 +16,16 @@
           :examples $ []
         |ShownBox $ %{} :CodeEntry (:doc "|Generic struct with where-bound on payload type") (:schema :dynamic)
           :code $ quote
-            def ShownBox $ &struct::new :ShownBox ([] 'T)
-              {} ('T Show)
-              [] :value 'T
+            defstruct ShownBox ('T)
+              ({} ('T Show))
+              (:value 'T)
           :examples $ []
         |ShownMaybe $ %{} :CodeEntry (:doc "|Generic enum with where-bound on payload type") (:schema :dynamic)
           :code $ quote
-            def ShownMaybe $ &enum::new :ShownMaybe ([] 'T)
-              {} ('T Show)
-              [] :some 'T
-              [] :none
+            defenum ShownMaybe ('T)
+              ({} ('T Show))
+              (:some 'T)
+              (:none)
           :examples $ []
         |Result0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
@@ -49,7 +49,7 @@
               :args $ [] 'test-enum.main/Result0
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-tag-match-validation) (test-tuple-to-enum) (test-match) (println "|All tests passed!")
+            defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-tag-match-validation) (test-tuple-to-enum) (test-match) (println "|All tests passed!")
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)
@@ -164,17 +164,18 @@
             defn test-where-bound-definitions () $ do (println "|Testing data definition where-bounds...")
               let
                   box $ %{} ShownBox (:value 1)
-                  some-value $ %:: ShownMaybe :some 1
-                  none-value $ %:: ShownMaybe :none
-                assert-type box $ :: 'ShownBox :number
-                assert-type some-value $ :: 'ShownMaybe :number
-                assert= |1 $ .show (:value box)
-                assert= |1 $ match some-value
-                  (:some item) (.show item)
-                  (:none) |none
-                assert= |none $ match none-value
-                  (:some item) (.show item)
-                  (:none) |none
+                let
+                    some-value $ %:: ShownMaybe :some 1
+                  let
+                      none-value $ %:: ShownMaybe :none
+                    assert-type box $ :: 'ShownBox :number
+                    assert-type some-value $ :: 'ShownMaybe :number
+                    assert= |1 $ match some-value
+                      (:some item) (.show item)
+                      (:none) |none
+                    assert= |none $ match none-value
+                      (:some item) (.show item)
+                      (:none) |none
               println "|✓ Data definition where-bounds passed"
           :examples $ []
           :schema $ :: :fn

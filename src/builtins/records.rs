@@ -1,14 +1,15 @@
-use std::ops::Rem;
 use std::collections::HashMap;
+use std::ops::Rem;
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
+use crate::calcit::CORE_NS;
 use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 use crate::calcit::{
-  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax,
-  CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
+  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct,
+  CalcitSyntax, CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
 };
 
 fn mark_fn_used_in_impl(value: &Calcit) -> Calcit {
@@ -70,20 +71,42 @@ fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
   Some(vars)
 }
 
-fn is_where_map_form(form: &Calcit) -> bool {
+fn is_list_literal_head(form: &Calcit) -> bool {
   match form {
-    Calcit::Map(_) => true,
-    Calcit::List(items) => matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}")
-      || matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeMap))),
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "[]",
+    Calcit::Proc(CalcitProc::List) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == CORE_NS && def.as_ref() == "[]",
+    Calcit::Macro { info, .. } => info.def_ns.as_ref() == CORE_NS && info.name.as_ref() == "[]",
     _ => false,
   }
 }
 
-fn parse_where_bounds(form: &Calcit, generics: &[Arc<str>]) -> Option<Vec<crate::calcit::CalcitGenericBound>> {
-  if !is_where_map_form(form) {
-    return None;
+fn is_where_map_head(form: &Calcit) -> bool {
+  matches!(form, Calcit::Symbol { sym, .. } if sym.as_ref() == "{}")
+    || matches!(form, Calcit::Proc(CalcitProc::NativeMap))
+    || matches!(form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == CORE_NS && def.as_ref() == "{}")
+    || matches!(form, Calcit::Macro { info, .. } if info.def_ns.as_ref() == CORE_NS && info.name.as_ref() == "{}")
+}
+
+fn normalize_where_bounds_form(form: &Calcit) -> Option<Calcit> {
+  match form {
+    Calcit::Map(_) => Some(form.to_owned()),
+    Calcit::List(items) => {
+      if items.first().is_some_and(is_where_map_head) {
+        Some(form.to_owned())
+      } else if items.first().is_some_and(is_list_literal_head) && items.get(1).is_some_and(is_where_map_head) {
+        Some(Calcit::List(Arc::new(CalcitList::Vector(items.iter().skip(1).cloned().collect()))))
+      } else {
+        None
+      }
+    }
+    _ => None,
   }
-  Some(CalcitTypeAnnotation::parse_where_bounds_form(form, generics, true))
+}
+
+fn parse_where_bounds(form: &Calcit, generics: &[Arc<str>]) -> Option<Vec<crate::calcit::CalcitGenericBound>> {
+  let normalized = normalize_where_bounds_form(form)?;
+  Some(CalcitTypeAnnotation::parse_where_bounds_form(&normalized, generics, true))
 }
 
 pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -1347,11 +1370,7 @@ mod tests {
 
   #[test]
   fn generic_struct_where_bounds_accept_show_values() {
-    let result = call_record(&[
-      Calcit::Struct(shown_box_struct()),
-      Calcit::tag("value"),
-      Calcit::Number(1.0),
-    ]);
+    let result = call_record(&[Calcit::Struct(shown_box_struct()), Calcit::tag("value"), Calcit::Number(1.0)]);
 
     assert!(result.is_ok(), "expected shown box creation to pass: {result:?}");
   }

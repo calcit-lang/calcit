@@ -126,6 +126,57 @@ const list_items = (item: CalcitValue): CalcitValue[] => {
   throw new Error(`Expected list entry, got: ${item}`);
 };
 
+const isQuotedTypeVar = (item: CalcitValue): boolean => {
+  if (item instanceof CalcitSymbol) {
+    return true;
+  }
+  if (item instanceof CalcitList || item instanceof CalcitSliceList) {
+    const items = Array.from(item.items());
+    return items.length === 2 && items[0] instanceof CalcitSymbol && items[0].value === "quote" && items[1] instanceof CalcitSymbol;
+  }
+  return false;
+};
+
+const isGenericsEntry = (entry: CalcitValue): boolean => {
+  if (!(entry instanceof CalcitList || entry instanceof CalcitSliceList)) {
+    return false;
+  }
+  const items = Array.from(entry.items());
+  return items.length > 0 && items.every(isQuotedTypeVar);
+};
+
+const isWhereMapEntry = (entry: CalcitValue): boolean => {
+  if (!(entry instanceof CalcitList || entry instanceof CalcitSliceList)) {
+    return false;
+  }
+  const items = Array.from(entry.items());
+  if (items.length < 2) {
+    return false;
+  }
+  const head = items[0];
+  if (head instanceof CalcitTag || head instanceof CalcitSymbol || typeof head === "string") {
+    return false;
+  }
+  return items.slice(1).every((item) => {
+    if (!(item instanceof CalcitList || item instanceof CalcitSliceList)) {
+      return false;
+    }
+    const pair = Array.from(item.items());
+    return pair.length === 2;
+  });
+};
+
+const trimDataDefinitionEntries = (entries: CalcitValue[]): CalcitValue[] => {
+  let start = 0;
+  if (entries[start] != null && isGenericsEntry(entries[start])) {
+    start += 1;
+  }
+  if (entries[start] != null && isWhereMapEntry(entries[start])) {
+    start += 1;
+  }
+  return entries.slice(start);
+};
+
 export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue): CalcitTrait {
   if (arguments.length !== 2) throw new Error("&trait::new expected 2 arguments");
   const items = list_items(methods);
@@ -195,8 +246,9 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
   const structName = castTag(name);
   const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
+  const fieldEntries = trimDataDefinitionEntries(entries);
 
-  for (let entry of entries) {
+  for (let entry of fieldEntries) {
     const items = list_items(entry);
     if (items.length !== 2) {
       throw new Error(`defstruct expects (field type) pairs, got: ${toString(entry, true)}`);
@@ -221,8 +273,9 @@ export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStr
 export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum => {
   const enumName = castTag(name);
   const entries: Array<{ tag: CalcitTag; payload: CalcitSliceList }> = [];
+  const variantEntries = trimDataDefinitionEntries(variants);
 
-  for (let variant of variants) {
+  for (let variant of variantEntries) {
     const items = list_items(variant);
     if (items.length === 0) {
       throw new Error("defenum expects variant tag and payload types, got empty list");

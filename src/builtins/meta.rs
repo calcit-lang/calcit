@@ -1,3 +1,4 @@
+use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 use crate::{
   builtins,
   calcit::{
@@ -16,7 +17,6 @@ use crate::{
   runner,
   util::number::f64_to_usize,
 };
-use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 
 use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
@@ -2044,11 +2044,7 @@ mod tests {
 
   #[test]
   fn generic_enum_where_bounds_accept_show_values() {
-    let result = new_enum_tuple_no_class(&[
-      Calcit::Enum(shown_maybe_enum()),
-      Calcit::tag("some"),
-      Calcit::Number(1.0),
-    ]);
+    let result = new_enum_tuple_no_class(&[Calcit::Enum(shown_maybe_enum()), Calcit::tag("some"), Calcit::Number(1.0)]);
 
     assert!(result.is_ok(), "expected shown maybe creation to pass: {result:?}");
   }
