@@ -61,6 +61,34 @@ let
 
 At the type level, `(:: 'ResultX :number :string)` means the first slot is bound to `T` and the second slot is bound to `E`.
 
+## Enums with Struct Payloads
+
+Enum payload slots can reference named structs, not just primitive tags. Use the same applied named type syntax that `defstruct` uses in schemas.
+
+```cirru
+let
+    Point $ defstruct Point (:x :number) (:y :number)
+    Shape $ defenum Shape (:point Point) (:label :string)
+    p $ %{} Point (:x 1) (:y 2)
+    shape $ %:: Shape :point p
+  assert-type shape Shape
+  assert= 1 $ get (&tuple:nth shape 1) :x
+```
+
+Applied generic structs also work in enum payloads:
+
+```cirru
+let
+    Box $ defstruct Box ([] 'T) (:value 'T)
+    Wrapped $ defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
+    value $ %:: Wrapped :box $ %{} Box (:value 1)
+  assert-type value $ :: 'Wrapped :number
+  assert-type (&tuple:nth value 1) $ :: 'Box :number
+  assert= 1 $ get (&tuple:nth value 1) :value
+```
+
+When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.
+
 ## Creating Instances
 
 Use `%::` with the enum definition, the variant tag, and then the payload values:
@@ -296,6 +324,14 @@ defenum ApiResult (:ok :string) (:err :string)
 
 ; (:point :number :number) means :point has two :number payloads
 defenum Shape (:point :number :number) (:circle :number)
+
+; payloads may also reference named structs
+defstruct Point (:x :number) (:y :number)
+defenum Shape2 (:point Point) (:circle :number)
+
+; generic struct payloads use applied named types
+defstruct Box ([] 'T) (:value 'T)
+defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
 
 ; (:none) means no payload
 defenum MaybeInt (:some :number) (:none)
