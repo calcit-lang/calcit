@@ -8,6 +8,64 @@ use crate::{
 pub mod cirru;
 pub mod edn;
 
+fn where_bounds_to_calcit_form(
+  bounds: &[crate::calcit::CalcitGenericBound],
+  ns: &str,
+  at_def: &str,
+) -> Option<Calcit> {
+  if bounds.is_empty() {
+    return None;
+  }
+
+  let info = Arc::new(crate::calcit::CalcitSymbolInfo {
+    at_ns: Arc::from(ns),
+    at_def: Arc::from(at_def),
+  });
+
+  let mut items = vec![Calcit::Symbol {
+    sym: "{}".into(),
+    info: info.clone(),
+    location: None,
+  }];
+
+  for bound in bounds {
+    let key = Calcit::from(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("quote")),
+      Calcit::Symbol {
+        sym: bound.name.to_owned(),
+        info: info.clone(),
+        location: None,
+      },
+    ]));
+
+    let value = if bound.traits.len() == 1 {
+      Calcit::Symbol {
+        sym: Arc::from(bound.traits[0].name.ref_str()),
+        info: info.clone(),
+        location: None,
+      }
+    } else {
+      let mut trait_items = vec![Calcit::Symbol {
+        sym: "[]".into(),
+        info: info.clone(),
+        location: None,
+      }];
+      for trait_def in bound.traits.iter() {
+        trait_items.push(Calcit::Symbol {
+          sym: Arc::from(trait_def.name.ref_str()),
+          info: info.clone(),
+          location: None,
+        });
+      }
+      Calcit::from(CalcitList::from(trait_items.as_slice()))
+    };
+
+    items.push(Calcit::from(CalcitList::from(&[key, value])));
+  }
+
+  Some(Calcit::from(CalcitList::from(items.as_slice())))
+}
+
 pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, String> {
   use Calcit::*;
 
@@ -98,7 +156,9 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       fields,
       field_types,
       generics,
+      where_bounds,
       impls,
+      ..
     }) => {
       let mut ys = vec![Calcit::Symbol {
         sym: "defstruct".into(),
@@ -128,6 +188,9 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
           .collect::<Vec<_>>();
         ys.push(Calcit::from(CalcitList::from(items.as_slice())));
       }
+      if let Some(where_form) = where_bounds_to_calcit_form(where_bounds.as_ref(), ns, at_def) {
+        ys.push(where_form);
+      }
       for (field, field_type) in fields.iter().zip(field_types.iter()) {
         ys.push(Calcit::from(CalcitList::from(&[
           Calcit::tag(field.ref_str()),
@@ -155,6 +218,29 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         location: None,
       }];
       ys.push(Calcit::Tag(enum_def.name().to_owned()));
+      if !enum_def.generics().is_empty() {
+        let items = enum_def
+          .generics()
+          .iter()
+          .map(|name| {
+            Calcit::from(CalcitList::from(&[
+              Calcit::Syntax(CalcitSyntax::Quote, Arc::from("quote")),
+              Calcit::Symbol {
+                sym: name.to_owned(),
+                info: Arc::new(crate::calcit::CalcitSymbolInfo {
+                  at_ns: Arc::from(ns),
+                  at_def: Arc::from(at_def),
+                }),
+                location: None,
+              },
+            ]))
+          })
+          .collect::<Vec<_>>();
+        ys.push(Calcit::from(CalcitList::from(items.as_slice())));
+      }
+      if let Some(where_form) = where_bounds_to_calcit_form(enum_def.where_bounds(), ns, at_def) {
+        ys.push(where_form);
+      }
       for variant in enum_def.variants() {
         let mut variant_form = vec![Calcit::tag(variant.tag.ref_str())];
         for payload_type in variant.payload_types() {

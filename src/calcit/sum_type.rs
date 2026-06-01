@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitImpl, CalcitList, CalcitRecord, CalcitStruct, CalcitTypeAnnotation};
+use crate::calcit::{Calcit, CalcitGenericBound, CalcitImpl, CalcitList, CalcitRecord, CalcitStruct, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
@@ -25,6 +25,7 @@ impl EnumVariant {
 pub struct CalcitEnum {
   name: EdnTag,
   generics: Arc<Vec<Arc<str>>>,
+  where_bounds: Arc<Vec<CalcitGenericBound>>,
   variants: Arc<Vec<EnumVariant>>,
   /// Trait implementations attached to this enum (multiple allowed for composition)
   pub impls: Vec<Arc<CalcitImpl>>,
@@ -43,10 +44,12 @@ impl CalcitEnum {
     let (variants, variant_index) = Self::collect_variants(&record)?;
     let name = record.name().to_owned();
     let generics = record.struct_ref.generics.clone();
+    let where_bounds = record.struct_ref.where_bounds.clone();
     let impls = record.struct_ref.impls.clone();
     Ok(Self {
       name,
       generics,
+      where_bounds,
       variants: Arc::new(variants),
       impls,
       variant_index: Arc::new(variant_index),
@@ -59,6 +62,10 @@ impl CalcitEnum {
 
   pub fn generics(&self) -> &[Arc<str>] {
     self.generics.as_ref()
+  }
+
+  pub fn where_bounds(&self) -> &[CalcitGenericBound] {
+    self.where_bounds.as_ref()
   }
 
   /// Reconstruct a `CalcitRecord` prototype from the enum's data.
@@ -82,6 +89,7 @@ impl CalcitEnum {
       fields: Arc::new(fields),
       field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
       generics: self.generics.clone(),
+      where_bounds: self.where_bounds.clone(),
       impls: self.impls.clone(),
     };
     CalcitRecord {
@@ -219,6 +227,7 @@ mod tests {
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
         field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
         generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
+        where_bounds: Arc::new(vec![]),
         impls: vec![],
       }),
       values: Arc::new(vec![list_from(vec![symbol("E")]), list_from(vec![symbol("T")])]),

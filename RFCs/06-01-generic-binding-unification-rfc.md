@@ -15,12 +15,24 @@
 
 但是这条链路还不够统一。
 
+基于当前版本，底层状态已经比最初起草这份 RFC 时更进一步：
+
+- `CalcitStruct.generics` 已参与 `Struct <-> Struct` 与 `Struct <-> TypeRef` 的单边 applied 绑定
+- `CalcitEnum` 现在也已经保存 `generics` 元数据
+- `&enum::new` 已支持泛型参数列表，enum payload 里的类型变量可以稳定保留下来
+- `defstruct Box ([] 'T) (:value 'T)` 这一类表层 struct 泛型声明已经能直接运行
+
+这意味着 RFC 的关注点可以收窄成两部分：
+
+- 先把已经具备元数据的路径补成对称行为
+- 再处理确实仍需 schema lookup 的 `TypeRef <-> TypeRef`
+
 最明显的缺口是：当两个命名类型本质上表示同一个定义，但只有一侧携带了已应用的泛型参数时，绑定行为并不一致。
 
 - `Struct(Applied)` 对 `Struct(Bare)`：当前已经会把已应用参数绑定回声明的泛型变量。
 - `TypeRef(Applied)` 对 `TypeRef(Bare)`：当前基本仍是宽松通过，不一定留下可用绑定。
 - `Struct(Applied)` 对 `TypeRef(Bare)`：本轮已经补齐绑定。
-- `Enum(Applied)` 对 `TypeRef(Bare)`：仍然缺失，因为 `CalcitEnum` 还不携带泛型变量名。
+- `Enum(Applied)` 对 `TypeRef(Bare)`：在新版之前缺失；现在底层元数据已经具备，可以直接补齐为与 struct 对称的绑定。
 
 这会导致一个问题：调用点表面上“类型匹配成功”，但后续依赖绑定结果的能力并没有拿到足够信息，例如：
 
@@ -90,15 +102,302 @@ expected: TypeRef("Pair", [])
 - 某些路径上 `:where` 警告会出现，另一些路径不会
 - 推理链条难以复用
 
-## 本轮已落地的最小修复
+## 当前已落地能力
 
-本轮已经在 `Struct <-> TypeRef` 上落地了最小统一：
+截至当前版本，已经确认可用的基础能力包括：
+
+- `Struct <-> TypeRef` 在单边 applied 时会把实参绑定回 `CalcitStruct.generics`
+- `Enum` 定义已经持有 `generics` 元数据，不再需要借助旧 record 结构旁敲侧击恢复泛型名
+- struct 泛型的表层声明、enum 泛型的运行时构造与 applied named type annotation 都已经能通过文档和 `eval` 验证
+
+其中，`Struct <-> TypeRef` 已经落地的统一行为是：
 
 - 两边都 bare：只检查命名是否一致
 - 两边都 applied：逐项匹配参数
 - 一边 bare、一边 applied：把 applied 参数绑定回 `CalcitStruct.generics`
 
 也就是从“宽松通过但不留痕”改成“通过且留下绑定”。
+
+enum 侧现在也具备做同等级修复的前提，不再属于“缺底层表示”的阶段。
+
+## 先看 Calcit 里的实际写法
+
+为了避免一直停留在内部 Rust 表示，先把这个问题翻回 Calcit 代码。
+
+当前你最熟悉的两类表面写法大致是：
+
+```cirru
+defn id2 (x)
+	hint-fn $ {}
+		:generics $ [] 'T
+		:args $ [] 'T
+		:return 'T
+	x
+
+defn show-id (x)
+	hint-fn $ {}
+		:generics $ [] 'T
+		:where $ {} ('T Show)
+		:args $ [] 'T
+		:return :string
+	.show x
+```
+
+这一层已经很像 Rust：
+
+- `'T` 是泛型变量
+- `:where` 约束表示 `'T` 必须满足某个 trait
+- 调用点先绑定 `'T`，再拿绑定结果检查 `:where`
+
+而命名类型这边，用户实际写的是：
+
+```cirru
+defstruct Pair
+	:left :number
+	:right :string
+
+defstruct Holder
+	:box Pair
+
+defenum Wrapped
+	:pair Pair
+	:none
+```
+
+这里的问题不是 Calcit 没有泛型，而是“命名类型在不同写法之间切换时，绑定信息没有总是被保留下来”。
+
+## 用 Calcit 代码看这个问题
+
+下面几段代码故意把内部 `Struct(...)` / `TypeRef(...)` 还原成用户更关心的表面写法。
+
+### 场景 0：先看一个正常的泛型绑定
+
+```cirru
+defn echo-box (x)
+	hint-fn $ {}
+		:generics $ [] 'T
+		:args $ [] (:: Box 'T)
+		:return 'T
+	get x :value
+
+defstruct Box $ :value 'T
+
+defn demo-ok ()
+	let
+			b $ %{} Box (:value 1)
+			n $ echo-box b
+		assert-type n :number
+```
+
+你希望编译器在调用 `echo-box b` 时做的事情其实很简单：
+
+1. 从参数 `b` 看出它是 `Box<number>`
+2. 把 schema 里的 `'T` 绑定成 `:number`
+3. 再把返回类型 `'T` 专门化成 `:number`
+
+这条链路本身没有争议。
+
+真正的分歧出在：如果 `Box 'T` 不是直接出现在同一种内部表示里，而是有时被保留成命名引用，有时已经解成结构定义，那还要不要留下 `'T -> :number` 这组绑定？
+
+### 场景 1：`Struct(Applied)` 对 `TypeRef(Bare)`
+
+对应的用户代码可以想成：
+
+```cirru
+defstruct Pair
+	:left 'A
+	:right 'B
+
+defn keep-pair (p)
+	hint-fn $ {}
+		:generics $ [] 'A 'B
+		:args $ [] Pair
+		:return Pair
+	p
+
+defn demo-struct-to-named ()
+	let
+			p $ %{} Pair (:left 1) (:right |hi)
+			out $ keep-pair p
+		assert-type out Pair
+```
+
+这段表面上看不出问题，因为 `assert-type out Pair` 太粗了，只要求它还是 `Pair`。
+
+但内部其实还有一个更细的问题：
+
+- `p` 这一侧已经知道是 `Pair<number, string>`
+- `keep-pair` 的参数 schema 另一侧可能只保留成名字 `Pair`
+
+如果这一步只判断“都是 Pair，所以 ok”，那 `'A` / `'B` 实际上没有被绑定下来。
+
+这就会影响后续更依赖精确信息的场景，比如：
+
+```cirru
+defn pair-left (p)
+	hint-fn $ {}
+		:generics $ [] 'A 'B
+		:args $ [] Pair
+		:return 'A
+	get p :left
+```
+
+如果前一步没有留下 `'A -> :number`，这里的 `:return 'A` 就更容易退回弱类型。
+
+### 场景 2：`TypeRef(Applied)` 对 `Struct(Bare)`
+
+这个场景在表面代码里更像“类型信息从引用侧来，而不是从结构定义侧来”。
+
+```cirru
+defstruct Pair
+	:left 'A
+	:right 'B
+
+defn pass-through (p)
+	hint-fn $ {}
+		:generics $ [] 'A 'B
+		:args $ [] (:: Pair 'A 'B)
+		:return (:: Pair 'A 'B)
+	p
+
+defn takes-pair (p)
+	hint-fn $ {}
+		:args $ [] Pair
+		:return Pair
+	p
+
+defn demo-named-to-struct ()
+	let
+			p $ pass-through $ %{} Pair (:left 1) (:right |hi)
+			out $ takes-pair p
+		assert-type out Pair
+```
+
+这里你可以把 `pass-through` 想成“把具体参数挂在名字上”，把 `takes-pair` 想成“只认这个结构定义”。
+
+理论上它们之间没有本质差异，都该把：
+
+- `'A -> :number`
+- `'B -> :string`
+
+留给后续链路。
+
+这也是为什么本轮已经先补 `Struct <-> TypeRef`，因为它是最小、最安全、又最接近 Rust 统一行为的一段。
+
+### 场景 3：`TypeRef(Applied)` 对 `TypeRef(Bare)`
+
+这是下一步最值得讨论的点，因为它表面上最“正常”，但内部最容易宽松放过。
+
+```cirru
+defstruct Pair
+	:left 'A
+	:right 'B
+
+defn id-pair (p)
+	hint-fn $ {}
+		:generics $ [] 'A 'B
+		:args $ [] (:: Pair 'A 'B)
+		:return (:: Pair 'A 'B)
+	p
+
+defn erase-pair (p)
+	hint-fn $ {}
+		:args $ [] Pair
+		:return Pair
+	p
+
+defn demo-named-to-named ()
+	let
+			p $ id-pair $ %{} Pair (:left 1) (:right |hi)
+			out $ erase-pair p
+		assert-type out Pair
+```
+
+这段为什么难判断？
+
+- 用户只看到 `Pair` 和 `(:: Pair 'A 'B)` 都是“同一个名字”
+- 但实现上 `TypeRef` 自己并不知道 `Pair` 的第 0 个参数叫 `'A`，第 1 个参数叫 `'B`
+- 只有再去 resolve schema，才知道参数位和变量名的对应关系
+
+所以这里的核心不是“要不要更严格”，而是：
+
+- 要不要在这一层做受控 schema lookup
+- 做 lookup 后，是不是能稳定拿到 `A/B` 这组声明名
+
+这也是 RFC 里把它单独列成阶段 2，而不是直接和 struct 一起改掉的原因。
+
+### 场景 4：`Enum(Applied)` 对 `TypeRef(Bare)`
+
+enum 侧更容易读懂这个结构性缺口：
+
+```cirru
+defenum Result
+	:ok 'T
+	:err 'E
+
+defn pass-result (x)
+	hint-fn $ {}
+		:generics $ [] 'T 'E
+		:args $ [] Result
+		:return Result
+	, x
+
+defn demo-result ()
+	let
+			v $ %:: Result :ok 1
+			out $ pass-result v
+		assert-type out Result
+```
+
+在当前版本里，你期待的绑定已经变成一个可以直接实现的小步，而不是纯设计目标：
+
+- `'T -> :number`
+- `'E -> :string`（如果调用点给出的 applied 参数完整）
+
+或者至少在仅一侧 applied 的情况下，把已有那一侧参数回填到 enum 声明的泛型名上。
+
+新版里这块底层元数据已经补齐：`CalcitEnum` 本身就保存 `generics`。因此这里的剩余工作不再是“先改数据结构”，而是把 `matches_with_bindings` 里的 enum 分支改成与 struct 一样的单边绑定策略。
+
+## 为什么这些 Calcit 片段今天还“不够显眼”
+
+如果你只看这些代码，可能会觉得：
+
+- 反正 `assert-type out Pair` 也过了
+- 反正 `pass-through` 和 `erase-pair` 都只是原样返回
+- 那到底哪里有问题？
+
+关键在于：这里要观察的不是“会不会立刻报错”，而是“后续还能不能继续做精确判断”。
+
+比如把上面的例子继续推进一步：
+
+```cirru
+defn pair-left (p)
+	hint-fn $ {}
+		:generics $ [] 'A 'B
+		:args $ [] Pair
+		:return 'A
+	get p :left
+
+defn show-left (p)
+	hint-fn $ {}
+		:generics $ [] 'A 'B
+		:where $ {} ('A Show)
+		:args $ [] Pair
+		:return :string
+	.show $ pair-left p
+```
+
+如果 `Pair<number, string>` 在更早一层只是“名字匹配成功”但没有留下：
+
+- `'A -> :number`
+- `'B -> :string`
+
+那么：
+
+- `pair-left` 的返回类型就更容易变弱
+- `show-left` 的 `:where ('A Show)` 也更容易看不到真实绑定
+
+所以这个 RFC 讨论的不是“让更多代码报错”，而是“让后续推断不要过早丢信息”。
 
 ## 详细案例
 
@@ -179,12 +478,12 @@ expected = TypeRef("Result", [])
 - 匹配成功
 - bindings 写入 `T -> number`, `E -> string`
 
-当前阻碍：
+当前版本下的实现前提已经具备：
 
-- `CalcitEnum` 当前不保存泛型变量名列表
-- 因此即使拿到了 `[number, string]`，也不知道应当绑定回哪个变量名
+- `CalcitEnum.generics()` 可以提供 `T/E/...` 这些声明名
+- 因此这一步已经下降为“补一段与 struct 对称的匹配代码和测试”
 
-这说明 enum 侧不是“缺一行匹配代码”，而是缺底层元数据。
+所以 enum 侧现在不再是“缺底层元数据”，而是一个适合直接试做的小步增量。
 
 ## 为什么这更像 Rust
 
@@ -232,9 +531,9 @@ Calcit 当前的问题不是“没有泛型”，而是“某些路径下统一�
 
 一旦绑定更完整，后续 `:where` 或返回类型检查就可能出现更多 warning。这不是新 bug，而是旧问题被看见了。
 
-### 2. enum 侧需要结构升级
+### 2. `TypeRef <-> TypeRef` 仍需要受控 schema lookup
 
-要让 `Enum <-> TypeRef` 也做到同等级统一，需要 `CalcitEnum` 记录泛型变量名。这个改动比当前 struct 侧修复更深。
+enum 侧的结构升级在当前版本里已经完成，真正还更深的一步反而是 `TypeRef <-> TypeRef`：它要在不引入过度解析和循环依赖的前提下，从名字反查出声明处的泛型变量顺序。
 
 ### 3. `TypeRef <-> TypeRef` 可能引入 schema lookup 成本
 
@@ -255,7 +554,17 @@ Calcit 当前的问题不是“没有泛型”，而是“某些路径下统一�
 - `matches_with_bindings`
 - 抽出复用 helper，避免同类分支各写一遍绑定逻辑
 
-### 阶段 2：补齐 `TypeRef(Applied) <-> TypeRef(Bare)`
+### 阶段 2：补齐 `Enum <-> TypeRef` 的单边绑定
+
+建议策略：
+
+- 直接复用 `bind_declared_generics_from_applied_args`
+- 行为与 `Struct <-> TypeRef` 保持完全对称
+- 先只覆盖“一边 bare、一边 applied”这条路径
+
+这一步风险低，而且能直接验证新版 enum 元数据补齐的实际收益。
+
+### 阶段 3：补齐 `TypeRef(Applied) <-> TypeRef(Bare)`
 
 建议策略：
 
@@ -263,16 +572,6 @@ Calcit 当前的问题不是“没有泛型”，而是“某些路径下统一�
 - 无法 resolve 时维持当前保守行为
 
 这样不会把整个 `TypeRef` 系统一次性改成强解析。
-
-### 阶段 3：给 `CalcitEnum` 增加泛型名字元数据
-
-完成后再把：
-
-- `Enum <-> Enum`
-- `Enum <-> TypeRef`
-- `Tuple(sum type) <-> TypeRef`
-
-统一到同一套绑定原则下。
 
 ### 阶段 4：观察 warning 面
 
@@ -289,13 +588,13 @@ Calcit 当前的问题不是“没有泛型”，而是“某些路径下统一�
 1. `Struct(Applied)` 对 `TypeRef(Bare)` 会留下 bindings
 2. `TypeRef(Applied)` 对 `Struct(Bare)` 会留下 bindings
 3. `TypeRef(Applied)` 对 `TypeRef(Bare)` 在可 resolve 时会留下 bindings
-4. `Enum(Applied)` 对 `TypeRef(Bare)` 在补齐 enum 元数据后会留下 bindings
+4. `Enum(Applied)` 对 `TypeRef(Bare)` 会留下 bindings
 5. 新 bindings 会被 `:where` 检查真实消费，而不是只存在于匹配函数内部
 
 ## 开放问题
 
 1. `TypeRef <-> TypeRef` 是否应当总是 resolve schema，还是只在单边 bare / applied 不对称时 resolve？
-2. `CalcitEnum` 的泛型名字应当直接存放在 enum 定义上，还是通过原始 record/schema 间接恢复？
+2. `TypeRef <-> TypeRef` 的 schema lookup 应该缓存到哪一层，才能避免重复解析和循环依赖？
 3. bindings 更完整后，是否需要把某些当前依赖 `dynamic` 的 core helper 一并收紧？
 
 ## 结论
@@ -306,4 +605,4 @@ Calcit 当前的问题不是“没有泛型”，而是“某些路径下统一�
 - 再观察新增 warning 面
 - 最后才决定是否提高错误等级
 
-本轮 `Struct <-> TypeRef` 的修复已经证明这条方向风险可控，而且能直接提升泛型返回特化和 `:where` 检查的可靠性。下一步最值得做的是 `TypeRef <-> TypeRef` 的受控绑定，以及 enum 元数据补齐。
+`Struct <-> TypeRef` 的修复已经证明这条方向风险可控；而新版 enum 元数据又把 `Enum <-> TypeRef` 从“结构前置缺失”降成了一个直接可做的小步。下一步最值得做的是：先把 enum 单边绑定补齐，验证 warning 面，再推进 `TypeRef <-> TypeRef` 的受控绑定。

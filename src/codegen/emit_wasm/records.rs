@@ -135,6 +135,7 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStruct> {
     fields: std::sync::Arc::new(fields),
     field_types: std::sync::Arc::new(vec![]),
     generics: std::sync::Arc::new(vec![]),
+    where_bounds: std::sync::Arc::new(vec![]),
     impls: vec![],
   })
 }

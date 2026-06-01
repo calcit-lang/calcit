@@ -703,6 +703,7 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
     fields: Arc::new(field_names.clone()),
     field_types: Arc::new(field_types),
     generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
     impls: vec![],
   };
 

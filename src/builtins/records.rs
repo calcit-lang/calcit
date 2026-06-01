@@ -1,9 +1,11 @@
 use std::ops::Rem;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
+use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 use crate::calcit::{
   Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax,
   CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
@@ -66,6 +68,22 @@ fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
     return None;
   }
   Some(vars)
+}
+
+fn is_where_map_form(form: &Calcit) -> bool {
+  match form {
+    Calcit::Map(_) => true,
+    Calcit::List(items) => matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}")
+      || matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeMap))),
+    _ => false,
+  }
+}
+
+fn parse_where_bounds(form: &Calcit, generics: &[Arc<str>]) -> Option<Vec<crate::calcit::CalcitGenericBound>> {
+  if !is_where_map_form(form) {
+    return None;
+  }
+  Some(CalcitTypeAnnotation::parse_where_bounds_form(form, generics, true))
 }
 
 pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -187,6 +205,11 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     generics = generics_form;
     start_idx = 2;
   }
+  let mut where_bounds = vec![];
+  if let Some(form) = xs.get(start_idx).and_then(|form| parse_where_bounds(form, generics.as_slice())) {
+    where_bounds = form;
+    start_idx += 1;
+  }
 
   let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = vec![];
   for item in xs.iter().skip(start_idx) {
@@ -256,6 +279,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
     generics: Arc::new(generics),
+    where_bounds: Arc::new(where_bounds),
     impls: vec![],
   }))
 }
@@ -289,6 +313,11 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if let Some(generics_form) = xs.get(1).and_then(parse_generics_list) {
     generics = generics_form;
     start_idx = 2;
+  }
+  let mut where_bounds = vec![];
+  if let Some(form) = xs.get(start_idx).and_then(|form| parse_where_bounds(form, generics.as_slice())) {
+    where_bounds = form;
+    start_idx += 1;
   }
 
   let mut variants: Vec<(EdnTag, Calcit)> = vec![];
@@ -342,6 +371,7 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   generics.sort();
   generics.dedup();
   struct_ref.generics = Arc::new(generics);
+  struct_ref.where_bounds = Arc::new(where_bounds);
   struct_ref.impls = vec![Arc::new(enum_prototype_marker())];
 
   let record = CalcitRecord {
@@ -391,6 +421,7 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   };
   let size = (args_size - 1) / 2;
   let mut seen_positions: Vec<bool> = vec![false; base_struct.fields.len()];
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   for idx in 0..size {
     let k_idx = idx * 2 + 1;
     let v_idx = k_idx + 1;
@@ -429,6 +460,7 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               ),
             );
           }
+          collect_runtime_type_bindings(&xs[v_idx], expected_type.as_ref(), &mut bindings);
         }
         xs[v_idx].clone_into(&mut base_values[pos]);
       }
@@ -439,6 +471,12 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         );
       }
     }
+  }
+  if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, base_struct.where_bounds.as_ref()) {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&%{{}}? failed generic where-bound validation for `{}`: {msg}", base_struct.name),
+    );
   }
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: base_struct,
@@ -695,6 +733,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   }
   let mut values: Vec<Calcit> = (**v0).to_owned();
   let mut seen_positions: Vec<bool> = vec![false; struct_ref.fields.len()];
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   for idx in 0..size {
     let k_idx = idx * 2 + 1;
@@ -722,6 +761,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
                 ),
               );
             }
+            collect_runtime_type_bindings(&xs[v_idx], expected_type.as_ref(), &mut bindings);
           }
           xs[v_idx].clone_into(&mut values[pos]);
         }
@@ -750,6 +790,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
                 ),
               );
             }
+            collect_runtime_type_bindings(&xs[v_idx], expected_type.as_ref(), &mut bindings);
           }
           xs[v_idx].clone_into(&mut values[pos]);
         }
@@ -769,6 +810,13 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
+  }
+
+  if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, struct_ref.where_bounds.as_ref()) {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&%{{}} failed generic where-bound validation for `{}`: {msg}", struct_ref.name),
+    );
   }
 
   Ok(Calcit::Record(CalcitRecord {
@@ -1042,6 +1090,7 @@ pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   }
 }
+
 pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:matches? expected 2 arguments, but received:", xs);
@@ -1274,5 +1323,51 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:extend-as expected 4 arguments, but received:", xs),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitGenericBound, CalcitTrait};
+
+  fn shown_box_struct() -> CalcitStruct {
+    CalcitStruct {
+      name: EdnTag::new("ShownBox"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![CalcitGenericBound {
+        name: Arc::from("T"),
+        traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+      }]),
+      impls: vec![],
+    }
+  }
+
+  #[test]
+  fn generic_struct_where_bounds_accept_show_values() {
+    let result = call_record(&[
+      Calcit::Struct(shown_box_struct()),
+      Calcit::tag("value"),
+      Calcit::Number(1.0),
+    ]);
+
+    assert!(result.is_ok(), "expected shown box creation to pass: {result:?}");
+  }
+
+  #[test]
+  fn generic_struct_where_bounds_reject_non_show_values() {
+    let err = call_record(&[
+      Calcit::Struct(shown_box_struct()),
+      Calcit::tag("value"),
+      Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
+    ])
+    .expect_err("expected shown box creation to fail on non-Show payload");
+
+    assert!(
+      err.msg.contains("does not satisfy `trait Show`") || err.msg.contains("does not satisfy `Show`"),
+      "unexpected error: {err:?}"
+    );
   }
 }

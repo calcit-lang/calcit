@@ -14,6 +14,19 @@
           :code $ quote
             defenum Maybe1 ('T) (:some 'T) (:none)
           :examples $ []
+        |ShownBox $ %{} :CodeEntry (:doc "|Generic struct with where-bound on payload type") (:schema :dynamic)
+          :code $ quote
+            def ShownBox $ &struct::new :ShownBox ([] 'T)
+              {} ('T Show)
+              [] :value 'T
+          :examples $ []
+        |ShownMaybe $ %{} :CodeEntry (:doc "|Generic enum with where-bound on payload type") (:schema :dynamic)
+          :code $ quote
+            def ShownMaybe $ &enum::new :ShownMaybe ([] 'T)
+              {} ('T Show)
+              [] :some 'T
+              [] :none
+          :examples $ []
         |Result0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum Result0 (:err :string) (:ok)
@@ -142,6 +155,27 @@
               assert= (str-spaced |swapped |hi |1)
                 render-duo $ %:: Duo :swapped |hi 1
               println "|✓ Generic enum where-bounds passed"
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ []
+        |test-where-bound-definitions $ %{} :CodeEntry (:doc "|Exercise defstruct/defenum where-map syntax on generic data types")
+          :code $ quote
+            defn test-where-bound-definitions () $ do (println "|Testing data definition where-bounds...")
+              let
+                  box $ %{} ShownBox (:value 1)
+                  some-value $ %:: ShownMaybe :some 1
+                  none-value $ %:: ShownMaybe :none
+                assert-type box $ :: 'ShownBox :number
+                assert-type some-value $ :: 'ShownMaybe :number
+                assert= |1 $ .show (:value box)
+                assert= |1 $ match some-value
+                  (:some item) (.show item)
+                  (:none) |none
+                assert= |none $ match none-value
+                  (:some item) (.show item)
+                  (:none) |none
+              println "|✓ Data definition where-bounds passed"
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)

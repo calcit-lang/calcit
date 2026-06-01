@@ -1,0 +1,6 @@
+- added where-bound metadata to struct and enum definitions, preserving it through parsing, hashing, compare, serialization, and enum prototype reconstruction
+- enforced data-definition generic trait bounds at runtime for `%{}`, `%{}?`, and `%::` by inferring concrete type bindings from record fields and enum payloads
+- kept builtin `Show` satisfaction narrow to builtin value families so function-level missing-impl warnings still fire correctly during preprocess
+- covered the new runtime path with focused Rust tests for accepting and rejecting struct/enum payloads under generic where-bounds
+- validated the calcit side with `cargo test where_bounds --lib`, `yarn check-all`, release `cr` build, and downstream respo compilation via `../../calcit-lang/calcit/target/release/cr js`
+- downstream follow-up in respo needed one explicit `assert-type text :string` for the `Op::update` payload under the stricter enum payload check

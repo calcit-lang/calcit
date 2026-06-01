@@ -16,6 +16,7 @@ use crate::{
   runner,
   util::number::f64_to_usize,
 };
+use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 
 use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
@@ -463,6 +464,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Some(variant) => {
             let payload_count = xs.len() - 2;
             let expected_arity = variant.arity();
+            let mut bindings = std::collections::HashMap::new();
             if payload_count != expected_arity {
               return CalcitErr::err_str(
                 CalcitErrKind::Arity,
@@ -487,6 +489,13 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                   ),
                 );
               }
+              collect_runtime_type_bindings(payload, expected_type.as_ref(), &mut bindings);
+            }
+            if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, enum_proto.where_bounds()) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("%:: failed generic where-bound validation for enum `{}`: {msg}", enum_proto.name()),
+              );
             }
           }
           None => {
@@ -521,6 +530,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Some(variant) => {
             let payload_count = xs.len() - 2;
             let expected_arity = variant.arity();
+            let mut bindings = std::collections::HashMap::new();
             if payload_count != expected_arity {
               return CalcitErr::err_str(
                 CalcitErrKind::Arity,
@@ -545,6 +555,13 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                   ),
                 );
               }
+              collect_runtime_type_bindings(payload, expected_type.as_ref(), &mut bindings);
+            }
+            if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, enum_proto.where_bounds()) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("%:: failed generic where-bound validation for enum `{}`: {msg}", enum_proto.name()),
+              );
             }
           }
           None => {
@@ -1986,4 +2003,68 @@ pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   };
   bind_type_slot(name, ty).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
   Ok(Calcit::Nil)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitGenericBound, CalcitSymbolInfo};
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("test.meta"),
+        at_def: Arc::from("enum-where-tests"),
+      }),
+      location: None,
+    }
+  }
+
+  fn shown_maybe_enum() -> CalcitEnum {
+    CalcitEnum::from_record(CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct {
+        name: EdnTag::new("ShownMaybe"),
+        fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),
+        field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![CalcitGenericBound {
+          name: Arc::from("T"),
+          traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+        }]),
+        impls: vec![],
+      }),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::Vector(vec![]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
+      ]),
+    })
+    .expect("valid enum")
+  }
+
+  #[test]
+  fn generic_enum_where_bounds_accept_show_values() {
+    let result = new_enum_tuple_no_class(&[
+      Calcit::Enum(shown_maybe_enum()),
+      Calcit::tag("some"),
+      Calcit::Number(1.0),
+    ]);
+
+    assert!(result.is_ok(), "expected shown maybe creation to pass: {result:?}");
+  }
+
+  #[test]
+  fn generic_enum_where_bounds_reject_non_show_values() {
+    let err = new_enum_tuple_no_class(&[
+      Calcit::Enum(shown_maybe_enum()),
+      Calcit::tag("some"),
+      Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
+    ])
+    .expect_err("expected shown maybe creation to fail on non-Show payload");
+
+    assert!(
+      err.msg.contains("does not satisfy `trait Show`") || err.msg.contains("does not satisfy `Show`"),
+      "unexpected error: {err:?}"
+    );
+  }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use super::{CalcitImpl, CalcitTypeAnnotation};
+use super::{CalcitGenericBound, CalcitImpl, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitStruct {
@@ -11,6 +11,7 @@ pub struct CalcitStruct {
   pub fields: Arc<Vec<EdnTag>>,
   pub field_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
   pub generics: Arc<Vec<Arc<str>>>,
+  pub where_bounds: Arc<Vec<CalcitGenericBound>>,
   /// Trait implementations attached to this struct (multiple allowed for composition)
   pub impls: Vec<Arc<CalcitImpl>>,
 }
@@ -24,6 +25,7 @@ impl CalcitStruct {
       fields: Arc::new(fields),
       field_types: Arc::new(field_types),
       generics,
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     }
   }
@@ -40,6 +42,7 @@ impl Hash for CalcitStruct {
     self.fields.hash(state);
     self.field_types.hash(state);
     self.generics.hash(state);
+    self.where_bounds.hash(state);
     for imp in &self.impls {
       imp.name().hash(state);
       imp.fields().hash(state);

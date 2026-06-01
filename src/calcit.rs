@@ -12,7 +12,7 @@ mod symbol;
 mod syntax_name;
 mod thunk;
 mod tuple;
-mod type_annotation;
+pub(crate) mod type_annotation;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -510,13 +510,16 @@ impl Hash for Calcit {
         fields,
         field_types,
         generics,
+        where_bounds,
         impls,
+        ..
       }) => {
         "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
         field_types.hash(_state);
         generics.hash(_state);
+        where_bounds.hash(_state);
         for imp in impls {
           imp.name().hash(_state);
           imp.origin().hash(_state);
@@ -528,6 +531,7 @@ impl Hash for Calcit {
         "enum:".hash(_state);
         enum_def.name().hash(_state);
         enum_def.generics().hash(_state);
+        enum_def.where_bounds().hash(_state);
         for v in enum_def.variants() {
           v.tag.hash(_state);
           for t in v.payload_types() {
@@ -1460,6 +1464,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("age")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
     let struct_right = Calcit::Struct(CalcitStruct {
@@ -1467,6 +1472,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("age")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
       generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
     assert_ne!(struct_left, struct_right);
@@ -1523,6 +1529,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("v")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
       generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
 

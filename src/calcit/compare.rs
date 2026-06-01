@@ -99,7 +99,10 @@ pub(super) fn compare_calcit_struct_values(a: &CalcitStruct, b: &CalcitStruct) -
     Equal => match a.fields.cmp(&b.fields) {
       Equal => match a.field_types.cmp(&b.field_types) {
         Equal => match a.generics.cmp(&b.generics) {
-          Equal => compare_struct_impls(&a.impls, &b.impls),
+          Equal => match a.where_bounds.cmp(&b.where_bounds) {
+            Equal => compare_struct_impls(&a.impls, &b.impls),
+            ord => ord,
+          },
           ord => ord,
         },
         ord => ord,
@@ -127,7 +130,11 @@ fn compare_struct_impls(a: &[Arc<CalcitImpl>], b: &[Arc<CalcitImpl>]) -> Orderin
 
 pub(super) fn compare_calcit_enum_values(a: &CalcitEnum, b: &CalcitEnum) -> Ordering {
   match a.name().cmp(b.name()) {
-    Equal => a.generics().cmp(b.generics()).then_with(|| {
+    Equal => a
+      .generics()
+      .cmp(b.generics())
+      .then_with(|| a.where_bounds().cmp(b.where_bounds()))
+      .then_with(|| {
       let av = a.variants();
       let bv = b.variants();
       av.len().cmp(&bv.len()).then_with(|| {

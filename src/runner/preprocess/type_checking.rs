@@ -582,6 +582,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("done?")]),
       field_types: Arc::new(vec![tag_annotation("bool")]),
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
 
