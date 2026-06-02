@@ -37,6 +37,8 @@ jobs:
         run: echo "CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse" >> $GITHUB_ENV
 
       - run: cargo test
+        env:
+          RUST_MIN_STACK: "16777216"
       - run: cargo run --bin cr calcit/test.cirru
 
       - name: "try js"

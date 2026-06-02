@@ -146,6 +146,10 @@ const isGenericsEntry = (entry: CalcitValue): boolean => {
 };
 
 const isWhereMapEntry = (entry: CalcitValue): boolean => {
+  // where-bound can be emitted as a CalcitMap (from _$n__$M_) or as a list-of-pairs
+  if (entry instanceof CalcitMap || entry instanceof CalcitSliceMap) {
+    return true;
+  }
   if (!(entry instanceof CalcitList || entry instanceof CalcitSliceList)) {
     return false;
   }

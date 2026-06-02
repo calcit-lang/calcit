@@ -5,7 +5,7 @@
 
 set -eo pipefail
 
-ENTRY="${1:-demos/calcit.cirru}"
+ENTRY="${1:-calcit/test.cirru}"
 
 # Prefer a pre-built debug binary; fall back to cargo run (slower but always works).
 if [ -x "./target/debug/cr" ]; then
@@ -21,7 +21,7 @@ TOTAL=0
 
 while IFS= read -r file; do
   TOTAL=$((TOTAL + 1))
-  if $CR_CMD "$ENTRY" docs check-md "$file" 2>&1; then
+  if $CR_CMD "$ENTRY" docs check-md "$file" -d "$ENTRY" 2>&1; then
     :
   else
     FAILED=$((FAILED + 1))

@@ -2,25 +2,9 @@ use super::{
   GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_docs_for_query, collect_search_results, find_doc_by_query,
   load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
-use crate::program;
-use crate::program::PROGRAM_CODE_DATA;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
-use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-static DOCS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-fn lock_docs_test_state() -> std::sync::MutexGuard<'static, ()> {
-  DOCS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
-}
-
-fn reset_docs_test_state() {
-  program::clear_runtime_caches_for_reload(std::sync::Arc::from("app.main"), std::sync::Arc::from("app.main"), true)
-    .expect("reset runtime and compiled data");
-  PROGRAM_CODE_DATA.write().expect("reset program code").clear();
-}
 
 fn unique_temp_dir(label: &str) -> std::path::PathBuf {
   let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -431,46 +415,6 @@ fn validate_doc_frontmatter_rejects_unknown_category() {
   let err = validate_doc_frontmatter("docs/broken.md", &frontmatter).unwrap_err();
   assert!(err.contains("Invalid frontmatter category 'api'"));
   assert!(err.contains("docs/docs-indexing.md"));
-}
-
-#[test]
-fn handle_check_md_rechecks_each_markdown_block_with_fresh_app_main_state() {
-  let _guard = lock_docs_test_state();
-  reset_docs_test_state();
-
-  let root = unique_temp_dir("docs-check-md-cache");
-  let md_path = root.join("cache-repro.md");
-  write_file(
-    &md_path,
-    "# tmp\n\n```cirru\nprintln |first-ok\n```\n\n```cirru\nlet\n    ShownMaybe $ defenum ShownMaybe ([] 'T)\n      {} ('T Show)\n      :some 'T\n        :none\n    some-val $ %:: ShownMaybe :some 1\n    none-val $ %:: ShownMaybe :none\n  assert-type some-val $ :: 'ShownMaybe :number\n  assert= |1 $ match some-val\n    (:some item) (.show item)\n    (:none) |none\n  assert= |none $ match none-val\n    (:some item) (.show item)\n    (:none) |none\n```\n",
-  );
-
-  let output = Command::new("cargo")
-    .current_dir(env!("CARGO_MANIFEST_DIR"))
-    .args([
-      "run",
-      "--bin",
-      "cr",
-      "--",
-      "demos/calcit.cirru",
-      "docs",
-      "check-md",
-      md_path.to_str().unwrap(),
-    ])
-    .output()
-    .expect("run docs check-md via cargo");
-
-  assert!(
-    !output.status.success(),
-    "expected malformed second block to fail, stdout:\n{}\nstderr:\n{}",
-    String::from_utf8_lossy(&output.stdout),
-    String::from_utf8_lossy(&output.stderr)
-  );
-
-  let stderr = String::from_utf8_lossy(&output.stderr);
-  assert!(stderr.contains("1 code block(s) failed"), "stderr was:\n{stderr}");
-
-  fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

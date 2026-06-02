@@ -1,7 +1,7 @@
 
 [package]
 name = "calcit"
-version = "0.12.36"
+version = "0.12.37"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2024"
 license = "MIT"
