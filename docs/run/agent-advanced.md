@@ -746,7 +746,7 @@ let
     ; 正式模式
     get-name $ fn (user)
       hint-fn $ {} (:args $ [] :dynamic) (:return :string)
-      |demo
+      , |demo
     ; 泛型声明示例
     id $ fn (x)
       hint-fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:return 'T)
@@ -835,7 +835,7 @@ let
 
 复杂但正确的示例（顶层用 `:schema`，局部函数用 `hint-fn`）：
 
-```cirru
+```cirru.no-check
 |join-str $ %{} :CodeEntry (:doc |)
   :code $ quote
     defn join-str (xs0 sep)

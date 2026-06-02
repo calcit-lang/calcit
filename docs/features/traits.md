@@ -181,7 +181,7 @@ let
 - Prefer public API in app/library code: `deftrait`, `defimpl`, `impl-traits`, `.method`, `&trait-call`.
 - Treat internal `&...` helpers as runtime-level details; they may change more frequently and are not the stable user contract.
 
-```cirru
+```cirru.no-check
 do
   ; struct example
   let

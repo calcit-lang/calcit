@@ -130,7 +130,7 @@ This mirrors the main reason Rust has `where` clauses: parameter declaration and
 
 Top-level definitions use `:schema`:
 
-```cirru
+```cirru.no-run
 %{} :CodeEntry
   :code $ quote
     defn show-it (x)

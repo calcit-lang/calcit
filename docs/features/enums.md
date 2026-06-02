@@ -105,9 +105,9 @@ let
     Box $ defstruct Box ([] 'T) (:value 'T)
     Wrapped $ defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
     value $ %:: Wrapped :box $ %{} Box (:value 1)
+    boxed $ &tuple:nth value 1
   assert-type value $ :: 'Wrapped :number
-  assert-type (&tuple:nth value 1) $ :: 'Box :number
-  assert= 1 $ get (&tuple:nth value 1) :value
+  assert= 1 $ :value boxed
 ```
 
 When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.
@@ -253,7 +253,7 @@ Both syntaxes share the same branch format: each branch is `(pattern body)`.
 
 The branch syntax is identical — migration is a single keyword replacement:
 
-```cirru
+```cirru.no-check
 ; Before (tag-match)
 tag-match r
   (:ok v) (str-spaced |ok: v)
@@ -348,16 +348,20 @@ defenum ApiResult (:ok :string) (:err :string)
 ; (:point :number :number) means :point has two :number payloads
 defenum Shape (:point :number :number) (:circle :number)
 
-; payloads may also reference named structs
-defstruct Point (:x :number) (:y :number)
-defenum Shape2 (:point Point) (:circle :number)
-
 ; generic struct payloads use applied named types
 defstruct Box ([] 'T) (:value 'T)
-defenum Wrapped ('T) (:box (:: 'Box 'T)) (:empty)
+defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
 
 ; (:none) means no payload
 defenum MaybeInt (:some :number) (:none)
+```
+
+Payloads may also reference named struct types (illustrative, cross-file type ref):
+
+```cirru.no-check
+; defstruct and defenum from the same snippet context:
+defstruct Point (:x :number) (:y :number)
+defenum Shape2 (:point Point) (:circle :number)
 ```
 
 Runtime type validation is enforced at instance creation — passing the wrong type to `%::` will raise an error.
@@ -367,17 +371,16 @@ Runtime type validation is enforced at instance creation — passing the wrong t
 When a function parameter is typed as an enum in its schema, the preprocessor automatically rewrites untyped tuple literal (`::`) arguments to typed enum tuple construction (`%::`). This lets you write shorter tuple syntax while still getting full enum type checking.
 
 ```cirru
-defenum Result0 (:err :string) (:ok)
-
-defn takes-result (r)
-  :: :fn $ {} (:return :dynamic)
-    :args $ [] 'app.main/Result0
-  match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
-
-; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
-takes-result $ :: :ok
-; Equivalent to:
-takes-result $ %:: Result0 :ok
+let
+    Result0 $ defenum Result0 (:err :string) (:ok)
+    takes-result $ fn (r)
+      :: :fn $ {} (:return :dynamic)
+        :args $ [] 'app.main/Result0
+      match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
+  ; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
+  assert= :ok $ takes-result $ :: :ok
+  ; Equivalent to:
+  assert= :ok $ takes-result $ %:: Result0 :ok
 ```
 
 Requirements for the rewrite to trigger:

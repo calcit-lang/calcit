@@ -114,12 +114,12 @@ For namespace-level `defn` / `defmacro`, parameter and return metadata should st
 ```cirru
 let
     add $ fn (a b) :number
-      hint-fn $ {} (:args ([] :number :number))
+      hint-fn $ {} (:args $ [] :number :number) (:return :number)
       let
           total $ + a b
         assert-type total :number
-        total
-  add 1 2
+        , total
+  assert= 3 $ add 1 2
 ```
 
 ## Supported Types

@@ -48,6 +48,9 @@ jobs:
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
 
+      - name: "check docs markdown"
+        run: bash scripts/check-docs-md.sh
+
       - run: cargo build --release
 
       - name: Release

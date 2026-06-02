@@ -2657,7 +2657,43 @@
                   and
                     list? candidate
                     not $ empty? candidate
-                    &= :map $ type-of (&list:first candidate)
+                    not $ tag? (&list:first candidate)
+                    every? (&list:rest candidate)
+                      fn (bound)
+                        &let
+                          items $ data-definition-form bound
+                          and
+                            list? items
+                            &= 2 $ count items
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :bool)
+              :args $ [] :dynamic
+        |data-definition-malformed-nesting? $ %{} :CodeEntry (:doc "|Detect suspicious nested forms that usually come from wrong indentation in data-definition macros")
+          :code $ quote
+            defn data-definition-malformed-nesting? (form)
+              if
+                and
+                  list? form
+                  &= 1 $ count form
+                  list? $ &list:first form
+                &let
+                  child $ data-definition-form $ &list:first form
+                  and
+                    list? child
+                    not $ empty? child
+                    or
+                      tag? $ &list:first child
+                      and
+                        not $ tag? (&list:first child)
+                        every? (&list:rest child)
+                          fn (bound)
+                            &let
+                              items $ data-definition-form bound
+                              and
+                                list? items
+                                &= 2 $ count items
+                , false
           :examples $ []
           :schema $ :: :fn
             {} (:return :bool)
@@ -2688,11 +2724,20 @@
                         where-form $ if has-where-form? (data-definition-form $ &list:first tail-forms) $ {}
                         &let
                           variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
-                          assert "|defenum expects (variant & payloads)" $ every? variant-forms
+                          assert "|defenum expects each variant as (:tag & payloads); check indentation if one variant was nested under another" $ every? variant-forms
                             fn (variant)
                               &let
                                 items $ data-definition-form variant
-                                &>= (count items) 1
+                                and
+                                  &>= (count items) 1
+                                  tag? $ &list:first items
+                          assert "|defenum found malformed nested payload syntax; check indentation around variants" $ every? variant-forms
+                            fn (variant)
+                              &let
+                                items $ data-definition-form variant
+                                every? (&list:rest items)
+                                  fn (payload-form)
+                                    not $ data-definition-malformed-nesting? payload-form
                           &let
                             normalized $ map variant-forms
                               fn (variant)
@@ -2886,11 +2931,18 @@
                         where-form $ if has-where-form? (data-definition-form $ &list:first tail-forms) $ {}
                         &let
                           field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
-                          assert "|defstruct expects (field type) pairs" $ every? field-pairs
+                          assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs
                             fn (pair)
                               &let
                                 items $ data-definition-form pair
-                                &= 2 $ count items
+                                and
+                                  &= 2 $ count items
+                                  tag? $ &list:first items
+                          assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs
+                            fn (pair)
+                              &let
+                                items $ data-definition-form pair
+                                not $ data-definition-malformed-nesting? $ last items
                           &let
                             normalized $ map field-pairs
                               fn (pair)

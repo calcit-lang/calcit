@@ -150,18 +150,21 @@ Calcit **does not** support Clojure-style `(defn name [^Type arg] ...)`.
 
 ```cirru
 let
-  ; Local helper function
-    square $ defn square (n)
+    ; hint-fn only: declare arg and return types
+    square $ fn (n)
       hint-fn $ {} (:args ([] :number)) (:return :number)
       &* n n
-    ; Return type as trailing label
-    get-pi $ defn get-pi () :number
+    ; trailing return type label
+    get-pi $ fn () :number
       , 3.14159
-    ; Mixed style
-    add $ defn add (a b) :number
+    ; mixed: hint-fn for args, trailing label for return
+    add $ fn (a b) :number
       hint-fn $ {} (:args ([] :number :number))
       + a b
-  [] (square 5) (get-pi) (add 3 4)
+  do
+    assert= 25 $ square 5
+    assert= 3.14159 $ get-pi
+    assert= 7 $ add 3 4
 ```
 
 For namespace-level definitions, attach schema separately, for example:

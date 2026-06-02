@@ -259,12 +259,12 @@ let
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :string) (:err :string)
-    process-result $ defn process-result (r)
-  hint-fn $ {} (:args ([] :dynamic)) (:return :string)
-  match r
+    process-result $ fn (r)
+      hint-fn $ {} (:args $ [] :dynamic) (:return :string)
+      match r
         (:ok v) (str v)
         (:err msg) msg
-  process-result (%:: ApiResult :ok |done)
+  process-result $ %:: ApiResult :ok |done
 ```
 
 ## Tuple vs Record

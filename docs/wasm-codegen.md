@@ -100,7 +100,7 @@ const strPtr = inst.exports.__str_new(top + 16, bytes.length);
 
 输入（`demos/wasm-demo.cirru`）中的 `fibo` 定义：
 
-```cirru
+```cirru.no-check
 defn fibo (n)
   if (&< n 2) 1
     &+ (fibo (&- n 1)) (fibo (&- n 2))

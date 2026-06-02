@@ -1031,6 +1031,10 @@ fn build_entries_from_snapshot(snapshot: &snapshot::Snapshot) -> Result<ProgramE
 fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSnapShot>, code: &str) -> Result<ProgramEntries, String> {
   ensure_runtime_initialized();
 
+  // `check-md` runs many snippets in one process; clear stale runtime/compiled
+  // state so each block is evaluated from the freshly built app.main snapshot.
+  program::clear_runtime_caches_for_reload(Arc::from("app.main"), Arc::from("app.main"), true)?;
+
   let mut snapshot = snapshot::Snapshot::default();
   let main_file = snapshot::create_file_from_snippet(code)?;
   snapshot.files.insert(String::from("app.main"), main_file);
@@ -1185,7 +1189,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
 
       for line in stderr.lines() {
         let lower = line.to_lowercase();
-        if lower.contains("warn") || lower.contains("error") {
+        if lower.contains("warn") || lower.contains("error") || lower.contains("failure") {
           println!("    {}", line.red());
         }
       }

@@ -48,6 +48,9 @@ jobs:
           reporter: "github-pr-review"
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: "check docs markdown"
+        run: bash scripts/check-docs-md.sh
+
       - name: "try js"
         run: >
           yarn
