@@ -691,6 +691,9 @@ pub struct DocsCheckMdCommand {
   /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entry configs.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]
   pub dep: Vec<String>,
+  /// suppress successful block logs; still prints failures and summary on error
+  #[argh(switch, short = 'q')]
+  pub quiet: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

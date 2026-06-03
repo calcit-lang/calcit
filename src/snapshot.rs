@@ -1391,8 +1391,9 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
             }
           }
         }
-        // No entry-point stubs needed; run_check_only_in_process falls back to
-        // checking all app.* defs when main!/reload! are absent.
+        // Each def is registered as its own CodeEntry so the type-checker can
+        // analyse multi-def snippets individually.  A no-op main! is still
+        // required so run_eval_in_process (Run mode) can find the entry point.
       } else {
         let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
         for line in body_lines {
@@ -1401,6 +1402,9 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
       }
 
+      def_dict
+        .entry("main!".to_string())
+        .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])].into()));
       def_dict
         .entry("reload!".to_string())
         .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()));

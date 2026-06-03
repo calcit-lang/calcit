@@ -18,10 +18,15 @@ fi
 
 FAILED=0
 TOTAL=0
+QUIET_ARGS=()
+
+if [[ "${CI:-}" == "true" ]]; then
+  QUIET_ARGS+=(--quiet)
+fi
 
 while IFS= read -r file; do
   TOTAL=$((TOTAL + 1))
-  if $CR_CMD "$ENTRY" docs check-md "$file" -d "$ENTRY" 2>&1; then
+  if $CR_CMD "$ENTRY" docs check-md "$file" -d "$ENTRY" "${QUIET_ARGS[@]}" 2>&1; then
     :
   else
     FAILED=$((FAILED + 1))

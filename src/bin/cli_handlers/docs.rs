@@ -141,7 +141,7 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     ),
     DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
-    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
+    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet),
   }
 }
 
@@ -1226,33 +1226,31 @@ fn run_parse_only_in_process(code: &str) -> Result<(), String> {
     .map_err(|e| format!("Error: Failed to parse code snippet: {e}"))
 }
 
-fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), String> {
-  let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
+struct QuietToolOutputGuard {
+  previous: bool,
+}
 
-  let blocks = extract_cirru_blocks(&content);
-
-  if blocks.is_empty() {
-    println!("{}", "No cirru code blocks found in the file.".yellow());
-    return Ok(());
+impl QuietToolOutputGuard {
+  fn new(enabled: bool) -> Option<Self> {
+    if enabled {
+      let previous = calcit::quiet_tool_output();
+      calcit::set_quiet_tool_output(true);
+      Some(Self { previous })
+    } else {
+      None
+    }
   }
+}
 
-  if !Path::new(entry).exists() {
-    return Err(format!(
-      "Entry file '{entry}' not found. Use -d to specify a valid entry .cirru file."
-    ));
+impl Drop for QuietToolOutputGuard {
+  fn drop(&mut self) {
+    calcit::set_quiet_tool_output(self.previous);
   }
+}
 
-  let shared_files = load_shared_files_for_check_md(entry, deps)?;
-
+fn print_check_md_header(file_path: &str, run_count: usize, no_run_count: usize, no_check_count: usize) {
   println!("{} {}", "Checking".bold(), file_path.cyan());
   println!("{}", "-".repeat(60).dimmed());
-
-  let mut passed = 0;
-  let mut failed = 0;
-  let total = blocks.len();
-  let run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Run).count();
-  let no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
-  let no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
 
   if run_count < no_check_count {
     println!(
@@ -1263,6 +1261,41 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
       .yellow()
     );
     println!("{}", "-".repeat(60).dimmed());
+  }
+}
+
+fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -> Result<(), String> {
+  let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
+
+  let blocks = extract_cirru_blocks(&content);
+
+  if blocks.is_empty() {
+    if !quiet {
+      println!("{}", "No cirru code blocks found in the file.".yellow());
+    }
+    return Ok(());
+  }
+
+  if !Path::new(entry).exists() {
+    return Err(format!(
+      "Entry file '{entry}' not found. Use -d to specify a valid entry .cirru file."
+    ));
+  }
+
+  let _quiet_guard = QuietToolOutputGuard::new(quiet);
+  let shared_files = load_shared_files_for_check_md(entry, deps)?;
+
+  let mut passed = 0;
+  let mut failed = 0;
+  let total = blocks.len();
+  let run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Run).count();
+  let no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
+  let no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
+  let mut printed_header = false;
+
+  if !quiet {
+    print_check_md_header(file_path, run_count, no_run_count, no_check_count);
+    printed_header = true;
   }
 
   for (line_num, mode, code) in &blocks {
@@ -1289,16 +1322,22 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
 
     if check_result.is_ok() {
       passed += 1;
-      println!(
-        "  {} L{}: {}{}{}",
-        "✓".green(),
-        format!("{line_num}").dimmed(),
-        mode_label.dimmed(),
-        preview.dimmed(),
-        preview_suffix.dimmed()
-      );
+      if !quiet {
+        println!(
+          "  {} L{}: {}{}{}",
+          "✓".green(),
+          format!("{line_num}").dimmed(),
+          mode_label.dimmed(),
+          preview.dimmed(),
+          preview_suffix.dimmed()
+        );
+      }
     } else {
       failed += 1;
+      if !printed_header {
+        print_check_md_header(file_path, run_count, no_run_count, no_check_count);
+        printed_header = true;
+      }
       let stderr = check_result
         .as_ref()
         .err()
@@ -1321,11 +1360,15 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
     }
   }
 
-  println!("{}", "-".repeat(60).dimmed());
   let summary = format!("Results: {total} blocks, {passed} passed, {failed} failed");
+  if printed_header {
+    println!("{}", "-".repeat(60).dimmed());
+  }
   if failed > 0 {
     println!("{}", summary.red().bold());
     Err(format!("{failed} code block(s) failed"))
+  } else if quiet {
+    Ok(())
   } else {
     println!("{}", summary.green().bold());
     Ok(())
