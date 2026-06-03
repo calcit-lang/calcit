@@ -987,19 +987,56 @@ fn module_folder() -> Result<PathBuf, String> {
 
 fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<String>, String> {
   let resolved_entry = calcit::resolve_snapshot_path_alias(Path::new(entry));
-  let resolved_entry_str = resolved_entry.to_string_lossy().to_string();
   let mut content =
     fs::read_to_string(&resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
   util::string::strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
-  let snapshot = snapshot::load_snapshot_data(&data, &resolved_entry_str)?;
 
-  let mut module_paths = snapshot.configs.modules;
+  // Extract configs.modules directly from the raw EDN to avoid loading the full snapshot.
+  // This is necessary because old-format snapshots (with %{} :Expr code entries) cannot
+  // be deserialized via load_snapshot_data, but we only need the module list here.
+  let module_paths_from_entry: Vec<String> = extract_modules_from_edn(&data).unwrap_or_default();
+
+  let mut module_paths = module_paths_from_entry;
   module_paths.extend(deps.iter().cloned());
 
   let mut seen_modules: HashSet<String> = HashSet::new();
   module_paths.retain(|module_path| seen_modules.insert(module_path.to_owned()));
   Ok(module_paths)
+}
+
+/// Extract the `configs.modules` list from an EDN snapshot value without fully
+/// deserializing the snapshot. This tolerates old-format entries (e.g. `%{} :Expr`)
+/// that `load_snapshot_data` cannot handle.
+fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Option<Vec<String>> {
+  use cirru_edn::Edn;
+
+  // Both old and new snapshot formats use a top-level Map or Record.
+  let get_field = |edn: &Edn, key: &str| -> Option<Edn> {
+    match edn {
+      Edn::Map(map) => map.tag_get(key).cloned(),
+      Edn::Record(record) => record.pairs.iter().find(|(k, _)| k.ref_str() == key).map(|(_, v)| v.clone()),
+      _ => None,
+    }
+  };
+
+  let configs = get_field(data, "configs")?;
+  let modules_edn = get_field(&configs, "modules")?;
+
+  match modules_edn {
+    Edn::List(list) => {
+      let paths: Vec<String> = list
+        .0
+        .iter()
+        .filter_map(|item| match item {
+          Edn::Str(s) => Some(s.to_string()),
+          _ => None,
+        })
+        .collect();
+      Some(paths)
+    }
+    _ => None,
+  }
 }
 
 fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMap<String, snapshot::FileInSnapShot>, String> {
