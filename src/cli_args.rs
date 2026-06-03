@@ -688,7 +688,7 @@ pub struct DocsCheckMdCommand {
   /// entry .cirru file for eval context (default: demos/calcit.cirru)
   #[argh(option, short = 'd', default = "String::from(\"demos/calcit.cirru\")")]
   pub entry: String,
-  /// dependency module path for eval context, can be provided multiple times; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
+  /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entry configs.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]
   pub dep: Vec<String>,
 }

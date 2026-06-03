@@ -985,16 +985,34 @@ fn module_folder() -> Result<PathBuf, String> {
   Ok(Path::new(&home).join(".config/calcit/modules/"))
 }
 
+fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<String>, String> {
+  let resolved_entry = calcit::resolve_snapshot_path_alias(Path::new(entry));
+  let resolved_entry_str = resolved_entry.to_string_lossy().to_string();
+  let mut content =
+    fs::read_to_string(&resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
+  util::string::strip_shebang(&mut content);
+  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
+  let snapshot = snapshot::load_snapshot_data(&data, &resolved_entry_str)?;
+
+  let mut module_paths = snapshot.configs.modules;
+  module_paths.extend(deps.iter().cloned());
+
+  let mut seen_modules: HashSet<String> = HashSet::new();
+  module_paths.retain(|module_path| seen_modules.insert(module_path.to_owned()));
+  Ok(module_paths)
+}
+
 fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMap<String, snapshot::FileInSnapShot>, String> {
   ensure_runtime_initialized();
 
   let entry_path = PathBuf::from(entry);
   let base_dir = entry_path.parent().unwrap_or(Path::new("."));
   let module_folder = module_folder()?;
+  let module_paths = collect_check_md_module_paths(entry, deps)?;
 
   let mut shared_files: HashMap<String, snapshot::FileInSnapShot> = HashMap::new();
 
-  for module_path in deps {
+  for module_path in &module_paths {
     let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
     for (k, v) in &module_data.files {
       if shared_files.contains_key(k) {
@@ -1063,11 +1081,41 @@ fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSn
 fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
-    .map_err(|failure| failure.msg)?;
+  let compile_entry_def = |ns: &Arc<str>, def: &Arc<str>| {
+    runner::preprocess::ensure_ns_def_compiled(ns, def, check_warnings, &CallStackList::default()).map_err(|failure| failure.msg)
+  };
 
-  runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
-    .map_err(|failure| failure.msg)?;
+  let entry_check =
+    compile_entry_def(&entries.init_ns, &entries.init_def).and_then(|_| compile_entry_def(&entries.reload_ns, &entries.reload_def));
+
+  if let Err(entry_err) = entry_check {
+    // Markdown snippets may start with `ns app.demo ...` and omit app.main entry defs.
+    // For no-run mode, fall back to checking user snippet defs under app.* namespaces.
+    if entry_err.contains("unknown ns/def in program") {
+      let targets: Vec<(Arc<str>, Arc<str>)> = {
+        let program_data = program::PROGRAM_CODE_DATA.read().map_err(|_| "open program data".to_string())?;
+        let mut pairs: Vec<(Arc<str>, Arc<str>)> = Vec::new();
+        for (ns_name, file_data) in &*program_data {
+          if ns_name.starts_with("app.") {
+            for def_name in file_data.defs.keys() {
+              pairs.push((ns_name.to_owned(), def_name.to_owned()));
+            }
+          }
+        }
+        pairs
+      };
+
+      if targets.is_empty() {
+        return Err(entry_err);
+      }
+
+      for (ns_name, def_name) in targets {
+        compile_entry_def(&ns_name, &def_name)?;
+      }
+    } else {
+      return Err(entry_err);
+    }
+  }
 
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {

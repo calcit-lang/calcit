@@ -1,6 +1,6 @@
 use super::{
-  GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_docs_for_query, collect_search_results, find_doc_by_query,
-  load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query, score_doc_shape, validate_doc_frontmatter,
+  GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
+  find_doc_by_query, load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -16,6 +16,39 @@ fn write_file(path: &Path, content: &str) {
     fs::create_dir_all(parent).unwrap();
   }
   fs::write(path, content).unwrap();
+}
+
+#[test]
+fn collect_check_md_module_paths_merges_entry_modules_with_cli_deps() {
+  let root = unique_temp_dir("check-md-modules");
+  let entry = root.join("mini.cirru");
+  let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version |0.0.0)
+    :modules $ [] |respo.calcit/ |memof/
+  :entries $ {}
+  :files $ {}
+    |mini $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn main! () nil)
+          :examples $ []
+          :schema nil
+"#;
+  write_file(&entry, content);
+
+  let modules = collect_check_md_module_paths(
+    entry.to_str().expect("entry path should be utf-8"),
+    &[String::from("lilac/"), String::from("memof/")],
+  )
+  .expect("collect modules");
+
+  assert_eq!(
+    modules,
+    vec![String::from("respo.calcit/"), String::from("memof/"), String::from("lilac/")]
+  );
+
+  fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
