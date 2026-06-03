@@ -2591,6 +2591,8 @@ defcomp comp-space (w h)
     assert!(file.defs.contains_key("style-space"));
     assert!(file.defs.contains_key("compute"));
     assert!(file.defs.contains_key("comp-space"));
-    assert!(!file.defs.contains_key("main!"));
+    // main! and reload! are always injected as no-op entry points
+    assert!(file.defs.contains_key("main!"));
+    assert!(file.defs.contains_key("reload!"));
   }
 }

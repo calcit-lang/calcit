@@ -6,6 +6,22 @@ fn lock_fixture_tests() -> std::sync::MutexGuard<'static, ()> {
   super::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
 }
 
+/// Run a test body in a dedicated thread with a 32 MiB stack.
+/// The suite lock is acquired inside the spawned thread so it is held for the
+/// duration of the run and dropped before the thread exits.
+fn run_with_large_stack(f: impl FnOnce() + Send + 'static) {
+  const STACK_SIZE: usize = 32 * 1024 * 1024;
+  std::thread::Builder::new()
+    .stack_size(STACK_SIZE)
+    .spawn(move || {
+      let _guard = lock_fixture_tests();
+      f();
+    })
+    .expect("spawn test thread")
+    .join()
+    .expect("test thread panicked");
+}
+
 fn load_fixture_entries(path: &str) -> ProgramEntries {
   builtins::effects::init_effects_states();
 
@@ -51,8 +67,7 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
 
 #[test]
 fn type_fail_schema_mismatch_fixtures_report_error_code() {
-  let _guard = lock_fixture_tests();
-
+  run_with_large_stack(|| {
   let fixtures = [
     (
       "calcit/type-fail/schema-required-arity.cirru",
@@ -82,11 +97,12 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
     );
     assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
   }
+  });
 }
 
 #[test]
 fn type_fail_call_arg_fixture_reports_warning_code() {
-  let _guard = lock_fixture_tests();
+  run_with_large_stack(|| {
   let fixtures = [
     (
       "calcit/type-fail/schema-call-arg-type-mismatch.cirru",
@@ -123,11 +139,12 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
       warning.message()
     );
   }
+  });
 }
 
 #[test]
 fn type_fail_generic_where_bound_fixture_reports_warning_code() {
-  let _guard = lock_fixture_tests();
+  run_with_large_stack(|| {
   let entries = load_fixture_entries("calcit/type-fail/generic-where-bound-mismatch.cirru");
   let require_schema = program::lookup_def_schema("type-fail-generic-where-bound.main", "require-mappable");
   let CalcitTypeAnnotation::Fn(require_fn_annot) = require_schema.as_ref() else {
@@ -162,11 +179,12 @@ fn type_fail_generic_where_bound_fixture_reports_warning_code() {
     "warning message was: {}",
     warning.message()
   );
+  });
 }
 
 #[test]
 fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
-  let _guard = lock_fixture_tests();
+  run_with_large_stack(|| {
   let entries = load_fixture_entries("calcit/type-fail/core-map-where-bound-mismatch.cirru");
   let map_schema = program::lookup_def_schema("calcit.core", "map");
   let CalcitTypeAnnotation::Fn(map_fn_annot) = map_schema.as_ref() else {
@@ -202,12 +220,12 @@ fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
     "warning message was: {}",
     warning.message()
   );
+  });
 }
 
 #[test]
 fn type_fail_type_slot_fixtures_report_errors() {
-  let _guard = lock_fixture_tests();
-
+  run_with_large_stack(|| {
   let fixtures = [(
     "calcit/type-fail/type-slot-bind-duplicate.cirru",
     "type slot 'payload' already bound",
@@ -219,12 +237,12 @@ fn type_fail_type_slot_fixtures_report_errors() {
 
     assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
   }
+  });
 }
 
 #[test]
 fn type_fail_type_slot_enum_invalid_variant() {
-  let _guard = lock_fixture_tests();
-
+  run_with_large_stack(|| {
   let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");
   let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -242,12 +260,12 @@ fn type_fail_type_slot_enum_invalid_variant() {
     "warning should mention enum name, got: {}",
     matched[0].message()
   );
+  });
 }
 
 #[test]
 fn type_fail_type_slot_fixture_is_repeatable_across_program_loads() {
-  let _guard = lock_fixture_tests();
-
+  run_with_large_stack(|| {
   for _ in 0..2 {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru");
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -262,11 +280,12 @@ fn type_fail_type_slot_fixture_is_repeatable_across_program_loads() {
       .count();
     assert_eq!(warning_count, 1);
   }
+  });
 }
 
 #[test]
 fn run_check_only_surfaces_schema_error_code() {
-  let _guard = lock_fixture_tests();
+  run_with_large_stack(|| {
   let entries = load_fixture_entries("calcit/type-fail/schema-required-arity.cirru");
   let err = run_check_only(&entries).expect_err("check-only should fail on schema mismatch fixture");
 
@@ -274,4 +293,5 @@ fn run_check_only_surfaces_schema_error_code() {
     err.contains("E_SCHEMA_DEF_MISMATCH"),
     "check-only error should contain code, got: {err}"
   );
+  });
 }
