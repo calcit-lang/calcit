@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
+use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
 
@@ -15,14 +16,7 @@ fn default_version() -> String {
 }
 
 fn format_edn_preview(value: &Edn) -> String {
-  let raw = cirru_edn::format(value, true).unwrap_or_else(|_| format!("{value:?}"));
-  const LIMIT: usize = 220;
-  if raw.chars().count() > LIMIT {
-    let truncated = raw.chars().take(LIMIT).collect::<String>();
-    format!("{truncated}…")
-  } else {
-    raw
-  }
+  format_edn_display(value)
 }
 
 fn schema_path_label(path: &[String]) -> String {
@@ -189,7 +183,10 @@ impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Map(_) => from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {e}")),
+      Edn::Map(_) => {
+        let preview = data.clone();
+        from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {}", format_deserialize_error(&e, &preview)))
+      }
       Edn::Record(record) => {
         let mut ns = None;
         let mut defs = None;
@@ -210,7 +207,10 @@ impl TryFrom<Edn> for FileInSnapShot {
         let defs = defs.ok_or("Missing defs field in FileEntry")?;
         Ok(FileInSnapShot { ns, defs })
       }
-      _ => Err(format!("Expected FileInSnapShot map or record, but got: {data:?}")),
+      _ => Err(format!(
+        "Expected FileInSnapShot map or record, but got: {}",
+        format_edn_display(&data)
+      )),
     }
   }
 }
@@ -236,10 +236,14 @@ impl TryFrom<Edn> for NsEntry {
         for (key, value) in &record.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
-              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+              doc = from_edn(value.to_owned())
+                .map_err(|e| format!("failed to parse NsEntry.doc: {}", format_deserialize_error(&e, value)))?;
             }
             "code" => {
-              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+              code = Some(
+                from_edn(value.to_owned())
+                  .map_err(|e| format!("failed to parse NsEntry.code: {}", format_deserialize_error(&e, value)))?,
+              );
             }
             _ => {}
           }
@@ -247,14 +251,20 @@ impl TryFrom<Edn> for NsEntry {
       }
       Edn::Map(map) => {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
-          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+          doc =
+            from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {}", format_deserialize_error(&e, value)))?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
-          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+          code = Some(
+            from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {}", format_deserialize_error(&e, value)))?,
+          );
         }
       }
       other => {
-        return Err(format!("failed to parse NsEntry: expected record/map, got: {other:?}"));
+        return Err(format!(
+          "failed to parse NsEntry: expected record/map, got: {}",
+          format_edn_display(&other)
+        ));
       }
     }
 
@@ -381,13 +391,18 @@ impl TryFrom<Edn> for CodeEntry {
         for (key, value) in &record.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
-              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.doc: {e}"))?;
+              doc = from_edn(value.to_owned())
+                .map_err(|e| format!("failed to parse CodeEntry.doc: {}", format_deserialize_error(&e, value)))?;
             }
             "examples" => {
-              examples = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.examples: {e}"))?;
+              examples = from_edn(value.to_owned())
+                .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
             }
             "code" => {
-              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.code: {e}"))?);
+              code = Some(
+                from_edn(value.to_owned())
+                  .map_err(|e| format!("failed to parse CodeEntry.code: {}", format_deserialize_error(&e, value)))?,
+              );
             }
             "schema" => {
               if !matches!(value, Edn::Nil) {
@@ -400,13 +415,18 @@ impl TryFrom<Edn> for CodeEntry {
       }
       Edn::Map(map) => {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
-          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.doc: {e}"))?;
+          doc = from_edn(value.to_owned())
+            .map_err(|e| format!("failed to parse CodeEntry.doc: {}", format_deserialize_error(&e, value)))?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("examples"))) {
-          examples = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.examples: {e}"))?;
+          examples = from_edn(value.to_owned())
+            .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
-          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.code: {e}"))?);
+          code = Some(
+            from_edn(value.to_owned())
+              .map_err(|e| format!("failed to parse CodeEntry.code: {}", format_deserialize_error(&e, value)))?,
+          );
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("schema")))
           && !matches!(value, Edn::Nil)
@@ -415,7 +435,10 @@ impl TryFrom<Edn> for CodeEntry {
         }
       }
       other => {
-        return Err(format!("failed to parse CodeEntry: expected record/map, got: {other:?}"));
+        return Err(format!(
+          "failed to parse CodeEntry: expected record/map, got: {}",
+          format_edn_display(&other)
+        ));
       }
     }
 
@@ -1302,6 +1325,30 @@ impl Default for Snapshot {
   }
 }
 
+/// Keywords that introduce a named top-level definition in Calcit.
+/// When a snippet contains multiple such forms, each is extracted as its own
+/// `CodeEntry` so the type-checker can inspect them individually (no-run mode).
+const TOP_LEVEL_DEF_HEADS: &[&str] = &[
+  "def",
+  "defn",
+  "defcomp",
+  "defeffect",
+  "defatom",
+  "defstruct",
+  "defenum",
+  "defmacro",
+  "defrecord",
+];
+
+/// Extract the binding name from a top-level definition form.
+/// Returns `Some(name)` for recognised `(def name ...)` / `(defn name args ...)` etc.
+fn extract_def_name(items: &[Cirru]) -> Option<&str> {
+  match (items.first(), items.get(1)) {
+    (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) if TOP_LEVEL_DEF_HEADS.contains(&head.as_ref()) => Some(name.as_ref()),
+    _ => None,
+  }
+}
+
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
@@ -1320,16 +1367,44 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         body_start = 1;
       }
 
-      let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(2);
-      let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
-      for line in lines.into_iter().skip(body_start) {
-        func_code.push(line.to_owned());
+      let body_lines: Vec<Cirru> = lines.into_iter().skip(body_start).collect();
+
+      // If every body line is a top-level definition (def/defn/defcomp/…), promote
+      // each to its own CodeEntry.  This lets the type-checker handle multi-def
+      // snippets that appear in documentation (no-run mode).
+      let all_top_level = !body_lines.is_empty()
+        && body_lines.iter().all(|line| {
+          if let Cirru::List(items) = line {
+            extract_def_name(items).is_some()
+          } else {
+            false
+          }
+        });
+
+      let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(body_lines.len() + 2);
+
+      if all_top_level {
+        for line in &body_lines {
+          if let Cirru::List(items) = line {
+            if let Some(name) = extract_def_name(items) {
+              def_dict.insert(name.to_owned(), CodeEntry::from_code(line.clone()));
+            }
+          }
+        }
+        // No entry-point stubs needed; run_check_only_in_process falls back to
+        // checking all app.* defs when main!/reload! are absent.
+      } else {
+        let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
+        for line in body_lines {
+          func_code.push(line);
+        }
+        def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
       }
-      def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
-      def_dict.insert(
-        "reload!".into(),
-        CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()),
-      );
+
+      def_dict
+        .entry("reload!".to_string())
+        .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()));
+
       Ok(FileInSnapShot {
         ns: NsEntry {
           doc: "".to_owned(),
@@ -2491,5 +2566,27 @@ mod tests {
       err.contains(":configs (:version ...)") || err.contains("got ||"),
       "unexpected error: {err}"
     );
+  }
+
+  #[test]
+  fn create_file_from_snippet_promotes_top_level_defs() {
+    let raw = r#"ns app.demo
+  :require
+    respo.core :refer $ div
+
+def style-space $ {}
+  :width "|1px"
+
+defn compute (w h)
+  + w h
+
+defcomp comp-space (w h)
+  div $ {}
+"#;
+    let file = create_file_from_snippet(raw).expect("snippet should parse");
+    assert!(file.defs.contains_key("style-space"));
+    assert!(file.defs.contains_key("compute"));
+    assert!(file.defs.contains_key("comp-space"));
+    assert!(!file.defs.contains_key("main!"));
   }
 }

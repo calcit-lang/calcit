@@ -1039,6 +1039,15 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Option<Vec<String>> {
   }
 }
 
+pub(crate) fn load_entry_snapshot_for_check_md(entry: &str) -> Result<snapshot::Snapshot, String> {
+  let resolved_entry = calcit::resolve_snapshot_path_alias(Path::new(entry));
+  let mut content =
+    fs::read_to_string(&resolved_entry).map_err(|e| format!("Failed to read entry file '{}': {e}", resolved_entry.display()))?;
+  util::string::strip_shebang(&mut content);
+  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
+  snapshot::load_snapshot_data(&data, &resolved_entry.display().to_string())
+}
+
 fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMap<String, snapshot::FileInSnapShot>, String> {
   ensure_runtime_initialized();
 
@@ -1061,7 +1070,7 @@ fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMa
 
   let core_snapshot = calcit::load_core_snapshot()?;
   for (k, v) in core_snapshot.files {
-    shared_files.insert(k.to_owned(), v.to_owned());
+    shared_files.insert(k.to_owned(), v);
   }
 
   Ok(shared_files)
@@ -1083,20 +1092,31 @@ fn build_entries_from_snapshot(snapshot: &snapshot::Snapshot) -> Result<ProgramE
   })
 }
 
-fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSnapShot>, code: &str) -> Result<ProgramEntries, String> {
+fn prepare_program_for_snippet(
+  entry: &str,
+  shared_files: &HashMap<String, snapshot::FileInSnapShot>,
+  code: &str,
+) -> Result<ProgramEntries, String> {
   ensure_runtime_initialized();
 
   // `check-md` runs many snippets in one process; clear stale runtime/compiled
   // state so each block is evaluated from the freshly built app.main snapshot.
   program::clear_runtime_caches_for_reload(Arc::from("app.main"), Arc::from("app.main"), true)?;
 
-  let mut snapshot = snapshot::Snapshot::default();
+  let mut snapshot = match load_entry_snapshot_for_check_md(entry) {
+    Ok(entry_snapshot) => entry_snapshot,
+    Err(e) => {
+      eprintln!("check-md: failed to load entry `{entry}`: {e}");
+      snapshot::Snapshot::default()
+    }
+  };
   let main_file = snapshot::create_file_from_snippet(code)?;
-  snapshot.files.insert(String::from("app.main"), main_file);
 
   for (k, v) in shared_files {
     snapshot.files.insert(k.to_owned(), v.to_owned());
   }
+  // Insert snippet last so loaded modules cannot overwrite the markdown block under test.
+  snapshot.files.insert(String::from("app.main"), main_file);
 
   {
     let mut prgm = program::PROGRAM_CODE_DATA.write().map_err(|_| "open program data".to_string())?;
@@ -1122,35 +1142,56 @@ fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
     runner::preprocess::ensure_ns_def_compiled(ns, def, check_warnings, &CallStackList::default()).map_err(|failure| failure.msg)
   };
 
-  let entry_check =
-    compile_entry_def(&entries.init_ns, &entries.init_def).and_then(|_| compile_entry_def(&entries.reload_ns, &entries.reload_def));
+  // `prepare_program_for_snippet` always injects the markdown block as `app.main`.
+  // Prefer checking those defs so entry init/reload from the loaded project do not
+  // shadow snippet validation when they compile successfully.
+  let snippet_targets: Vec<(Arc<str>, Arc<str>)> = {
+    let program_data = program::PROGRAM_CODE_DATA.read().map_err(|_| "open program data".to_string())?;
+    program_data
+      .get("app.main")
+      .map(|file_data| {
+        file_data
+          .defs
+          .keys()
+          .map(|def_name| (Arc::from("app.main"), def_name.to_owned()))
+          .collect()
+      })
+      .unwrap_or_default()
+  };
 
-  if let Err(entry_err) = entry_check {
-    // Markdown snippets may start with `ns app.demo ...` and omit app.main entry defs.
-    // For no-run mode, fall back to checking user snippet defs under app.* namespaces.
-    if entry_err.contains("unknown ns/def in program") {
-      let targets: Vec<(Arc<str>, Arc<str>)> = {
-        let program_data = program::PROGRAM_CODE_DATA.read().map_err(|_| "open program data".to_string())?;
-        let mut pairs: Vec<(Arc<str>, Arc<str>)> = Vec::new();
-        for (ns_name, file_data) in &*program_data {
-          if ns_name.starts_with("app.") {
-            for def_name in file_data.defs.keys() {
-              pairs.push((ns_name.to_owned(), def_name.to_owned()));
+  if !snippet_targets.is_empty() {
+    for (ns_name, def_name) in snippet_targets {
+      compile_entry_def(&ns_name, &def_name).map_err(|e| format!("compile {ns_name}/{def_name}: {e}"))?;
+    }
+  } else {
+    let entry_check =
+      compile_entry_def(&entries.init_ns, &entries.init_def).and_then(|_| compile_entry_def(&entries.reload_ns, &entries.reload_def));
+
+    if let Err(entry_err) = entry_check {
+      if entry_err.contains("unknown ns/def in program") {
+        let targets: Vec<(Arc<str>, Arc<str>)> = {
+          let program_data = program::PROGRAM_CODE_DATA.read().map_err(|_| "open program data".to_string())?;
+          let mut pairs: Vec<(Arc<str>, Arc<str>)> = Vec::new();
+          for (ns_name, file_data) in &*program_data {
+            if ns_name.starts_with("app.") {
+              for def_name in file_data.defs.keys() {
+                pairs.push((ns_name.to_owned(), def_name.to_owned()));
+              }
             }
           }
-        }
-        pairs
-      };
+          pairs
+        };
 
-      if targets.is_empty() {
+        if targets.is_empty() {
+          return Err(entry_err);
+        }
+
+        for (ns_name, def_name) in targets {
+          compile_entry_def(&ns_name, &def_name)?;
+        }
+      } else {
         return Err(entry_err);
       }
-
-      for (ns_name, def_name) in targets {
-        compile_entry_def(&ns_name, &def_name)?;
-      }
-    } else {
-      return Err(entry_err);
     }
   }
 
@@ -1239,13 +1280,9 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
     };
 
     let check_result = match mode {
-      CirruCheckMode::Run => {
-        let entries = prepare_program_for_snippet(&shared_files, code)?;
-        run_eval_in_process(&entries)
-      }
+      CirruCheckMode::Run => prepare_program_for_snippet(entry, &shared_files, code).and_then(|entries| run_eval_in_process(&entries)),
       CirruCheckMode::NoRun => {
-        let entries = prepare_program_for_snippet(&shared_files, code)?;
-        run_check_only_in_process(&entries)
+        prepare_program_for_snippet(entry, &shared_files, code).and_then(|entries| run_check_only_in_process(&entries))
       }
       CirruCheckMode::NoCheck => run_parse_only_in_process(code),
     };
@@ -1262,7 +1299,11 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
       );
     } else {
       failed += 1;
-      let stderr = check_result.err().unwrap_or_else(|| "Error: Unknown error".to_string());
+      let stderr = check_result
+        .as_ref()
+        .err()
+        .cloned()
+        .unwrap_or_else(|| "Error: Unknown error".to_string());
       println!(
         "  {} L{}: {}{}{}",
         "✗".red(),
@@ -1273,8 +1314,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
       );
 
       for line in stderr.lines() {
-        let lower = line.to_lowercase();
-        if lower.contains("warn") || lower.contains("error") || lower.contains("failure") {
+        if !line.trim().is_empty() {
           println!("    {}", line.red());
         }
       }

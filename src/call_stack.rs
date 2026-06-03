@@ -219,11 +219,14 @@ pub fn display_stack_with_docs(
     let mut args = EdnListView::default();
     for v in s.args.iter() {
       let edn_val = edn::calcit_to_edn(v)?;
-      args.push(edn::sanitize_edn_for_format(&edn_val));
+      args.push(edn::compact_edn_for_display(&edn_val, 0));
     }
     let mut info_map = vec![
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
-      (Edn::tag("code"), cirru::calcit_to_cirru(&s.code)?.into()),
+      (
+        Edn::tag("code"),
+        Edn::str(edn::format_edn_display(&Edn::Quote(cirru::calcit_to_cirru(&s.code)?))),
+      ),
       (Edn::tag("args"), args.into()),
       (Edn::tag("kind"), Edn::tag(s.kind.to_string())),
       (
@@ -265,7 +268,8 @@ pub fn display_stack_with_docs(
     },
   ));
 
-  let content = cirru_edn::format(&Edn::map_from_iter(snapshot_fields), true)?;
+  let snapshot_edn = Edn::map_from_iter(snapshot_fields);
+  let content = cirru_edn::format(&edn::compact_edn_for_display(&snapshot_edn, 0), true)?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
   eprintln!("\nrun `cat {ERROR_SNAPSHOT}` to read stack details.");
   Ok(())

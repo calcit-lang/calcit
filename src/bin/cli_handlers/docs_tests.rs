@@ -1,6 +1,7 @@
 use super::{
   GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
-  find_doc_by_query, load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query, score_doc_shape, validate_doc_frontmatter,
+  find_doc_by_query, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query,
+  score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -49,6 +50,16 @@ fn collect_check_md_module_paths_merges_entry_modules_with_cli_deps() {
   );
 
   fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn load_entry_snapshot_for_check_md_reads_respo_project() {
+  let entry = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../respo/respo/calcit.cirru");
+  if !entry.exists() {
+    return;
+  }
+  let snapshot = load_entry_snapshot_for_check_md(entry.to_str().expect("entry path utf-8")).expect("load respo entry");
+  assert!(snapshot.files.contains_key("respo.core"));
 }
 
 #[test]
