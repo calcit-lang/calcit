@@ -174,6 +174,6 @@ cr docs check-md README.md --dep ./ --dep ~/.config/calcit/modules/memof/
 
 Recommended block modes:
 
-- `cirru`: run + preprocess + parse (preferred)
+- `cirru`: run + preprocess + parse (preferred; executes injected snippet entry `app.main/main!`, not entry file `:init-fn`)
 - `cirru.no-run`: preprocess + parse when runtime setup is unavailable
 - `cirru.no-check`: parse only for illustrative snippets

@@ -15,6 +15,7 @@ use std::time::{Duration, SystemTime};
 use calcit::ProgramEntries;
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
+use calcit::data::edn::format_edn_display;
 use calcit::program;
 use calcit::runner;
 use calcit::snapshot;
@@ -995,7 +996,8 @@ fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<Str
   // Extract configs.modules directly from the raw EDN to avoid loading the full snapshot.
   // This is necessary because old-format snapshots (with %{} :Expr code entries) cannot
   // be deserialized via load_snapshot_data, but we only need the module list here.
-  let module_paths_from_entry: Vec<String> = extract_modules_from_edn(&data).unwrap_or_default();
+  // Fail fast on malformed modules to avoid silently dropping dependencies.
+  let module_paths_from_entry: Vec<String> = extract_modules_from_edn(&data)?;
 
   let mut module_paths = module_paths_from_entry;
   module_paths.extend(deps.iter().cloned());
@@ -1008,7 +1010,7 @@ fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<Str
 /// Extract the `configs.modules` list from an EDN snapshot value without fully
 /// deserializing the snapshot. This tolerates old-format entries (e.g. `%{} :Expr`)
 /// that `load_snapshot_data` cannot handle.
-fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Option<Vec<String>> {
+fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String> {
   use cirru_edn::Edn;
 
   // Both old and new snapshot formats use a top-level Map or Record.
@@ -1020,22 +1022,35 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Option<Vec<String>> {
     }
   };
 
-  let configs = get_field(data, "configs")?;
-  let modules_edn = get_field(&configs, "modules")?;
+  let configs = match get_field(data, "configs") {
+    Some(configs) => configs,
+    None => return Ok(vec![]),
+  };
+  let modules_edn = match get_field(&configs, "modules") {
+    Some(modules) => modules,
+    None => return Ok(vec![]),
+  };
 
   match modules_edn {
     Edn::List(list) => {
-      let paths: Vec<String> = list
-        .0
-        .iter()
-        .filter_map(|item| match item {
-          Edn::Str(s) => Some(s.to_string()),
-          _ => None,
-        })
-        .collect();
-      Some(paths)
+      let mut paths: Vec<String> = vec![];
+      for item in &list.0 {
+        match item {
+          Edn::Str(s) => paths.push(s.to_string()),
+          _ => {
+            return Err(format!(
+              "Failed to parse `configs.modules`: expected list of strings, got item `{}`",
+              format_edn_display(item)
+            ));
+          }
+        }
+      }
+      Ok(paths)
     }
-    _ => None,
+    _ => Err(format!(
+      "Failed to parse `configs.modules`: expected list, got `{}`",
+      format_edn_display(&modules_edn)
+    )),
   }
 }
 
@@ -1103,13 +1118,7 @@ fn prepare_program_for_snippet(
   // state so each block is evaluated from the freshly built app.main snapshot.
   program::clear_runtime_caches_for_reload(Arc::from("app.main"), Arc::from("app.main"), true)?;
 
-  let mut snapshot = match load_entry_snapshot_for_check_md(entry) {
-    Ok(entry_snapshot) => entry_snapshot,
-    Err(e) => {
-      eprintln!("check-md: failed to load entry `{entry}`: {e}");
-      snapshot::Snapshot::default()
-    }
-  };
+  let mut snapshot = load_entry_snapshot_for_check_md(entry).map_err(|e| format!("check-md: failed to load entry `{entry}`: {e}"))?;
   let main_file = snapshot::create_file_from_snippet(code)?;
 
   for (k, v) in shared_files {
@@ -1132,7 +1141,13 @@ fn prepare_program_for_snippet(
   )
   .map_err(|e| e.msg)?;
 
-  build_entries_from_snapshot(&snapshot)
+  let mut entries = build_entries_from_snapshot(&snapshot)?;
+  // Snippet is always mounted at `app.main`; Run/NoRun must not use the entry
+  // project's init-fn (e.g. `memof.main/main!` running the bundled test suite).
+  entries.init_ns = Arc::from("app.main");
+  entries.init_def = Arc::from("main!");
+  entries.init_fn = Arc::from("|app.main/main!");
+  Ok(entries)
 }
 
 fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
