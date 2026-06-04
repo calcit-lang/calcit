@@ -1142,11 +1142,15 @@ fn prepare_program_for_snippet(
   .map_err(|e| e.msg)?;
 
   let mut entries = build_entries_from_snapshot(&snapshot)?;
-  // Snippet is always mounted at `app.main`; Run/NoRun must not use the entry
-  // project's init-fn (e.g. `memof.main/main!` running the bundled test suite).
+  // Snippet is always mounted at `app.main`; override the project's init/reload
+  // entries so run_eval_in_process calls app.main/main! rather than the project
+  // entry (which may require JS-only APIs, a running server, etc.).
   entries.init_ns = Arc::from("app.main");
   entries.init_def = Arc::from("main!");
   entries.init_fn = Arc::from("|app.main/main!");
+  entries.reload_fn = Arc::from("|app.main/reload!");
+  entries.reload_ns = Arc::from("app.main");
+  entries.reload_def = Arc::from("reload!");
   Ok(entries)
 }
 
