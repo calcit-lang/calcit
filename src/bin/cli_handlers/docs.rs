@@ -1385,7 +1385,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
   }
   if failed > 0 {
     println!("{}", summary.red().bold());
-    Err(format!("{failed} code block(s) failed"))
+    Err(format!("check-md failed: {summary}"))
   } else if quiet {
     Ok(())
   } else {
