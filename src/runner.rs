@@ -58,6 +58,11 @@ fn resolve_runtime_or_compiled_def(
   program::resolve_runtime_or_compiled_def(ns, def, def_id, program::RuntimeResolveMode::Strict, call_stack).map_err(|err| match err {
     program::RuntimeResolveError::RuntimeCell(cell) => build_runtime_cell_error(ns, def, call_stack, cell),
     program::RuntimeResolveError::Eval(failure) => failure,
+    program::RuntimeResolveError::RuntimeSeed(message) => CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      format!("failed to seed runtime for {ns}/{def}: {message}"),
+      call_stack,
+    ),
   })
 }
 

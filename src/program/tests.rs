@@ -700,7 +700,7 @@ fn lookup_codegen_type_hint_falls_back_to_runtime_value() {
 }
 
 #[test]
-fn lenient_compiled_fallback_does_not_backfill_runtime_cache() {
+fn lenient_compiled_fallback_backfills_runtime_cache() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
 
@@ -742,11 +742,14 @@ fn lenient_compiled_fallback_does_not_backfill_runtime_cache() {
   )
   .expect("lenient compiled fallback should succeed");
   assert_eq!(value, Some(Calcit::Number(7.0)));
-  assert_eq!(lookup_runtime_cell("app.compiled", "callable"), Some(RuntimeCell::Cold));
+  assert_eq!(
+    lookup_runtime_cell("app.compiled", "callable"),
+    Some(RuntimeCell::Ready(Calcit::Number(7.0)))
+  );
 }
 
 #[test]
-fn preprocess_ns_def_materializes_compiled_function_without_backfilling_runtime() {
+fn preprocess_ns_def_materializes_compiled_function_with_runtime_backfill() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
 
@@ -789,7 +792,10 @@ fn preprocess_ns_def_materializes_compiled_function_without_backfilling_runtime(
     .expect("lookup compiled function after ensure");
 
   assert!(matches!(value, Some(Calcit::Fn { .. })));
-  assert_eq!(lookup_runtime_cell_by_id(def_id), Some(RuntimeCell::Cold));
+  assert!(matches!(
+    lookup_runtime_cell_by_id(def_id),
+    Some(RuntimeCell::Ready(Calcit::Fn { .. }))
+  ));
 }
 
 #[test]
@@ -828,7 +834,7 @@ fn lazy_runtime_resolution_seeds_from_compiled_when_runtime_slot_is_missing() {
 }
 
 #[test]
-fn run_program_compiles_then_executes_without_runtime_backfill() {
+fn run_program_compiles_then_executes_with_runtime_backfill() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
 
@@ -865,7 +871,10 @@ fn run_program_compiles_then_executes_without_runtime_backfill() {
 
   assert_eq!(result, Calcit::Number(7.0));
   assert!(lookup_compiled_def("app.main", "main").is_some());
-  assert_eq!(lookup_runtime_cell("app.main", "main"), None);
+  assert!(matches!(
+    lookup_runtime_cell("app.main", "main"),
+    Some(RuntimeCell::Ready(Calcit::Fn { .. }))
+  ));
 }
 
 #[test]

@@ -40,6 +40,7 @@ pub enum RuntimeResolveMode {
 pub enum RuntimeResolveError {
   RuntimeCell(RuntimeCell),
   Eval(CalcitErr),
+  RuntimeSeed(String),
 }
 
 pub type ProgramRuntimeData = Vec<RuntimeCell>;
@@ -463,7 +464,9 @@ fn materialize_compiled_executable_payload(
     return Ok(None);
   };
 
-  result.map(Some).map_err(RuntimeResolveError::Eval)
+  let value = result.map_err(RuntimeResolveError::Eval)?;
+  write_runtime_ready(ns, def, value.to_owned()).map_err(RuntimeResolveError::RuntimeSeed)?;
+  Ok(Some(value))
 }
 
 pub fn resolve_compiled_executable_def(ns: &str, def: &str, call_stack: &CallStackList) -> Result<Option<Calcit>, RuntimeResolveError> {
