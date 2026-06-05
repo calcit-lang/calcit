@@ -36,7 +36,7 @@ Quick note: `cr edit format` rewrites the target snapshot using canonical serial
 cr
 
 # Run specific file
-cr demos/calcit.cirru
+cr calcit.cirru
 ```
 
 ### Run Mode (default once)
@@ -45,7 +45,7 @@ By default, `cr` runs once and exits. Use `--watch` (`-w`) to enable watch mode:
 
 ```bash
 cr --watch
-cr -w demos/calcit.cirru
+cr -w calcit.cirru
 ```
 
 ### Error Stack Trace (--disable-stack)
@@ -164,6 +164,12 @@ Use `docs check-md` to validate fenced code blocks in markdown files:
 
 ```bash
 cr docs check-md README.md
+```
+
+This defaults to `calcit.cirru` as the eval entry. If your project uses a different snapshot filename, pass it explicitly with `-d`:
+
+```bash
+cr docs check-md README.md -d compact.cirru
 ```
 
 Load module dependencies with repeatable `--dep` options:

@@ -685,8 +685,8 @@ pub struct DocsCheckMdCommand {
   /// path to the markdown file to check
   #[argh(positional)]
   pub file: String,
-  /// entry .cirru file for eval context (default: demos/calcit.cirru)
-  #[argh(option, short = 'd', default = "String::from(\"demos/calcit.cirru\")")]
+  /// entry .cirru file for eval context (default: calcit.cirru)
+  #[argh(option, short = 'd', default = "String::from(\"calcit.cirru\")")]
   pub entry: String,
   /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entry configs.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]

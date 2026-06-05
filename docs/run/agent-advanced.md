@@ -136,7 +136,7 @@ Calcit 程序使用 `cr` 命令：
   - 用于 CI/CD 或快速验证代码修改
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
 - `cr --tips <subcommand> ...` - 主动显示完整 tips（教学/排障时）
-  - 示例：`cr --tips demos/calcit.cirru query def calcit.core/foldl`
+  - 示例：`cr --tips calcit.cirru query def calcit.core/foldl`
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
 - - **不需要**项目运行时快照文件（`calcit.cirru` / `compact.cirru`）：core 内置函数（`range`、`+`、`map` 等）直接可用
 - 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块

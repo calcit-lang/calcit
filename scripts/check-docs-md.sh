@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check all Markdown files under docs/ using `cr docs check-md`.
 # Usage: ./scripts/check-docs-md.sh [entry-file]
-#   entry-file defaults to demos/calcit.cirru
+#   entry-file defaults to calcit/test.cirru in this repository.
 
 set -eo pipefail
 

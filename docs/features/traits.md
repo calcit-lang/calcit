@@ -331,7 +331,7 @@ let
 ### Examples (verified with `cr eval`)
 
 ```bash
-cargo run --bin cr -- demos/calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (.len xs)'
+cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (.len xs)'
 ```
 
 Expected output:
@@ -341,7 +341,7 @@ Expected output:
 ```
 
 ```bash
-cargo run --bin cr -- demos/calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (.map xs inc)'
+cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (.map xs inc)'
 ```
 
 Expected output:
