@@ -16,6 +16,7 @@ use std::{
   fs,
   io::Write,
   path::{Path, PathBuf},
+  process::Command,
   sync::Arc,
   thread,
 };
@@ -681,11 +682,36 @@ fn upgrade_packages(deps: PackageDeps, deps_file: &str, opts: &UpgradeCaps) -> R
 
   if !outdated_packages.is_empty() || calcit_version_needs_update {
     update_deps_file(&outdated_packages, calcit_version_needs_update, deps_file)?;
+    if opts.all {
+      sync_calcit_procs_package()?;
+    }
     println!("deps.cirru updated successfully!");
     Ok(true)
   } else {
     println!("Already up to date.");
     Ok(false)
+  }
+}
+
+fn sync_calcit_procs_package() -> Result<(), String> {
+  if !Path::new("package.json").exists() {
+    println!("skipping {} sync: no package.json found", "@calcit/procs".yellow());
+    return Ok(());
+  }
+
+  println!("syncing npm package {}...", "@calcit/procs".green());
+  let status = Command::new("yarn")
+    .args(["up", "@calcit/procs"])
+    .status()
+    .map_err(|e| format!("failed to run `yarn up @calcit/procs`: {e}"))?;
+
+  if status.success() {
+    Ok(())
+  } else {
+    Err(format!(
+      "`yarn up @calcit/procs` exited with status {}",
+      status.code().map(|code| code.to_string()).unwrap_or_else(|| "signal".to_string())
+    ))
   }
 }
 

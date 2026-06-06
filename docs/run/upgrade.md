@@ -75,10 +75,18 @@ cr --version
 ### Step C：检查并更新 `deps.cirru`
 
 ```bash
+caps upgrade --all
+```
+
+说明：`caps upgrade --all` 会更新 `deps.cirru` 里的依赖版本与 `:calcit-version`；如果确实发生升级，还会顺带执行一次 `yarn up @calcit/procs`，把 JS 运行时包同步到当前 Calcit 版本链路。
+
+如果你只想批量把旧版本提升到最新标签，也可以继续用：
+
+```bash
 caps outdated --yes
 ```
 
-说明：`caps outdated --yes` 用于更新 `deps.cirru`，不负责模块下载。
+这个命令只更新 `deps.cirru`，不触发 `yarn up @calcit/procs`。
 
 ### Step D：同步模块内容
 
