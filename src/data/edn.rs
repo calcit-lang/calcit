@@ -493,6 +493,19 @@ fn find_enum_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calci
   }
 }
 
+fn resolve_enum_tag(enum_tag: &Edn, options: &Calcit) -> Option<Arc<CalcitEnum>> {
+  let enum_name = match enum_tag {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Symbol(sym) => sym.as_ref(),
+    Edn::Str(s) => s.as_ref(),
+    _ => return None,
+  };
+  match find_enum_in_options(enum_name, options) {
+    Some(Calcit::Enum(enum_def)) => Some(Arc::new(enum_def.to_owned())),
+    _ => None,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -535,18 +548,5 @@ mod tests {
     let err_msg = format_deserialize_error("Cannot deserialize Edn type: record `Expr`", &Edn::Record(expr));
     assert!(err_msg.contains("ns app.demo"), "err={err_msg}");
     assert!(!err_msg.contains("legacy-expr"), "err={err_msg}");
-  }
-}
-
-fn resolve_enum_tag(enum_tag: &Edn, options: &Calcit) -> Option<Arc<CalcitEnum>> {
-  let enum_name = match enum_tag {
-    Edn::Tag(tag) => tag.ref_str(),
-    Edn::Symbol(sym) => sym.as_ref(),
-    Edn::Str(s) => s.as_ref(),
-    _ => return None,
-  };
-  match find_enum_in_options(enum_name, options) {
-    Some(Calcit::Enum(enum_def)) => Some(Arc::new(enum_def.to_owned())),
-    _ => None,
   }
 }

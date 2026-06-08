@@ -22,12 +22,20 @@ fn run_with_large_stack(f: impl FnOnce() + Send + 'static) {
     .expect("test thread panicked");
 }
 
-fn load_fixture_entries(path: &str) -> ProgramEntries {
+fn load_fixture_entries_with_entry(path: &str, selected_entry: Option<&str>) -> ProgramEntries {
   builtins::effects::init_effects_states();
 
   let content = fs::read_to_string(path).unwrap_or_else(|_| panic!("Failed to read fixture: {path}"));
   let data = cirru_edn::parse(&content).unwrap_or_else(|e| panic!("Failed to parse fixture {path}: {e}"));
   let mut snapshot = snapshot::load_snapshot_data(&data, path).unwrap_or_else(|e| panic!("Failed to load fixture {path}: {e}"));
+  if let Some(entry) = selected_entry {
+    let entry_configs = snapshot
+      .entries
+      .get(entry)
+      .unwrap_or_else(|| panic!("Fixture {path} missing entry {entry}"))
+      .to_owned();
+    entry_configs.clone_into(&mut snapshot.configs);
+  }
   let core_snapshot = calcit::load_core_snapshot().expect("load core snapshot");
 
   for (k, v) in core_snapshot.files {
@@ -63,6 +71,10 @@ fn load_fixture_entries(path: &str) -> ProgramEntries {
     reload_ns: reload_ns.into(),
     reload_def: reload_def.into(),
   }
+}
+
+fn load_fixture_entries(path: &str) -> ProgramEntries {
+  load_fixture_entries_with_entry(path, None)
 }
 
 #[test]
@@ -279,6 +291,19 @@ fn type_fail_type_slot_fixture_is_repeatable_across_program_loads() {
         .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH"))
         .count();
       assert_eq!(warning_count, 1);
+    }
+  });
+}
+
+#[test]
+fn type_slot_bindings_are_scoped_to_selected_entry() {
+  run_with_large_stack(|| {
+    for selected_entry in [None, Some("server")] {
+      let entries = load_fixture_entries_with_entry("calcit/type-fail/type-slot-entry-scope.cirru", selected_entry);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("entry-scoped bind-type fixture should preprocess without duplicate slot errors");
     }
   });
 }

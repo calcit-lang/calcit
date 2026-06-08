@@ -198,9 +198,9 @@ pub fn ensure_ns_def_compiled(
   ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)
 }
 
-/// Pre-compile all defs that contain `bind-type` calls so that global type
-/// slots (e.g. `*dispatch-op`) are populated **before** any component or
-/// utility def is preprocessed.
+/// Pre-compile entry-reachable defs that contain `bind-type` calls so that
+/// global type slots (e.g. `*dispatch-op`) are populated **before** any
+/// component or utility def reachable from the selected entry is preprocessed.
 ///
 /// `bind-type` is processed as a compile-time side effect inside
 /// `preprocess_expr`.  If a component def (e.g. `reel.app.comp.todolist`)
@@ -208,17 +208,31 @@ pub fn ensure_ns_def_compiled(
 /// type slot is unresolved and the tuple-to-enum type-rewriting is skipped,
 /// producing structurally different (and incorrect) JS on alternate runs.
 ///
-/// This function scans every source-code def, identifies those whose source
-/// contains a `bind-type` call, and compiles them eagerly.
-pub fn precompile_bind_type_defs(check_warnings: &RefCell<Vec<LocatedWarning>>, call_stack: &CallStackList) -> Result<(), CalcitErr> {
+/// This function starts from the selected entry, finds all reachable defs via
+/// source-level call analysis, identifies those whose source contains a
+/// `bind-type` call, and compiles only that reachable subset eagerly. This
+/// keeps multiple entries from fighting over the same type slot when they bind
+/// it independently.
+pub fn precompile_bind_type_defs(
+  init_ns: &str,
+  init_def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
   let tasks: Vec<(Arc<str>, Arc<str>)> = {
+    let reachable = crate::call_tree::count_calls(init_ns, init_def, true, None)
+      .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, None))?;
     let program_code = program::PROGRAM_CODE_DATA.read().expect("read program code for bind-type pre-scan");
     let mut bind_type_defs = vec![];
-    for (ns, file) in program_code.iter() {
-      for (def, entry) in file.defs.iter() {
-        if program::calcit_contains_bind_type(&entry.code) {
-          bind_type_defs.push((ns.clone(), def.clone()));
-        }
+    for entry in reachable.counts {
+      let Some(file) = program_code.get(entry.ns.as_str()) else {
+        continue;
+      };
+      let Some(def_entry) = file.defs.get(entry.def.as_str()) else {
+        continue;
+      };
+      if program::calcit_contains_bind_type(&def_entry.code) {
+        bind_type_defs.push((Arc::from(entry.ns), Arc::from(entry.def)));
       }
     }
     // Sort for determinism
