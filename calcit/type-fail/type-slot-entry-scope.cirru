@@ -14,8 +14,7 @@
           :schema :dynamic
         |server-main! $ %{} :CodeEntry (:doc "|Server entry binds the same slot name independently")
           :code $ quote
-            defn server-main! () $ do
-              bind-type :dispatch-op ServerOp
+            defn server-main! () $ with-type-slot (:dispatch-op ServerOp)
               accept-op $ :: :server/ping
               , nil
           :examples $ []
@@ -37,8 +36,7 @@
               :args $ [] '*dispatch-op
         |client-main! $ %{} :CodeEntry (:doc "|Client entry binds dispatch-op for client enums")
           :code $ quote
-            defn client-main! () $ do
-              bind-type :dispatch-op ClientOp
+            defn client-main! () $ with-type-slot (:dispatch-op ClientOp)
               accept-op $ :: :client/ping
               , nil
           :examples $ []
@@ -52,5 +50,5 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc "|Fixture for entry-scoped bind-type preprocessing")
+      :ns $ %{} :NsEntry (:doc "|Fixture for entry-scoped with-type-slot preprocessing")
         :code $ quote (ns type-fail-type-slot-entry-scope.main)

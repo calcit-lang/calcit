@@ -470,8 +470,8 @@ pub enum CalcitProc {
   // type slots
   #[strum(serialize = "deftype-slot")]
   DeftypeSlot,
-  #[strum(serialize = "bind-type")]
-  BindType,
+  #[strum(serialize = "with-type-slot")]
+  WithTypeSlot,
 }
 
 use crate::CalcitTypeAnnotation;
@@ -1387,10 +1387,8 @@ impl CalcitProc {
         return_type: some_tag("nil"),
         arg_types: vec![some_tag("tag")],
       }),
-      BindType => Some(ProcTypeSignature {
-        return_type: some_tag("nil"),
-        arg_types: vec![some_tag("tag"), dynamic_tag()],
-      }),
+      // with-type-slot has a variadic body; type-checking is handled at preprocess time
+      WithTypeSlot => None,
     }
   }
 

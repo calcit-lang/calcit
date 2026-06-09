@@ -469,8 +469,8 @@ fn gen_call_code(
         None => Err(format!("raise expected 1~2 arguments, got: {body}")),
       }
     }
-    // deftype-slot and bind-type are preprocessing-only; they have no JS runtime effect.
-    Calcit::Proc(CalcitProc::DeftypeSlot) | Calcit::Proc(CalcitProc::BindType) => Ok(format!("{return_code}null")),
+    // deftype-slot is preprocessing-only; it has no JS runtime effect.
+    Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     // &record:nth: with 3 args (record, idx, :field-tag), use record.get(tag) for JS
     // because JS CalcitRecord fields are sorted by tag.idx (registration order), not alphabetically.
     // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).

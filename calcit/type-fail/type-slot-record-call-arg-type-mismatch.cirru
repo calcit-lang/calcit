@@ -13,9 +13,7 @@
           :schema :dynamic
         |main! $ %{} :CodeEntry (:doc "|Entry for type-slot record bind call-site arg type mismatch")
           :code $ quote
-            defn main! () $ do
-              deftype-slot :payload
-              bind-type :payload $ %{} User (:name |demo)
+            defn main! () $ with-type-slot (:payload $ %{} User (:name |demo))
               takes-user 1
               , nil
           :examples $ []

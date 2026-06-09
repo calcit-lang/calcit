@@ -7,8 +7,8 @@ use crate::{
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport,
     CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTypeAnnotation,
-    GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind, bind_type_slot, brief_type_of_value,
-    register_type_slot,
+    GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind, brief_type_of_value, pop_type_slot_override,
+    push_type_slot_override, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -198,53 +198,167 @@ pub fn ensure_ns_def_compiled(
   ensure_ns_def_preprocessed(raw_ns, raw_def, check_warnings, call_stack)
 }
 
-/// Pre-compile entry-reachable defs that contain `bind-type` calls so that
-/// global type slots (e.g. `*dispatch-op`) are populated **before** any
-/// component or utility def reachable from the selected entry is preprocessed.
+/// Preprocess a `(with-type-slot (:slot-name TypeExpr) body...)` form.
 ///
-/// `bind-type` is processed as a compile-time side effect inside
-/// `preprocess_expr`.  If a component def (e.g. `reel.app.comp.todolist`)
-/// is compiled before the def that calls `(bind-type :dispatch-op Op)`, the
-/// type slot is unresolved and the tuple-to-enum type-rewriting is skipped,
-/// producing structurally different (and incorrect) JS on alternate runs.
-///
-/// This function starts from the selected entry, finds all reachable defs via
-/// source-level call analysis, identifies those whose source contains a
-/// `bind-type` call, and compiles only that reachable subset eagerly. This
-/// keeps multiple entries from fighting over the same type slot when they bind
-/// it independently.
-pub fn precompile_bind_type_defs(
-  init_ns: &str,
-  init_def: &str,
+/// The first argument must be a two-element list `(:slot-name TypeExpr)`.
+/// The type is resolved and pushed as a scoped override, then all body
+/// expressions are preprocessed under that scope, and finally the override
+/// is popped.  The preprocessed form emits `(with-type-slot <binding-list> body...)`.
+fn preprocess_with_type_slot_block(
+  head_form: &Calcit,
+  args: &CalcitList,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
-) -> Result<(), CalcitErr> {
-  let tasks: Vec<(Arc<str>, Arc<str>)> = {
-    let reachable = crate::call_tree::count_calls(init_ns, init_def, true, None)
-      .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, None))?;
-    let program_code = program::PROGRAM_CODE_DATA.read().expect("read program code for bind-type pre-scan");
-    let mut bind_type_defs = vec![];
-    for entry in reachable.counts {
-      let Some(file) = program_code.get(entry.ns.as_str()) else {
-        continue;
-      };
-      let Some(def_entry) = file.defs.get(entry.def.as_str()) else {
-        continue;
-      };
-      if program::calcit_contains_bind_type(&def_entry.code) {
-        bind_type_defs.push((Arc::from(entry.ns), Arc::from(entry.def)));
-      }
-    }
-    // Sort for determinism
-    bind_type_defs.sort();
-    bind_type_defs
+) -> Result<Calcit, CalcitErr> {
+  let head_location = head_form.get_location();
+  // --- Parse the binding pair ---
+  let Some(binding_expr) = args.first() else {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      "with-type-slot expected a binding pair as first argument, e.g. `(:dispatch-op Op)`",
+      call_stack,
+      head_location,
+    ));
   };
 
-  for (ns, def) in tasks {
-    ensure_ns_def_preprocessed(&ns, &def, check_warnings, call_stack)?;
+  let Calcit::List(binding_list) = binding_expr else {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("with-type-slot binding must be a list, got: {binding_expr}"),
+      call_stack,
+      binding_expr.get_location(),
+    ));
+  };
+
+  if binding_list.len() != 2 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!(
+        "with-type-slot binding must be a 2-element list (:slot-name TypeExpr), got {} elements",
+        binding_list.len()
+      ),
+      call_stack,
+      binding_expr.get_location(),
+    ));
   }
 
-  Ok(())
+  // Slot name (first element of binding pair)
+  let slot_name: Arc<str> = match &binding_list[0] {
+    Calcit::Tag(tag) => Arc::from(tag.ref_str()),
+    Calcit::Str(s) => Arc::from(s.as_ref()),
+    other => {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!("with-type-slot name must be a tag or string, got: {other}"),
+        call_stack,
+        other.get_location(),
+      ));
+    }
+  };
+
+  // Type expression (second element of binding pair — preprocess it first)
+  let raw_type_expr = &binding_list[1];
+  let processed_type_expr = preprocess_expr(raw_type_expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+
+  // Resolve the preprocessed expression to a type annotation
+  let resolved = match &processed_type_expr {
+    Calcit::Import(crate::calcit::CalcitImport { ns, def, .. }) => resolve_program_value_for_preprocess(ns, def, None),
+    Calcit::Symbol { sym, info, .. } => resolve_program_value_for_preprocess(&info.at_ns, sym, None),
+    other => Some(other.to_owned()),
+  };
+  let Some(resolved) = resolved else {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Unexpected,
+      format!("with-type-slot could not resolve type value for slot `{slot_name}`"),
+      call_stack,
+      raw_type_expr.get_location(),
+    ));
+  };
+
+  let import_path: Option<(Arc<str>, Arc<str>)> = match &processed_type_expr {
+    Calcit::Import(crate::calcit::CalcitImport { ns, def, .. }) => Some((ns.clone(), def.clone())),
+    _ => None,
+  };
+
+  let type_annotation: Arc<CalcitTypeAnnotation> = if let Some((ns, def)) = &import_path {
+    match &resolved {
+      Calcit::Enum(_) | Calcit::Struct(_) => {
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
+      }
+      Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Unexpected,
+          format!(
+            "with-type-slot expected an enum or struct import, got: {}",
+            brief_type_of_value(other)
+          ),
+          call_stack,
+          raw_type_expr.get_location(),
+        ));
+      }
+    }
+  } else {
+    match &resolved {
+      Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
+      Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
+      Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+      other => match infer_type_from_expr(other, scope_types) {
+        Some(inferred)
+          if matches!(
+            inferred.as_ref(),
+            CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::Record(_)
+          ) =>
+        {
+          inferred
+        }
+        _ => {
+          return Err(CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Unexpected,
+            format!(
+              "with-type-slot expected an enum, struct, or record as type value, got: {}",
+              brief_type_of_value(other)
+            ),
+            call_stack,
+            raw_type_expr.get_location(),
+          ));
+        }
+      },
+    }
+  };
+
+  // Push the scoped override
+  push_type_slot_override(slot_name.clone(), type_annotation);
+
+  // Preprocess body expressions under the override
+  let body_args = args.drop_left();
+  let mut preprocessed_body: Vec<Calcit> = Vec::with_capacity(body_args.len());
+  let mut preprocess_err: Option<CalcitErr> = None;
+  for expr in body_args.iter() {
+    match preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack) {
+      Ok(form) => preprocessed_body.push(form),
+      Err(e) => {
+        preprocess_err = Some(e);
+        break;
+      }
+    }
+  }
+
+  // Always pop the override, even on error
+  pop_type_slot_override(&slot_name);
+
+  if let Some(e) = preprocess_err {
+    return Err(e);
+  }
+
+  // Rebuild: (with-type-slot (:slot-name processed-type-expr) body...)
+  let rebuilt_binding = Calcit::from(vec![binding_list[0].to_owned(), processed_type_expr]);
+  let mut result_items = vec![head_form.to_owned(), rebuilt_binding];
+  result_items.extend(preprocessed_body);
+  Ok(Calcit::from(CalcitList::from(result_items.as_slice())))
 }
 
 fn lookup_callable_ns_def_for_preprocess(
@@ -931,6 +1045,12 @@ fn preprocess_list_call(
         head.get_location(),
       )),
 
+      // with-type-slot must be intercepted before the generic Proc arm so that its body
+      // args are preprocessed while the scoped type override is active.
+      Calcit::Proc(CalcitProc::WithTypeSlot) => {
+        preprocess_with_type_slot_block(&head_form, &args, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+      }
+
       Calcit::Method(_, _)
       | Calcit::Proc(..)
       | Calcit::Local { .. }
@@ -1181,94 +1301,6 @@ fn preprocess_list_call(
               .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location()))?;
           }
         }
-        if let Some(Calcit::Proc(CalcitProc::BindType)) = ys.first() {
-          if let (Some(slot_arg), Some(type_arg)) = (processed_args.first(), processed_args.get(1)) {
-            let slot_name = match slot_arg {
-              Calcit::Tag(tag) => tag.ref_str(),
-              Calcit::Str(text) => text.as_ref(),
-              _ => {
-                return Err(CalcitErr::use_msg_stack_location(
-                  CalcitErrKind::Unexpected,
-                  format!("bind-type expected a tag or string as slot name, got: {slot_arg}"),
-                  call_stack,
-                  head.get_location(),
-                ));
-              }
-            };
-            let resolved = match type_arg {
-              Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_program_value_for_preprocess(ns, def, *def_id),
-              Calcit::Symbol { sym, info, .. } => resolve_program_value_for_preprocess(&info.at_ns, sym, None),
-              other => Some(other.to_owned()),
-            };
-            // When the type was resolved from an Import, preserve the ns/def path as a TypeRef
-            // so that downstream resolution (e.g., resolve_to_enum_with_ref) can produce Import nodes
-            // for JS codegen compatibility.
-            let import_path: Option<(Arc<str>, Arc<str>)> = match type_arg {
-              Calcit::Import(CalcitImport { ns, def, .. }) => Some((ns.clone(), def.clone())),
-              _ => None,
-            };
-            let Some(resolved) = resolved else {
-              return Err(CalcitErr::use_msg_stack_location(
-                CalcitErrKind::Unexpected,
-                format!("bind-type expected a resolvable type value for slot `{slot_name}`"),
-                call_stack,
-                head.get_location(),
-              ));
-            };
-            let type_annotation = if let Some((ns, def)) = &import_path {
-              // When bound from an import, use TypeRef to preserve ns/def for JS codegen
-              match &resolved {
-                Calcit::Enum(_) | Calcit::Struct(_) => {
-                  Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
-                }
-                _ => match &resolved {
-                  Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
-                  _ => {
-                    return Err(CalcitErr::use_msg_stack_location(
-                      CalcitErrKind::Unexpected,
-                      format!(
-                        "bind-type expected an enum or struct import, got: {}",
-                        brief_type_of_value(&resolved)
-                      ),
-                      call_stack,
-                      head.get_location(),
-                    ));
-                  }
-                },
-              }
-            } else {
-              match &resolved {
-                Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
-                Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-                Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
-                other => match infer_type_from_expr(other, scope_types) {
-                  Some(inferred)
-                    if matches!(
-                      inferred.as_ref(),
-                      CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::Record(_)
-                    ) =>
-                  {
-                    inferred
-                  }
-                  _ => {
-                    return Err(CalcitErr::use_msg_stack_location(
-                      CalcitErrKind::Unexpected,
-                      format!(
-                        "bind-type expected an enum, struct, or record as type value, got: {}",
-                        brief_type_of_value(other)
-                      ),
-                      call_stack,
-                      head.get_location(),
-                    ));
-                  }
-                },
-              }
-            };
-            bind_type_slot(slot_name, type_annotation)
-              .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location()))?;
-          }
-        }
-
         // Handle &inspect-type: print type information for the given symbol
         if let Some(Calcit::Proc(CalcitProc::NativeInspectType)) = ys.first() {
           if let Some(first_arg) = processed_args.first() {

@@ -4,8 +4,7 @@ use crate::{
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
-    bind_type_slot, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, resolve_type_slot,
-    value_matches_type_annotation,
+    brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -1959,50 +1958,11 @@ pub fn deftype_slot(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }
 
-/// `bind-type` proc: bind a concrete type (enum/struct) to a declared type slot.
-/// Usage: `(bind-type :dispatch-op Op)` where `Op` is a defenum definition.
-///
-/// At runtime this is a no-op when the slot was already bound during preprocessing —
-/// the preprocessing phase eagerly resolves and binds the slot, so the runtime call
-/// simply returns nil to avoid a "double-bind" error.
-pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(
-      CalcitErrKind::Arity,
-      "bind-type expected 2 arguments (slot-name, type-value), but received:",
-      xs,
-    );
-  }
-  let name: &str = match &xs[0] {
-    Calcit::Tag(t) => t.ref_str(),
-    Calcit::Str(s) => s.as_ref(),
-    a => {
-      return CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("bind-type expected a tag or string as slot name, got: {a}"),
-      );
-    }
-  };
-  // If the slot was already bound (typically by preprocessing), skip the runtime bind.
-  if resolve_type_slot(name).is_some() {
-    return Ok(Calcit::Nil);
-  }
-  let ty: Arc<CalcitTypeAnnotation> = match &xs[1] {
-    Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
-    Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-    Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
-    a => {
-      return CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!(
-          "bind-type expected an enum, struct, or record as type value, got: {}",
-          brief_type_of_value(a)
-        ),
-      );
-    }
-  };
-  bind_type_slot(name, ty).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
-  Ok(Calcit::Nil)
+/// `with-type-slot` runtime stub: type binding is handled entirely at preprocess time.
+/// At runtime the body has already been evaluated by the interpreter; this proc is a no-op.
+pub fn with_type_slot_runtime(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  // Return the last body value, or nil if the call somehow reaches here with no args.
+  Ok(xs.last().cloned().unwrap_or(Calcit::Nil))
 }
 
 #[cfg(test)]

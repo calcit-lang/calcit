@@ -522,29 +522,29 @@ Then reference the slot in type annotations with the `*name` syntax:
 
 ### Binding a Type Slot (Application Side)
 
-In the application's entry point (e.g. `main!`), bind a concrete type to the slot:
+In the application's entry point (e.g. `main!`), use `with-type-slot` to bind a concrete type locally for the scope of the body:
 
 ```cirru.no-check
 defenum Op (:add :string) (:remove :tag) (:clear)
 
-defn main! ()
-  bind-type :dispatch-op Op
-  ;; subsequent code benefits from full type checking
+defn main! () $ with-type-slot (:dispatch-op Op)
+  ;; all code in this body benefits from full type checking
 ```
+
+`with-type-slot` takes a binding pair `(:slot-name TypeExpr)` as its first argument and a body of expressions. The slot is active only within that scope.
 
 ### How It Works
 
-1. `deftype-slot :name` registers a placeholder in the global `TYPE_SLOTS` registry (value = `None`).
-2. `bind-type :name ConcreteType` sets the slot value to the given enum/struct/record type.
-3. Both operations execute during **preprocessing** (not runtime), so type checking in the same compilation pass immediately sees the binding.
-4. When type annotations encounter `*name`, the slot is resolved and standard type matching proceeds.
+1. `deftype-slot :name` registers a placeholder (optional, for documentation/library contracts).
+2. `with-type-slot (:name ConcreteType) body...` pushes a scoped override for `*name` during preprocessing of the body, then pops it when the body finishes.
+3. When type annotations encounter `*name`, the override is resolved and standard type matching proceeds.
+4. Multiple entries can each bind the same slot independently without conflict, since each binding is scoped.
 
 ### Constraints
 
-- Each slot can only be declared and bound **once** per program.
 - Only enum, struct, and record types can be bound to slots.
-- Unbound slots are treated as `:dynamic` (no type checking, no error).
-- At runtime, `bind-type` is a no-op if the slot was already bound during preprocessing (avoids double-bind errors).
+- Unbound slots (no active `with-type-slot` override) are treated as `:dynamic` (no type checking, no error).
+- `with-type-slot` bindings are scoped — they do not persist outside the body.
 
 ### Example: Detecting Wrong Dispatch Calls
 

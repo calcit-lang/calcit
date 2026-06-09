@@ -13,9 +13,7 @@
           :schema :dynamic
         |main! $ %{} :CodeEntry (:doc "|Entry testing enum auto-rewrite via type-slot with invalid variant")
           :code $ quote
-            defn main! () $ do
-              deftype-slot :dispatch-op
-              bind-type :dispatch-op Action
+            defn main! () $ with-type-slot (:dispatch-op Action)
               takes-action $ :: :nonexistent |hello
               , nil
           :examples $ []

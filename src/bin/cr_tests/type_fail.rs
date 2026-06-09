@@ -236,23 +236,6 @@ fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
 }
 
 #[test]
-fn type_fail_type_slot_fixtures_report_errors() {
-  run_with_large_stack(|| {
-    let fixtures = [(
-      "calcit/type-fail/type-slot-bind-duplicate.cirru",
-      "type slot 'payload' already bound",
-    )];
-
-    for (path, expected_msg) in fixtures {
-      let entries = load_fixture_entries(path);
-      let err = run_check_only(&entries).expect_err("type-slot fixture should fail during check-only");
-
-      assert!(err.contains(expected_msg), "fixture {path} msg was: {err}");
-    }
-  });
-}
-
-#[test]
 fn type_fail_type_slot_enum_invalid_variant() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");
@@ -303,7 +286,7 @@ fn type_slot_bindings_are_scoped_to_selected_entry() {
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
       runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-        .expect("entry-scoped bind-type fixture should preprocess without duplicate slot errors");
+        .expect("entry-scoped with-type-slot fixture should preprocess without duplicate slot errors");
     }
   });
 }

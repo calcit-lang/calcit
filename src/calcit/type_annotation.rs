@@ -31,6 +31,9 @@ thread_local! {
   /// Global type-slot registry: maps slot names to their bound type annotations.
   /// A slot is declared via `deftype-slot` (value = None) and bound via `bind-type` (value = Some).
   static TYPE_SLOTS: RefCell<HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
+  /// Scoped type-slot overrides for `with-type-slot` blocks.
+  /// Each entry is a stack; the top value shadows the base `TYPE_SLOTS` binding within the scope.
+  static TYPE_SLOT_OVERRIDES: RefCell<HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
 }
 
 /// Register program-level lookup functions.  Must be called once at startup
@@ -71,36 +74,43 @@ pub fn register_type_slot(name: Arc<str>) -> Result<(), String> {
   })
 }
 
-/// Bind a concrete type to a declared slot. Auto-registers the slot if not yet declared.
-/// Returns Err if the slot is already bound (double-bind).
-pub fn bind_type_slot(name: &str, ty: Arc<CalcitTypeAnnotation>) -> Result<(), String> {
-  TYPE_SLOTS.with(|slots| {
-    let mut map = slots.borrow_mut();
-    match map.get_mut(name) {
-      Some(slot) if slot.is_some() => Err(format!(
-        "type slot '{name}' already bound — each slot can only be bound once per program"
-      )),
-      Some(slot) => {
-        *slot = Some(ty);
-        Ok(())
-      }
-      None => {
-        map.insert(Arc::from(name), Some(ty));
-        Ok(())
-      }
-    }
-  })
+/// Look up the type bound to a slot.
+/// Overrides from `with-type-slot` take priority.
+/// Returns `None` if no `with-type-slot` override is active for this slot.
+pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  // Check scoped overrides first (innermost wins).
+  let override_val = TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow().get(name).and_then(|stack| stack.last().cloned()));
+  if override_val.is_some() {
+    return override_val;
+  }
+  TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
 }
 
-/// Look up the type bound to a slot. Returns `None` if the slot is unknown or not yet bound.
-pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
-  TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
+/// Push a scoped type override for `with-type-slot`. Must be paired with `pop_type_slot_override`.
+pub fn push_type_slot_override(name: Arc<str>, ty: Arc<CalcitTypeAnnotation>) {
+  TYPE_SLOT_OVERRIDES.with(|overrides| {
+    overrides.borrow_mut().entry(name).or_default().push(ty);
+  });
+}
+
+/// Pop the innermost scoped override for `name`. Cleans up empty stacks.
+pub fn pop_type_slot_override(name: &str) {
+  TYPE_SLOT_OVERRIDES.with(|overrides| {
+    let mut map = overrides.borrow_mut();
+    if let Some(stack) = map.get_mut(name) {
+      stack.pop();
+      if stack.is_empty() {
+        map.remove(name);
+      }
+    }
+  });
 }
 
 /// Clear all type slots. Called at program startup/shutdown to avoid stale state across runs.
 #[allow(dead_code)]
 pub fn clear_type_slots() {
   TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
+  TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());
 }
 
 fn truncate_type_form_preview(raw: &str) -> String {
