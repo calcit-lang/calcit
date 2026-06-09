@@ -220,6 +220,10 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
   Ok(())
 }
 
+fn wrap_module_error<T>(result: Result<T, String>, org_and_folder: &str, folder_path: &Path, action: &str) -> Result<T, String> {
+  result.map_err(|e| format!("failed to {action} module `{org_and_folder}` at `{}`\n{e}", folder_path.display()))
+}
+
 fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, org_and_folder: Arc<str>) -> Result<(), String> {
   // check if exists
   let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
@@ -231,7 +235,7 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
   if folder_path.exists() {
     // println!("module {} exists", folder);
     // check branch
-    let current_head = git_repo.current_head()?;
+    let current_head = wrap_module_error(git_repo.current_head(), &org_and_folder, &folder_path, "read current git head")?;
 
     if current_head.get_name() == *version {
       dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
@@ -239,12 +243,12 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
         && options.pull_branch
       {
         dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        git_repo.pull(&branch)?;
+        wrap_module_error(git_repo.pull(&branch), &org_and_folder, &folder_path, "pull branch")?;
         dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
 
         // if there's a build.sh file in the folder, run it
         if build_file.exists() {
-          let build_msg = call_build_script(&folder_path)?;
+          let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
           dim_println(format!("ran build script for {}", gray(&org_and_folder)));
           dim_println(build_msg);
         }
@@ -255,30 +259,40 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // println!("  {}", msg.yellow());
 
     // load latest tags
-    git_repo.fetch()?;
+    wrap_module_error(git_repo.fetch(), &org_and_folder, &folder_path, "fetch tags")?;
     // try if tag or branch exists in git history
-    let has_target = git_repo.check_branch_or_tag(&version, folder)?;
+    let has_target = wrap_module_error(
+      git_repo.check_branch_or_tag(&version, folder),
+      &org_and_folder,
+      &folder_path,
+      "check target branch or tag",
+    )?;
     if !has_target {
       dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_repo.fetch()?;
+      wrap_module_error(git_repo.fetch(), &org_and_folder, &folder_path, "fetch tags")?;
       dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
       // fetch git repo and checkout target version
     }
-    git_repo.checkout(&version)?;
+    wrap_module_error(
+      git_repo.checkout(&version),
+      &org_and_folder,
+      &folder_path,
+      &format!("checkout version `{version}`"),
+    )?;
     dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
 
-    let current_head = git_repo.current_head()?;
+    let current_head = wrap_module_error(git_repo.current_head(), &org_and_folder, &folder_path, "read current git head")?;
     if let GitHead::Branch(branch) = current_head
       && options.pull_branch
     {
       dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_repo.pull(&branch)?;
+      wrap_module_error(git_repo.pull(&branch), &org_and_folder, &folder_path, "pull branch")?;
       dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
     }
 
     // if there's a build.sh file in the folder, run it
     if build_file.exists() {
-      let build_msg = call_build_script(&folder_path)?;
+      let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
       dim_println(format!("ran build script for {}", gray(&org_and_folder)));
       dim_println(build_msg);
     }
@@ -289,14 +303,19 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
       format!("git@github.com:{org_and_folder}.git")
     };
     dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-    GitRepo::clone_to(&modules_dir, &url, &version, options.ci)?;
+    wrap_module_error(
+      GitRepo::clone_to(&modules_dir, &url, &version, options.ci),
+      &org_and_folder,
+      &folder_path,
+      &format!("clone version `{version}`"),
+    )?;
     // println!("downloading {} at version {}", url, version);
     dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
 
     if !options.ci {
       // if there's a build.sh file in the folder, run it
       if build_file.exists() {
-        let build_msg = call_build_script(&folder_path)?;
+        let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
         dim_println(format!("ran build script for {}", gray(&org_and_folder)));
         dim_println(build_msg);
       }
