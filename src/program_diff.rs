@@ -427,6 +427,7 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
       let children = vec![
         diff_string("doc", Some(old.doc.as_str()), Some(new.doc.as_str())),
         diff_string("schema", Some(&old.schema.to_string()), Some(&new.schema.to_string())),
+        diff_tag_set("tags", &old.tags, &new.tags),
         diff_cirru_list("examples", &old.examples, &new.examples),
         diff_cirru("code", Some(&old.code), Some(&new.code), "0"),
       ];
@@ -452,6 +453,18 @@ fn diff_string(label: &str, old: Option<&str>, new: Option<&str>) -> DiffNode {
 
 fn diff_optional_string(label: &str, old: Option<&str>, new: Option<&str>) -> DiffNode {
   diff_string(label, old, new)
+}
+
+fn diff_tag_set(
+  label: &str,
+  old: &std::collections::HashSet<cirru_edn::EdnTag>,
+  new: &std::collections::HashSet<cirru_edn::EdnTag>,
+) -> DiffNode {
+  let mut old_tags: Vec<String> = old.iter().map(|tag| tag.ref_str().to_string()).collect();
+  let mut new_tags: Vec<String> = new.iter().map(|tag| tag.ref_str().to_string()).collect();
+  old_tags.sort();
+  new_tags.sort();
+  diff_string_list(label, &old_tags, &new_tags)
 }
 
 fn diff_string_list(label: &str, old: &[String], new: &[String]) -> DiffNode {
@@ -560,9 +573,13 @@ fn build_code_entry_tree(label: &str, value: &CodeEntry, status: DiffStatus) -> 
     .map(|(idx, node)| build_cirru_tree(&format!("[{idx}]"), node, status, &idx.to_string()))
     .collect::<Vec<_>>();
 
+  let mut tags: Vec<String> = value.tags.iter().map(|tag| tag.ref_str().to_string()).collect();
+  tags.sort();
+
   DiffNode::new(label, status).with_children(vec![
     DiffNode::new("doc", status).with_detail(render_text(&value.doc)),
     DiffNode::new("schema", status).with_detail(render_text(&value.schema.to_string())),
+    build_string_list_tree("tags", &tags, status),
     DiffNode::new("examples", status).with_children(examples),
     build_cirru_tree("code", &value.code, status, "0"),
   ])

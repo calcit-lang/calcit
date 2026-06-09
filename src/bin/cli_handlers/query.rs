@@ -874,8 +874,11 @@ fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
       .map(|c| cirru_to_json(&c)),
     _ => None,
   };
+  let mut tags: Vec<String> = entry.tags.iter().map(|tag| tag.ref_str().to_string()).collect();
+  tags.sort();
   serde_json::json!({
     "doc": entry.doc,
+    "tags": tags,
     "examples": entry.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
     "code": cirru_to_json(&entry.code),
     "schema": schema_json,

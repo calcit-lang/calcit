@@ -306,6 +306,13 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts)
     }
     EditSubcommand::RmExample(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "index" => &opts.index.to_string()),
+    EditSubcommand::Tags(opts) => {
+      echo_items!(
+        tokens,
+        pos "target" => &opts.target,
+        opt "tags" => opts.tags.as_deref(); default "none"
+      )
+    }
     EditSubcommand::AddNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
     EditSubcommand::RmNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
     EditSubcommand::Imports(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
@@ -592,6 +599,7 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::Examples(_) => "examples",
     EditSubcommand::AddExample(_) => "add-example",
     EditSubcommand::RmExample(_) => "rm-example",
+    EditSubcommand::Tags(_) => "tags",
     EditSubcommand::AddNs(_) => "add-ns",
     EditSubcommand::RmNs(_) => "rm-ns",
     EditSubcommand::Imports(_) => "imports",

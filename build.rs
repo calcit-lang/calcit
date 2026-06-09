@@ -23,6 +23,8 @@ pub struct CodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default)]
+  pub tags: Vec<String>,
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
@@ -261,6 +263,32 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn, owner: &str) -> Result<(), 
   walk(value, owner, &mut path)
 }
 
+fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> {
+  match value {
+    Edn::Set(set) => {
+      let mut tags = Vec::with_capacity(set.0.len());
+      for item in &set.0 {
+        match item {
+          Edn::Tag(tag) => tags.push(format!(":{}", tag.ref_str())),
+          other => {
+            return Err(format!(
+              "{owner}: CodeEntry.tags expects tag items, got {}",
+              format_edn_preview(other)
+            ));
+          }
+        }
+      }
+      tags.sort();
+      tags.dedup();
+      Ok(tags)
+    }
+    other => Err(format!(
+      "{owner}: CodeEntry.tags expects a hashset, got {}",
+      format_edn_preview(other)
+    )),
+  }
+}
+
 fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   let record: EdnRecordView = match edn {
     Edn::Record(r) => r,
@@ -268,12 +296,14 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   };
   let mut doc = String::new();
   let mut examples: Vec<Cirru> = vec![];
+  let mut tags: Vec<String> = Vec::new();
   let mut code: Option<Cirru> = None;
   let mut schema: Option<Edn> = None;
   for (key, value) in &record.pairs {
     match key.arc_str().as_ref() {
       "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
       "examples" => examples = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:examples`: {e}"))?,
+      "tags" => tags = parse_tags_from_edn(value, owner)?,
       "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
       "schema" => {
         if !matches!(value, Edn::Nil) {
@@ -286,6 +316,7 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   Ok(CodeEntry {
     doc,
     examples,
+    tags,
     code: code.ok_or_else(|| format!("{owner}: missing `:code` field in CodeEntry"))?,
     schema,
   })

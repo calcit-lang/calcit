@@ -857,6 +857,8 @@ pub enum EditSubcommand {
   AddExample(EditAddExampleCommand),
   /// remove an example from definition by index
   RmExample(EditRmExampleCommand),
+  /// view or update definition tags
+  Tags(EditTagsCommand),
   /// add a new namespace
   AddNs(EditAddNsCommand),
   /// delete a namespace
@@ -1039,6 +1041,18 @@ pub struct EditRmExampleCommand {
   /// index of example to remove (0-based)
   #[argh(positional)]
   pub index: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "tags")]
+/// view or update definition tags
+pub struct EditTagsCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// comma-separated tags; omit to view, pass empty string to clear
+  #[argh(positional)]
+  pub tags: Option<String>,
 }
 
 // --- Namespace operations ---

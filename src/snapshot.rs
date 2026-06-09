@@ -105,6 +105,8 @@ struct RawCodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default)]
+  pub tags: Vec<String>,
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
@@ -135,6 +137,7 @@ impl RawCodeEntry {
     Ok(CodeEntry {
       doc: self.doc,
       examples: self.examples,
+      tags: tags_vec_to_set(self.tags),
       code: self.code,
       schema,
     })
@@ -330,6 +333,25 @@ mod schema_serde {
   }
 }
 
+mod tags_serde {
+  use super::*;
+
+  pub fn serialize<S>(tags: &HashSet<EdnTag>, s: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    tags_set_to_vec(tags).serialize(s)
+  }
+
+  pub fn deserialize<'de, D>(d: D) -> Result<HashSet<EdnTag>, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    let tags = Vec::<String>::deserialize(d)?;
+    Ok(tags_vec_to_set(tags))
+  }
+}
+
 fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
   if matches!(value, Edn::Nil) {
     return Ok(DYNAMIC_TYPE.clone());
@@ -368,11 +390,68 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     })
 }
 
+fn tags_vec_to_set(tags: Vec<String>) -> HashSet<EdnTag> {
+  tags.into_iter().map(|tag| EdnTag::new(tag.trim_start_matches(':'))).collect()
+}
+
+fn tags_set_to_vec(tags: &HashSet<EdnTag>) -> Vec<String> {
+  let mut items: Vec<String> = tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect();
+  items.sort();
+  items
+}
+
+pub fn parse_code_entry_tags_from_edn(value: &Edn) -> Result<HashSet<EdnTag>, String> {
+  match value {
+    Edn::Set(set) => {
+      let mut tags = HashSet::with_capacity(set.0.len());
+      for item in &set.0 {
+        match item {
+          Edn::Tag(tag) => {
+            tags.insert(tag.clone());
+          }
+          other => {
+            return Err(format!("CodeEntry.tags expects tag items, got: {}", format_edn_preview(other)));
+          }
+        }
+      }
+      Ok(tags)
+    }
+    other => Err(format!("CodeEntry.tags expects a hashset, got: {}", format_edn_preview(other))),
+  }
+}
+
+fn tags_to_edn(tags: &HashSet<EdnTag>) -> Edn {
+  #[allow(clippy::mutable_key_type)]
+  let items: HashSet<Edn> = tags.iter().map(|tag| Edn::Tag(tag.clone())).collect();
+  Edn::Set(EdnSetView(items))
+}
+
+fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
+  let schema = normalize_schema_for_code(&data.code, &data.schema);
+  let schema_edn: Edn = match schema.as_ref() {
+    CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
+    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
+    other => other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic")),
+  };
+  let mut pairs = vec![
+    ("doc".into(), data.doc.to_owned().into()),
+    ("examples".into(), data.examples.to_owned().into()),
+    ("code".into(), data.code.to_owned().into()),
+    ("schema".into(), schema_edn),
+  ];
+  if !data.tags.is_empty() {
+    pairs.insert(2, ("tags".into(), tags_to_edn(&data.tags)));
+  }
+  pairs
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default, with = "tags_serde")]
+  pub tags: HashSet<EdnTag>,
   pub code: Cirru,
   #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
   pub schema: Arc<CalcitTypeAnnotation>,
@@ -383,6 +462,7 @@ impl TryFrom<Edn> for CodeEntry {
   fn try_from(data: Edn) -> Result<Self, String> {
     let mut doc = String::new();
     let mut examples: Vec<Cirru> = vec![];
+    let mut tags: HashSet<EdnTag> = HashSet::new();
     let mut code: Option<Cirru> = None;
     let mut schema: Arc<CalcitTypeAnnotation> = DYNAMIC_TYPE.clone();
 
@@ -397,6 +477,9 @@ impl TryFrom<Edn> for CodeEntry {
             "examples" => {
               examples = from_edn(value.to_owned())
                 .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
+            }
+            "tags" => {
+              tags = parse_code_entry_tags_from_edn(value)?;
             }
             "code" => {
               code = Some(
@@ -421,6 +504,9 @@ impl TryFrom<Edn> for CodeEntry {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("examples"))) {
           examples = from_edn(value.to_owned())
             .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("tags"))) {
+          tags = parse_code_entry_tags_from_edn(value)?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
           code = Some(
@@ -448,6 +534,7 @@ impl TryFrom<Edn> for CodeEntry {
     Ok(CodeEntry {
       doc,
       examples,
+      tags,
       code,
       schema,
     })
@@ -1013,47 +1100,13 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
 impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
-    let schema = normalize_schema_for_code(&data.code, &data.schema);
-    let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-      other => {
-        // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
-      }
-    };
-    Edn::record_from_pairs(
-      "CodeEntry".into(),
-      &[
-        ("doc".into(), data.doc.into()),
-        ("examples".into(), data.examples.into()),
-        ("code".into(), data.code.into()),
-        ("schema".into(), schema_edn),
-      ],
-    )
+    Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(&data))
   }
 }
 
 impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
-    let schema = normalize_schema_for_code(&data.code, &data.schema);
-    let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-      other => {
-        // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
-      }
-    };
-    Edn::record_from_pairs(
-      "CodeEntry".into(),
-      &[
-        ("doc".into(), data.doc.to_owned().into()),
-        ("examples".into(), data.examples.to_owned().into()),
-        ("code".into(), data.code.to_owned().into()),
-        ("schema".into(), schema_edn),
-      ],
-    )
+    Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(data))
   }
 }
 
@@ -1062,6 +1115,7 @@ impl CodeEntry {
     CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code,
       schema: DYNAMIC_TYPE.clone(),
     }
@@ -1738,6 +1792,7 @@ mod tests {
         Cirru::List(vec![Cirru::leaf("+"), Cirru::leaf("a"), Cirru::leaf("b")]),
       ]),
       examples,
+      tags: HashSet::new(),
       schema: {
         let schema_edn = schema_cirru_to_edn(Cirru::List(vec![
           Cirru::leaf("{}"),
@@ -1778,6 +1833,40 @@ mod tests {
     }
 
     println!("✅ CodeEntry with examples test passed!");
+  }
+
+  #[test]
+  fn test_code_entry_tags_field_defaults_and_round_trip() {
+    let entry_edn = Edn::record_from_pairs(
+      "CodeEntry".into(),
+      &[
+        ("doc".into(), Edn::str("tagged def")),
+        ("examples".into(), Edn::List(EdnListView(vec![]))),
+        ("code".into(), Cirru::leaf("x").into()),
+        ("schema".into(), Edn::tag("dynamic")),
+      ],
+    );
+    let parsed: CodeEntry = entry_edn.try_into().expect("missing tags should default to empty set");
+    assert!(parsed.tags.is_empty());
+
+    let mut tagged = parsed.clone();
+    tagged.tags.insert(EdnTag::new("smoke"));
+    tagged.tags.insert(EdnTag::new("doc"));
+
+    let serialized = Edn::from(&tagged);
+    let Edn::Record(record) = &serialized else {
+      panic!("expected CodeEntry record");
+    };
+    assert!(record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
+
+    let reloaded: CodeEntry = serialized.try_into().expect("tags should round-trip");
+    assert_eq!(reloaded.tags, tagged.tags);
+
+    let empty_serialized = Edn::from(&parsed);
+    let Edn::Record(empty_record) = &empty_serialized else {
+      panic!("expected CodeEntry record");
+    };
+    assert!(!empty_record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
   }
 
   #[test]
@@ -2208,6 +2297,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "test fn".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defmacro", "test-fn", "(a b)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(fn_schema))),
     };
@@ -2251,6 +2341,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped schema".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),
@@ -2293,6 +2384,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped macro schema".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defmacro", "wrapped", "(& body)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),
@@ -2337,6 +2429,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped macro schema".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defmacro", "wrapped", "(x)", "x"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),

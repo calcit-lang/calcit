@@ -13,13 +13,14 @@ use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
   EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand,
   EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
-  EditSplitDefCommand, EditSubcommand,
+  EditSplitDefCommand, EditSubcommand, EditTagsCommand,
 };
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
   validate_schema_for_write,
 };
+use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 use colored::Colorize;
 use semver::Version;
@@ -77,6 +78,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
     EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
+    EditSubcommand::Tags(opts) => handle_tags(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
     EditSubcommand::Imports(opts) => handle_imports(opts, snapshot_file),
@@ -987,6 +989,115 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     namespace,
     total_count
   );
+
+  Ok(())
+}
+
+fn parse_tag_token(raw: &str) -> Result<EdnTag, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("empty tag".to_string());
+  }
+  let name = trimmed.strip_prefix(':').unwrap_or(trimmed);
+  if name.is_empty() {
+    return Err(format!("invalid tag: {raw}"));
+  }
+  Ok(EdnTag::new(name))
+}
+
+fn parse_tags_csv(raw: &str) -> Result<HashSet<EdnTag>, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Ok(HashSet::new());
+  }
+  let mut tags = HashSet::new();
+  for token in trimmed.split(',') {
+    let piece = token.trim();
+    if piece.is_empty() {
+      return Err("tags must be comma-separated without empty items".to_string());
+    }
+    tags.insert(parse_tag_token(piece)?);
+  }
+  Ok(tags)
+}
+
+fn get_code_entry<'a>(snapshot: &'a Snapshot, namespace: &str, definition: &str) -> Result<(String, &'a CodeEntry), String> {
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+  let code_entry = file_data
+    .defs
+    .get(resolved_definition.as_str())
+    .ok_or_else(|| format!("Definition '{resolved_definition}' not found in namespace '{namespace}'"))?;
+  Ok((resolved_definition, code_entry))
+}
+
+fn get_code_entry_mut<'a>(
+  snapshot: &'a mut Snapshot,
+  namespace: &str,
+  definition: &str,
+) -> Result<(String, &'a mut CodeEntry), String> {
+  check_ns_editable(snapshot, namespace)?;
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+  let code_entry = file_data
+    .defs
+    .get_mut(resolved_definition.as_str())
+    .ok_or_else(|| format!("Definition '{resolved_definition}' not found in namespace '{namespace}'"))?;
+  Ok((resolved_definition, code_entry))
+}
+
+fn format_tags_csv(tags: &HashSet<EdnTag>) -> String {
+  let mut items: Vec<String> = tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect();
+  items.sort();
+  items.join(",")
+}
+
+fn handle_tags(opts: &EditTagsCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  if opts.tags.is_none() {
+    let snapshot = load_snapshot(snapshot_file)?;
+    let (resolved_definition, code_entry) = get_code_entry(&snapshot, namespace, definition)?;
+    let tags_text = format_tags_csv(&code_entry.tags);
+    if tags_text.is_empty() {
+      println!("{namespace}/{resolved_definition}: (none)");
+    } else {
+      println!("{namespace}/{resolved_definition}: {tags_text}");
+    }
+    return Ok(());
+  }
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  let (resolved_definition, code_entry) = get_code_entry_mut(&mut snapshot, namespace, definition)?;
+  let tags = parse_tags_csv(opts.tags.as_deref().unwrap_or(""))?;
+  let cleared = tags.is_empty();
+  let tags_summary = format_tags_csv(&tags);
+  code_entry.tags = tags;
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  if cleared {
+    println!(
+      "{} Cleared tags for '{}' in namespace '{}'",
+      "✓".green(),
+      resolved_definition.cyan(),
+      namespace
+    );
+  } else {
+    println!(
+      "{} Set tags for '{}' in namespace '{}': {tags_summary}",
+      "✓".green(),
+      resolved_definition.cyan(),
+      namespace
+    );
+  }
 
   Ok(())
 }

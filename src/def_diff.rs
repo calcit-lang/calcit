@@ -85,6 +85,7 @@ mod tests {
     CodeEntry {
       doc: doc.to_string(),
       examples: vec![],
+      tags: std::collections::HashSet::new(),
       code: Cirru::Leaf(Arc::from(code)),
       schema: Arc::new(schema),
     }

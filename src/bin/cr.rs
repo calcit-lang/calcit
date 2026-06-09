@@ -732,6 +732,7 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
       snapshot::CodeEntry {
         doc: "Generated function to check all examples in this namespace".to_string(),
         examples: Vec::new(),
+        tags: std::collections::HashSet::new(),
         code: check_function_code,
         schema: calcit::calcit::DYNAMIC_TYPE.clone(),
       },
@@ -2445,6 +2446,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tags: std::collections::HashSet::new(),
       code: list(vec![
         leaf("defn"),
         leaf("demo"),
@@ -2473,6 +2475,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tags: std::collections::HashSet::new(),
       code: list(vec![
         leaf("defn"),
         leaf("branchy"),
@@ -2503,6 +2506,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tags: std::collections::HashSet::new(),
       code: list(vec![leaf("defn"), leaf("nested"), list(vec![]), leaf("x")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         generics: Arc::new(vec![]),
@@ -2540,6 +2544,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tags: std::collections::HashSet::new(),
       code: leaf("demo"),
       schema: Arc::new(CalcitTypeAnnotation::Map(
         Arc::new(CalcitTypeAnnotation::Tag),

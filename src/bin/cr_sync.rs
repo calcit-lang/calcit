@@ -312,6 +312,16 @@ fn detailed_code_entry_to_edn(entry: &DetailedCodeEntry) -> Edn {
     .collect();
   record.pairs.push(("examples".into(), Edn::List(examples_list.into())));
 
+  if !entry.tags.is_empty() {
+    #[allow(clippy::mutable_key_type)]
+    let tag_items: std::collections::HashSet<Edn> = entry
+      .tags
+      .iter()
+      .map(|tag| Edn::Tag(cirru_edn::EdnTag::new(tag.trim_start_matches(':'))))
+      .collect();
+    record.pairs.push(("tags".into(), Edn::Set(cirru_edn::EdnSetView(tag_items))));
+  }
+
   Edn::Record(record)
 }
 
