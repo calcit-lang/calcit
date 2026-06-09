@@ -354,9 +354,13 @@ fn preprocess_with_type_slot_block(
     return Err(e);
   }
 
-  // Rebuild: (with-type-slot (:slot-name processed-type-expr) body...)
-  let rebuilt_binding = Calcit::from(vec![binding_list[0].to_owned(), processed_type_expr]);
-  let mut result_items = vec![head_form.to_owned(), rebuilt_binding];
+  // Emit as (with-type-slot body...) — binding pair is stripped since the override was
+  // already applied at preprocess time.  At runtime, with_type_slot_runtime simply
+  // returns the last evaluated body value, so no binding evaluation occurs.
+  if preprocessed_body.len() == 1 {
+    return Ok(preprocessed_body.remove(0));
+  }
+  let mut result_items = vec![head_form.to_owned()];
   result_items.extend(preprocessed_body);
   Ok(Calcit::from(CalcitList::from(result_items.as_slice())))
 }
