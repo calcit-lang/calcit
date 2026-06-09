@@ -112,7 +112,9 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
     QuerySubcommand::Ns(opts) => {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
     }
-    QuerySubcommand::Defs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
+    QuerySubcommand::Defs(opts) => {
+      echo_items!(tokens, pos "namespace" => &opts.namespace, opt "tag" => opts.tag.as_deref(); default "none")
+    }
     QuerySubcommand::Pkg(_) | QuerySubcommand::Config(_) | QuerySubcommand::Error(_) | QuerySubcommand::Modules(_) => {}
     QuerySubcommand::Def(opts) => echo_items!(
       tokens,

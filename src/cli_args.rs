@@ -369,6 +369,9 @@ pub struct QueryDefsCommand {
   /// namespace to query
   #[argh(positional)]
   pub namespace: String,
+  /// filter definitions that contain this tag (e.g. macro or :macro)
+  #[argh(option)]
+  pub tag: Option<String>,
 }
 
 // read-ns merged into ns command

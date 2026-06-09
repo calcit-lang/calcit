@@ -7,10 +7,11 @@ use super::common::{emit_cli_output, format_path, parse_path, print_cli_warning_
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::DYNAMIC_TYPE;
-use calcit::cli_args::{QueryCommand, QueryDefCommand, QuerySubcommand};
+use calcit::cli_args::{QueryCommand, QueryDefCommand, QueryDefsCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
+use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 use colored::Colorize;
 use std::collections::HashSet;
@@ -321,7 +322,7 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
   match &cmd.subcommand {
     QuerySubcommand::Ns(opts) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
-    QuerySubcommand::Defs(opts) => handle_defs(input_path, &opts.namespace),
+    QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
     QuerySubcommand::Config(_) => handle_config(input_path),
     QuerySubcommand::Error(_) => handle_error(),
@@ -525,7 +526,26 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
+fn parse_query_tag(raw: &str) -> Result<EdnTag, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("empty tag".to_string());
+  }
+  let name = trimmed.strip_prefix(':').unwrap_or(trimmed);
+  if name.is_empty() {
+    return Err(format!("invalid tag: {raw}"));
+  }
+  Ok(EdnTag::new(name))
+}
+
+fn format_tags_display(tags: &HashSet<EdnTag>) -> String {
+  let mut items: Vec<String> = tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect();
+  items.sort();
+  items.join(",")
+}
+
+fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {
+  let namespace = &opts.namespace;
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -533,13 +553,35 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
+  let filter_tag = opts.tag.as_deref().map(parse_query_tag).transpose()?;
+
   let mut defs: Vec<&String> = file_data.defs.keys().collect();
   defs.sort();
+  let total = defs.len();
 
-  println!("{} {}", "Definitions:".bold(), defs.len());
+  if let Some(tag) = &filter_tag {
+    defs.retain(|def| file_data.defs[*def].tags.contains(tag));
+  }
+
+  if let Some(tag) = &filter_tag {
+    println!(
+      "{} {} (filtered by {}, {} total)",
+      "Definitions:".bold(),
+      defs.len(),
+      format!(":{}", tag.ref_str()).yellow(),
+      total
+    );
+  } else {
+    println!("{} {}", "Definitions:".bold(), defs.len());
+  }
 
   for def in &defs {
     let entry = &file_data.defs[*def];
+    let tags_hint = if entry.tags.is_empty() {
+      String::new()
+    } else {
+      format!(" [{}]", format_tags_display(&entry.tags))
+    };
     let schema_hint = if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
       " [schema]"
     } else {
@@ -552,9 +594,15 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
       } else {
         doc_first_line.to_string()
       };
-      println!("  {}{} - {}", def.green(), schema_hint.dimmed(), doc_display.dimmed());
+      println!(
+        "  {}{}{} - {}",
+        def.green(),
+        tags_hint.yellow(),
+        schema_hint.dimmed(),
+        doc_display.dimmed()
+      );
     } else {
-      println!("  {}{}", def.green(), schema_hint.dimmed());
+      println!("  {}{}{}", def.green(), tags_hint.yellow(), schema_hint.dimmed());
     }
   }
 
@@ -811,6 +859,13 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
 
   if !code_entry.doc.is_empty() {
     let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), code_entry.doc);
+  }
+
+  let tags_text = format_tags_display(&code_entry.tags);
+  if tags_text.is_empty() {
+    let _ = writeln!(&mut out, "{} {}", "Tags:".bold(), "(none)".dimmed());
+  } else {
+    let _ = writeln!(&mut out, "{} {}", "Tags:".bold(), tags_text);
   }
 
   if !code_entry.examples.is_empty() {
