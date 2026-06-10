@@ -574,6 +574,22 @@
             {} (:return :tag)
               :args $ []
           :tags $ #{} :builtin :internal
+        |&get-def-doc $ %{} :CodeEntry (:doc "|internal function for reading definition doc metadata (cr/eval runtime only)\nSyntax: (&get-def-doc ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: string\nReturns the `:doc` text stored on a loaded definition, or empty string when missing. Not available in calcit-js.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= true $ includes? (&get-def-doc |calcit.core/map) |map
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :dynamic
+          :tags $ #{} :builtin :internal
+        |&get-def-schema $ %{} :CodeEntry (:doc "|internal function for reading definition schema metadata (cr/eval runtime only)\nSyntax: (&get-def-schema ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: EDN data\nReturns the `:schema` value stored on a loaded definition as EDN data. Not available in calcit-js.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= :fn $ &tuple:nth (&get-def-schema |calcit.core/map) 0
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
+          :tags $ #{} :builtin :internal
         |&hash $ %{} :CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
           :code $ quote &runtime-implementation
           :examples $ []

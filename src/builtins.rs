@@ -319,6 +319,8 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     TurnTag => meta::turn_tag(args),
     NativeCompare => meta::native_compare(args),
     NativeGetOs => meta::get_os(args),
+    NativeGetDefDoc => meta::get_def_doc(args),
+    NativeGetDefSchema => meta::get_def_schema(args),
     NativeFormatTernaryTree => meta::format_ternary_tree(args),
     NativeBuffer => meta::buffer(args),
     NativeHash => meta::hash(args),

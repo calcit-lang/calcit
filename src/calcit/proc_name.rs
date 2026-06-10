@@ -30,6 +30,10 @@ pub enum CalcitProc {
   NativeCompare,
   #[strum(serialize = "&get-os")]
   NativeGetOs,
+  #[strum(serialize = "&get-def-doc")]
+  NativeGetDefDoc,
+  #[strum(serialize = "&get-def-schema")]
+  NativeGetDefSchema,
   #[strum(serialize = "&format-ternary-tree")]
   NativeFormatTernaryTree,
   #[strum(serialize = "&buffer")]
@@ -622,6 +626,14 @@ impl CalcitProc {
       NativeGetOs => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
         arg_types: vec![],
+      }),
+      NativeGetDefDoc => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      NativeGetDefSchema => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag()],
       }),
       NativeHash => Some(ProcTypeSignature {
         return_type: some_tag("number"),

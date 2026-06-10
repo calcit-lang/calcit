@@ -14,7 +14,14 @@ pub(super) fn write_file_if_changed(filename: &Path, content: &str) -> Result<bo
 pub(super) fn is_js_unavailable_procs(name: &str) -> bool {
   matches!(
     name,
-    "&reset-gensym-index!" | "gensym" | "macroexpand" | "macroexpand-all" | "to-cirru-edn" | "extract-cirru-edn"
+    "&reset-gensym-index!"
+      | "&get-def-doc"
+      | "&get-def-schema"
+      | "gensym"
+      | "macroexpand"
+      | "macroexpand-all"
+      | "to-cirru-edn"
+      | "extract-cirru-edn"
   )
 }
 

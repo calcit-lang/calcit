@@ -2278,6 +2278,8 @@ export let gensym = unavailableProc;
 export let macroexpand = unavailableProc;
 export let macroexpand_all = unavailableProc;
 export let _$n_get_calcit_running_mode = unavailableProc;
+export let _$n_get_def_doc = unavailableProc;
+export let _$n_get_def_schema = unavailableProc;
 
 // already handled in code emitter
 export let raise = unavailableProc;

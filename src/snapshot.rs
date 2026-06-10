@@ -426,13 +426,18 @@ fn tags_to_edn(tags: &HashSet<EdnTag>) -> Edn {
   Edn::Set(EdnSetView(items))
 }
 
-fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
-  let schema = normalize_schema_for_code(&data.code, &data.schema);
-  let schema_edn: Edn = match schema.as_ref() {
+/// Convert a loaded definition schema annotation into snapshot-style EDN.
+pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
+  match schema {
     CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
     other => other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic")),
-  };
+  }
+}
+
+fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
+  let schema = normalize_schema_for_code(&data.code, &data.schema);
+  let schema_edn = schema_annotation_to_edn(schema.as_ref());
   let mut pairs = vec![
     ("doc".into(), data.doc.to_owned().into()),
     ("examples".into(), data.examples.to_owned().into()),

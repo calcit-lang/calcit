@@ -13,8 +13,9 @@ use crate::{
     data_to_calcit,
     edn::{self, edn_to_calcit},
   },
-  runner,
+  program, runner, snapshot,
   util::number::f64_to_usize,
+  util::string::extract_ns_def,
 };
 
 use cirru_edn::EdnTag;
@@ -1674,6 +1675,45 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
 pub fn get_os(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
   Ok(Calcit::tag(std::env::consts::OS))
+}
+
+fn parse_ns_def_arg(value: &Calcit) -> Result<(String, String), CalcitErr> {
+  let text = match value {
+    Calcit::Str(s) => s.as_ref().trim_start_matches('|').to_string(),
+    Calcit::Symbol { sym, .. } => sym.to_string(),
+    other => {
+      let msg = format!(
+        "expected ns/def string or symbol, but received: {}",
+        type_of(&[other.to_owned()])?.lisp_str()
+      );
+      return Err(CalcitErr::use_str(CalcitErrKind::Type, msg));
+    }
+  };
+  extract_ns_def(&text).map_err(|e| CalcitErr::use_str(CalcitErrKind::Syntax, e))
+}
+
+/// Lookup `:doc` metadata for a definition in `ns/def` form.
+pub fn get_def_doc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&get-def-doc expected 1 argument, but received:", xs);
+  }
+  let (ns, def) = parse_ns_def_arg(&xs[0])?;
+  let doc = program::lookup_def_doc(&ns, &def).unwrap_or_default();
+  Ok(Calcit::Str(doc.into()))
+}
+
+/// Lookup `:schema` metadata for a definition in `ns/def` form, returned as EDN data.
+pub fn get_def_schema(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&get-def-schema expected 1 argument, but received:", xs);
+  }
+  let (ns, def) = parse_ns_def_arg(&xs[0])?;
+  if !program::has_def_code(&ns, &def) {
+    return CalcitErr::err_str(CalcitErrKind::Var, format!("definition not found: {ns}/{def}"));
+  }
+  let schema = program::lookup_def_schema(&ns, &def);
+  let edn = snapshot::schema_annotation_to_edn(schema.as_ref());
+  Ok(edn::edn_to_calcit(&edn, &Calcit::Nil))
 }
 
 pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

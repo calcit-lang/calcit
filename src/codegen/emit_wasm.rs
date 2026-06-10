@@ -2014,6 +2014,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // &get-os — host OS info; not available in WASM; return nil.
     CalcitProc::NativeGetOs => ctx.stub_proc(args),
 
+    // definition metadata — not available in WASM; return nil.
+    CalcitProc::NativeGetDefDoc | CalcitProc::NativeGetDefSchema => ctx.stub_proc(args),
+
     // &number:display-by — radix string formatting.
     CalcitProc::NativeNumberDisplayBy => {
       if args.len() != 2 {
