@@ -76,9 +76,9 @@ pub enum CalcitCommand {
   Cirru(CirruCommand),
   /// legacy alias for docs remote-libs
   Libs(LibsCommand),
-  /// edit project code (definitions, namespaces, modules, configs)
+  /// coarse-grained code editing (namespaces, definitions, metadata); for internal expression changes, use `tree` instead
   Edit(EditCommand),
-  /// fine-grained tree operations (view and modify AST nodes)
+  /// fine-grained tree operations (view and modify AST nodes within definitions)
   Tree(TreeCommand),
   /// manage project configuration (show, set, modules, add-module, rm-module)
   Config(ConfigCommand),
@@ -833,7 +833,7 @@ pub struct LibsScanMdCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "edit")]
-/// edit project code (definitions, namespaces, modules, configs)
+/// coarse-grained code editing (namespaces, definitions, metadata). For internal structural changes within definitions, use the `tree` command.
 pub struct EditCommand {
   #[argh(subcommand)]
   pub subcommand: EditSubcommand,
