@@ -973,9 +973,8 @@ fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String> {
 fn format_cirru_path(root: &str, path: &[usize]) -> String {
   let mut rendered = root.to_owned();
   for idx in path {
-    rendered.push('[');
+    rendered.push('.');
     rendered.push_str(&idx.to_string());
-    rendered.push(']');
   }
   rendered
 }
@@ -1071,7 +1070,7 @@ fn scan_schema_dynamic_annotation(
     CalcitTypeAnnotation::Fn(fn_annot) => {
       for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
         let arg_detail = extend_schema_dynamic_detail(detail, "fn-arg");
-        scan_schema_dynamic_annotation(arg, &format!("{path}.args[{idx}]"), &arg_detail, occurrences);
+        scan_schema_dynamic_annotation(arg, &format!("{path}.args.{idx}"), &arg_detail, occurrences);
       }
       let return_detail = extend_schema_dynamic_detail(detail, "fn-return");
       scan_schema_dynamic_annotation(&fn_annot.return_type, &format!("{path}.return"), &return_detail, occurrences);
@@ -1083,7 +1082,7 @@ fn scan_schema_dynamic_annotation(
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
       for (idx, arg) in args.iter().enumerate() {
         let type_arg_detail = extend_schema_dynamic_detail(detail, "type-arg");
-        scan_schema_dynamic_annotation(arg, &format!("{path}.type-arg[{idx}]"), &type_arg_detail, occurrences);
+        scan_schema_dynamic_annotation(arg, &format!("{path}.type-arg.{idx}"), &type_arg_detail, occurrences);
       }
     }
     _ => {}
@@ -1192,7 +1191,7 @@ fn analyze_weak_types_entry(
   } else if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() {
     if selected.contains(&WeakTypeKind::SchemaDynamic) {
       for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
-        scan_schema_dynamic_annotation(arg, &format!("schema.args[{idx}]"), "arg", &mut occurrences);
+        scan_schema_dynamic_annotation(arg, &format!("schema.args.{idx}"), "arg", &mut occurrences);
       }
       scan_schema_dynamic_annotation(&fn_annot.return_type, "schema.return", "return", &mut occurrences);
       if let Some(rest) = &fn_annot.rest_type {
