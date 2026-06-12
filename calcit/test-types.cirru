@@ -6,19 +6,19 @@
   :files $ {}
     |test-types.main $ %{} :FileEntry
       :defs $ {}
-        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata") (:schema nil)
+        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata") (:schema :impl)
           :code $ quote
             defimpl EnumImpl :EnumImpl $ .dummy nil
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks") (:schema nil)
+        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks") (:schema :struct)
           :code $ quote
             defstruct Person (:name :string) (:age nil)
           :examples $ []
-        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks") (:schema nil)
+        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks") (:schema :enum)
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests") (:schema nil)
+        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests") (:schema :impl)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .describe
               fn (self)
@@ -27,11 +27,11 @@
                     str "|ok " value
                   (:err msg) (str "|err " msg)
           :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests") (:schema nil)
+        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests") (:schema :trait)
           :code $ quote
             deftrait ResultTrait $ .describe :fn
           :examples $ []
-        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata") (:schema nil)
+        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata") (:schema :impl)
           :code $ quote
             defimpl StructImpl :StructImpl $ .dummy nil
           :examples $ []

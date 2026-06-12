@@ -908,7 +908,8 @@ fn parse_generics_vars(node: &Cirru) -> HashSet<String> {
 
 /// Allowed primitive tag types usable as a bare leaf schema (e.g. `:string`, `:number`).
 pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
-  "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit",
+  "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit", "record",
+  "struct", "enum", "trait", "impl",
 ];
 
 /// Strict validation for schemas submitted via `cr edit schema`.
@@ -1973,6 +1974,16 @@ mod tests {
     assert!(validate_schema_for_write(&leaf_fn).is_ok(), ":fn leaf should pass");
     let leaf_number = Cirru::Leaf(Arc::from(":number"));
     assert!(validate_schema_for_write(&leaf_number).is_ok(), ":number leaf should pass");
+    let leaf_trait = Cirru::Leaf(Arc::from(":trait"));
+    assert!(validate_schema_for_write(&leaf_trait).is_ok(), ":trait leaf should pass");
+    let leaf_enum = Cirru::Leaf(Arc::from(":enum"));
+    assert!(validate_schema_for_write(&leaf_enum).is_ok(), ":enum leaf should pass");
+    let leaf_record = Cirru::Leaf(Arc::from(":record"));
+    assert!(validate_schema_for_write(&leaf_record).is_ok(), ":record leaf should pass");
+    let leaf_struct = Cirru::Leaf(Arc::from(":struct"));
+    assert!(validate_schema_for_write(&leaf_struct).is_ok(), ":struct leaf should pass");
+    let leaf_impl = Cirru::Leaf(Arc::from(":impl"));
+    assert!(validate_schema_for_write(&leaf_impl).is_ok(), ":impl leaf should pass");
 
     // Unknown leaf (not a known primitive type) must still fail.
     let leaf_unknown = Cirru::Leaf(Arc::from(":not-a-type"));
