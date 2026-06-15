@@ -7,7 +7,7 @@ use super::common::{emit_cli_output, format_path, parse_path, print_cli_warning_
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::DYNAMIC_TYPE;
-use calcit::cli_args::{QueryCommand, QueryDefCommand, QueryDefsCommand, QuerySubcommand};
+use calcit::cli_args::{QueryCommand, QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -374,6 +374,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_schema(input_path, ns, def, opts.json)
     }
+    QuerySubcommand::HostProcs(opts) => handle_host_procs(opts),
   }
 }
 
@@ -542,6 +543,37 @@ fn format_tags_display(tags: &HashSet<EdnTag>) -> String {
   let mut items: Vec<String> = tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect();
   items.sort();
   items.join(",")
+}
+
+fn handle_host_procs(opts: &QueryHostProcsCommand) -> Result<(), String> {
+  let filter_tag = opts.tag.as_deref().map(parse_query_tag).transpose()?;
+  let mut items = calcit::builtins::list_registered_procs();
+
+  if let Some(tag) = &filter_tag {
+    items.retain(|(_, descriptor)| descriptor.tags.contains(tag));
+  }
+
+  if let Some(tag) = &filter_tag {
+    println!(
+      "{} {} (filtered by {})",
+      "Registered procs:".bold(),
+      items.len(),
+      format!(":{}", tag.ref_str()).yellow()
+    );
+  } else {
+    println!("{} {}", "Registered procs:".bold(), items.len());
+  }
+
+  for (name, descriptor) in items {
+    let tags = if descriptor.tags.is_empty() {
+      "-".dimmed().to_string()
+    } else {
+      format_tags_display(&descriptor.tags)
+    };
+    println!("  {}  {}", name.cyan(), tags.dimmed());
+  }
+
+  Ok(())
 }
 
 fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {

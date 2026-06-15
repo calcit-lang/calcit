@@ -27,7 +27,8 @@ mod cr_cirru_suite_tests;
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
-  AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit, WeakTypesCommand,
+  AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, EffectsGraphCommand, ToplevelCalcit,
+  WeakTypesCommand,
 };
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
@@ -48,6 +49,9 @@ use cirru_parser::Cirru;
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
+
+  #[cfg(not(target_arch = "wasm32"))]
+  injection::inject_platform_apis();
 
   let cli_args: ToplevelCalcit = argh::from_env();
 
@@ -115,8 +119,6 @@ fn main() -> Result<(), String> {
   // get dirty functions injected
   #[cfg(not(target_arch = "wasm32"))]
   injection::set_trace_ffi(cli_args.trace_ffi);
-  #[cfg(not(target_arch = "wasm32"))]
-  injection::inject_platform_apis();
 
   let core_snapshot = calcit::load_core_snapshot()?;
 
@@ -281,6 +283,7 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
+      AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
       AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
       AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),
     }
@@ -828,6 +831,44 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
     println!("{json}");
   } else {
     println!("{}", calcit::call_tree::format_for_llm(&result));
+  }
+
+  Ok(())
+}
+
+fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) -> Result<(), String> {
+  let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
+    util::string::extract_ns_def(def_path)?
+  } else {
+    (entries.init_ns.to_string(), entries.init_def.to_string())
+  };
+
+  println!("{}", format!("Analyzing effects graph from: {entry_ns}/{entry_def}").cyan());
+
+  let detail = match options.detail.as_str() {
+    "full" => calcit::effects_graph::EffectsGraphDetail::Full,
+    "minimal" => calcit::effects_graph::EffectsGraphDetail::Minimal,
+    _ => calcit::effects_graph::EffectsGraphDetail::Summary,
+  };
+
+  let result = calcit::effects_graph::analyze_effects_graph(
+    &entry_ns,
+    &entry_def,
+    options.include_core,
+    options.max_depth,
+    options.ns_prefix.clone(),
+    detail,
+  )?;
+
+  if options.format == "json" {
+    let json = calcit::effects_graph::format_as_json(&result)?;
+    println!("{json}");
+  } else if options.format == "mermaid" {
+    println!("{}", calcit::effects_graph::format_as_mermaid(&result));
+  } else if options.format == "tree" {
+    println!("{}", calcit::effects_graph::format_for_llm(&result));
+  } else {
+    println!("{}", calcit::effects_graph::format_as_sketch(&result));
   }
 
   Ok(())

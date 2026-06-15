@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-04-17
+更新时间：2026-06-15
 
 ## 目录原则
 
@@ -27,6 +27,7 @@
 | `04-15-wasm-compilation-feasibility.md` | Active | WASM 编译三条路径（解释器→WASM / AOT 子集 / WASM GC）的可行性评估。 |
 | `04-16-wasm-data-structures.md` | Active | WASM codegen 中 Tag/Record/Tuple 等数据结构的内存布局与编译策略。 |
 | `05-31-generic-where-bounds-mfs.md` | Active | 函数 schema 泛型 `:where` 约束的最小功能规格，先作为主链路开发基线。 |
+| `06-15-effects-graph-rfc.md` | Draft | `cr analyze effects-graph`：State/Transform/Effect 语义分解图与类型驱动 effect 标注路线。 |
 
 ## 已执行的清理
 

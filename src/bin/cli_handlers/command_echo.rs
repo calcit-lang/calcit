@@ -161,6 +161,9 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       opt "entry" => opts.entry.as_deref(); default "none",
       value "detail-offset" => opts.detail_offset; default "0"
     ),
+    QuerySubcommand::HostProcs(opts) => {
+      echo_items!(tokens, opt "tag" => opts.tag.as_deref(); default "none")
+    }
   }
 }
 
@@ -287,6 +290,15 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
       switch "deps" => opts.deps
+    ),
+    AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
+      tokens,
+      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
+      switch "include-core" => opts.include_core,
+      value "max-depth" => opts.max_depth; default "2",
+      value "format" => &opts.format; default "sketch",
+      value "detail" => &opts.detail; default "summary"
     ),
     AnalyzeSubcommand::JsEscape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
     AnalyzeSubcommand::JsUnescape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
@@ -542,6 +554,7 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Search(_) => "search",
     QuerySubcommand::SearchExpr(_) => "search-expr",
     QuerySubcommand::Schema(_) => "schema",
+    QuerySubcommand::HostProcs(_) => "host-procs",
   }
 }
 
@@ -585,6 +598,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
     AnalyzeSubcommand::WeakTypes(_) => "weak-types",
+    AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
     AnalyzeSubcommand::JsUnescape(_) => "js-unescape",
   }

@@ -16,6 +16,7 @@ use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
 use crate::call_stack::{CallStackList, using_stack};
+use cirru_edn::EdnTag;
 
 use im_ternary_tree::TernaryTreeList;
 pub(crate) use refs::{ValueAndListeners, quick_build_atom};
@@ -57,6 +58,8 @@ pub struct RegisteredProcDescriptor {
   pub stability: RegisteredProcStability,
   pub docs_hint: Option<Arc<str>>,
   pub callback_last: bool,
+  /// Effect/analysis tags aligned with calcit.core CodeEntry `:tags` (e.g. `:log`, `:io`, `:interop`).
+  pub tags: HashSet<EdnTag>,
 }
 
 impl Default for RegisteredProcDescriptor {
@@ -73,8 +76,20 @@ impl Default for RegisteredProcDescriptor {
       stability: RegisteredProcStability::Public,
       docs_hint: None,
       callback_last: false,
+      tags: HashSet::new(),
     }
   }
+}
+
+/// Build descriptor tags from names like `"log"` or `":io"`.
+pub fn proc_tags<'a>(names: impl IntoIterator<Item = &'a str>) -> HashSet<EdnTag> {
+  names
+    .into_iter()
+    .map(|name| {
+      let trimmed = name.strip_prefix(':').unwrap_or(name);
+      EdnTag::new(trimmed)
+    })
+    .collect()
 }
 
 pub(crate) static IMPORTED_PROCS: LazyLock<RwLock<HashMap<Arc<str>, FnType>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -102,6 +117,26 @@ pub fn is_proc_name(s: &str) -> bool {
 pub fn is_registered_proc(s: &str) -> bool {
   let ps = IMPORTED_PROCS.read().expect("read procs");
   ps.contains_key(s)
+}
+
+pub fn registered_proc_descriptor(name: &str) -> Option<RegisteredProcDescriptor> {
+  IMPORTED_PROC_DESCRIPTORS.read().expect("read proc descriptors").get(name).cloned()
+}
+
+pub fn registered_proc_has_tag(name: &str, tag: &EdnTag) -> bool {
+  registered_proc_descriptor(name)
+    .map(|descriptor| descriptor.tags.contains(tag))
+    .unwrap_or(false)
+}
+
+pub fn list_registered_procs() -> Vec<(Arc<str>, RegisteredProcDescriptor)> {
+  let descriptors = IMPORTED_PROC_DESCRIPTORS.read().expect("read proc descriptors");
+  let mut items: Vec<(Arc<str>, RegisteredProcDescriptor)> = descriptors
+    .iter()
+    .map(|(name, descriptor)| (name.clone(), descriptor.clone()))
+    .collect();
+  items.sort_by(|a, b| a.0.cmp(&b.0));
+  items
 }
 
 fn detect_current_platform() -> RegisteredProcPlatform {
@@ -654,6 +689,24 @@ mod tests {
   }
 
   #[test]
+  fn registered_proc_stores_tags() {
+    let name = unique_name("test-tags-registered-proc");
+    register_import_proc_with_descriptor(
+      &name,
+      dummy_proc,
+      RegisteredProcDescriptor {
+        tags: proc_tags(["log", "io"]),
+        ..RegisteredProcDescriptor::default()
+      },
+    );
+
+    let descriptor = registered_proc_descriptor(&name).expect("descriptor should exist");
+    assert!(descriptor.tags.contains(&EdnTag::new("log")));
+    assert!(descriptor.tags.contains(&EdnTag::new("io")));
+    assert!(registered_proc_has_tag(&name, &EdnTag::new("log")));
+  }
+
+  #[test]
   fn registered_proc_default_descriptor_works() {
     let name = unique_name("test-default-registered-proc");
     register_import_proc(&name, dummy_proc);
@@ -675,6 +728,7 @@ mod tests {
         stability: RegisteredProcStability::Public,
         docs_hint: None,
         callback_last: false,
+        ..RegisteredProcDescriptor::default()
       },
     );
 
@@ -696,6 +750,7 @@ mod tests {
         stability: RegisteredProcStability::Public,
         docs_hint: Some(Arc::from("Fix: switch to JS runtime or use native alternative.")),
         callback_last: false,
+        ..RegisteredProcDescriptor::default()
       },
     );
 
@@ -716,6 +771,7 @@ mod tests {
         stability: RegisteredProcStability::Public,
         docs_hint: Some(Arc::from("Fix: pass exactly 2 arguments.")),
         callback_last: false,
+        ..RegisteredProcDescriptor::default()
       },
     );
 
@@ -737,6 +793,7 @@ mod tests {
         stability: RegisteredProcStability::Experimental,
         docs_hint: Some(Arc::from("Fix: place callback function at the last argument.")),
         callback_last: true,
+        ..RegisteredProcDescriptor::default()
       },
     );
 
@@ -761,6 +818,7 @@ mod tests {
           stability: RegisteredProcStability::Public,
           docs_hint: None,
           callback_last: false,
+          ..RegisteredProcDescriptor::default()
         },
       );
     });
@@ -781,6 +839,7 @@ mod tests {
         stability: RegisteredProcStability::Experimental,
         docs_hint: None,
         callback_last: false,
+        ..RegisteredProcDescriptor::default()
       },
     );
 

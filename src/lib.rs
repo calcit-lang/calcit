@@ -9,6 +9,7 @@ pub mod cli_args;
 pub mod codegen;
 pub mod def_diff;
 pub mod detailed_snapshot;
+pub mod effects_graph;
 pub mod program;
 pub mod program_diff;
 pub mod runner;

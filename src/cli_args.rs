@@ -146,6 +146,8 @@ pub enum AnalyzeSubcommand {
   CheckTypes(CheckTypesCommand),
   /// locate weakly-typed hotspots such as :dynamic schema usage and nil literals
   WeakTypes(WeakTypesCommand),
+  /// decompose entry into State / Transform / Effect graph
+  EffectsGraph(EffectsGraphCommand),
   /// escape a Calcit symbol into JavaScript-safe identifier form
   JsEscape(JsEscapeCommand),
   /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
@@ -237,6 +239,30 @@ pub struct CallGraphCommand {
   /// output format: "text" (default, LLM-friendly) or "json"
   #[argh(option, default = "String::from(\"text\")")]
   pub format: String,
+}
+
+/// decompose program into State / Transform / Effect graph from entry point
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "effects-graph")]
+pub struct EffectsGraphCommand {
+  /// directly specify root definition to analyze (format: ns/def). If omitted, uses init-fn from config
+  #[argh(option)]
+  pub root: Option<String>,
+  /// only show definitions whose namespace starts with this prefix
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// include core/library calls in the output
+  #[argh(switch)]
+  pub include_core: bool,
+  /// maximum depth to traverse (0 = unlimited, 2 = recommended for sketch)
+  #[argh(option, default = "2")]
+  pub max_depth: usize,
+  /// output format: "sketch" (default, birdview text), "mermaid", "tree", or "json"
+  #[argh(option, default = "String::from(\"sketch\")")]
+  pub format: String,
+  /// transform compression level: summary, full, or minimal
+  #[argh(option, default = "String::from(\"summary\")")]
+  pub detail: String,
 }
 
 /// compare call graph structure against a Git ref and annotate code changes
@@ -336,6 +362,8 @@ pub enum QuerySubcommand {
   SearchExpr(QuerySearchExprCommand),
   /// read a definition's schema (type information)
   Schema(QuerySchemaCommand),
+  /// list host-injected registered procs and descriptor tags
+  HostProcs(QueryHostProcsCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -348,6 +376,15 @@ pub struct QuerySchemaCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "host-procs")]
+/// list host-injected registered procs and descriptor tags
+pub struct QueryHostProcsCommand {
+  /// filter procs that contain this tag (e.g. log or :log)
+  #[argh(option)]
+  pub tag: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
