@@ -843,7 +843,14 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
     (entries.init_ns.to_string(), entries.init_def.to_string())
   };
 
-  println!("{}", format!("Analyzing effects graph from: {entry_ns}/{entry_def}").cyan());
+  println!(
+    "{}",
+    format!(
+      "Analyzing effects graph from: {}",
+      calcit::effects_graph::format_entry_label(&entry_ns, &entry_def, options.ns_prefix.as_deref())
+    )
+    .cyan()
+  );
 
   let detail = match options.detail.as_str() {
     "full" => calcit::effects_graph::EffectsGraphDetail::Full,
@@ -864,7 +871,7 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
     let json = calcit::effects_graph::format_as_json(&result)?;
     println!("{json}");
   } else {
-    println!("{}", calcit::effects_graph::format_as_ste_tree(&result));
+    println!("{}", calcit::effects_graph::format_as_ste_tree(&result, options.color));
   }
 
   Ok(())

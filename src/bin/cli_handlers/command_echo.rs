@@ -298,7 +298,8 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "2",
       value "format" => &opts.format; default "tree",
-      value "detail" => &opts.detail; default "summary"
+      value "detail" => &opts.detail; default "summary",
+      value "color" => opts.color; default "true"
     ),
     AnalyzeSubcommand::JsEscape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
     AnalyzeSubcommand::JsUnescape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),

@@ -263,6 +263,9 @@ pub struct EffectsGraphCommand {
   /// transform compression level: summary, full, or minimal
   #[argh(option, default = "String::from(\"summary\")")]
   pub detail: String,
+  /// enable ANSI colors in tree output (default: true; pass false to disable)
+  #[argh(option, default = "true")]
+  pub color: bool,
 }
 
 /// compare call graph structure against a Git ref and annotate code changes
