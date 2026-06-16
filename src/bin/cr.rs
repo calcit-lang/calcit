@@ -863,12 +863,8 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
   if options.format == "json" {
     let json = calcit::effects_graph::format_as_json(&result)?;
     println!("{json}");
-  } else if options.format == "mermaid" {
-    println!("{}", calcit::effects_graph::format_as_mermaid(&result));
-  } else if options.format == "tree" {
-    println!("{}", calcit::effects_graph::format_for_llm(&result));
   } else {
-    println!("{}", calcit::effects_graph::format_as_sketch(&result));
+    println!("{}", calcit::effects_graph::format_as_ste_tree(&result));
   }
 
   Ok(())

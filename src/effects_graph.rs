@@ -2,7 +2,6 @@
 
 use crate::builtins;
 use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitSyntax};
-use crate::call_tree::{analyze_call_graph, CallTreeNode};
 use crate::program::{ImportRule, PROGRAM_CODE_DATA};
 use cirru_edn::EdnTag;
 use serde::{Deserialize, Serialize};
@@ -72,6 +71,9 @@ pub struct EffectsGraphNode {
   pub circular: bool,
   #[serde(skip_serializing_if = "std::ops::Not::not")]
   pub seen: bool,
+  /// True when max_depth limit prevented expanding children (analysis still present).
+  #[serde(skip_serializing_if = "std::ops::Not::not")]
+  pub depth_exceeded: bool,
 }
 
 /// Analysis result.
@@ -195,10 +197,6 @@ impl EffectsGraphAnalyzer {
       self.max_depth = depth;
     }
 
-    if self.config.max_depth > 0 && depth >= self.config.max_depth {
-      return Ok(empty_shell_node(ns, def, &fqn, self.source_type(ns)));
-    }
-
     if self.visited.contains(&fqn) {
       return Ok(EffectsGraphNode {
         ns: ns.to_string(),
@@ -212,6 +210,7 @@ impl EffectsGraphAnalyzer {
         children: vec![],
         circular: true,
         seen: false,
+        depth_exceeded: false,
       });
     }
 
@@ -228,6 +227,7 @@ impl EffectsGraphAnalyzer {
         children: vec![],
         circular: false,
         seen: had_children,
+        depth_exceeded: false,
       });
     }
 
@@ -254,7 +254,10 @@ impl EffectsGraphAnalyzer {
       transform: TransformInfo::default(),
     };
 
+    let depth_exceeded = self.config.max_depth > 0 && depth >= self.config.max_depth;
+
     if let Some(code) = code {
+      // Always analyze the code for state/effects/transform, even at max depth
       self.analyze_code(&code, ns, doc.as_deref(), &mut analysis);
       if let Some(hint) = schema_return {
         analysis.state.push(StateItem {
@@ -267,14 +270,17 @@ impl EffectsGraphAnalyzer {
       let call_refs = extract_call_targets(&code, ns);
       drop(program_code);
 
-      for (call_ns, call_def) in call_refs {
-        if !self.config.include_core && self.is_core_ns(&call_ns) {
-          continue;
+      // Only build children if not at max depth
+      if !depth_exceeded {
+        for (call_ns, call_def) in call_refs {
+          if !self.config.include_core && self.is_core_ns(&call_ns) {
+            continue;
+          }
+          if call_ns == ns && call_def == def {
+            continue;
+          }
+          children.push(self.build_node(&call_ns, &call_def, depth + 1)?);
         }
-        if call_ns == ns && call_def == def {
-          continue;
-        }
-        children.push(self.build_node(&call_ns, &call_def, depth + 1)?);
       }
     } else {
       drop(program_code);
@@ -304,6 +310,7 @@ impl EffectsGraphAnalyzer {
       children,
       circular: false,
       seen: false,
+      depth_exceeded,
     })
   }
 
@@ -338,7 +345,7 @@ impl EffectsGraphAnalyzer {
   fn walk_expr(&self, code: &Calcit, current_ns: &str, out: &mut DefAnalysis, depth: usize) {
     if let Calcit::List(list) = code {
       if let Some(head) = list.first() {
-        self.inspect_call_head(head, current_ns, out);
+        self.inspect_call_head(head, Some(list), current_ns, out);
         if depth < 3 {
           record_control_head(head, &mut out.transform.control);
         }
@@ -384,14 +391,15 @@ impl EffectsGraphAnalyzer {
     }
   }
 
-  fn inspect_call_head(&self, head: &Calcit, current_ns: &str, out: &mut DefAnalysis) {
+  fn inspect_call_head(&self, head: &Calcit, list: Option<&crate::calcit::CalcitList>, current_ns: &str, out: &mut DefAnalysis) {
     let Some((name, ns_hint)) = call_operator(head, current_ns) else {
       return;
     };
 
     if is_state_operator(&name) {
-      record_state_operator(&name, &mut out.state);
-      if matches!(name.as_str(), "defatom" | "atom" | "reset!" | "swap!" | "deref") {
+      let target = extract_state_target(list, &name);
+      record_state_operator(&name, &target, &mut out.state);
+      if matches!(name.as_str(), "defatom" | "atom" | "reset!" | "swap!" | "deref" | "set!") {
         return;
       }
     }
@@ -434,22 +442,6 @@ impl EffectsGraphAnalyzer {
 
   fn is_core_ns(&self, ns: &str) -> bool {
     ns == "calcit.core" || ns.starts_with("calcit.")
-  }
-}
-
-fn empty_shell_node(ns: &str, def: &str, fqn: &str, source: String) -> EffectsGraphNode {
-  EffectsGraphNode {
-    ns: ns.to_string(),
-    def: def.to_string(),
-    fqn: fqn.to_string(),
-    doc: None,
-    source,
-    state: vec![],
-    transform: TransformInfo::default(),
-    effects: vec![],
-    children: vec![],
-    circular: false,
-    seen: false,
   }
 }
 
@@ -619,23 +611,46 @@ fn resolve_def_call_from_expr(code: &Calcit, current_ns: &str) -> Option<(String
 fn is_state_operator(name: &str) -> bool {
   matches!(
     name,
-    "defatom" | "reset!" | "swap!" | "atom" | "deref" | "add-watch" | "remove-watch"
+    "defatom" | "reset!" | "swap!" | "atom" | "deref" | "add-watch" | "remove-watch" | "set!"
   )
 }
 
-fn record_state_operator(name: &str, state: &mut Vec<StateItem>) {
-  let kind = match name {
+fn record_state_operator(op_name: &str, target: &str, state: &mut Vec<StateItem>) {
+  let kind = match op_name {
     "defatom" | "atom" => "atom",
     "reset!" | "swap!" => "atom-write",
     "add-watch" | "remove-watch" => "watch",
     "deref" => "atom-read",
+    "set!" => "local-write",
     _ => "state",
   };
   state.push(StateItem {
     kind: kind.into(),
-    name: name.into(),
+    name: target.into(),
     type_hint: None,
   });
+}
+
+/// Extract the atom name from a state-operator call like `(swap! *store ...)`.
+fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str) -> String {
+  let Some(list) = list else {
+    return op_name.to_string();
+  };
+  match op_name {
+    "swap!" | "reset!" | "deref" | "add-watch" | "remove-watch" | "set!" => {
+      list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| op_name.to_string())
+    }
+    "defatom" | "atom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
+    _ => op_name.to_string(),
+  }
+}
+
+fn extract_symbol_name(calcit: &Calcit) -> Option<String> {
+  match calcit {
+    Calcit::Symbol { sym, .. } => Some(sym.to_string()),
+    Calcit::Str(s) => Some(s.to_string()),
+    _ => None,
+  }
 }
 
 fn record_control_head(head: &Calcit, control: &mut Vec<String>) {
@@ -687,6 +702,11 @@ fn classify_by_name(name: &str) -> Option<Vec<String>> {
     "generate-id!" | "cpu-time" | "&get-os" | "async-sleep" => vec!["io"],
     "try" => vec!["control"],
     "&doseq" => vec!["effect/sequential"],
+    // Respo convention: common project-level functions
+    "render-app!" | "mount-app!" | "rerender-app!" | "clear-cache!" => vec!["render"],
+    "send-to-component!" | "dispatch!" => vec!["lifecycle"],
+    "save-store!" => vec!["storage"],
+    "realize-ssr!" => vec!["render"],
     _ => return None,
   };
   Some(kinds.into_iter().map(str::to_string).collect())
@@ -730,8 +750,12 @@ fn heuristic_effect_kinds(name: &str) -> Vec<String> {
   if name.starts_with("js/") {
     return vec!["interop/js".into()];
   }
+  // Common project-level effect conventions
+  if name.contains("load") || name.contains("init") || name.contains("setup") {
+    return vec!["io".into()];
+  }
   if name.ends_with('!') && !matches!(name, "main!" | "reload!" | "quit!" | "reset!" | "swap!") {
-    return vec!["unknown/effect!".into()];
+    return vec!["effect".into()];
   }
   vec![]
 }
@@ -805,958 +829,6 @@ pub fn analyze_effects_graph(
   analyzer.analyze(entry_ns, entry_def)
 }
 
-pub fn format_for_llm(result: &EffectsGraphResult) -> String {
-  let mut output = String::new();
-  output.push_str(&format!("# Birdview: `{}`\n\n", result.entry));
-  output.push_str(&format_as_mermaid(result));
-  output.push('\n');
-  output.push_str(&format_birdview_legend(&result.tree));
-  output
-}
-
-/// Mermaid birdview: State types, Transform chain, Effect kinds.
-pub fn format_as_mermaid(result: &EffectsGraphResult) -> String {
-  let model = build_birdview_model(&result.tree);
-  let mut output = String::new();
-  output.push_str("```mermaid\n");
-  output.push_str(&render_mermaid_diagram(&model, &result.entry));
-  output.push_str("```\n");
-  output
-}
-
-#[derive(Debug, Clone)]
-struct BirdviewTransform {
-  id: String,
-  label: String,
-  collapsed: bool,
-}
-
-#[derive(Debug, Clone)]
-struct BirdviewState {
-  id: String,
-  label: String,
-}
-
-#[derive(Debug, Clone)]
-struct BirdviewEffect {
-  id: String,
-  kind: String,
-}
-
-#[derive(Debug, Clone)]
-enum BirdviewEdge {
-  Calls { from: String, to: String, collapsed: bool },
-  HoldsState { transform: String, state: String },
-  Triggers { transform: String, effect: String },
-}
-
-#[derive(Debug, Default)]
-struct BirdviewModel {
-  transforms: Vec<BirdviewTransform>,
-  states: Vec<BirdviewState>,
-  effects: Vec<BirdviewEffect>,
-  edges: Vec<BirdviewEdge>,
-}
-
-fn build_birdview_model(root: &EffectsGraphNode) -> BirdviewModel {
-  let mut model = BirdviewModel::default();
-  let mut transform_index: HashMap<String, String> = HashMap::new();
-  collect_birdview_transforms(root, &mut model, &mut transform_index);
-
-  for node in collect_birdview_nodes(root) {
-    let Some(tid) = transform_index.get(&node.fqn) else {
-      continue;
-    };
-    for (idx, label) in birdview_state_labels(node).into_iter().enumerate() {
-      let sid = format!("{tid}_s{idx}");
-      model.states.push(BirdviewState { id: sid.clone(), label });
-      model.edges.push(BirdviewEdge::HoldsState {
-        transform: tid.clone(),
-        state: sid,
-      });
-    }
-
-    let mut seen_kinds: HashSet<String> = HashSet::new();
-    for effect in &node.effects {
-      if !seen_kinds.insert(effect.kind.clone()) {
-        continue;
-      }
-      let eid = format!("{tid}_e_{}", mermaid_slug(&effect.kind));
-      model.effects.push(BirdviewEffect {
-        id: eid.clone(),
-        kind: effect.kind.clone(),
-      });
-      model.edges.push(BirdviewEdge::Triggers {
-        transform: tid.clone(),
-        effect: eid,
-      });
-    }
-  }
-
-  model
-}
-
-fn collect_birdview_nodes(root: &EffectsGraphNode) -> Vec<&EffectsGraphNode> {
-  let mut nodes = vec![root];
-  let mut queue: Vec<&EffectsGraphNode> = root.children.iter().collect();
-  while let Some(node) = queue.first().copied() {
-    queue.remove(0);
-    if node.seen {
-      continue;
-    }
-    nodes.push(node);
-    queue.extend(node.children.iter());
-  }
-  nodes
-}
-
-fn collect_birdview_transforms(node: &EffectsGraphNode, model: &mut BirdviewModel, index: &mut HashMap<String, String>) {
-  if node.seen {
-    return;
-  }
-
-  let collapsed = !is_analyzed_node(node);
-  let tid = format!("t_{}", mermaid_slug(&node.fqn));
-  let label = if collapsed {
-    format!("{}<br/>…", mermaid_escape(&short_def_label(&node.fqn)))
-  } else {
-    mermaid_escape(&short_def_label(&node.fqn))
-  };
-
-  if !index.contains_key(&node.fqn) {
-    index.insert(node.fqn.clone(), tid.clone());
-    model.transforms.push(BirdviewTransform {
-      id: tid.clone(),
-      label,
-      collapsed,
-    });
-  }
-
-  let parent_tid = index.get(&node.fqn).cloned();
-  for child in &node.children {
-    if child.seen {
-      continue;
-    }
-    collect_birdview_transforms(child, model, index);
-    if let (Some(from), Some(to)) = (parent_tid.as_ref(), index.get(&child.fqn)) {
-      let child_collapsed = !is_analyzed_node(child);
-      model.edges.push(BirdviewEdge::Calls {
-        from: from.clone(),
-        to: to.clone(),
-        collapsed: child_collapsed,
-      });
-    }
-  }
-}
-
-fn birdview_state_labels(node: &EffectsGraphNode) -> Vec<String> {
-  if !is_analyzed_node(node) {
-    return vec![];
-  }
-
-  let mut labels = vec![];
-  let mut has_atom_mut = false;
-
-  for item in &node.state {
-    match (item.kind.as_str(), item.name.as_str()) {
-      ("atom" | "atom-write" | "atom-read", "defatom" | "reset!" | "swap!" | "deref" | "atom") => {
-        has_atom_mut = true;
-      }
-      ("watch", _) => {}
-      _ => labels.push(state_port_label(item)),
-    }
-  }
-
-  if has_atom_mut {
-    labels.push("atom<br/>mut".into());
-  }
-
-  labels.sort();
-  labels.dedup();
-  labels
-}
-
-fn state_port_label(item: &StateItem) -> String {
-  let name = mermaid_escape(&item.name);
-  let shape = item
-    .type_hint
-    .as_deref()
-    .map(mermaid_escape)
-    .unwrap_or_else(|| mermaid_escape(&item.kind));
-  format!("{name}<br/>{shape}")
-}
-
-fn short_def_label(fqn: &str) -> String {
-  fqn.rsplit('/').next().unwrap_or(fqn).to_string()
-}
-
-fn mermaid_slug(text: &str) -> String {
-  text.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
-}
-
-fn mermaid_escape(text: &str) -> String {
-  text.replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;")
-}
-
-fn render_mermaid_diagram(model: &BirdviewModel, entry: &str) -> String {
-  let mut out = String::new();
-  out.push_str("flowchart LR\n");
-  out.push_str("  classDef stateNode fill:#dbeafe,stroke:#2563eb,color:#1e3a5f\n");
-  out.push_str("  classDef transformNode fill:#fef9c3,stroke:#ca8a04,color:#451a03\n");
-  out.push_str("  classDef effectNode fill:#fecaca,stroke:#dc2626,color:#450a0a\n\n");
-
-  if model.transforms.is_empty() {
-    out.push_str(&format!("  empty[[{entry}]]:::transformNode\n"));
-    return out;
-  }
-
-  if !model.states.is_empty() {
-    out.push_str("  subgraph stateLane[\"State\"]\n");
-    out.push_str("    direction TB\n");
-    for state in &model.states {
-      out.push_str(&format!("    {}[\"{}\"]:::stateNode\n", state.id, state.label));
-    }
-    out.push_str("  end\n\n");
-  }
-
-  out.push_str("  subgraph transformLane[\"Transform\"]\n");
-  out.push_str("    direction TB\n");
-  for transform in &model.transforms {
-    if transform.collapsed {
-      out.push_str(&format!("    {}([\"{}\"]):::transformNode\n", transform.id, transform.label));
-    } else {
-      out.push_str(&format!("    {}[\"{}\"]:::transformNode\n", transform.id, transform.label));
-    }
-  }
-  out.push_str("  end\n\n");
-
-  if !model.effects.is_empty() {
-    out.push_str("  subgraph effectLane[\"Effects\"]\n");
-    out.push_str("    direction TB\n");
-    for effect in &model.effects {
-      out.push_str(&format!("    {}[[{}]]:::effectNode\n", effect.id, mermaid_escape(&effect.kind)));
-    }
-    out.push_str("  end\n\n");
-  }
-
-  for edge in &model.edges {
-    match edge {
-      BirdviewEdge::Calls { from, to, collapsed } => {
-        let arrow = if *collapsed { "-.->|call|" } else { "-->|call|" };
-        out.push_str(&format!("  {from} {arrow} {to}\n"));
-      }
-      BirdviewEdge::HoldsState { transform, state } => {
-        out.push_str(&format!("  {transform} -.->|state| {state}\n"));
-      }
-      BirdviewEdge::Triggers { transform, effect } => {
-        out.push_str(&format!("  {transform} ==>|effect| {effect}\n"));
-      }
-    }
-  }
-
-  out
-}
-
-fn format_birdview_legend(root: &EffectsGraphNode) -> String {
-  let mut out = String::new();
-  out.push_str("## Legend\n\n");
-  out.push_str("- **State** (blue): data ports and structures\n");
-  out.push_str("- **Transform** (yellow): key functions connecting nodes\n");
-  out.push_str("- **Effect** (red): side-effect kinds triggered by transforms\n");
-  out.push_str("- `-.->` state ownership · `-->` transform call · `==>` effect trigger\n\n");
-
-  let child_targets = collect_child_targets(root);
-  let collapsed: Vec<_> = child_targets.iter().filter(|t| !t.analyzed).collect();
-  if !collapsed.is_empty() {
-    out.push_str("### Expand\n\n");
-    for target in collapsed {
-      out.push_str(&format!("- `--root {fqn}`", fqn = target.fqn));
-      if let Some(ref doc) = target.doc {
-        out.push_str(&format!(" — {doc}"));
-      }
-      out.push('\n');
-    }
-  }
-  out
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Program sketch (birdview text)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone)]
-struct SketchAtom {
-  name: String,
-  ns: String,
-  type_hint: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct SketchHook {
-  label: String,
-  role: String,
-}
-
-#[derive(Debug, Default)]
-struct ProgramSketch {
-  entry: String,
-  role: String,
-  project_prefix: String,
-  atoms: Vec<SketchAtom>,
-  lifecycle: Vec<SketchHook>,
-  channels: Vec<(String, Vec<String>)>,
-  data_flow: Option<String>,
-  expand: Vec<String>,
-  namespaces: Vec<SketchNamespace>,
-}
-
-#[derive(Debug, Clone)]
-struct SketchNamespace {
-  ns: String,
-  highlights: Vec<String>,
-}
-
-/// Aggregated birdview text — entry, project state, lifecycle, effect channels.
-pub fn format_as_sketch(result: &EffectsGraphResult) -> String {
-  let sketch = build_program_sketch(result);
-  render_program_sketch(&sketch, result)
-}
-
-fn build_program_sketch(result: &EffectsGraphResult) -> ProgramSketch {
-  let project_prefix = result
-    .display
-    .ns_prefix
-    .clone()
-    .unwrap_or_else(|| infer_project_prefix(&result.entry));
-
-  let atoms = collect_project_atoms(&project_prefix);
-  let mut lifecycle = collect_lifecycle_hooks(&result.tree, &project_prefix);
-  supplement_entry_wiring(&result.entry, &mut lifecycle);
-  let channels = collect_effect_channels(&result.tree, &project_prefix, 2);
-  let data_flow = infer_data_flow(&lifecycle, &atoms, &channels);
-  let role = infer_program_role(&result.tree, &result.entry);
-  let expand = collect_expand_targets(&result.tree, &project_prefix);
-  let namespaces = collect_project_map(&project_prefix);
-
-  ProgramSketch {
-    entry: result.entry.clone(),
-    role,
-    project_prefix,
-    atoms,
-    lifecycle,
-    channels,
-    data_flow,
-    expand,
-    namespaces,
-  }
-}
-
-fn infer_project_prefix(entry: &str) -> String {
-  let ns = entry.split('/').next().unwrap_or(entry);
-  let head = ns.split('.').next().unwrap_or(ns);
-  format!("{head}.")
-}
-
-fn collect_project_atoms(prefix: &str) -> Vec<SketchAtom> {
-  let program_code = PROGRAM_CODE_DATA.read().ok();
-  let Some(program_code) = program_code else {
-    return vec![];
-  };
-
-  let mut atoms = vec![];
-  for (ns, file) in program_code.iter() {
-    if !ns.starts_with(prefix) {
-      continue;
-    }
-    for (def, entry) in &file.defs {
-      if !def.starts_with('*') {
-        continue;
-      }
-      let type_hint = format_type_hint(&entry.schema).filter(|hint| hint != "dynamic");
-      atoms.push(SketchAtom {
-        name: def.to_string(),
-        ns: ns.to_string(),
-        type_hint,
-      });
-    }
-  }
-
-  atoms.sort_by(|a, b| a.name.cmp(&b.name));
-  atoms
-}
-
-fn collect_lifecycle_hooks(root: &EffectsGraphNode, prefix: &str) -> Vec<SketchHook> {
-  let mut hooks = vec![];
-  for child in &root.children {
-    if child.seen {
-      continue;
-    }
-    if child.def.starts_with('*') {
-      hooks.push(SketchHook {
-        label: child.def.clone(),
-        role: "state atom (referenced)".into(),
-      });
-      continue;
-    }
-    if !child.ns.starts_with(prefix) && !is_project_adjacent_ns(&child.ns, prefix) {
-      continue;
-    }
-    hooks.push(SketchHook {
-      label: short_def_label(&child.fqn),
-      role: infer_hook_role(child, prefix),
-    });
-  }
-  hooks
-}
-
-fn supplement_entry_wiring(entry: &str, hooks: &mut Vec<SketchHook>) {
-  let Some((ns, def)) = entry.split_once('/') else {
-    return;
-  };
-  let program_code = PROGRAM_CODE_DATA.read().ok();
-  let Some(program_code) = program_code else {
-    return;
-  };
-  let Some(file) = program_code.get(ns) else {
-    return;
-  };
-  let Some(entry_def) = file.defs.get(def) else {
-    return;
-  };
-
-  let mut existing: HashSet<String> = hooks.iter().map(|h| h.label.clone()).collect();
-  scan_entry_wiring(&entry_def.code, hooks, &mut existing);
-}
-
-fn scan_entry_wiring(code: &Calcit, hooks: &mut Vec<SketchHook>, existing: &mut HashSet<String>) {
-  match code {
-    Calcit::List(list) => {
-      if is_add_watch_head(list.first()) {
-        if let Some(atom) = list.get(1) {
-          push_atom_hook(atom, "watched state", hooks, existing);
-        }
-      }
-      let _ = list.traverse_result::<String>(&mut |item| {
-        scan_entry_wiring(item, hooks, existing);
-        Ok(())
-      });
-    }
-    Calcit::Fn { info, .. } => {
-      for expr in info.body.iter() {
-        scan_entry_wiring(expr, hooks, existing);
-      }
-    }
-    Calcit::Symbol { sym, .. } => {
-      let name = sym.as_ref();
-      if name.starts_with('*') {
-        if existing.insert(name.to_string()) {
-          hooks.push(SketchHook {
-            label: name.to_string(),
-            role: "state reference".into(),
-          });
-        }
-      } else if name.ends_with('!') && !matches!(name, "main!" | "reload!") && existing.insert(name.to_string()) {
-        hooks.push(SketchHook {
-          label: name.to_string(),
-          role: "handler reference".into(),
-        });
-      }
-    }
-    Calcit::Import(import) if import.def.ends_with('!') || import.def.starts_with('*') => {
-      let label = import.def.to_string();
-      if existing.insert(label.clone()) {
-        hooks.push(SketchHook {
-          label,
-          role: "imported handler".into(),
-        });
-      }
-    }
-    Calcit::Macro { info, .. } => {
-      for expr in info.body.iter() {
-        scan_entry_wiring(expr, hooks, existing);
-      }
-    }
-    Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => {
-      scan_entry_wiring(code, hooks, existing);
-    }
-    _ => {}
-  }
-}
-
-fn is_add_watch_head(head: Option<&Calcit>) -> bool {
-  match head {
-    Some(Calcit::Proc(CalcitProc::AddWatch)) => true,
-    Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "add-watch",
-    _ => false,
-  }
-}
-
-fn push_atom_hook(atom: &Calcit, role: &str, hooks: &mut Vec<SketchHook>, existing: &mut HashSet<String>) {
-  if let Calcit::Symbol { sym, .. } = atom {
-    if sym.starts_with('*') && existing.insert(sym.to_string()) {
-      hooks.push(SketchHook {
-        label: sym.to_string(),
-        role: role.into(),
-      });
-    }
-  }
-}
-
-fn is_project_adjacent_ns(ns: &str, prefix: &str) -> bool {
-  ns.starts_with("reel.") || ns.starts_with(prefix)
-}
-
-fn infer_hook_role(node: &EffectsGraphNode, prefix: &str) -> String {
-  if let Some(ref doc) = node.doc {
-    let line = doc.lines().next().unwrap_or(doc).trim();
-    if !line.is_empty() {
-      return line.to_string();
-    }
-  }
-
-  let def = node.def.as_str();
-  let child_hints: Vec<String> = node
-    .children
-    .iter()
-    .filter(|c| !c.seen && (c.ns.starts_with(prefix) || is_effect_named(&c.def)))
-    .take(3)
-    .map(|c| short_def_label(&c.fqn))
-    .collect();
-
-  let base = match def {
-    n if n.contains("render") => "UI mount",
-    n if n.contains("dispatch") => "state update handler",
-    n if n.contains("persist") || n.contains("storage") => "persist to storage",
-    n if n.contains("hydrate") => "hydrate from storage",
-    n if n.contains("listen") => "event listener setup",
-    n if n.contains("connect") => "external connection",
-    n if n.starts_with("comp-") || n.contains("container") => "UI component",
-    _ => "lifecycle",
-  };
-
-  if child_hints.is_empty() {
-    base.into()
-  } else {
-    format!("{base} (→ {})", child_hints.join(", "))
-  }
-}
-
-fn is_effect_named(def: &str) -> bool {
-  def.ends_with('!') || def == "render!" || def.contains("send-to")
-}
-
-fn collect_effect_channels(root: &EffectsGraphNode, prefix: &str, max_depth: usize) -> Vec<(String, Vec<String>)> {
-  let mut buckets: HashMap<String, HashSet<String>> = HashMap::new();
-  collect_effect_channels_recursive(root, prefix, 0, max_depth, &mut buckets);
-
-  let mut channels: Vec<(String, Vec<String>)> = buckets
-    .into_iter()
-    .map(|(channel, items)| {
-      let mut list: Vec<String> = items.into_iter().collect();
-      list.sort();
-      (channel, list)
-    })
-    .collect();
-  channels.sort_by(|a, b| a.0.cmp(&b.0));
-  channels
-}
-
-fn collect_effect_channels_recursive(
-  node: &EffectsGraphNode,
-  prefix: &str,
-  depth: usize,
-  max_depth: usize,
-  buckets: &mut HashMap<String, HashSet<String>>,
-) {
-  if depth > max_depth {
-    return;
-  }
-
-  let include_effects = depth == 0 || depth == 1 || node.ns.starts_with(prefix);
-  if include_effects {
-    for effect in &node.effects {
-      if effect.kind == "unknown/effect!" && !is_ui_proc(&effect.target) {
-        continue;
-      }
-      let channel = effect_channel_name(&effect.kind, &effect.target);
-      let label = effect_channel_label(&effect.kind, &effect.target);
-      buckets.entry(channel).or_default().insert(label);
-    }
-  }
-
-  if node.seen {
-    return;
-  }
-  for child in &node.children {
-    collect_effect_channels_recursive(child, prefix, depth + 1, max_depth, buckets);
-  }
-}
-
-fn effect_channel_name(kind: &str, target: &str) -> String {
-  if target.contains("localStorage") || matches!(kind, "io/write" | "io/read") && target.contains("storage") {
-    return "Storage".into();
-  }
-  if target.contains("chrome") || target.contains("worker") || target.contains("extension") {
-    return "Extension".into();
-  }
-  // UI channel: only show framework/UI procs, hide project lifecycle fns mis-tagged as unknown/effect!
-  match kind {
-    "console" => "Console".into(),
-    "render" => "UI".into(),
-    "unknown/effect!" if is_ui_proc(target) => "UI".into(),
-    "io/read" | "io/write" | "io/file" | "io" => "Storage/IO".into(),
-    "interop/js" => "DOM/JS".into(),
-    "interop/host" | "interop/eval" => "Host".into(),
-    "state/watch" => "Reactivity".into(),
-    "env" => "Environment".into(),
-    "async" => "Async".into(),
-    _ if target.starts_with("js/") => "DOM/JS".into(),
-    _ => "Other".into(),
-  }
-}
-
-fn is_ui_proc(target: &str) -> bool {
-  matches!(
-    target,
-    "render!" | "render-app!" | "send-to-component!" | "clear-cache!" | "mount-app!" | "rerender-app!"
-  )
-}
-
-fn effect_channel_label(kind: &str, target: &str) -> String {
-  if target == "println" || target == "eprintln" || target == "echo" {
-    return target.to_string();
-  }
-  if kind == "unknown/effect!" || kind == "render" {
-    return target.to_string();
-  }
-  if kind == "interop/js" && target.starts_with("js/") {
-    return simplify_js_target(target);
-  }
-  if target.len() > 2 {
-    return target.to_string();
-  }
-  kind.to_string()
-}
-
-fn simplify_js_target(target: &str) -> String {
-  let rest = target.strip_prefix("js/").unwrap_or(target);
-  if rest.len() > 40 {
-    format!("js/{}…", &rest[..40])
-  } else {
-    target.to_string()
-  }
-}
-
-fn infer_program_role(root: &EffectsGraphNode, entry: &str) -> String {
-  if let Some(ref doc) = root.doc {
-    let line = doc.lines().next().unwrap_or(doc).trim();
-    if !line.is_empty() {
-      return line.to_string();
-    }
-  }
-  if entry.contains("comp.") || lifecycle_has(root, "render") {
-    return "Respo UI application".into();
-  }
-  "Calcit application".into()
-}
-
-fn lifecycle_has(root: &EffectsGraphNode, needle: &str) -> bool {
-  root.children.iter().any(|c| c.def.contains(needle))
-}
-
-fn infer_data_flow(lifecycle: &[SketchHook], atoms: &[SketchAtom], channels: &[(String, Vec<String>)]) -> Option<String> {
-  let labels: HashSet<String> = lifecycle.iter().map(|h| h.label.clone()).collect();
-  let has_reel = atoms.iter().any(|a| a.name.contains("reel") || a.name == "*reel");
-  let has_dispatch = labels.iter().any(|l| l.contains("dispatch"));
-  let has_render = labels.iter().any(|l| l.contains("render"));
-  let has_watch = channels.iter().any(|(name, _)| name == "Reactivity");
-
-  if has_dispatch && has_render && has_reel {
-    return Some("event → dispatch! → *reel → [watch] → render-app! → render! → DOM".into());
-  }
-  if has_dispatch && has_render {
-    return Some("event → dispatch! → state → [watch] → render-app! → render!".into());
-  }
-  if has_render && has_watch && has_reel {
-    return Some("*reel change → [watch] → render-app! → render! → DOM".into());
-  }
-  if has_render && has_watch {
-    return Some("state change → [watch] → render-app! → render!".into());
-  }
-  if lifecycle.len() >= 2 {
-    let chain: Vec<String> = lifecycle
-      .iter()
-      .filter(|h| !h.label.starts_with('*'))
-      .take(5)
-      .map(|h| h.label.clone())
-      .collect();
-    if chain.len() >= 2 {
-      return Some(chain.join(" → "));
-    }
-  }
-  None
-}
-
-fn collect_expand_targets(root: &EffectsGraphNode, prefix: &str) -> Vec<String> {
-  let mut targets = vec![];
-  for child in &root.children {
-    if child.seen {
-      continue;
-    }
-    if child.def.starts_with('*') {
-      continue;
-    }
-    if child.ns.starts_with(prefix) && (child.def.contains("comp-") || child.def.contains("container")) {
-      targets.push(child.fqn.clone());
-    }
-    for grand in &child.children {
-      if grand.seen {
-        continue;
-      }
-      if grand.ns.starts_with(prefix) && (grand.def.contains("comp-") || grand.def.contains("container")) {
-        targets.push(grand.fqn.clone());
-      }
-    }
-  }
-  targets.sort();
-  targets.dedup();
-  targets
-}
-
-fn collect_project_map(prefix: &str) -> Vec<SketchNamespace> {
-  let program_code = PROGRAM_CODE_DATA.read().ok();
-  let Some(program_code) = program_code else {
-    return vec![];
-  };
-
-  let mut items = vec![];
-  for (ns, file) in program_code.iter() {
-    if !ns.starts_with(prefix) {
-      continue;
-    }
-    let mut highlights: Vec<String> = file
-      .defs
-      .keys()
-      .filter(|def| {
-        def.starts_with('*')
-          || def.ends_with('!')
-          || def.contains("comp-")
-          || def.contains("main")
-          || def.contains("dispatch")
-          || def.contains("updater")
-      })
-      .map(|def| def.to_string())
-      .collect();
-    highlights.sort();
-    if highlights.len() > 8 {
-      highlights.truncate(7);
-      highlights.push("…".into());
-    }
-    items.push(SketchNamespace {
-      ns: ns.to_string(),
-      highlights,
-    });
-  }
-  items.sort_by(|a, b| a.ns.cmp(&b.ns));
-  items
-}
-
-fn render_program_sketch(sketch: &ProgramSketch, result: &EffectsGraphResult) -> String {
-  let mut out = String::new();
-  out.push_str(&format!("# Program Sketch: `{}`\n\n", sketch.entry));
-  out.push_str(&format!("**Role:** {}\n", sketch.role));
-  out.push_str(&format!("**Scope:** `{}*` (project definitions)\n\n", sketch.project_prefix));
-
-  render_structure_section(result, &mut out);
-
-  if !sketch.namespaces.is_empty() {
-    out.push_str("## Project map\n\n");
-    for item in &sketch.namespaces {
-      if item.highlights.is_empty() {
-        out.push_str(&format!("- `{}`\n", item.ns));
-      } else {
-        out.push_str(&format!("- `{}` — {}\n", item.ns, item.highlights.join(", ")));
-      }
-    }
-    out.push('\n');
-  }
-
-  out.push_str("## State (persist)\n\n");
-  if sketch.atoms.is_empty() {
-    out.push_str("_No project-level atoms (`*name`) found._\n\n");
-  } else {
-    for atom in &sketch.atoms {
-      let type_suffix = atom.type_hint.as_ref().map(|hint| format!(" — {hint}")).unwrap_or_default();
-      out.push_str(&format!("- `{}` ({}){}\n", atom.name, atom.ns, type_suffix));
-    }
-    out.push('\n');
-  }
-
-  out.push_str("## Lifecycle (entry wiring)\n\n");
-  if sketch.lifecycle.is_empty() {
-    out.push_str("_No direct lifecycle hooks detected. Try `--max-depth 2`._\n\n");
-  } else {
-    for hook in &sketch.lifecycle {
-      out.push_str(&format!("- `{}` — {}\n", hook.label, hook.role));
-    }
-    out.push('\n');
-  }
-
-  out.push_str("## Effects (channels)\n\n");
-  if sketch.channels.is_empty() {
-    out.push_str("_No effect channels detected at this depth._\n\n");
-  } else {
-    for (channel, items) in &sketch.channels {
-      out.push_str(&format!("- **{channel}:** {}\n", items.join(", ")));
-    }
-    out.push('\n');
-  }
-
-  if let Some(ref flow) = sketch.data_flow {
-    out.push_str("## Data flow (inferred)\n\n");
-    out.push_str(&format!("{flow}\n\n"));
-  }
-
-  if !sketch.expand.is_empty() {
-    out.push_str("## Expand\n\n");
-    for fqn in &sketch.expand {
-      out.push_str(&format!("- `cr ... analyze effects-graph --root {fqn} --max-depth 2`\n"));
-    }
-    out.push('\n');
-  }
-
-  out
-}
-
-fn render_structure_section(result: &EffectsGraphResult, out: &mut String) {
-  out.push_str("## Structure\n\n");
-  out.push_str("_Call tree from entry (same reachability as `cr analyze call-graph`)._\n\n");
-  out.push_str("```\n");
-
-  let hints = collect_effect_hints(&result.tree);
-  if let Ok(call) = build_call_tree(result) {
-    render_call_structure_node(&call.tree, out, "", true, &hints);
-  } else {
-    render_effects_structure_node(&result.tree, out, "", true);
-  }
-
-  out.push_str("```\n\n");
-}
-
-fn build_call_tree(result: &EffectsGraphResult) -> Result<crate::call_tree::CallTreeResult, String> {
-  let parts: Vec<&str> = result.entry.split('/').collect();
-  if parts.len() != 2 {
-    return Err(format!("invalid entry: {}", result.entry));
-  }
-  analyze_call_graph(
-    parts[0],
-    parts[1],
-    result.display.include_core,
-    result.display.max_depth_limit,
-    false,
-    None,
-    result.display.ns_prefix.clone(),
-  )
-}
-
-fn collect_effect_hints(tree: &EffectsGraphNode) -> HashMap<String, String> {
-  let mut hints = HashMap::new();
-  collect_effect_hints_walk(tree, &mut hints);
-  hints
-}
-
-fn collect_effect_hints_walk(node: &EffectsGraphNode, hints: &mut HashMap<String, String>) {
-  let hint = structure_effect_hint(node);
-  if !hint.is_empty() {
-    hints.insert(node.fqn.clone(), hint);
-  }
-  for child in &node.children {
-    collect_effect_hints_walk(child, hints);
-  }
-}
-
-fn render_call_structure_node(
-  node: &CallTreeNode,
-  out: &mut String,
-  prefix: &str,
-  is_last: bool,
-  hints: &HashMap<String, String>,
-) {
-  let connector = if is_last { "└── " } else { "├── " };
-  let marker = if node.circular {
-    " [circular]"
-  } else if node.seen {
-    " [seen]"
-  } else if node.def.starts_with('*') {
-    " [state]"
-  } else if node.source == "core" {
-    " [core]"
-  } else if node.source == "external" {
-    " [dep]"
-  } else {
-    ""
-  };
-  let effect = hints.get(&node.fqn).map(|h| format!("  · {h}")).unwrap_or_default();
-  out.push_str(&format!("{prefix}{connector}{}{marker}{effect}\n", node.fqn));
-
-  let child_prefix = format!("{prefix}{}   ", if is_last { " " } else { "│" });
-  let child_count = node.calls.len();
-  for (idx, child) in node.calls.iter().enumerate() {
-    let is_last_child = idx + 1 == child_count;
-    render_call_structure_node(child, out, &child_prefix, is_last_child, hints);
-  }
-}
-
-fn render_effects_structure_node(node: &EffectsGraphNode, out: &mut String, prefix: &str, is_last: bool) {
-  if node.seen {
-    let connector = if is_last { "└── " } else { "├── " };
-    out.push_str(&format!("{prefix}{connector}{} [seen]\n", node.fqn));
-    return;
-  }
-
-  let connector = if is_last { "└── " } else { "├── " };
-  let effects = structure_effect_hint(node);
-  let effect = if effects.is_empty() {
-    String::new()
-  } else {
-    format!("  · {effects}")
-  };
-  out.push_str(&format!("{prefix}{connector}{}{effect}\n", node.fqn));
-
-  let child_prefix = format!("{prefix}{}   ", if is_last { " " } else { "│" });
-  if node.circular {
-    out.push_str(&format!("{child_prefix}└── [circular]\n"));
-    return;
-  }
-
-  let child_count = node.children.len();
-  for (idx, child) in node.children.iter().enumerate() {
-    let is_last_child = idx + 1 == child_count;
-    render_effects_structure_node(child, out, &child_prefix, is_last_child);
-  }
-}
-
-fn structure_effect_hint(node: &EffectsGraphNode) -> String {
-  let mut kinds: Vec<String> = node.effects.iter().map(|e| e.kind.clone()).collect();
-  kinds.sort();
-  kinds.dedup();
-  if kinds.is_empty() {
-    return String::new();
-  }
-  if kinds.len() > 3 {
-    format!("{}, +{}", kinds[..3].join(", "), kinds.len() - 3)
-  } else {
-    kinds.join(", ")
-  }
-}
-
-#[derive(Debug, Clone)]
-struct ChildTarget {
-  fqn: String,
-  analyzed: bool,
-  doc: Option<String>,
-}
-
 fn is_meaningful_call_target(ns: &str, def: &str, include_core: bool) -> bool {
   if matches!(
     def,
@@ -1778,22 +850,11 @@ fn is_analyzed_node(node: &EffectsGraphNode) -> bool {
     || !node.transform.control.is_empty()
     || !node.children.is_empty()
     || node.circular
+    || node.depth_exceeded
 }
 
 fn count_subgraph_nodes(tree: &EffectsGraphNode) -> usize {
   collect_analyzed_subgraphs(tree).len()
-}
-
-fn collect_child_targets(tree: &EffectsGraphNode) -> Vec<ChildTarget> {
-  tree
-    .children
-    .iter()
-    .map(|child| ChildTarget {
-      fqn: child.fqn.clone(),
-      analyzed: is_analyzed_node(child) && !child.seen,
-      doc: child.doc.clone(),
-    })
-    .collect()
 }
 
 fn collect_analyzed_subgraphs(tree: &EffectsGraphNode) -> Vec<&EffectsGraphNode> {
@@ -1807,6 +868,264 @@ fn collect_analyzed_subgraphs(tree: &EffectsGraphNode) -> Vec<&EffectsGraphNode>
     queue.extend(node.children.iter());
   }
   nodes
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STE tree format — per-function State / Transform / Effect decomposition
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Render per-function STE decomposition tree.
+pub fn format_as_ste_tree(result: &EffectsGraphResult) -> String {
+  let mut out = String::new();
+  out.push_str(&format!("# Effects Graph: `{}`\n\n", result.entry));
+
+  let depth_limited = count_depth_limited(&result.tree);
+  if depth_limited > 0 {
+    out.push_str(&format!(
+      "Max depth: {}  ({} nodes truncated; rerun with larger --max-depth to expand)\n\n",
+      result.display.max_depth_limit, depth_limited
+    ));
+  }
+
+  render_ste_node(&result.tree, &mut out, "", true);
+  out
+}
+
+fn count_depth_limited(node: &EffectsGraphNode) -> usize {
+  let mut count = if node.depth_exceeded { 1 } else { 0 };
+  for child in &node.children {
+    count += count_depth_limited(child);
+  }
+  count
+}
+
+fn render_ste_node(node: &EffectsGraphNode, out: &mut String, prefix: &str, is_last: bool) {
+  if node.seen {
+    return;
+  }
+
+  let connector = if is_last { "└── " } else { "├── " };
+  let (kind_label, is_collapsed) = ste_kind_label(node);
+  let summary = node_transform_summary(node);
+
+  out.push_str(&format!("{prefix}{connector}{}  {kind_label}\n", node.fqn));
+
+  let child_prefix = format!("{prefix}{}   ", if is_last { " " } else { "│" });
+
+  if is_collapsed {
+    if !summary.is_empty() {
+      out.push_str(&format!("{child_prefix}({summary})\n"));
+    }
+    return;
+  }
+
+  render_ste_state(node, out, &child_prefix);
+  render_ste_transform(node, out, &child_prefix);
+  render_ste_effects(node, out, &child_prefix);
+
+  if !node.children.is_empty() {
+    out.push_str(&format!("{child_prefix}│\n"));
+  }
+  for (idx, child) in node.children.iter().enumerate() {
+    let is_last_child = idx + 1 == node.children.len();
+    render_ste_node(child, out, &child_prefix, is_last_child);
+  }
+}
+
+fn ste_kind_label(node: &EffectsGraphNode) -> (&'static str, bool) {
+  if node.depth_exceeded {
+    ("[depth limit ↑]", true)
+  } else if node.circular {
+    ("[circular]", true)
+  } else if node.source == "core" {
+    ("[core]", true)
+  } else if !is_analyzed_node(node) {
+    ("[no analysis]", true)
+  } else if node.def.starts_with('*') {
+    ("[state]", false)
+  } else if node.effects.is_empty() {
+    ("[transform]", false)
+  } else {
+    ("[program]", false)
+  }
+}
+
+fn node_transform_summary(node: &EffectsGraphNode) -> String {
+  let mut parts: Vec<String> = vec![];
+
+  let doc_line = node.doc.as_ref().and_then(|doc| {
+    let line = doc.lines().next().unwrap_or(doc).trim();
+    if line.is_empty() { None } else { Some(line.to_string()) }
+  });
+
+  if let Some(ref line) = doc_line {
+    parts.push(line.clone());
+  }
+
+  let summary = &node.transform.summary;
+  if !summary.is_empty() && summary != "transform" && doc_line.as_ref() != Some(summary) {
+    parts.push(summary.clone());
+  }
+
+  if !node.effects.is_empty() {
+    let kinds: Vec<String> = node.effects.iter().map(|e| e.kind.clone()).collect();
+    let mut unique: Vec<String> = kinds;
+    unique.sort();
+    unique.dedup();
+    let effect_part = format!("effects: {}", unique.join(", "));
+    if !parts.iter().any(|p| p.contains("effects:")) {
+      parts.push(effect_part);
+    }
+  }
+
+  let joined = parts.join("; ");
+  if joined.len() > 120 {
+    format!("{}…", &joined[..117])
+  } else {
+    joined
+  }
+}
+
+fn render_ste_state(node: &EffectsGraphNode, out: &mut String, prefix: &str) {
+  if node.state.is_empty() {
+    return;
+  }
+  out.push_str(&format!("{prefix}├── State\n"));
+  let item_prefix = format!("{prefix}│   ");
+
+  let mut params: Vec<&StateItem> = vec![];
+  let mut atoms: Vec<&StateItem> = vec![];
+  let mut returns: Vec<&StateItem> = vec![];
+  let mut watches: Vec<&StateItem> = vec![];
+  let mut others: Vec<&StateItem> = vec![];
+
+  for item in &node.state {
+    match item.kind.as_str() {
+      "param" => params.push(item),
+      "atom" | "atom-read" | "atom-write" => atoms.push(item),
+      "return" => returns.push(item),
+      "watch" => watches.push(item),
+      _ => others.push(item),
+    }
+  }
+
+  let mut all_items: Vec<String> = vec![];
+  for item in &params {
+    all_items.push(format!("param    {}", ste_state_detail(item)));
+  }
+  for item in &atoms {
+    all_items.push(format!("atom     {}", ste_state_detail(item)));
+  }
+  for item in &returns {
+    all_items.push(format!("return   {}", ste_state_detail(item)));
+  }
+  for item in &watches {
+    all_items.push(format!("watch    {}", ste_state_detail(item)));
+  }
+  for item in &others {
+    all_items.push(format!("{:<8} {}", item.kind, ste_state_detail(item)));
+  }
+  if all_items.is_empty() {
+    all_items.push("(none)".into());
+  }
+
+  for (idx, line) in all_items.iter().enumerate() {
+    let conn = if idx + 1 == all_items.len() { "└── " } else { "├── " };
+    out.push_str(&format!("{item_prefix}{conn}{line}\n"));
+  }
+}
+
+fn ste_state_detail(item: &StateItem) -> String {
+  if item.kind == "return" {
+    return item.type_hint.as_deref().unwrap_or(&item.name).to_string();
+  }
+  let mut s = item.name.clone();
+  if item.kind == "atom-write" {
+    s.push_str(" (write)");
+  } else if item.kind == "atom-read" {
+    s.push_str(" (read)");
+  } else if item.kind == "local-write" {
+    s.push_str(" (set!)");
+  }
+  if let Some(ref hint) = item.type_hint {
+    s.push_str(&format!("  :{hint}"));
+  }
+  s
+}
+
+fn render_ste_transform(node: &EffectsGraphNode, out: &mut String, prefix: &str) {
+  let has_control = !node.transform.control.is_empty();
+  let has_calls = !node.transform.calls.is_empty();
+  let summary = if node.transform.summary.is_empty() || node.transform.summary == "transform" {
+    String::new()
+  } else {
+    format!("  ({})", node.transform.summary)
+  };
+
+  if !has_control && !has_calls {
+    out.push_str(&format!("{prefix}├── Transform{summary}\n"));
+    out.push_str(&format!("{prefix}│   └── (no calls)\n"));
+    return;
+  }
+
+  out.push_str(&format!("{prefix}├── Transform{summary}\n"));
+  let item_prefix = format!("{prefix}│   ");
+  let mut lines: Vec<String> = vec![];
+
+  if has_control {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for item in &node.transform.control {
+      *counts.entry(item.as_str()).or_default() += 1;
+    }
+    let control_summary: Vec<String> = counts
+      .into_iter()
+      .map(|(name, count)| if count > 1 { format!("{name}×{count}") } else { name.to_string() })
+      .collect();
+    lines.push(format!("control: {}", control_summary.join(", ")));
+  }
+
+  for call in &node.transform.calls {
+    lines.push(format!("→ {call}"));
+  }
+
+  for (idx, line) in lines.iter().enumerate() {
+    let conn = if idx + 1 == lines.len() { "└── " } else { "├── " };
+    out.push_str(&format!("{item_prefix}{conn}{line}\n"));
+  }
+}
+
+fn render_ste_effects(node: &EffectsGraphNode, out: &mut String, prefix: &str) {
+  if node.effects.is_empty() {
+    out.push_str(&format!("{prefix}└── Effects\n"));
+    out.push_str(&format!("{prefix}    └── (none — pure transform)\n"));
+    return;
+  }
+
+  out.push_str(&format!("{prefix}└── Effects\n"));
+  let item_prefix = format!("{prefix}    ");
+
+  let mut seen: HashSet<String> = HashSet::new();
+  let mut unique_effects: Vec<&EffectItem> = vec![];
+  for effect in &node.effects {
+    if seen.insert(format!("{}::{}", effect.kind, effect.target)) {
+      unique_effects.push(effect);
+    }
+  }
+  unique_effects.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.target.cmp(&b.target)));
+
+  for (idx, effect) in unique_effects.iter().enumerate() {
+    let conn = if idx + 1 == unique_effects.len() {
+      "└── "
+    } else {
+      "├── "
+    };
+    let count_suffix = if effect.count > 1 {
+      format!(" (×{})", effect.count)
+    } else {
+      String::new()
+    };
+    out.push_str(&format!("{item_prefix}{conn}{:<14} {}{count_suffix}\n", effect.kind, effect.target));
+  }
 }
 
 pub fn format_as_json(result: &EffectsGraphResult) -> Result<String, String> {
@@ -1832,7 +1151,13 @@ mod tests {
   }
 
   #[test]
-  fn sketch_format_contains_core_sections() {
+  fn heuristic_detects_js_prefix() {
+    let kinds = heuristic_effect_kinds("js/console.log");
+    assert_eq!(kinds, vec!["interop/js".to_string()]);
+  }
+
+  #[test]
+  fn ste_tree_contains_core_sections() {
     let result = EffectsGraphResult {
       entry: "app.main/main!".into(),
       tree: EffectsGraphNode {
@@ -1860,9 +1185,11 @@ mod tests {
           children: vec![],
           circular: false,
           seen: false,
+          depth_exceeded: false,
         }],
         circular: false,
         seen: false,
+        depth_exceeded: false,
       },
       stats: EffectsGraphStats {
         reachable_count: 2,
@@ -1879,88 +1206,11 @@ mod tests {
       },
     };
 
-    let text = format_as_sketch(&result);
-    assert!(text.contains("# Program Sketch"));
-    assert!(text.contains("## Structure"));
+    let text = format_as_ste_tree(&result);
+    assert!(text.contains("# Effects Graph"));
     assert!(text.contains("app.main/main!"));
-    assert!(text.contains("## State (persist)"));
-    assert!(text.contains("## Lifecycle (entry wiring)"));
-    assert!(text.contains("## Effects (channels)"));
-    assert!(text.contains("dispatch!"));
-    assert!(text.contains("Console"));
-  }
-
-  #[test]
-  fn mermaid_birdview_shows_state_transform_effect_links() {
-    let result = EffectsGraphResult {
-      entry: "app.main/main!".into(),
-      tree: EffectsGraphNode {
-        ns: "app.main".into(),
-        def: "main!".into(),
-        fqn: "app.main/main!".into(),
-        doc: None,
-        source: "project".into(),
-        state: vec![],
-        transform: TransformInfo::default(),
-        effects: vec![EffectItem {
-          kind: "console".into(),
-          target: "println".into(),
-          count: 1,
-        }],
-        children: vec![EffectsGraphNode {
-          ns: "app.main".into(),
-          def: "helper".into(),
-          fqn: "app.main/helper".into(),
-          doc: None,
-          source: "project".into(),
-          state: vec![StateItem {
-            kind: "param".into(),
-            name: "data".into(),
-            type_hint: Some(":map".into()),
-          }],
-          transform: TransformInfo::default(),
-          effects: vec![EffectItem {
-            kind: "io/read".into(),
-            target: "read-file".into(),
-            count: 1,
-          }],
-          children: vec![],
-          circular: false,
-          seen: false,
-        }],
-        circular: false,
-        seen: false,
-      },
-      stats: EffectsGraphStats {
-        reachable_count: 2,
-        effect_sites: 2,
-        state_items: 1,
-        max_depth: 1,
-        subgraph_count: 1,
-      },
-      display: EffectsGraphDisplayMeta {
-        max_depth_limit: 0,
-        detail: "summary".into(),
-        include_core: false,
-        ns_prefix: None,
-      },
-    };
-
-    let mermaid = format_as_mermaid(&result);
-    assert!(mermaid.contains("```mermaid"));
-    assert!(mermaid.contains("stateNode"));
-    assert!(mermaid.contains("transformNode"));
-    assert!(mermaid.contains("effectNode"));
-    assert!(mermaid.contains("data&lt;br/&gt;:map") || mermaid.contains("data<br/>:map"));
-    assert!(mermaid.contains("-->|call|"));
-    assert!(mermaid.contains("==>|effect|"));
-    assert!(mermaid.contains("console"));
-    assert!(mermaid.contains("io/read"));
-  }
-
-  #[test]
-  fn heuristic_detects_js_prefix() {
-    let kinds = heuristic_effect_kinds("js/console.log");
-    assert_eq!(kinds, vec!["interop/js".to_string()]);
+    assert!(text.contains("console"));
+    assert!(text.contains("println"));
+    assert!(text.contains("[program]"));
   }
 }

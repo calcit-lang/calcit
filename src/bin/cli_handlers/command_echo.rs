@@ -297,7 +297,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "2",
-      value "format" => &opts.format; default "sketch",
+      value "format" => &opts.format; default "tree",
       value "detail" => &opts.detail; default "summary"
     ),
     AnalyzeSubcommand::JsEscape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),

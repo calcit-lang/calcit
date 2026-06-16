@@ -254,11 +254,11 @@ pub struct EffectsGraphCommand {
   /// include core/library calls in the output
   #[argh(switch)]
   pub include_core: bool,
-  /// maximum depth to traverse (0 = unlimited, 2 = recommended for sketch)
+  /// maximum depth to traverse (0 = unlimited, 2 = default)
   #[argh(option, default = "2")]
   pub max_depth: usize,
-  /// output format: "sketch" (default, birdview text), "mermaid", "tree", or "json"
-  #[argh(option, default = "String::from(\"sketch\")")]
+  /// output format: "tree" (default) or "json"
+  #[argh(option, default = "String::from(\"tree\")")]
   pub format: String,
   /// transform compression level: summary, full, or minimal
   #[argh(option, default = "String::from(\"summary\")")]
