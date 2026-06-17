@@ -40,7 +40,7 @@ aliases:
 
 ```bash
 cr --version
-caps outdated --yes
+caps upgrade --all
 caps
 corepack enable
 corepack prepare yarn@4.12.0 --activate
@@ -188,7 +188,7 @@ yarn <script-name>
 建议至少覆盖以下 6 项：
 
 1. `cr --version`
-2. `caps outdated --yes`（确认无遗漏项或已按预期处理）
+2. `caps upgrade --all`（确认无遗漏项或已按预期处理）
 3. `yarn install --immutable`
 4. `cr js`（如果是 js 项目）
 5. CI 中的入口/测试命令（`--entry` 或 `--init-fn` 链路）
