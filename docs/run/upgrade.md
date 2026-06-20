@@ -60,6 +60,8 @@ cr --version
 
 说明：一般本机已经是较新版本，但升级前先确认一遍，避免后续误判。
 
+> ⚠️ 注意 CI 中 `calcit-lang/setup-cr` 的版本：旧版本（如 `0.0.8`）安装的 `cr` 可能不识别 `calcit.cirru`。升级后若 CI 报 `"compact.cirru does not exist"`，请升级 `setup-cr` 版本。最新版本请查阅 [setup-cr releases](https://github.com/calcit-lang/setup-cr/releases)。
+
 ### Step B：先对齐项目版本与 Node 工具链
 
 重点先检查并对齐以下几处：
@@ -168,9 +170,13 @@ yarn <script-name>
     corepack prepare yarn@4.12.0 --activate
     yarn --version
 
+- uses: calcit-lang/setup-cr@0.0.9
+
 - name: Install deps
   run: caps --ci && yarn install --immutable
 ```
+
+> ⚠️ `calcit-lang/setup-cr` 的版本决定了 CI 中安装的 `cr` 版本。旧版本（如 `0.0.8`）可能不识别 `calcit.cirru`，且不支持新版类型检查。建议保持 `@0.0.9` 或更新。最新版本请查阅 [setup-cr releases](https://github.com/calcit-lang/setup-cr/releases)。不要在 `caps --ci` 之前运行 `cr` 命令，否则会使用默认旧版模块缓存。
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
