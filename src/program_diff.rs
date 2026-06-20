@@ -114,7 +114,7 @@ pub struct CirruEditAdvice {
   pub strategy: CirruEditStrategy,
 }
 
-pub fn analyze_program_diff(git_ref: &str, input_path: &str) -> Result<ProgramDiffResult, String> {
+pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &str) -> Result<ProgramDiffResult, String> {
   let cwd = env::current_dir().map_err(|e| format!("Failed to read current directory: {e}"))?;
   let input_abs = resolve_input_path(&cwd, input_path)?;
   let repo_search_dir = input_abs.parent().unwrap_or(cwd.as_path());
@@ -123,22 +123,47 @@ pub fn analyze_program_diff(git_ref: &str, input_path: &str) -> Result<ProgramDi
 
   let snapshot_path = repo_rel_path.to_string_lossy().to_string();
 
-  let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;
-  let current_snapshot = parse_snapshot(&current_content, input_path, &snapshot_path)?;
+  match base_ref {
+    Some(base) => {
+      // Two-ref mode: both sides from git history
+      let base_content = git_show_file(&repo_root, base, &repo_rel_path)?;
+      let base_label = format!("{base}:{}", repo_rel_path.display());
+      let base_snapshot = parse_snapshot(&base_content, &base_label, &snapshot_path)?;
 
-  let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
-  let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
-  let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+      let target_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
+      let target_label = format!("{git_ref}:{}", repo_rel_path.display());
+      let target_snapshot = parse_snapshot(&target_content, &target_label, &snapshot_path)?;
 
-  let root = diff_snapshot(&historical_snapshot, &current_snapshot);
-  let stats = collect_stats(&root);
+      let root = diff_snapshot(&base_snapshot, &target_snapshot);
+      let stats = collect_stats(&root);
 
-  Ok(ProgramDiffResult {
-    git_ref: git_ref.to_string(),
-    file_path: repo_rel_path.to_string_lossy().to_string(),
-    root,
-    stats,
-  })
+      Ok(ProgramDiffResult {
+        git_ref: format!("{base}..{git_ref}"),
+        file_path: repo_rel_path.to_string_lossy().to_string(),
+        root,
+        stats,
+      })
+    }
+    None => {
+      // Single-ref mode: working tree vs git ref (backward-compatible)
+      let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;
+      let current_snapshot = parse_snapshot(&current_content, input_path, &snapshot_path)?;
+
+      let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
+      let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
+      let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+
+      let root = diff_snapshot(&historical_snapshot, &current_snapshot);
+      let stats = collect_stats(&root);
+
+      Ok(ProgramDiffResult {
+        git_ref: git_ref.to_string(),
+        file_path: repo_rel_path.to_string_lossy().to_string(),
+        root,
+        stats,
+      })
+    }
+  }
 }
 
 pub fn format_program_diff(result: &ProgramDiffResult) -> String {

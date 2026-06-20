@@ -310,13 +310,18 @@ pub struct CountCallsCommand {
   pub sort: String,
 }
 
-/// compare current snapshot against a Git ref with structured tree diff; use --def to narrow to one definition
+/// compare current snapshot (or one definition) against a Git ref with structured tree diff;
+/// use --base to diff two arbitrary refs from git history
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "program-diff")]
 pub struct ProgramDiffCommand {
   /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
   #[argh(positional)]
   pub git_ref: String,
+  /// base git reference for two-ref diff (compare base vs positional ref, both from git history).
+  /// When omitted, compares working tree against the positional ref.
+  #[argh(option)]
+  pub base: Option<String>,
   /// narrow diff to a single definition in format ns/def
   #[argh(option)]
   pub def: Option<String>,

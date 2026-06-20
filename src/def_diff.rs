@@ -16,7 +16,7 @@ pub struct DefDiffResult {
   pub stats: ProgramDiffStats,
 }
 
-pub fn analyze_def_diff(target: &str, git_ref: &str, input_path: &str) -> Result<DefDiffResult, String> {
+pub fn analyze_def_diff(target: &str, git_ref: &str, base_ref: Option<&str>, input_path: &str) -> Result<DefDiffResult, String> {
   let cwd = env::current_dir().map_err(|e| format!("Failed to read current directory: {e}"))?;
   let input_abs = resolve_input_path(&cwd, input_path)?;
   let repo_search_dir = input_abs.parent().unwrap_or(cwd.as_path());
@@ -24,19 +24,37 @@ pub fn analyze_def_diff(target: &str, git_ref: &str, input_path: &str) -> Result
   let repo_rel_path = repo_relative_path(&input_abs, &repo_root)?;
   let snapshot_path = repo_rel_path.to_string_lossy().to_string();
 
-  let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;
-  let current_snapshot = parse_snapshot(&current_content, input_path, &snapshot_path)?;
-
-  let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
-  let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
-  let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
-
   let (ns, def) = extract_ns_def(target)?;
-  let old_entry = lookup_code_entry(&historical_snapshot, &ns, &def);
-  let new_entry = lookup_code_entry(&current_snapshot, &ns, &def);
+
+  let (old_snapshot, new_snapshot, ref_label) = match base_ref {
+    Some(base) => {
+      let base_content = git_show_file(&repo_root, base, &repo_rel_path)?;
+      let base_label = format!("{base}:{}", repo_rel_path.display());
+      let base_snapshot = parse_snapshot(&base_content, &base_label, &snapshot_path)?;
+
+      let target_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
+      let target_label = format!("{git_ref}:{}", repo_rel_path.display());
+      let target_snapshot = parse_snapshot(&target_content, &target_label, &snapshot_path)?;
+
+      (base_snapshot, target_snapshot, format!("{base}..{git_ref}"))
+    }
+    None => {
+      let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;
+      let current_snapshot = parse_snapshot(&current_content, input_path, &snapshot_path)?;
+
+      let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
+      let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
+      let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+
+      (historical_snapshot, current_snapshot, git_ref.to_string())
+    }
+  };
+
+  let old_entry = lookup_code_entry(&old_snapshot, &ns, &def);
+  let new_entry = lookup_code_entry(&new_snapshot, &ns, &def);
 
   if old_entry.is_none() && new_entry.is_none() {
-    return Err(format!("Definition not found in current file or ref '{git_ref}': {target}"));
+    return Err(format!("Definition not found in file or refs: {target}"));
   }
 
   let mut root = diff_code_entry(&def, old_entry, new_entry);
@@ -45,7 +63,7 @@ pub fn analyze_def_diff(target: &str, git_ref: &str, input_path: &str) -> Result
 
   Ok(DefDiffResult {
     target: target.to_string(),
-    git_ref: git_ref.to_string(),
+    git_ref: ref_label,
     file_path: repo_rel_path.to_string_lossy().to_string(),
     root,
     stats,
