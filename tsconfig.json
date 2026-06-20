@@ -4,6 +4,7 @@
     "outDir": "lib/",
     "allowSyntheticDefaultImports": true,
     "experimentalDecorators": true,
+    "declaration": true,
     "sourceMap": false,
     "noImplicitAny": true,
     "noImplicitThis": true,

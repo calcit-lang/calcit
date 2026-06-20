@@ -1,0 +1,5 @@
+- `tsconfig.json` 添加 `declaration: true`，使 `yarn compile` 生成 `.d.mts` 类型声明文件
+- `yarn compile` 后 `lib/` 中与 `.mjs` 一一对应生成 18 个 `.d.mts` 文件
+- `.npmignore` 不排除 `lib/`，这些声明文件在 npm publish 时会被包含
+- 对 hovenia-editor：移除手动 `calcit-procs.d.ts`，改用上游生成的 `.d.mts`
+- 本地验证：`cargo fmt` `cargo clippy` `yarn compile` `cargo test` `yarn check-all` 全部通过
