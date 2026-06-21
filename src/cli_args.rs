@@ -532,6 +532,9 @@ pub struct QuerySearchCommand {
   /// exact match: only match nodes equal to the pattern (default is contains-match)
   #[argh(switch)]
   pub exact: bool,
+  /// regex match: treat pattern as a regular expression for leaf node matching
+  #[argh(switch, long = "regex")]
+  pub regex: bool,
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
@@ -1405,9 +1408,12 @@ pub struct TreeTargetReplaceCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// pattern to search for (exact match on leaf nodes)
-  #[argh(option, long = "pattern")]
+  /// pattern to search for (exact match on leaf nodes by default; use --regex for regex matching)
+  #[argh(option, short = 's', long = "pattern")]
   pub pattern: String,
+  /// treat pattern as a regular expression for matching leaf nodes
+  #[argh(switch, long = "regex")]
+  pub regex: bool,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
@@ -1465,9 +1471,12 @@ pub struct TreeReplaceLeafCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// pattern to search for (exact match on leaf nodes)
-  #[argh(option, long = "pattern")]
+  /// pattern to search for (exact match on leaf nodes by default; use --regex for regex matching)
+  #[argh(option, short = 's', long = "pattern")]
   pub pattern: String,
+  /// treat pattern as a regular expression for matching leaf nodes
+  #[argh(switch, long = "regex")]
+  pub regex: bool,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,

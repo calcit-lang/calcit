@@ -31,6 +31,7 @@ type RefResults = Vec<(String, String, String, Vec<Vec<usize>>, &'static str)>;
 struct SearchCommonOpts<'a> {
   filter: Option<&'a str>,
   loose: bool,
+  regex: bool,
   max_depth: usize,
   entry: Option<&'a str>,
   detail_offset: usize,
@@ -354,6 +355,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let common_opts = SearchCommonOpts {
         filter: opts.filter.as_deref(),
         loose: !opts.exact,
+        regex: opts.regex,
         max_depth: opts.max_depth,
         entry: opts.entry.as_deref(),
         detail_offset: opts.detail_offset,
@@ -364,6 +366,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let common_opts = SearchCommonOpts {
         filter: opts.filter.as_deref(),
         loose: !opts.exact,
+        regex: false,
         max_depth: opts.max_depth,
         entry: opts.entry.as_deref(),
         detail_offset: opts.detail_offset,
@@ -1740,7 +1743,14 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
       };
 
       let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
-      let results = search_leaf_nodes(&search_root, pattern, common_opts.loose, common_opts.max_depth, base_path);
+      let results = search_leaf_nodes(
+        &search_root,
+        pattern,
+        common_opts.loose,
+        common_opts.regex,
+        common_opts.max_depth,
+        base_path,
+      );
 
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
@@ -1967,7 +1977,14 @@ fn json_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
 
 /// Print search results with parent context
 /// Search for leaf nodes with exact or loose matching
-fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize, current_path: &[usize]) -> Vec<(Vec<usize>, Cirru)> {
+fn search_leaf_nodes(
+  node: &Cirru,
+  pattern: &str,
+  loose: bool,
+  regex: bool,
+  max_depth: usize,
+  current_path: &[usize],
+) -> Vec<(Vec<usize>, Cirru)> {
   let mut results = Vec::new();
 
   // Check depth limit
@@ -1975,10 +1992,25 @@ fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize,
     return results;
   }
 
+  // Compile regex once if needed
+  let regex_pattern = if regex {
+    match regex::Regex::new(pattern) {
+      Ok(r) => Some(r),
+      Err(e) => {
+        eprintln!("{} Invalid regex '{}': {}", "Error:".red().bold(), pattern, e);
+        return results;
+      }
+    }
+  } else {
+    None
+  };
+
   // Only match leaf nodes
   match node {
     Cirru::Leaf(s) => {
-      let matches = if loose {
+      let matches = if regex {
+        regex_pattern.as_ref().is_some_and(|r| r.is_match(s))
+      } else if loose {
         // Loose: check if leaf contains pattern
         s.to_lowercase().contains(&pattern.to_lowercase())
       } else {
@@ -1995,7 +2027,7 @@ fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize,
       for (i, item) in items.iter().enumerate() {
         let mut new_path = current_path.to_vec();
         new_path.push(i);
-        results.extend(search_leaf_nodes(item, pattern, loose, max_depth, &new_path));
+        results.extend(search_leaf_nodes(item, pattern, loose, regex, max_depth, &new_path));
       }
     }
   }

@@ -864,6 +864,72 @@ impl Calcit {
       Calcit::Symbol { .. } | Calcit::Local { .. } | Calcit::Import(..) | Calcit::Thunk(..) | Calcit::List(..)
     )
   }
+
+  /// a semantic description of what kind of Calcit value this is, for displaying in CLI echo
+  pub fn describe_type(&self) -> String {
+    use Calcit::*;
+    match self {
+      Nil => "**Calcit nil** (`nil`)".to_string(),
+      Bool(b) => format!("**Calcit boolean** (`{b}`)"),
+      Number(n) => format!("**Calcit number** (`{n}`)"),
+      Symbol { sym, .. } => {
+        format!("**Calcit symbol** (`{sym}`) — a bare identifier name")
+      }
+      Local(local) => format!("**Calcit local** (`{}`) — a local variable binding", local.sym),
+      Import(import) => format!(
+        "**Calcit import** (`{}/{}`) — a reference to imported definition",
+        import.ns, import.def
+      ),
+      Registered(alias) => {
+        format!("**Calcit registered** (`{alias}`) — a runtime-registered value")
+      }
+      Tag(tag) => {
+        format!("**Calcit keyword/tag** (`:{tag}`) — used as keys and identifiers")
+      }
+      Str(s) => {
+        format!("**Calcit string literal** (`|{s}`) — Cirru strings use `|` prefix")
+      }
+      Thunk(_) => "**Calcit thunk** — a delayed-evaluation expression".to_string(),
+      Ref(name, _) => format!("**Calcit atom/ref** (`{name}`) — a mutable state container"),
+      Tuple(tuple) => {
+        format!("**Calcit tuple** (`{}`) — a tagged union", tuple.tag)
+      }
+      Buffer(buf) => format!("**Calcit buffer** ({} bytes) — binary data", buf.len()),
+      BufList(items) => {
+        format!(
+          "**Calcit buffer list** ({} items) — mutable list",
+          items.lock().expect("BufList lock").len()
+        )
+      }
+      CirruQuote(code) => format!("**Calcit cirru-quoted** — quoted Cirru AST: `{code}`"),
+      Recur(xs) => format!("**Calcit recur** ({} args) — for tail recursion", xs.len()),
+      List(xs) => format!("**Calcit list** ({} items) — vector/list", xs.len()),
+      Set(xs) => format!("**Calcit set** ({} items) — unique values set", xs.size()),
+      Map(xs) => format!("**Calcit map** ({} pairs) — key-value map", xs.size()),
+      Record(record) => format!("**Calcit record** (`{}`) — typed struct", record.name()),
+      Struct(strukt) => format!("**Calcit struct** (`{}`) — struct definition", strukt.name),
+      Enum(enm) => format!("**Calcit enum** (`{}`) — enum/sum-type definition", enm.name()),
+      Trait(trt) => format!("**Calcit trait** (`{}`) — trait definition", trt.name),
+      Impl(imp) => format!("**Calcit impl** (`{}`) — trait implementation", imp.name),
+      Proc(p) => format!("**Calcit procedure** (`{p}`) — native function"),
+      Macro { id, .. } => format!("**Calcit macro** (`{id}`)"),
+      Fn { id, .. } => format!("**Calcit function** (`{id}`)"),
+      Syntax(syntax, _ns) => format!("**Calcit special syntax** (`{syntax}`)"),
+      Method(name, kind) => {
+        let kind_label = match kind {
+          crate::calcit::MethodKind::Access => "attribute access",
+          crate::calcit::MethodKind::InvokeNative => "native method call",
+          crate::calcit::MethodKind::Invoke(_) => "method call",
+          crate::calcit::MethodKind::TagAccess => "tag attribute access",
+          crate::calcit::MethodKind::AccessOptional => "optional attribute access",
+          crate::calcit::MethodKind::InvokeNativeOptional => "optional native method call",
+        };
+        format!("**Calcit method shorthand** (`.{name}`, {kind_label})")
+      }
+      RawCode(_, code) => format!("**Calcit raw code** (`{code}`) — inline code snippet"),
+      AnyRef(_) => "**Calcit any-ref** — reference to native Rust data".to_string(),
+    }
+  }
 }
 
 pub fn gen_core_id() -> Arc<str> {

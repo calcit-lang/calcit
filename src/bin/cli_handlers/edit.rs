@@ -29,8 +29,8 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
-  resolve_definition_lookup,
+  ERR_CODE_INPUT_REQUIRED, format_path, format_path_bracketed, json_value_to_cirru, parse_input_to_cirru, parse_path,
+  print_cli_warning_block, read_code_input, resolve_definition_lookup,
 };
 use super::tips::{Tips, command_guidance_enabled};
 
@@ -1275,23 +1275,25 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
   for (depth, &idx) in path.iter().enumerate() {
     match current {
       Cirru::Leaf(_) => {
-        let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        let partial = format_path(&path[..depth]);
         return Err(format!(
-          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: [{partial_path}]\n   Tip: Use 'cr tree show' to explore the tree structure"
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show -p {}' to explore the tree structure (use dot-separated indices, e.g. '2.1.0')",
+          format_path_bracketed(&path[..depth]),
+          partial,
         ));
       }
       Cirru::List(items) => {
         if idx >= items.len() {
-          let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-          let attempted_path = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+          let partial = format_path(&path[..depth]);
           return Err(format!(
-            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: [{}]\n   Valid path: [{}]\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show' with parent path to see available indices",
+            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: {}\n   Valid path up to: {}\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show -p {}' to see available children",
             idx,
             depth,
             items.len(),
-            attempted_path,
-            partial_path,
-            items.len().saturating_sub(1)
+            format_path_bracketed(path),
+            format_path_bracketed(&path[..depth]),
+            items.len().saturating_sub(1),
+            partial,
           ));
         }
         current = &items[idx];

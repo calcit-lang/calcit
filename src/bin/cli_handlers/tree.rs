@@ -606,7 +606,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
   // Find all leaf nodes that match the pattern
-  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
+  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, opts.regex, &[]);
 
   if matches.is_empty() {
     println!("{}", "No matches found.".yellow());
@@ -618,8 +618,12 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
 
   // Show preview of matches
   for (i, (path, old_value)) in matches.iter().enumerate().take(20) {
-    let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
-    println!("  {}. Path [{}]: {}", i + 1, path_str.dimmed(), format!("{old_value:?}").yellow());
+    println!(
+      "  {}. Path {}: {}",
+      i + 1,
+      format_path_bracketed(path).dimmed(),
+      format!("{old_value:?}").yellow()
+    );
   }
 
   if matches.len() > 20 {
@@ -643,9 +647,9 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
       }
       Err(e) => {
         eprintln!(
-          "{} Failed to replace at path [{}]: {}",
+          "{} Failed to replace at path {}: {}",
           "Warning:".yellow(),
-          path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          format_path_bracketed(&path),
           e
         );
       }
@@ -690,7 +694,7 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
   // Find all leaf nodes that match the pattern
-  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
+  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, opts.regex, &[]);
 
   if matches.is_empty() {
     return Err("No matches found for target pattern".to_string());
@@ -712,7 +716,7 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
     };
 
     for (i, (path, _)) in matches.iter().enumerate().take(10) {
-      let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
+      let path_str = format_path(path);
       println!(
         "  {}. {} {} -p '{}' {}",
         i + 1,
@@ -731,7 +735,11 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
       println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
     }
 
-    return Err(String::new());
+    return Err(format!(
+      "Found {} matches for pattern '{}'. Use a specific path with 'cr tree replace' to disambiguate (see suggestions above).",
+      matches.len(),
+      opts.pattern
+    ));
   }
 
   // Exactly one match
@@ -751,14 +759,33 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   Ok(())
 }
 
-/// Find all leaf nodes that exactly match the pattern
-fn find_all_leaf_matches(node: &Cirru, pattern: &str, current_path: &[usize]) -> Vec<(Vec<usize>, String)> {
+/// Find leaf nodes matching the pattern; uses exact match or regex based on flag
+fn find_all_leaf_matches(node: &Cirru, pattern: &str, regex: bool, current_path: &[usize]) -> Vec<(Vec<usize>, String)> {
   let mut results = Vec::new();
+
+  // Compile regex once if needed
+  let regex_pattern = if regex {
+    match regex::Regex::new(pattern) {
+      Ok(r) => Some(r),
+      Err(e) => {
+        eprintln!("{} Invalid regex '{}': {}", "Error:".red().bold(), pattern, e);
+        return results;
+      }
+    }
+  } else {
+    None
+  };
 
   match node {
     Cirru::Leaf(s) => {
-      // Exact match only
-      if s.as_ref() == pattern {
+      let matched = if regex {
+        regex_pattern.as_ref().is_some_and(|r| r.is_match(s))
+      } else {
+        // Exact match (default)
+        s.as_ref() == pattern
+      };
+
+      if matched {
         results.push((current_path.to_vec(), s.to_string()));
       }
     }
@@ -767,7 +794,7 @@ fn find_all_leaf_matches(node: &Cirru, pattern: &str, current_path: &[usize]) ->
       for (i, item) in items.iter().enumerate() {
         let mut new_path = current_path.to_vec();
         new_path.push(i);
-        results.extend(find_all_leaf_matches(item, pattern, &new_path));
+        results.extend(find_all_leaf_matches(item, pattern, regex, &new_path));
       }
     }
   }
@@ -843,10 +870,10 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
       deleted_index
     );
     println!(
-      "   Example: path [{},{}] is now [{},{}]",
-      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      "   Example: path {}.{} is now {}.{}",
+      format_path(&parent_path),
       deleted_index + 1,
-      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      format_path(&parent_path),
       deleted_index
     );
     println!(
@@ -1091,10 +1118,10 @@ fn generic_insert_handler<T: InsertOperation>(
           insert_index
         );
         println!(
-          "   Old path [{},{}] → New path [{},{}]",
-          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          "   Old path {}.{} → New path {}.{}",
+          format_path(&parent_path),
           insert_index,
-          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          format_path(&parent_path),
           insert_index + 1
         );
       }
