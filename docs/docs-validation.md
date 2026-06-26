@@ -31,10 +31,11 @@ Use it when changing:
 cr docs search quick-start
 cr docs search project-structure
 cr docs search structural-strategies
-cr docs search project structure
+cr docs search debugging
 
 # Summary mode on new files
 cr docs search "project structure" --summary
+cr docs search debugging --summary
 cr docs search structural --summary
 ```
 
