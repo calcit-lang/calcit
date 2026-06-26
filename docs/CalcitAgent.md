@@ -155,80 +155,15 @@ a
 
 #### 先理解启动文件：`calcit.cirru` 的 EDN 结构（兼容旧文件名 `compact.cirru`）
 
-Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compact.cirru`）看成一个“可执行项目快照”，其顶层 EDN 结构通常是：
+详细内容已移入 [run/project-structure.md](./run/project-structure.md)。概要：
 
-```cirru.no-check
-{}
-  :package |my-app
-  :configs $ {}
-    :init-fn |app.main/main!
-    :reload-fn |app.main/reload!
-    :modules $ [] |lilac/ |memof/
-  :entries $ {}
-    :test $ {}
-      :init-fn |app.test/main!
-      :reload-fn |app.test/reload!
-      :modules $ [] |calcit-test/
-  :files $ {}
-    |app.main $ %{} :FileEntry
-      :ns $ %{} :CodeEntry ...
-      :defs $ {}
-        |main! $ %{} :CodeEntry ...
-```
-
-字段职责可以快速记成：
-
-- `:package`：包名边界（影响哪些 namespace 允许被 `cr edit` 修改）。
-- `:configs`：默认运行入口（`cr` / `cr js` / `cr ir` 不指定 `--entry` 时使用）。
-- `:entries`：命名入口集合（`cr --entry <name>` 走这里）。
-- `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
-- `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `calcit.cirru`，并回退到 `compact.cirru`）。
-
-一般避免直接修改 `calcit.cirru` 文件（兼容旧文件名 `compact.cirru`）, 因为可能会导致格式出错整体无法解析, 如果确实认为需要修改, 要确保修改以后立即执行 `cr calcit.cirru edit format` 确保能够正确格式化.
-
-启动解析顺序（实操最常用）：
-
-1. `cr`：使用 `:configs` 的 `:init-fn` / `:reload-fn` / `:modules`。
-2. `cr --entry test`：切到 `:entries.test` 的配置运行。
-3. `cr --init-fn xxx`：覆盖入口函数（常用于测试链路临时指定）。
-
-建议每次开工先跑 3 条，建立项目运行心智：
-
-```bash
-cr query config
-cr query ns <target-ns>
-cr query defs <target-ns>
-```
+- `calcit.cirru` 是一个"可执行项目快照"，顶层字段包括 `:package`、`:configs`、`:entries`、`:files`、`:modules`
+- `deps.cirru` 声明外部模块依赖和期望的 Calcit 版本
+- 每次开工先跑 3 条：`cr query config`、`cr query ns <ns>`、`cr query defs <ns>`
 
 #### `deps.cirru` 与运行时快照文件的关系（简版）
 
-给 Agent 一个最小心智就够：
-
-- `deps.cirru`：声明“要下载哪些外部模块 + 期望的 calcit 版本”。
-- `calcit.cirru`（兼容旧文件名 `compact.cirru`）：声明“运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）”。
-
-常见升级动作（最少命令）：
-
-```bash
-# 1) 看本机 CLI 版本
-cr --version
-
-# 2) 看依赖是否有更新
-caps --ci outdated
-
-# 3) 直接更新 deps.cirru（无交互）
-caps --ci outdated --yes
-
-# 4) 下载/同步模块后再编译验证
-caps --ci
-cr js
-```
-
-实践里优先保证两件事一致：
-
-- `deps.cirru` 的 `:calcit-version` 与当前 `cr --version` 不要偏差太大；
-- `package.json` 的 `@calcit/procs` 与当前 Calcit 版本链路保持同一代。
-
+详细内容已移入 [run/project-structure.md](./run/project-structure.md)。
 #### 实操规则（最稳）
 
 凡是改到 `$` 或 `,`（尤其是从单行改成多行）时：
@@ -376,52 +311,7 @@ cr edit inc --changed <ns/def>
 
 ### 结构化策略（常用 5 招）
 
-下面是“尽量不手写大段代码”的编辑策略，按风险从低到高使用。
-
-#### 1) `cp`：复制现有子树，减少手输
-
-```bash
-cr tree cp app.main/demo --from '3.2' -p '4' --at after
-```
-
-- 含义：把路径 `3.2` 的子树复制到 `4` 后面。
-- 适合：先复用旧逻辑，再做小改。
-
-#### 2) `mv`：移动/重命名定义
-
-```bash
-cr edit mv app.main/old-name app.main/new-name
-```
-
-- 含义：定义级重命名或迁移。
-- 适合：整理命名或模块边界。
-
-#### 3) `wrap`：给目标套一层结构
-
-```bash
-cr tree wrap app.main/demo -p '5.2' -e 'when cond self'
-```
-
-- 含义：把原节点作为 `self` 嵌入新结构。
-- 适合：快速加 guard、日志、转换壳。
-
-#### 4) `raise`：提升子表达式，去掉中间壳
-
-```bash
-cr tree raise app.main/demo -p '5.2.1'
-```
-
-- 含义：用指定子节点替换其父节点。
-- 适合：去掉多余 `let/when/pipe` 包裹层。
-
-#### 5) `rewrite`：引用原节点做结构重排
-
-```bash
-cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
-```
-
-- 含义：在新模板中引用原节点（`.`）。
-- 适合：复杂重构但希望保持局部语义。
+详细内容已移入 [run/structural-strategies.md](./run/structural-strategies.md)。
 
 > 实战建议：先 `search-replace/cp/wrap`，再用 `rewrite`；每步后 `tree show` 复核。
 

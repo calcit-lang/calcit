@@ -80,7 +80,7 @@ Required fields:
 
 Use these categories for core docs unless there is a strong reason not to:
 
-- `run`: CLI execution, eval, query, edit-tree, docs commands, upgrade workflow
+- `run`: CLI execution, eval, query, edit-tree, docs commands, upgrade workflow, quick-start, project-structure, structural-strategies
 - `features`: language features such as traits, macros, records, tuples, enums, collections
 - `installation`: installation, modules directory, CI setup, runtime bindings
 - `data`: data literals and data structures, such as strings, EDN, persistent collections

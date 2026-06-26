@@ -24,7 +24,19 @@ Use it when changing:
 - resolver behavior
 - scope/module routing
 
-## Core Search Checks
+## New File Checks
+
+```bash
+# New split files should be searchable by alias and content
+cr docs search quick-start
+cr docs search project-structure
+cr docs search structural-strategies
+cr docs search project structure
+
+# Summary mode on new files
+cr docs search "project structure" --summary
+cr docs search structural --summary
+```
 
 ```bash
 cr docs search polymorphism
