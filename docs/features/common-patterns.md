@@ -1,5 +1,6 @@
 ---
 title: "Common Patterns"
+summary: "实用编程模式：集合操作、错误处理、字符串处理、状态管理、控制流（含 case-default/try/cond/pipe）、文件操作"
 scope: "core"
 kind: "guide"
 category: "features"
@@ -302,6 +303,22 @@ defn fibonacci (n)
       if (&<= n 0) a
         recur b (&+ a b) (&- n 1)
 ```
+
+### `case-default` (Multi-branch dispatch)
+
+`case-default` dispatches on a value against multiple patterns with a fallback:
+
+```cirru
+case-default action nil
+  :mount $ do
+    js/console.log |Mounted
+  :update $ do
+    js/console.log |Updated
+  :unmount $ do
+    js/console.log |Unmounted
+```
+
+The first argument is the value to match, the second is the default/fallback, followed by pattern-result pairs. Useful for lifecycle hooks, event handling, and state machine transitions.
 
 ## Working with Files
 

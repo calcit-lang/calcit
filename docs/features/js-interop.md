@@ -8,6 +8,11 @@ aliases:
   - "js interop"
   - "promise"
   - "js-await"
+entry_for:
+  - "js-await"
+  - "hint-fn"
+  - ".!"
+  - ".-"
 ---
 # JavaScript Interop
 

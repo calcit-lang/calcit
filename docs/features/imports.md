@@ -1,11 +1,15 @@
 ---
 title: "Imports"
+summary: "命名空间导入语法：:require、:refer、:as、:default，以及 cr edit add-import/imports 命令管理"
 scope: "core"
 kind: "reference"
 category: "features"
 aliases:
   - "namespace imports"
   - "require"
+  - "import module"
+  - "import namespace"
+  - "add-import"
   - "refer"
   - "module imports"
   - "add import"
