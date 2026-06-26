@@ -1,5 +1,6 @@
 ---
 title: "Run in Eval mode"
+summary: "使用 cr eval 求值代码片段、检查类型、加载外部模块。涵盖 --dep、--check-only、assert-type 等用法"
 scope: "core"
 kind: "reference"
 category: "run"

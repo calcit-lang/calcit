@@ -70,7 +70,8 @@ The same schema is also supported for:
 
 Required fields:
 
-- `title`: user-facing page title
+- `title`: user-facing page title (required)
+- `summary`: one-sentence description for quick scanning (recommended)
 - `scope`: `core` or `module`
 - `kind`: one of `hub`, `guide`, `reference`, `spec`, `agent`
 - `category`: one value from the category registry below
@@ -143,6 +144,21 @@ Examples:
 ```bash
 cr docs search render --module respo.calcit
 ```
+
+- `cr docs search <keyword>` — searches doc body + frontmatter metadata (title, aliases, entry_for, summary)
+- `cr docs search <keyword> --summary` — shows only doc title + summary (no content snippets), ideal for LLM first-pass filtering
+- `cr docs search <keyword> -f <filename>` — filter by filename
+- `cr docs search <keyword> --module <name>` — search module docs instead of core
+
+### `summary` field (recommended)
+
+A one-sentence description of the document's purpose and content. Used by `--summary` mode and search ranking.
+
+```yaml
+summary: "How to use cr tree commands to show, replace, delete, and restructure AST nodes by path or content"
+```
+
+Search scoring: exact match 200, contains match 130.
 
 ## Read Behavior
 

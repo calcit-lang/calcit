@@ -1,5 +1,6 @@
 ---
 title: "Calcit Agent 快速实践（局部查看与编辑优先）"
+summary: "高频工作流速查表：查询定位、结构化编辑、最小改动模板。包含 Cirru 语法、$ 和 , 操作符、cr tree/edit 命令的路径操作"
 scope: "core"
 kind: "agent"
 category: "run"

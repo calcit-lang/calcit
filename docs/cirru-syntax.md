@@ -1,5 +1,6 @@
 ---
 title: "Cirru Syntax Essentials"
+summary: "Cirru 语法基础：缩进嵌套、$ 操作符、, 操作符、字符串字面量、集合语法"
 scope: "core"
 kind: "reference"
 category: "syntax"

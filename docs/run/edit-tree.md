@@ -1,5 +1,6 @@
 ---
 title: "CLI Code Editing (edit & tree)"
+summary: "如何使用 cr tree show/replace/search-replace/delete/batch-delete/insert/wrap/rewrite 查看和修改 AST 节点"
 scope: "core"
 kind: "reference"
 category: "run"

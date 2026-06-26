@@ -1,6 +1,5 @@
 ---
-title: "Querying Definitions"
-scope: "core"
+title: "Querying Definitions"summary: "使用 cr query defs/def/search/find/usages/search-expr 查找和浏览定义"scope: "core"
 kind: "reference"
 category: "run"
 aliases:

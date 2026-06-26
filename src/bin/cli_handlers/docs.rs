@@ -50,6 +50,7 @@ pub struct GuideDoc {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct GuideDocFrontmatter {
   title: Option<String>,
+  summary: Option<String>,
   scope: Option<String>,
   kind: Option<String>,
   category: Option<String>,
@@ -129,7 +130,13 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     DocsSubcommand::RemoteLibs(opts) => handle_libs_command(&calcit::cli_args::LibsCommand {
       subcommand: opts.subcommand.clone(),
     }),
-    DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref(), opts.module.as_deref()),
+    DocsSubcommand::Search(opts) => handle_search(
+      &opts.keyword,
+      opts.context,
+      opts.filename.as_deref(),
+      opts.module.as_deref(),
+      opts.summary,
+    ),
     DocsSubcommand::List(opts) => handle_list(opts.module.as_deref()),
     DocsSubcommand::Sections(opts) => handle_sections(&opts.filename, opts.module.as_deref(), opts.with_lines),
     DocsSubcommand::Read(opts) => handle_read(
@@ -343,6 +350,7 @@ fn parse_doc_frontmatter(raw: &str) -> (GuideDocFrontmatter, String) {
         active_list = None;
         match key {
           "title" => frontmatter.title = Some(trim_frontmatter_value(value)),
+          "summary" => frontmatter.summary = Some(trim_frontmatter_value(value)),
           "scope" => frontmatter.scope = Some(trim_frontmatter_value(value)),
           "kind" => frontmatter.kind = Some(trim_frontmatter_value(value)),
           "category" => frontmatter.category = Some(trim_frontmatter_value(value)),
@@ -495,6 +503,10 @@ fn score_metadata_hit(doc: &GuideDoc, keyword_lower: &str) -> (usize, bool) {
 
   if let Some(title) = &doc.frontmatter.title {
     accumulate_match_score(&mut score, &mut matched, title, keyword_lower, 240, 160);
+  }
+
+  if let Some(summary) = &doc.frontmatter.summary {
+    accumulate_match_score(&mut score, &mut matched, summary, keyword_lower, 200, 130);
   }
 
   for alias in &doc.frontmatter.aliases {
@@ -675,6 +687,7 @@ fn handle_search(
   context_lines: usize,
   filename_filter: Option<&str>,
   module_filter: Option<&str>,
+  summary_mode: bool,
 ) -> Result<(), String> {
   let guide_docs = collect_docs_for_query(module_filter)?;
   let keyword_lower = keyword.to_lowercase();
@@ -683,11 +696,28 @@ fn handle_search(
 
   for result in &results {
     let doc = &guide_docs[result.doc_index];
-    let lines: Vec<&str> = doc.content.lines().collect();
 
-    println!("{} ({})", doc.display_title().cyan().bold(), doc.path.dimmed());
+    // Build title with optional [Hub] marker
+    let mut title = doc.display_title();
+    if doc.frontmatter.kind.as_deref() == Some("hub") {
+      title = format!("{} {}", "[Hub]", title);
+    }
+    println!("{} ({})", title.cyan().bold(), doc.path.dimmed());
+
+    // Summary mode: show only title + summary
+    if summary_mode {
+      if let Some(summary) = &doc.frontmatter.summary {
+        println!("  {}", summary.dimmed());
+      } else {
+        println!("  {}", "(no summary)".dimmed());
+      }
+      println!();
+      continue;
+    }
+
     println!("{}", "-".repeat(60).dimmed());
 
+    let lines: Vec<&str> = doc.content.lines().collect();
     for (start, end) in &result.merged_ranges {
       for (idx, line) in lines[*start..*end].iter().enumerate() {
         let line_num = *start + idx + 1;
@@ -704,22 +734,21 @@ fn handle_search(
   if results.is_empty() {
     println!("{}", "No matching content found.".yellow());
   } else if command_guidance_enabled() {
+    if summary_mode {
+      println!(
+        "{}",
+        "Tip: Omit --summary to see full context snippets. Use -c <num> for more context.".dimmed()
+      );
+    } else {
+      println!(
+        "{}",
+        "Tip: Use -c <num> to show more context lines (e.g., 'cr docs search <keyword> -c 20')".dimmed()
+      );
+    }
     println!(
       "{}",
-      "Tip: Use -c <num> to show more context lines (e.g., 'cr docs search <keyword> -c 20')".dimmed()
+      "    Use -f <filename> to filter by filename. Use --module <name> to search module docs.".dimmed()
     );
-    if filename_filter.is_none() {
-      println!(
-        "{}",
-        "     Use -f <filename> to filter by file (e.g., 'cr docs search <keyword> -f syntax.md')".dimmed()
-      );
-    }
-    if module_filter.is_none() {
-      println!(
-        "{}",
-        "     Use --module <name> to search one installed module instead of calcit docs.".dimmed()
-      );
-    }
   }
 
   Ok(())

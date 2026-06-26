@@ -643,6 +643,9 @@ pub struct DocsSearchCommand {
   /// search docs for a specific installed module (e.g. respo.calcit)
   #[argh(option)]
   pub module: Option<String>,
+  /// show only document title and summary (no content snippets)
+  #[argh(switch, long = "summary")]
+  pub summary: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

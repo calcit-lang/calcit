@@ -1,5 +1,6 @@
 ---
 title: "Calcit 编程 Agent 指南"
+summary: "进阶 Agent/LLM 工作流：结构化编辑策略、搜索与替换模式、占位符重构、模块依赖管理"
 scope: "core"
 kind: "agent"
 category: "run"

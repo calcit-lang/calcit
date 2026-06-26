@@ -1,5 +1,6 @@
 ---
 title: "Calcit 项目升级手册（Respo / Lilac）"
+summary: "项目升级流程：caps upgrade、deps.cirru 版本同步、CI workflow 更新、Corepack/Yarn 配置迁移"
 scope: "core"
 kind: "guide"
 category: "run"

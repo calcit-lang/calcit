@@ -1,5 +1,6 @@
 ---
 title: "Features"
+summary: "Calcit 语言特性概览：不可变数据结构、函数式编程、JS 互操作、宏、类型系统、热重载"
 scope: "core"
 kind: "hub"
 category: "features"

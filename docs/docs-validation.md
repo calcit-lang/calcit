@@ -34,6 +34,28 @@ cr docs search watch mode
 cr docs search calcit.cirru
 ```
 
+## Summary Mode Checks
+
+```bash
+# --summary should show only title + summary, no content snippets
+cr docs search eval --summary
+cr docs search cirru --summary
+
+# Should still work when no summary field exists
+cr docs search scopes --summary
+
+# Summary mode with module filter
+cr docs search render --module respo.calcit --summary
+```
+
+## Hub Marking Checks
+
+```bash
+# Results should show [Hub] marker on hub-type documents
+cr docs search features
+cr docs search calcit.cirru
+```
+
 ## Module Search Checks
 
 ```bash
