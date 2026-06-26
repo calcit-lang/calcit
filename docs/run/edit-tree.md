@@ -5,12 +5,12 @@ kind: "reference"
 category: "run"
 aliases:
   - "edit tree"
-  - "target-replace"
+  - "search-replace"
   - "add-import"
   - "tree replace"
   - "tree rewrite"
 entry_for:
-  - "cr tree target-replace"
+  - "cr tree search-replace"
   - "cr edit add-import"
   - "cr query search"
 ---
@@ -65,11 +65,11 @@ cr tree view app.main/main!
 
 ### Target-based Replacement
 
-`target-replace` is the safest way to modify a specific node by its content:
+`search-replace` is the safest way to modify a specific node by its content:
 
 ```bash
 # Replace '1' with '10' inside the definition
-cr tree target-replace app.main/main! -t 1 -e 10
+cr tree search-replace app.main/main! -t 1 -e 10
 ```
 
 ### Path-based Operations
@@ -108,4 +108,4 @@ Editing commands support several ways to provide new code:
 
 1. **Check first**: Use `cr query find` or `cr tree view` to confirm the current state.
 2. **From back to front**: When performing multiple `delete` or `insert` operations at the same level, start from the highest index to avoid shifting indices.
-3. **Use target-replace**: It is usually safer than path-based replacement as it validates the current content.
+3. **Use search-replace**: It is usually safer than path-based replacement as it validates the current content.

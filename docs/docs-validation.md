@@ -29,7 +29,7 @@ Use it when changing:
 ```bash
 cr docs search polymorphism
 cr docs search edit-tree -f run.md
-cr docs search target-replace
+cr docs search search-replace
 cr docs search watch mode
 cr docs search calcit.cirru
 ```
@@ -50,7 +50,7 @@ cr docs search hook --module respo.calcit
 cr docs search polymorphism
 
 # Alias-only queries should still find the right page
-cr docs search target-replace
+cr docs search search-replace
 cr docs search hot reload
 
 # Command-oriented phrases should point at the operational guide
@@ -78,10 +78,10 @@ cr docs search clear-cache --module respo.calcit
 ```bash
 # Metadata should not leak into read output
 cr docs read polymorphism.md
-cr docs read edit-tree.md target-replace
+cr docs read edit-tree.md search-replace
 
 # Resolver should work with aliases, titles, and command phrases
-cr docs read target-replace
+cr docs read search-replace
 cr docs read "CLI Code Editing"
 cr docs read "cr eval --dep"
 cr docs read "cr edit add-import"
@@ -93,7 +93,7 @@ cr docs read "indentation based syntax"
 ## Read-Lines Checks
 
 ```bash
-cr docs read-lines target-replace --start 48 --lines 8
+cr docs read-lines search-replace --start 48 --lines 8
 cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 

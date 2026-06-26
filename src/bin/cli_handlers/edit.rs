@@ -277,7 +277,7 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
     CirruEditStrategy::Replace => {
       lines.push("Most differences are replacements. Prefer a local tree edit instead of a full overwrite.".to_string());
       lines.push(format!(
-        "Try: cr tree target-replace '{target}' --pattern '<leaf>' --leaf -e '<new-leaf>'"
+        "Try: cr tree search-replace '{target}' --pattern '<leaf>' --leaf -e '<new-leaf>'"
       ));
       lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
     }

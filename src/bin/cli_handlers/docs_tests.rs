@@ -181,12 +181,12 @@ fn collect_search_results_uses_alias_matches_without_body_hits() {
       scope: Some("core".to_string()),
       kind: Some("guide".to_string()),
       category: Some("run".to_string()),
-      aliases: vec!["target-replace".to_string(), "tree replace".to_string()],
-      entry_for: vec!["cr tree target-replace".to_string()],
+      aliases: vec!["search-replace".to_string(), "tree replace".to_string()],
+      entry_for: vec!["cr tree search-replace".to_string()],
     },
   }];
 
-  let results = collect_search_results(&docs, "target-replace", 2, None);
+  let results = collect_search_results(&docs, "search-replace", 2, None);
   assert_eq!(results.len(), 1);
   assert_eq!(docs[results[0].doc_index].filename, "edit-tree.md");
 }
@@ -204,7 +204,7 @@ fn collect_search_results_prefers_guide_over_spec_on_same_metadata_hit() {
         scope: Some("core".to_string()),
         kind: Some("spec".to_string()),
         category: Some("docs".to_string()),
-        aliases: vec!["target-replace".to_string()],
+        aliases: vec!["search-replace".to_string()],
         entry_for: vec![],
       },
     },
@@ -218,13 +218,13 @@ fn collect_search_results_prefers_guide_over_spec_on_same_metadata_hit() {
         scope: Some("core".to_string()),
         kind: Some("guide".to_string()),
         category: Some("run".to_string()),
-        aliases: vec!["target-replace".to_string()],
+        aliases: vec!["search-replace".to_string()],
         entry_for: vec![],
       },
     },
   ];
 
-  let results = collect_search_results(&docs, "target-replace", 2, None);
+  let results = collect_search_results(&docs, "search-replace", 2, None);
   assert_eq!(docs[results[0].doc_index].filename, "edit-tree.md");
 }
 
@@ -284,8 +284,8 @@ fn find_doc_by_query_matches_aliases_and_titles() {
         scope: Some("core".to_string()),
         kind: Some("guide".to_string()),
         category: Some("run".to_string()),
-        aliases: vec!["target-replace".to_string()],
-        entry_for: vec!["cr tree target-replace".to_string()],
+        aliases: vec!["search-replace".to_string()],
+        entry_for: vec!["cr tree search-replace".to_string()],
       },
     },
     GuideDoc {
@@ -304,7 +304,7 @@ fn find_doc_by_query_matches_aliases_and_titles() {
     },
   ];
 
-  assert_eq!(find_doc_by_query(&docs, "target-replace").unwrap().filename, "edit-tree.md");
+  assert_eq!(find_doc_by_query(&docs, "search-replace").unwrap().filename, "edit-tree.md");
   assert_eq!(find_doc_by_query(&docs, "CLI Code Editing").unwrap().filename, "edit-tree.md");
 }
 

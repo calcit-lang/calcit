@@ -113,10 +113,10 @@ kind: "guide"
 category: "run"
 aliases:
   - "edit tree"
-  - "target-replace"
+  - "search-replace"
   - "imports"
 entry_for:
-  - "cr tree target-replace"
+  - "cr tree search-replace"
   - "cr edit add-import"
 ---
 ```
@@ -169,11 +169,11 @@ Examples:
 ```bash
 cr docs scopes
 cr docs list
-cr docs sections target-replace
-cr docs read target-replace
+cr docs sections search-replace
+cr docs read search-replace
 cr docs read "CLI Code Editing"
 cr docs read Respo-Agent --module respo.calcit
-cr docs read-lines target-replace --start 48 --lines 8
+cr docs read-lines search-replace --start 48 --lines 8
 cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 

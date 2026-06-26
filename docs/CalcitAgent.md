@@ -24,6 +24,7 @@ entry_for:
 - 看某个定义的大致结构：`cr query peek <ns/def>`
 - 看某个定义的完整实现：`cr query def <ns/def>`
 - 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
+- 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> -f <ns/def> --parent-path`
 - 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
 - 调试 JS 变量改名：`cr analyze js-escape '<symbol>'` / `cr analyze js-unescape '<escaped>'`（`js-unescape` 当前为 best-effort）
 - 比较与 Git ref 的代码差异：`cr analyze program-diff <git-ref>`（全量）或加 `--def <ns/def>`（单定义）
@@ -97,6 +98,33 @@ result (collect! state)
 
 - 当你把一段调用改成/改掉 `$` 形式时，命中节点的路径经常会变深或变浅。
 - 经验：改 `$` 之后，不复用旧路径，重新 `query search` 一次。
+
+#### `$` 在属性 map 中的用法
+
+在 `div` 等组件的属性 map 中，`$` 用来控制属性值的缩进层级：
+
+```cirru.no-check
+div
+  {}
+    ; ":class-name 的值是 (str-spaced css/a css/b)"
+    :class-name $ str-spaced css/a css/b
+    ; ":on-click 的值是 (fn (e d!) ...)"
+    :on-click $ fn (e d!)
+      js/log e
+    ; ":on 是一个 map，里面的 :dragstart 等是它的键"
+    :on $ {}
+      :dragstart $ fn (e d!)
+        js/log |drag
+      :dragend $ fn (e d!)
+        js/log |drag-end
+```
+
+注意：`:on $ {}` 后新起一行的 `:dragstart` 是 `{}` 的键，**不是**外层 map 的键。如果缩进不对，`$` 会把后续内容当作参数而不是键值对。因此修改属性 map 时：
+
+1. 先用 `cr tree show <ns/def> -p '<path>'` 确认当前 map 结构
+2. 新增属性用 `cr tree insert-after/insert-child`
+3. 删除属性用 `cr tree batch-delete`（多个）或 `cr tree delete`（单个）
+4. 修改后运行 `cr query search <keyword> -f <ns/def>` 重拿路径
 
 #### `,`：在“重起一行”场景里用于保持目标节点形态（有助于坐标稳定）
 
@@ -276,7 +304,9 @@ cr js
 ### 编辑
 
 - `cr tree replace <ns/def> -p '<path>' -e '<code>'`：替换指定节点。
-- `cr tree target-replace <ns/def> --pattern '<leaf>' -e '<code>' --leaf`：按内容唯一定位替换（优先）。
+- `cr tree search-replace <ns/def> --pattern '<leaf>' -e '<code>' --leaf`：按内容唯一定位替换（优先）。
+- `cr tree batch-delete <ns/def> -p '<path1>' -p '<path2>'`：删除多个路径（自动从高索引到低索引，避免索引漂移）。
+- `cr query search <pattern> -f <ns/def> --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
 - `cr edit inc --changed <ns/def>`：增量编译当前修改定义。
 
@@ -295,8 +325,9 @@ cr src/cirru/calcit-core.cirru edit format
 优先规则：
 
 - 只改 1~10 个节点：优先 `cr tree` 系列。
-- 仅改文本/叶子：优先 `target-replace` 或 `replace-leaf`。
-- 只调单层结构：优先 `insert-*` / `delete` / `swap-*` / `wrap` / `raise`。
+- 仅改文本/叶子：优先 `search-replace` 或 `replace-leaf`。
+- 只调单层结构：优先 `insert-*` / `delete` / `batch-delete` / `swap-*` / `wrap` / `raise`。
+- 连续删除多个相邻属性：优先 `batch-delete`（自动从高索引到低索引删除，避免索引漂移）。
 - 仅在“整段重写/新增定义/大范围重构”时，才用 `cr edit def --overwrite -f`。
 
 典型场景模板：
@@ -304,7 +335,7 @@ cr src/cirru/calcit-core.cirru edit format
 1. 修改文本节点（leaf）
 
 ```bash
-cr tree target-replace <ns/def> --pattern '|Old text' --leaf -e '|New text'
+cr tree search-replace <ns/def> --pattern '|Old text' --leaf -e '|New text'
 # 或
 cr tree replace-leaf <ns/def> --from '|Old text' --to '|New text'
 ```
@@ -391,7 +422,7 @@ cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
 - 含义：在新模板中引用原节点（`.`）。
 - 适合：复杂重构但希望保持局部语义。
 
-> 实战建议：先 `target-replace/cp/wrap`，再用 `rewrite`；每步后 `tree show` 复核。
+> 实战建议：先 `search-replace/cp/wrap`，再用 `rewrite`；每步后 `tree show` 复核。
 
 ### 验证
 
@@ -510,7 +541,7 @@ cr js
 - 运行与编译：`cr`, `cr js`, `cr ir`, `cr-wasm`（实验性）, `-w/--watch`
 - 查询与定位：`cr query defs/def/search/search-expr/usages/schema/examples`
 - 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`, `cr analyze program-diff <git-ref>`, `cr analyze call-graph-diff <git-ref>`
-- 结构化编辑：`cr tree show/replace/target-replace/cp/wrap/unwrap/raise/rewrite`
+- 结构化编辑：`cr tree show/replace/search-replace/cp/wrap/unwrap/raise/rewrite`
 - 定义级编辑：`cr edit mv/def/add-import/imports/...`
 - 配置管理：`cr config show/modules/version/set/add-module/rm-module`
 - 文档与指南：`cr docs scopes/list/sections/read/search/agents`

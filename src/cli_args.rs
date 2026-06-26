@@ -547,6 +547,9 @@ pub struct QuerySearchCommand {
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
+  /// also print parent path for each match (strip trailing index for editable node)
+  #[argh(switch, long = "parent-path")]
+  pub parent_path: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1268,8 +1271,9 @@ pub enum TreeSubcommand {
   Unwrap(TreeUnwrapCommand),
   Raise(TreeRaiseCommand),
   Wrap(TreeWrapCommand),
-  TargetReplace(TreeTargetReplaceCommand),
+  SearchReplace(TreeSearchReplaceCommand),
   Rewrite(TreeStructuralCommand),
+  BatchDelete(TreeBatchDeleteCommand),
 }
 
 /// view tree node at specific path
@@ -1403,8 +1407,8 @@ pub struct TreeStructuralCommand {
 
 /// find unique leaf node and replace it; if multiple found, returns error with helpful hints
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "target-replace")]
-pub struct TreeTargetReplaceCommand {
+#[argh(subcommand, name = "search-replace")]
+pub struct TreeSearchReplaceCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -1429,6 +1433,21 @@ pub struct TreeTargetReplaceCommand {
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
+/// delete multiple paths at once (deletes from highest index to lowest)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "batch-delete")]
+pub struct TreeBatchDeleteCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// paths to delete (dot-separated, e.g. \"3.2.1.8 3.2.1.7 3.2.1.6\"); deletes from highest to lowest
+  #[argh(option, short = 'p')]
+  pub paths: Vec<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,

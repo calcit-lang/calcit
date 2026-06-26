@@ -43,7 +43,7 @@ cr docs agents
 cr docs read run.md
 
 # Read by title/alias instead of exact filename
-cr docs read target-replace
+cr docs read search-replace
 cr docs read "CLI Code Editing"
 
 # List headings in a file (best first step before narrowing)
@@ -83,7 +83,7 @@ Use `read-lines` for large files where you need a specific range:
 cr docs read-lines common-patterns.md --start 100 --lines 50
 
 # Resolve by alias/title first, then read a specific range
-cr docs read-lines target-replace --start 48 --lines 8
+cr docs read-lines search-replace --start 48 --lines 8
 
 # Read a module document by title/alias with the same resolver
 cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8

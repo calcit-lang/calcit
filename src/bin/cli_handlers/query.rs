@@ -35,6 +35,7 @@ struct SearchCommonOpts<'a> {
   max_depth: usize,
   entry: Option<&'a str>,
   detail_offset: usize,
+  parent_path: bool,
 }
 
 const DETAILED_RESULTS_WINDOW: usize = 3;
@@ -359,6 +360,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         max_depth: opts.max_depth,
         entry: opts.entry.as_deref(),
         detail_offset: opts.detail_offset,
+        parent_path: opts.parent_path,
       };
       handle_search_leaf(input_path, &opts.pattern, opts.start_path.as_deref(), &common_opts)
     }
@@ -370,6 +372,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         max_depth: opts.max_depth,
         entry: opts.entry.as_deref(),
         detail_offset: opts.detail_offset,
+        parent_path: false,
       };
       handle_search_expr(input_path, &opts.pattern, opts.json, &common_opts)
     }
@@ -1804,6 +1807,11 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
                 println!("    {} {} ⟪…⟫", path_str.cyan(), display_preview);
               } else {
                 println!("    {} {}", path_str.cyan(), display_preview);
+              }
+              // Print parent path (stripped last index) when --parent-path is requested
+              if common_opts.parent_path && path.len() > 1 {
+                let parent_path_str = format!("[{}]", format_path(&path[..path.len() - 1]));
+                println!("       {} {}", "parent:".dimmed(), parent_path_str.dimmed());
               }
             }
           }

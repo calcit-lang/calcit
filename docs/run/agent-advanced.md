@@ -338,7 +338,7 @@ cr query modules
   - 使用 `-e, -f, -j` 等通用参数提供替换内容
   - 自动遍历整个定义，一次性替换所有匹配项
   - 示例：`cr tree replace-leaf 'ns/def' --pattern 'old-name' -e 'new-name' --leaf`
-- `cr tree target-replace` - 基于内容的唯一替换（无需指定路径，更安全 ⭐⭐⭐）
+- `cr tree search-replace` - 基于内容的唯一替换（无需指定路径，更安全 ⭐⭐⭐）
   - `--pattern <pattern>` - 要搜索的模式（精确匹配 leaf 节点）
   - 使用 `-e, -f, -j` 等通用参数提供替换内容
   - 逻辑：自动查找叶子节点，若唯一则替换；若不唯一则报错并列出所有位置及修改命令建议。
@@ -360,7 +360,7 @@ cr query modules
 - `--leaf` - 强制作为 leaf 节点（符号或字符串）
 - `-j '<json>'` / `-f <file>`
 
-简单更新尽量用结构化的 API 操作. 多行或者带特殊符号的表达式, 可以在 `.calcit-snippets/` 创建临时文件, 然后用 `cr cirru parse` 验证语法, 最后用 `-f <file>` 提交, 从而减少错误率. 复杂表达式建议分段, 然后搭配 `cr tree target-replace` 命令来完成多阶段提交.
+简单更新尽量用结构化的 API 操作. 多行或者带特殊符号的表达式, 可以在 `.calcit-snippets/` 创建临时文件, 然后用 `cr cirru parse` 验证语法, 最后用 `-f <file>` 提交, 从而减少错误率. 复杂表达式建议分段, 然后搭配 `cr tree search-replace` 命令来完成多阶段提交.
 
 **整体替换定义的经验规则：**
 
@@ -403,7 +403,7 @@ cr tree replace-leaf namespace/def --pattern 'old-name' -e 'new-name' --leaf
 # ===== 方案 C：基于内容的半自动替换（最推荐 ⭐⭐⭐） =====
 
 # 1. 尝试基于叶子节点内容直接替换
-cr tree target-replace namespace/def --pattern 'old-symbol' -e 'new-symbol' --leaf
+cr tree search-replace namespace/def --pattern 'old-symbol' -e 'new-symbol' --leaf
 
 # 2. 如果存在多个匹配，命令会报错并给出详细指引（包含具体路径的 replace 命令建议）
 # 如果确定要全部替换，可改用 tree replace-leaf
@@ -494,7 +494,7 @@ cr tree replace namespace/def -p '3.2.2.5.2.4.1.2' -e 'let ((x 1)) (+ x task)'
 
 - 占位符统一使用 `{{NAME}}` 风格，例如 `{{BODY}}`、`{{TRUE_BRANCH}}`；
 - 大表达式可以先用 `cr query def <ns/def>` 看整体分片，再用 `cr tree show <ns/def> -p '<path>'` 深入某个片段；
-- 真正填充时，优先用 `cr tree target-replace` 找占位符，不唯一时再退回路径替换。
+- 真正填充时，优先用 `cr tree search-replace` 找占位符，不唯一时再退回路径替换。
 
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单 JSON 结构。
 
@@ -1174,13 +1174,13 @@ cr tree unwrap 'app.core/main-fn' -p '3.2'
 cr tree raise 'app.core/main-fn' -p '3.2.1'
 ```
 
-### 批量重命名局部变量（`tree replace-leaf` / `tree target-replace`）
+### 批量重命名局部变量（`tree replace-leaf` / `tree search-replace`）
 
 **场景：** 某函数内某个局部变量名需要统一改掉。
 
 ```bash
 # 若只有一处：内容定位直接替换（最安全 ⭐）
-cr tree target-replace 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
+cr tree search-replace 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
 
 # 若多处：一次性全部替换
 cr tree replace-leaf 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
@@ -1292,7 +1292,7 @@ send-to-component! $ :: :clipboard/read text
 - **JSON 格式 (`-j / --json`, `-J`, `-e`)**: 字数上限 **2000**。
 
 **大资源处理建议：**
-如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `cr tree target-replace` 或按路径的 `cr tree replace` 做精准的分段替换。
+如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `cr tree search-replace` 或按路径的 `cr tree replace` 做精准的分段替换。
 
 补充提示：现在 `cr query def` 和 `cr tree show` 遇到大表达式时会自动输出分片结果。`tree show` 默认只展开 ROOT 与一层 chunk；若需要继续查看 chunk 中的 chunk，可显式增加 `--chunk-expand-depth`。若你采用多阶段创建，建议从第一步就使用 `{{NAME}}` 风格占位符，这样后续在分片视图中更容易识别骨架、复制坐标并继续填充内容。
 

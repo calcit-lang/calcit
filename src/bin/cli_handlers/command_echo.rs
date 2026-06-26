@@ -400,7 +400,7 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
       }
       desc
     }
-    TreeSubcommand::TargetReplace(opts) => {
+    TreeSubcommand::SearchReplace(opts) => {
       let code_parts = CodeInputParts::new(
         opts.file.as_deref(),
         opts.code.as_deref(),
@@ -449,6 +449,11 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
       }
       desc
     }
+    TreeSubcommand::BatchDelete(opts) => format!(
+      "deletes {} path(s) from `{}` (sorted highest-to-lowest)",
+      opts.paths.len(),
+      opts.target
+    ),
   })
 }
 
@@ -859,12 +864,15 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
       echo_items!(tokens, code_input opts);
     }
-    TreeSubcommand::TargetReplace(opts) => {
+    TreeSubcommand::SearchReplace(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::Rewrite(opts) => {
       push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
       echo_items!(tokens, code_input opts, list "with" => &opts.with);
+    }
+    TreeSubcommand::BatchDelete(opts) => {
+      echo_items!(tokens, pos "target" => &opts.target, list "paths" => &opts.paths, value "depth" => opts.depth; default "2");
     }
   }
 }
@@ -1070,8 +1078,9 @@ fn tree_name(subcommand: &TreeSubcommand) -> &'static str {
     TreeSubcommand::Unwrap(_) => "unwrap",
     TreeSubcommand::Raise(_) => "raise",
     TreeSubcommand::Wrap(_) => "wrap",
-    TreeSubcommand::TargetReplace(_) => "target-replace",
+    TreeSubcommand::SearchReplace(_) => "search-replace",
     TreeSubcommand::Rewrite(_) => "rewrite",
+    TreeSubcommand::BatchDelete(_) => "batch-delete",
   }
 }
 

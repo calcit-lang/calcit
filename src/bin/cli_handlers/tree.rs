@@ -9,9 +9,9 @@ use super::common::{
 };
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
-  TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
-  TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
-  TreeSwapNextCommand, TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeUnwrapCommand, TreeWrapCommand,
+  TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
+  TreeInsertChildCommand, TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeSearchReplaceCommand, TreeShowCommand,
+  TreeStructuralCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -40,8 +40,9 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::Unwrap(opts) => handle_unwrap(opts, snapshot_file),
     TreeSubcommand::Raise(opts) => handle_raise(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
-    TreeSubcommand::TargetReplace(opts) => handle_target_replace(opts, snapshot_file),
+    TreeSubcommand::SearchReplace(opts) => handle_search_replace(opts, snapshot_file),
     TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
+    TreeSubcommand::BatchDelete(opts) => handle_batch_delete(opts, snapshot_file),
   }
 }
 
@@ -672,7 +673,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   Ok(())
 }
 
-fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
@@ -747,7 +748,7 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace"));
+  println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
 
   let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&replacement_node))?;
   code_entry.code = new_code;
@@ -886,6 +887,31 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   Ok(())
 }
 
+fn handle_batch_delete(opts: &TreeBatchDeleteCommand, snapshot_file: &str) -> Result<(), String> {
+  // First, parse and validate all paths, sorting by path descending
+  // so we delete from highest index to lowest, avoiding index drift
+  let mut parsed: Vec<(Vec<usize>, String)> = Vec::new();
+  for p in &opts.paths {
+    let path = parse_path(p).map_err(|e| format!("Invalid path '{p}': {e}"))?;
+    parsed.push((path, p.clone()));
+  }
+  // Sort by path descending
+  parsed.sort_by(|a, b| b.0.cmp(&a.0));
+
+  for (_, original_path) in &parsed {
+    let delete_opts = TreeDeleteCommand {
+      target: opts.target.clone(),
+      path: original_path.clone(),
+      depth: opts.depth,
+    };
+    handle_delete(&delete_opts, snapshot_file)?;
+    println!();
+  }
+
+  println!("{} Deleted {} path(s) via batch-delete", "✓".green(), parsed.len());
+  Ok(())
+}
+
 fn handle_insert_before(opts: &TreeInsertBeforeCommand, snapshot_file: &str) -> Result<(), String> {
   generic_insert_handler(&opts.target, &opts.path, "insert-before", opts, snapshot_file, opts.depth)
 }
@@ -986,7 +1012,7 @@ impl InsertOperation for TreeAppendChildCommand {
   }
 }
 
-impl InsertOperation for TreeTargetReplaceCommand {
+impl InsertOperation for TreeSearchReplaceCommand {
   fn file(&self) -> &Option<String> {
     &self.file
   }
