@@ -178,6 +178,7 @@ fn collect_search_results_uses_alias_matches_without_body_hits() {
     scope: GuideDocScope::Core,
     frontmatter: GuideDocFrontmatter {
       title: Some("CLI Code Editing".to_string()),
+      summary: None,
       scope: Some("core".to_string()),
       kind: Some("guide".to_string()),
       category: Some("run".to_string()),
@@ -201,6 +202,7 @@ fn collect_search_results_prefers_guide_over_spec_on_same_metadata_hit() {
       scope: GuideDocScope::Core,
       frontmatter: GuideDocFrontmatter {
         title: Some("Documentation Indexing Spec".to_string()),
+        summary: None,
         scope: Some("core".to_string()),
         kind: Some("spec".to_string()),
         category: Some("docs".to_string()),
@@ -215,6 +217,7 @@ fn collect_search_results_prefers_guide_over_spec_on_same_metadata_hit() {
       scope: GuideDocScope::Core,
       frontmatter: GuideDocFrontmatter {
         title: Some("CLI Code Editing".to_string()),
+        summary: None,
         scope: Some("core".to_string()),
         kind: Some("guide".to_string()),
         category: Some("run".to_string()),
@@ -237,6 +240,7 @@ fn score_doc_shape_prefers_guides_to_specs() {
     scope: GuideDocScope::Core,
     frontmatter: GuideDocFrontmatter {
       title: None,
+      summary: None,
       scope: Some("core".to_string()),
       kind: Some("guide".to_string()),
       category: Some("run".to_string()),
@@ -251,6 +255,7 @@ fn score_doc_shape_prefers_guides_to_specs() {
     scope: GuideDocScope::Core,
     frontmatter: GuideDocFrontmatter {
       title: None,
+      summary: None,
       scope: Some("core".to_string()),
       kind: Some("spec".to_string()),
       category: Some("docs".to_string()),
@@ -281,6 +286,7 @@ fn find_doc_by_query_matches_aliases_and_titles() {
       scope: GuideDocScope::Core,
       frontmatter: GuideDocFrontmatter {
         title: Some("CLI Code Editing".to_string()),
+        summary: None,
         scope: Some("core".to_string()),
         kind: Some("guide".to_string()),
         category: Some("run".to_string()),
@@ -295,6 +301,7 @@ fn find_doc_by_query_matches_aliases_and_titles() {
       scope: GuideDocScope::Core,
       frontmatter: GuideDocFrontmatter {
         title: Some("Documentation Indexing Spec".to_string()),
+        summary: None,
         scope: Some("core".to_string()),
         kind: Some("spec".to_string()),
         category: Some("docs".to_string()),
@@ -317,6 +324,7 @@ fn score_doc_query_prefers_filename_exact_match() {
     scope: GuideDocScope::Core,
     frontmatter: GuideDocFrontmatter {
       title: Some("Polymorphism".to_string()),
+      summary: None,
       scope: Some("core".to_string()),
       kind: Some("guide".to_string()),
       category: Some("features".to_string()),
@@ -337,6 +345,7 @@ fn find_doc_by_query_can_resolve_module_agents_title() {
     scope: GuideDocScope::Module("respo.calcit".to_string()),
     frontmatter: GuideDocFrontmatter {
       title: Some("Respo-Agent.md".to_string()),
+      summary: None,
       scope: Some("module".to_string()),
       kind: Some("agent".to_string()),
       category: Some("docs".to_string()),
@@ -358,6 +367,7 @@ fn collect_search_results_prefers_module_style_guide_for_defstyle_query() {
       scope: GuideDocScope::Module("respo.calcit".to_string()),
       frontmatter: GuideDocFrontmatter {
         title: Some("Styles".to_string()),
+        summary: None,
         scope: Some("module".to_string()),
         kind: Some("guide".to_string()),
         category: Some("ecosystem".to_string()),
@@ -372,6 +382,7 @@ fn collect_search_results_prefers_module_style_guide_for_defstyle_query() {
       scope: GuideDocScope::Module("respo.calcit".to_string()),
       frontmatter: GuideDocFrontmatter {
         title: Some("Respo API".to_string()),
+        summary: None,
         scope: Some("module".to_string()),
         kind: Some("overview".to_string()),
         category: Some("reference".to_string()),
@@ -395,6 +406,7 @@ fn find_doc_by_query_matches_module_entry_for_terms() {
     scope: GuideDocScope::Module("respo.calcit".to_string()),
     frontmatter: GuideDocFrontmatter {
       title: Some("Server Rendering".to_string()),
+      summary: None,
       scope: Some("module".to_string()),
       kind: Some("guide".to_string()),
       category: Some("ecosystem".to_string()),
@@ -419,6 +431,7 @@ fn find_doc_by_query_matches_symbol_aliases_for_module_docs() {
     scope: GuideDocScope::Module("respo.calcit".to_string()),
     frontmatter: GuideDocFrontmatter {
       title: Some(">>".to_string()),
+      summary: None,
       scope: Some("module".to_string()),
       kind: Some("reference".to_string()),
       category: Some("reference".to_string()),
@@ -435,6 +448,7 @@ fn find_doc_by_query_matches_symbol_aliases_for_module_docs() {
 fn validate_doc_frontmatter_accepts_registered_category() {
   let frontmatter = GuideDocFrontmatter {
     title: Some("Styles".to_string()),
+    summary: None,
     scope: Some("module".to_string()),
     kind: Some("guide".to_string()),
     category: Some("ecosystem".to_string()),
@@ -449,6 +463,7 @@ fn validate_doc_frontmatter_accepts_registered_category() {
 fn validate_doc_frontmatter_rejects_unknown_category() {
   let frontmatter = GuideDocFrontmatter {
     title: Some("Broken".to_string()),
+    summary: None,
     scope: Some("core".to_string()),
     kind: Some("guide".to_string()),
     category: Some("api".to_string()),
