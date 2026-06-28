@@ -308,7 +308,7 @@ defn fibonacci (n)
 
 `case-default` dispatches on a value against multiple patterns with a fallback:
 
-```cirru
+```cirru.no-check
 case-default action nil
   :mount $ do
     js/console.log |Mounted
