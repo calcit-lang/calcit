@@ -23,13 +23,29 @@ aliases:
 
 升级前先检查以下文件与配置是否齐全：
 
-- 运行入口与快照：`calcit.cirru`（兼容旧文件名 `compact.cirru`）
+- 运行入口：`calcit.cirru`（兼容旧文件名 `compact.cirru`）
   - `:configs`（默认入口）
   - `:entries`（额外入口）
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
 - 结构化编辑优先使用 `cr edit` / `cr tree`；若直接改过 `calcit.cirru`（或旧文件名 `compact.cirru`），提交前执行一次 `cr edit format`
+
+### 快照文件迁移说明
+
+以前的 Calcit 项目使用两套文件：
+
+- `calcit.cirru` — 存放完整 AST 快照，内容包含全部编译信息（带所有代码位置、类型标注等）
+- `compact.cirru` — 存放精简代码，是人工读写的主要文件
+
+当前推荐去掉快照文件，精简代码直接保存在 `calcit.cirru` 中，方便 `cr` 命令直接读取使用。迁移方式：
+
+1. 确认 `compact.cirru` 是项目实际精简化代码，`calcit.cirru` 是完整 AST 快照（差异通常很大）
+2. 将 `compact.cirru` 内容直接覆盖到 `calcit.cirru`（或者删除 `calcit.cirru` 后重命名 `compact.cirru` 为 `calcit.cirru`）
+3. 提交时删除旧的快照文件（确保不再跟踪 `calcit.cirru` 的旧快照内容）
+4. 后续所有 `cr` 命令都基于单一的 `calcit.cirru` 运行，不再生成快照文件
+
+> 如果项目中还存在旧的 `calcit.cirru` 快照文件，迁移后可以删除。`cr` 命令行不再依赖快照文件——它直接读取 `calcit.cirru` 中的精简代码运行。`cr edit` / `cr tree` 的修改直接保存在 `calcit.cirru`。`.gitattributes` 中 `calcit.cirru -diff linguist-generated` 标记也可以移除。`.gitignore` 中的 `compact.cirru` 则应改为忽略旧快照文件名。
 
 ---
 

@@ -1,0 +1,2 @@
+- docs/run/upgrade.md: added snapshot migration section — documents the transition from two-file setup (calcit.cirru snapshot + compact.cirru compact code) to single calcit.cirru with compact code only, no separate snapshot file needed
+- Recommended: delete old snapshot file, compact code saved directly in calcit.cirru for cr command to use directly
