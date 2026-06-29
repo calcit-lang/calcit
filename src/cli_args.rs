@@ -76,6 +76,8 @@ pub enum CalcitCommand {
   Cirru(CirruCommand),
   /// legacy alias for docs remote-libs
   Libs(LibsCommand),
+  /// execute Cirru code from stdin (bypasses shell escaping)
+  Exec(ExecCommand),
   /// coarse-grained code editing (namespaces, definitions, metadata); for internal expression changes, use `tree` instead
   Edit(EditCommand),
   /// fine-grained tree operations (view and modify AST nodes within definitions)
@@ -111,7 +113,16 @@ pub struct EmitIrCommand {
 pub struct EvalCommand {
   /// evaluate a snippet
   #[argh(positional)]
-  pub snippet: String,
+  pub snippet: Option<String>,
+  /// entry file path
+  #[argh(option)]
+  pub dep: Vec<String>,
+}
+
+/// execute Cirru code from stdin (bypasses shell escaping)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "exec")]
+pub struct ExecCommand {
   /// entry file path
   #[argh(option)]
   pub dep: Vec<String>,

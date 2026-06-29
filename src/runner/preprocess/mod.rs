@@ -540,6 +540,10 @@ pub fn preprocess_expr(
           if &*ns_alias == "js" {
             Ok(Calcit::RawCode(RawCodeType::Js, def_part))
             // TODO js syntax to handle in future
+          } else if is_registered_proc(def) {
+            // registered proc with namespace-qualified name (e.g. "calcit.cli/list-ns")
+            // must precede has_def_code: calcit.cli/* also exist in core as metadata stubs
+            Ok(Calcit::Registered(def.to_owned()))
           } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
             // make sure the target is preprocessed
             ensure_ns_def_compiled(&target_ns, &def_part, check_warnings, call_stack)?;
@@ -1290,6 +1294,21 @@ fn preprocess_list_call(
           if let Some(Calcit::Local(local)) = ys.first() {
             let updated_args = CalcitList::from(ys.drop_left());
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
+          }
+        }
+
+        // Type-check registered proc options maps from Rust specs (e.g. calcit.cli/*).
+        if let Some(Calcit::Registered(alias)) = ys.first() {
+          if let Some(specs) = builtins::registered_proc_cli_options(alias.as_ref()) {
+            if let Some(arg) = processed_args.first() {
+              for issue in builtins::cli_options::check_cli_options_map(alias.as_ref(), arg, specs) {
+                if let Some(loc) = call_location.clone().or_else(|| arg.get_location()) {
+                  gen_check_warning_code_at(issue.message, issue.code, file_ns, Some(loc), check_warnings);
+                } else {
+                  gen_check_warning_code(issue.message, issue.code, file_ns, check_warnings);
+                }
+              }
+            }
           }
         }
 

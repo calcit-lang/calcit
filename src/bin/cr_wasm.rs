@@ -7,6 +7,10 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "../type_coverage.rs"]
+mod type_coverage;
+
 use argh::FromArgs;
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
@@ -52,7 +56,7 @@ fn main() -> Result<(), String> {
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  injection::inject_platform_apis();
+  injection::inject_platform_apis_without_cli();
 
   let core_snapshot = calcit::load_core_snapshot()?;
 

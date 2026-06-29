@@ -20,13 +20,52 @@ entry_for:
 
 本文定位为“查询与局部编辑速查表”：聚焦高频命令、路径定位和最小改动模板。执行前置约束与完整边界规则以 Agents 文档为准。
 
+## 零成本 Shell 转义方案：`cr exec`
+
+**问题**：传统 `cr` 命令通过 Shell 参数传递 Cirru 代码，`$`、`` ` ``、`|`、`>` 等特殊字符需要转义，大段代码写不了。
+
+**方案**：`cr exec` 固定从 stdin 读取 Cirru 代码，完全绕过 Shell 转义。配合 `calcit.cli/*` 函数，所有 CLI 操作都变成 Cirru 函数调用。
+
+```cirru.cli
+; 查询命名空间列表
+calcit.cli/list-ns $ {} (:file-path |calcit.cirru)
+
+; 查看定义概要
+calcit.cli/peek-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:lines 5)
+
+; 搜索关键字路径和叶子预览
+calcit.cli/search-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:keyword |println)
+
+; 查看 AST 子树
+calcit.cli/tree-show $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:path |3.1)
+
+; 查找符号
+calcit.cli/find-symbol $ {} (:file-path |calcit.cirru) (:symbol |main!)
+```
+
+```bash
+# 用 heredoc 传入，无转义
+cr path/to/project.cirru exec << 'END'
+calcit.cli/list-ns $ {} (:file-path |calcit.cirru)
+END
+
+# 或管道
+echo 'calcit.cli/list-config $ {} (:file-path |calcit.cirru)' | cr project.cirru exec
+```
+
+`calcit.cli` 命名空间的函数都已注册为 Calcit 内建函数，可直接在 Cirru 代码中调用。统一调用形式为 `calcit.cli/f $ {} (:key value) ...`（如 `(:file-path …)`、`(:target …)`、`(:namespace …)`）。
+
 ### 查询导航（先用这个）
 
-- 看某个定义的大致结构：`cr query peek <ns/def>`
-- 看某个定义的完整实现：`cr query def <ns/def>`
-- 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
+- 看某个定义的大致结构：`cr query peek <ns/def>` / `calcit.cli/peek-def $ {} (:file-path |file.cirru) (:target |<ns/def>) (:lines 5)`
+- 看某个定义的完整实现：`cr query def <ns/def>` / `calcit.cli/show-def $ {} (:file-path |file.cirru) (:target |<ns/def>)`
+- 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>` / `calcit.cli/search-def $ {} (:file-path |file.cirru) (:target |<ns/def>) (:keyword |<keyword>)`（返回 `path leaf-preview`）
 - 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> -f <ns/def> --parent-path`
-- 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
+- 跨命名空间找符号：`cr query find <symbol>` / `calcit.cli/find-symbol $ {} (:file-path |file.cirru) (:symbol |<symbol>)`
+- 查看类型标注：`cr query schema <ns/def>` / `calcit.cli/show-schema $ {} (:file-path |file.cirru) (:target |<ns/def>)`
+- 查看示例：`cr query examples <ns/def>` / `calcit.cli/list-examples $ {} (:file-path |file.cirru) (:target |<ns/def>)`
+- 查看引用：`cr query usages <ns/def>` / `calcit.cli/list-usages $ {} (:file-path |file.cirru) (:target |<ns/def>)`
+- 查看配置：`cr query config` / `calcit.cli/list-config $ {} (:file-path |file.cirru)`
 - 调试 JS 变量改名：`cr analyze js-escape '<symbol>'` / `cr analyze js-unescape '<escaped>'`（`js-unescape` 当前为 best-effort）
 - 比较与 Git ref 的代码差异：`cr analyze program-diff <git-ref>`（全量）或加 `--def <ns/def>`（单定义）
 - 比较调用图变化：`cr analyze call-graph-diff <git-ref>`（标注新增/删除/变更的调用关系）
@@ -164,6 +203,7 @@ a
 #### `deps.cirru` 与运行时快照文件的关系（简版）
 
 详细内容已移入 [run/project-structure.md](./run/project-structure.md)。
+
 #### 实操规则（最稳）
 
 凡是改到 `$` 或 `,`（尤其是从单行改成多行）时：
@@ -213,6 +253,38 @@ cr docs agents --full
 4. 聚焦子树确认上下文：`cr tree show <ns/def> -p '<path>'`（复杂时可加 `-j`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
 5. 修改并验证：`cr tree replace ...` 或 `cr edit inc --changed <ns/def>`，然后 `cr js`
 
+### cr exec 等价用法（免转义）
+
+上述步骤也可以用 `cr exec` + `calcit.cli/*` 函数完成，避免 Shell 转义：
+
+```cirru.cli
+; 1. 列出命名空间
+calcit.cli/list-ns $ {} (:file-path |calcit.cirru)
+
+; 2. 查看定义概要和完整实现
+calcit.cli/peek-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!)
+calcit.cli/show-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!)
+
+; 3. 搜索关键词路径
+calcit.cli/search-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:keyword |keyword)
+
+; 4. 查看 AST 子树
+calcit.cli/tree-show $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:path |3.1.0)
+
+; 5. 查看配置
+calcit.cli/list-config $ {} (:file-path |calcit.cirru)
+
+; 6. 查找符号
+calcit.cli/find-symbol $ {} (:file-path |calcit.cirru) (:symbol |keyword)
+```
+
+```bash
+# 执行上述任一调用
+cr calcit.cirru exec << 'END'
+calcit.cli/list-defs $ {} (:file-path |calcit.cirru) (:namespace |app.main)
+END
+```
+
 > 修改时要求先考虑定位到坐标使用局部修改的方式, 或者结构化修改的方式, 若改动较大或不确定改动范围时再考虑整段覆盖式修改。
 
 ### 示例（大函数）
@@ -226,16 +298,25 @@ cr edit inc --changed respo.render.diff/find-element-diffs
 cr js
 ```
 
+也可用 `cr exec` 免转义执行查询步骤：
+
+```cirru.cli
+calcit.cli/peek-def $ {} (:file-path |calcit.cirru) (:target |respo.render.diff/find-element-diffs) (:lines 5)
+calcit.cli/show-def $ {} (:file-path |calcit.cirru) (:target |respo.render.diff/find-element-diffs)
+calcit.cli/search-def $ {} (:file-path |calcit.cirru) (:target |respo.render.diff/find-element-diffs) (:keyword |collect!)
+calcit.cli/tree-show $ {} (:file-path |calcit.cirru) (:target |respo.render.diff/find-element-diffs) (:path |5.5.1.3)
+```
+
 ---
 
 ## 3) 高频命令（只保留最常用）
 
 ### 查询
 
-- `cr query defs <ns>`：列出命名空间定义。
-- `cr query def <ns/def>`：查看定义（默认 Cirru）。
-- `cr query search <pattern> -f <ns/def>`：按关键词拿路径。
-- `cr tree show <ns/def> -p '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
+- `cr query defs <ns>` / `calcit.cli/list-defs $ {} (:file-path |file.cirru) (:namespace |<ns>)`：列出命名空间定义。
+- `cr query def <ns/def>` / `calcit.cli/show-def $ {} (:file-path |file.cirru) (:target |<ns/def>)`：查看定义（默认 Cirru）。
+- `cr query search <pattern> -f <ns/def>` / `calcit.cli/search-def $ {} (:file-path |file.cirru) (:target |<ns/def>) (:keyword |<pattern>)`：按关键词拿路径。
+- `cr tree show <ns/def> -p '<path>'` / `calcit.cli/tree-show $ {} (:file-path |file.cirru) (:target |<ns/def>) (:path |<path>)`：查看局部子树。
 
 ### 编辑
 
@@ -364,13 +445,17 @@ cr edit inc --changed <ns/def>
 ```bash
 # 1) 先轻看，避免大段输出
 cr query peek <ns/def>
+# cr exec: calcit.cli/peek-def $ {} (:file-path |project.cirru) (:target |<ns/def>) (:lines 5)
 
 # 2) 必要时才看完整定义（默认 Cirru）
 cr query def <ns/def>
+# cr exec: calcit.cli/show-def $ {} (:file-path |project.cirru) (:target |<ns/def>)
 
 # 3) 用 search 定位后再 show 局部
 cr query search '<keyword>' -f <ns/def>
 cr tree show <ns/def> -p '<path>'
+# cr exec: calcit.cli/search-def $ {} (:file-path |project.cirru) (:target |<ns/def>) (:keyword |<keyword>)
+# cr exec: calcit.cli/tree-show $ {} (:file-path |project.cirru) (:target |<ns/def>) (:path |<path>)
 
 # 4) 需要完整提示再打开
 cr --tips query def <ns/def>
@@ -400,6 +485,15 @@ cr tree show app.main/main! -p '3.2'
 cr tree replace app.main/main! -p '3.2' -e 'new-expr'
 cr edit inc --changed app.main/main!
 cr js
+```
+
+`cr exec` 等效查询：
+
+```cirru.cli
+calcit.cli/list-defs $ {} (:file-path |calcit.cirru) (:namespace |app.main)
+calcit.cli/show-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!)
+calcit.cli/search-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:keyword |state)
+calcit.cli/tree-show $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:path |3.2)
 ```
 
 ---
@@ -437,6 +531,39 @@ cr js
 - 配置管理：`cr config show/modules/version/set/add-module/rm-module`
 - 文档与指南：`cr docs scopes/list/sections/read/search/agents`
 - 语法学习：`cr cirru show-guide`
+
+### cr exec + calcit.cli 等价能力（免 Shell 转义）
+
+通过 `cr exec` + `calcit.cli/*` 函数，所有 CLI 操作都变成纯 Cirru 函数调用：
+
+| 函数                        | 等价 CLI                 | 说明             |
+| --------------------------- | ------------------------ | ---------------- |
+| `calcit.cli/list-ns`        | `cr query ns`            | 列出命名空间     |
+| `calcit.cli/list-defs`      | `cr query defs`          | 列出定义         |
+| `calcit.cli/show-def`       | `cr query def`           | 查看完整定义     |
+| `calcit.cli/peek-def`       | `cr query peek`          | 预览定义前 N 行  |
+| `calcit.cli/search-def`     | `cr query search`        | 搜索关键字路径和叶子预览 |
+| `calcit.cli/find-symbol`    | `cr query find`          | 跨命名空间找符号 |
+| `calcit.cli/show-schema`    | `cr query schema`        | 查看类型标注     |
+| `calcit.cli/list-examples`  | `cr query examples`      | 查看示例         |
+| `calcit.cli/list-usages`    | `cr query usages`        | 查找引用位置     |
+| `calcit.cli/list-config`    | `cr query config`        | 查看配置         |
+| `calcit.cli/list-modules`   | `cr config modules`      | 查看模块依赖     |
+| `calcit.cli/list-modules`   | `cr config modules`      | 查看模块依赖     |
+| `calcit.cli/tree-show`      | `cr tree show`           | 查看 AST 子树；`(:max-lines N)` 控制输出行数 |
+| `calcit.cli/tree-replace`   | `cr tree replace`        | 替换 AST 节点    |
+| `calcit.cli/search-replace` | `cr tree search-replace` | 搜索替换叶子节点 |
+| `calcit.cli/edit-def`       | `cr edit def`            | 创建/更新定义    |
+| `calcit.cli/add-import`     | `cr edit add-import`     | 添加 import      |
+
+```bash
+# 用法示例
+cr calcit.cirru exec << 'END'
+calcit.cli/peek-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:lines 8)
+calcit.cli/search-def $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:keyword |state)
+calcit.cli/tree-show $ {} (:file-path |calcit.cirru) (:target |app.main/main!) (:path |3.1.0)
+END
+```
 
 ### Agent 自学习最短路径
 

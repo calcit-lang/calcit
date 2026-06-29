@@ -937,11 +937,13 @@ mod tests;
 ///
 /// - `cirru`          → Run: parse + preprocess + eval
 /// - `cirru.no-run`   → NoRun: parse + preprocess (type-check), skip eval
+/// - `cirru.no-cli`   → NoCli: parse + preprocess, for `calcit.cli/*` calls
 /// - `cirru.no-check` → NoCheck: parse only (syntax validation)
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CirruCheckMode {
   Run,
   NoRun,
+  NoCli,
   NoCheck,
 }
 
@@ -950,13 +952,14 @@ impl std::fmt::Display for CirruCheckMode {
     match self {
       CirruCheckMode::Run => write!(f, "run"),
       CirruCheckMode::NoRun => write!(f, "no-run"),
+      CirruCheckMode::NoCli => write!(f, "no-cli"),
       CirruCheckMode::NoCheck => write!(f, "no-check"),
     }
   }
 }
 
 /// Extract cirru code blocks from markdown content.
-/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-check
+/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-cli  ```cirru.no-check
 /// Returns (line_number, check_mode, code_content) triples.
 fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
   let mut blocks = Vec::new();
@@ -983,6 +986,11 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
         in_block = true;
         block_start_line = idx + 1;
         block_mode = CirruCheckMode::NoCheck;
+        block_lines.clear();
+      } else if trimmed == "```cirru.cli" {
+        in_block = true;
+        block_start_line = idx + 1;
+        block_mode = CirruCheckMode::NoCli;
         block_lines.clear();
       } else {
         in_non_cirru_block = true;
@@ -1296,7 +1304,7 @@ impl Drop for QuietToolOutputGuard {
   }
 }
 
-fn print_check_md_header(file_path: &str, run_count: usize, no_run_count: usize, no_check_count: usize) {
+fn print_check_md_header(file_path: &str, run_count: usize, no_run_count: usize, no_cli_count: usize, no_check_count: usize) {
   println!("{} {}", "Checking".bold(), file_path.cyan());
   println!("{}", "-".repeat(60).dimmed());
 
@@ -1304,7 +1312,7 @@ fn print_check_md_header(file_path: &str, run_count: usize, no_run_count: usize,
     println!(
       "{}",
       format!(
-        "Tip: check-mode balance is skewed (cirru: {run_count}, cirru.no-run: {no_run_count}, cirru.no-check: {no_check_count}). Prefer `cirru` first, then `cirru.no-run`, and use `cirru.no-check` only when necessary."
+        "Tip: check-mode balance is skewed (cirru: {run_count}, cirru.no-run: {no_run_count}, cirru.cli: {no_cli_count}, cirru.no-check: {no_check_count}). Prefer `cirru` first, then `cirru.no-run`, and use `cirru.no-check` only when necessary."
       )
       .yellow()
     );
@@ -1338,11 +1346,12 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
   let total = blocks.len();
   let run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Run).count();
   let no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
+  let no_cli_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCli).count();
   let no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
   let mut printed_header = false;
 
   if !quiet {
-    print_check_md_header(file_path, run_count, no_run_count, no_check_count);
+    print_check_md_header(file_path, run_count, no_run_count, no_cli_count, no_check_count);
     printed_header = true;
   }
 
@@ -1357,12 +1366,13 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
     let mode_label = match mode {
       CirruCheckMode::Run => "",
       CirruCheckMode::NoRun => "[no-run] ",
+      CirruCheckMode::NoCli => "[cli] ",
       CirruCheckMode::NoCheck => "[no-check] ",
     };
 
     let check_result = match mode {
       CirruCheckMode::Run => prepare_program_for_snippet(entry, &shared_files, code).and_then(|entries| run_eval_in_process(&entries)),
-      CirruCheckMode::NoRun => {
+      CirruCheckMode::NoRun | CirruCheckMode::NoCli => {
         prepare_program_for_snippet(entry, &shared_files, code).and_then(|entries| run_check_only_in_process(&entries))
       }
       CirruCheckMode::NoCheck => run_parse_only_in_process(code),
@@ -1383,7 +1393,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
     } else {
       failed += 1;
       if !printed_header {
-        print_check_md_header(file_path, run_count, no_run_count, no_check_count);
+        print_check_md_header(file_path, run_count, no_run_count, no_cli_count, no_check_count);
         printed_header = true;
       }
       let stderr = check_result

@@ -1,4 +1,5 @@
 use super::*;
+use calcit::calcit::CalcitTypeAnnotation;
 use std::cell::RefCell;
 use std::fs;
 

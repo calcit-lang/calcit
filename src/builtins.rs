@@ -1,3 +1,4 @@
+pub mod cli_options;
 pub mod effects;
 mod json;
 mod lists;
@@ -60,6 +61,8 @@ pub struct RegisteredProcDescriptor {
   pub callback_last: bool,
   /// Effect/analysis tags aligned with calcit.core CodeEntry `:tags` (e.g. `:log`, `:io`, `:interop`).
   pub tags: HashSet<EdnTag>,
+  /// Typed options map spec for procs that take `$ {} (:key val)` (e.g. `calcit.cli/*`).
+  pub cli_options: Option<&'static [cli_options::CliOptionSpec]>,
 }
 
 impl Default for RegisteredProcDescriptor {
@@ -77,6 +80,7 @@ impl Default for RegisteredProcDescriptor {
       docs_hint: None,
       callback_last: false,
       tags: HashSet::new(),
+      cli_options: None,
     }
   }
 }
@@ -123,10 +127,20 @@ pub fn registered_proc_descriptor(name: &str) -> Option<RegisteredProcDescriptor
   IMPORTED_PROC_DESCRIPTORS.read().expect("read proc descriptors").get(name).cloned()
 }
 
+pub fn registered_proc_cli_options(name: &str) -> Option<&'static [cli_options::CliOptionSpec]> {
+  IMPORTED_PROC_DESCRIPTORS
+    .read()
+    .expect("read proc descriptors")
+    .get(name)
+    .and_then(|descriptor| descriptor.cli_options)
+}
+
 pub fn registered_proc_has_tag(name: &str, tag: &EdnTag) -> bool {
-  registered_proc_descriptor(name)
-    .map(|descriptor| descriptor.tags.contains(tag))
-    .unwrap_or(false)
+  IMPORTED_PROC_DESCRIPTORS
+    .read()
+    .expect("read proc descriptors")
+    .get(name)
+    .is_some_and(|descriptor| descriptor.tags.contains(tag))
 }
 
 pub fn list_registered_procs() -> Vec<(Arc<str>, RegisteredProcDescriptor)> {
