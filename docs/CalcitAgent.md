@@ -204,24 +204,14 @@ cr docs agents --full
 
 ---
 
-## 1) 默认约定（基于反馈）
+## 1) 默认约定
 
-- 默认优先 **Cirru 输出**，避免默认 JSON 带来的 token 膨胀。
-- 大定义默认先 `query peek`，确认签名与规模后再 `query def`，避免首次信息过载。
+- 默认优先 **Cirru 输出**，避免 JSON 带来的 token 膨胀。
+- 大定义先 `query peek` 看签名，再用 `query def` 看完整代码。
 - 路径统一使用点号：`'5.5.1.3'`。
-- 大函数先“看结构再下刀”：先 `query def`，再 `query search` 拿路径，再 `tree show --path` 聚焦子树。
-- 搜索命中很多时，修改遵循：
-  - 从大索引往前改，或
-  - 每次修改后重新 `query search` 避免路径漂移。
-- Tips 需要但应可控：
-  - 默认只在高优先级场景展示最多一条（快速扫读）
-  - 需要全部提示时主动加 `--tips`
-  - 需要精细控制时使用 `--tips-level`
-- 涉及 `map/filter/reduce` 的改动，优先写成显式嵌套调用（`map xs f`、`filter xs pred`），再考虑 `->`，避免宏展开后参数位置误判。
-- `query find` 不要再写 `--fuzzy`（旧参数 `-f`）；当前默认 fuzzy，需要精确匹配时使用 `--exact`。
-- 在项目目录里用 `cr eval` 验证本项目定义时，默认不要加 `--dep ./`，避免重复加载本地模块导致 namespace 冲突。
-
-> 说明：默认不加参数即 `minimal`（仅高优先级提示，最多 1 条）；`--tips` 等价于 `full`。也支持显式 `--tips-level minimal|full|none`。
+- 搜索命中多时从大索引往前改，或每次修改后重新 `query search`。
+- `query find` 默认 fuzzy，精确匹配用 `--exact`。
+- 在项目目录里用 `cr eval` 验证时，默认不要加 `--dep ./`，避免 namespace 冲突。
 
 ---
 
@@ -371,64 +361,27 @@ cr edit inc --changed <ns/def>
 - 若要看全部提示请加 `--tips`。
 - 若要完全静默可用 `--tips-level none`。
 
-### 本轮新增的稳定性约束（已验证）
-
-- `cr query find` 当前默认 fuzzy，不再使用 `--fuzzy`（旧参数 `-f`）；精确匹配用 `--exact`。
-- Cirru 字符串统一按 one-liner 处理：多行文本用 `\n` 内嵌；含空格/特殊字符优先用 `"|text with spaces"`，简单字符串用 `|text`。
-- 条件分支末尾若直接返回值（尤其 `nil`）出现调用歧义时，优先改成稳定值结构（例如 sentinel map）再做过滤。
-- `cr query error` 提示旧错误堆栈时，先以本次 `cr js` / `cr --check-only` 结果为准，再决定是否继续追旧栈。
-
-### 命令参数对照（易混）
-
-- `cr query search <keyword> --filter <ns/def>`：`--filter` 用于限定搜索范围（有效）。
-- `cr query find <symbol>`：默认就是 fuzzy，不再使用 `--fuzzy`（旧参数 `-f`）；精确匹配用 `--exact`。
-- `cr edit def ... --file <file>`：`--file` 是“从文件读代码输入”（与 query 的 `--filter` 含义不同）。
-
-### `Invalid path` 快速恢复模板（固定 3 步）
-
-当路径报错时，不要继续猜坐标，直接走下面流程：
-
-1. `cr query search <keyword> --filter <ns/def>` 重新拿最新路径。
-2. `cr tree show <ns/def> --path '<new-path>'` 核对子树上下文。
-3. 再执行 `tree replace/wrap/rewrite`。
-
-常见触发原因：
-
-- 前一步做了 `insert/delete/raise/unwrap`，兄弟索引已变化。
-- 把单行改成多行（尤其涉及 `$`）后，子树深度发生变化。
-
-### 低噪音工作模式（推荐给 Agent）
+### 低噪音工作模式
 
 ```bash
-# 1) 先轻看，避免大段输出
 cr query peek <ns/def>
-
-# 2) 必要时才看完整定义（默认 Cirru）
 cr query def <ns/def>
-
-# 3) 用 search 定位后再 show 局部
 cr query search '<keyword>' --filter <ns/def>
 cr tree show <ns/def> --path '<path>'
-
-# 4) 需要完整提示再打开
-cr --tips query def <ns/def>
 ```
 
-仅在需要程序化处理时再加 `--json`，否则保持 Cirru 输出即可。
+> **`Invalid path` 恢复**：`cr query search` 重拿路径 → `cr tree show` 核对 → 执行修改。
 
 ---
 
-## 5) 路径规则（统一）
+## 5) 路径规则
 
-- 使用点号路径：`'5.5.1.3'`。
-- `--path ''` 表示根节点，仅在明确需要根级操作时使用。
-- 输入错误路径会触发 `Invalid path`，先 `tree show` 校验上下文再改。
+- 使用点号路径：`5.5.1.3`。
+- `--path ''` 表示根节点。
 
 ---
 
-## 6) 新手上手顺序（一次就够）
-
-按顺序跑一遍即可建立手感：
+## 6) 新手上手顺序
 
 ```bash
 cr query defs app.main
@@ -439,60 +392,18 @@ cr edit inc --changed app.main/main!
 cr js
 ```
 
-第 5 步 tree 替换（`--code` 含特殊字符时优先用 `cr exec` + heredoc）：
+> `--code` 含特殊字符时用 `cr exec` + heredoc 替代。
 
 ---
 
-## 7) 进阶入口（按需跳转）
 
-本文件不重复收录低频内容，遇到下列场景再跳转：
+## 7) `cr` 能力地图
 
-- 复杂重构 / 大规模替换 / rewrite 组合：`cr docs read agent-advanced.md rewrite`
-- 命名空间导入、输入格式与路径漂移陷阱：`cr docs read agent-advanced.md 命名空间`、`cr docs read agent-advanced.md 输入格式`
-- 运行模式、eval 细节、CLI 约束：`Agents.md`
-- 浏览可查 scope：`cr docs scopes`
-- 浏览 calcit 文档文件：`cr docs list`
-- 浏览某个模块文档：`cr docs list --module <module-name>`
-- 浏览文件章节：`cr docs sections <file> [--module <module-name>]`
-- 语言章节与 Cirru 语法细节：`cr docs read <file>` / `cr cirru show-guide`
-
----
-
-## 8) 一句话原则
-
-**先定位路径，再看子树，再最小替换；默认 Cirru，JSON 只在必要时启用。**
-
----
-
-## 9) `cr` 能力地图（粗粒度）
-
-当当前模板不够用时，按下面的“能力分层”自行扩展：
-
-- 运行与编译：`cr`, `cr js`, `cr ir`, `cr-wasm`（实验性）, `--watch`
-- 查询与定位：`cr query defs/def/search/search-expr/usages/schema/examples`
-- 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`, `cr analyze program-diff <git-ref>`, `cr analyze call-graph-diff <git-ref>`
-- 结构化编辑：`cr tree show/replace/search-replace/cp/wrap/unwrap/raise/rewrite`
-- 定义级编辑：`cr edit mv/def/add-import/imports/...`
-- 配置管理：`cr config show/modules/version/set/add-module/rm-module`
-- 文档与指南：`cr docs scopes/list/sections/read/search/agents`
-- 语法学习：`cr cirru show-guide`
-
-### Agent 自学习最短路径
-
-```bash
-cr docs scopes
-cr docs list
-cr docs list --module respo.calcit
-cr docs sections agent-advanced.md
-cr docs remote-libs search respo
-cr analyze call-graph
-cr analyze count-calls
-cr analyze program-diff HEAD~1          # 对比当前快照与上一 commit 的结构差异（AST tree-diff）
-cr analyze program-diff HEAD~1 --def app.main/main!  # 只看某个定义的差异
-cr analyze call-graph-diff HEAD~1       # 对比调用图，标注新增/删除/变更的调用关系
-cr docs search 'tree rewrite'
-cr docs read run/edit-tree.md rewrite
-cr docs search 'query search-expr'
-```
-
-原则：先在 docs 找“最小可行命令”，再回到当前定义做局部试改与验证。
+- **运行**：`cr`, `cr js`, `cr ir`, `cr-wasm`, `--watch`
+- **查询**：`cr query defs/def/search/usages/schema/examples`
+- **分析**：`cr analyze call-graph/program-diff`
+- **结构化编辑**：`cr tree show/replace/search-replace/cp/wrap`
+- **定义编辑**：`cr edit def/add-import/imports/mv/rename`
+- **配置**：`cr config show/modules/version`
+- **文档**：`cr docs scopes/list/read/search/agents`
+- **语法**：`cr cirru show-guide`
