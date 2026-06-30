@@ -1334,7 +1334,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
 
   if !Path::new(entry).exists() {
     return Err(format!(
-      "Entry file '{entry}' not found. Use -d to specify a valid entry .cirru file."
+      "Entry file '{entry}' not found. Use --entry to specify a valid entry .cirru file."
     ));
   }
 

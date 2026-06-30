@@ -31,7 +31,7 @@ while IFS= read -r file; do
 
   output=""
   exit_code=0
-  if output="$("${CR_CMD[@]}" "$ENTRY" docs check-md "$file" --dep "$ENTRY" "${QUIET_ARGS[@]}" 2>&1)"; then
+  if output="$("${CR_CMD[@]}" "$ENTRY" docs check-md "$file" --entry "$ENTRY" "${QUIET_ARGS[@]}" 2>&1)"; then
     :
   else
     exit_code=$?
