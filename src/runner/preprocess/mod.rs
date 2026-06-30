@@ -1297,21 +1297,6 @@ fn preprocess_list_call(
           }
         }
 
-        // Type-check registered proc options maps from Rust specs (e.g. calcit.cli/*).
-        if let Some(Calcit::Registered(alias)) = ys.first() {
-          if let Some(specs) = builtins::registered_proc_cli_options(alias.as_ref()) {
-            if let Some(arg) = processed_args.first() {
-              for issue in builtins::cli_options::check_cli_options_map(alias.as_ref(), arg, specs) {
-                if let Some(loc) = call_location.clone().or_else(|| arg.get_location()) {
-                  gen_check_warning_code_at(issue.message, issue.code, file_ns, Some(loc), check_warnings);
-                } else {
-                  gen_check_warning_code(issue.message, issue.code, file_ns, check_warnings);
-                }
-              }
-            }
-          }
-        }
-
         // Eagerly execute type-slot procs during preprocessing so that TypeSlot
         // annotations can be resolved by the type checker within the same compilation.
         if let Some(Calcit::Proc(CalcitProc::DeftypeSlot)) = ys.first() {

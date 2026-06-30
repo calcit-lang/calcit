@@ -19,16 +19,6 @@ use calcit::{
   runner::track,
 };
 
-mod calcit_cli;
-mod calcit_cli_analyze;
-mod calcit_cli_args;
-mod calcit_cli_docs;
-mod calcit_cli_extra;
-mod calcit_cli_program;
-mod calcit_cli_query;
-mod calcit_cli_specs;
-mod calcit_cli_tree;
-
 /// FFI protocol types
 type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
 type EdnFfiFn = fn(
@@ -161,23 +151,10 @@ fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<()
 const ABI_VERSION: &str = "0.0.9";
 
 static PLATFORM_APIS_INJECTED: AtomicBool = AtomicBool::new(false);
-static CALCIT_CLI_BUILTINS_INJECTED: AtomicBool = AtomicBool::new(false);
 
 #[allow(dead_code)]
 pub fn inject_platform_apis() {
-  inject_platform_apis_impl(true);
-}
-
-#[allow(dead_code)]
-pub fn inject_platform_apis_without_cli() {
-  inject_platform_apis_impl(false);
-}
-
-fn inject_platform_apis_impl(include_calcit_cli: bool) {
   if PLATFORM_APIS_INJECTED.swap(true, Ordering::Relaxed) {
-    if include_calcit_cli {
-      register_calcit_cli_builtins();
-    }
     return;
   }
   builtins::register_import_proc_with_descriptor(
@@ -191,7 +168,6 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
       docs_hint: Some(Arc::from("Fix: use native runtime and pass (lib-name method ...args).")),
       callback_last: false,
       tags: proc_tags(["interop", "io"]),
-      ..RegisteredProcDescriptor::default()
     },
   );
   let log_io = proc_tags(["log", "io"]);
@@ -200,7 +176,7 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
     stdout_println,
     RegisteredProcDescriptor {
       tags: log_io.clone(),
-      ..RegisteredProcDescriptor::default()
+      ..Default::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -208,7 +184,7 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
     stdout_println,
     RegisteredProcDescriptor {
       tags: log_io.clone(),
-      ..RegisteredProcDescriptor::default()
+      ..Default::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -216,7 +192,7 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
     stderr_println,
     RegisteredProcDescriptor {
       tags: log_io,
-      ..RegisteredProcDescriptor::default()
+      ..Default::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -230,7 +206,6 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
       tags: proc_tags(["interop", "io"]),
-      ..RegisteredProcDescriptor::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -244,7 +219,6 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
       tags: proc_tags(["interop", "io"]),
-      ..RegisteredProcDescriptor::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -252,7 +226,7 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
     builtins::meta::async_sleep,
     RegisteredProcDescriptor {
       tags: proc_tags(["io"]),
-      ..RegisteredProcDescriptor::default()
+      ..Default::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -260,383 +234,13 @@ fn inject_platform_apis_impl(include_calcit_cli: bool) {
     on_ctrl_c,
     RegisteredProcDescriptor {
       tags: proc_tags(["control", "io"]),
-      ..RegisteredProcDescriptor::default()
+      ..Default::default()
     },
   );
-
-  if include_calcit_cli {
-    register_calcit_cli_builtins();
-  }
 
   if !calcit::quiet_tool_output() {
     eprintln!("{}", "registered platform APIs".dimmed());
   }
-}
-
-fn register_calcit_cli_builtins() {
-  if CALCIT_CLI_BUILTINS_INJECTED.swap(true, Ordering::Relaxed) {
-    return;
-  }
-
-  use calcit_cli::*;
-  use calcit_cli_specs::*;
-  let cli_tags = proc_tags(["cli", "io"]);
-  let tags = || cli_tags.clone();
-
-  register_calcit_cli_descriptor("calcit.cli/list-ns", list_namespaces, LIST_NS, "list namespace names", tags());
-  register_calcit_cli_descriptor("calcit.cli/list-defs", list_defs, LIST_DEFS, "list definition names", tags());
-  register_calcit_cli_descriptor("calcit.cli/show-def", show_def, SHOW_DEF, "return full Cirru code", tags());
-  register_calcit_cli_descriptor("calcit.cli/peek-def", peek_def, PEEK_DEF, "first N lines", tags());
-  register_calcit_cli_descriptor("calcit.cli/search-def", search_def, SEARCH_DEF, "list matching leaf paths", tags());
-  register_calcit_cli_descriptor("calcit.cli/find-symbol", find_symbol, FIND_SYMBOL, "find across namespaces", tags());
-  register_calcit_cli_descriptor("calcit.cli/show-schema", show_schema, SHOW_SCHEMA, "return schema", tags());
-  register_calcit_cli_descriptor("calcit.cli/list-examples", list_examples, LIST_EXAMPLES, "list examples", tags());
-  register_calcit_cli_descriptor("calcit.cli/list-usages", list_usages, LIST_USAGES, "find references", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/list-config",
-    list_config,
-    LIST_CONFIG,
-    "return config as Cirru EDN",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/list-modules",
-    list_modules,
-    LIST_MODULES,
-    "list module dependencies",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/tree-show", tree_show, TREE_SHOW, "show AST subtree", tags());
-  register_calcit_cli_descriptor("calcit.cli/edit-def", edit_def, EDIT_DEF, "create/update definition", tags());
-  register_calcit_cli_descriptor("calcit.cli/tree-replace", tree_replace, TREE_REPLACE, "replace AST node", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/search-replace",
-    search_replace,
-    SEARCH_REPLACE,
-    "search & replace leaf",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/add-import", add_import, ADD_IMPORT, "add :refer import", tags());
-  register_calcit_cli_tree_edit_fns(&cli_tags);
-}
-
-fn register_calcit_cli_descriptor(
-  name: &str,
-  handler: calcit::builtins::FnType,
-  specs: &'static [calcit_cli_args::CliArgSpec],
-  result_hint: &str,
-  tags: std::collections::HashSet<cirru_edn::EdnTag>,
-) {
-  let docs_hint = calcit_cli_args::format_cli_docs_hint(name, specs, result_hint);
-  builtins::register_import_proc_with_descriptor(
-    name,
-    handler,
-    RegisteredProcDescriptor {
-      arity_min: 1,
-      arity_max: Some(1),
-      platforms: vec![RegisteredProcPlatform::Native],
-      stability: RegisteredProcStability::Experimental,
-      docs_hint: Some(Arc::from(docs_hint)),
-      tags,
-      cli_options: Some(specs),
-      ..RegisteredProcDescriptor::default()
-    },
-  );
-}
-
-fn register_calcit_cli_tree_edit_fns(cli_tags: &std::collections::HashSet<cirru_edn::EdnTag>) {
-  use calcit_cli::*;
-  use calcit_cli_specs::*;
-  let tags = || cli_tags.clone();
-  register_calcit_cli_descriptor("calcit.cli/tree-delete", tree_delete, TREE_DELETE, "delete AST node", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-insert",
-    tree_insert,
-    TREE_INSERT,
-    "insert node (before|after|prepend-child|append-child|replace)",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-wrap",
-    tree_wrap,
-    TREE_WRAP,
-    "wrap node; use `self` leaf for original",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-unwrap",
-    tree_unwrap,
-    TREE_UNWRAP,
-    "unwrap list node into parent",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/tree-raise", tree_raise, TREE_RAISE, "replace parent with child", tags());
-  register_calcit_cli_descriptor("calcit.cli/tree-cp", tree_cp, TREE_CP, "copy AST subtree", tags());
-  register_calcit_cli_descriptor("calcit.cli/tree-mv", tree_mv, TREE_MV, "move AST subtree", tags());
-  register_calcit_cli_descriptor("calcit.cli/rename-def", rename_def, RENAME_DEF, "rename definition", tags());
-  register_calcit_cli_descriptor("calcit.cli/rm-def", rm_def, RM_DEF, "remove definition", tags());
-  register_calcit_cli_descriptor("calcit.cli/mv-def", mv_def, MV_DEF, "move definition", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/split-def",
-    split_def,
-    SPLIT_DEF,
-    "extract sub-expression to new def",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/add-ns", add_ns, ADD_NS, "create namespace", tags());
-  register_calcit_cli_descriptor("calcit.cli/rm-import", rm_import, RM_IMPORT, "remove require rule", tags());
-  register_calcit_cli_descriptor("calcit.cli/edit-doc", edit_doc, EDIT_DOC, "update definition doc", tags());
-  register_calcit_cli_descriptor("calcit.cli/edit-schema", edit_schema, EDIT_SCHEMA, "update type schema", tags());
-  register_calcit_cli_descriptor("calcit.cli/add-example", add_example, ADD_EXAMPLE, "add example", tags());
-  register_calcit_cli_descriptor("calcit.cli/show-error", show_error, SHOW_ERROR, "read last error stack", tags());
-  register_calcit_cli_extra_fns(cli_tags);
-}
-
-fn register_calcit_cli_extra_fns(cli_tags: &std::collections::HashSet<cirru_edn::EdnTag>) {
-  use calcit_cli_extra::*;
-  use calcit_cli_specs::*;
-  let tags = || cli_tags.clone();
-  register_calcit_cli_descriptor("calcit.cli/rm-ns", rm_ns, RM_NS, "remove namespace", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/set-imports",
-    set_imports,
-    SET_IMPORTS,
-    "replace all import rules",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/format-file", format_file, FORMAT_FILE, "format snapshot file", tags());
-  register_calcit_cli_descriptor("calcit.cli/show-doc", show_doc, SHOW_DOC, "return definition doc", tags());
-  register_calcit_cli_descriptor("calcit.cli/show-ns-doc", show_ns_doc, SHOW_NS_DOC, "return namespace doc", tags());
-  register_calcit_cli_descriptor("calcit.cli/list-tags", list_tags, LIST_TAGS, "return comma-separated tags", tags());
-  register_calcit_cli_descriptor("calcit.cli/set-tags", set_tags, SET_TAGS, "set definition tags", tags());
-  register_calcit_cli_descriptor("calcit.cli/rm-example", rm_example, RM_EXAMPLE, "remove example", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/clear-examples",
-    clear_examples,
-    CLEAR_EXAMPLES,
-    "remove all examples",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/set-examples", set_examples, SET_EXAMPLES, "replace examples", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-replace-leaf",
-    tree_replace_leaf,
-    TREE_REPLACE_LEAF,
-    "replace matching leaves",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-swap-next",
-    tree_swap_next,
-    TREE_SWAP_NEXT,
-    "swap with next sibling",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-swap-prev",
-    tree_swap_prev,
-    TREE_SWAP_PREV,
-    "swap with previous sibling",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-batch-delete",
-    tree_batch_delete,
-    TREE_BATCH_DELETE,
-    "delete multiple paths",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-rewrite",
-    tree_rewrite,
-    TREE_REWRITE,
-    "rewrite with refs like self=.,arg=1.0",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/set-config",
-    set_config,
-    SET_CONFIG,
-    "set init-fn/reload-fn/version",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/add-module", add_module, ADD_MODULE, "add module dependency", tags());
-  register_calcit_cli_descriptor("calcit.cli/rm-module", rm_module, RM_MODULE, "remove module dependency", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/cirru-parse",
-    cirru_parse,
-    CIRRU_PARSE,
-    "parse Cirru to JSON string",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/cirru-format",
-    cirru_format,
-    CIRRU_FORMAT,
-    "format JSON Cirru AST to text",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/read-text-file",
-    read_text_file,
-    READ_TEXT_FILE,
-    "read text file contents",
-    tags(),
-  );
-  register_calcit_cli_analyze_fns(cli_tags);
-}
-
-fn register_calcit_cli_analyze_fns(cli_tags: &std::collections::HashSet<cirru_edn::EdnTag>) {
-  use calcit_cli_analyze::*;
-  use calcit_cli_extra::*;
-  use calcit_cli_specs::*;
-  let tags = || cli_tags.clone();
-  register_calcit_cli_descriptor(
-    "calcit.cli/cirru-parse-edn",
-    cirru_parse_edn,
-    CIRRU_PARSE_EDN,
-    "parse Cirru EDN to JSON string",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/cirru-show-guide",
-    cirru_show_guide,
-    CIRRU_SHOW_GUIDE,
-    "read ~/.config/calcit/docs/cirru-syntax.md",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/docs-search",
-    docs_search,
-    DOCS_SEARCH,
-    "grep markdown docs for keyword",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/trigger-inc",
-    trigger_inc,
-    TRIGGER_INC,
-    "write .compact-inc.cirru",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/tree-replace-leaf-regex",
-    tree_replace_leaf_regex,
-    TREE_REPLACE_LEAF_REGEX,
-    "replace leaves matching regex",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/analyze-call-graph",
-    analyze_call_graph,
-    ANALYZE_CALL_GRAPH,
-    "call graph report",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/analyze-effects-graph",
-    analyze_effects_graph,
-    ANALYZE_EFFECTS_GRAPH,
-    "effects graph report",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/analyze-count-calls",
-    analyze_count_calls,
-    ANALYZE_COUNT_CALLS,
-    "call count report",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/analyze-check-types",
-    analyze_check_types,
-    ANALYZE_CHECK_TYPES,
-    "type coverage report",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/analyze-weak-types",
-    analyze_weak_types,
-    ANALYZE_WEAK_TYPES,
-    "weak type hotspots",
-    tags(),
-  );
-  register_calcit_cli_query_fns(cli_tags);
-  register_calcit_cli_docs_fns(cli_tags);
-}
-
-fn register_calcit_cli_query_fns(cli_tags: &std::collections::HashSet<cirru_edn::EdnTag>) {
-  use calcit_cli_extra::*;
-  use calcit_cli_query::*;
-  use calcit_cli_specs::*;
-  let tags = || cli_tags.clone();
-  register_calcit_cli_descriptor("calcit.cli/show-pkg", show_pkg, SHOW_PKG, "package name", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/show-ns",
-    show_ns,
-    SHOW_NS,
-    "namespace doc + declaration summary",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/list-defs-by-tag",
-    list_defs_by_tag,
-    LIST_DEFS_BY_TAG,
-    "ns/def list",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/validate-file",
-    validate_file,
-    VALIDATE_FILE,
-    "check-only preprocess (returns ok or error)",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/bump-version",
-    bump_version,
-    BUMP_VERSION,
-    "bump semver in config",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/edit-ns-doc", edit_ns_doc, EDIT_NS_DOC, "update namespace doc", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/search-project",
-    search_project,
-    SEARCH_PROJECT,
-    "leaf search across project",
-    tags(),
-  );
-  register_calcit_cli_descriptor(
-    "calcit.cli/search-def-regex",
-    search_def_regex,
-    SEARCH_DEF_REGEX,
-    "regex leaf paths in definition",
-    tags(),
-  );
-  register_calcit_cli_descriptor("calcit.cli/search-expr", search_expr, SEARCH_EXPR, "structural search", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/list-host-procs",
-    list_host_procs,
-    LIST_HOST_PROCS,
-    "registered host proc names and tags",
-    tags(),
-  );
-}
-
-fn register_calcit_cli_docs_fns(cli_tags: &std::collections::HashSet<cirru_edn::EdnTag>) {
-  use calcit_cli_docs::*;
-  use calcit_cli_specs::*;
-  let tags = || cli_tags.clone();
-  register_calcit_cli_descriptor("calcit.cli/docs-agents", docs_agents, DOCS_AGENTS, "read cached Agents.md", tags());
-  register_calcit_cli_descriptor("calcit.cli/docs-read", docs_read, DOCS_READ, "read guide markdown", tags());
-  register_calcit_cli_descriptor(
-    "calcit.cli/docs-sections",
-    docs_sections,
-    DOCS_SECTIONS,
-    "list markdown headings",
-    tags(),
-  );
 }
 
 // &call-dylib-edn

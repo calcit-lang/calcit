@@ -428,7 +428,7 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ []
-          :tags $ #{} :builtin :internal :log :io
+          :tags $ #{} :builtin :internal :io :log
         |&doseq $ %{} :CodeEntry (:doc "|Side-effect traversal macro. Iterates over a binding pair, executing the body for each element and returning nil.")
           :code $ quote
             defmacro &doseq (pair & body)
@@ -450,7 +450,7 @@
               assert= ([] 1 2) (deref *seen)
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-          :tags $ #{} :internal :macro :effect
+          :tags $ #{} :effect :internal :macro
         |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -567,6 +567,24 @@
             {} (:return :tag)
               :args $ []
           :tags $ #{} :builtin :internal :io
+        |&get-def-doc $ %{} :CodeEntry (:doc "|internal function for reading definition doc metadata (cr/eval runtime only)\nSyntax: (&get-def-doc ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: string\nReturns the `:doc` text stored on a loaded definition, or empty string when missing. Not available in calcit-js.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= true
+              includes? (&get-def-doc |calcit.core/map) |map
+          :schema $ :: :fn
+            {} (:return :string)
+              :args $ [] :dynamic
+          :tags $ #{} :builtin :internal :io :meta
+        |&get-def-schema $ %{} :CodeEntry (:doc "|internal function for reading definition schema metadata (cr/eval runtime only)\nSyntax: (&get-def-schema ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: EDN data\nReturns the `:schema` value stored on a loaded definition as EDN data. Not available in calcit-js.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= :fn
+              &tuple:nth (&get-def-schema |calcit.core/map) 0
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ [] :dynamic
+          :tags $ #{} :builtin :internal :io :meta
         |&get-os $ %{} :CodeEntry (:doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -574,22 +592,6 @@
             {} (:return :tag)
               :args $ []
           :tags $ #{} :builtin :internal :io
-        |&get-def-doc $ %{} :CodeEntry (:doc "|internal function for reading definition doc metadata (cr/eval runtime only)\nSyntax: (&get-def-doc ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: string\nReturns the `:doc` text stored on a loaded definition, or empty string when missing. Not available in calcit-js.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ assert= true $ includes? (&get-def-doc |calcit.core/map) |map
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] :dynamic
-          :tags $ #{} :builtin :internal :meta :io
-        |&get-def-schema $ %{} :CodeEntry (:doc "|internal function for reading definition schema metadata (cr/eval runtime only)\nSyntax: (&get-def-schema ns/def)\nParams: target (string or symbol in `ns/def` form)\nReturns: EDN data\nReturns the `:schema` value stored on a loaded definition as EDN data. Not available in calcit-js.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ assert= :fn $ &tuple:nth (&get-def-schema |calcit.core/map) 0
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
-          :tags $ #{} :builtin :internal :meta :io
         |&hash $ %{} :CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2428,7 +2430,7 @@
               not $ empty? ([] 1)
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-          :tags $ #{} :macro :control :log
+          :tags $ #{} :control :log :macro
         |assert-detect $ %{} :CodeEntry (:doc "|asserts that a value satisfies a predicate function, raises error with details if not")
           :code $ quote
             defmacro assert-detect (f code)
@@ -2449,11 +2451,11 @@
             quote $ assert-detect even? (* 2 5)
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-          :tags $ #{} :macro :control :log
+          :tags $ #{} :control :log :macro
         |assert-type $ %{} :CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :meta
+          :tags $ #{} :builtin :internal :meta :syntax
         |assert= $ %{} :CodeEntry (:doc "|asserts that two values are equal, raises error showing both values if not")
           :code $ quote
             defmacro assert= (a b)
@@ -2475,7 +2477,7 @@
             quote $ assert= ([] 1 2 3) (range 1 4)
           :schema $ :: :macro
             {} $ :args ([] :dynamic :dynamic)
-          :tags $ #{} :macro :control :log
+          :tags $ #{} :control :log :macro
         |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
             defn assoc (x k v)
@@ -2961,7 +2963,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic
-          :tags $ #{} :builtin :internal :syntax :state
+          :tags $ #{} :builtin :internal :state :syntax
         |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name [('T 'E)] (:variant type...) ...)\nParams: Name (symbol/tag), optional generics list, variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")
           :code $ quote
             defmacro defenum (name & variants)
@@ -3262,13 +3264,6 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
           :tags $ #{} :macro
-        |deftype-slot $ %{} :CodeEntry (:doc "|Declare a named type slot for late binding\nSyntax: (deftype-slot :slot-name)\nParams: slot-name (tag or string)\nReturns: nil\nRegisters a type slot on the current namespace entry; bound later via bind-type or with-type-slot")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
-              :args $ [] :tag
-          :tags $ #{} :builtin :internal :syntax :state :meta
         |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn $ {} (:args [...]) (:return t))) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
             defmacro deftrait (name & methods)
@@ -3304,6 +3299,13 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
           :tags $ #{} :macro
+        |deftype-slot $ %{} :CodeEntry (:doc "|Declare a named type slot for late binding\nSyntax: (deftype-slot :slot-name)\nParams: slot-name (tag or string)\nReturns: nil\nRegisters a type slot on the current namespace entry; bound later via bind-type or with-type-slot")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ [] :tag
+          :tags $ #{} :builtin :internal :meta :state :syntax
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
             defn deref (*a)
@@ -3519,7 +3521,7 @@
         |eval $ %{} :CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :interop
+          :tags $ #{} :builtin :internal :interop :syntax
         |even? $ %{} :CodeEntry (:doc "|check if number is even?")
           :code $ quote
             defn even? (n)
@@ -3855,7 +3857,7 @@
             {}
               :args $ [] :string
               :return $ :: :optional :string
-          :tags $ #{} :builtin :internal :io :env
+          :tags $ #{} :builtin :env :internal :io
         |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
           :code $ quote
             defn get-in (base path)
@@ -3917,7 +3919,7 @@
         |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (used for async and function schema metadata)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (schema map or keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and schema metadata such as :args, :return, :generics, and :where") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :async
+          :tags $ #{} :async :builtin :internal :syntax
         |identical? $ %{} :CodeEntry (:doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4153,7 +4155,7 @@
                 ys $ &list:concat & xs
                 quasiquote $ &js-object ~@ys
           :examples $ []
-          :tags $ #{} :macro :interop
+          :tags $ #{} :interop :macro
         |json-parse $ %{} :CodeEntry (:doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4478,15 +4480,15 @@
         |macroexpand $ %{} :CodeEntry (:doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :meta
+          :tags $ #{} :builtin :internal :meta :syntax
         |macroexpand-1 $ %{} :CodeEntry (:doc "|internal syntax for expanding macro just once for debugging\nSyntax: (macroexpand-1 expr)\nParams: expr (macro call)\nReturns: one-level expanded code\nExpands macro only one level for debugging purposes") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :meta
+          :tags $ #{} :builtin :internal :meta :syntax
         |macroexpand-all $ %{} :CodeEntry (:doc "|internal syntax for expanding macro until macros inside are resolved\nSyntax: (macroexpand-all expr)\nParams: expr (code with macros)\nReturns: fully expanded code\nExpands all macros including nested ones") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :meta
+          :tags $ #{} :builtin :internal :meta :syntax
         |map $ %{} :CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
           :code $ quote
             defn map (xs f)
@@ -4838,7 +4840,7 @@
           :schema $ :: :fn
             {} (:return :unit)
               :args $ [] (:: :optional :number)
-          :tags $ #{} :builtin :internal :control
+          :tags $ #{} :builtin :control :internal
         |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4850,7 +4852,7 @@
             {} (:return 'T)
               :args $ [] :string
               :generics $ [] 'T
-          :tags $ #{} :builtin :internal :control
+          :tags $ #{} :builtin :control :internal
         |range $ %{} :CodeEntry (:doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4880,7 +4882,7 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
-          :tags $ #{} :builtin :internal :io :file
+          :tags $ #{} :builtin :file :internal :io
         |record-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro record-match (value & body)
@@ -4987,7 +4989,7 @@
             {} (:return 'T)
               :args $ [] (:: :ref 'T) 'T
               :generics $ [] 'T
-          :tags $ #{} :builtin :internal :syntax :state
+          :tags $ #{} :builtin :internal :state :syntax
         |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element\nNil input returns nil; lists delegate to &list:rest.")
           :code $ quote
             defn rest (x)
@@ -5429,7 +5431,7 @@
         |try $ %{} :CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism") (:schema :dynamic)
           :code $ quote &runtime-implementation
           :examples $ []
-          :tags $ #{} :builtin :internal :syntax :control
+          :tags $ #{} :builtin :control :internal :syntax
         |tuple? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a tuple literal created with the `::` form.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5715,7 +5717,7 @@
           :examples $ []
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
-          :tags $ #{} :macro :io :log
+          :tags $ #{} :io :log :macro
         |with-gensyms $ %{} :CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
           :code $ quote
             defmacro with-gensyms (names & body)
@@ -5738,7 +5740,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-          :tags $ #{} :builtin :internal :syntax :state :meta
+          :tags $ #{} :builtin :internal :meta :state :syntax
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro wo-js-log (x) x
@@ -5759,7 +5761,7 @@
           :schema $ :: :fn
             {} (:return :unit)
               :args $ [] :string :string
-          :tags $ #{} :builtin :internal :io :file
+          :tags $ #{} :builtin :file :internal :io
         |zipmap $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn zipmap (xs0 ys0)
@@ -5820,565 +5822,6 @@
       :ns $ %{} :NsEntry (:doc "|built-in function and macros in `calcit.core`")
         :code $ quote
           ns calcit.core $ :require (calcit.internal :as internal)
-    |calcit.cli $ %{} :FileEntry
-      :defs $ {}
-        |add-example $ %{} :CodeEntry (:doc "|add example Options: :file-path, :target, :code, :index.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:code :cirru-quote) (:index (:: :optional :number)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |add-import $ %{} :CodeEntry (:doc "|add :refer import Options: :file-path, :namespace, :source-ns, :refer-sym.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string) (:source-ns :string) (:refer-sym :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |add-module $ %{} :CodeEntry (:doc "|add module dependency Options: :file-path, :module-path, :entry.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:module-path :string) (:entry (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |add-ns $ %{} :CodeEntry (:doc "|create namespace Options: :file-path, :namespace, :code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string) (:code (:: :optional :cirru-quote)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |analyze-call-graph $ %{} :CodeEntry (:doc "|call graph report Options: :file-path, :root, :format, :max-depth, :include-core, :ns-prefix, :show-unused.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/analyze-call-graph $ {}
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:root (:: :optional :string)) (:format (:: :optional :string)) (:max-depth (:: :optional :number)) (:include-core (:: :optional :bool)) (:ns-prefix (:: :optional :string)) (:show-unused (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |analyze-check-types $ %{} :CodeEntry (:doc "|type coverage report Options: :file-path, :namespace, :ns-prefix, :only-levels, :include-deps.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace (:: :optional :string)) (:ns-prefix (:: :optional :string)) (:only-levels (:: :optional :string)) (:include-deps (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |analyze-count-calls $ %{} :CodeEntry (:doc "|call count report Options: :file-path, :root, :format, :include-core, :ns-prefix, :sort.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:root (:: :optional :string)) (:format (:: :optional :string)) (:include-core (:: :optional :bool)) (:ns-prefix (:: :optional :string)) (:sort (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |analyze-effects-graph $ %{} :CodeEntry (:doc "|effects graph report Options: :file-path, :root, :format, :max-depth, :include-core, :ns-prefix, :detail.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:root (:: :optional :string)) (:format (:: :optional :string)) (:max-depth (:: :optional :number)) (:include-core (:: :optional :bool)) (:ns-prefix (:: :optional :string)) (:detail (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |analyze-weak-types $ %{} :CodeEntry (:doc "|weak type hotspots Options: :file-path, :namespace, :ns-prefix, :only-kinds, :include-deps.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace (:: :optional :string)) (:ns-prefix (:: :optional :string)) (:only-kinds (:: :optional :string)) (:include-deps (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |bump-version $ %{} :CodeEntry (:doc "|bump semver in config Options: :file-path, :kind.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:kind :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |cirru-format $ %{} :CodeEntry (:doc "|format JSON Cirru AST to text Options: :json.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:json :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |cirru-parse $ %{} :CodeEntry (:doc "|parse Cirru to JSON string Options: :code, :one-liner.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/cirru-parse $ {} (:code "|range 3")
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:code :string) (:one-liner (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |cirru-parse-edn $ %{} :CodeEntry (:doc "|parse Cirru EDN to JSON string Options: :edn.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:edn :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |cirru-show-guide $ %{} :CodeEntry (:doc "|read ~/.config/calcit/docs/cirru-syntax.md")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/cirru-show-guide $ {}
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({})
-          :tags $ #{} :proc :cli :io :native :experimental
-        |clear-examples $ %{} :CodeEntry (:doc "|remove all examples Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |docs-agents $ %{} :CodeEntry (:doc "|read cached Agents.md Options: :headings, :full.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:headings (:: :optional :string)) (:full (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |docs-read $ %{} :CodeEntry (:doc "|read guide markdown Options: :filename, :headings, :full.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:filename :string) (:headings (:: :optional :string)) (:full (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |docs-search $ %{} :CodeEntry (:doc "|grep markdown docs for keyword Options: :keyword, :docs-dir.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/docs-search $ {} (:keyword |trigger-inc)
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:keyword :string) (:docs-dir (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |docs-sections $ %{} :CodeEntry (:doc "|list markdown headings Options: :filename.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:filename :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |edit-def $ %{} :CodeEntry (:doc "|create/update definition Options: :file-path, :target, :code, :overwrite.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:code :cirru-quote) (:overwrite (:: :optional :bool)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |edit-doc $ %{} :CodeEntry (:doc "|update definition doc Options: :file-path, :target, :doc.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:doc :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |edit-ns-doc $ %{} :CodeEntry (:doc "|update namespace doc Options: :file-path, :namespace, :doc.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string) (:doc :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |edit-schema $ %{} :CodeEntry (:doc "|update type schema Options: :file-path, :target, :schema-code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:schema-code :cirru-quote))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |find-symbol $ %{} :CodeEntry (:doc "|find across namespaces Options: :file-path, :symbol.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/find-symbol $ {} (:symbol |main)
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)) (:symbol :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |format-file $ %{} :CodeEntry (:doc "|format snapshot file Options: :file-path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/format-file $ {}
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |list-config $ %{} :CodeEntry (:doc "|return config as Cirru EDN Options: :file-path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/list-config $ {}
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-defs $ %{} :CodeEntry (:doc "|list definition names Options: :file-path, :namespace.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/list-defs $ {} (:namespace |app.main)
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-defs-by-tag $ %{} :CodeEntry (:doc "|ns/def list Options: :file-path, :tag, :namespace.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:tag :string) (:namespace (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-examples $ %{} :CodeEntry (:doc "|list examples Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-host-procs $ %{} :CodeEntry (:doc "|registered host proc names and tags Options: :tag.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:tag (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-modules $ %{} :CodeEntry (:doc "|list module dependencies Options: :file-path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-ns $ %{} :CodeEntry (:doc "|list namespace names Options: :file-path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/list-ns $ {}
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-tags $ %{} :CodeEntry (:doc "|return comma-separated tags Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |list-usages $ %{} :CodeEntry (:doc "|find references Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |mv-def $ %{} :CodeEntry (:doc "|move definition Options: :file-path, :source, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:source :string) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |peek-def $ %{} :CodeEntry (:doc "|first N lines Options: :file-path, :target, :lines.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/peek-def $ {} (:target |app.main/main!) (:lines 5)
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:lines (:: :optional :number)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |read-text-file $ %{} :CodeEntry (:doc "|read text file contents Options: :path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:path :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |rename-def $ %{} :CodeEntry (:doc "|rename definition Options: :file-path, :target, :new-name.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:new-name :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |rm-def $ %{} :CodeEntry (:doc "|remove definition Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |rm-example $ %{} :CodeEntry (:doc "|remove example Options: :file-path, :target, :index.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:index :number))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |rm-import $ %{} :CodeEntry (:doc "|remove require rule Options: :file-path, :namespace, :source-ns.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string) (:source-ns :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |rm-module $ %{} :CodeEntry (:doc "|remove module dependency Options: :file-path, :module-path, :entry.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:module-path :string) (:entry (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |rm-ns $ %{} :CodeEntry (:doc "|remove namespace Options: :file-path, :namespace.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |search-def $ %{} :CodeEntry (:doc "|list matching leaf paths Options: :file-path, :target, :keyword.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/search-def $ {} (:target |app.main/main!) (:keyword |main)
-          :schema $ :: :fn
-            {} (:return (:: :list :string))
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:keyword :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |search-def-regex $ %{} :CodeEntry (:doc "|regex leaf paths in definition Options: :file-path, :target, :regex.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:regex :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |search-expr $ %{} :CodeEntry (:doc "|structural search Options: :file-path, :pattern, :filter, :json, :exact, :max-depth.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:pattern :string) (:filter (:: :optional :string)) (:json (:: :optional :bool)) (:exact (:: :optional :bool)) (:max-depth (:: :optional :number)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |search-project $ %{} :CodeEntry (:doc "|leaf search across project Options: :file-path, :pattern, :filter, :exact, :max-depth.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:pattern :string) (:filter (:: :optional :string)) (:exact (:: :optional :bool)) (:max-depth (:: :optional :number)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |search-replace $ %{} :CodeEntry (:doc "|search & replace leaf Options: :file-path, :target, :pattern, :replacement.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:pattern :string) (:replacement :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |set-config $ %{} :CodeEntry (:doc "|set init-fn/reload-fn/version Options: :file-path, :key, :value, :entry.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:key :string) (:value :string) (:entry (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |set-examples $ %{} :CodeEntry (:doc "|replace examples Options: :file-path, :target, :examples-code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:examples-code :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |set-imports $ %{} :CodeEntry (:doc "|replace all import rules Options: :file-path, :namespace, :rules-code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string) (:rules-code :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |set-tags $ %{} :CodeEntry (:doc "|set definition tags Options: :file-path, :target, :tags.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:tags :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |show-def $ %{} :CodeEntry (:doc "|return full Cirru code Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/show-def $ {} (:target |app.main/main!)
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |show-doc $ %{} :CodeEntry (:doc "|return definition doc Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |show-error $ %{} :CodeEntry (:doc "|read last error stack Options: :error-file.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/show-error $ {}
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:error-file (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |show-ns $ %{} :CodeEntry (:doc "|namespace doc + declaration summary Options: :file-path, :namespace.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |show-ns-doc $ %{} :CodeEntry (:doc "|return namespace doc Options: :file-path, :namespace.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:namespace :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |show-pkg $ %{} :CodeEntry (:doc "|package name Options: :file-path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |show-schema $ %{} :CodeEntry (:doc "|return schema Options: :file-path, :target.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/show-schema $ {} (:target |app.main/main!)
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string))
-          :tags $ #{} :proc :cli :io :native :experimental
-        |split-def $ %{} :CodeEntry (:doc "|extract sub-expression to new def Options: :file-path, :target, :path, :new-name.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string) (:new-name :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-batch-delete $ %{} :CodeEntry (:doc "|delete multiple paths Options: :file-path, :target, :paths.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:paths (:: :list :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-cp $ %{} :CodeEntry (:doc "|copy AST subtree Options: :file-path, :target, :from-path, :to-path, :position.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:from-path :string) (:to-path :string) (:position (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-delete $ %{} :CodeEntry (:doc "|delete AST node Options: :file-path, :target, :path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-insert $ %{} :CodeEntry (:doc "|insert node (before|after|prepend-child|append-child|replace) Options: :file-path, :target, :path, :code, :position.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string) (:code :cirru-quote) (:position (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-mv $ %{} :CodeEntry (:doc "|move AST subtree Options: :file-path, :target, :from-path, :to-path, :position.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:from-path :string) (:to-path :string) (:position (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-raise $ %{} :CodeEntry (:doc "|replace parent with child Options: :file-path, :target, :path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-replace $ %{} :CodeEntry (:doc "|replace AST node Options: :file-path, :target, :path, :code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string) (:code :cirru-quote))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-replace-leaf $ %{} :CodeEntry (:doc "|replace matching leaves Options: :file-path, :target, :pattern, :replacement-code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:pattern :string) (:replacement-code :cirru-quote))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-replace-leaf-regex $ %{} :CodeEntry (:doc "|replace leaves matching regex Options: :file-path, :target, :regex, :replacement-code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:regex :string) (:replacement-code :cirru-quote))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-rewrite $ %{} :CodeEntry (:doc "|rewrite with refs like self=.,arg=1.0 Options: :file-path, :target, :path, :template-code, :refs.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string) (:template-code :cirru-quote) (:refs :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-show $ %{} :CodeEntry (:doc "|show AST subtree Options: :file-path, :target, :path, :max-lines.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path (:: :optional :string)) (:max-lines (:: :optional :number)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-swap-next $ %{} :CodeEntry (:doc "|swap with next sibling Options: :file-path, :target, :path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-swap-prev $ %{} :CodeEntry (:doc "|swap with previous sibling Options: :file-path, :target, :path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-unwrap $ %{} :CodeEntry (:doc "|unwrap list node into parent Options: :file-path, :target, :path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |tree-wrap $ %{} :CodeEntry (:doc "|wrap node; use `self` leaf for original Options: :file-path, :target, :path, :wrapper-code.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:target :string) (:path :string) (:wrapper-code :cirru-quote))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |trigger-inc $ %{} :CodeEntry (:doc "|write .compact-inc.cirru Options: :file-path, :changed, :added, :removed, :added-ns, :removed-ns, :ns-updated.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ calcit.cli/trigger-inc $ {} (:changed |app.main/main!)
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)) (:changed (:: :optional :string)) (:added (:: :optional :string)) (:removed (:: :optional :string)) (:added-ns (:: :optional :string)) (:removed-ns (:: :optional :string)) (:ns-updated (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental :write
-        |validate-file $ %{} :CodeEntry (:doc "|check-only preprocess (returns ok or error) Options: :file-path.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] ({} (:file-path (:: :optional :string)))
-          :tags $ #{} :proc :cli :io :native :experimental
-      :ns $ %{} :NsEntry (:doc "|Host CLI builtins for cr exec. Call with map options: calcit.cli/f $ {} (:file-path |path) (:target |ns/def).")
-        :code $ quote
-          ns calcit.cli
     |calcit.internal $ %{} :FileEntry
       :defs $ {}
         |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list") (:schema :dynamic)

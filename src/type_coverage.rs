@@ -1,4 +1,5 @@
-//! Type coverage and weak-type analysis shared by `cr analyze` and `calcit.cli/analyze-*`.
+//! Type coverage and weak-type analysis for `cr analyze`.
+#![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;

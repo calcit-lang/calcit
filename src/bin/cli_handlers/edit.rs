@@ -144,7 +144,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let auto_json = opts.code.is_some();
 
-  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -277,9 +277,9 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
     CirruEditStrategy::Replace => {
       lines.push("Most differences are replacements. Prefer a local tree edit instead of a full overwrite.".to_string());
       lines.push(format!(
-        "Try: cr tree search-replace '{target}' --pattern '<leaf>' --leaf -e '<new-leaf>'"
+        "Try: cr tree search-replace '{target}' --pattern '<leaf>' --code '(quote |<new-leaf>')"
       ));
-      lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
+      lines.push(format!("Or: cr tree replace '{target}' --path '<path>' --code '(quote |<code>)'"));
     }
     CirruEditStrategy::Insert => {
       lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
@@ -828,13 +828,13 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   }
 
   let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let schema_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
+  let schema_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.code.is_some())?;
   let schema_payload = unwrap_schema_quote_input(schema_node)?;
   let schema_payload = strip_name_field_from_schema(schema_payload);
 
   validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
 
-  // Primitive type tag leaf (e.g. --leaf -e ':string') — store directly without going through fn-schema parsing.
+  // Primitive type tag leaf (e.g. --code '(quote |:string)') — store directly without going through fn-schema parsing.
   if let Cirru::Leaf(tag) = &schema_payload {
     let tag_name = tag.trim_start_matches(':');
     code_entry.schema = Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name));
@@ -909,9 +909,7 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     .ok_or("Examples input required: use --file, --code, --json, or --clear")?;
 
   // Parse examples - expect an array of Cirru expressions
-  let examples: Vec<Cirru> = if opts.leaf {
-    vec![Cirru::Leaf(Arc::from(raw))]
-  } else if opts.json.is_some() || opts.json_input {
+  let examples: Vec<Cirru> = if opts.json.is_some() || opts.json_input {
     // Parse as JSON array
     let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
@@ -967,7 +965,7 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .ok_or("Example input required: use --file, --code, or --json")?;
 
   // Parse example
-  let example: Cirru = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
+  let example: Cirru = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.code.is_some())?;
 
   // Insert at specified position or append
   let position = opts.at.unwrap_or(code_entry.examples.len());
@@ -1322,7 +1320,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   let auto_json = opts.code.is_some();
 
   let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json)? {
-    let code = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+    let code = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
     // Validate: if input looks like a `ns` expression, the name inside must match
     if let Cirru::List(ref items) = code {
       if let Some(Cirru::Leaf(kw)) = items.first() {
@@ -1398,7 +1396,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
   } else {
     // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
     use super::common::cirru_to_json_value;
     cirru_to_json_value(&cirru_node)
   };
@@ -1583,7 +1581,7 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
 
   let auto_json = opts.code.is_some();
 
-  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =

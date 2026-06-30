@@ -1,6 +1,4 @@
 use calcit::cli_args::*;
-use calcit::data::cirru::code_to_calcit;
-use cirru_parser::Cirru;
 use colored::Colorize;
 
 macro_rules! echo_items {
@@ -44,7 +42,7 @@ macro_rules! echo_items {
         opts.code.as_deref(),
         opts.json.as_deref(),
         opts.json_input,
-        opts.leaf,
+
       ),
     );
     echo_items!($tokens $(, $($rest)*)?);
@@ -125,23 +123,13 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
   }
 }
 
-fn describe_leaf_calcit_type(code: &str) -> String {
-  let leaf = Cirru::leaf(code);
-  match code_to_calcit(&leaf, "@echo", "@echo", vec![]) {
-    Ok(calcit) => calcit.describe_type(),
-    Err(e) => format!("*invalid Cirru: {e}*"),
-  }
-}
-
 fn describe_code_input(parts: &CodeInputParts<'_>) -> String {
   let mut desc = String::new();
-  if let Some(code) = parts.code {
-    if parts.leaf {
-      desc.push_str(&format!("--code value is {} (via --leaf). ", describe_leaf_calcit_type(code)));
-    } else if parts.json_input {
+  if parts.code.is_some() {
+    if parts.json_input {
       desc.push_str("--code value is a **JSON-encoded AST** (with --json-input). ");
     } else {
-      desc.push_str("--code is a **Cirru expression snippet**. ");
+      desc.push_str("--code is a **Cirru expression snippet (wrapped in `(quote ...)`)**. ");
     }
   }
   if let Some(_file) = parts.file {
@@ -257,7 +245,6 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
           opts.code.as_deref(),
           opts.json.as_deref(),
           opts.json_input,
-          opts.leaf
         ))
       )
     }
@@ -301,7 +288,6 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
           opts.code.as_deref(),
           opts.json.as_deref(),
           opts.json_input,
-          opts.leaf
         ))
       )
     }
@@ -316,7 +302,6 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
           opts.code.as_deref(),
           opts.json.as_deref(),
           opts.json_input,
-          opts.leaf
         ))
       )
     }
@@ -330,7 +315,6 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
           opts.code.as_deref(),
           opts.json.as_deref(),
           opts.json_input,
-          opts.leaf
         )),
         if opts.overwrite { "(overwrites existing)" } else { "" }
       )
@@ -370,13 +354,7 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
       desc
     }
     TreeSubcommand::Replace(opts) => {
-      let code_parts = CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      );
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input);
       let mut desc = format!("replaces AST node at path `{}` in `{}`", opts.path, opts.target);
       let code_desc = describe_code_input(&code_parts);
       if !code_desc.is_empty() {
@@ -385,13 +363,7 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
       desc
     }
     TreeSubcommand::ReplaceLeaf(opts) => {
-      let code_parts = CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      );
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input);
       let mode = if opts.regex { "regex match" } else { "exact match" };
       let mut desc = format!("replaces all leaf nodes matching `{}` in `{}` ({mode})", opts.pattern, opts.target);
       let code_desc = describe_code_input(&code_parts);
@@ -401,13 +373,7 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
       desc
     }
     TreeSubcommand::SearchReplace(opts) => {
-      let code_parts = CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      );
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input);
       let mut desc = format!("finds unique leaf `{}` in `{}` and replaces it", opts.pattern, opts.target);
       let code_desc = describe_code_input(&code_parts);
       if !code_desc.is_empty() {
@@ -428,13 +394,7 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
     ),
     TreeSubcommand::Raise(opts) => format!("raises node at path `{}` one level up in `{}`", opts.path, opts.target),
     TreeSubcommand::Wrap(opts) => {
-      let code_parts = CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      );
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input);
       let mut desc = format!("wraps node at path `{}` in a new list in `{}`", opts.path, opts.target);
       let code_desc = describe_code_input(&code_parts);
       if !code_desc.is_empty() {
@@ -808,52 +768,28 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input),
       opts.depth,
     ),
     TreeSubcommand::InsertAfter(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input),
       opts.depth,
     ),
     TreeSubcommand::InsertChild(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input),
       opts.depth,
     ),
     TreeSubcommand::AppendChild(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref(), opts.json.as_deref(), opts.json_input),
       opts.depth,
     ),
     TreeSubcommand::SwapNext(opts) => push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth),
@@ -882,17 +818,15 @@ struct CodeInputParts<'a> {
   code: Option<&'a str>,
   json: Option<&'a str>,
   json_input: bool,
-  leaf: bool,
 }
 
 impl<'a> CodeInputParts<'a> {
-  fn new(file: Option<&'a str>, code: Option<&'a str>, json: Option<&'a str>, json_input: bool, leaf: bool) -> Self {
+  fn new(file: Option<&'a str>, code: Option<&'a str>, json: Option<&'a str>, json_input: bool) -> Self {
     Self {
       file,
       code,
       json,
       json_input,
-      leaf,
     }
   }
 }
@@ -913,7 +847,6 @@ fn push_code_input(tokens: &mut Vec<String>, code_input: &CodeInputParts<'_>) {
   push_optional(tokens, "code", code_input.code, "none");
   push_optional(tokens, "json", code_input.json, "none");
   push_switch(tokens, "json-input", code_input.json_input);
-  push_switch(tokens, "leaf", code_input.leaf);
 }
 
 fn push_switch(tokens: &mut Vec<String>, name: &str, enabled: bool) {

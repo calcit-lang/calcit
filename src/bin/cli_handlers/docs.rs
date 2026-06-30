@@ -937,7 +937,7 @@ mod tests;
 ///
 /// - `cirru`          → Run: parse + preprocess + eval
 /// - `cirru.no-run`   → NoRun: parse + preprocess (type-check), skip eval
-/// - `cirru.no-cli`   → NoCli: parse + preprocess, for `calcit.cli/*` calls
+/// - `cirru.no-cli`   → NoCli: parse + preprocess only
 /// - `cirru.no-check` → NoCheck: parse only (syntax validation)
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CirruCheckMode {
@@ -1150,7 +1150,6 @@ fn prepare_program_for_snippet(
   code: &str,
 ) -> Result<ProgramEntries, String> {
   ensure_runtime_initialized();
-  calcit::set_host_snapshot_file(Some(entry.to_string()));
 
   // `check-md` runs many snippets in one process; clear stale runtime/compiled
   // state so each block is evaluated from the freshly built app.main snapshot.

@@ -472,7 +472,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -537,7 +537,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -591,7 +591,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -679,7 +679,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -934,7 +934,6 @@ trait InsertOperation {
   fn code(&self) -> &Option<String>;
   fn json(&self) -> &Option<String>;
   fn json_input(&self) -> bool;
-  fn leaf(&self) -> bool;
   fn with(&self) -> &[String] {
     &[]
   }
@@ -953,9 +952,6 @@ impl InsertOperation for TreeInsertBeforeCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
 }
 
 impl InsertOperation for TreeInsertAfterCommand {
@@ -970,9 +966,6 @@ impl InsertOperation for TreeInsertAfterCommand {
   }
   fn json_input(&self) -> bool {
     self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
   }
 }
 
@@ -989,9 +982,6 @@ impl InsertOperation for TreeInsertChildCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
 }
 
 impl InsertOperation for TreeAppendChildCommand {
@@ -1006,9 +996,6 @@ impl InsertOperation for TreeAppendChildCommand {
   }
   fn json_input(&self) -> bool {
     self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
   }
 }
 
@@ -1025,9 +1012,6 @@ impl InsertOperation for TreeSearchReplaceCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
 }
 
 impl InsertOperation for TreeStructuralCommand {
@@ -1042,9 +1026,6 @@ impl InsertOperation for TreeStructuralCommand {
   }
   fn json_input(&self) -> bool {
     self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
   }
   fn with(&self) -> &[String] {
     &self.with
@@ -1066,7 +1047,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf(), true)?;
+  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -1411,7 +1392,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
 
   let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let auto_json = opts.code.is_some();
-  let template = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let template = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;

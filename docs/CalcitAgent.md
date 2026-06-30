@@ -22,15 +22,15 @@ entry_for:
 
 ## 命令参数中的 Cirru 表达式（受 bash 特殊字符影响）
 
-以下参数的值包含 **Cirru 代码**，其中 `$`、`` ` ``、`|`、`>`、`"` 等字符会被 bash 解释，需用引号包裹或改用 `cr exec` + `calcit.cli` 免转义方案：
+以下参数的值包含 **Cirru 代码**，其中 `$`、`` ` ``、`|`、`>`、`"` 等字符会被 bash 解释，需用引号包裹或改用 `cr exec` + heredoc 从 stdin 传入（完全绕过 Shell 转义）：
 
 | 参数 | 出现场景 | 说明 |
 |------|----------|------|
-| `--code` (`-e`) | `cr tree replace/search-replace/insert-*/wrap/replace-leaf`、`cr edit def/add-import` | Cirru AST 代码片段 |
-| `--pattern` (`-s`) | `cr tree search-replace/replace-leaf` | Cirru 叶子节点内容 |
-| `--file` (`-f`) 读取的文件内容 | `cr edit def`、`cr tree replace` 等 | 文件中的 Cirru 代码 |
-| `--json` (`-j`) | 各支持 JSON 输入的命令 | JSON 字符串（含引号和括号） |
-| 位置参数 `<code>` | `cr cirru parse '<cirru_code>'` | 原始 Cirru 代码 |
+| `--code` | `cr tree replace/search-replace/insert-*/wrap/replace-leaf`、`cr edit def/add-import` | Cirru 代码片段，须用 `quote` 前缀 |
+| `--pattern` | `cr tree search-replace/replace-leaf` | Cirru 叶子节点内容 |
+| `--file` 读取的文件内容 | `cr edit def`、`cr tree replace` 等 | 文件中的 Cirru 代码，须用 `quote` 前缀 |
+| `--json` | 各支持 JSON 输入的命令 | JSON 字符串（含引号和括号） |
+| 位置参数 `<code>` | `cr cirru parse '<cirru_code>'` | 原始 Cirru 代码，须用引号包裹 |
 | 位置参数 `<json>` | `cr cirru format '<json>'` | JSON 字符串 |
 
 > 本文档中所有命令行示例已统一使用 **完整长参数名**（如 `--filter`、`--file`、`--code`、`--path` 等），不再使用单字符短参数。
@@ -263,33 +263,23 @@ cr js
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
 - `cr edit inc --changed <ns/def>`：增量编译当前修改定义。
 
-`cr tree` 的 `--code`（`-e`）和 `--pattern`（`-s`）常含 `$`、括号等特殊字符，Shell 转义成本高。**tree 系列优先用 `calcit.cli/*` 经 `cr exec` 传入**（统一形式 `calcit.cli/f $ {} (:key value) ...`）。
-
-`:file-path` 可省略，默认使用 `cr <file.cirru>` 启动时指定的 snapshot 文件；仅在操作其他文件时显式传入 `(:file-path |other.cirru)`。
-
-AST 参数（`:code`、`:wrapper-code`、`:replacement-code` 等）类型为 **`:cirru-quote`**：在 options map 里写 `(:code $ quote |leaf)` 或 `(:code $ quote $ expr ...)`（`:code` 后用 `$` 标记 quote 表达式，等同括号包裹），传 plain string 会报 `W_CLI_OPTION_TYPE_MISMATCH`。
-
-```cirru.cli
-; "|替换 leaf 节点"
-calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote new-symbol)
-
-; "|替换为表达式"
-calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote $ println |a)
-
-; "|按内容唯一定位替换（优先）"
-calcit.cli/search-replace $ {} (:target |app.main/main!) (:pattern |Old) (:replacement |New)
-
-; "|删除多个路径（自动从高索引到低索引，避免索引漂移）"
-calcit.cli/tree-batch-delete $ {} (:target |app.main/main!) (:paths $ [] |3.2 |4.1)
-
-; "|查看局部子树（改前改后复核）"
-calcit.cli/tree-show $ {} (:target |app.main/main!) (:path |3.2)
-```
+`cr tree` 的 `--code` 和 `--pattern` 常含 `$`、括号等特殊字符，Shell 转义成本高。**推荐用 `cr exec` + heredoc 替代 `--code`**：
 
 ```bash
+# heredoc 完全绕过 Shell 转义，可自由书写 Cirru 代码
 cr path/to/project.cirru exec << 'END'
-calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |new-expr)
+quote (println |hello)
 END
+```
+
+Cirru 代码输入（`--code` / `--file`）必须使用 `quote` 前缀来区分 leaf 和表达式：
+
+```bash
+# leaf 节点
+cr tree replace ns/def --path 3.2 --code 'quote |new-value'
+
+# 表达式
+cr tree replace ns/def --path 3.2 --code 'quote (println |hello)'
 ```
 
 `edit format` 用法例子：
@@ -316,37 +306,36 @@ cr src/cirru/calcit-core.cirru edit format
 
 1. 修改文本节点（leaf）
 
-```cirru.cli
-; "|search-replace：按完整 leaf 匹配替换（优先）"
-calcit.cli/search-replace $ {} (:target |app.main/main!) (:pattern |Old) (:replacement |New)
+```bash
+# search-replace：按完整 leaf 匹配替换（优先）
+cr tree search-replace <ns/def> --pattern '|Old' --code 'quote |New'
 
-; "|或 tree-replace-leaf：批量替换匹配 leaf"
-calcit.cli/tree-replace-leaf $ {} (:target |app.main/main!) (:pattern |Old) (:replacement-code $ quote |New)
+# 或 tree-replace-leaf：批量替换匹配 leaf
+cr tree replace-leaf <ns/def> --pattern '|Old' --code 'quote |New'
 ```
 
 2. 删除节点
 
-```cirru.cli
-calcit.cli/tree-delete $ {} (:target |app.main/main!) (:path |3.2)
+```bash
+cr tree delete <ns/def> --path 3.2
 ```
 
 3. 一层表达式结构调整（同级顺序/包裹关系）
 
-```cirru.cli
-calcit.cli/tree-swap-next $ {} (:target |app.main/main!) (:path |3.2)
-calcit.cli/tree-swap-prev $ {} (:target |app.main/main!) (:path |3.2)
-calcit.cli/tree-wrap $ {} (:target |app.main/main!) (:path |3.2) (:wrapper-code $ quote $ when cond self)
-calcit.cli/tree-raise $ {} (:target |app.main/main!) (:path |3.2.1)
+```bash
+cr tree swap-next <ns/def> --path 3.2
+cr tree swap-prev <ns/def> --path 3.2
+cr tree wrap <ns/def> --path 3.2 --code 'quote (when cond self)'
+cr tree raise <ns/def> --path 3.2.1
 ```
 
 4. 补充节点（插入 sibling/child）
 
-```cirru.cli
-; "|position: |before |after |prepend-child |append-child"
-calcit.cli/tree-insert $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |node) (:position |before)
-calcit.cli/tree-insert $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |node) (:position |after)
-calcit.cli/tree-insert $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |node) (:position |prepend-child)
-calcit.cli/tree-insert $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |node) (:position |append-child)
+```bash
+cr tree insert-before <ns/def> --path 3.2 --code 'quote |node'
+cr tree insert-after <ns/def> --path 3.2 --code 'quote |node'
+cr tree insert-child <ns/def> --path 3.2 --code 'quote |node'
+cr tree append-child <ns/def> --path 3.2 --code 'quote |node'
 ```
 
 5. 每次小改后都做最小复核
@@ -354,12 +343,6 @@ calcit.cli/tree-insert $ {} (:target |app.main/main!) (:path |3.2) (:code $ quot
 ```bash
 cr tree show <ns/def> --path '<path>'
 cr edit inc --changed <ns/def>
-```
-
-或用 `calcit.cli` 复核子树：
-
-```cirru.cli
-calcit.cli/tree-show $ {} (:target |app.main/main!) (:path |3.2)
 ```
 
 一句话：**小改动走 `cr tree`，大改动才整段覆盖。**
@@ -456,11 +439,7 @@ cr edit inc --changed app.main/main!
 cr js
 ```
 
-第 5 步 tree 替换（`--code` 含特殊字符时用 `cr exec` + `calcit.cli`）：
-
-```cirru.cli
-calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |new-expr)
-```
+第 5 步 tree 替换（`--code` 含特殊字符时优先用 `cr exec` + heredoc）：
 
 ---
 
@@ -497,26 +476,6 @@ calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quo
 - 配置管理：`cr config show/modules/version/set/add-module/rm-module`
 - 文档与指南：`cr docs scopes/list/sections/read/search/agents`
 - 语法学习：`cr cirru show-guide`
-
-### `calcit.cli` 与 `cr tree` 对照（免 Shell 转义）
-
-参数简单的 `cr query` 直接用命令行即可。`cr tree` 携带 Cirru 代码时，优先经 `cr exec` 调用 `calcit.cli/*`：
-
-| 函数                        | 等价 CLI                 | 说明             |
-| --------------------------- | ------------------------ | ---------------- |
-| `calcit.cli/tree-show`      | `cr tree show`           | 查看 AST 子树；`(:max-lines N)` 控制输出行数 |
-| `calcit.cli/tree-replace`   | `cr tree replace`        | 替换 AST 节点    |
-| `calcit.cli/search-replace` | `cr tree search-replace` | 搜索替换叶子节点 |
-| `calcit.cli/tree-delete`    | `cr tree delete`         | 删除 AST 节点    |
-| `calcit.cli/tree-batch-delete` | `cr tree batch-delete` | 批量删除；`(:paths $ [] \|3.2 \|4.1)` |
-| `calcit.cli/tree-insert`    | `cr tree insert-*`       | `(:position \|before\|after\|prepend-child\|append-child)` |
-| `calcit.cli/tree-wrap`      | `cr tree wrap`           | 包裹节点（`self` 占位） |
-| `calcit.cli/tree-raise`     | `cr tree raise`          | 提升子节点       |
-| `calcit.cli/tree-swap-next` | `cr tree swap-next`      | 与下一兄弟交换   |
-| `calcit.cli/tree-swap-prev` | `cr tree swap-prev`      | 与上一兄弟交换   |
-| `calcit.cli/tree-replace-leaf` | `cr tree replace-leaf` | 批量替换匹配 leaf |
-
-查询类函数（`list-defs`、`show-def`、`search-def` 等）也有对应实现，详见 `cr query schema calcit.cli/tree-replace` 或 [agent-advanced.md](./run/agent-advanced.md)。
 
 ### Agent 自学习最短路径
 

@@ -56,7 +56,7 @@ fn main() -> Result<(), String> {
   }
 
   #[cfg(not(target_arch = "wasm32"))]
-  injection::inject_platform_apis_without_cli();
+  injection::inject_platform_apis();
 
   let core_snapshot = calcit::load_core_snapshot()?;
 

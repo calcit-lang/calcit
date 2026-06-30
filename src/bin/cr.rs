@@ -150,7 +150,6 @@ fn main() -> Result<(), String> {
 
   let input_path = calcit::resolve_snapshot_path_alias(&PathBuf::from(&cli_args.input));
   let input_path_str = input_path.to_string_lossy().to_string();
-  calcit::set_host_snapshot_file(Some(input_path_str.clone()));
   let base_dir = input_path.parent().expect("extract parent");
 
   if let Some(CalcitCommand::Exec(ref command)) = cli_args.subcommand {

@@ -977,9 +977,6 @@ pub struct EditDefCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// overwrite existing definition if it already exists
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1037,9 +1034,6 @@ pub struct EditSchemaCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// clear schema field
   #[argh(switch, long = "clear")]
   pub clear: bool,
@@ -1064,9 +1058,6 @@ pub struct EditExamplesCommand {
   /// treat file input as JSON array
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// clear all examples
   #[argh(switch, long = "clear")]
   pub clear: bool,
@@ -1094,9 +1085,6 @@ pub struct EditAddExampleCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1144,9 +1132,6 @@ pub struct EditAddNsCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1177,9 +1162,6 @@ pub struct EditImportsCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1201,9 +1183,6 @@ pub struct EditAddImportCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// overwrite existing rule for the same source namespace
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1408,9 +1387,6 @@ pub struct TreeStructuralCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// bind placeholder to original-node path: `--with self=.` , `--with rhs=2`
   #[argh(option, long = "with")]
   pub with: Vec<String>,
@@ -1444,9 +1420,6 @@ pub struct TreeSearchReplaceCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1489,9 +1462,6 @@ pub struct TreeReplaceCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1522,9 +1492,6 @@ pub struct TreeReplaceLeafCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1568,9 +1535,6 @@ pub struct TreeInsertBeforeCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1599,9 +1563,6 @@ pub struct TreeInsertAfterCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1630,9 +1591,6 @@ pub struct TreeInsertChildCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1661,9 +1619,6 @@ pub struct TreeAppendChildCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1751,9 +1706,6 @@ pub struct TreeWrapCommand {
   /// treat file input as JSON
   #[argh(switch, long = "json-input")]
   pub json_input: bool,
-  /// treat input as a Cirru leaf node
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
