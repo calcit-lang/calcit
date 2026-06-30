@@ -48,6 +48,32 @@ fn format_calcit_value_for_echo(value: &Calcit) -> String {
     Calcit::Number(n) => n.to_string(),
     Calcit::Tag(tag) => format!(":{}", tag.ref_str()),
     Calcit::Nil => "nil".to_string(),
+    Calcit::CirruQuote(code) => {
+      let formatted = cirru_parser::format(std::slice::from_ref(code), true.into()).unwrap_or_else(|_| code.to_string());
+      format!("quote {formatted}")
+    }
+    Calcit::List(list) => {
+      let items: Vec<_> = list.iter().collect();
+      let data = if items.first().is_some_and(|head| {
+        matches!(head, Calcit::Proc(calcit::CalcitProc::List)) || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")
+      }) {
+        &items[1..]
+      } else {
+        &items[..]
+      };
+      let rendered: Vec<String> = data
+        .iter()
+        .map(|item| match item {
+          Calcit::Str(s) => {
+            let text = s.strip_prefix('|').unwrap_or(s);
+            format!("|{text}")
+          }
+          Calcit::Tag(tag) => format!(":{}", tag.ref_str()),
+          other => other.lisp_str(),
+        })
+        .collect();
+      format!("$ [] {}", rendered.join(" "))
+    }
     other => other.lisp_str(),
   }
 }
@@ -91,7 +117,7 @@ mod tests {
   }
 
   static PEEK_SPECS: &[CliArgSpec] = &[
-    cli_option("file-path", CliOptionKind::String, true, None),
+    cli_option("file-path", CliOptionKind::String, false, None),
     cli_option("target", CliOptionKind::String, true, None),
     cli_option("lines", CliOptionKind::Usize, false, Some(CliOptionDefault::Usize(5))),
   ];

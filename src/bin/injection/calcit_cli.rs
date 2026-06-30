@@ -38,7 +38,7 @@ use super::calcit_cli_tree::{
 /// `(calcit.cli/list-ns $ {} (:file-path <path>))` → list namespace names
 pub fn list_namespaces(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-ns", &xs, LIST_NS)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let mut ns_names: Vec<Calcit> = snapshot.files.keys().map(|k| Calcit::Str(Arc::from(k.as_str()))).collect();
   ns_names.sort();
@@ -48,7 +48,7 @@ pub fn list_namespaces(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<C
 /// `(calcit.cli/list-defs $ {} (:file-path <path>) (:namespace <ns>))` → list definition names in a namespace
 pub fn list_defs(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-defs", &xs, LIST_DEFS)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let ns_name = args.string("namespace")?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let file = get_file(&snapshot, &ns_name)?;
@@ -60,7 +60,7 @@ pub fn list_defs(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit,
 /// `(calcit.cli/show-def $ {} (:file-path <path>) (:target <ns/def>))` → return full Cirru code of a definition
 pub fn show_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/show-def", &xs, SHOW_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let entry = get_def(&snapshot, &ns_name, &def_name)?;
@@ -71,7 +71,7 @@ pub fn show_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, 
 /// `(calcit.cli/peek-def $ {} (:file-path <path>) (:target <ns/def>) (:lines 5?))` → first N lines of a definition
 pub fn peek_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/peek-def", &xs, PEEK_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let max_lines = args.usize("lines")?;
   if max_lines == 0 {
@@ -87,7 +87,7 @@ pub fn peek_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, 
 /// `(calcit.cli/search-def $ {} (:file-path <path>) (:target <ns/def>) (:keyword <text>))` → find leaf paths matching keyword
 pub fn search_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/search-def", &xs, SEARCH_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let keyword = args.string("keyword")?;
   if keyword.is_empty() {
@@ -120,7 +120,7 @@ fn search_cirru_for_keyword(node: &Cirru, keyword: &str, path: &mut Vec<usize>, 
 /// `(calcit.cli/find-symbol $ {} (:file-path <path>) (:symbol <name>))` → find symbol across all namespaces
 pub fn find_symbol(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/find-symbol", &xs, FIND_SYMBOL)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let symbol = args.string("symbol")?;
   if symbol.is_empty() {
     return Err(CalcitErr::from("find-symbol: symbol cannot be empty".to_string()));
@@ -141,7 +141,7 @@ pub fn find_symbol(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
 /// `(calcit.cli/show-schema $ {} (:file-path <path>) (:target <ns/def>))` → return schema as Cirru string
 pub fn show_schema(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/show-schema", &xs, SHOW_SCHEMA)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let entry = get_def(&snapshot, &ns_name, &def_name)?;
@@ -153,7 +153,7 @@ pub fn show_schema(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
 /// `(calcit.cli/list-examples $ {} (:file-path <path>) (:target <ns/def>))` → list examples of a definition
 pub fn list_examples(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-examples", &xs, LIST_EXAMPLES)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let entry = get_def(&snapshot, &ns_name, &def_name)?;
@@ -168,7 +168,7 @@ pub fn list_examples(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Cal
 /// `(calcit.cli/list-usages $ {} (:file-path <path>) (:target <ns/def>))` → find all references to a definition across the snapshot
 pub fn list_usages(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-usages", &xs, LIST_USAGES)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (target_ns, def_name) = args.target("target")?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   get_def(&snapshot, &target_ns, &def_name)?;
@@ -191,15 +191,13 @@ pub fn list_usages(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
 
 // ─── Write functions (edit / tree) ──────────────────────────────────────────
 
-/// `(calcit.cli/edit-def $ {} (:file-path <path>) (:target <ns/def>) (:code <str>) (:overwrite false?))` → create or update a definition
+/// `(calcit.cli/edit-def $ {} (:file-path <path>) (:target <ns/def>) (:code <cirru-quote>) (:overwrite false?))` → create or update a definition
 pub fn edit_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/edit-def", &xs, EDIT_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
-  let code_str = args.string("code")?;
+  let syntax_tree = args.cirru_quote("code")?;
   let overwrite = args.bool("overwrite")?;
-
-  let syntax_tree = parse_single_cirru("edit-def", &code_str)?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
 
@@ -226,17 +224,16 @@ pub fn edit_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, 
   Ok(Calcit::Str(Arc::from(if exists { "updated" } else { "created" })))
 }
 
-/// `(calcit.cli/tree-replace $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:code <str>))` → replace node at path
+/// `(calcit.cli/tree-replace $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:code <cirru-quote>))` → replace node at path
 pub fn tree_replace(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-replace", &xs, TREE_REPLACE)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
-  let code_str = args.string("code")?;
 
   let indices = parse_path("tree-replace", &path_str, false)?;
 
-  let replacement = parse_single_cirru("tree-replace", &code_str)?;
+  let replacement = args.cirru_quote("code")?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
 
@@ -257,7 +254,7 @@ pub fn tree_replace(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calc
 /// `(calcit.cli/tree-delete $ {} (:file-path <path>) (:target <ns/def>) (:path <path>))` → delete AST node
 pub fn tree_delete(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-delete", &xs, TREE_DELETE)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
   let indices = parse_path("tree-delete", &path_str, false)?;
@@ -274,17 +271,16 @@ pub fn tree_delete(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
   Ok(Calcit::Str(Arc::from("deleted")))
 }
 
-/// `(calcit.cli/tree-insert $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:code <str>) (:position after?))` → insert node
+/// `(calcit.cli/tree-insert $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:code <cirru-quote>) (:position after?))` → insert node
 pub fn tree_insert(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-insert", &xs, TREE_INSERT)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
-  let code_str = args.string("code")?;
   let position = args.string("position")?;
   let operation = map_at_to_operation(position.trim_start_matches('|'))?;
   let indices = parse_path("tree-insert", &path_str, false)?;
-  let new_node = parse_single_cirru("tree-insert", &code_str)?;
+  let new_node = args.cirru_quote("code")?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
   check_ns_editable(&snapshot, &ns_name)?;
@@ -298,15 +294,14 @@ pub fn tree_insert(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
   Ok(Calcit::Str(Arc::from("inserted")))
 }
 
-/// `(calcit.cli/tree-wrap $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:wrapper-code <str>))` → wrap node; use `self` leaf for original
+/// `(calcit.cli/tree-wrap $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:wrapper-code <cirru-quote>))` → wrap node; use `self` leaf for original
 pub fn tree_wrap(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-wrap", &xs, TREE_WRAP)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
-  let code_str = args.string("wrapper-code")?;
+  let template = args.cirru_quote("wrapper-code")?;
   let indices = parse_path("tree-wrap", &path_str, false)?;
-  let template = parse_single_cirru("tree-wrap", &code_str)?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
   check_ns_editable(&snapshot, &ns_name)?;
@@ -327,7 +322,7 @@ pub fn tree_wrap(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit,
 /// `(calcit.cli/tree-unwrap $ {} (:file-path <path>) (:target <ns/def>) (:path <path>))` → unwrap list node into parent
 pub fn tree_unwrap(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-unwrap", &xs, TREE_UNWRAP)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
   let indices = parse_path("tree-unwrap", &path_str, false)?;
@@ -358,7 +353,7 @@ pub fn tree_unwrap(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
 /// `(calcit.cli/tree-raise $ {} (:file-path <path>) (:target <ns/def>) (:path <path>))` → replace parent with child at path
 pub fn tree_raise(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-raise", &xs, TREE_RAISE)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
   let indices = parse_path("tree-raise", &path_str, false)?;
@@ -383,7 +378,7 @@ pub fn tree_raise(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit
 /// `(calcit.cli/tree-cp $ {} (:file-path <path>) (:target <ns/def>) (:from-path <path>) (:to-path <path>) (:position after?))` → copy AST subtree
 pub fn tree_cp(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-cp", &xs, TREE_CP)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let from_str = args.string("from-path")?;
   let to_str = args.string("to-path")?;
@@ -408,7 +403,7 @@ pub fn tree_cp(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, C
 /// `(calcit.cli/tree-mv $ {} (:file-path <path>) (:target <ns/def>) (:from-path <path>) (:to-path <path>) (:position after?))` → move AST subtree
 pub fn tree_mv(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-mv", &xs, TREE_MV)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let from_str = args.string("from-path")?;
   let to_str = args.string("to-path")?;
@@ -446,7 +441,7 @@ pub fn tree_mv(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, C
 /// `(calcit.cli/rename-def $ {} (:file-path <path>) (:target <ns/def>) (:new-name <name>))` → rename definition in namespace
 pub fn rename_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/rename-def", &xs, RENAME_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let new_name = args.string("new-name")?;
   if new_name.is_empty() {
@@ -475,7 +470,7 @@ pub fn rename_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit
 /// `(calcit.cli/rm-def $ {} (:file-path <path>) (:target <ns/def>))` → remove definition
 pub fn rm_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/rm-def", &xs, RM_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
@@ -493,7 +488,7 @@ pub fn rm_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, Ca
 /// `(calcit.cli/mv-def $ {} (:file-path <path>) (:source <ns/def>) (:target <ns/def>))` → move definition across namespaces
 pub fn mv_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/mv-def", &xs, MV_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (source_ns, source_def) = args.target("source")?;
   let (target_ns, target_def) = args.target("target")?;
 
@@ -543,7 +538,7 @@ pub fn mv_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, Ca
 /// `(calcit.cli/split-def $ {} (:file-path <path>) (:target <ns/def>) (:path <path>) (:new-name <name>))` → extract sub-expression to new def
 pub fn split_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/split-def", &xs, SPLIT_DEF)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.string("path")?;
   let new_name = args.string("new-name")?;
@@ -589,10 +584,9 @@ pub fn split_def(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit,
 /// `(calcit.cli/add-ns $ {} (:file-path <path>) (:namespace <ns>) (:code <ns-expr>?))` → create namespace
 pub fn add_ns(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/add-ns", &xs, ADD_NS)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let ns_name = args.string("namespace")?;
-  let ns_code = if let Some(code_str) = args.optional_string("code") {
-    let code = parse_single_cirru("add-ns", &code_str)?;
+  let ns_code = if let Some(code) = args.try_cirru_quote("code")? {
     if let Cirru::List(ref items) = code {
       if let Some(Cirru::Leaf(kw)) = items.first()
         && kw.as_ref() == "ns"
@@ -631,7 +625,7 @@ pub fn add_ns(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, Ca
 /// `(calcit.cli/rm-import $ {} (:file-path <path>) (:namespace <ns>) (:source-ns <src>))` → remove require rule for source namespace
 pub fn rm_import(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/rm-import", &xs, RM_IMPORT)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let ns_name = args.string("namespace")?;
   let src_ns = args.string("source-ns")?;
 
@@ -654,7 +648,7 @@ pub fn rm_import(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit,
 /// `(calcit.cli/edit-doc $ {} (:file-path <path>) (:target <ns/def>) (:doc <text>))` → update definition documentation
 pub fn edit_doc(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/edit-doc", &xs, EDIT_DOC)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let doc = args.string("doc")?;
 
@@ -670,12 +664,11 @@ pub fn edit_doc(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, 
   Ok(Calcit::Str(Arc::from("updated")))
 }
 
-/// `(calcit.cli/edit-schema $ {} (:file-path <path>) (:target <ns/def>) (:schema-code <code>))` → update type schema
+/// `(calcit.cli/edit-schema $ {} (:file-path <path>) (:target <ns/def>) (:schema-code <cirru-quote>))` → update type schema
 pub fn edit_schema(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/edit-schema", &xs, EDIT_SCHEMA)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
-  let schema_str = args.string("schema-code")?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
   check_ns_editable(&snapshot, &ns_name)?;
@@ -685,13 +678,13 @@ pub fn edit_schema(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
     .get_mut(&def_name)
     .ok_or_else(|| CalcitErr::from(format!("Definition '{def_name}' not found")))?;
 
-  if schema_str.trim() == "nil" || schema_str.trim() == "|nil" {
+  let schema_node = args.cirru_quote("schema-code")?;
+  if matches!(&schema_node, Cirru::Leaf(s) if s.as_ref() == "nil") {
     entry.schema = DYNAMIC_TYPE.clone();
     save_calcit_snapshot(&file_path, &snapshot)?;
     return Ok(Calcit::Str(Arc::from("cleared")));
   }
 
-  let schema_node = parse_single_cirru("edit-schema", &schema_str)?;
   let schema_payload = strip_name_field_from_schema(unwrap_schema_quote_input(schema_node)?);
   validate_schema_for_write(&schema_payload).map_err(|e| CalcitErr::from(format!("edit-schema: schema validation failed: {e}")))?;
 
@@ -713,10 +706,9 @@ pub fn edit_schema(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
 /// `(calcit.cli/add-example $ {} (:file-path <path>) (:target <ns/def>) (:code <str>) (:index <n>?))` → append or insert example
 pub fn add_example(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/add-example", &xs, ADD_EXAMPLE)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
-  let code_str = args.string("code")?;
-  let example = parse_single_cirru("add-example", &code_str)?;
+  let example = args.cirru_quote("code")?;
 
   let mut snapshot = load_calcit_snapshot(&file_path)?;
   check_ns_editable(&snapshot, &ns_name)?;
@@ -764,7 +756,7 @@ pub fn show_error(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit
 /// `(calcit.cli/search-replace $ {} (:file-path <path>) (:target <ns/def>) (:pattern <text>) (:replacement <text>))` → search and replace leaf nodes
 pub fn search_replace(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/search-replace", &xs, SEARCH_REPLACE)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let pattern = args.string("pattern")?;
   let replacement_str = args.string("replacement")?;
@@ -815,7 +807,7 @@ fn replace_leaf_nodes(node: &mut Cirru, pattern: &str, replacement: &Cirru, coun
 /// `(calcit.cli/add-import $ {} (:file-path <path>) (:namespace <ns>) (:source-ns <src>) (:refer-sym <sym>))` → add a :refer import to a namespace
 pub fn add_import(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/add-import", &xs, ADD_IMPORT)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let ns_name = args.string("namespace")?;
   let src_ns = args.string("source-ns")?;
   let refer_sym = args.string("refer-sym")?;
@@ -851,7 +843,7 @@ pub fn add_import(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit
 /// `(calcit.cli/list-config $ {} (:file-path <path>))` → return config as Cirru EDN string
 pub fn list_config(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-config", &xs, LIST_CONFIG)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let configs = &snapshot.configs;
   let mut entries_vec: Vec<String> = snapshot.entries.keys().cloned().collect();
@@ -877,7 +869,7 @@ pub fn list_config(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
 /// `(calcit.cli/list-modules $ {} (:file-path <path>))` → list module dependencies
 pub fn list_modules(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-modules", &xs, LIST_MODULES)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let snapshot = load_calcit_snapshot(&file_path)?;
   let modules: Vec<Calcit> = snapshot
     .configs
@@ -893,7 +885,7 @@ pub fn list_modules(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calc
 /// `(calcit.cli/tree-show $ {} (:file-path <path>) (:target <ns/def>) (:path <path>?) (:max-lines 80?))` → show AST subtree
 pub fn tree_show(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/tree-show", &xs, TREE_SHOW)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let path_str = args.optional_string("path");
   let max_lines = args.usize("max-lines")?;
@@ -975,17 +967,6 @@ pub(crate) fn format_path(path: &[usize]) -> String {
 fn format_cirru(fn_name: &str, node: &Cirru) -> Result<String, CalcitErr> {
   cirru_parser::format(std::slice::from_ref(node), true.into())
     .map_err(|e| CalcitErr::from(format!("{fn_name}: failed to format Cirru node: {e}")))
-}
-
-pub(crate) fn parse_single_cirru(fn_name: &str, code: &str) -> Result<Cirru, CalcitErr> {
-  let parsed = cirru_parser::parse(code).map_err(|e| CalcitErr::from(format!("{fn_name}: failed to parse Cirru code: {e}")))?;
-  if parsed.len() != 1 {
-    return Err(CalcitErr::from(format!(
-      "{fn_name}: expected exactly one Cirru expression, got {}",
-      parsed.len()
-    )));
-  }
-  Ok(parsed.into_iter().next().expect("checked one expression"))
 }
 
 pub(crate) fn calcit_str_list(items: Vec<String>) -> Calcit {
@@ -1278,12 +1259,13 @@ mod tests {
     calcit::set_quiet_tool_output(true);
     let file = temp_copy_of_test_snapshot();
     let stack = empty_stack();
+    let insert_code = cirru_parser::parse("println |temp-marker").expect("parse")[0].clone();
     let _ = tree_insert(
       build_cli_opts(&[
         ("file-path", Calcit::Str(Arc::from(file.as_str()))),
         ("target", Calcit::Str(Arc::from("|app.main/main!"))),
         ("path", Calcit::Str(Arc::from("|0"))),
-        ("code", Calcit::Str(Arc::from("|println |temp-marker"))),
+        ("code", Calcit::CirruQuote(insert_code)),
         ("position", Calcit::Str(Arc::from("|after"))),
       ]),
       &stack,

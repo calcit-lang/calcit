@@ -14,7 +14,7 @@ use super::calcit_cli_specs::{
 
 pub fn analyze_call_graph(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/analyze-call-graph", &xs, ANALYZE_CALL_GRAPH)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let root = args.optional_string("root");
   let format = args.string("format")?;
   let max_depth = args.usize("max-depth")?;
@@ -41,7 +41,7 @@ pub fn analyze_call_graph(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Resul
 
 pub fn analyze_effects_graph(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/analyze-effects-graph", &xs, ANALYZE_EFFECTS_GRAPH)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let root = args.optional_string("root");
   let format = args.string("format")?;
   let max_depth = args.usize("max-depth")?;
@@ -79,7 +79,7 @@ pub fn analyze_effects_graph(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Re
 
 pub fn analyze_count_calls(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/analyze-count-calls", &xs, ANALYZE_COUNT_CALLS)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let root = args.optional_string("root");
   let format = args.string("format")?;
   let include_core = args.bool("include-core")?;
@@ -106,7 +106,7 @@ pub fn analyze_check_types(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Resu
   use calcit::cli_args::CheckTypesCommand;
 
   let args = resolve_cli_args("calcit.cli/analyze-check-types", &xs, ANALYZE_CHECK_TYPES)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let options = CheckTypesCommand {
     ns: args.optional_string("namespace"),
     ns_prefix: args.optional_string("ns-prefix"),
@@ -122,7 +122,7 @@ pub fn analyze_weak_types(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Resul
   use calcit::cli_args::WeakTypesCommand;
 
   let args = resolve_cli_args("calcit.cli/analyze-weak-types", &xs, ANALYZE_WEAK_TYPES)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let options = WeakTypesCommand {
     ns: args.optional_string("namespace"),
     ns_prefix: args.optional_string("ns-prefix"),

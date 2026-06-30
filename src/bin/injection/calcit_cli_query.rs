@@ -19,14 +19,14 @@ use super::calcit_cli_tree::find_regex_leaf_paths;
 
 pub fn show_pkg(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/show-pkg", &xs, SHOW_PKG)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let snapshot = load_calcit_snapshot_with_deps(&file_path, true)?;
   Ok(Calcit::Str(Arc::from(snapshot.package.as_str())))
 }
 
 pub fn show_ns(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/show-ns", &xs, SHOW_NS)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let ns_name = args.string("namespace")?;
   let snapshot = load_calcit_snapshot_with_deps(&file_path, true)?;
   let file = snapshot
@@ -46,7 +46,7 @@ pub fn show_ns(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, C
 
 pub fn list_defs_by_tag(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/list-defs-by-tag", &xs, LIST_DEFS_BY_TAG)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let tag_raw = args.string("tag")?;
   let tag = parse_tag("list-defs-by-tag", &tag_raw)?;
   let filter_ns = args.optional_string("namespace");
@@ -76,14 +76,14 @@ pub fn list_defs_by_tag(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<
 
 pub fn validate_file(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/validate-file", &xs, VALIDATE_FILE)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let status = validate_snapshot_file(&file_path)?;
   Ok(Calcit::Str(Arc::from(status)))
 }
 
 pub fn search_project(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/search-project", &xs, SEARCH_PROJECT)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let pattern = args.string("pattern")?;
   let filter = args.optional_string("filter");
   let exact = args.bool("exact")?;
@@ -124,7 +124,7 @@ pub fn search_project(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
 
 pub fn search_def_regex(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/search-def-regex", &xs, SEARCH_DEF_REGEX)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let (ns_name, def_name) = args.target("target")?;
   let pattern_raw = args.string("regex")?;
 
@@ -153,7 +153,7 @@ pub fn search_def_regex(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<
 
 pub fn search_expr(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let args = resolve_cli_args("calcit.cli/search-expr", &xs, SEARCH_EXPR)?;
-  let file_path = args.string("file-path")?;
+  let file_path = args.file_path()?;
   let pattern_raw = args.string("pattern")?;
   let filter = args.optional_string("filter");
   let json = args.bool("json")?;

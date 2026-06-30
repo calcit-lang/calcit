@@ -1150,6 +1150,7 @@ fn prepare_program_for_snippet(
   code: &str,
 ) -> Result<ProgramEntries, String> {
   ensure_runtime_initialized();
+  calcit::set_host_snapshot_file(Some(entry.to_string()));
 
   // `check-md` runs many snippets in one process; clear stale runtime/compiled
   // state so each block is evaluated from the freshly built app.main snapshot.

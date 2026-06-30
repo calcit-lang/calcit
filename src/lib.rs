@@ -35,6 +35,18 @@ pub const LEGACY_SNAPSHOT_FILE: &str = "compact.cirru";
 
 static QUIET_TOOL_OUTPUT: AtomicBool = AtomicBool::new(false);
 
+thread_local! {
+  static HOST_SNAPSHOT_FILE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+pub fn set_host_snapshot_file(path: Option<String>) {
+  HOST_SNAPSHOT_FILE.with(|cell| *cell.borrow_mut() = path);
+}
+
+pub fn host_snapshot_file() -> Option<String> {
+  HOST_SNAPSHOT_FILE.with(|cell| cell.borrow().clone())
+}
+
 pub fn set_quiet_tool_output(v: bool) {
   QUIET_TOOL_OUTPUT.store(v, Ordering::Relaxed);
 }
