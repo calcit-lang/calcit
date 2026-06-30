@@ -8,7 +8,7 @@ pub struct ToplevelCalcit {
   #[argh(subcommand)]
   pub subcommand: Option<CalcitCommand>,
   /// enable watch mode for direct run mode (default behavior is run once)
-  #[argh(switch, short = 'w')]
+  #[argh(switch)]
   pub watch: bool,
   /// check-only mode: validate without execution or codegen
   #[argh(switch)]
@@ -91,7 +91,7 @@ pub enum CalcitCommand {
 #[argh(subcommand, name = "js")]
 pub struct EmitJsCommand {
   /// enable watch mode (default behavior is run once)
-  #[argh(switch, short = 'w')]
+  #[argh(switch)]
   pub watch: bool,
   /// check-only mode for JS emit
   #[argh(switch)]
@@ -103,7 +103,7 @@ pub struct EmitJsCommand {
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
   /// enable watch mode (default behavior is run once)
-  #[argh(switch, short = 'w')]
+  #[argh(switch)]
   pub watch: bool,
 }
 
@@ -393,7 +393,7 @@ pub struct QuerySchemaCommand {
   #[argh(positional)]
   pub target: String,
   /// also output JSON format for programmatic consumption
-  #[argh(switch, short = 'j')]
+  #[argh(switch)]
   pub json: bool,
 }
 
@@ -460,7 +460,7 @@ pub struct QueryDefCommand {
   #[argh(positional)]
   pub target: String,
   /// also output JSON format for programmatic consumption
-  #[argh(switch, short = 'j')]
+  #[argh(switch)]
   pub json: bool,
   /// preferred nodes per display fragment when large expressions are chunked
   #[argh(option, default = "56")]
@@ -508,7 +508,7 @@ pub struct QueryFindCommand {
   #[argh(switch)]
   pub exact: bool,
   /// maximum number of results (default 20)
-  #[argh(option, short = 'n', default = "20")]
+  #[argh(option, default = "20")]
   pub limit: usize,
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
@@ -538,7 +538,7 @@ pub struct QuerySearchCommand {
   #[argh(positional)]
   pub pattern: String,
   /// filter search to specific namespace or namespace/definition (optional)
-  #[argh(option, short = 'f', long = "filter")]
+  #[argh(option, long = "filter")]
   pub filter: Option<String>,
   /// exact match: only match nodes equal to the pattern (default is contains-match)
   #[argh(switch)]
@@ -547,10 +547,10 @@ pub struct QuerySearchCommand {
   #[argh(switch, long = "regex")]
   pub regex: bool,
   /// maximum search depth (0 = unlimited)
-  #[argh(option, short = 'd', default = "0")]
+  #[argh(option, default = "0")]
   pub max_depth: usize,
   /// start search from specific path (dot-separated indices preferred, e.g. "2.1.0")
-  #[argh(option, short = 'p', long = "start-path")]
+  #[argh(option, long = "start-path")]
   pub start_path: Option<String>,
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
@@ -571,16 +571,16 @@ pub struct QuerySearchExprCommand {
   #[argh(positional)]
   pub pattern: String,
   /// filter search to specific namespace or namespace/definition (optional)
-  #[argh(option, short = 'f', long = "filter")]
+  #[argh(option, long = "filter")]
   pub filter: Option<String>,
   /// exact match: only match structurally identical expressions (default is prefix/contains match)
   #[argh(switch)]
   pub exact: bool,
   /// maximum search depth (0 = unlimited)
-  #[argh(option, short = 'd', default = "0")]
+  #[argh(option, default = "0")]
   pub max_depth: usize,
   /// treat pattern as JSON array instead of Cirru expr
-  #[argh(switch, short = 'j')]
+  #[argh(switch)]
   pub json: bool,
   /// include modules configured for a specific entry in `entries`
   #[argh(option, long = "entry")]
@@ -646,10 +646,10 @@ pub struct DocsSearchCommand {
   #[argh(positional)]
   pub keyword: String,
   /// number of context lines to show before and after match (default: 5)
-  #[argh(option, short = 'c', default = "5")]
+  #[argh(option, default = "5")]
   pub context: usize,
   /// filter by filename (optional)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub filename: Option<String>,
   /// search docs for a specific installed module (e.g. respo.calcit)
   #[argh(option)]
@@ -736,10 +736,10 @@ pub struct DocsReadLinesCommand {
   #[argh(positional)]
   pub filename: String,
   /// starting line number (default: 0)
-  #[argh(option, short = 's', default = "0")]
+  #[argh(option, default = "0")]
   pub start: usize,
   /// number of lines to read (default: 80)
-  #[argh(option, short = 'n', default = "80")]
+  #[argh(option, default = "80")]
   pub lines: usize,
   /// read docs from a specific installed module (e.g. respo.calcit)
   #[argh(option)]
@@ -754,13 +754,13 @@ pub struct DocsCheckMdCommand {
   #[argh(positional)]
   pub file: String,
   /// entry .cirru file for eval context (default: calcit.cirru)
-  #[argh(option, short = 'd', default = "String::from(\"calcit.cirru\")")]
+  #[argh(option, default = "String::from(\"calcit.cirru\")")]
   pub entry: String,
   /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entry configs.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]
   pub dep: Vec<String>,
   /// suppress successful block logs; still prints failures and summary on error
-  #[argh(switch, short = 'q')]
+  #[argh(switch)]
   pub quiet: bool,
 }
 
@@ -797,10 +797,10 @@ pub struct CirruParseCommand {
   #[argh(positional)]
   pub code: String,
   /// parse input as a single-line Cirru expression (one-liner parser, default is multi-line)
-  #[argh(switch, short = 'e', long = "expr-one")]
+  #[argh(switch, long = "expr-one")]
   pub expr_one_liner: bool,
   /// perform basic syntax validation after parsing (checks keywords, strings, numbers)
-  #[argh(switch, short = 'v', long = "validate")]
+  #[argh(switch, long = "validate")]
   pub validate: bool,
 }
 
@@ -861,7 +861,7 @@ pub struct LibsReadmeCommand {
   #[argh(positional)]
   pub headings: Vec<String>,
   /// optional file path relative to package directory (e.g., "Skills.md")
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// do not include nested subheadings when showing matched parent heading content
   #[argh(switch)]
@@ -966,16 +966,16 @@ pub struct EditDefCommand {
   #[argh(positional)]
   pub target: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
@@ -1026,16 +1026,16 @@ pub struct EditSchemaCommand {
   #[argh(positional)]
   pub target: String,
   /// read schema from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// schema as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// schema as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
@@ -1053,16 +1053,16 @@ pub struct EditExamplesCommand {
   #[argh(positional)]
   pub target: String,
   /// read examples from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// examples as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// examples as inline JSON array string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON array
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
@@ -1083,16 +1083,16 @@ pub struct EditAddExampleCommand {
   #[argh(option, long = "at")]
   pub at: Option<usize>,
   /// read example from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// example as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// example as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
@@ -1133,16 +1133,16 @@ pub struct EditAddNsCommand {
   #[argh(positional)]
   pub namespace: String,
   /// read ns syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// ns syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// ns syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
@@ -1166,16 +1166,16 @@ pub struct EditImportsCommand {
   #[argh(positional)]
   pub namespace: String,
   /// read imports from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// imports as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// imports as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
@@ -1190,22 +1190,22 @@ pub struct EditAddImportCommand {
   #[argh(positional)]
   pub namespace: String,
   /// read import rule from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// import rule as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// import rule as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// overwrite existing rule for the same source namespace
-  #[argh(switch, short = 'o', long = "overwrite")]
+  #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
 }
 
@@ -1298,13 +1298,13 @@ pub struct TreeShowCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (dot-separated preferred; e.g. "2.1.0"); omit to show from root
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
   /// also output JSON format for programmatic consumption
-  #[argh(switch, short = 'j')]
+  #[argh(switch)]
   pub json: bool,
   /// preferred nodes per display fragment when large expressions are chunked
   #[argh(option, default = "56")]
@@ -1334,7 +1334,7 @@ pub struct EditCpCommand {
   #[argh(option, long = "from")]
   pub from: String,
   /// path to the destination node (comma-separated indices)
-  #[argh(option, short = 'p', long = "path")]
+  #[argh(option, long = "path")]
   pub path: String,
   /// position relative to the destination node (before, after, append-child, prepend-child, replace)
   #[argh(option, long = "at", default = "String::from(\"after\")")]
@@ -1352,7 +1352,7 @@ pub struct EditMvNodeCommand {
   #[argh(option, long = "from")]
   pub from: String,
   /// path to the destination node (comma-separated indices)
-  #[argh(option, short = 'p', long = "path")]
+  #[argh(option, long = "path")]
   pub path: String,
   /// position relative to the destination node (before, after, append-child, prepend-child, replace)
   #[argh(option, long = "at", default = "String::from(\"after\")")]
@@ -1379,10 +1379,10 @@ pub struct EditSplitDefCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node to extract (comma-separated indices, e.g. "3,2,1")
-  #[argh(option, short = 'p', long = "path")]
+  #[argh(option, long = "path")]
   pub path: String,
   /// name for the new extracted definition (within the same namespace)
-  #[argh(option, short = 'n', long = "name")]
+  #[argh(option, long = "name")]
   pub new_name: String,
 }
 
@@ -1394,28 +1394,28 @@ pub struct TreeStructuralCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// bind placeholder to original-node path: `--with self=.` , `--with rhs=2`
-  #[argh(option, short = 'w', long = "with")]
+  #[argh(option, long = "with")]
   pub with: Vec<String>,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1427,28 +1427,28 @@ pub struct TreeSearchReplaceCommand {
   #[argh(positional)]
   pub target: String,
   /// pattern to search for (exact match on leaf nodes by default; use --regex for regex matching)
-  #[argh(option, short = 's', long = "pattern")]
+  #[argh(option, long = "pattern")]
   pub pattern: String,
   /// treat pattern as a regular expression for matching leaf nodes
   #[argh(switch, long = "regex")]
   pub regex: bool,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1460,10 +1460,10 @@ pub struct TreeBatchDeleteCommand {
   #[argh(positional)]
   pub target: String,
   /// paths to delete (dot-separated, e.g. \"3.2.1.8 3.2.1.7 3.2.1.6\"); deletes from highest to lowest
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub paths: Vec<String>,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1475,25 +1475,25 @@ pub struct TreeReplaceCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1505,28 +1505,28 @@ pub struct TreeReplaceLeafCommand {
   #[argh(positional)]
   pub target: String,
   /// pattern to search for (exact match on leaf nodes by default; use --regex for regex matching)
-  #[argh(option, short = 's', long = "pattern")]
+  #[argh(option, long = "pattern")]
   pub pattern: String,
   /// treat pattern as a regular expression for matching leaf nodes
   #[argh(switch, long = "regex")]
   pub regex: bool,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1538,10 +1538,10 @@ pub struct TreeDeleteCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1553,26 +1553,26 @@ pub struct TreeInsertBeforeCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1584,26 +1584,26 @@ pub struct TreeInsertAfterCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1615,26 +1615,26 @@ pub struct TreeInsertChildCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1646,26 +1646,26 @@ pub struct TreeAppendChildCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1677,10 +1677,10 @@ pub struct TreeSwapNextCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1692,10 +1692,10 @@ pub struct TreeSwapPrevCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1707,10 +1707,10 @@ pub struct TreeUnwrapCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node to unwrap (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1722,10 +1722,10 @@ pub struct TreeRaiseCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the child node to raise (must have at least one element; its parent will be replaced)
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 
@@ -1737,25 +1737,25 @@ pub struct TreeWrapCommand {
   #[argh(positional)]
   pub target: String,
   /// path to the node to wrap (comma-separated indices, e.g. "2,1,0")
-  #[argh(option, short = 'p')]
+  #[argh(option)]
   pub path: String,
   /// wrapping expression with `self` as placeholder for the original node (e.g. 'println self')
-  #[argh(option, short = 'e', long = "code")]
+  #[argh(option, long = "code")]
   pub code: Option<String>,
   /// read wrapping expression from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
+  #[argh(option)]
   pub file: Option<String>,
   /// wrapping expression as inline JSON string
-  #[argh(option, short = 'j')]
+  #[argh(option)]
   pub json: Option<String>,
   /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
+  #[argh(switch, long = "json-input")]
   pub json_input: bool,
   /// treat input as a Cirru leaf node
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, short = 'd', default = "2")]
+  #[argh(option, default = "2")]
   pub depth: usize,
 }
 

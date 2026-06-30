@@ -13,19 +13,19 @@ use std::sync::Arc;
 #[derive(FromArgs)]
 /// Legacy sync tool: copy changes from a compact runtime snapshot into calcit.cirru while preserving metadata
 struct Args {
-  #[argh(option, short = 'c', default = "PathBuf::from(\"compact.cirru\")")]
+  #[argh(option, default = "PathBuf::from(\"compact.cirru\")")]
   /// path to legacy compact runtime snapshot file
   compact_path: PathBuf,
 
-  #[argh(option, short = 'f', default = "PathBuf::from(\"calcit.cirru\")")]
+  #[argh(option, default = "PathBuf::from(\"calcit.cirru\")")]
   /// path to calcit.cirru file
   calcit_path: PathBuf,
 
-  #[argh(switch, short = 'd')]
+  #[argh(switch)]
   /// dry run mode - show changes without applying them
   dry_run: bool,
 
-  #[argh(switch, short = 'v')]
+  #[argh(switch)]
   /// verbose output
   verbose: bool,
 }

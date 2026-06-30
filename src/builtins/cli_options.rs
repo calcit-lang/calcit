@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use rpds::HashTrieMapSync;
 
-use crate::calcit::{CORE_NS, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitSyntax};
+use crate::calcit::{CORE_NS, Calcit, CalcitErr, CalcitImport, CalcitProc, CalcitSyntax};
 use crate::data::cirru::{calcit_data_to_cirru, calcit_to_cirru};
 use cirru_parser::Cirru;
 

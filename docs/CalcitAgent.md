@@ -20,12 +20,27 @@ entry_for:
 
 本文定位为“查询与局部编辑速查表”：聚焦高频命令、路径定位和最小改动模板。执行前置约束与完整边界规则以 Agents 文档为准。
 
+## 命令参数中的 Cirru 表达式（受 bash 特殊字符影响）
+
+以下参数的值包含 **Cirru 代码**，其中 `$`、`` ` ``、`|`、`>`、`"` 等字符会被 bash 解释，需用引号包裹或改用 `cr exec` + `calcit.cli` 免转义方案：
+
+| 参数 | 出现场景 | 说明 |
+|------|----------|------|
+| `--code` (`-e`) | `cr tree replace/search-replace/insert-*/wrap/replace-leaf`、`cr edit def/add-import` | Cirru AST 代码片段 |
+| `--pattern` (`-s`) | `cr tree search-replace/replace-leaf` | Cirru 叶子节点内容 |
+| `--file` (`-f`) 读取的文件内容 | `cr edit def`、`cr tree replace` 等 | 文件中的 Cirru 代码 |
+| `--json` (`-j`) | 各支持 JSON 输入的命令 | JSON 字符串（含引号和括号） |
+| 位置参数 `<code>` | `cr cirru parse '<cirru_code>'` | 原始 Cirru 代码 |
+| 位置参数 `<json>` | `cr cirru format '<json>'` | JSON 字符串 |
+
+> 本文档中所有命令行示例已统一使用 **完整长参数名**（如 `--filter`、`--file`、`--code`、`--path` 等），不再使用单字符短参数。
+
 ### 查询导航（先用这个）
 
 - 看某个定义的大致结构：`cr query peek <ns/def>`
 - 看某个定义的完整实现：`cr query def <ns/def>`
-- 找关键词并拿可编辑路径：`cr query search <keyword> -f <ns/def>`
-- 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> -f <ns/def> --parent-path`
+- 找关键词并拿可编辑路径：`cr query search <keyword> --filter <ns/def>`
+- 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> --filter <ns/def> --parent-path`
 - 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
 - 查看类型标注：`cr query schema <ns/def>`
 - 查看示例：`cr query examples <ns/def>`
@@ -81,8 +96,8 @@ defn demo (state)
 ```
 
 - `query def` 先看全貌，不改。
-- `query search collect! -f app.main/demo` 拿到路径（假设返回 `[3.1.2]`）。
-- `tree show app.main/demo -p '3.1.2'` 验证该坐标确实是目标子树。
+- `query search collect! --filter app.main/demo` 拿到路径（假设返回 `[3.1.2]`）。
+- `tree show app.main/demo --path '3.1.2'` 验证该坐标确实是目标子树。
 - 再做 replace/rewrite，避免“猜路径”。
 
 ### `$` 与 `,` 对坐标的影响（结合 Cirru 教程）
@@ -126,10 +141,10 @@ div
 
 注意：`:on $ {}` 后新起一行的 `:dragstart` 是 `{}` 的键，**不是**外层 map 的键。如果缩进不对，`$` 会把后续内容当作参数而不是键值对。因此修改属性 map 时：
 
-1. 先用 `cr tree show <ns/def> -p '<path>'` 确认当前 map 结构
+1. 先用 `cr tree show <ns/def> --path '<path>'` 确认当前 map 结构
 2. 新增属性用 `cr tree insert-after/insert-child`
 3. 删除属性用 `cr tree batch-delete`（多个）或 `cr tree delete`（单个）
-4. 修改后运行 `cr query search <keyword> -f <ns/def>` 重拿路径
+4. 修改后运行 `cr query search <keyword> --filter <ns/def>` 重拿路径
 
 #### `,`：在“重起一行”场景里用于保持目标节点形态（有助于坐标稳定）
 
@@ -174,7 +189,7 @@ a
 凡是改到 `$` 或 `,`（尤其是从单行改成多行）时：
 
 1. 先 `tree show` 看当前子树。
-2. 修改后立刻 `query search <keyword> -f <ns/def>` 重拿路径。
+2. 修改后立刻 `query search <keyword> --filter <ns/def>` 重拿路径。
 3. 再继续下一步结构化编辑（`replace/wrap/rewrite`）。
 
 ## 0) 硬前置步骤
@@ -194,7 +209,7 @@ cr docs agents --full
 - 默认优先 **Cirru 输出**，避免默认 JSON 带来的 token 膨胀。
 - 大定义默认先 `query peek`，确认签名与规模后再 `query def`，避免首次信息过载。
 - 路径统一使用点号：`'5.5.1.3'`。
-- 大函数先“看结构再下刀”：先 `query def`，再 `query search` 拿路径，再 `tree show -p` 聚焦子树。
+- 大函数先“看结构再下刀”：先 `query def`，再 `query search` 拿路径，再 `tree show --path` 聚焦子树。
 - 搜索命中很多时，修改遵循：
   - 从大索引往前改，或
   - 每次修改后重新 `query search` 避免路径漂移。
@@ -203,7 +218,7 @@ cr docs agents --full
   - 需要全部提示时主动加 `--tips`
   - 需要精细控制时使用 `--tips-level`
 - 涉及 `map/filter/reduce` 的改动，优先写成显式嵌套调用（`map xs f`、`filter xs pred`），再考虑 `->`，避免宏展开后参数位置误判。
-- `query find` 不要再写 `-f/--fuzzy`（旧参数）；当前默认 fuzzy，需要精确匹配时使用 `--exact`。
+- `query find` 不要再写 `--fuzzy`（旧参数 `-f`）；当前默认 fuzzy，需要精确匹配时使用 `--exact`。
 - 在项目目录里用 `cr eval` 验证本项目定义时，默认不要加 `--dep ./`，避免重复加载本地模块导致 namespace 冲突。
 
 > 说明：默认不加参数即 `minimal`（仅高优先级提示，最多 1 条）；`--tips` 等价于 `full`。也支持显式 `--tips-level minimal|full|none`。
@@ -214,8 +229,8 @@ cr docs agents --full
 
 1. 定位目标定义：`cr query defs <ns>`
 2. 先轻看再全看：`cr query peek <ns/def>`，必要时再 `cr query def <ns/def>`
-3. 搜关键词拿路径：`cr query search <keyword> -f <ns/def>`
-4. 聚焦子树确认上下文：`cr tree show <ns/def> -p '<path>'`（复杂时可加 `-j`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
+3. 搜关键词拿路径：`cr query search <keyword> --filter <ns/def>`
+4. 聚焦子树确认上下文：`cr tree show <ns/def> --path '<path>'`（复杂时可加 `--json`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
 5. 修改并验证：`cr tree replace ...` 或 `cr edit inc --changed <ns/def>`，然后 `cr js`
 
 > 修改时要求先考虑定位到坐标使用局部修改的方式, 或者结构化修改的方式, 若改动较大或不确定改动范围时再考虑整段覆盖式修改。
@@ -225,8 +240,8 @@ cr docs agents --full
 ```bash
 cr query peek respo.render.diff/find-element-diffs
 cr query def respo.render.diff/find-element-diffs
-cr query search collect! -f respo.render.diff/find-element-diffs
-cr tree show respo.render.diff/find-element-diffs -p '5.5.1.3' -j
+cr query search collect! --filter respo.render.diff/find-element-diffs
+cr tree show respo.render.diff/find-element-diffs --path '5.5.1.3' --json
 cr edit inc --changed respo.render.diff/find-element-diffs
 cr js
 ```
@@ -239,16 +254,16 @@ cr js
 
 - `cr query defs <ns>`：列出命名空间定义。
 - `cr query def <ns/def>`：查看定义（默认 Cirru）。
-- `cr query search <pattern> -f <ns/def>`：按关键词拿路径。
-- `cr tree show <ns/def> -p '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
+- `cr query search <pattern> --filter <ns/def>`：按关键词拿路径。
+- `cr tree show <ns/def> --path '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
 
 ### 编辑
 
-- `cr query search <pattern> -f <ns/def> --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
+- `cr query search <pattern> --filter <ns/def> --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
 - `cr edit inc --changed <ns/def>`：增量编译当前修改定义。
 
-`cr tree` 的 `-e` / `--pattern` 常含 `$`、括号等特殊字符，Shell 转义成本高。**tree 系列优先用 `calcit.cli/*` 经 `cr exec` 传入**（统一形式 `calcit.cli/f $ {} (:key value) ...`）。
+`cr tree` 的 `--code`（`-e`）和 `--pattern`（`-s`）常含 `$`、括号等特殊字符，Shell 转义成本高。**tree 系列优先用 `calcit.cli/*` 经 `cr exec` 传入**（统一形式 `calcit.cli/f $ {} (:key value) ...`）。
 
 `:file-path` 可省略，默认使用 `cr <file.cirru>` 启动时指定的 snapshot 文件；仅在操作其他文件时显式传入 `(:file-path |other.cirru)`。
 
@@ -287,7 +302,7 @@ cr src/cirru/calcit-core.cirru edit format
 
 ### 小改动优先 `cr tree`（避免整段重置）
 
-当需求只是“改少量内容或局部结构”时，**不要**先写完整文件再 `cr edit def --overwrite -f ...`。这会放大 token 消耗，也更容易引入无关漂移。
+当需求只是“改少量内容或局部结构”时，**不要**先写完整文件再 `cr edit def --overwrite --file ...`。这会放大 token 消耗，也更容易引入无关漂移。
 
 优先规则：
 
@@ -295,7 +310,7 @@ cr src/cirru/calcit-core.cirru edit format
 - 仅改文本/叶子：优先 `search-replace` 或 `replace-leaf`。
 - 只调单层结构：优先 `insert-*` / `delete` / `batch-delete` / `swap-*` / `wrap` / `raise`。
 - 连续删除多个相邻属性：优先 `batch-delete`（自动从高索引到低索引删除，避免索引漂移）。
-- 仅在“整段重写/新增定义/大范围重构”时，才用 `cr edit def --overwrite -f`。
+- 仅在“整段重写/新增定义/大范围重构”时，才用 `cr edit def --overwrite --file`。
 
 典型场景模板：
 
@@ -337,7 +352,7 @@ calcit.cli/tree-insert $ {} (:target |app.main/main!) (:path |3.2) (:code $ quot
 5. 每次小改后都做最小复核
 
 ```bash
-cr tree show <ns/def> -p '<path>'
+cr tree show <ns/def> --path '<path>'
 cr edit inc --changed <ns/def>
 ```
 
@@ -365,33 +380,33 @@ calcit.cli/tree-show $ {} (:target |app.main/main!) (:path |3.2)
 
 ## 4) 降噪与可读性建议
 
-- 默认只看 Cirru，**必要时**才加 `-j`。
+- 默认只看 Cirru，**必要时**才加 `--json`。
 - 先 `query def` 看大轮廓，再 `search` + `tree show` 看局部。
 - 搜索结果过多时，不要连续盲改路径；每次改后重搜一次更稳。
-- 复杂多行表达式优先 `-f <file>`，减少 shell 转义错误。
+- 复杂多行表达式优先 `--file <file>`，减少 shell 转义错误。
 - 默认模式通常不显示 tips；仅在高优先级场景显示 1 条。
 - 若要看全部提示请加 `--tips`。
 - 若要完全静默可用 `--tips-level none`。
 
 ### 本轮新增的稳定性约束（已验证）
 
-- `cr query find` 当前默认 fuzzy，不再使用 `--fuzzy` / `-f` 这类旧参数；精确匹配用 `--exact`。
+- `cr query find` 当前默认 fuzzy，不再使用 `--fuzzy`（旧参数 `-f`）；精确匹配用 `--exact`。
 - Cirru 字符串统一按 one-liner 处理：多行文本用 `\n` 内嵌；含空格/特殊字符优先用 `"|text with spaces"`，简单字符串用 `|text`。
 - 条件分支末尾若直接返回值（尤其 `nil`）出现调用歧义时，优先改成稳定值结构（例如 sentinel map）再做过滤。
 - `cr query error` 提示旧错误堆栈时，先以本次 `cr js` / `cr --check-only` 结果为准，再决定是否继续追旧栈。
 
 ### 命令参数对照（易混）
 
-- `cr query search <keyword> -f <ns/def>`：这里的 `-f` 是 `--filter`，用于限定搜索范围（有效）。
-- `cr query find <symbol>`：默认就是 fuzzy，不再使用 `-f/--fuzzy`（无效）；精确匹配用 `--exact`。
-- `cr edit def ... -f <file>`：这里的 `-f` 是“从文件读代码输入”（与 query 的 `-f` 含义不同）。
+- `cr query search <keyword> --filter <ns/def>`：`--filter` 用于限定搜索范围（有效）。
+- `cr query find <symbol>`：默认就是 fuzzy，不再使用 `--fuzzy`（旧参数 `-f`）；精确匹配用 `--exact`。
+- `cr edit def ... --file <file>`：`--file` 是“从文件读代码输入”（与 query 的 `--filter` 含义不同）。
 
 ### `Invalid path` 快速恢复模板（固定 3 步）
 
 当路径报错时，不要继续猜坐标，直接走下面流程：
 
-1. `cr query search <keyword> -f <ns/def>` 重新拿最新路径。
-2. `cr tree show <ns/def> -p '<new-path>'` 核对子树上下文。
+1. `cr query search <keyword> --filter <ns/def>` 重新拿最新路径。
+2. `cr tree show <ns/def> --path '<new-path>'` 核对子树上下文。
 3. 再执行 `tree replace/wrap/rewrite`。
 
 常见触发原因：
@@ -409,21 +424,21 @@ cr query peek <ns/def>
 cr query def <ns/def>
 
 # 3) 用 search 定位后再 show 局部
-cr query search '<keyword>' -f <ns/def>
-cr tree show <ns/def> -p '<path>'
+cr query search '<keyword>' --filter <ns/def>
+cr tree show <ns/def> --path '<path>'
 
 # 4) 需要完整提示再打开
 cr --tips query def <ns/def>
 ```
 
-仅在需要程序化处理时再加 `-j`，否则保持 Cirru 输出即可。
+仅在需要程序化处理时再加 `--json`，否则保持 Cirru 输出即可。
 
 ---
 
 ## 5) 路径规则（统一）
 
 - 使用点号路径：`'5.5.1.3'`。
-- `-p ''` 表示根节点，仅在明确需要根级操作时使用。
+- `--path ''` 表示根节点，仅在明确需要根级操作时使用。
 - 输入错误路径会触发 `Invalid path`，先 `tree show` 校验上下文再改。
 
 ---
@@ -435,13 +450,13 @@ cr --tips query def <ns/def>
 ```bash
 cr query defs app.main
 cr query def app.main/main!
-cr query search state -f app.main/main!
-cr tree show app.main/main! -p '3.2'
+cr query search state --filter app.main/main!
+cr tree show app.main/main! --path '3.2'
 cr edit inc --changed app.main/main!
 cr js
 ```
 
-第 5 步 tree 替换（`-e` 含特殊字符时用 `cr exec` + `calcit.cli`）：
+第 5 步 tree 替换（`--code` 含特殊字符时用 `cr exec` + `calcit.cli`）：
 
 ```cirru.cli
 calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quote |new-expr)
@@ -474,7 +489,7 @@ calcit.cli/tree-replace $ {} (:target |app.main/main!) (:path |3.2) (:code $ quo
 
 当当前模板不够用时，按下面的“能力分层”自行扩展：
 
-- 运行与编译：`cr`, `cr js`, `cr ir`, `cr-wasm`（实验性）, `-w/--watch`
+- 运行与编译：`cr`, `cr js`, `cr ir`, `cr-wasm`（实验性）, `--watch`
 - 查询与定位：`cr query defs/def/search/search-expr/usages/schema/examples`
 - 分析与影响评估：`cr analyze call-graph`, `cr analyze count-calls`, `cr analyze program-diff <git-ref>`, `cr analyze call-graph-diff <git-ref>`
 - 结构化编辑：`cr tree show/replace/search-replace/cp/wrap/unwrap/raise/rewrite`
