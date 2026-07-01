@@ -29,7 +29,7 @@ Calcit loads namespaces from `calcit.cirru` (legacy filename: `compact.cirru`). 
 - **Alias**: `:require (app.lib :as lib)`
 - **Refer**: `:require (app.lib :refer $ f1 f2)`
 - **Core**: `calcit.core` is auto-imported
-- **CLI Add**: `cr edit add-import app.main -e 'app.lib :refer $ f1'`
+- **CLI Add**: `cr edit add-import app.main --code 'app.lib :refer $ f1'`
 
 ## The `ns` Form
 
@@ -120,10 +120,10 @@ The `cr edit` CLI commands help manage imports safely:
 
 ```bash
 # Add a new import to a namespace
-cr app.cirru edit add-import app.demo -e 'app.util :refer $ helper'
+cr app.cirru edit add-import app.demo --code 'app.util :refer $ helper'
 
 # Override an existing import (same source namespace)
-cr app.cirru edit add-import app.demo -e 'app.util :refer $ helper new-fn' -o
+cr app.cirru edit add-import app.demo --code 'app.util :refer $ helper new-fn' --overwrite
 ```
 
 See `cr edit --help` for all available operations.

@@ -33,8 +33,11 @@ This command also rewrites older namespace records into the canonical `NsEntry` 
 ### Managing Namespaces
 
 ```bash
-# Move or rename a definition
-cr edit mv app.main/old-name app.main/new-name
+# Move a definition to another namespace
+cr edit mv-def app.main/old-name app.util/old-name
+
+# Rename a definition within the same namespace
+cr edit rename app.main/old-name new-name
 
 # Add a new namespace
 cr edit add-ns app.util
@@ -47,10 +50,10 @@ cr edit rm-ns app.util
 
 ```bash
 # Add an import to a namespace
-cr edit add-import app.main -e 'respo.core :refer $ deftime'
+cr edit add-import app.main --code 'respo.core :refer $ deftime'
 
 # Bulk reset all imports for a namespace
-cr edit imports app.main -f imports.cirru
+cr edit imports app.main --file imports.cirru
 ```
 
 ## Fine-grained AST Operations (cr tree)
@@ -61,7 +64,7 @@ The `tree` command allows precise manipulation of nodes within a definition's S-
 
 ```bash
 # View the AST of a definition with indices
-cr tree view app.main/main!
+cr tree show app.main/main!
 ```
 
 ### Target-based Replacement
@@ -70,7 +73,7 @@ cr tree view app.main/main!
 
 ```bash
 # Replace '1' with '10' inside the definition
-cr tree search-replace app.main/main! -t 1 -e 10
+cr tree search-replace app.main/main! --pattern '1' --code '10'
 ```
 
 ### Path-based Operations
@@ -78,35 +81,40 @@ cr tree search-replace app.main/main! -t 1 -e 10
 You can use numeric paths to locate deep nodes:
 
 ```bash
-# Replace the node at path [1 2 0]
-cr tree replace app.main/main! -p 1 2 0 -e '(+ 1 2)'
+# Replace the node at path 1.2.0
+cr tree replace app.main/main! --path '1.2.0' --code '(+ 1 2)'
 
-# Insert before/after a node
-cr tree insert app.main/main! -p 1 0 --at before -e 'println |started'
+# Insert before a node
+cr tree insert-before app.main/main! --path '1.0' --code 'println |started'
 
 # Delete a node
-cr tree delete app.main/main! -p 1 0
+cr tree delete app.main/main! --path '1.0'
 ```
 
-### Copying across Definitions
+### Copying and Moving Nodes
+
+Current CLI exposes node copy/move under `cr edit cp` and `cr edit mv`:
 
 ```bash
-# Copy a node from one definition to another
-cr tree cp app.main/target-def --from app.main/source-def -p 1 0 --at append-child
+# Copy a node within a definition
+cr edit cp app.main/target-def --from '1.0' --path '2.0' --at append-child
+
+# Move a node within a definition
+cr edit mv app.main/target-def --from '1.0' --path '2.0' --at after
 ```
 
 ## Input Formats
 
 Editing commands support several ways to provide new code:
 
-- `-e 'code'`: Inline Cirru expression (one-liner).
-- `-f file.cirru`: Multi-line code from a file (recommended for complex structures).
-- `-j 'json'`: Raw JSON-serialized Cirru representation.
+- `--code 'code'`: Inline Cirru expression (one-liner).
+- `--file file.cirru`: Multi-line code from a file (recommended for complex structures).
+- `--json 'json'`: Raw JSON-serialized Cirru representation.
 
-> Note: For multi-line text input, prefer using `-f` with a temporary file in `.calcit-snippets/`.
+> Note: For multi-line text input, prefer using `--file` with a temporary file in `.calcit-snippets/`.
 
 ## Best Practices
 
-1. **Check first**: Use `cr query find` or `cr tree view` to confirm the current state.
+1. **Check first**: Use `cr query find` or `cr tree show` to confirm the current state.
 2. **From back to front**: When performing multiple `delete` or `insert` operations at the same level, start from the highest index to avoid shifting indices.
 3. **Use search-replace**: It is usually safer than path-based replacement as it validates the current content.

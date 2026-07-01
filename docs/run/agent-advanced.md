@@ -157,43 +157,35 @@ echo 'quote (println "|hello")' | cr project.cirru exec
 简单提示：
 
 - 占位符统一使用 `{{NAME}}` 风格，例如 `{{BODY}}`、`{{TRUE_BRANCH}}`；
-- 大表达式可以先用 `cr query def $ {} (:target |ns/def)` 看整体；
-- 再用 `cr tree show $ {} (:target |ns/def) (:path |3.1.0)` 深入某个片段；
+- 大表达式可以先用 `cr query def ns/def` 看整体；
+- 再用 `cr tree show ns/def --path 3.1.0` 深入某个片段；
 - 真正填充时，优先用 `cr tree search-replace` 找占位符，不唯一时再退回 `cr tree replace`。
 
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单结构。
 
    ```bash
-cr tree replace $ {} (:target |ns/def) (:path |4.0) (:code $ quote $ let ((x 1)) {{BODY}})
+cr tree replace ns/def --path 4.0 --code 'let ((x 1)) {{BODY}}'
    ```
 
-2. **定位占位符**：使用 `tree-show` 确认占位符的具体路径。
+2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
 
    ```bash
-cr tree show $ {} (:target |ns/def) (:path |4.0)
+cr tree show ns/def --path 4.0
    ```
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
    ```bash
-cr tree replace $ {} (:target |ns/def) (:path |4.0.2) (:code $ quote $ if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}})
+cr tree replace ns/def --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
    ```
 
 4. **递归迭代**：重复上述步骤直到所有占位符都被替换为最终逻辑。
 
 **优势：**
 
-- **精确性**：`:code` 等 AST 参数用 `(:code $ quote |leaf)` / `(:code $ quote $ expr ...)`（`:cirru-quote`），preprocess 会校验类型。
-- **低风险**：每次只修改一小部分，出错时容易通过 `tree-show` 快速定位。
+- **精确性**：`--code` 直接传 Cirru one-liner，preprocess 会校验结构。
+- **低风险**：每次只修改一小部分，出错时容易通过 `tree show` 快速定位。
 - **绕过限制**：解决某些终端对超长命令行参数的限制。
-
-```bash
-cr project.cirru exec << 'END'
-cr tree replace $ {} (:target |ns/def) (:path |4.0) (:code $ quote $ let ((x 1)) {{BODY}})
-cr tree show $ {} (:target |ns/def) (:path |4.0)
-cr tree replace $ {} (:target |ns/def) (:path |4.0.2) (:code $ quote $ if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}})
-END
-```
 
 ## Calcit 语言基础
 
@@ -216,16 +208,16 @@ END
 详细内容已移入 [run/debugging.md](./debugging.md)。包括：
 
 - watcher 监听模式（`cr -w` / `cr js -w` / `cr ir -w`）
-- 增量触发更新（`cr edit inc $ {} (:changed …)`，等价 `cr edit inc`）
-- 编译结果检查（`cr query error $ {}` 或 `cr query error`）
+- 增量触发更新（`cr edit inc --changed ...`）
+- 编译结果检查（`cr query error`）
 
 ## 文档支持
 
 遇到疑问时使用：
 
-- `cr docs search $ {} (:keyword |keyword)` — 在 `docs/` 与 `~/.config/calcit/docs` 中 grep markdown（简化版 `cr docs search`）
+- `cr docs search keyword` — 在 `docs/` 与 `~/.config/calcit/docs` 中 grep markdown
 - `# see: cr cirru show-guide` — 读取 Cirru 语法指南
-- `cr docs read $ {} (:path |path)` — 读取任意文档文件
+- `cr docs read path.md` — 读取任意文档文件
 - `cr docs agents [<heading> ...] [--full]` — 结构化 Agent 指南
 - `cr docs read` / `sections` / `remote-libs` 等 — 见 [debugging.md](./debugging.md)
 
@@ -237,51 +229,42 @@ END
 ### 添加新函数
 
 ```bash
-cr edit def $ {} (:target |app.core/multiply) (:code $ quote $ defn multiply (x y) (* x y))
+cr edit def app.core/multiply --code 'defn multiply (x y) (* x y)'
 ```
 
 ### 基本操作
 
 ```bash
 ; 添加新函数
-cr edit def $ {} (:target |app.core/multiply) (:code $ quote $ defn multiply (x y) (* x y))
+cr edit def app.core/multiply --code 'defn multiply (x y) (* x y)'
 
-; 覆盖已有定义（`(:overwrite true)`）
-cr edit def $ {} (:target |app.core/multiply) (:code $ quote $ defn multiply (x y) (* x y)) (:overwrite true)
+; 覆盖已有定义（`--overwrite`）
+cr edit def app.core/multiply --code 'defn multiply (x y) (* x y)' --overwrite
 
 ; 添加 :refer import
-cr edit add-import $ {} (:namespace |app.main) (:source-ns |app.util) (:refer-sym |helper)
+cr edit add-import app.main --code 'app.util :refer $ helper'
 
 ; 触发热更新（watcher 模式下写入 .compact-inc.cirru）
-cr edit inc $ {} (:changed |app.core/my-fn)
+cr edit inc --changed app.core/my-fn
 ```
 
 ### 修改定义工作流
 
 ```bash
 ; 1. 搜索定位（返回 path + leaf-preview）
-cr query search $ {} (:target |ns/def) (:keyword |pattern)
+cr query search pattern --filter ns/def
 
 ; 2. 查看节点上下文
-cr tree show $ {} (:target |ns/def) (:path |3.1.0)
+cr tree show ns/def --path 3.1.0
 
 ; 3. 执行替换
-cr tree replace $ {} (:target |ns/def) (:path |3.1.0) (:code $ quote |new-value)
+cr tree replace ns/def --path 3.1.0 --code 'new-value'
 
 ; 4. 或搜索替换叶子
-cr tree search-replace $ {} (:target |ns/def) (:pattern |old-sym) (:replacement |new-sym)
+cr tree search-replace ns/def --pattern old-sym --code new-sym
 
 ; 5. 验证写回结果
-cr query def $ {} (:target |ns/def)
-```
-
-```bash
-cr project.cirru exec << 'END'
-cr query search $ {} (:target |ns/def) (:keyword |pattern)
-cr tree show $ {} (:target |ns/def) (:path |3.1.0)
-cr tree replace $ {} (:target |ns/def) (:path |3.1.0) (:code $ quote |new-value)
-cr query def $ {} (:target |ns/def)
-END
+cr query def ns/def
 ```
 
 ---
@@ -296,17 +279,17 @@ END
 
 ```bash
 ; 1. 搜索并定位目标子表达式
-cr query search $ {} (:target |app.core/process-data) (:keyword |complex-call)
+cr query search complex-call --filter app.core/process-data
 
 ; 2. 查看上下文确认路径
-cr tree show $ {} (:target |app.core/process-data) (:path |3.2.1)
+cr tree show app.core/process-data --path 3.2.1
 
 ; 3. 提取为新定义
-cr edit split-def $ {} (:target |app.core/process-data) (:path |3.2.1) (:new-name |extracted-calc)
+cr edit split-def app.core/process-data --path 3.2.1 --name extracted-calc
 
 ; 4. 验证结果
-cr query def $ {} (:target |app.core/extracted-calc)
-cr query def $ {} (:target |app.core/process-data)
+cr query def app.core/extracted-calc
+cr query def app.core/process-data
 ```
 
 ### 重命名定义（`rename-def`）
@@ -315,16 +298,16 @@ cr query def $ {} (:target |app.core/process-data)
 
 ```bash
 ; 1. 确认有哪些地方引用到
-cr query usages $ {} (:target |app.core/old-name)
+cr query usages app.core/old-name
 
 ; 2. 搜索所有引用位置
-cr query search $ {} (:target |app.core/caller-fn) (:keyword |old-name)
+cr query search old-name --filter app.core/caller-fn
 
 ; 3. 重命名定义
-cr edit rename $ {} (:target |app.core/old-name) (:new-name |new-name)
+cr edit rename app.core/old-name new-name
 
 ; 4. 批量更新引用
-cr tree search-replace $ {} (:target |app.core/caller-fn) (:pattern |old-name) (:replacement |new-name)
+cr tree replace-leaf app.core/caller-fn --pattern old-name --code new-name
 ```
 
 ### 迁移定义到另一命名空间（`mv-def`）
@@ -332,27 +315,27 @@ cr tree search-replace $ {} (:target |app.core/caller-fn) (:pattern |old-name) (
 **场景：** 某函数放错了命名空间，需要迁移。
 
 ```bash
-cr edit mv-def $ {} (:source |app.util/helper-fn) (:target |app.core/helper-fn)
-cr edit add-import $ {} (:namespace |app.main) (:source-ns |app.core) (:refer-sym |helper-fn)
+cr edit mv-def app.util/helper-fn app.core/helper-fn
+cr edit add-import app.main --code 'app.core :refer $ helper-fn'
 ```
 
 ```bash
 ; watcher 模式下触发热更新
-cr edit inc $ {} (:changed |app.core/helper-fn)
+cr edit inc --changed app.core/helper-fn
 ```
 
-### 在定义内移动 / 复制 AST 节点（`tree-cp` / `tree-mv`）
+### 在定义内移动 / 复制 AST 节点（`edit cp` / `edit mv`）
 
 **场景：** 函数体内某个子表达式需要移到另一位置，或复制用于多处。
 
 ```bash
 ; 定位节点
-cr query search $ {} (:target |app.core/main-fn) (:keyword |process)
-cr tree show $ {} (:target |app.core/main-fn) (:path |3.1.2)
+cr query search process --filter app.core/main-fn
+cr tree show app.core/main-fn --path 3.1.2
 
 ; 复制或移动（position: |before |after |prepend-child |append-child |replace）
-cr tree cp $ {} (:target |app.core/main-fn) (:from-path |3.1.2) (:to-path |3.0) (:position |after)
-cr tree mv $ {} (:target |app.core/main-fn) (:from-path |3.1.2) (:to-path |3.0) (:position |after)
+cr edit cp app.core/main-fn --from 3.1.2 --path 3.0 --at after
+cr edit mv app.core/main-fn --from 3.1.2 --path 3.0 --at after
 ```
 
 ### 包裹 / 拆包 / 提升节点（`tree-wrap` / `tree-unwrap` / `tree-raise`）
@@ -361,11 +344,11 @@ cr tree mv $ {} (:target |app.core/main-fn) (:from-path |3.1.2) (:to-path |3.0) 
 
 ```bash
 ; wrap：模板中用 self 引用原节点
-cr tree wrap $ {} (:target |app.core/main-fn) (:path |3.1.2) (:wrapper-code $ quote $ println self)
+cr tree wrap app.core/main-fn --path 3.1.2 --code 'println self'
 
 ; unwrap / raise
-cr tree unwrap $ {} (:target |app.core/main-fn) (:path |3.1.2)
-cr tree raise $ {} (:target |app.core/main-fn) (:path |3.1.2)
+cr tree unwrap app.core/main-fn --path 3.1.2
+cr tree raise app.core/main-fn --path 3.1.2
 ```
 
 ### 批量重命名局部变量
@@ -374,7 +357,7 @@ cr tree raise $ {} (:target |app.core/main-fn) (:path |3.1.2)
 
 ```bash
 ; 搜索替换所有匹配的 leaf
-cr tree search-replace $ {} (:target |app.core/process) (:pattern |old-var) (:replacement |new-var)
+cr tree replace-leaf app.core/process --pattern old-var --code new-var
 ```
 
 ---
@@ -389,7 +372,7 @@ cr tree search-replace $ {} (:target |app.core/process) (:pattern |old-var) (:re
 
 - **从后往前操作**（推荐）：先删大索引，再删小索引
 - **单次操作后重新搜索**：每次修改立即用 `cr query search` 更新路径
-- **整体重写**：优先用 `cr edit def` 带 `(:overwrite true)` 覆盖；根路径 `tree-replace` 只保留给明确需要根节点级别改写的场景
+- **整体重写**：优先用 `cr edit def --overwrite` 覆盖；根路径 `tree replace` 只保留给明确需要根节点级别改写的场景
 
 非法 path 会抛出明确错误，例如 `tree-show: invalid path 'bad.path': segment 'bad' is not an unsigned integer`。
 
@@ -397,33 +380,33 @@ cr tree search-replace $ {} (:target |app.core/process) (:pattern |old-var) (:re
 
 `cr tree replace` 的 path 不能为空（写操作不允许 root path）。当你需要完整替换一个定义体时：
 
-- 更推荐 `cr edit def $ {} (:target |ns/def) (:code $ quote $ defn ...) (:overwrite true)`
+- 更推荐 `cr edit def ns/def --code 'defn ...' --overwrite`
 - 先在 snippet 里组织完整定义，再一次性覆盖，验证也更直接
 - 替换成功后仍应立刻执行 `cr query def` 确认写回结构符合预期
 
 ### 2. 输入格式：Cirru one-liner 字符串 ⭐⭐⭐
 
-`--code` 参数必须是 **Cirru 表达式**，用 `quote` 前缀区分 leaf 和表达式：
+`--code` 参数必须是 **Cirru 表达式**：
 
 | 场景           | 写法示例                                              | 说明                     |
 | -------------- | ----------------------------------------------------- | ------------------------ |
-| AST path       | `cr tree show $ {} (:path \|3.1.0)`                    | path 必须是字符串        |
-| 表达式         | `"\|defn add (a b) (+ a b)"`                          | 完整 Cirru one-liner     |
-| 原子符号 leaf  | `cr tree replace $ {} (:path \|3.1.0) (:code $ quote \|new-symbol))`      | 替换为 leaf              |
-| 字符串 leaf    | `cr tree search-replace $ {} (:pattern \|old) (:replacement \|new text)`      | 搜索替换 leaf            |
-| 覆盖已有定义   | `cr edit def $ {} (:code $ quote $ code) (:overwrite true)`                | 加 `(:overwrite true)`        |
+| AST path       | `cr tree show app.main/fn --path 3.1.0`                               | path 用点分隔更直观  |
+| 表达式         | `cr tree replace app.main/fn --path 2 --code 'println |hello'`        | 完整 Cirru one-liner |
+| 原子符号 leaf  | `cr tree replace app.main/fn --path 2.0 --code 'new-symbol'`          | 替换为 leaf          |
+| 字符串 leaf    | `cr tree search-replace app.main/fn --pattern old --code '|new text'` | 搜索替换 leaf        |
+| 覆盖已有定义   | `cr edit def app.main/fn --code 'defn fn () nil' --overwrite`         | 加 `--overwrite`     |
 
 **实战示例：**
 
 ```bash
 ; ✅ 替换表达式
-cr tree replace $ {} (:target |app.main/fn) (:path |2) (:code $ quote $ println |hello)
+cr tree replace app.main/fn --path 2 --code 'println |hello'
 
 ; ✅ 替换 leaf
-cr tree replace $ {} (:target |app.main/fn) (:path |2.0) (:code $ quote |new-symbol)
+cr tree replace app.main/fn --path 2.0 --code 'new-symbol'
 
 ; ✅ 搜索替换 leaf
-cr tree search-replace $ {} (:target |app.main/fn) (:pattern |old-var) (:replacement |new-var)
+cr tree search-replace app.main/fn --pattern old-var --code new-var
 ```
 
 ### 3. Cirru 字符串和数据类型 ⭐⭐
@@ -468,7 +451,7 @@ send-to-component! $ :: :clipboard/read text
 **大资源处理建议：**
 如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符，统一写成 `{{PLACEHOLDER_FEATURE}}` 这种花括号形式，并注意避免重复，然后通过 `cr tree search-replace` 或 `cr tree replace` 做精准的分段替换。
 
-`cr query def` / `cr tree show` 面向 LLM 脚本调用，返回稳定字符串；`tree-show` 的 `(:max-lines N)` 控制最大输出行数（默认 80）。
+`cr query def` / `cr tree show` 面向 LLM 脚本调用，返回稳定字符串。
 
 ### 5. 命名空间 import 操作 ⭐⭐⭐
 
@@ -476,11 +459,11 @@ send-to-component! $ :: :clipboard/read text
 
 ```bash
 ; ✅ 正确：添加 :refer import
-cr edit add-import $ {} (:namespace |app.main) (:source-ns |app.util) (:refer-sym |helper)
+cr edit add-import app.main --code 'app.util :refer $ helper'
 
 ; ✅ 分两次添加 :as 和 :refer（Calcit 不支持合并写法）
-cr edit add-import $ {} (:namespace |app.main) (:source-ns |app.schema) (:refer-sym |schema)
-cr edit add-import $ {} (:namespace |app.main) (:source-ns |app.schema) (:refer-sym |Op)
+cr edit add-import app.main --code 'app.schema :refer $ schema'
+cr edit add-import app.main --code 'app.schema :refer $ Op'
 ```
 
 **常见陷阱：**
@@ -506,24 +489,24 @@ ns app.main $ :require
 
 ```bash
 ; 1. 快速定位
-cr query search $ {} (:target |ns/def) (:keyword |target)
+cr query search target --filter ns/def
 
 ; 2. 查看上下文
-cr tree show $ {} (:target |ns/def) (:path |3.1.0)
+cr tree show ns/def --path 3.1.0
 
 ; 3. 执行修改
-cr tree replace $ {} (:target |ns/def) (:path |3.1.0) (:code $ quote |new-value)
+cr tree replace ns/def --path 3.1.0 --code 'new-value'
 
 ; 4. 验证
-cr query def $ {} (:target |ns/def)
+cr query def ns/def
 ```
 
 **新手提示：**
 
-- 不知道目标在哪？用 `search-def` 快速找到所有匹配
-- 想了解代码结构？用 `tree-show` 逐层探索
+- 不知道目标在哪？用 `cr query search` 快速找到所有匹配
+- 想了解代码结构？用 `tree show` 逐层探索
 - 需要批量重命名 leaf？用 `search-replace`
-- 不确定修改是否正确？每步后用 `tree-show` 验证
+- 不确定修改是否正确？每步后用 `tree show` 验证
 
 ### 7. 特殊字符：完全绕过 Shell ⭐⭐⭐
 
@@ -531,15 +514,15 @@ Calcit 函数名中的 `?`, `->`, `!` 等字符在 bash/zsh 中有特殊含义�
 
 ```bash
 ; 含 $ ` | > < & ; 等特殊字符，全部可以自由书写
-cr query search $ {} (:target |ns/main!) (:keyword |$data)
-cr query peek $ {} (:target |app.core/valid?) (:lines 10)
-cr query def $ {} (:target |app.main/valid?)
+cr query search '$data' --filter ns/main!
+cr query peek app.core/valid?
+cr query def app.main/valid?
 ```
 
 ```bash
 cr project.cirru exec << 'END'
-cr query defs $ {} (:namespace |app.core)
-cr query search $ {} (:target |app.core/process!) (:keyword |item)
+cr query defs app.core
+cr query search item --filter app.core/process!
 END
 ```
 
@@ -549,11 +532,11 @@ END
 
 ```bash
 cr project.cirru exec << 'END'
-cr query peek $ {} (:target |app.core/main!) (:lines 5)
-cr query search $ {} (:target |app.core/main!) (:keyword |keyword)
-cr tree show $ {} (:target |app.core/main!) (:path |3.1.0)
-cr tree replace $ {} (:target |app.core/main!) (:path |3.1.0) (:code $ quote |updated)
-cr query def $ {} (:target |app.core/main!)
+cr query peek app.core/main!
+cr query search keyword --filter app.core/main!
+cr tree show app.core/main! --path 3.1.0
+cr tree replace app.core/main! --path 3.1.0 --code 'updated'
+cr query def app.core/main!
 END
 ```
 
@@ -567,9 +550,9 @@ END
 
 ```bash
 # query is done via cr CLI
-cr query defs $ {} (:namespace |app.util)
-cr query peek $ {} (:target |app.util/format-date) (:lines 5)
-cr query def $ {} (:target |app.util/format-date)
+cr query defs app.util
+cr query peek app.util/format-date
+cr query def app.util/format-date
 ```
 
 ### 步骤 2：用 exec 快速验证写法
@@ -593,25 +576,25 @@ END
 ### 步骤 3：添加新定义
 
 ```bash
-cr edit def $ {} (:target |app.util/calculate-discount) (:code $ quote $ defn calculate-discount (price rate) (* price (- 1 rate)))
-cr query def $ {} (:target |app.util/calculate-discount)
+cr edit def app.util/calculate-discount --code 'defn calculate-discount (price rate) (* price (- 1 rate))'
+cr query def app.util/calculate-discount
 ```
 
 ### 步骤 4：在调用方添加 import 并使用
 
 ```bash
-cr query defs $ {} (:namespace |app.core)
-cr edit add-import $ {} (:namespace |app.core) (:source-ns |app.util) (:refer-sym |calculate-discount)
-cr query search $ {} (:target |app.core/checkout) (:keyword |total-price)
-cr tree replace $ {} (:target |app.core/checkout) (:path |3.2.1) (:code $ quote $ calculate-discount total-price 0.1)
+cr query defs app.core
+cr edit add-import app.core --code 'app.util :refer $ calculate-discount'
+cr query search total-price --filter app.core/checkout
+cr tree replace app.core/checkout --path 3.2.1 --code 'calculate-discount total-price 0.1'
 ```
 
 ### 步骤 5：触发热更新并验证
 
 ```bash
-cr edit inc $ {} (:changed |app.util/calculate-discount,app.core/checkout)
-cr query def $ {} (:target |app.util/calculate-discount)
-cr query def $ {} (:target |app.core/checkout)
+cr edit inc --changed app.util/calculate-discount --changed app.core/checkout
+cr query def app.util/calculate-discount
+cr query def app.core/checkout
 ```
 
 > 可运行 `cr --check-only` 做全量验证，或 `cr js` 快速编译。
@@ -620,11 +603,11 @@ cr query def $ {} (:target |app.core/checkout)
 
 ```bash
 ; 忘记 import → unknown symbol
-cr edit add-import $ {} (:namespace |app.core) (:source-ns |app.util) (:refer-sym |calculate-discount)
+cr edit add-import app.core --code 'app.util :refer $ calculate-discount'
 
 ; 函数参数顺序传错 → 定位并修改调用
-cr query search $ {} (:target |app.core/checkout) (:keyword |calculate-discount)
-cr tree replace $ {} (:target |app.core/checkout) (:path |3.2.1) (:code $ quote |calculate-discount)
+cr query search calculate-discount --filter app.core/checkout
+cr tree replace app.core/checkout --path 3.2.1 --code 'calculate-discount'
 ```
 
 > `edit rename` 拼写错误可用 `cr edit rename` 修正。
@@ -739,24 +722,24 @@ cr calcit/test.cirru eval 'cr query peek $ {} (:file-pth |x)'
 
 当 watcher 提示有错误或行为异常时，按以下顺序排查：
 
-1. 查看最新错误堆栈：`cr query error $ {}` 或 `cr query error`
+1. 查看最新错误堆栈：`cr query error`
 2. 用 `cr --check-only` 快速全量验证
 3. 用 `cr exec` 隔离验证单个表达式写法
 
 ```bash
 ; 检查某个定义的代码和内容
-cr query def $ {} (:target |ns/def)
-cr tree show $ {} (:target |ns/def) (:path |3.1.0)
-cr query search $ {} (:target |ns/def) (:keyword |suspect-symbol)
-cr query find $ {} (:symbol |my-function)
-cr query defs $ {} (:namespace |my.namespace)
-cr query error $ {}
+cr query def ns/def
+cr tree show ns/def --path 3.1.0
+cr query search suspect-symbol --filter ns/def
+cr query find my-function
+cr query defs my.namespace
+cr query error
 ```
 
 ```bash
 cr project.cirru exec << 'END'
-cr query def $ {} (:target |ns/def)
-cr tree show $ {} (:target |ns/def) (:path |3.1.0)
+cr query def ns/def
+cr tree show ns/def --path 3.1.0
 END
 ```
 
@@ -764,10 +747,10 @@ END
 
 | 错误信息                                         | 原因                                              | 解决方法                                                                 |
 | ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `tree-show: invalid path ...`                     | path 含非法段或非数字                             | 重新 `search-def` 获取正确 path，只用点号分隔数字                        |
-| `tree-replace: root path is not allowed`         | 写操作传了空 path                                 | 改用 `edit-def` 覆盖整段定义                                             |
+| `tree-show: invalid path ...`                     | path 含非法段或非数字                             | 重新 `cr query search` 获取正确 path，只用点号分隔数字                   |
+| `tree-replace: root path is not allowed`         | 写操作传了空 path                                 | 改用 `cr edit def --overwrite` 覆盖整段定义                              |
 | `add-import: import rule already exists`         | 重复添加相同 import                               | 跳过或先手动移除旧规则                                                   |
-| `Definition 'xxx' already exists`                | `edit-def` 未传 overwrite                         | 加 `(:overwrite true)`                                                     |
+| `Definition 'xxx' already exists`                | `cr edit def` 未传 `--overwrite`                 | 加 `--overwrite`                                                          |
 | `tag-match expected tuple`                       | 传入 vector 而非 tuple                            | 改用 `::` 语法，如 `:: :event-name data`                                 |
 | `unknown symbol: xxx`                            | 符号未定义或未 import                             | `find-symbol` 确认位置，`add-import` 引入                                |
 | `expects pairs in list for let`                  | `let` 绑定语法错误                                | 改为 `let ((x val)) body`（双层括号）                                    |

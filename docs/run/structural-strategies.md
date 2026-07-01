@@ -11,8 +11,8 @@ aliases:
   - "raise strategy"
   - "rewrite strategy"
 entry_for:
-  - "cr tree cp"
-  - "cr edit mv"
+  - "cr edit cp"
+  - "cr edit mv-def"
   - "cr tree wrap"
   - "cr tree raise"
   - "cr tree rewrite"
@@ -25,25 +25,25 @@ entry_for:
 ## 1) `cp`：复制现有子树，减少手输
 
 ```bash
-cr tree cp app.main/demo --from '3.2' -p '4' --at after
+cr edit cp app.main/demo --from '3.2' --path '4' --at after
 ```
 
 - 含义：把路径 `3.2` 的子树复制到 `4` 后面。
 - 适合：先复用旧逻辑，再做小改。
 
-## 2) `mv`：移动/重命名定义
+## 2) `mv-def`：移动定义到另一命名空间
 
 ```bash
-cr edit mv app.main/old-name app.main/new-name
+cr edit mv-def app.main/old-name app.util/old-name
 ```
 
-- 含义：定义级重命名或迁移。
+- 含义：定义级迁移；若只是同命名空间重命名，使用 `cr edit rename`。
 - 适合：整理命名或模块边界。
 
 ## 3) `wrap`：给目标套一层结构
 
 ```bash
-cr tree wrap app.main/demo -p '5.2' -e 'when cond self'
+cr tree wrap app.main/demo --path '5.2' --code 'when cond self'
 ```
 
 - 含义：把原节点作为 `self` 嵌入新结构。
@@ -52,7 +52,7 @@ cr tree wrap app.main/demo -p '5.2' -e 'when cond self'
 ## 4) `raise`：提升子表达式，去掉中间壳
 
 ```bash
-cr tree raise app.main/demo -p '5.2.1'
+cr tree raise app.main/demo --path '5.2.1'
 ```
 
 - 含义：用指定子节点替换其父节点。
@@ -61,7 +61,7 @@ cr tree raise app.main/demo -p '5.2.1'
 ## 5) `rewrite`：引用原节点做结构重排
 
 ```bash
-cr tree rewrite app.main/demo -p '5.2' --with self=. -e '-> self normalize emit'
+cr tree rewrite app.main/demo --path '5.2' --with self=. --code '-> self normalize emit'
 ```
 
 - 含义：在新模板中引用原节点（`.`）。

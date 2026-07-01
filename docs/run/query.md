@@ -85,7 +85,7 @@ cr query usages app.main/main!
 cr query search hello
 
 # Limit to one definition
-cr query search hello -f app.main/main!
+cr query search hello --filter app.main/main!
 ```
 
 ### Search Expressions (`search-expr`)
@@ -95,7 +95,7 @@ cr query search hello -f app.main/main!
 cr query search-expr "fn (x)"
 
 # Limit to one definition
-cr query search-expr "fn (x)" -f app.main/main!
+cr query search-expr "fn (x)" --filter app.main/main!
 ```
 
 ## Quick Recipes (for fast locating)

@@ -27,17 +27,17 @@ entry_for:
 
 ```bash
 # 搜索 → 修改 → 验证
-cr query search 'symbol' -f 'ns/def'                      # 1. 定位（输出：[3.2.1] in ...）
-cr tree replace 'ns/def' -p '3.2.1' --leaf -e 'new'     # 2. 修改
-cr tree show 'ns/def' -p '3.2.1'                        # 3. 验证（可选）
+cr query search 'symbol' --filter 'ns/def'                    # 1. 定位（输出：[3.2.1] in ...）
+cr tree replace 'ns/def' --path '3.2.1' --code 'new'         # 2. 修改
+cr tree show 'ns/def' --path '3.2.1'                         # 3. 验证（可选）
 ```
 
 ### 三种搜索方式
 
 ```bash
-cr query search 'target' -f 'ns/def'                      # 搜索符号/字符串
-cr query search-expr 'fn (x)' -f 'ns/def'                 # 搜索代码结构
-cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶子节点
+cr query search 'target' --filter 'ns/def'                    # 搜索符号/字符串
+cr query search-expr 'fn (x)' --filter 'ns/def'               # 搜索代码结构
+cr tree replace-leaf 'ns/def' --pattern 'old' --code 'new'    # 批量替换叶子节点
 ```
 
 ### 效率对比
