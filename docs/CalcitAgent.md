@@ -22,7 +22,7 @@ entry_for:
 
 ## 命令参数中的 Cirru 表达式（受 bash 特殊字符影响）
 
-以下参数的值包含 **Cirru 代码**，其中 `$`、`` ` ``、`|`、`>`、`"` 等字符会被 bash 解释，需用引号包裹或改用 `cr exec` + heredoc 从 stdin 传入（完全绕过 Shell 转义）：
+以下参数的值包含 **Cirru 代码**，其中 `$`、`` ` ``、`|`、`>`、`"` 等字符会被 bash 解释，需用引号包裹或改用 stdin + heredoc 从 stdin 传入（完全绕过 Shell 转义）：
 
 | 参数 | 出现场景 | 说明 |
 |------|----------|------|
@@ -37,17 +37,17 @@ entry_for:
 
 ### 查询导航（先用这个）
 
-- 看某个定义的大致结构：`cr query peek <ns/def>`
-- 看某个定义的完整实现：`cr query def <ns/def>`
-- 找关键词并拿可编辑路径：`cr query search <keyword> --filter <ns/def>`
-- 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> --filter <ns/def> --parent-path`
+- 看某个定义的大致结构：`cr query peek '<ns/def>'`
+- 看某个定义的完整实现：`cr query def '<ns/def>'`
+- 找关键词并拿可编辑路径：`cr query search <keyword> --filter '<ns/def>'`
+- 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> --filter '<ns/def>' --parent-path`
 - 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
-- 查看类型标注：`cr query schema <ns/def>`
-- 查看示例：`cr query examples <ns/def>`
-- 查看引用：`cr query usages <ns/def>`
+- 查看类型标注：`cr query schema '<ns/def>'`
+- 查看示例：`cr query examples '<ns/def>'`
+- 查看引用：`cr query usages '<ns/def>'`
 - 查看配置：`cr query config`
 - 调试 JS 变量改名：`cr analyze js-escape '<symbol>'` / `cr analyze js-unescape '<escaped>'`（`js-unescape` 当前为 best-effort）
-- 比较与 Git ref 的代码差异：`cr analyze program-diff <git-ref>`（全量）或加 `--def <ns/def>`（单定义）
+- 比较与 Git ref 的代码差异：`cr analyze program-diff <git-ref>`（全量）或加 `--def '<ns/def>'`（单定义）
 - 比较调用图变化：`cr analyze call-graph-diff <git-ref>`（标注新增/删除/变更的调用关系）
 - 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
 - 看进阶手册全文：`cr docs read agent-advanced.md --full`
@@ -96,8 +96,8 @@ defn demo (state)
 ```
 
 - `query def` 先看全貌，不改。
-- `query search collect! --filter app.main/demo` 拿到路径（假设返回 `[3.1.2]`）。
-- `tree show app.main/demo --path '3.1.2'` 验证该坐标确实是目标子树。
+- `query search collect! --filter 'app.main/demo'` 拿到路径（假设返回 `[3.1.2]`）。
+- `tree show 'app.main/demo' --path '3.1.2'` 验证该坐标确实是目标子树。
 - 再做 replace/rewrite，避免“猜路径”。
 
 ### `$` 与 `,` 对坐标的影响（结合 Cirru 教程）
@@ -141,10 +141,10 @@ div
 
 注意：`:on $ {}` 后新起一行的 `:dragstart` 是 `{}` 的键，**不是**外层 map 的键。如果缩进不对，`$` 会把后续内容当作参数而不是键值对。因此修改属性 map 时：
 
-1. 先用 `cr tree show <ns/def> --path '<path>'` 确认当前 map 结构
+1. 先用 `cr tree show '<ns/def>' --path '<path>'` 确认当前 map 结构
 2. 新增属性用 `cr tree insert-after/insert-child`
 3. 删除属性用 `cr tree batch-delete`（多个）或 `cr tree delete`（单个）
-4. 修改后运行 `cr query search <keyword> --filter <ns/def>` 重拿路径
+4. 修改后运行 `cr query search <keyword> --filter '<ns/def>'` 重拿路径
 
 #### `,`：在“重起一行”场景里用于保持目标节点形态（有助于坐标稳定）
 
@@ -186,10 +186,10 @@ a
 
 #### 实操规则（最稳）
 
-凡是改到 `$` 或 `,`（尤其是从单行改成多行）时：
+凡 is改到 `$` 或 `,`（尤其是从单行改成多行）时：
 
 1. 先 `tree show` 看当前子树。
-2. 修改后立刻 `query search <keyword> --filter <ns/def>` 重拿路径。
+2. 修改后立刻 `query search <keyword> --filter '<ns/def>'` 重拿路径。
 3. 再继续下一步结构化编辑（`replace/wrap/rewrite`）。
 
 ## 0) 硬前置步骤
@@ -218,21 +218,20 @@ cr docs agents --full
 ## 2) 5 步最小模板（看大表达式并可编辑）
 
 1. 定位目标定义：`cr query defs <ns>`
-2. 先轻看再全看：`cr query peek <ns/def>`，必要时再 `cr query def <ns/def>`
-3. 搜关键词拿路径：`cr query search <keyword> --filter <ns/def>`
-4. 聚焦子树确认上下文：`cr tree show <ns/def> --path '<path>'`（复杂时可加 `--json`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
-5. 修改并验证：`cr tree replace ...` 或 `cr edit inc --changed <ns/def>`，然后 `cr js`
+2. 先轻看再全看：`cr query peek '<ns/def>'`，必要时再 `cr query def '<ns/def>'`
+3. 搜关键词拿路径：`cr query search <keyword> --filter '<ns/def>'`
+4. 聚焦子树确认上下文：`cr tree show '<ns/def>' --path '<path>'`（复杂时可加 `--json`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
+5. 修改并验证：`cr tree replace ...` 然后 `cr js`
 
 > 修改时要求先考虑定位到坐标使用局部修改的方式, 或者结构化修改的方式, 若改动较大或不确定改动范围时再考虑整段覆盖式修改。
 
 ### 示例（大函数）
 
 ```bash
-cr query peek respo.render.diff/find-element-diffs
-cr query def respo.render.diff/find-element-diffs
-cr query search collect! --filter respo.render.diff/find-element-diffs
-cr tree show respo.render.diff/find-element-diffs --path '5.5.1.3' --json
-cr edit inc --changed respo.render.diff/find-element-diffs
+cr query peek 'respo.render.diff/find-element-diffs'
+cr query def 'respo.render.diff/find-element-diffs'
+cr query search collect! --filter 'respo.render.diff/find-element-diffs'
+cr tree show 'respo.render.diff/find-element-diffs' --path '5.5.1.3' --json
 cr js
 ```
 
@@ -243,22 +242,34 @@ cr js
 ### 查询
 
 - `cr query defs <ns>`：列出命名空间定义。
-- `cr query def <ns/def>`：查看定义（默认 Cirru）。
-- `cr query search <pattern> --filter <ns/def>`：按关键词拿路径。
-- `cr tree show <ns/def> --path '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
+- `cr query def '<ns/def>'`：查看定义（默认 Cirru）。
+- `cr query search <pattern> --filter '<ns/def>'`：按关键词拿路径。
+- `cr tree show '<ns/def>' --path '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
 
 ### 编辑
 
-- `cr query search <pattern> --filter <ns/def> --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
+- `cr query search <pattern> --filter '<ns/def>' --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
-- `cr edit inc --changed <ns/def>`：增量编译当前修改定义。
 
-`cr tree` 的 `--code` 和 `--pattern` 常含 `$`、括号等特殊字符，Shell 转义成本高。**推荐用 `cr exec` + heredoc 替代 `--code`**：
+`cr tree` 的 `--code` 和 `--pattern` 常含 `$`、括号等特殊字符，Shell 转义成本高。**可以使用 stdin/heredoc 完全规避转义问题**：
 
+#### 1. 执行动态代码 (`cr exec` 从 stdin 读取且评估)
+`cr exec` 专门用于直接运行从标准输入 stdin 传入的代码，非常适合动态调试：
 ```bash
-# heredoc 完全绕过 Shell 转义，可自由书写 Cirru 代码
-cr path/to/project.cirru exec << 'END'
-quote (println |hello)
+echo "range 10" | cr exec
+```
+
+#### 2. 在结构/编辑命令中免参数默认读取 stdin
+对于任何接收表达式或代码输入的命令 (例如 `cr tree replace`, `cr tree insert-before`, `cr edit def`, `cr edit add-import`, `cr edit imports` 等)，如果在不加其他输入来源的情况下**同时省略 `--file`, `--code`, `--json` 参数**，其将**默认直接从 stdin 读取多行输入代入修改** (对于解析为 AST 的内容，其输入必须以 `quote` 标识词开头)：
+```bash
+# 同时省略 --file/--code/--json，无需复杂的 Shell 转义，直接传递多行内容
+cr calcit.cirru tree replace app.main/main! --path '3.1' << 'END'
+quote (println |abc)
+END
+
+# edit commands 同样支持无参数默认读取 stdin
+cr calcit.cirru edit add-import app.main << 'END'
+app.config :refer $ dev?
 END
 ```
 
@@ -298,41 +309,40 @@ cr src/cirru/calcit-core.cirru edit format
 
 ```bash
 # search-replace：按完整 leaf 匹配替换（优先）
-cr tree search-replace <ns/def> --pattern '|Old' --code 'quote |New'
+cr tree search-replace '<ns/def>' --pattern '|Old' --code 'quote |New'
 
 # 或 tree-replace-leaf：批量替换匹配 leaf
-cr tree replace-leaf <ns/def> --pattern '|Old' --code 'quote |New'
+cr tree replace-leaf '<ns/def>' --pattern '|Old' --code 'quote |New'
 ```
 
 2. 删除节点
 
 ```bash
-cr tree delete <ns/def> --path 3.2
+cr tree delete '<ns/def>' --path 3.2
 ```
 
 3. 一层表达式结构调整（同级顺序/包裹关系）
 
 ```bash
-cr tree swap-next <ns/def> --path 3.2
-cr tree swap-prev <ns/def> --path 3.2
-cr tree wrap <ns/def> --path 3.2 --code 'quote (when cond self)'
-cr tree raise <ns/def> --path 3.2.1
+cr tree swap-next '<ns/def>' --path 3.2
+cr tree swap-prev '<ns/def>' --path 3.2
+cr tree wrap '<ns/def>' --path 3.2 --code 'quote (when cond self)'
+cr tree raise '<ns/def>' --path 3.2.1
 ```
 
 4. 补充节点（插入 sibling/child）
 
 ```bash
-cr tree insert-before <ns/def> --path 3.2 --code 'quote |node'
-cr tree insert-after <ns/def> --path 3.2 --code 'quote |node'
-cr tree insert-child <ns/def> --path 3.2 --code 'quote |node'
-cr tree append-child <ns/def> --path 3.2 --code 'quote |node'
+cr tree insert-before '<ns/def>' --path 3.2 --code 'quote |node'
+cr tree insert-after '<ns/def>' --path 3.2 --code 'quote |node'
+cr tree insert-child '<ns/def>' --path 3.2 --code 'quote |node'
+cr tree append-child '<ns/def>' --path 3.2 --code 'quote |node'
 ```
 
 5. 每次小改后都做最小复核
 
 ```bash
-cr tree show <ns/def> --path '<path>'
-cr edit inc --changed <ns/def>
+cr tree show '<ns/def>' --path '<path>'
 ```
 
 一句话：**小改动走 `cr tree`，大改动才整段覆盖。**
@@ -364,10 +374,10 @@ cr edit inc --changed <ns/def>
 ### 低噪音工作模式
 
 ```bash
-cr query peek <ns/def>
-cr query def <ns/def>
-cr query search '<keyword>' --filter <ns/def>
-cr tree show <ns/def> --path '<path>'
+cr query peek '<ns/def>'
+cr query def '<ns/def>'
+cr query search '<keyword>' --filter '<ns/def>'
+cr tree show '<ns/def>' --path '<path>'
 ```
 
 > **`Invalid path` 恢复**：`cr query search` 重拿路径 → `cr tree show` 核对 → 执行修改。
@@ -385,14 +395,14 @@ cr tree show <ns/def> --path '<path>'
 
 ```bash
 cr query defs app.main
-cr query def app.main/main!
-cr query search state --filter app.main/main!
-cr tree show app.main/main! --path '3.2'
-cr edit inc --changed app.main/main!
+cr query def 'app.main/main!'
+cr query search state --filter 'app.main/main!'
+cr tree show 'app.main/main!' --path '3.2'
+cr edit inc --changed 'app.main/main!'
 cr js
 ```
 
-> `--code` 含特殊字符时用 `cr exec` + heredoc 替代。
+> `--code` 含特殊字符时用 stdin + heredoc 替代。
 
 ---
 

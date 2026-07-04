@@ -86,10 +86,18 @@ impl GitRepo {
     match self.run_command(&["show-ref", "--verify", &format!("refs/tags/{version}")]) {
       Ok(_) => Ok(true),
       Err(_) => {
-        let ret = self.run_command(&["show-ref", "--verify", &format!("refs/heads/{version}")]);
-        match ret {
-          Ok(_) => Ok(true),
-          Err(_) => Err(format!("failed to check branch or tag `{version}` in `{folder}`")),
+        if self
+          .run_command(&["show-ref", "--verify", &format!("refs/heads/{version}")])
+          .is_ok()
+        {
+          Ok(true)
+        } else if self
+          .run_command(&["show-ref", "--verify", &format!("refs/remotes/origin/{version}")])
+          .is_ok()
+        {
+          Ok(true)
+        } else {
+          Err(format!("failed to check branch or tag `{version}` in `{folder}`"))
         }
       }
     }

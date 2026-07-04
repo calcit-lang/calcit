@@ -206,6 +206,7 @@ pub fn validate_input_sources(sources: &[bool]) -> Result<(), String> {
 
 /// Read code input from file, inline code, or json option.
 /// Exactly one input source should be used.
+/// If none of them are provided, fallback to reading from stdin.
 pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>) -> Result<Option<String>, String> {
   let sources = [file.is_some(), code.is_some(), json.is_some()];
   validate_input_sources(&sources)?;
@@ -223,7 +224,10 @@ pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Opti
   } else if let Some(j) = json {
     Ok(Some(j.clone()))
   } else {
-    Ok(None)
+    // Fallback to reading from stdin if no source is specified
+    let mut buf = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map_err(|e| format!("Failed to read from stdin: {e}"))?;
+    Ok(Some(buf.trim().to_string()))
   }
 }
 

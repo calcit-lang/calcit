@@ -21,45 +21,51 @@ entry_for:
 
 本文定位为 Agents 约束与完整操作手册：覆盖硬前置步骤、命令边界、复杂重构与系统化排障。`docs/CalcitAgent.md` 用于查询与局部编辑速查，不替代本文中的约束规则。
 
-## 🚀 快速开始（新 LLM 必读）
+## 🚀 🚀 快速开始与零逃逸 Stdin 工作流（新 LLM 必读）
 
-详细内容已移入 [run/quick-start.md](./quick-start.md)。
+对于所有接收表达式和代码输入的修改命令（如 `cr tree replace`, `cr edit def`, `cr edit add-import` 等），当**同时省略 `--file`、`--code` 与 `--json` 参数时，它们将默认直接从标准输入 stdin 读入多行代码**。这是一种**完全免转义**、不需要临时文件且极力推荐的高级重构方式！
 
-**核心原则：用 `cr exec` + heredoc 传入 Cirru 代码，用 `cr query search` + `cr tree show` 定位**
+### 统一查询命令
+```bash
+cr query ns
+cr query defs app.core
+cr query def 'app.core/main!'
+cr query peek 'app.core/main!'
+cr query search <keyword> --filter 'app.core/main!'
+cr query find main!
+cr query schema 'app.core/main!'
+cr query examples 'app.core/main!'
+cr query config
+cr config modules
+cr tree show 'app.core/main!' --path 3.1.0
+```
+
+### 极力推荐：免参数 Stdin 重构流（在 zsh / bash 下通过 heredoc）
+
+```bash
+# 不需要本地临时文件，不需要艰难的 Shell 字符转义，直接传递多行 Cirru 结构定义
+cr calcit.cirru tree replace 'app.main/main!' --path '3.1' << 'END'
+quote (println |abc)
+END
+
+# 添加导入 (edit add-import) 也同样天然支持免参数从 stdin 读取
+cr calcit.cirru edit add-import app.main << 'END'
+app.config :refer $ dev?
+END
+```
+
+> 💡 提示：如果只需做单行短代码段修改，也可以直接使用传统的 `--code 'quote ...'`。
 
 ---
 
-## 🔧 零 Shell 转义方案：`cr exec` + heredoc
+## 🔧 代码动态运行：`cr exec`
 
-传统 `cr` 命令通过 Shell 参数传代码，`$` `` ` `` `|` `>` `<` `&` `;` `(` `)` `!` `?` `*` `[` `]` 等字符需要转义。
-**`cr exec` 固定从 stdin 读取，完全绕过 Shell 转义**，所有操作都变成纯 Cirru 代码，通过 heredoc 传入。
-
-```bash
-# 所有查询通过标准 cr 命令完成
-cr query ns
-cr query defs app.core
-cr query def app.core/main!
-cr query peek app.core/main!
-cr query search <keyword> --filter app.core/main!
-cr query find main!
-cr query schema app.core/main!
-cr query examples app.core/main!
-cr query config
-cr config modules
-cr tree show app.core/main! --path 3.1.0
-```
+在仅用于执行或评估外部代码的场景，`cr exec` 会直接评估通过标准输入 stdin 传入的代码，常用来快速测试独立的 Cirru 代码行为：
 
 ```bash
-# heredoc 传入纯 Cirru 代码，完全不受 Shell 转义
-cr project.cirru exec << 'END'
-quote (println "|hello from exec")
-END
-
-# 也可以用管道传单行代码
-echo 'quote (println "|hello")' | cr project.cirru exec
+# 也可以用管道传单行代码进行评估
+echo 'range 10' | cr exec
 ```
-
-> 💡 `cr exec` 固定从 stdin 读代码；短代码段仍可用 `--code 'quote ...'`。所有查询/编辑操作统一使用 `cr query`/`cr tree`/`cr edit` 等标准 CLI 命令。
 
 ---
 
@@ -157,26 +163,26 @@ echo 'quote (println "|hello")' | cr project.cirru exec
 简单提示：
 
 - 占位符统一使用 `{{NAME}}` 风格，例如 `{{BODY}}`、`{{TRUE_BRANCH}}`；
-- 大表达式可以先用 `cr query def ns/def` 看整体；
-- 再用 `cr tree show ns/def --path 3.1.0` 深入某个片段；
+- 大表达式可以先用 `cr query def '<ns/def>'` 看整体；
+- 再用 `cr tree show '<ns/def>' --path 3.1.0` 深入某个片段；
 - 真正填充时，优先用 `cr tree search-replace` 找占位符，不唯一时再退回 `cr tree replace`。
 
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单结构。
 
    ```bash
-cr tree replace ns/def --path 4.0 --code 'let ((x 1)) {{BODY}}'
+cr tree replace '<ns/def>' --path 4.0 --code 'let ((x 1)) {{BODY}}'
    ```
 
 2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
 
    ```bash
-cr tree show ns/def --path 4.0
+cr tree show '<ns/def>' --path 4.0
    ```
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
    ```bash
-cr tree replace ns/def --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
+cr tree replace '<ns/def>' --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
    ```
 
 4. **递归迭代**：重复上述步骤直到所有占位符都被替换为最终逻辑。
@@ -229,42 +235,42 @@ cr tree replace ns/def --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_B
 ### 添加新函数
 
 ```bash
-cr edit def app.core/multiply --code 'defn multiply (x y) (* x y)'
+cr edit def 'app.core/multiply' --code 'defn multiply (x y) (* x y)'
 ```
 
 ### 基本操作
 
 ```bash
 ; 添加新函数
-cr edit def app.core/multiply --code 'defn multiply (x y) (* x y)'
+cr edit def 'app.core/multiply' --code 'defn multiply (x y) (* x y)'
 
 ; 覆盖已有定义（`--overwrite`）
-cr edit def app.core/multiply --code 'defn multiply (x y) (* x y)' --overwrite
+cr edit def 'app.core/multiply' --code 'defn multiply (x y) (* x y)' --overwrite
 
 ; 添加 :refer import
 cr edit add-import app.main --code 'app.util :refer $ helper'
 
 ; 触发热更新（watcher 模式下写入 .compact-inc.cirru）
-cr edit inc --changed app.core/my-fn
+cr edit inc --changed 'app.core/my-fn'
 ```
 
 ### 修改定义工作流
 
 ```bash
 ; 1. 搜索定位（返回 path + leaf-preview）
-cr query search pattern --filter ns/def
+cr query search pattern --filter '<ns/def>'
 
 ; 2. 查看节点上下文
-cr tree show ns/def --path 3.1.0
+cr tree show '<ns/def>' --path 3.1.0
 
 ; 3. 执行替换
-cr tree replace ns/def --path 3.1.0 --code 'new-value'
+cr tree replace '<ns/def>' --path 3.1.0 --code 'new-value'
 
 ; 4. 或搜索替换叶子
-cr tree search-replace ns/def --pattern old-sym --code new-sym
+cr tree search-replace '<ns/def>' --pattern old-sym --code new-sym
 
 ; 5. 验证写回结果
-cr query def ns/def
+cr query def '<ns/def>'
 ```
 
 ---
@@ -279,17 +285,17 @@ cr query def ns/def
 
 ```bash
 ; 1. 搜索并定位目标子表达式
-cr query search complex-call --filter app.core/process-data
+cr query search complex-call --filter 'app.core/process-data'
 
 ; 2. 查看上下文确认路径
-cr tree show app.core/process-data --path 3.2.1
+cr tree show 'app.core/process-data' --path 3.2.1
 
 ; 3. 提取为新定义
-cr edit split-def app.core/process-data --path 3.2.1 --name extracted-calc
+cr edit split-def 'app.core/process-data' --path 3.2.1 --name extracted-calc
 
 ; 4. 验证结果
-cr query def app.core/extracted-calc
-cr query def app.core/process-data
+cr query def 'app.core/extracted-calc'
+cr query def 'app.core/process-data'
 ```
 
 ### 重命名定义（`rename-def`）
@@ -298,16 +304,16 @@ cr query def app.core/process-data
 
 ```bash
 ; 1. 确认有哪些地方引用到
-cr query usages app.core/old-name
+cr query usages 'app.core/old-name'
 
 ; 2. 搜索所有引用位置
-cr query search old-name --filter app.core/caller-fn
+cr query search old-name --filter 'app.core/caller-fn'
 
 ; 3. 重命名定义
-cr edit rename app.core/old-name new-name
+cr edit rename 'app.core/old-name' new-name
 
 ; 4. 批量更新引用
-cr tree replace-leaf app.core/caller-fn --pattern old-name --code new-name
+cr tree replace-leaf 'app.core/caller-fn' --pattern old-name --code new-name
 ```
 
 ### 迁移定义到另一命名空间（`mv-def`）
@@ -321,7 +327,7 @@ cr edit add-import app.main --code 'app.core :refer $ helper-fn'
 
 ```bash
 ; watcher 模式下触发热更新
-cr edit inc --changed app.core/helper-fn
+cr edit inc --changed 'app.core/helper-fn'
 ```
 
 ### 在定义内移动 / 复制 AST 节点（`edit cp` / `edit mv`）
@@ -330,12 +336,12 @@ cr edit inc --changed app.core/helper-fn
 
 ```bash
 ; 定位节点
-cr query search process --filter app.core/main-fn
-cr tree show app.core/main-fn --path 3.1.2
+cr query search process --filter 'app.core/main-fn'
+cr tree show 'app.core/main-fn' --path 3.1.2
 
 ; 复制或移动（position: |before |after |prepend-child |append-child |replace）
-cr edit cp app.core/main-fn --from 3.1.2 --path 3.0 --at after
-cr edit mv app.core/main-fn --from 3.1.2 --path 3.0 --at after
+cr edit cp 'app.core/main-fn' --from 3.1.2 --path 3.0 --at after
+cr edit mv 'app.core/main-fn' --from 3.1.2 --path 3.0 --at after
 ```
 
 ### 包裹 / 拆包 / 提升节点（`tree-wrap` / `tree-unwrap` / `tree-raise`）
@@ -344,11 +350,11 @@ cr edit mv app.core/main-fn --from 3.1.2 --path 3.0 --at after
 
 ```bash
 ; wrap：模板中用 self 引用原节点
-cr tree wrap app.core/main-fn --path 3.1.2 --code 'println self'
+cr tree wrap 'app.core/main-fn' --path 3.1.2 --code 'println self'
 
 ; unwrap / raise
-cr tree unwrap app.core/main-fn --path 3.1.2
-cr tree raise app.core/main-fn --path 3.1.2
+cr tree unwrap 'app.core/main-fn' --path 3.1.2
+cr tree raise 'app.core/main-fn' --path 3.1.2
 ```
 
 ### 批量重命名局部变量
@@ -356,8 +362,8 @@ cr tree raise app.core/main-fn --path 3.1.2
 **场景：** 某函数内某个局部变量名需要统一改掉。
 
 ```bash
-; 搜索替换所有匹配的 leaf
-cr tree replace-leaf app.core/process --pattern old-var --code new-var
+; 搜索替换所有匹配 of leaf
+cr tree replace-leaf 'app.core/process' --pattern old-var --code new-var
 ```
 
 ---
@@ -489,16 +495,16 @@ ns app.main $ :require
 
 ```bash
 ; 1. 快速定位
-cr query search target --filter ns/def
+cr query search target --filter '<ns/def>'
 
 ; 2. 查看上下文
-cr tree show ns/def --path 3.1.0
+cr tree show '<ns/def>' --path 3.1.0
 
 ; 3. 执行修改
-cr tree replace ns/def --path 3.1.0 --code 'new-value'
+cr tree replace '<ns/def>' --path 3.1.0 --code 'new-value'
 
 ; 4. 验证
-cr query def ns/def
+cr query def '<ns/def>'
 ```
 
 **新手提示：**
@@ -508,37 +514,13 @@ cr query def ns/def
 - 需要批量重命名 leaf？用 `search-replace`
 - 不确定修改是否正确？每步后用 `tree show` 验证
 
-### 7. 特殊字符：完全绕过 Shell ⭐⭐⭐
+### 7. 特殊字符与 Stdin 降噪流动 ⭐⭐⭐
 
-Calcit 函数名中的 `?`, `->`, `!` 等字符在 bash/zsh 中有特殊含义。使用 `cr exec` + heredoc 时**完全不需要转义**：
+Calcit 字段名、函数名常包含 `?`, `->`, `!` 等 Bash 敏感字符，在传统 Shell 中极易发生参数展开错误。使用 Stdin / Heredoc 传入指令或代码时**完全不需要转义**。
 
-```bash
-; 含 $ ` | > < & ; 等特殊字符，全部可以自由书写
-cr query search '$data' --filter ns/main!
-cr query peek app.core/valid?
-cr query def app.main/valid?
-```
+### 8. 用 Stdin 传入多条重构动作
 
-```bash
-cr project.cirru exec << 'END'
-cr query defs app.core
-cr query search item --filter app.core/process!
-END
-```
-
-### 8. 多命令链式调用 ⭐⭐⭐
-
-**推荐：用 `cr exec` + heredoc 一次传入多条 Cirru 代码**，无转义风险、无路径索引漂移误判：
-
-```bash
-cr project.cirru exec << 'END'
-cr query peek app.core/main!
-cr query search keyword --filter app.core/main!
-cr tree show app.core/main! --path 3.1.0
-cr tree replace app.core/main! --path 3.1.0 --code 'updated'
-cr query def app.core/main!
-END
-```
+我们可以直接利用 Shell 的 heredoc 顺畅地向 `cr` 写入复杂的内联代码，绝无任何转义焦虑。
 
 ---
 
@@ -551,8 +533,8 @@ END
 ```bash
 # query is done via cr CLI
 cr query defs app.util
-cr query peek app.util/format-date
-cr query def app.util/format-date
+cr query peek 'app.util/format-date'
+cr query def 'app.util/format-date'
 ```
 
 ### 步骤 2：用 exec 快速验证写法
@@ -576,8 +558,8 @@ END
 ### 步骤 3：添加新定义
 
 ```bash
-cr edit def app.util/calculate-discount --code 'defn calculate-discount (price rate) (* price (- 1 rate))'
-cr query def app.util/calculate-discount
+cr edit def 'app.util/calculate-discount' --code 'defn calculate-discount (price rate) (* price (- 1 rate))'
+cr query def 'app.util/calculate-discount'
 ```
 
 ### 步骤 4：在调用方添加 import 并使用
@@ -585,16 +567,16 @@ cr query def app.util/calculate-discount
 ```bash
 cr query defs app.core
 cr edit add-import app.core --code 'app.util :refer $ calculate-discount'
-cr query search total-price --filter app.core/checkout
-cr tree replace app.core/checkout --path 3.2.1 --code 'calculate-discount total-price 0.1'
+cr query search total-price --filter 'app.core/checkout'
+cr tree replace 'app.core/checkout' --path 3.2.1 --code 'calculate-discount total-price 0.1'
 ```
 
 ### 步骤 5：触发热更新并验证
 
 ```bash
-cr edit inc --changed app.util/calculate-discount --changed app.core/checkout
-cr query def app.util/calculate-discount
-cr query def app.core/checkout
+cr edit inc --changed 'app.util/calculate-discount' --changed 'app.core/checkout'
+cr query def 'app.util/calculate-discount'
+cr query def 'app.core/checkout'
 ```
 
 > 可运行 `cr --check-only` 做全量验证，或 `cr js` 快速编译。
@@ -606,8 +588,8 @@ cr query def app.core/checkout
 cr edit add-import app.core --code 'app.util :refer $ calculate-discount'
 
 ; 函数参数顺序传错 → 定位并修改调用
-cr query search calculate-discount --filter app.core/checkout
-cr tree replace app.core/checkout --path 3.2.1 --code 'calculate-discount'
+cr query search calculate-discount --filter 'app.core/checkout'
+cr tree replace 'app.core/checkout' --path 3.2.1 --code 'calculate-discount'
 ```
 
 > `edit rename` 拼写错误可用 `cr edit rename` 修正。
