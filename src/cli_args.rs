@@ -383,6 +383,10 @@ pub enum QuerySubcommand {
   Schema(QuerySchemaCommand),
   /// list host-injected registered procs and descriptor tags
   HostProcs(QueryHostProcsCommand),
+  /// resolve a semantic path expression to numeric indices
+  Path(QueryPathCommand),
+  /// list @anchor annotations in a namespace
+  Anchors(QueryAnchorsCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -588,6 +592,27 @@ pub struct QuerySearchExprCommand {
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "path")]
+/// resolve a semantic path expression (heading/nth) to numeric indices
+pub struct QueryPathCommand {
+  /// target namespace (e.g. "app.main")
+  #[argh(positional)]
+  pub namespace: String,
+  /// path expression in Cirru syntax (one-liner: "path heading def {} :name |add nth 2")
+  #[argh(option, long = "selector")]
+  pub selector: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "anchors")]
+/// list @anchor annotations in a namespace
+pub struct QueryAnchorsCommand {
+  /// target namespace (e.g. "app.main")
+  #[argh(positional)]
+  pub namespace: String,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1300,6 +1325,9 @@ pub struct TreeShowCommand {
   /// force raw subtree display without chunking
   #[argh(switch)]
   pub raw: bool,
+  /// annotate each nested list with its path index
+  #[argh(switch)]
+  pub path_annotations: bool,
 }
 
 /// copy node from one path to another within a definition
@@ -1423,6 +1451,13 @@ pub struct TreeSearchReplaceCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
+  /// pick the Nth candidate (0-based) when multiple matches are found
+  #[argh(option, long = "pick")]
+  pub pick: Option<usize>,
+  /// semantic path expression to narrow search scope
+  /// e.g. "path heading def {} :name |add nth 2 heading let nth 0"
+  #[argh(option, long = "selector")]
+  pub selector: Option<String>,
 }
 
 /// delete multiple paths at once (deletes from highest index to lowest)

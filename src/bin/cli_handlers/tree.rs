@@ -19,6 +19,7 @@ use super::edit::{
   apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target, process_node_with_references,
   save_snapshot,
 };
+use super::query::resolve_path_expression;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helper functions
@@ -243,6 +244,28 @@ fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -
   (out, visible_fragments.len())
 }
 
+/// Recursively annotate each list node with its path index as a trailing comment.
+/// Appends `; "previous node path: X.Y.Z"` as the last child of each list.
+fn annotate_paths(node: &mut Cirru, current_path: &[usize], annotate_root: bool) {
+  if let Cirru::List(children) = node {
+    // Recurse into children first, tracking their paths
+    for (i, child) in children.iter_mut().enumerate() {
+      let mut child_path = current_path.to_vec();
+      child_path.push(i);
+      annotate_paths(child, &child_path, true);
+    }
+    // Append path comment at the end (skip root if annotate_root is false)
+    if annotate_root && !current_path.is_empty() {
+      let path_str = format_path(current_path);
+      let comment = Cirru::List(vec![
+        Cirru::Leaf(";".into()),
+        Cirru::Leaf(format!("previous node path: {path_str}").into()),
+      ]);
+      children.push(comment);
+    }
+  }
+}
+
 // ============================================================================
 // Command handlers
 // ============================================================================
@@ -281,7 +304,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     .expect("resolved definition exists");
 
   // Try to navigate to path, provide enhanced error message on failure
-  let node = match navigate_to_path(&code_entry.code, &path) {
+  let mut node = match navigate_to_path(&code_entry.code, &path) {
     Ok(n) => n,
     Err(original_error) => {
       // Find the longest valid path
@@ -381,6 +404,11 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     }
   };
 
+  // Apply path annotations if requested
+  if opts.path_annotations {
+    annotate_paths(&mut node, &path, !path.is_empty());
+  }
+
   let node_type = match &node {
     Cirru::Leaf(_) => "leaf",
     Cirru::List(items) => {
@@ -421,6 +449,17 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       }
 
       let mut tips = Tips::new();
+      // Tip: suggest path-annotations for nodes with many children
+      if items.len() > 8 && !opts.path_annotations {
+        tips.add_with_priority(
+          TipPriority::High,
+          format!(
+            "This node has {} children. Use {} to annotate each nested list with its path index for easier editing.",
+            items.len(),
+            "--path-annotations".yellow()
+          ),
+        );
+      }
       if let Some((shown_fragments, total_fragments)) = shown_fragments {
         if shown_fragments < total_fragments {
           tips.add_with_priority(
@@ -694,50 +733,112 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  // Find all leaf nodes that match the pattern
-  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, opts.regex, &[]);
+  // L3: resolve search scope via --selector
+  let (search_root_path, search_root) = if let Some(selector) = &opts.selector {
+    let path = resolve_path_expression(&code_entry.code, selector)?;
+    let root = navigate_to_path(&code_entry.code, &path)?;
+    (path, root)
+  } else {
+    (vec![], code_entry.code.clone())
+  };
+
+  // Find all leaf nodes that match the pattern within the search scope
+  let matches = find_all_leaf_matches(&search_root, &opts.pattern, opts.regex, &[]);
+
+  // Compose full paths: prefix search_root_path to each match path
+  let compose_path = |rel: &[usize]| -> Vec<usize> {
+    let mut full = search_root_path.clone();
+    full.extend_from_slice(rel);
+    full
+  };
 
   if matches.is_empty() {
     return Err("No matches found for target pattern".to_string());
   }
 
   if matches.len() > 1 {
-    println!("{} Found {} matches.", "Notice:".yellow().bold(), matches.len());
-    println!("Please use specific path to replace:");
+    // If --pick is specified, use that candidate directly
+    if let Some(pick_index) = opts.pick {
+      if pick_index >= matches.len() {
+        return Err(format!(
+          "--pick {} is out of range (found {} matches, valid indices: 0-{})",
+          pick_index,
+          matches.len(),
+          matches.len() - 1
+        ));
+      }
+      let (path, old_value) = &matches[pick_index];
+      let full_path = compose_path(path);
+      let old_node = Cirru::Leaf(old_value.to_string().into());
+      println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
+
+      let new_code = apply_operation_at_path(&code_entry.code, &full_path, "replace", Some(&replacement_node))?;
+      code_entry.code = new_code;
+      save_snapshot(&snapshot, snapshot_file)?;
+      println!("{} Replaced occurrence [{}]", "✓".green(), pick_index);
+      return Ok(());
+    }
+
+    // No --pick: show candidates with context
+    println!(
+      "{} Found {} matches for pattern {:?}:",
+      "Search:".bold(),
+      matches.len(),
+      opts.pattern
+    );
     println!();
 
     let replacement_arg = if let Some(c) = &opts.code {
-      format!("-e '{c}'")
+      format!("--code '{c}'")
     } else if let Some(j) = &opts.json {
-      format!("-j '{j}'")
+      format!("--json '{j}'")
     } else if let Some(f) = &opts.file {
-      format!("-f '{f}'")
+      format!("--file '{f}'")
     } else {
-      "-e '...'".to_string()
+      "--code '...'".to_string()
     };
 
-    for (i, (path, _)) in matches.iter().enumerate().take(10) {
-      let path_str = format_path(path);
+    for (i, (path, value)) in matches.iter().enumerate().take(20) {
+      let full_path = compose_path(path);
+      let path_str = format_path_bracketed(&full_path);
+      println!("  [{}] Path {}: {:?}", i, path_str.dimmed(), value.to_string().yellow());
+      // Show context: get the parent node for a quick preview
+      if !full_path.is_empty() {
+        let parent_path = &full_path[..full_path.len() - 1];
+        if let Ok(parent) = navigate_to_path(&code_entry.code, parent_path) {
+          let preview = parent.format_one_liner().unwrap_or_else(|_| "<expr>".to_string());
+          let truncated = if preview.len() > 80 {
+            format!("{}...", &preview[..80])
+          } else {
+            preview
+          };
+          println!("    Context: {}", truncated.dimmed());
+        }
+      }
       println!(
-        "  {}. {} {} -p '{}' {}",
-        i + 1,
-        "cr tree replace".cyan(),
+        "    Command: {} {} --pattern '{}' {} --pick {}",
+        "cr tree search-replace".cyan(),
         opts.target,
-        path_str,
-        replacement_arg
+        opts.pattern,
+        replacement_arg,
+        i
       );
+      println!();
     }
 
-    if matches.len() > 10 {
-      println!("  ... and {} more", matches.len() - 10);
+    if matches.len() > 20 {
+      println!("  ... and {} more", matches.len() - 20);
     }
     println!();
     if command_guidance_enabled() {
-      println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+      println!(
+        "{}",
+        "Tip: Use --pick <index> to select a candidate, or use 'tree replace-leaf' to replace ALL occurrences.".blue()
+      );
     }
 
     return Err(format!(
-      "Found {} matches for pattern '{}'. Use a specific path with 'cr tree replace' to disambiguate (see suggestions above).",
+      "Found {} matches for pattern '{}'. Use --pick <index> to select one (see candidates above).",
       matches.len(),
       opts.pattern
     ));
@@ -745,12 +846,13 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
 
   // Exactly one match
   let (path, old_value) = &matches[0];
+  let full_path = compose_path(path);
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
   // Show diff preview
   println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
 
-  let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&replacement_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, &full_path, "replace", Some(&replacement_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;

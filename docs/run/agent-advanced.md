@@ -26,6 +26,7 @@ entry_for:
 对于所有接收表达式和代码输入的修改命令（如 `cr tree replace`, `cr edit def`, `cr edit add-import` 等），当**同时省略 `--file`、`--code` 与 `--json` 参数时，它们将默认直接从标准输入 stdin 读入多行代码**。这是一种**完全免转义**、不需要临时文件且极力推荐的高级重构方式！
 
 ### 统一查询命令
+
 ```bash
 cr query ns
 cr query defs app.core
@@ -36,6 +37,8 @@ cr query find main!
 cr query schema 'app.core/main!'
 cr query examples 'app.core/main!'
 cr query config
+cr query path app.main --selector 'path heading def {} :name |add nth 2'
+cr query anchors app.main
 cr config modules
 cr tree show 'app.core/main!' --path 3.1.0
 ```
@@ -170,19 +173,19 @@ echo 'range 10' | cr exec
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单结构。
 
    ```bash
-cr tree replace '<ns/def>' --path 4.0 --code 'let ((x 1)) {{BODY}}'
+   cr tree replace '<ns/def>' --path 4.0 --code 'let ((x 1)) {{BODY}}'
    ```
 
 2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
 
    ```bash
-cr tree show '<ns/def>' --path 4.0
+   cr tree show '<ns/def>' --path 4.0
    ```
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
    ```bash
-cr tree replace '<ns/def>' --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
+   cr tree replace '<ns/def>' --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
    ```
 
 4. **递归迭代**：重复上述步骤直到所有占位符都被替换为最终逻辑。
@@ -226,7 +229,6 @@ cr tree replace '<ns/def>' --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FAL
 - `cr docs read path.md` — 读取任意文档文件
 - `cr docs agents [<heading> ...] [--full]` — 结构化 Agent 指南
 - `cr docs read` / `sections` / `remote-libs` 等 — 见 [debugging.md](./debugging.md)
-
 
 ---
 
@@ -366,6 +368,117 @@ cr tree raise 'app.core/main-fn' --path 3.1.2
 cr tree replace-leaf 'app.core/process' --pattern old-var --code new-var
 ```
 
+### 树形展示路径标注（`--path-annotations`）
+
+**场景：** 深层嵌套表达式难以手动数坐标时，让 CLI 自动标注每个 list 节点的路径。
+
+```bash
+# 默认行为：纯代码展示
+cr tree show 'app.main/main!' --path '0'
+
+# 开启路径标注：每个嵌套 list 末尾追加 ; "previous node path: X.Y.Z" 注释
+cr tree show 'app.main/main!' --path '0' --path-annotations
+```
+
+输出示例：
+
+```cirru
+defn process (xs)
+  let
+      ys $ map xs inc
+        ; "previous node path: 3.0.0.1.2"
+      ; "previous node path: 3.0.0"
+    foldl zs 0 add
+    ; "previous node path: 3.2"
+  ; "previous node path: 3"
+```
+
+> 当节点子节点较多时，底部自动提示可开启 `--path-annotations`。LLM 直接从注释中复制路径即可用于 `-p` 参数。
+
+### 多匹配候选选择（`--pick`）
+
+**场景：** `search-replace` 匹配到多个节点时，用 `--pick <N>` 直接选择而非手动复制路径。
+
+```bash
+# 多匹配时列出候选（带路径、上下文、命令建议）
+cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote |new-name'
+
+# 直接选择第 2 个候选
+cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote |new-name' --pick 2
+```
+
+候选展示格式：
+
+```
+[0] Path [1.3.0]: "old-name"
+    Context: defn update $ old-name new-name
+    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 0
+
+[1] Path [2.5.2]: "old-name"
+    Context: let $ old-name x $ do-something old-name
+    Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 1
+```
+
+### 锚点链式搜索（`--selector`）
+
+**场景：** 用语义路径表达式缩小搜索范围，在特定子树内做搜索替换。
+
+```bash
+# 在 add 函数的 body（第 2 个子节点）→ let → bindings（第 0 个子节点）中搜索替换
+cr tree search-replace 'app.main/main!' \
+  --selector 'path heading def {} :name |add nth 2 heading let nth 0' \
+  --pattern 'old-var' \
+  --code 'quote |new-var'
+```
+
+与 `cr query path` 使用同一套选择器语法（裸叶子/`heading`/`nth`）。等效于先用 `cr query path` 获取数字路径再传 `--path`，但一步完成。
+
+### 语义路径查询（`cr query path`）
+
+**场景：** 用语义描述定位节点，获取数字路径用于后续编辑。
+
+```bash
+# 解析语义路径为数字坐标
+cr query path app.main --selector 'path
+  heading def {} :name |add
+  nth 2
+  heading let
+  nth 0'
+
+# 输出: 0.2.3.0（可直接用于 -p）
+```
+
+选择器：
+
+- 裸叶子 `x`、`|hello`、`42`、`:name` — 当前节点必须是此叶子值
+- `heading ...` — 当前 list 的前 N 个子节点匹配（无多余子节点时等同精确匹配）
+- `nth N` — 进入当前 list 的第 N 个子节点
+
+### 锚点标注（`cr query anchors`）
+
+**场景：** 在源码中用 `noted @anchor:<name>` 标记关键位置，查询锚点获取稳定引用。
+
+在源码中标记：
+
+```cirru
+defn main! ()
+  noted @anchor:init-state
+    let
+        state $ load-initial-state
+      ; ...
+```
+
+查询锚点：
+
+```bash
+cr query anchors app.main
+# 输出：
+#   @anchor:init-state -> app.main/main! [1]
+#   @anchor:render-loop -> app.main/main! [4.2]
+```
+
+> 锚点附着在表达式上，`tree` 编辑操作后自然跟随，比数字路径更稳定。
+
 ---
 
 ## ⚠️ 常见陷阱和最佳实践
@@ -394,13 +507,13 @@ cr tree replace-leaf 'app.core/process' --pattern old-var --code new-var
 
 `--code` 参数必须是 **Cirru 表达式**：
 
-| 场景           | 写法示例                                              | 说明                     |
-| -------------- | ----------------------------------------------------- | ------------------------ |
-| AST path       | `cr tree show app.main/fn --path 3.1.0`                               | path 用点分隔更直观  |
-| 表达式         | `cr tree replace app.main/fn --path 2 --code 'println |hello'`        | 完整 Cirru one-liner |
-| 原子符号 leaf  | `cr tree replace app.main/fn --path 2.0 --code 'new-symbol'`          | 替换为 leaf          |
-| 字符串 leaf    | `cr tree search-replace app.main/fn --pattern old --code '|new text'` | 搜索替换 leaf        |
-| 覆盖已有定义   | `cr edit def app.main/fn --code 'defn fn () nil' --overwrite`         | 加 `--overwrite`     |
+| 场景          | 写法示例                                                      | 说明                |
+| ------------- | ------------------------------------------------------------- | ------------------- | -------------------- |
+| AST path      | `cr tree show app.main/fn --path 3.1.0`                       | path 用点分隔更直观 |
+| 表达式        | `cr tree replace app.main/fn --path 2 --code 'println         | hello'`             | 完整 Cirru one-liner |
+| 原子符号 leaf | `cr tree replace app.main/fn --path 2.0 --code 'new-symbol'`  | 替换为 leaf         |
+| 字符串 leaf   | `cr tree search-replace app.main/fn --pattern old --code '    | new text'`          | 搜索替换 leaf        |
+| 覆盖已有定义  | `cr edit def app.main/fn --code 'defn fn () nil' --overwrite` | 加 `--overwrite`    |
 
 **实战示例：**
 
@@ -617,7 +730,6 @@ cr tree replace 'app.core/checkout' --path 3.2.1 --code 'calculate-discount'
 
 ---
 
-
 ## check-md：验证文档代码块
 
 文档里的 **`cirru` 代码块**会走 `check-md` 的验证路径。
@@ -688,11 +800,11 @@ cr calcit/test.cirru eval 'cr query peek $ {} (:file-pth |x)'
 
 ### 选项类型告警码
 
-| 告警码 | 典型原因 | 修复 |
-| ------ | -------- | ---- |
-| `W_CLI_OPTION_UNKNOWN_KEY` | key 拼写错误（如 `:file-pth`） | 对照函数文档或 `cr query peek cr query ns` 的 Options |
-| `W_CLI_OPTION_MISSING_REQUIRED` | 未传必填项（如 `peek-def` 缺 `:target`） | 补全 map 中的必填 tag |
-| `W_CLI_OPTION_TYPE_MISMATCH` | 值类型不符（如 `:lines \|bad`） | `:string` 用 `\|text` 或 tag；`:number` 用数字；`:bool` 用 `true`/`false` |
+| 告警码                          | 典型原因                                 | 修复                                                                      |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
+| `W_CLI_OPTION_UNKNOWN_KEY`      | key 拼写错误（如 `:file-pth`）           | 对照函数文档或 `cr query peek cr query ns` 的 Options                     |
+| `W_CLI_OPTION_MISSING_REQUIRED` | 未传必填项（如 `peek-def` 缺 `:target`） | 补全 map 中的必填 tag                                                     |
+| `W_CLI_OPTION_TYPE_MISMATCH`    | 值类型不符（如 `:lines \|bad`）          | `:string` 用 `\|text` 或 tag；`:number` 用数字；`:bool` 用 `true`/`false` |
 
 统一使用标准 `cr` CLI 命令。
 
@@ -727,22 +839,22 @@ END
 
 ### 错误信息对照表
 
-| 错误信息                                         | 原因                                              | 解决方法                                                                 |
-| ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `tree-show: invalid path ...`                     | path 含非法段或非数字                             | 重新 `cr query search` 获取正确 path，只用点号分隔数字                   |
-| `tree-replace: root path is not allowed`         | 写操作传了空 path                                 | 改用 `cr edit def --overwrite` 覆盖整段定义                              |
-| `add-import: import rule already exists`         | 重复添加相同 import                               | 跳过或先手动移除旧规则                                                   |
-| `Definition 'xxx' already exists`                | `cr edit def` 未传 `--overwrite`                 | 加 `--overwrite`                                                          |
-| `tag-match expected tuple`                       | 传入 vector 而非 tuple                            | 改用 `::` 语法，如 `:: :event-name data`                                 |
-| `unknown symbol: xxx`                            | 符号未定义或未 import                             | `find-symbol` 确认位置，`add-import` 引入                                |
-| `expects pairs in list for let`                  | `let` 绑定语法错误                                | 改为 `let ((x val)) body`（双层括号）                                    |
-| `cannot be used as operator`                     | 末尾符号被当作函数调用                            | 改用 `, acc` 前缀传递值，或用函数包裹                                    |
-| `unknown data for foldl-shortcut`                | 参数顺序错误（Calcit vs Clojure 差异）            | Calcit 集合在第一位：`map data fn`                                       |
-| 字符串被拆分成多个 token                         | 没有用 `\|` 或 `"` 包裹                           | 使用 `\|complete string` 或 `"|complete string"`                         |
-| `Type warning` 导致 exec 失败                    | 类型不匹配（阻断执行）                            | 优先检查 `:schema` / `hint-fn` 的参数标注                                  |
-| `W_CLI_OPTION_UNKNOWN_KEY`                       | 选项 key 拼写错误                  | 对照 Options 列表，如 `:file-path` 而非 `:file-pth`                        |
-| `W_CLI_OPTION_MISSING_REQUIRED`                  | 缺少必填选项                                      | 补全 map，如 `peek-def` 必须含 `(:target …)`                               |
-| `W_CLI_OPTION_TYPE_MISMATCH`                     | 选项值类型错误                                    | `:lines` 用数字；字符串用 `\|…`；布尔用 `true`/`false`                     |
-| `cr query error` 无报错但页面仍异常              | 问题不在 Calcit 语义链路，而在 CSS/DOM/业务值     | 到真实运行环境核对渲染结果、属性值和外部依赖                               |
+| 错误信息                                 | 原因                                          | 解决方法                                               |
+| ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------ | ----------------- |
+| `tree-show: invalid path ...`            | path 含非法段或非数字                         | 重新 `cr query search` 获取正确 path，只用点号分隔数字 |
+| `tree-replace: root path is not allowed` | 写操作传了空 path                             | 改用 `cr edit def --overwrite` 覆盖整段定义            |
+| `add-import: import rule already exists` | 重复添加相同 import                           | 跳过或先手动移除旧规则                                 |
+| `Definition 'xxx' already exists`        | `cr edit def` 未传 `--overwrite`              | 加 `--overwrite`                                       |
+| `tag-match expected tuple`               | 传入 vector 而非 tuple                        | 改用 `::` 语法，如 `:: :event-name data`               |
+| `unknown symbol: xxx`                    | 符号未定义或未 import                         | `find-symbol` 确认位置，`add-import` 引入              |
+| `expects pairs in list for let`          | `let` 绑定语法错误                            | 改为 `let ((x val)) body`（双层括号）                  |
+| `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |
+| `unknown data for foldl-shortcut`        | 参数顺序错误（Calcit vs Clojure 差异）        | Calcit 集合在第一位：`map data fn`                     |
+| 字符串被拆分成多个 token                 | 没有用 `\|` 或 `"` 包裹                       | 使用 `\|complete string` 或 `"                         | complete string"` |
+| `Type warning` 导致 exec 失败            | 类型不匹配（阻断执行）                        | 优先检查 `:schema` / `hint-fn` 的参数标注              |
+| `W_CLI_OPTION_UNKNOWN_KEY`               | 选项 key 拼写错误                             | 对照 Options 列表，如 `:file-path` 而非 `:file-pth`    |
+| `W_CLI_OPTION_MISSING_REQUIRED`          | 缺少必填选项                                  | 补全 map，如 `peek-def` 必须含 `(:target …)`           |
+| `W_CLI_OPTION_TYPE_MISMATCH`             | 选项值类型错误                                | `:lines` 用数字；字符串用 `\|…`；布尔用 `true`/`false` |
+| `cr query error` 无报错但页面仍异常      | 问题不在 Calcit 语义链路，而在 CSS/DOM/业务值 | 到真实运行环境核对渲染结果、属性值和外部依赖           |
 
 > 💡 **错误文件备份**：`.calcit-error.cirru` 会保存最近一次的完整错误堆栈。直接用 `cat .calcit-error.cirru` 读取，或 `cr query error`（从此文件读取并格式化输出）。

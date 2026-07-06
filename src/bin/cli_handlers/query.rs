@@ -7,7 +7,9 @@ use super::common::{emit_cli_output, format_path, parse_path, print_cli_warning_
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::DYNAMIC_TYPE;
-use calcit::cli_args::{QueryCommand, QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QuerySubcommand};
+use calcit::cli_args::{
+  QueryAnchorsCommand, QueryCommand, QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QueryPathCommand, QuerySubcommand,
+};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -381,6 +383,8 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       handle_schema(input_path, ns, def, opts.json)
     }
     QuerySubcommand::HostProcs(opts) => handle_host_procs(opts),
+    QuerySubcommand::Path(opts) => handle_query_path(input_path, opts),
+    QuerySubcommand::Anchors(opts) => handle_query_anchors(input_path, opts),
   }
 }
 
@@ -2132,4 +2136,196 @@ fn matches_exact_structure(node: &Cirru, pattern: &Cirru) -> bool {
     }
     _ => false,
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// L4: path expression resolver
+// ═══════════════════════════════════════════════════════════════════════════════
+
+fn handle_query_path(input_path: &str, opts: &QueryPathCommand) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+  let file_data = snapshot
+    .files
+    .get(opts.namespace.as_str())
+    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+
+  // Collect all definitions as the top-level nodes to search within
+  // For each def, we'll search the def's code
+  // Simple approach: just search within each def's code
+  for (def_name, code_entry) in &file_data.defs {
+    match resolve_path_expression(&code_entry.code, &opts.selector) {
+      Ok(path) => {
+        println!("{} {} -> {}", opts.namespace, def_name, format_path(&path));
+        return Ok(());
+      }
+      Err(_) => continue,
+    }
+  }
+  Err(format!("Path expression not found in namespace '{}'", opts.namespace))
+}
+
+pub(crate) fn resolve_path_expression(root: &Cirru, selector: &str) -> Result<Vec<usize>, String> {
+  // Parse the selector as Cirru
+  let parsed = cirru_parser::parse(selector).map_err(|e| format!("Failed to parse path selector: {e}"))?;
+  let Some(first) = parsed.first() else {
+    return Err("Empty path selector".to_string());
+  };
+
+  // Verify it starts with "path"
+  let Cirru::List(steps) = first else {
+    return Err("Path expression must be a list starting with 'path'".to_string());
+  };
+  if steps.is_empty() {
+    return Err("Empty path expression".to_string());
+  }
+  let Cirru::Leaf(head) = &steps[0] else {
+    return Err("Path expression must start with 'path'".to_string());
+  };
+  if head.as_ref() != "path" {
+    return Err(format!("Expected 'path' at start, got '{head}'"));
+  }
+
+  // Walk the selectors
+  let mut current_node = root.clone();
+  let mut current_path: Vec<usize> = vec![];
+
+  for step in &steps[1..] {
+    match step {
+      Cirru::Leaf(leaf_val) => {
+        // Bare leaf: match the current node as a leaf
+        let Cirru::Leaf(current_leaf) = &current_node else {
+          return Err(format!("Expected leaf but got list at path {}", format_path(&current_path)));
+        };
+        if current_leaf.as_ref() != leaf_val.as_ref() {
+          return Err(format!(
+            "Leaf mismatch at path {}: expected {:?}, got {:?}",
+            format_path(&current_path),
+            leaf_val.as_ref(),
+            current_leaf.as_ref()
+          ));
+        }
+        // Leaf matched — search next sibling by going up and right
+        // For simplicity, we just verify and move on
+      }
+      Cirru::List(selector_list) => {
+        if selector_list.is_empty() {
+          return Err("Empty selector".to_string());
+        }
+        let Cirru::Leaf(op) = &selector_list[0] else {
+          return Err("Selector must start with an operator leaf".to_string());
+        };
+        match op.as_ref() {
+          "heading" => {
+            // Match current node's children against pattern
+            let Cirru::List(ref current_children) = current_node else {
+              return Err("heading requires a list node".to_string());
+            };
+            let pattern = &selector_list[1..];
+            if !starts_with_pattern(current_children, pattern) {
+              return Err(format!(
+                "heading mismatch at path {}: node does not start with expected pattern",
+                format_path(&current_path)
+              ));
+            }
+          }
+          "nth" => {
+            if selector_list.len() < 2 {
+              return Err("nth requires an index argument".to_string());
+            }
+            let Cirru::Leaf(idx_leaf) = &selector_list[1] else {
+              return Err("nth index must be a number".to_string());
+            };
+            let idx: usize = idx_leaf
+              .as_ref()
+              .parse()
+              .map_err(|_| format!("Invalid nth index: '{}'", idx_leaf.as_ref()))?;
+            let Cirru::List(ref children) = current_node else {
+              return Err("nth requires a list node".to_string());
+            };
+            if idx >= children.len() {
+              return Err(format!("nth index {} out of bounds ({} children)", idx, children.len()));
+            }
+            current_path.push(idx);
+            current_node = children[idx].clone();
+          }
+          _ => return Err(format!("Unknown selector: '{}'", op.as_ref())),
+        }
+      }
+    }
+  }
+
+  Ok(current_path)
+}
+
+fn starts_with_pattern(node_children: &[Cirru], pattern: &[Cirru]) -> bool {
+  if pattern.len() > node_children.len() {
+    return false;
+  }
+  for (i, pat) in pattern.iter().enumerate() {
+    match pat {
+      Cirru::Leaf(pat_leaf) => {
+        let Cirru::Leaf(child_leaf) = &node_children[i] else {
+          return false;
+        };
+        if child_leaf.as_ref() != pat_leaf.as_ref() {
+          return false;
+        }
+      }
+      Cirru::List(pat_list) => {
+        let Cirru::List(child_list) = &node_children[i] else {
+          return false;
+        };
+        if !starts_with_pattern(child_list, pat_list) {
+          return false;
+        }
+      }
+    }
+  }
+  true
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Phase 4: anchor annotations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+fn handle_query_anchors(input_path: &str, opts: &QueryAnchorsCommand) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+  let file_data = snapshot
+    .files
+    .get(opts.namespace.as_str())
+    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+
+  for (def_name, code_entry) in &file_data.defs {
+    let anchors = find_anchors(&code_entry.code, &[]);
+    for (path, anchor_name) in anchors {
+      println!("  @anchor:{anchor_name} -> {}/{def_name} [{}]", opts.namespace, format_path(&path));
+    }
+  }
+  Ok(())
+}
+
+fn find_anchors(node: &Cirru, current_path: &[usize]) -> Vec<(Vec<usize>, String)> {
+  let mut results = vec![];
+  if let Cirru::List(children) = node {
+    // Look for `noted @anchor:<name> expr` pattern
+    if children.len() >= 3 {
+      if let Cirru::Leaf(first) = &children[0] {
+        if first.as_ref() == "noted" {
+          if let Cirru::Leaf(tag) = &children[1] {
+            let tag_str = tag.as_ref();
+            if let Some(name) = tag_str.strip_prefix("@anchor:") {
+              results.push((current_path.to_vec(), name.to_string()));
+            }
+          }
+        }
+      }
+    }
+    // Recurse into children
+    for (i, child) in children.iter().enumerate() {
+      let mut child_path = current_path.to_vec();
+      child_path.push(i);
+      results.extend(find_anchors(child, &child_path));
+    }
+  }
+  results
 }

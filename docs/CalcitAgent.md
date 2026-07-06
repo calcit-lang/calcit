@@ -24,14 +24,14 @@ entry_for:
 
 以下参数的值包含 **Cirru 代码**，其中 `$`、`` ` ``、`|`、`>`、`"` 等字符会被 bash 解释，需用引号包裹或改用 stdin + heredoc 从 stdin 传入（完全绕过 Shell 转义）：
 
-| 参数 | 出现场景 | 说明 |
-|------|----------|------|
-| `--code` | `cr tree replace/search-replace/insert-*/wrap/replace-leaf`、`cr edit def/add-import` | Cirru 代码片段，须用 `quote` 前缀 |
-| `--pattern` | `cr tree search-replace/replace-leaf` | Cirru 叶子节点内容 |
-| `--file` 读取的文件内容 | `cr edit def`、`cr tree replace` 等 | 文件中的 Cirru 代码，须用 `quote` 前缀 |
-| `--json` | 各支持 JSON 输入的命令 | JSON 字符串（含引号和括号） |
-| 位置参数 `<code>` | `cr cirru parse '<cirru_code>'` | 原始 Cirru 代码，须用引号包裹 |
-| 位置参数 `<json>` | `cr cirru format '<json>'` | JSON 字符串 |
+| 参数                    | 出现场景                                                                              | 说明                                   |
+| ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------- |
+| `--code`                | `cr tree replace/search-replace/insert-*/wrap/replace-leaf`、`cr edit def/add-import` | Cirru 代码片段，须用 `quote` 前缀      |
+| `--pattern`             | `cr tree search-replace/replace-leaf`                                                 | Cirru 叶子节点内容                     |
+| `--file` 读取的文件内容 | `cr edit def`、`cr tree replace` 等                                                   | 文件中的 Cirru 代码，须用 `quote` 前缀 |
+| `--json`                | 各支持 JSON 输入的命令                                                                | JSON 字符串（含引号和括号）            |
+| 位置参数 `<code>`       | `cr cirru parse '<cirru_code>'`                                                       | 原始 Cirru 代码，须用引号包裹          |
+| 位置参数 `<json>`       | `cr cirru format '<json>'`                                                            | JSON 字符串                            |
 
 > 本文档中所有命令行示例已统一使用 **完整长参数名**（如 `--filter`、`--file`、`--code`、`--path` 等），不再使用单字符短参数。
 
@@ -55,8 +55,8 @@ entry_for:
 - 查某个模块的文档目录：`cr docs list --module <module-name>`
 - 看某个文件有哪些章节：`cr docs sections <file> [--module <module-name>]`
 - 查远程库 README / registry：`cr docs remote-libs search <keyword>` / `cr docs remote-libs readme <package>`
-
-补充：仓库文件路径是 `docs/run/agent-advanced.md`，用 `cr docs read` 查询时文件名参数写 `agent-advanced.md`。
+- 语义路径解析为数字坐标：`cr query path <ns> --selector 'path heading def {} :name |fn nth 2'`
+- 列出命名空间内锚点：`cr query anchors <ns>`
 
 ## Cirru 语法速览（先看这个）
 
@@ -220,7 +220,7 @@ cr docs agents --full
 1. 定位目标定义：`cr query defs <ns>`
 2. 先轻看再全看：`cr query peek '<ns/def>'`，必要时再 `cr query def '<ns/def>'`
 3. 搜关键词拿路径：`cr query search <keyword> --filter '<ns/def>'`
-4. 聚焦子树确认上下文：`cr tree show '<ns/def>' --path '<path>'`（复杂时可加 `--json`；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
+4. 聚焦子树确认上下文：`cr tree show '<ns/def>' --path '<path>'`（复杂时可加 `--json`；嵌套多时可加 `--path-annotations` 显示各节点路径坐标；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
 5. 修改并验证：`cr tree replace ...` 然后 `cr js`
 
 > 修改时要求先考虑定位到坐标使用局部修改的方式, 或者结构化修改的方式, 若改动较大或不确定改动范围时再考虑整段覆盖式修改。
@@ -249,18 +249,23 @@ cr js
 ### 编辑
 
 - `cr query search <pattern> --filter '<ns/def>' --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
+- `cr tree search-replace` 多匹配时可用 `--pick <N>` 直接选择第 N 个候选；也可用 `--selector 'path heading ... nth ...'` 限定搜索范围。
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
 
 `cr tree` 的 `--code` 和 `--pattern` 常含 `$`、括号等特殊字符，Shell 转义成本高。**可以使用 stdin/heredoc 完全规避转义问题**：
 
 #### 1. 执行动态代码 (`cr exec` 从 stdin 读取且评估)
+
 `cr exec` 专门用于直接运行从标准输入 stdin 传入的代码，非常适合动态调试：
+
 ```bash
 echo "range 10" | cr exec
 ```
 
 #### 2. 在结构/编辑命令中免参数默认读取 stdin
+
 对于任何接收表达式或代码输入的命令 (例如 `cr tree replace`, `cr tree insert-before`, `cr edit def`, `cr edit add-import`, `cr edit imports` 等)，如果在不加其他输入来源的情况下**同时省略 `--file`, `--code`, `--json` 参数**，其将**默认直接从 stdin 读取多行输入代入修改** (对于解析为 AST 的内容，其输入必须以 `quote` 标识词开头)：
+
 ```bash
 # 同时省略 --file/--code/--json，无需复杂的 Shell 转义，直接传递多行内容
 cr calcit.cirru tree replace app.main/main! --path '3.1' << 'END'
@@ -406,13 +411,12 @@ cr js
 
 ---
 
-
 ## 7) `cr` 能力地图
 
 - **运行**：`cr`, `cr js`, `cr ir`, `cr-wasm`, `--watch`
-- **查询**：`cr query defs/def/search/usages/schema/examples`
+- **查询**：`cr query defs/def/search/usages/schema/examples/path/anchors`
 - **分析**：`cr analyze call-graph/program-diff`
-- **结构化编辑**：`cr tree show/replace/search-replace/cp/wrap`
+- **结构化编辑**：`cr tree show/replace/search-replace/cp/wrap`（`show` 支持 `--path-annotations` 标注坐标；`search-replace` 支持 `--pick`/`--selector`）
 - **定义编辑**：`cr edit def/add-import/imports/mv/rename`
 - **配置**：`cr config show/modules/version`
 - **文档**：`cr docs scopes/list/read/search/agents`

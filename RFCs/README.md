@@ -29,6 +29,7 @@
 | `05-31-generic-where-bounds-mfs.md`                 | Active        | 函数 schema 泛型 `:where` 约束的最小功能规格，先作为主链路开发基线。                      |
 | `06-15-effects-graph-rfc.md`                        | Draft         | `cr analyze effects-graph`：State/Transform/Effect 语义分解图与类型驱动 effect 标注路线。 |
 | `06-29-cr-exec-cli-builtins-rfc.md`                 | **Active**    | `cr exec` + `calcit.cli/*` 内建函数：绕过 Shell 转义的 Cirru 函数调用方案。               |
+| `07-06-semantic-tree-navigation-rfc.md`             | Draft         | 语义化树形导航与编辑：路径标注、多候选交互、锚点搜索替换、结构化查询语言。                |
 
 ## 已执行的清理
 

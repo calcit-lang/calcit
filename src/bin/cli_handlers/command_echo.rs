@@ -229,6 +229,8 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
       }
       desc
     }
+    QuerySubcommand::Path(_) => "resolves semantic path to numeric indices".to_string(),
+    QuerySubcommand::Anchors(_) => "lists @anchor annotations in namespace".to_string(),
   })
 }
 
@@ -553,6 +555,10 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
     QuerySubcommand::HostProcs(opts) => {
       echo_items!(tokens, opt "tag" => opts.tag.as_deref(); default "none")
     }
+    QuerySubcommand::Path(opts) => {
+      echo_items!(tokens, opt "selector" => Some(opts.selector.as_str()); default "none")
+    }
+    QuerySubcommand::Anchors(_) => {}
   }
 }
 
@@ -921,6 +927,8 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::SearchExpr(_) => "search-expr",
     QuerySubcommand::Schema(_) => "schema",
     QuerySubcommand::HostProcs(_) => "host-procs",
+    QuerySubcommand::Path(_) => "path",
+    QuerySubcommand::Anchors(_) => "anchors",
   }
 }
 
