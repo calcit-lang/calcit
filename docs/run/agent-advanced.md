@@ -460,7 +460,7 @@ cr query path app.main --selector 'path
 
 在源码中标记：
 
-```cirru
+```cirru.no-check
 defn main! ()
   noted @anchor:init-state
     let

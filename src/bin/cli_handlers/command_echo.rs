@@ -609,7 +609,7 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::CheckMd(opts) => {
-      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "calcit.cirru", list "dep" => &opts.dep)
+      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "calcit.cirru", list "dep" => &opts.dep, switch "failures-only" => opts.failures_only)
     }
   }
 }

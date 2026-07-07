@@ -787,6 +787,9 @@ pub struct DocsCheckMdCommand {
   /// suppress successful block logs; still prints failures and summary on error
   #[argh(switch)]
   pub quiet: bool,
+  /// only display failed blocks and summary; implies --quiet
+  #[argh(switch, long = "failures-only")]
+  pub failures_only: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

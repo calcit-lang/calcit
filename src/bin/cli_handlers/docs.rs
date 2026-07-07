@@ -149,7 +149,7 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     ),
     DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
-    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet),
+    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet, opts.failures_only),
   }
 }
 
@@ -1304,29 +1304,13 @@ impl Drop for QuietToolOutputGuard {
   }
 }
 
-fn print_check_md_header(file_path: &str, run_count: usize, no_run_count: usize, no_cli_count: usize, no_check_count: usize) {
-  println!("{} {}", "Checking".bold(), file_path.cyan());
-  println!("{}", "-".repeat(60).dimmed());
-
-  if run_count < no_check_count {
-    println!(
-      "{}",
-      format!(
-        "Tip: check-mode balance is skewed (cirru: {run_count}, cirru.no-run: {no_run_count}, cirru.cli: {no_cli_count}, cirru.no-check: {no_check_count}). Prefer `cirru` first, then `cirru.no-run`, and use `cirru.no-check` only when necessary."
-      )
-      .yellow()
-    );
-    println!("{}", "-".repeat(60).dimmed());
-  }
-}
-
-fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -> Result<(), String> {
+fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, failures_only: bool) -> Result<(), String> {
   let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
 
   let blocks = extract_cirru_blocks(&content);
 
   if blocks.is_empty() {
-    if !quiet {
+    if !quiet && !failures_only {
       println!("{}", "No cirru code blocks found in the file.".yellow());
     }
     return Ok(());
@@ -1338,22 +1322,18 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
     ));
   }
 
-  let _quiet_guard = QuietToolOutputGuard::new(quiet);
+  // Always suppress tool output during check-md to avoid noise
+  let _quiet_guard = QuietToolOutputGuard::new(true);
   let shared_files = load_shared_files_for_check_md(entry, deps)?;
 
   let mut passed = 0;
   let mut failed = 0;
   let total = blocks.len();
-  let run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Run).count();
-  let no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
-  let no_cli_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCli).count();
-  let no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
-  let mut printed_header = false;
-
-  if !quiet {
-    print_check_md_header(file_path, run_count, no_run_count, no_cli_count, no_check_count);
-    printed_header = true;
-  }
+  let _run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Run).count();
+  let _no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
+  let _no_cli_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCli).count();
+  let _no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
+  let mut failure_details = String::new();
 
   for (line_num, mode, code) in &blocks {
     let preview: String = code.lines().next().unwrap_or("").chars().take(60).collect();
@@ -1380,52 +1360,60 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool) -
 
     if check_result.is_ok() {
       passed += 1;
-      if !quiet {
-        println!(
-          "  {} L{}: {}{}{}",
-          "✓".green(),
-          format!("{line_num}").dimmed(),
-          mode_label.dimmed(),
-          preview.dimmed(),
-          preview_suffix.dimmed()
-        );
-      }
     } else {
       failed += 1;
-      if !printed_header {
-        print_check_md_header(file_path, run_count, no_run_count, no_cli_count, no_check_count);
-        printed_header = true;
-      }
       let stderr = check_result
         .as_ref()
         .err()
         .cloned()
         .unwrap_or_else(|| "Error: Unknown error".to_string());
-      println!(
-        "  {} L{}: {}{}{}",
+      failure_details.push_str(&format!(
+        "  {} L{}: {}{}{}\n",
         "✗".red(),
         format!("{line_num}").yellow(),
         mode_label,
         preview,
         preview_suffix
-      );
-
+      ));
       for line in stderr.lines() {
         if !line.trim().is_empty() {
-          println!("    {}", line.red());
+          failure_details.push_str(&format!("    {}\n", line.red()));
         }
       }
     }
   }
 
-  let summary = format!("Results: {total} blocks, {passed} passed, {failed} failed");
-  if printed_header {
-    println!("{}", "-".repeat(60).dimmed());
+  if !quiet && !failures_only {
+    // One-line per file summary for success, detailed for failures
+    if failed == 0 && !quiet {
+      println!("{}  {} blocks, {} passed  {}", file_path.cyan(), total, passed, "✓".green());
+    }
   }
+
   if failed > 0 {
-    println!("{}", summary.red().bold());
+    if !failures_only {
+      println!(
+        "{}  {} blocks, {} passed, {} failed  {}",
+        file_path.cyan(),
+        total,
+        passed,
+        failed,
+        "✗".red()
+      );
+    } else {
+      // In failures-only mode, just print the file name and failure details
+      println!("{}  {} blocks, {} passed, {} failed", file_path.cyan(), total, passed, failed);
+    }
+    print!("{failure_details}");
+  }
+
+  let summary = format!("Results: {total} blocks, {passed} passed, {failed} failed");
+  if failed > 0 {
+    if !quiet && !failures_only {
+      println!("{}", summary.red().bold());
+    }
     Err(format!("check-md failed: {summary}"))
-  } else if quiet {
+  } else if quiet || failures_only {
     Ok(())
   } else {
     println!("{}", summary.green().bold());
