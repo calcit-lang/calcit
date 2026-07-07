@@ -92,12 +92,12 @@ Inner `try` handlers can re-raise or recover selectively:
 
 ```cirru.no-check
 try
-    try
-        risky-operation
-      fn (e)
-        if (= e :recoverable)
-          default-value
-          raise e
+  try
+      risky-operation
+    fn (e)
+      if (= e :recoverable)
+        default-value
+        raise e
   fn (outer-e)
     log-error outer-e
     nil
@@ -133,17 +133,17 @@ This pattern avoids exceptions entirely and keeps error handling explicit in the
 `assert` and `assert=` raise errors during preprocessing/testing:
 
 ```cirru.no-check
-; assert a condition is true
+; "assert a condition is true"
 assert (> x 0) |expected-positive
 
-; assert two values are equal
+; "assert two values are equal"
 assert= (+ 1 2) 3
 ```
 
 `assert-type` checks type at preprocessing time:
 
 ```cirru.no-check
-; assert x is a number before using it
+; "assert x is a number before using it"
 assert-type x :number
 ```
 

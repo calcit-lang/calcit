@@ -46,7 +46,7 @@ let
 
 The low-level primitive `&{}` takes flat key-value pairs:
 
-```cirru.no-run
+```cirru
 &{} :a 1 :b 2
 ```
 
