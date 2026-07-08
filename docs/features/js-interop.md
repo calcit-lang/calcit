@@ -62,7 +62,7 @@ Optional method call is supported with `.?!name`.
 
 Use `js-array` for JavaScript arrays:
 
-```cirru.no-run
+```cirru.no-check
 let
     a $ js-array 1 2
   .!push a 3 4
@@ -73,7 +73,7 @@ let
 
 Use `js-object` with key/value pairs:
 
-```cirru.no-run
+```cirru.no-check
 js-object
   :a 1
   :b 2
@@ -83,7 +83,7 @@ js-object
 
 Equivalent single-line form:
 
-```cirru.no-run
+```cirru.no-check
 js-object (:a 1) (:b 2)
 ```
 
@@ -91,13 +91,13 @@ js-object (:a 1) (:b 2)
 
 Use `new` with a constructor symbol:
 
-```cirru.no-run
+```cirru.no-check
 new js/Date
 ```
 
 With arguments:
 
-```cirru.no-run
+```cirru.no-check
 new js/Array 3
 ```
 
@@ -111,7 +111,7 @@ Use `hint-fn $ {} (:async true)` in function body when using `js-await`:
 
 `js-await` should stay inside async-marked function bodies.
 
-```cirru.no-run
+```cirru.no-check
 let
     fetch-data $ fn () nil
   fn ()
@@ -123,7 +123,7 @@ let
 
 Use `js-await` for Promise-like values:
 
-```cirru.no-run
+```cirru.no-check
 fn ()
   hint-fn $ {} (:async true)
   let
@@ -139,7 +139,7 @@ fn ()
 
 A common pattern is wrapping callback APIs with `new js/Promise`:
 
-```cirru.no-run
+```cirru.no-check
 defn timeout (ms)
   new js/Promise $ fn (resolve _reject)
     js/setTimeout resolve ms
@@ -147,7 +147,7 @@ defn timeout (ms)
 
 Then consume it inside async function:
 
-```cirru.no-run
+```cirru.no-check
 let
     timeout $ fn (ms) $ new js/Promise $ fn (resolve _reject)
       js/setTimeout resolve ms
@@ -160,7 +160,7 @@ let
 
 Use `js-for-await` with `js-await` for async iterables:
 
-```cirru.no-run
+```cirru.no-check
 let
     gen $ fn () nil
   fn ()
