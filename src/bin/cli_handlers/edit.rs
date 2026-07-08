@@ -141,10 +141,9 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let auto_json = opts.code.is_some();
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
+  let syntax_tree = parse_input_to_cirru(&raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -827,8 +826,8 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     return Ok(());
   }
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let schema_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.code.is_some())?;
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let schema_node = parse_input_to_cirru(&raw)?;
   let schema_payload = unwrap_schema_quote_input(schema_node)?;
   let schema_payload = strip_name_field_from_schema(schema_payload);
 
@@ -903,15 +902,15 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
   }
 
   // Read examples input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Examples input required: use --file, --code, --json, or --clear")?;
+    .ok_or("Examples input required: use --file, --code, or pipe input via stdin")?;
 
-  // Parse examples - expect an array of Cirru expressions
-  let examples: Vec<Cirru> = if opts.json.is_some() || opts.json_input {
+  // Parse examples - auto-detect JSON array vs Cirru text
+  let examples: Vec<Cirru> = if raw.trim().starts_with('[') {
     // Parse as JSON array
-    let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    let json_value: serde_json::Value = serde_json::from_str(raw.trim()).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
       serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
       _ => return Err("Expected JSON array of examples".to_string()),
@@ -959,13 +958,13 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .expect("resolved definition exists");
 
   // Read example input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Example input required: use --file, --code, or --json")?;
+    .ok_or("Example input required: use --file, --code, or pipe via stdin")?;
 
   // Parse example
-  let example: Cirru = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.code.is_some())?;
+  let example: Cirru = parse_input_to_cirru(raw)?;
 
   // Insert at specified position or append
   let position = opts.at.unwrap_or(code_entry.examples.len());
@@ -1317,10 +1316,8 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   }
 
   // Create ns code
-  let auto_json = opts.code.is_some();
-
-  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json)? {
-    let code = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
+  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code)? {
+    let code = parse_input_to_cirru(&raw)?;
     // Validate: if input looks like a `ns` expression, the name inside must match
     if let Cirru::List(ref items) = code {
       if let Some(Cirru::Leaf(kw)) = items.first() {
@@ -1377,8 +1374,7 @@ fn handle_rm_ns(opts: &EditRmNsCommand, snapshot_file: &str) -> Result<(), Strin
 }
 
 fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Imports input required: use --file, --code, or --json")?;
-  let auto_json = opts.code.is_some();
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or("Imports input required: use --file, --code, or pipe via stdin")?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -1390,13 +1386,13 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     .get_mut(&opts.namespace)
     .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
 
-  // Determine input format: JSON (if requested) or Cirru (default)
-  let imports_json: serde_json::Value = if opts.json.is_some() || opts.json_input {
+  // Determine input format: auto-detect JSON array vs Cirru EDN
+  let imports_json: serde_json::Value = if raw.trim().starts_with('[') {
     serde_json::from_str(&raw)
-      .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
+      .map_err(|e| format!("Failed to parse imports JSON: {e}"))?
   } else {
     // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
+    let cirru_node = parse_input_to_cirru(&raw)?;
     use super::common::cirru_to_json_value;
     cirru_to_json_value(&cirru_node)
   };
@@ -1577,11 +1573,9 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
 }
 
 fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Import rule input required: use --file, --code, or --json")?;
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or("Import rule input required: use --file, --code, or pipe via stdin")?;
 
-  let auto_json = opts.code.is_some();
-
-  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, auto_json)?;
+  let new_rule = parse_input_to_cirru(&raw)?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =

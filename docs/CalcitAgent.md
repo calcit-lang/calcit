@@ -29,7 +29,6 @@ entry_for:
 | `--code`                | `cr tree replace/search-replace/insert-*/wrap/replace-leaf`、`cr edit def/add-import` | Cirru 代码片段，须用 `quote` 前缀      |
 | `--pattern`             | `cr tree search-replace/replace-leaf`                                                 | Cirru 叶子节点内容                     |
 | `--file` 读取的文件内容 | `cr edit def`、`cr tree replace` 等                                                   | 文件中的 Cirru 代码，须用 `quote` 前缀 |
-| `--json`                | 各支持 JSON 输入的命令                                                                | JSON 字符串（含引号和括号）            |
 | 位置参数 `<code>`       | `cr cirru parse '<cirru_code>'`                                                       | 原始 Cirru 代码，须用引号包裹          |
 | 位置参数 `<json>`       | `cr cirru format '<json>'`                                                            | JSON 字符串                            |
 
@@ -264,21 +263,26 @@ echo "range 10" | cr exec
 
 #### 2. 在结构/编辑命令中免参数默认读取 stdin
 
-对于任何接收表达式或代码输入的命令 (例如 `cr tree replace`, `cr tree insert-before`, `cr edit def`, `cr edit add-import`, `cr edit imports` 等)，如果在不加其他输入来源的情况下**同时省略 `--file`, `--code`, `--json` 参数**，其将**默认直接从 stdin 读取多行输入代入修改** (对于解析为 AST 的内容，其输入必须以 `quote` 标识词开头)：
+对于任何接收表达式或代码输入的命令 (例如 `cr tree replace`, `cr tree insert-before`, `cr edit def`, `cr edit add-import`, `cr edit imports`, `cr edit schema` 等)，当**同时省略 `--file` 和 `--code` 参数**时，将**默认直接从 stdin 读取**。格式自动检测：`[` 开头为 JSON，其他为 Cirru EDN（须 `quote` 前缀）。
 
 ```bash
-# 同时省略 --file/--code/--json，无需复杂的 Shell 转义，直接传递多行内容
+# 同时省略 --file/--code，无需 Shell 转义，直接传递多行内容
 cr calcit.cirru tree replace app.main/main! --path '3.1' << 'END'
 quote (println |abc)
 END
 
-# edit commands 同样支持无参数默认读取 stdin
+# edit commands 同样支持 stdin
 cr calcit.cirru edit add-import app.main << 'END'
 app.config :refer $ dev?
 END
+
+# schema 更新也可以用 stdin
+cr calcit.cirru edit schema app.main/main! << 'END'
+quote (:: :fn ({} (:return :dynamic) (:args ([])) (:features (#{} :js-ffi))))
+END
 ```
 
-Cirru 代码输入（`--code` / `--file`）必须使用 `quote` 前缀来区分 leaf 和表达式：
+Cirru 代码输入（`--code` / `--file` / stdin）必须使用 `quote` 前缀来区分 leaf 和表达式：
 
 ```bash
 # leaf 节点

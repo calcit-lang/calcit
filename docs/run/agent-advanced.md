@@ -23,7 +23,15 @@ entry_for:
 
 ## 🚀 🚀 快速开始与零逃逸 Stdin 工作流（新 LLM 必读）
 
-对于所有接收表达式和代码输入的修改命令（如 `cr tree replace`, `cr edit def`, `cr edit add-import` 等），当**同时省略 `--file`、`--code` 与 `--json` 参数时，它们将默认直接从标准输入 stdin 读入多行代码**。这是一种**完全免转义**、不需要临时文件且极力推荐的高级重构方式！
+对于所有接收表达式和代码输入的修改命令（如 `cr tree replace`, `cr edit def`, `cr edit add-import`, `cr edit schema` 等），有三种输入方式，按推荐顺序：
+
+| 方式 | 适用场景 | 格式检测 |
+|------|---------|---------|
+| **stdin**（免参数） | 多行代码、含特殊字符 | 自动（`[`=JSON，其他=Cirru） |
+| `--file <path>` | 从文件读取 | 自动 |
+| `--code <text>` | 单行简单代码 | 自动 |
+
+当**同时省略 `--file` 和 `--code`** 时，命令默认从 stdin 读取。无需 Shell 转义，不需临时文件——这是极力推荐的高级重构方式。
 
 ### 统一查询命令
 

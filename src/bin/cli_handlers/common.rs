@@ -5,9 +5,9 @@ use std::fs;
 use std::sync::Arc;
 
 // Error message constants
-pub const ERR_MULTIPLE_INPUT_SOURCES: &str = "Multiple input sources provided. Use only one of: --file/-f, --code/-e, or --json/-j.";
+pub const ERR_MULTIPLE_INPUT_SOURCES: &str = "Multiple input sources provided. Use only one of: --file, --code, or stdin.";
 
-pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code (with `(quote ...)` wrapper), or --json";
+pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code (with `(quote ...)` wrapper), or pipe/redirect input via stdin";
 
 pub const ERR_JSON_OBJECTS_NOT_SUPPORTED: &str = "JSON objects not supported, use arrays";
 
@@ -204,11 +204,11 @@ pub fn validate_input_sources(sources: &[bool]) -> Result<(), String> {
   }
 }
 
-/// Read code input from file, inline code, or json option.
-/// Exactly one input source should be used.
-/// If none of them are provided, fallback to reading from stdin.
-pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>) -> Result<Option<String>, String> {
-  let sources = [file.is_some(), code.is_some(), json.is_some()];
+/// Read code input from --file, --code, or stdin (fallback).
+/// At most one input source should be provided.
+/// If stdin has no data (EOF immediately), returns `None`.
+pub fn read_code_input(file: &Option<String>, code: &Option<String>) -> Result<Option<String>, String> {
+  let sources = [file.is_some(), code.is_some()];
   validate_input_sources(&sources)?;
 
   if let Some(path) = file {
@@ -217,17 +217,20 @@ pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Opti
   } else if let Some(s) = code {
     if s.contains('\n') {
       eprintln!("\n⚠️  Note: Inline code contains newlines. Multi-line code in shell can be error-prone.");
-      eprintln!("   Consider writing to a temporary file and using --file/-f instead.");
+      eprintln!("   Consider writing to a temporary file and using --file instead.");
       eprintln!();
     }
     Ok(Some(s.trim().to_string()))
-  } else if let Some(j) = json {
-    Ok(Some(j.clone()))
   } else {
     // Fallback to reading from stdin if no source is specified
     let mut buf = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    Ok(Some(buf.trim().to_string()))
+    let bytes_read = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
+    if bytes_read == 0 {
+      Ok(None)
+    } else {
+      Ok(Some(buf.trim().to_string()))
+    }
   }
 }
 
@@ -277,30 +280,23 @@ fn parse_edn_quote(raw: &str) -> Result<Cirru, String> {
   }
 }
 
-/// Determine input mode and parse raw input string into a `Cirru` node.
-/// Precedence (highest to lowest):
-/// - `--json <string>` (inline JSON)
-/// - `--json-input` (parse JSON -> Cirru)
-/// - Cirru EDN with `quote` prefix (default)
+/// Parse raw input string into a `Cirru` node.
+/// Format auto-detection: if the trimmed input starts with `[` or `{`, it is treated as JSON.
+/// Otherwise, it is treated as Cirru EDN with `quote` prefix (e.g. `quote |leaf` or `quote (expr ...)`).
 ///
-/// Cirru text input MUST use `quote` prefix (e.g. `quote |leaf` or `quote (expr ...)`),
-/// replacing the old `--leaf` flag. The `cirru_edn` parser enforces this natively.
-pub fn parse_input_to_cirru(raw: &str, inline_json: &Option<String>, json_input: bool, _auto_json: bool) -> Result<Cirru, String> {
-  // If inline JSON provided, use it (takes precedence)
-  if let Some(j) = inline_json {
-    if j.len() > 2000 {
-      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", j.len());
+/// Cirru text input MUST use `quote` prefix — the `cirru_edn` parser enforces this natively.
+/// Use `--code` for inline text, `--file` for file input, or pipe via stdin.
+pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
+  let trimmed = raw.trim();
+  // Auto-detect: JSON arrays start with `[`, Cirru EDN starts with `quote`
+  let is_json = trimmed.starts_with('[');
+  if is_json {
+    if trimmed.len() > 2000 {
+      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", trimmed.len());
       eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
       eprintln!();
     }
-    Ok(json_to_cirru(j)?)
-  } else if json_input {
-    if raw.len() > 2000 {
-      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", raw.len());
-      eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
-      eprintln!();
-    }
-    json_to_cirru(raw)
+    json_to_cirru(trimmed)
   } else {
     // Parse as Cirru EDN with `quote` prefix
     if raw.contains('\t') {

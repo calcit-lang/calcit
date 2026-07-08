@@ -988,23 +988,17 @@ pub struct EditFormatCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "def")]
-/// add a new definition
+/// add a new definition (input via --file, --code, or pipe via stdin)
 pub struct EditDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// overwrite existing definition if it already exists
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1045,23 +1039,17 @@ pub struct EditDocCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "schema")]
-/// update definition schema (validates structure before writing; cr edit format normalises old quote-wrapped schemas to direct map)
+/// update definition schema (input via --file, --code, or pipe via stdin; validates structure before writing)
 pub struct EditSchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read schema from file (Cirru format by default, use -J for JSON)
+  /// read schema from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// schema as inline Cirru text (or JSON when used with -J/--json-input)
+  /// schema as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// schema as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// clear schema field
   #[argh(switch, long = "clear")]
   pub clear: bool,
@@ -1069,23 +1057,17 @@ pub struct EditSchemaCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "examples")]
-/// set definition examples (replaces all)
+/// set definition examples — replaces all (input via --file, --code, or pipe via stdin)
 pub struct EditExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read examples from file (Cirru format by default, use -J for JSON)
+  /// read examples from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// examples as inline Cirru text (or JSON when used with -J/--json-input)
+  /// examples as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// examples as inline JSON array string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON array
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// clear all examples
   #[argh(switch, long = "clear")]
   pub clear: bool,
@@ -1093,7 +1075,7 @@ pub struct EditExamplesCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-example")]
-/// add a single example to definition
+/// add a single example to definition (input via --file, --code, or pipe via stdin)
 pub struct EditAddExampleCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -1101,18 +1083,12 @@ pub struct EditAddExampleCommand {
   /// position to insert at (default: append to end)
   #[argh(option, long = "at")]
   pub at: Option<usize>,
-  /// read example from file (Cirru format by default, use -J for JSON)
+  /// read example from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// example as inline Cirru text (or JSON when used with -J/--json-input)
+  /// example as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// example as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1143,23 +1119,17 @@ pub struct EditTagsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-ns")]
-/// add a new namespace (ns syntax_tree input: Cirru by default; use --json-input or -j for JSON)
+/// add a new namespace (ns code via --file, --code, or pipe via stdin; auto-detects JSON vs Cirru)
 pub struct EditAddNsCommand {
   /// namespace name to create
   #[argh(positional)]
   pub namespace: String,
-  /// read ns syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read ns syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// ns syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// ns syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// ns syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1173,44 +1143,32 @@ pub struct EditRmNsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "imports")]
-/// update namespace imports (replaces all)
+/// update namespace imports — replaces all (input via --file, --code, or pipe via stdin)
 pub struct EditImportsCommand {
   /// namespace to update
   #[argh(positional)]
   pub namespace: String,
-  /// read imports from file (Cirru format by default, use -J for JSON)
+  /// read imports from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// imports as inline Cirru text (or JSON when used with -J/--json-input)
+  /// imports as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// imports as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-import")]
-/// add a single import rule to namespace
+/// add a single import rule to namespace (input via --file, --code, or pipe via stdin)
 pub struct EditAddImportCommand {
   /// namespace to add import rule to
   #[argh(positional)]
   pub namespace: String,
-  /// read import rule from file (Cirru format by default, use -J for JSON)
+  /// read import rule from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// import rule as inline Cirru text (or JSON when used with -J/--json-input)
+  /// import rule as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// import rule as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// overwrite existing rule for the same source namespace
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
@@ -1406,18 +1364,12 @@ pub struct TreeStructuralCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// bind placeholder to original-node path: `--with self=.` , `--with rhs=2`
   #[argh(option, long = "with")]
   pub with: Vec<String>,
@@ -1439,18 +1391,12 @@ pub struct TreeSearchReplaceCommand {
   /// treat pattern as a regular expression for matching leaf nodes
   #[argh(switch, long = "regex")]
   pub regex: bool,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1488,18 +1434,12 @@ pub struct TreeReplaceCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1518,18 +1458,12 @@ pub struct TreeReplaceLeafCommand {
   /// treat pattern as a regular expression for matching leaf nodes
   #[argh(switch, long = "regex")]
   pub regex: bool,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1560,19 +1494,12 @@ pub struct TreeInsertBeforeCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// parse input as a single-line Cirru expression (one-liner parser)
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1588,19 +1515,12 @@ pub struct TreeInsertAfterCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// parse input as a single-line Cirru expression (one-liner parser)
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1616,19 +1536,12 @@ pub struct TreeInsertChildCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// parse input as a single-line Cirru expression (one-liner parser)
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1644,19 +1557,12 @@ pub struct TreeAppendChildCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  /// read syntax_tree from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// parse input as a single-line Cirru expression (one-liner parser)
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1735,15 +1641,9 @@ pub struct TreeWrapCommand {
   /// wrapping expression with `self` as placeholder for the original node (e.g. 'println self')
   #[argh(option, long = "code")]
   pub code: Option<String>,
-  /// read wrapping expression from file (Cirru format by default, use -J for JSON)
+  /// read wrapping expression from file (auto-detects JSON vs Cirru)
   #[argh(option)]
   pub file: Option<String>,
-  /// wrapping expression as inline JSON string
-  #[argh(option)]
-  pub json: Option<String>,
-  /// treat file input as JSON
-  #[argh(switch, long = "json-input")]
-  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,

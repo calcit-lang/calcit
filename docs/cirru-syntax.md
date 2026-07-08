@@ -217,9 +217,11 @@ cond
   true default-result
 ```
 
-## JSON Format Rules
+## JSON Input Format
 
-When using `-j` or `--json-input`:
+Input is automatically detected as JSON when it starts with `[` (Cirru JSON is always arrays, never objects). No flags needed.
+
+When providing JSON:
 
 1. **Everything is arrays or strings**: `["defn", "name", ["args"], ["body"]]`
 2. **Numbers as strings**: `["&+", "1", "2"]` not `["&+", 1, 2]`

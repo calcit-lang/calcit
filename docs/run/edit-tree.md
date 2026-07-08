@@ -15,6 +15,7 @@ entry_for:
   - "cr edit add-import"
   - "cr query search"
 ---
+
 # CLI Code Editing (edit & tree)
 
 Calcit provides powerful CLI tools for modifying code directly without opening a text editor. These commands are optimized for both interactive use and automated scripts/agents.
@@ -107,9 +108,9 @@ cr edit mv app.main/target-def --from '1.0' --path '2.0' --at after
 
 Editing commands support several ways to provide new code:
 
-- `--code 'code'`: Inline Cirru expression (one-liner).
+- `--code 'code'`: Inline text (auto-detects JSON vs Cirru format).
 - `--file file.cirru`: Multi-line code from a file (recommended for complex structures).
-- `--json 'json'`: Raw JSON-serialized Cirru representation.
+- **stdin**: Pipe or redirect input directly; auto-detects JSON vs Cirru.
 
 > Note: For multi-line text input, prefer using `--file` with a temporary file in `.calcit-snippets/`.
 
