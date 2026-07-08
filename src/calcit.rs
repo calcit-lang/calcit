@@ -1190,13 +1190,17 @@ impl From<&NodeLocation> for Edn {
 
 impl fmt::Display for NodeLocation {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(
-      f,
-      "{}/{} [{}]",
-      self.ns,
-      self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
-    )
+    if self.coord.is_empty() {
+      write!(f, "{}/{}", self.ns, self.def)
+    } else {
+      write!(
+        f,
+        "{}/{} @{}",
+        self.ns,
+        self.def,
+        self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
+      )
+    }
   }
 }
 
@@ -1614,6 +1618,6 @@ mod tests {
       Arc::from("comp-sidebar"),
       Arc::from(vec![3, 2, 1, 0]),
     );
-    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar [3.2.1.0]");
+    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar @3.2.1.0");
   }
 }

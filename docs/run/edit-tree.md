@@ -82,14 +82,14 @@ cr tree search-replace app.main/main! --pattern '1' --code '10'
 You can use numeric paths to locate deep nodes:
 
 ```bash
-# Replace the node at path 1.2.0
-cr tree replace app.main/main! --path '1.2.0' --code '(+ 1 2)'
+# Replace the node at path @1.2.0
+cr tree replace app.main/main! --path '@1.2.0' --code '(+ 1 2)'
 
 # Insert before a node
-cr tree insert-before app.main/main! --path '1.0' --code 'println |started'
+cr tree insert-before app.main/main! --path '@1.0' --code 'println |started'
 
 # Delete a node
-cr tree delete app.main/main! --path '1.0'
+cr tree delete app.main/main! --path '@1.0'
 ```
 
 ### Copying and Moving Nodes
@@ -98,10 +98,10 @@ Current CLI exposes node copy/move under `cr edit cp` and `cr edit mv`:
 
 ```bash
 # Copy a node within a definition
-cr edit cp app.main/target-def --from '1.0' --path '2.0' --at append-child
+cr edit cp app.main/target-def --from '@1.0' --path '@2.0' --at append-child
 
 # Move a node within a definition
-cr edit mv app.main/target-def --from '1.0' --path '2.0' --at after
+cr edit mv app.main/target-def --from '@1.0' --path '@2.0' --at after
 ```
 
 ## Input Formats

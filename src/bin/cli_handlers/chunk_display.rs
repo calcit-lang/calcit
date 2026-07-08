@@ -495,15 +495,17 @@ fn make_placeholder_name(node: &Cirru, index: usize, used_names: &mut HashSet<St
 }
 
 fn compare_coords(left: &str, right: &str) -> std::cmp::Ordering {
-  let left_parts: Vec<usize> = if left == "root" {
+  let left_clean = left.strip_prefix('@').unwrap_or(left);
+  let right_clean = right.strip_prefix('@').unwrap_or(right);
+  let left_parts: Vec<usize> = if left_clean == "root" {
     vec![]
   } else {
-    left.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
+    left_clean.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
   };
-  let right_parts: Vec<usize> = if right == "root" {
+  let right_parts: Vec<usize> = if right_clean == "root" {
     vec![]
   } else {
-    right.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
+    right_clean.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
   };
 
   for index in 0..left_parts.len().max(right_parts.len()) {
@@ -537,7 +539,7 @@ mod tests {
       coord: if path.is_empty() {
         "root".to_string()
       } else {
-        path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(".")
+        format!("@{}", path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join("."))
       },
       path: path.to_vec(),
       nodes: 1,

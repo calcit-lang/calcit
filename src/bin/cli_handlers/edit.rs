@@ -29,8 +29,8 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, format_path, format_path_bracketed, json_value_to_cirru, parse_input_to_cirru, parse_path,
-  print_cli_warning_block, read_code_input, resolve_definition_lookup,
+  ERR_CODE_INPUT_REQUIRED, format_path, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block,
+  read_code_input, resolve_definition_lookup,
 };
 use super::tips::{Tips, command_guidance_enabled};
 
@@ -1274,8 +1274,8 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
       Cirru::Leaf(_) => {
         let partial = format_path(&path[..depth]);
         return Err(format!(
-          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show -p {}' to explore the tree structure (use dot-separated indices, e.g. '2.1.0')",
-          format_path_bracketed(&path[..depth]),
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show -p {}' to explore the tree structure (use dot-separated indices, e.g. '@2.1.0')",
+          format_path(&path[..depth]),
           partial,
         ));
       }
@@ -1287,8 +1287,8 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
             idx,
             depth,
             items.len(),
-            format_path_bracketed(path),
-            format_path_bracketed(&path[..depth]),
+            format_path(path),
+            format_path(&path[..depth]),
             items.len().saturating_sub(1),
             partial,
           ));
@@ -1388,8 +1388,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
 
   // Determine input format: auto-detect JSON array vs Cirru EDN
   let imports_json: serde_json::Value = if raw.trim().starts_with('[') {
-    serde_json::from_str(&raw)
-      .map_err(|e| format!("Failed to parse imports JSON: {e}"))?
+    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse imports JSON: {e}"))?
   } else {
     // Parse as cirru and convert to JSON value
     let cirru_node = parse_input_to_cirru(&raw)?;

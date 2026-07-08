@@ -696,7 +696,10 @@ pub fn preprocess_expr(
               None if codegen::codegen_mode() && is_js_syntax_procs(def) => {
                 // Check FFI permission: only allow if the current function's schema has :js-ffi feature
                 let has_ffi = CURRENT_FN_FEATURES.with(|cell| {
-                  cell.borrow().as_ref().is_some_and(|features| features.contains(&EdnTag::new("js-ffi")))
+                  cell
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|features| features.contains(&EdnTag::new("js-ffi")))
                 }) || program::lookup_def_schema(&info.at_ns, &info.at_def)
                   .as_ref()
                   .as_fn()
@@ -704,8 +707,7 @@ pub fn preprocess_expr(
                 if !has_ffi {
                   gen_check_warning_with_location(
                     format!(
-                      "[Warn] JS FFI function `{}` used in `{}/{}` without `:js-ffi` feature in schema — consider isolating FFI operations into dedicated binding functions with `:features $ #{{}} :js-ffi`",
-                      def, def_ns, at_def
+                      "[Warn] JS FFI function `{def}` used in `{def_ns}/{at_def}` without `:js-ffi` feature in schema — consider isolating FFI operations into dedicated binding functions with `:features $ #{{}} :js-ffi`",
                     ),
                     NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
                     check_warnings,
@@ -1348,7 +1350,7 @@ fn preprocess_list_call(
 
             let loc = head.get_location().or_else(|| first_arg.get_location());
             if let Some(l) = loc {
-              let coord_repr = l.coord.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(".");
+              let coord_repr = format!("@{}", l.coord.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("."));
               eprintln!(
                 "[&inspect-type] in {}/{} [{}]\n  {} => {}",
                 l.ns,

@@ -25,11 +25,11 @@ entry_for:
 
 对于所有接收表达式和代码输入的修改命令（如 `cr tree replace`, `cr edit def`, `cr edit add-import`, `cr edit schema` 等），有三种输入方式，按推荐顺序：
 
-| 方式 | 适用场景 | 格式检测 |
-|------|---------|---------|
+| 方式                | 适用场景             | 格式检测                     |
+| ------------------- | -------------------- | ---------------------------- |
 | **stdin**（免参数） | 多行代码、含特殊字符 | 自动（`[`=JSON，其他=Cirru） |
-| `--file <path>` | 从文件读取 | 自动 |
-| `--code <text>` | 单行简单代码 | 自动 |
+| `--file <path>`     | 从文件读取           | 自动                         |
+| `--code <text>`     | 单行简单代码         | 自动                         |
 
 当**同时省略 `--file` 和 `--code`** 时，命令默认从 stdin 读取。无需 Shell 转义，不需临时文件——这是极力推荐的高级重构方式。
 
@@ -48,14 +48,14 @@ cr query config
 cr query path app.main --selector 'path heading def {} :name |add nth 2'
 cr query anchors app.main
 cr config modules
-cr tree show 'app.core/main!' --path 3.1.0
+cr tree show 'app.core/main!' --path @3.1.0
 ```
 
 ### 极力推荐：免参数 Stdin 重构流（在 zsh / bash 下通过 heredoc）
 
 ```bash
 # 不需要本地临时文件，不需要艰难的 Shell 字符转义，直接传递多行 Cirru 结构定义
-cr calcit.cirru tree replace 'app.main/main!' --path '3.1' << 'END'
+cr calcit.cirru tree replace 'app.main/main!' --path '@3.1' << 'END'
 quote (println |abc)
 END
 
@@ -175,25 +175,25 @@ echo 'range 10' | cr exec
 
 - 占位符统一使用 `{{NAME}}` 风格，例如 `{{BODY}}`、`{{TRUE_BRANCH}}`；
 - 大表达式可以先用 `cr query def '<ns/def>'` 看整体；
-- 再用 `cr tree show '<ns/def>' --path 3.1.0` 深入某个片段；
+- 再用 `cr tree show '<ns/def>' --path @3.1.0` 深入某个片段；
 - 真正填充时，优先用 `cr tree search-replace` 找占位符，不唯一时再退回 `cr tree replace`。
 
 1. **确立骨架**：先替换目标节点为一个带有占位符的简单结构。
 
    ```bash
-   cr tree replace '<ns/def>' --path 4.0 --code 'let ((x 1)) {{BODY}}'
+   cr tree replace '<ns/def>' --path @4.0 --code 'let ((x 1)) {{BODY}}'
    ```
 
 2. **定位占位符**：使用 `tree show` 确认占位符的具体路径。
 
    ```bash
-   cr tree show '<ns/def>' --path 4.0
+   cr tree show '<ns/def>' --path @4.0
    ```
 
 3. **填充内容**：针对占位符路径进行下一层的精细替换。
 
    ```bash
-   cr tree replace '<ns/def>' --path 4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
+   cr tree replace '<ns/def>' --path @4.0.2 --code 'if (= x 1) {{TRUE_BRANCH}} {{FALSE_BRANCH}}'
    ```
 
 4. **递归迭代**：重复上述步骤直到所有占位符都被替换为最终逻辑。
@@ -271,10 +271,10 @@ cr edit inc --changed 'app.core/my-fn'
 cr query search pattern --filter '<ns/def>'
 
 ; 2. 查看节点上下文
-cr tree show '<ns/def>' --path 3.1.0
+cr tree show '<ns/def>' --path @3.1.0
 
 ; 3. 执行替换
-cr tree replace '<ns/def>' --path 3.1.0 --code 'new-value'
+cr tree replace '<ns/def>' --path @3.1.0 --code 'new-value'
 
 ; 4. 或搜索替换叶子
 cr tree search-replace '<ns/def>' --pattern old-sym --code new-sym
@@ -298,10 +298,10 @@ cr query def '<ns/def>'
 cr query search complex-call --filter 'app.core/process-data'
 
 ; 2. 查看上下文确认路径
-cr tree show 'app.core/process-data' --path 3.2.1
+cr tree show 'app.core/process-data' --path @3.2.1
 
 ; 3. 提取为新定义
-cr edit split-def 'app.core/process-data' --path 3.2.1 --name extracted-calc
+cr edit split-def 'app.core/process-data' --path @3.2.1 --name extracted-calc
 
 ; 4. 验证结果
 cr query def 'app.core/extracted-calc'
@@ -347,11 +347,11 @@ cr edit inc --changed 'app.core/helper-fn'
 ```bash
 ; 定位节点
 cr query search process --filter 'app.core/main-fn'
-cr tree show 'app.core/main-fn' --path 3.1.2
+cr tree show 'app.core/main-fn' --path @3.1.2
 
 ; 复制或移动（position: |before |after |prepend-child |append-child |replace）
-cr edit cp 'app.core/main-fn' --from 3.1.2 --path 3.0 --at after
-cr edit mv 'app.core/main-fn' --from 3.1.2 --path 3.0 --at after
+cr edit cp 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
+cr edit mv 'app.core/main-fn' --from @3.1.2 --path @3.0 --at after
 ```
 
 ### 包裹 / 拆包 / 提升节点（`tree-wrap` / `tree-unwrap` / `tree-raise`）
@@ -360,11 +360,11 @@ cr edit mv 'app.core/main-fn' --from 3.1.2 --path 3.0 --at after
 
 ```bash
 ; wrap：模板中用 self 引用原节点
-cr tree wrap 'app.core/main-fn' --path 3.1.2 --code 'println self'
+cr tree wrap 'app.core/main-fn' --path @3.1.2 --code 'println self'
 
 ; unwrap / raise
-cr tree unwrap 'app.core/main-fn' --path 3.1.2
-cr tree raise 'app.core/main-fn' --path 3.1.2
+cr tree unwrap 'app.core/main-fn' --path @3.1.2
+cr tree raise 'app.core/main-fn' --path @3.1.2
 ```
 
 ### 批量重命名局部变量
@@ -394,8 +394,8 @@ cr tree show 'app.main/main!' --path '0' --path-annotations
 defn process (xs)
   let
       ys $ map xs inc
-        ; "previous node path: 3.0.0.1.2"
-      ; "previous node path: 3.0.0"
+        ; "previous node path: @3.0.0.1.2"
+      ; "previous node path: @3.0.0"
     foldl zs 0 add
     ; "previous node path: 3.2"
   ; "previous node path: 3"
@@ -418,11 +418,11 @@ cr tree search-replace 'app.main/main!' --pattern 'old-name' --code 'quote |new-
 候选展示格式：
 
 ```
-[0] Path [1.3.0]: "old-name"
+[0] Path @1.3.0: "old-name"
     Context: defn update $ old-name new-name
     Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 0
 
-[1] Path [2.5.2]: "old-name"
+[1] Path @2.5.2: "old-name"
     Context: let $ old-name x $ do-something old-name
     Command: cr tree search-replace 'app.main/main!' --pattern 'old-name' --code '...' --pick 1
 ```
@@ -481,8 +481,8 @@ defn main! ()
 ```bash
 cr query anchors app.main
 # 输出：
-#   @anchor:init-state -> app.main/main! [1]
-#   @anchor:render-loop -> app.main/main! [4.2]
+#   @anchor:init-state -> app.main/main! @1
+#   @anchor:render-loop -> app.main/main! @4.2
 ```
 
 > 锚点附着在表达式上，`tree` 编辑操作后自然跟随，比数字路径更稳定。
@@ -517,9 +517,9 @@ cr query anchors app.main
 
 | 场景          | 写法示例                                                      | 说明                |
 | ------------- | ------------------------------------------------------------- | ------------------- | -------------------- |
-| AST path      | `cr tree show app.main/fn --path 3.1.0`                       | path 用点分隔更直观 |
-| 表达式        | `cr tree replace app.main/fn --path 2 --code 'println         | hello'`             | 完整 Cirru one-liner |
-| 原子符号 leaf | `cr tree replace app.main/fn --path 2.0 --code 'new-symbol'`  | 替换为 leaf         |
+| AST path      | `cr tree show app.main/fn --path @3.1.0`                      | path 用点分隔更直观 |
+| 表达式        | `cr tree replace app.main/fn --path @2 --code 'println        | hello'`             | 完整 Cirru one-liner |
+| 原子符号 leaf | `cr tree replace app.main/fn --path @2.0 --code 'new-symbol'` | 替换为 leaf         |
 | 字符串 leaf   | `cr tree search-replace app.main/fn --pattern old --code '    | new text'`          | 搜索替换 leaf        |
 | 覆盖已有定义  | `cr edit def app.main/fn --code 'defn fn () nil' --overwrite` | 加 `--overwrite`    |
 
@@ -527,10 +527,10 @@ cr query anchors app.main
 
 ```bash
 ; ✅ 替换表达式
-cr tree replace app.main/fn --path 2 --code 'println |hello'
+cr tree replace app.main/fn --path @2 --code 'println |hello'
 
 ; ✅ 替换 leaf
-cr tree replace app.main/fn --path 2.0 --code 'new-symbol'
+cr tree replace app.main/fn --path @2.0 --code 'new-symbol'
 
 ; ✅ 搜索替换 leaf
 cr tree search-replace app.main/fn --pattern old-var --code new-var
@@ -619,10 +619,10 @@ ns app.main $ :require
 cr query search target --filter '<ns/def>'
 
 ; 2. 查看上下文
-cr tree show '<ns/def>' --path 3.1.0
+cr tree show '<ns/def>' --path @3.1.0
 
 ; 3. 执行修改
-cr tree replace '<ns/def>' --path 3.1.0 --code 'new-value'
+cr tree replace '<ns/def>' --path @3.1.0 --code 'new-value'
 
 ; 4. 验证
 cr query def '<ns/def>'
@@ -689,7 +689,7 @@ cr query def 'app.util/calculate-discount'
 cr query defs app.core
 cr edit add-import app.core --code 'app.util :refer $ calculate-discount'
 cr query search total-price --filter 'app.core/checkout'
-cr tree replace 'app.core/checkout' --path 3.2.1 --code 'calculate-discount total-price 0.1'
+cr tree replace 'app.core/checkout' --path @3.2.1 --code 'calculate-discount total-price 0.1'
 ```
 
 ### 步骤 5：触发热更新并验证
@@ -710,7 +710,7 @@ cr edit add-import app.core --code 'app.util :refer $ calculate-discount'
 
 ; 函数参数顺序传错 → 定位并修改调用
 cr query search calculate-discount --filter 'app.core/checkout'
-cr tree replace 'app.core/checkout' --path 3.2.1 --code 'calculate-discount'
+cr tree replace 'app.core/checkout' --path @3.2.1 --code 'calculate-discount'
 ```
 
 > `edit rename` 拼写错误可用 `cr edit rename` 修正。
@@ -831,7 +831,7 @@ cr calcit/test.cirru eval 'cr query peek $ {} (:file-pth |x)'
 ```bash
 ; 检查某个定义的代码和内容
 cr query def ns/def
-cr tree show ns/def --path 3.1.0
+cr tree show ns/def --path @3.1.0
 cr query search suspect-symbol --filter ns/def
 cr query find my-function
 cr query defs my.namespace
@@ -841,7 +841,7 @@ cr query error
 ```bash
 cr project.cirru exec << 'END'
 cr query def ns/def
-cr tree show ns/def --path 3.1.0
+cr tree show ns/def --path @3.1.0
 END
 ```
 

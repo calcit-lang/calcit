@@ -3,6 +3,7 @@
 ## Changes
 
 ### Feature: `:features` and `:js-object` type system
+
 - Added `features: Arc<HashSet<EdnTag>>` to `CalcitFnTypeAnnotation` for marking function capabilities
 - Added `CalcitTypeAnnotation::JsObject` variant for opaque JS FFI data
 - EDN round-trip for both (`features_to_edn` + `parse_fn_features_from_form`)
@@ -14,6 +15,7 @@
 - All direct FFI callers marked with `:features $ #{} :js-ffi`
 
 ### Refactor: CLI simplification
+
 - Removed `--json` option and `--json-input` switch from all edit/tree subcommands
 - Auto-detect JSON (`[` prefix) vs Cirru EDN (`quote` prefix) in `parse_input_to_cirru`
 - Simplified `read_code_input` to `(file, code)` params; stdin fallback

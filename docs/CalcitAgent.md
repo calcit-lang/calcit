@@ -81,7 +81,7 @@ entry_for:
   - 双引号前缀不是通用替代：简单字符串优先 `|text`，只有在 `|...` 不够清晰时才用 `"|..."`。
   - `:tag`：tag
   - `[]` / `{}`：集合构造
-- 你在 `cr query search` 里看到的 `[5.5.1.3]`，本质是“第 5 个子节点的第 5 个子节点的第 1 个子节点的第 3 个子节点”。
+- 你在 `cr query search` 里看到的 `@5.5.1.3`，本质是“第 5 个子节点的第 5 个子节点的第 1 个子节点的第 3 个子节点”。
 
 ### 坐标如何从代码中读出来
 
@@ -95,8 +95,8 @@ defn demo (state)
 ```
 
 - `query def` 先看全貌，不改。
-- `query search collect! --filter 'app.main/demo'` 拿到路径（假设返回 `[3.1.2]`）。
-- `tree show 'app.main/demo' --path '3.1.2'` 验证该坐标确实是目标子树。
+- `query search collect! --filter 'app.main/demo'` 拿到路径（假设返回 `@3.1.2`）。
+- `tree show 'app.main/demo' --path '@3.1.2'` 验证该坐标确实是目标子树。
 - 再做 replace/rewrite，避免“猜路径”。
 
 ### `$` 与 `,` 对坐标的影响（结合 Cirru 教程）
@@ -207,7 +207,7 @@ cr docs agents --full
 
 - 默认优先 **Cirru 输出**，避免 JSON 带来的 token 膨胀。
 - 大定义先 `query peek` 看签名，再用 `query def` 看完整代码。
-- 路径统一使用点号：`'5.5.1.3'`。
+- 路径统一使用点号前缀 `@`：`'@5.5.1.3'`。
 - 搜索命中多时从大索引往前改，或每次修改后重新 `query search`。
 - `query find` 默认 fuzzy，精确匹配用 `--exact`。
 - 在项目目录里用 `cr eval` 验证时，默认不要加 `--dep ./`，避免 namespace 冲突。
@@ -230,7 +230,7 @@ cr docs agents --full
 cr query peek 'respo.render.diff/find-element-diffs'
 cr query def 'respo.render.diff/find-element-diffs'
 cr query search collect! --filter 'respo.render.diff/find-element-diffs'
-cr tree show 'respo.render.diff/find-element-diffs' --path '5.5.1.3' --json
+cr tree show 'respo.render.diff/find-element-diffs' --path '@5.5.1.3' --json
 cr js
 ```
 
@@ -267,7 +267,7 @@ echo "range 10" | cr exec
 
 ```bash
 # 同时省略 --file/--code，无需 Shell 转义，直接传递多行内容
-cr calcit.cirru tree replace app.main/main! --path '3.1' << 'END'
+cr calcit.cirru tree replace app.main/main! --path '@3.1' << 'END'
 quote (println |abc)
 END
 
@@ -286,10 +286,10 @@ Cirru 代码输入（`--code` / `--file` / stdin）必须使用 `quote` 前缀�
 
 ```bash
 # leaf 节点
-cr tree replace ns/def --path 3.2 --code 'quote |new-value'
+cr tree replace ns/def --path @3.2 --code 'quote |new-value'
 
 # 表达式
-cr tree replace ns/def --path 3.2 --code 'quote (println |hello)'
+cr tree replace ns/def --path @3.2 --code 'quote (println |hello)'
 ```
 
 `edit format` 用法例子：
@@ -327,25 +327,25 @@ cr tree replace-leaf '<ns/def>' --pattern '|Old' --code 'quote |New'
 2. 删除节点
 
 ```bash
-cr tree delete '<ns/def>' --path 3.2
+cr tree delete '<ns/def>' --path @3.2
 ```
 
 3. 一层表达式结构调整（同级顺序/包裹关系）
 
 ```bash
-cr tree swap-next '<ns/def>' --path 3.2
-cr tree swap-prev '<ns/def>' --path 3.2
-cr tree wrap '<ns/def>' --path 3.2 --code 'quote (when cond self)'
-cr tree raise '<ns/def>' --path 3.2.1
+cr tree swap-next '<ns/def>' --path @3.2
+cr tree swap-prev '<ns/def>' --path @3.2
+cr tree wrap '<ns/def>' --path @3.2 --code 'quote (when cond self)'
+cr tree raise '<ns/def>' --path @3.2.1
 ```
 
 4. 补充节点（插入 sibling/child）
 
 ```bash
-cr tree insert-before '<ns/def>' --path 3.2 --code 'quote |node'
-cr tree insert-after '<ns/def>' --path 3.2 --code 'quote |node'
-cr tree insert-child '<ns/def>' --path 3.2 --code 'quote |node'
-cr tree append-child '<ns/def>' --path 3.2 --code 'quote |node'
+cr tree insert-before '<ns/def>' --path @3.2 --code 'quote |node'
+cr tree insert-after '<ns/def>' --path @3.2 --code 'quote |node'
+cr tree insert-child '<ns/def>' --path @3.2 --code 'quote |node'
+cr tree append-child '<ns/def>' --path @3.2 --code 'quote |node'
 ```
 
 5. 每次小改后都做最小复核
@@ -395,7 +395,7 @@ cr tree show '<ns/def>' --path '<path>'
 
 ## 5) 路径规则
 
-- 使用点号路径：`5.5.1.3`。
+- 使用点号路径：`@5.5.1.3`。
 - `--path ''` 表示根节点。
 
 ---
@@ -406,7 +406,7 @@ cr tree show '<ns/def>' --path '<path>'
 cr query defs app.main
 cr query def 'app.main/main!'
 cr query search state --filter 'app.main/main!'
-cr tree show 'app.main/main!' --path '3.2'
+cr tree show 'app.main/main!' --path '@3.2'
 cr edit inc --changed 'app.main/main!'
 cr js
 ```

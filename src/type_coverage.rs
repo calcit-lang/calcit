@@ -122,12 +122,18 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
 }
 
 fn format_cirru_path(root: &str, path: &[usize]) -> String {
-  let mut rendered = root.to_owned();
-  for idx in path {
-    rendered.push('.');
-    rendered.push_str(&idx.to_string());
+  if path.is_empty() {
+    root.to_owned()
+  } else {
+    let mut rendered = format!("{root}@");
+    for (i, idx) in path.iter().enumerate() {
+      if i > 0 {
+        rendered.push('.');
+      }
+      rendered.push_str(&idx.to_string());
+    }
+    rendered
   }
-  rendered
 }
 
 fn weak_type_detail(kind: WeakTypeKind, detail: &str) -> String {

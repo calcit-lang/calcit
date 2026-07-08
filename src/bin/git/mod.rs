@@ -83,24 +83,17 @@ impl GitRepo {
   }
 
   pub fn check_branch_or_tag(&self, version: &str, folder: &str) -> Result<bool, String> {
-    match self.run_command(&["show-ref", "--verify", &format!("refs/tags/{version}")]) {
-      Ok(_) => Ok(true),
-      Err(_) => {
-        if self
-          .run_command(&["show-ref", "--verify", &format!("refs/heads/{version}")])
-          .is_ok()
-        {
-          Ok(true)
-        } else if self
-          .run_command(&["show-ref", "--verify", &format!("refs/remotes/origin/{version}")])
-          .is_ok()
-        {
-          Ok(true)
-        } else {
-          Err(format!("failed to check branch or tag `{version}` in `{folder}`"))
-        }
+    let refs = [
+      format!("refs/tags/{version}"),
+      format!("refs/heads/{version}"),
+      format!("refs/remotes/origin/{version}"),
+    ];
+    for r in &refs {
+      if self.run_command(&["show-ref", "--verify", r]).is_ok() {
+        return Ok(true);
       }
     }
+    Err(format!("failed to check branch or tag `{version}` in `{folder}`"))
   }
 
   pub fn fetch(&self) -> Result<(), String> {

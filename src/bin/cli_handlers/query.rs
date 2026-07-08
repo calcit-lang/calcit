@@ -1800,7 +1800,7 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
                 println!("    {} {}", "(root)".cyan(), content.dimmed());
               }
             } else {
-              let path_str = format!("[{}]", format_path(path));
+              let path_str = format_path(path);
               let ((expr_preview, expr_truncated), parent_previews) =
                 expression_and_parent_preview(&code_entry.code, path, node, Some(pattern), common_opts.loose);
               let (display_preview, display_truncated) = parent_previews
@@ -1814,7 +1814,7 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
               }
               // Print parent path (stripped last index) when --parent-path is requested
               if common_opts.parent_path && path.len() > 1 {
-                let parent_path_str = format!("[{}]", format_path(&path[..path.len() - 1]));
+                let parent_path_str = format_path(&path[..path.len() - 1]);
                 println!("       {} {}", "parent:".dimmed(), parent_path_str.dimmed());
               }
             }
@@ -2298,7 +2298,7 @@ fn handle_query_anchors(input_path: &str, opts: &QueryAnchorsCommand) -> Result<
   for (def_name, code_entry) in &file_data.defs {
     let anchors = find_anchors(&code_entry.code, &[]);
     for (path, anchor_name) in anchors {
-      println!("  @anchor:{anchor_name} -> {}/{def_name} [{}]", opts.namespace, format_path(&path));
+      println!("  @anchor:{anchor_name} -> {}/{def_name} {}", opts.namespace, format_path(&path));
     }
   }
   Ok(())

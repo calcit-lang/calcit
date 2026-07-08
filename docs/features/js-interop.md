@@ -14,6 +14,7 @@ entry_for:
   - ".!"
   - ".-"
 ---
+
 # JavaScript Interop
 
 Calcit keeps JS interop syntax intentionally small. This page covers the existing core patterns:

@@ -553,7 +553,7 @@ pub struct QuerySearchCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, default = "0")]
   pub max_depth: usize,
-  /// start search from specific path (dot-separated indices preferred, e.g. "2.1.0")
+  /// start search from specific path (dot-separated indices preferred, e.g. "@2.1.0")
   #[argh(option, long = "start-path")]
   pub start_path: Option<String>,
   /// include modules configured for a specific entry in `entries`
@@ -1262,7 +1262,7 @@ pub struct TreeShowCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (dot-separated preferred; e.g. "2.1.0"); omit to show from root
+  /// path to the node (dot-separated preferred; e.g. "@2.1.0"); omit to show from root
   #[argh(option)]
   pub path: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -1416,7 +1416,7 @@ pub struct TreeBatchDeleteCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// paths to delete (dot-separated, e.g. \"3.2.1.8 3.2.1.7 3.2.1.6\"); deletes from highest to lowest
+  /// paths to delete (dot-separated, e.g. \"@3.2.1.8 @3.2.1.7 @3.2.1.6\"); deletes from highest to lowest
   #[argh(option)]
   pub paths: Vec<String>,
   /// max depth for result preview (0 = unlimited, default 2)

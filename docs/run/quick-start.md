@@ -27,7 +27,7 @@ entry_for:
 
 ```bash
 # 搜索 → 修改 → 验证
-cr query search 'symbol' --filter 'ns/def'                    # 1. 定位（输出：[3.2.1] in ...）
+cr query search 'symbol' --filter 'ns/def'                    # 1. 定位（输出：@3.2.1 in ...）
 cr tree replace 'ns/def' --path '3.2.1' --code 'new'         # 2. 修改
 cr tree show 'ns/def' --path '3.2.1'                         # 3. 验证（可选）
 ```

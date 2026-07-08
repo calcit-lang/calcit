@@ -4,8 +4,8 @@ use std::fmt::Write as _;
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, format_path_bracketed, parse_input_to_cirru, parse_path,
-  print_cli_warning_block, read_code_input, resolve_definition_lookup,
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, parse_input_to_cirru, parse_path, print_cli_warning_block,
+  read_code_input, resolve_definition_lookup,
 };
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
@@ -333,7 +333,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       let valid_node = navigate_to_path(&code_entry.code, valid_path).unwrap();
 
       // Format the valid path display
-      let valid_path_display = format_path_bracketed(valid_path);
+      let valid_path_display = format_path(valid_path);
 
       // Get preview of the valid node
       let node_preview = match &valid_node {
@@ -661,7 +661,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     println!(
       "  {}. Path {}: {}",
       i + 1,
-      format_path_bracketed(path).dimmed(),
+      format_path(path).dimmed(),
       format!("{old_value:?}").yellow()
     );
   }
@@ -686,12 +686,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
         replaced_count += 1;
       }
       Err(e) => {
-        eprintln!(
-          "{} Failed to replace at path {}: {}",
-          "Warning:".yellow(),
-          format_path_bracketed(&path),
-          e
-        );
+        eprintln!("{} Failed to replace at path {}: {}", "Warning:".yellow(), format_path(&path), e);
       }
     }
   }
@@ -798,7 +793,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
 
     for (i, (path, value)) in matches.iter().enumerate().take(20) {
       let full_path = compose_path(path);
-      let path_str = format_path_bracketed(&full_path);
+      let path_str = format_path(&full_path);
       println!("  [{}] Path {}: {:?}", i, path_str.dimmed(), value.to_string().yellow());
       // Show context: get the parent node for a quick preview
       if !full_path.is_empty() {
@@ -1272,7 +1267,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     let parent_display = if parent_path.is_empty() {
       "root".to_string()
     } else {
-      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
+      format!("@{}", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
     };
 
     match operation {

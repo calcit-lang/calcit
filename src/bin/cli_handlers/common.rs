@@ -7,7 +7,8 @@ use std::sync::Arc;
 // Error message constants
 pub const ERR_MULTIPLE_INPUT_SOURCES: &str = "Multiple input sources provided. Use only one of: --file, --code, or stdin.";
 
-pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code (with `(quote ...)` wrapper), or pipe/redirect input via stdin";
+pub const ERR_CODE_INPUT_REQUIRED: &str =
+  "Code input required: use --file, --code (with `(quote ...)` wrapper), or pipe/redirect input via stdin";
 
 pub const ERR_JSON_OBJECTS_NOT_SUPPORTED: &str = "JSON objects not supported, use arrays";
 
@@ -50,7 +51,11 @@ pub fn format_path_with_separator(path: &[usize], separator: &str) -> String {
 }
 
 pub fn format_path(path: &[usize]) -> String {
-  format_path_with_separator(path, ".")
+  if path.is_empty() {
+    "root".to_string()
+  } else {
+    format!("@{}", format_path_with_separator(path, "."))
+  }
 }
 
 fn is_shell_sensitive_char(ch: char) -> bool {
@@ -170,27 +175,20 @@ pub fn emit_cli_output(content: &str, to_stderr: bool) {
   }
 }
 
-pub fn format_path_bracketed(path: &[usize]) -> String {
-  if path.is_empty() {
-    "root".to_string()
-  } else {
-    format!("[{}]", format_path(path))
-  }
-}
-
-/// Parse path string like "2.1.0" to Vec<usize>
+/// Parse path string like "@2.1.0" or "2.1.0" to Vec<usize>
 pub fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
   if path_str.is_empty() {
     return Ok(vec![]);
   }
+  let cleaned = path_str.strip_prefix('@').unwrap_or(path_str);
 
-  if path_str.contains(',') {
+  if cleaned.contains(',') {
     return Err(format!(
-      "Invalid path '{path_str}': comma separator is no longer supported. Use dot-separated coordinates, e.g. '2.1.0'."
+      "Invalid path '{path_str}': comma separator is no longer supported. Use dot-separated coordinates, e.g. '@2.1.0'."
     ));
   }
 
-  path_str
+  cleaned
     .split('.')
     .map(|s| s.trim().parse::<usize>().map_err(|e| format!("Invalid path index '{s}': {e}")))
     .collect()
@@ -224,8 +222,8 @@ pub fn read_code_input(file: &Option<String>, code: &Option<String>) -> Result<O
   } else {
     // Fallback to reading from stdin if no source is specified
     let mut buf = String::new();
-    let bytes_read = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
+    let bytes_read =
+      std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map_err(|e| format!("Failed to read from stdin: {e}"))?;
     if bytes_read == 0 {
       Ok(None)
     } else {
@@ -314,7 +312,7 @@ pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
 
 #[cfg(test)]
 mod tests {
-  use super::{format_path, format_path_bracketed, format_path_with_separator, parse_path, resolve_definition_lookup, shell_quote};
+  use super::{format_path, format_path_with_separator, parse_path, resolve_definition_lookup, shell_quote};
 
   #[test]
   fn rejects_comma_separated_paths() {
@@ -325,6 +323,7 @@ mod tests {
   #[test]
   fn parses_dot_separated_paths() {
     assert_eq!(parse_path("3.2.1").unwrap(), vec![3, 2, 1]);
+    assert_eq!(parse_path("@3.2.1").unwrap(), vec![3, 2, 1]);
   }
 
   #[test]
@@ -334,8 +333,8 @@ mod tests {
 
   #[test]
   fn formats_paths_with_dot_by_default() {
-    assert_eq!(format_path(&[3, 2, 1]), "3.2.1");
-    assert_eq!(format_path_bracketed(&[3, 2, 1]), "[3.2.1]");
+    assert_eq!(format_path(&[3, 2, 1]), "@3.2.1");
+
     assert_eq!(format_path_with_separator(&[3, 2, 1], ","), "3,2,1");
   }
 
