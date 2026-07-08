@@ -284,6 +284,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+              :features $ #{} :js-ffi
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")

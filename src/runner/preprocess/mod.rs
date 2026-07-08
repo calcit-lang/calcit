@@ -47,6 +47,9 @@ thread_local! {
   /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
   /// This enables type propagation through record literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
   static EXPECTED_STRUCT_TYPE: RefCell<Option<CalcitStruct>> = const { RefCell::new(None) };
+  /// Feature flags of the current function being preprocessed.
+  /// Used to check whether js-ffi calls are permitted.
+  static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
 }
 
 fn with_preprocess_compile_guard<T>(ns: &str, def: &str, f: impl FnOnce() -> Result<T, CalcitErr>) -> Result<Option<T>, CalcitErr> {
@@ -690,7 +693,26 @@ pub fn preprocess_expr(
                 });
                 Ok(form)
               }
-              None if codegen::codegen_mode() && is_js_syntax_procs(def) => Ok(expr.to_owned()),
+              None if codegen::codegen_mode() && is_js_syntax_procs(def) => {
+                // Check FFI permission: only allow if the current function's schema has :js-ffi feature
+                let has_ffi = CURRENT_FN_FEATURES.with(|cell| {
+                  cell.borrow().as_ref().is_some_and(|features| features.contains(&EdnTag::new("js-ffi")))
+                }) || program::lookup_def_schema(&info.at_ns, &info.at_def)
+                  .as_ref()
+                  .as_fn()
+                  .is_some_and(|fn_annot| fn_annot.features.contains(&EdnTag::new("js-ffi")));
+                if !has_ffi {
+                  gen_check_warning_with_location(
+                    format!(
+                      "[Warn] JS FFI function `{}` used in `{}/{}` without `:js-ffi` feature in schema — consider isolating FFI operations into dedicated binding functions with `:features $ #{{}} :js-ffi`",
+                      def, def_ns, at_def
+                    ),
+                    NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
+                    check_warnings,
+                  );
+                }
+                Ok(expr.to_owned())
+              }
               None => {
                 let from_default = program::lookup_default_target_in_import(def_ns, def);
                 if let Some(target_ns) = from_default {
@@ -3347,6 +3369,18 @@ pub fn preprocess_defn(
         xs = xs.push_right(schema_hint);
       }
 
+      // Set current function features for FFI permission checks during body preprocessing.
+      // Save previous state for restoration after the function body is processed.
+      let prev_features = CURRENT_FN_FEATURES.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        let old = guard.take();
+        *guard = match def_schema.as_ref() {
+          CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.features.clone()),
+          _ => None,
+        };
+        old
+      });
+
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
           to_skip -= 1;
@@ -3385,6 +3419,9 @@ pub fn preprocess_defn(
       for body_expr in &processed_body {
         check_impl_traits_top_level_in_expr(body_expr, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
       }
+
+      // Restore previous function features
+      CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = prev_features);
 
       Ok(Calcit::List(Arc::new(xs.into())))
     }
@@ -5046,6 +5083,7 @@ mod tests {
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
+        features: Arc::new(HashSet::new()),
       }))),
     };
     let head_form = Calcit::Local(local_fn.clone());
@@ -5604,6 +5642,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::Number),
       fn_kind: kind,
       rest_type: has_rest.then(|| Arc::new(CalcitTypeAnnotation::Number)),
+      features: Arc::new(HashSet::new()),
     })))
   }
 
@@ -5697,6 +5736,7 @@ mod tests {
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       fn_kind: SchemaKind::Fn,
       rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
+      features: Arc::new(HashSet::new()),
     }));
 
     let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defn, "calcit.core", "include", &args, &schema);
@@ -5735,6 +5775,7 @@ mod tests {
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       fn_kind: SchemaKind::Macro,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     }));
 
     let issues = validate_def_schema_during_preprocess(&CalcitSyntax::Defmacro, "calcit.core", "fn", &args, &schema);

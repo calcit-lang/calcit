@@ -6,7 +6,7 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |%A $ %{} :CodeEntry (:doc |) (:schema nil)
+        |%A $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl %A :%A $ .deref
               fn (self)
@@ -14,66 +14,65 @@
                   :atom x
                   , x
           :examples $ []
-        |%r $ %{} :CodeEntry (:doc |) (:schema nil)
+        |%r $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl %r :%demo $ .get
               fn (self) 1
           :examples $ []
-        |*ref-demo $ %{} :CodeEntry (:doc |) (:schema nil)
+        |*ref-demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote (defatom *ref-demo 0)
           :examples $ []
-        |AtomBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AtomBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def AtomBox $ impl-traits AtomBox0 %A
           :examples $ []
-        |AtomBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AtomBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum AtomBox $ :atom :dynamic
           :examples $ []
-        |Demo $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def Demo $ impl-traits Demo0 %r
           :examples $ []
-        |Demo0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Demo0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum Demo $ :a :dynamic
           :examples $ []
-        |Deref $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Deref $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl Deref :Deref $ .deref
               fn (self) 2
           :examples $ []
-        |Num $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Num $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl Num NumTrait
               .inc $ fn (x) (update x 1 inc)
               .show $ fn (x)
                 str $ &tuple:nth x 1
           :examples $ []
-        |NumBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |NumBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
           :examples $ []
-        |NumBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |NumBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum NumBox $ :number :number
           :examples $ []
-        |NumTrait $ %{} :CodeEntry (:doc |) (:schema nil)
+        |NumTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
-        |ValueBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ValueBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def ValueBox $ impl-traits ValueBox0 Deref
           :examples $ []
-        |ValueBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ValueBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum ValueBox $ :value :dynamic
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! ()
-              &init-builtin-impls!
+            defn main! () (&init-builtin-impls!)
               println $ &get-os
               println "|gen id:" $ generate-id!
               inside-js: $ load-console-formatter!
@@ -123,6 +122,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+              :features $ #{} :js-ffi
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit

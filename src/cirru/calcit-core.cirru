@@ -4140,7 +4140,7 @@
             {} (:return :string)
               :args $ [] (:: :list 'T) :string
               :generics $ [] 'T
-        |js-object $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |js-object $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro js-object (& xs)
               if
@@ -4155,6 +4155,10 @@
                 ys $ &list:concat & xs
                 quasiquote $ &js-object ~@ys
           :examples $ []
+          :schema $ :: :macro
+            {} (:return :dynamic)
+              :args $ [] :dynamic
+              :features $ #{} :js-ffi
           :tags $ #{} :interop :macro
         |json-parse $ %{} :CodeEntry (:doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil")
           :code $ quote &runtime-implementation

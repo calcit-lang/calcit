@@ -479,6 +479,7 @@ mod tests {
   use super::{dump_code, dump_type_annotation};
   use crate::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitImpl, CalcitProc, CalcitTypeAnnotation, SchemaKind};
   use cirru_edn::{Edn, EdnTag};
+  use std::collections::HashSet;
   use std::sync::Arc;
 
   #[test]
@@ -538,6 +539,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::Bool),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     }));
     assert_eq!(
       dump_type_annotation(&fn_type),

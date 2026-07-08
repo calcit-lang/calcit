@@ -731,6 +731,16 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
           let values: Option<Vec<Edn>> = items.iter().skip(1).map(cirru_schema_to_edn).collect();
           values.map(|xs| Edn::List(cirru_edn::EdnListView(xs)))
         }
+        Some(Cirru::Leaf(head)) if head.as_ref() == "#{}" => {
+          let values: Option<Vec<Edn>> = items.iter().skip(1).map(cirru_schema_to_edn).collect();
+          values.map(|xs| {
+            let mut set = EdnSetView::default();
+            for item in xs {
+              set.insert(item);
+            }
+            Edn::Set(set)
+          })
+        }
         Some(Cirru::Leaf(head)) if head.as_ref() == "::" && items.len() >= 2 => {
           let tag = cirru_schema_to_edn(&items[1])?;
           let extra: Option<Vec<Edn>> = items.iter().skip(2).map(cirru_schema_to_edn).collect();
@@ -823,7 +833,7 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
 }
 
 /// Valid top-level field names accepted in a schema map.
-pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics", ":where"];
+pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics", ":where", ":features"];
 
 /// Recursively check a Cirru schema tree for deprecated `:nil` type annotations.
 fn check_no_nil_type(node: &Cirru) -> Result<(), String> {
@@ -1030,6 +1040,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut return_node: Option<&Cirru> = None;
   let mut rest_node: Option<&Cirru> = None;
   let mut where_node: Option<&Cirru> = None;
+  let mut features_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair {
@@ -1040,6 +1051,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
           ":return" => return_node = Some(val),
           ":rest" => rest_node = Some(val),
           ":where" => where_node = Some(val),
+          ":features" => features_node = Some(val),
           _ => {}
         }
       }
@@ -1101,6 +1113,29 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     }
   }
 
+  // Validate :features value — must be a hashset of tags
+  if let Some(features_val) = features_node {
+    match features_val {
+      Cirru::List(items) => {
+        // Check it's a hashset: `(#{} tag1 tag2 ...)`
+        let Some(Cirru::Leaf(first)) = items.first() else {
+          return Err("`:features` must be a hashset like `(#{} :tag1 :tag2)`".to_owned());
+        };
+        if first.as_ref() != "#{}" {
+          return Err("`:features` must be a hashset like `(#{} :tag1 :tag2)`".to_owned());
+        }
+        for item in items.iter().skip(1) {
+          if !matches!(item, Cirru::Leaf(_)) {
+            return Err("`:features` hashset items must be simple leaf tags".to_owned());
+          }
+        }
+      }
+      _ => {
+        return Err("`:features` must be a hashset like `(#{} :tag1 :tag2)`".to_owned());
+      }
+    }
+  }
+
   Ok(())
 }
 
@@ -1148,6 +1183,7 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
     return_type: fn_annot.return_type.clone(),
     fn_kind: SchemaKind::Macro,
     rest_type: fn_annot.rest_type.clone(),
+    features: fn_annot.features.clone(),
   })))
 }
 
@@ -2366,6 +2402,7 @@ mod tests {
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
+        features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
     };
 
@@ -2409,6 +2446,7 @@ mod tests {
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Macro,
         rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
+        features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
     };
 
@@ -2456,6 +2494,7 @@ mod tests {
         )))),
         fn_kind: SchemaKind::Macro,
         rest_type: None,
+        features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
     };
 

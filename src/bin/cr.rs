@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+#[allow(unused_imports)]
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -999,6 +1001,7 @@ mod tests {
       return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
       fn_kind: kind,
       rest_type,
+      features: Arc::new(HashSet::new()),
     }))
   }
 
@@ -1173,6 +1176,7 @@ mod tests {
         return_type: Arc::new(CalcitTypeAnnotation::Bool),
         fn_kind: SchemaKind::Fn,
         rest_type: Some(calcit::calcit::DYNAMIC_TYPE.clone()),
+        features: Arc::new(HashSet::new()),
       }))
       .into(),
     };
@@ -1210,8 +1214,10 @@ mod tests {
             return_type: Arc::new(CalcitTypeAnnotation::Bool),
             fn_kind: SchemaKind::Fn,
             rest_type: None,
+            features: Arc::new(HashSet::new()),
           },
         )))),
+        features: Arc::new(HashSet::new()),
       }))
       .into(),
     };

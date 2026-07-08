@@ -1,7 +1,7 @@
 use std::{
   cell::RefCell,
   cmp::Ordering,
-  collections::HashMap,
+  collections::{HashMap, HashSet},
   fmt,
   hash::{Hash, Hasher},
   sync::Arc,
@@ -9,7 +9,7 @@ use std::{
 
 use std::thread_local;
 
-use cirru_edn::{Edn, EdnListView, EdnMapView, EdnTag};
+use cirru_edn::{Edn, EdnListView, EdnMapView, EdnSetView, EdnTag};
 
 use super::{
   CORE_NS, Calcit, CalcitEnum, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSymbolInfo,
@@ -177,6 +177,7 @@ struct FnSchemaFields<'a> {
   returns: Option<&'a Calcit>,
   rest: Option<&'a Calcit>,
   kind: Option<&'a Calcit>,
+  features: Option<&'a Calcit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -269,6 +270,8 @@ pub enum CalcitTypeAnnotation {
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
   /// Unit/nil type — for side-effectful functions that explicitly return nil
   Unit,
+  /// JavaScript FFI external object (opaque to Calcit type system)
+  JsObject,
   /// A type slot reference declared via `deftype-slot` and bound via `bind-type`.
   /// At type-checking time, this is resolved by looking up the global TYPE_SLOTS registry.
   TypeSlot(Arc<str>),
@@ -368,6 +371,7 @@ impl CalcitTypeAnnotation {
       | Self::Dynamic
       | Self::TypeVar(_)
       | Self::Unit
+      | Self::JsObject
       | Self::TypeSlot(_) => Ok(()),
     }
   }
@@ -395,6 +399,7 @@ impl CalcitTypeAnnotation {
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
       "unit" | "nil" => Some(Self::Unit),
+      "js-object" => Some(Self::JsObject),
       _ => None,
     }
   }
@@ -415,6 +420,7 @@ impl CalcitTypeAnnotation {
       Self::Buffer => Some("buffer"),
       Self::CirruQuote => Some("cirru-quote"),
       Self::Unit => Some("unit"),
+      Self::JsObject => Some("js-object"),
       _ => None,
     }
   }
@@ -611,6 +617,12 @@ impl CalcitTypeAnnotation {
           fields.has_any = true;
           if fields.kind.is_none() {
             fields.kind = Some(value);
+          }
+        }
+        "features" => {
+          fields.has_any = true;
+          if fields.features.is_none() {
+            fields.features = Some(value);
           }
         }
         _ => {}
@@ -928,6 +940,24 @@ impl CalcitTypeAnnotation {
     Some(Arc::new(CalcitTypeAnnotation::DynFn))
   }
 
+  fn parse_fn_features_from_form(form: Option<&Calcit>) -> Arc<HashSet<EdnTag>> {
+    let Some(form) = form else {
+      return Arc::new(HashSet::new());
+    };
+    match form {
+      Calcit::Set(xs) => {
+        let mut features = HashSet::with_capacity(xs.size());
+        for item in xs.iter() {
+          if let Calcit::Tag(tag) = item {
+            features.insert(tag.clone());
+          }
+        }
+        Arc::new(features)
+      }
+      _ => Arc::new(HashSet::new()),
+    }
+  }
+
   fn parse_fn_annotation_from_schema_form(
     form: &Calcit,
     generics: &[Arc<str>],
@@ -961,6 +991,8 @@ impl CalcitTypeAnnotation {
       _ => SchemaKind::Fn,
     };
 
+    let features = Self::parse_fn_features_from_form(fields.features);
+
     Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(local_generics),
       where_bounds: Arc::new(where_bounds),
@@ -968,6 +1000,7 @@ impl CalcitTypeAnnotation {
       return_type,
       fn_kind,
       rest_type,
+      features,
     }))))
   }
 
@@ -1046,7 +1079,7 @@ impl CalcitTypeAnnotation {
       _ => return None,
     };
 
-    let has_schema_fields = ["kind", "args", "return", "generics", "where", "rest"]
+    let has_schema_fields = ["kind", "args", "return", "generics", "where", "rest", "features"]
       .iter()
       .any(|key| map.tag_get(key).is_some());
     if !has_schema_fields {
@@ -1093,6 +1126,22 @@ impl CalcitTypeAnnotation {
     let rest_type = map
       .tag_get("rest")
       .map(|v| Self::parse_type_annotation_form_with_generics(&Self::edn_type_to_calcit(v), generics.as_slice()));
+    let features = map
+      .tag_get("features")
+      .and_then(|v| {
+        if let Edn::Set(xs) = v {
+          let mut set = HashSet::with_capacity(xs.len());
+          for item in xs.0.iter() {
+            if let Edn::Tag(tag) = item {
+              set.insert(tag.clone());
+            }
+          }
+          Some(Arc::new(set))
+        } else {
+          None
+        }
+      })
+      .unwrap_or_default();
     Some(CalcitFnTypeAnnotation {
       generics: Arc::new(generics),
       where_bounds: Arc::new(where_bounds),
@@ -1100,6 +1149,7 @@ impl CalcitTypeAnnotation {
       return_type,
       fn_kind,
       rest_type,
+      features,
     })
   }
 
@@ -1239,6 +1289,7 @@ impl CalcitTypeAnnotation {
         return_type,
         fn_kind: SchemaKind::Fn,
         rest_type: None,
+        features: Arc::new(HashSet::new()),
       };
       return Some(signature.render_signature_brief());
     }
@@ -1791,6 +1842,7 @@ impl CalcitTypeAnnotation {
           return_type: new_ret,
           fn_kind: sig.fn_kind,
           rest_type: new_rest,
+          features: sig.features.clone(),
         })))
       }
       Self::Struct(base, args) => {
@@ -2298,6 +2350,7 @@ impl CalcitTypeAnnotation {
       return_type,
       fn_kind: SchemaKind::Fn,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     }))
   }
 
@@ -2528,6 +2581,14 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  pub fn as_fn(&self) -> Option<&CalcitFnTypeAnnotation> {
+    match self {
+      Self::Fn(fn_annot) => Some(fn_annot.as_ref()),
+      Self::Optional(inner) => inner.as_fn(),
+      _ => None,
+    }
+  }
+
   pub fn as_function(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
       Self::Fn(signature) => Some(signature.as_ref()),
@@ -2636,7 +2697,8 @@ impl CalcitTypeAnnotation {
       Self::Trait(_) => 25,
       Self::TraitSet(_) => 26,
       Self::Unit => 27,
-      Self::TypeSlot(_) => 28,
+      Self::JsObject => 28,
+      Self::TypeSlot(_) => 29,
     }
   }
 }
@@ -3133,6 +3195,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     }));
 
     let edn = annotation.to_type_edn();
@@ -3230,6 +3293,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::Bool),
       fn_kind: SchemaKind::Macro,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     }));
 
     let edn = annotation.to_type_edn();
@@ -3342,6 +3406,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::String),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     };
 
     let edn = schema.to_wrapped_schema_edn();
@@ -3380,6 +3445,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::String),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     };
 
     let edn = schema.to_wrapped_schema_edn();
@@ -3439,6 +3505,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::String),
       fn_kind: SchemaKind::Fn,
       rest_type: Some(Arc::new(CalcitTypeAnnotation::Tag)),
+      features: Arc::new(HashSet::new()),
     };
 
     let edn = schema.to_wrapped_schema_edn();
@@ -3461,6 +3528,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
       fn_kind: SchemaKind::Macro,
       rest_type: Some(Arc::new(CalcitTypeAnnotation::Dynamic)),
+      features: Arc::new(HashSet::new()),
     };
 
     let edn = schema.to_wrapped_schema_edn();
@@ -3488,6 +3556,7 @@ mod tests {
       return_type: Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("record")))),
       fn_kind: SchemaKind::Macro,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     };
 
     let edn = schema.to_wrapped_schema_edn();
@@ -3758,6 +3827,7 @@ impl Hash for CalcitTypeAnnotation {
         }
       }
       Self::Unit => "unit".hash(state),
+      Self::JsObject => "js-object".hash(state),
       Self::TypeSlot(name) => {
         "type-slot".hash(state);
         name.hash(state);
@@ -3822,7 +3892,7 @@ pub enum SchemaKind {
   Macro,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitFnTypeAnnotation {
   pub generics: Arc<Vec<Arc<str>>>,
   pub where_bounds: Arc<Vec<CalcitGenericBound>>,
@@ -3832,6 +3902,38 @@ pub struct CalcitFnTypeAnnotation {
   pub fn_kind: SchemaKind,
   /// Rest-param type from `:rest` in the schema, if present.
   pub rest_type: Option<Arc<CalcitTypeAnnotation>>,
+  /// Feature flags declared in schema, e.g. `:features $ #{} :js-ffi`.
+  pub features: Arc<HashSet<EdnTag>>,
+}
+
+impl PartialOrd for CalcitFnTypeAnnotation {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl Ord for CalcitFnTypeAnnotation {
+  fn cmp(&self, other: &Self) -> Ordering {
+    self
+      .generics
+      .cmp(&other.generics)
+      .then_with(|| self.where_bounds.cmp(&other.where_bounds))
+      .then_with(|| self.arg_types.cmp(&other.arg_types))
+      .then_with(|| self.return_type.cmp(&other.return_type))
+      .then_with(|| self.fn_kind.cmp(&other.fn_kind))
+      .then_with(|| self.rest_type.cmp(&other.rest_type))
+  }
+}
+
+impl Hash for CalcitFnTypeAnnotation {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.generics.hash(state);
+    self.where_bounds.hash(state);
+    self.arg_types.hash(state);
+    self.return_type.hash(state);
+    self.fn_kind.hash(state);
+    self.rest_type.hash(state);
+  }
 }
 
 impl CalcitFnTypeAnnotation {
@@ -3865,6 +3967,17 @@ impl CalcitFnTypeAnnotation {
     Ok(())
   }
 
+  fn features_to_edn(&self) -> Option<Edn> {
+    if self.features.is_empty() {
+      return None;
+    }
+    let mut set = EdnSetView::default();
+    for tag in self.features.iter() {
+      set.insert(Edn::Tag(tag.clone()));
+    }
+    Some(Edn::Set(set))
+  }
+
   fn to_inline_type_schema_edn(&self) -> Edn {
     let args: Vec<Edn> = self.arg_types.iter().map(|t| t.to_type_edn()).collect();
     let mut map = EdnMapView::default();
@@ -3888,6 +4001,9 @@ impl CalcitFnTypeAnnotation {
     }
     if let Some(rest) = &self.rest_type {
       map.insert_key("rest", rest.to_type_edn());
+    }
+    if let Some(features) = self.features_to_edn() {
+      map.insert_key("features", features);
     }
     Edn::Map(map)
   }
@@ -3924,6 +4040,9 @@ impl CalcitFnTypeAnnotation {
     if let Some(rest) = &self.rest_type {
       map.insert_key("rest", rest.to_type_edn());
     }
+    if let Some(features) = self.features_to_edn() {
+      map.insert_key("features", features);
+    }
     Edn::Map(map)
   }
 
@@ -3947,6 +4066,9 @@ impl CalcitFnTypeAnnotation {
     }
     if let Some(rest) = &self.rest_type {
       map.insert_key("rest", rest.to_type_edn());
+    }
+    if let Some(features) = self.features_to_edn() {
+      map.insert_key("features", features);
     }
 
     let wrapped_tag = match self.fn_kind {
@@ -4113,6 +4235,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
         true // unbound slot: permissive like Dynamic
       }
     }
+    CalcitTypeAnnotation::JsObject => true, // opaque external data, allow any
   }
 }
 
