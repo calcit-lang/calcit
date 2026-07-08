@@ -4,9 +4,9 @@
 //! Shared by: cr tree - fine-grained tree operations (replace, insert, delete, swap, wrap)
 //!
 //! Supports code input via:
-//! - `--file <path>` - read from file
-//! - `--json <string>` - inline JSON string
-//! - `--code <string>` - inline Cirru string
+//! - `--file <path>` - read from file (auto-detects JSON vs Cirru)
+//! - `--code <string>` - inline text (auto-detects JSON vs Cirru)
+//! - stdin - pipe or redirect input (auto-detects JSON vs Cirru)
 
 use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{

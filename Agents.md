@@ -61,8 +61,9 @@ cr docs agents --full
 
 - **优先使用 `search-replace`**：在 `cr tree` 操作中，优先使用 `search-replace` 而非 `replace`。它基于内容定位，且在不唯一时会报错，比手动指定索引更安全。
 - **全量取消 stdin (-s) 支持**：由于 Shell 重定向和多行输入的复杂性，所有的修改类子命令（`edit` 和 `tree` 系列）已**移除 `--stdin` / `-s` 选项**。
-  - ✅ 使用 `--code 'code'` 或 `--json 'json'` 进行单行输入。
-  - ✅ 使用 `--file file.cirru` 进行多行或复杂结构输入（推荐在 `.calcit-snippets/` 下创建临时文件）。
+  - ✅ 使用 `--code 'code'` 进行单行输入（自动检测 JSON vs Cirru）。
+  - ✅ 使用 `--file file` 进行多行或复杂结构输入（推荐在 `.calcit-snippets/` 下创建临时文件）。
+  - ✅ 省略 `--code` `--file` 时自动从 stdin 读取（推荐用于多行代码和避免转义）。
 - **路径索引动态性**：在 `tree` 系列操作中（如 `delete`, `insert`），操作会引起同级后续节点索引变化。建议**从后往前**操作，或每次修改后使用 `query search` 重新定位。
 - **结构引用替换 (`tree rewrite`)**：`tree replace` 仅支持简单替换。涉及引用原始节点及其内容的复杂替换（使用 `--with name=path`）已统一移动至 `cr tree rewrite` 命令。
 - **常用的编辑操作**：
@@ -70,7 +71,7 @@ cr docs agents --full
   - `edit cp <target> --from <path> --path <path> [--at <pos>]`：在 AST 节点间复制内容，支持 `before`, `after` (默认), `prepend-child`, `append-child`, `replace`。
 - **`cr edit` 命名空间 import 操作格式**（三个命令的 `--code` 输入格式不同，混淆会导致静默损坏）：
   - `edit add-ns <ns>`：推荐不传 `--code`，创建空 ns 再逐条 `add-import`。若传 `--code`，必须是完整 `ns` 表达式且内部名称与位置参数完全一致。
-  - `edit imports <ns> --code 'src-ns :refer $ sym'`：**不含 `:require` 前缀**，直接是规则体；多条规则用 `--file file`（每行一条）或 `--json '[["src",":refer",["sym"]],...]'`。
+  - `edit imports <ns> --code 'src-ns :refer $ sym'`：**不含 `:require` 前缀**，直接是规则体；多条规则用 `--file file`（每行一条）或 stdin 传入 JSON 数组 `[["src",":refer",["sym"]],...]`。
   - `edit add-import <ns> --code 'src-ns :refer $ sym'`：格式与 `imports` 单条规则相同；已存在同名来源时加 `--overwrite` 覆盖。
   - 优先用 `add-import`（带校验和覆盖保护），`imports` 只在需要全量重置所有 import 时使用。
 

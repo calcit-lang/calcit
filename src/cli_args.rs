@@ -571,7 +571,7 @@ pub struct QuerySearchCommand {
 #[argh(subcommand, name = "search-expr")]
 /// search for structural expressions (Cirru expr or JSON array) across project or in specific namespace/definition (fuzzy match by default)
 pub struct QuerySearchExprCommand {
-  /// pattern to search for (Cirru one-liner or JSON array with -j)
+  /// pattern to search for (Cirru one-liner or JSON array with --json)
   #[argh(positional)]
   pub pattern: String,
   /// filter search to specific namespace or namespace/definition (optional)
