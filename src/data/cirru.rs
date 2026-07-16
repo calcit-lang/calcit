@@ -178,8 +178,8 @@ fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
   ];
 
   for (prefix, kind) in prefixes.iter() {
-    if let Some((obj, method)) = s.split_once(prefix) {
-      if is_valid_symbol(obj) && is_valid_symbol(method) {
+    if let Some((obj, method)) = s.split_once(prefix)
+      && is_valid_symbol(obj) && is_valid_symbol(method) {
         let method_kind = if matches!(kind, MethodKind::Invoke(_)) {
           MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone())
         } else {
@@ -187,7 +187,6 @@ fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
         };
         return Some((obj.to_owned(), Calcit::Method(method.into(), method_kind)));
       }
-    }
   }
 
   None

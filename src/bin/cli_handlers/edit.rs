@@ -186,11 +186,10 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     .as_ref()
     .and_then(|entry| format_existing_definition_advice(namespace, resolved_definition, &entry.code, &syntax_tree));
 
-  if opts.overwrite {
-    if let Some(advice) = existing_edit_advice.as_deref() {
+  if opts.overwrite
+    && let Some(advice) = existing_edit_advice.as_deref() {
       print_cli_warning_block(advice);
     }
-  }
 
   if exists && !opts.overwrite {
     if let Some(advice) = existing_edit_advice.as_deref() {
@@ -1319,20 +1318,16 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code)? {
     let code = parse_input_to_cirru(&raw)?;
     // Validate: if input looks like a `ns` expression, the name inside must match
-    if let Cirru::List(ref items) = code {
-      if let Some(Cirru::Leaf(kw)) = items.first() {
-        if kw.as_ref() == "ns" {
-          if let Some(Cirru::Leaf(ns_in_expr)) = items.get(1) {
-            if ns_in_expr.as_ref() != opts.namespace.as_str() {
+    if let Cirru::List(ref items) = code
+      && let Some(Cirru::Leaf(kw)) = items.first()
+        && kw.as_ref() == "ns"
+          && let Some(Cirru::Leaf(ns_in_expr)) = items.get(1)
+            && ns_in_expr.as_ref() != opts.namespace.as_str() {
               return Err(format!(
                 "Namespace name mismatch: positional argument is '{}' but ns expression contains '{}'. They must be identical.",
                 opts.namespace, ns_in_expr
               ));
             }
-          }
-        }
-      }
-    }
     code
   } else {
     // Default minimal ns declaration: (ns namespace-name)
@@ -1414,15 +1409,14 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       } else {
         // The whole array is a single import rule (e.g. from `-e 'src-ns :refer $ sym'`)
         // Guard: user may have accidentally included ':require' prefix
-        if let Some(serde_json::Value::String(first_str)) = elems.first() {
-          if first_str == ":require" {
+        if let Some(serde_json::Value::String(first_str)) = elems.first()
+          && first_str == ":require" {
             return Err(
               "Do not include ':require' as a prefix in the imports input. \
                Pass rules directly, e.g. -e 'src-ns :refer $ sym' or use -f for multiple rules."
                 .to_string(),
             );
           }
-        }
         vec![json_value_to_cirru(&imports_json)?]
       }
     }
@@ -1486,13 +1480,11 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     // Parse each added import string to provide tips
     for added_str in &added {
       // Parse the import string back to Cirru to analyze it
-      if let Ok(parsed) = cirru_parser::parse(added_str) {
-        if let Some(rule) = parsed.first() {
-          if let Some(source_ns) = get_require_source_ns(rule) {
+      if let Ok(parsed) = cirru_parser::parse(added_str)
+        && let Some(rule) = parsed.first()
+          && let Some(source_ns) = get_require_source_ns(rule) {
             print_import_usage_tips(rule, &source_ns);
           }
-        }
-      }
     }
   }
 
@@ -1506,12 +1498,11 @@ fn extract_require_list(ns_code: &Cirru) -> Vec<String> {
   if let Cirru::List(items) = ns_code {
     let mut in_require = false;
     for item in items {
-      if let Cirru::Leaf(s) = item {
-        if s.as_ref() == ":require" {
+      if let Cirru::Leaf(s) = item
+        && s.as_ref() == ":require" {
           in_require = true;
           continue;
         }
-      }
       if in_require {
         // Format each import as one-liner
         if let Ok(formatted) = item.format_one_liner() {
@@ -1543,15 +1534,13 @@ fn extract_require_rules(ns_code: &Cirru) -> Vec<Cirru> {
   if let Cirru::List(items) = ns_code {
     for item in items.iter().skip(2) {
       // skip "ns" and namespace name
-      if let Cirru::List(inner) = item {
-        if let Some(Cirru::Leaf(first)) = inner.first() {
-          if first.as_ref() == ":require" {
+      if let Cirru::List(inner) = item
+        && let Some(Cirru::Leaf(first)) = inner.first()
+          && first.as_ref() == ":require" {
             // Found [:require rule1 rule2 ...]
             rules.extend(inner.iter().skip(1).cloned());
             break;
           }
-        }
-      }
     }
   }
   rules
@@ -1897,20 +1886,18 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
           }
           ":as" => {
             import_type = Some("as");
-            if i + 1 < items.len() {
-              if let Cirru::Leaf(a) = &items[i + 1] {
+            if i + 1 < items.len()
+              && let Cirru::Leaf(a) = &items[i + 1] {
                 alias = Some(a.to_string());
               }
-            }
             break;
           }
           ":default" => {
             import_type = Some("default");
-            if i + 1 < items.len() {
-              if let Cirru::Leaf(s) = &items[i + 1] {
+            if i + 1 < items.len()
+              && let Cirru::Leaf(s) = &items[i + 1] {
                 symbols.push(s.to_string());
               }
-            }
             break;
           }
           _ => {}

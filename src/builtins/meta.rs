@@ -212,7 +212,7 @@ pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "parse-cirru-list requires a string, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ParseCirruList).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -242,7 +242,7 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "parse-cirru requires a string, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ParseCirru).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -316,7 +316,7 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "parse-cirru-edn requires a string, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ParseCirruEdn).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -358,7 +358,7 @@ pub fn cirru_quote_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&cirru-quote:to-list requires a Cirru quote, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeCirruQuoteToList).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -388,7 +388,7 @@ pub fn turn_symbol(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
     a => {
-      let msg = format!("turn-symbol cannot convert to symbol: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!("turn-symbol cannot convert to symbol: {}", type_of(std::slice::from_ref(a))?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::TurnSymbol).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -404,7 +404,7 @@ pub fn turn_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Tag(s) => Ok(Calcit::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Calcit::tag(sym)),
     a => {
-      let msg = format!("turn-tag cannot convert to tag: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!("turn-tag cannot convert to tag: {}", type_of(std::slice::from_ref(a))?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::TurnTag).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -454,7 +454,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            let msg = format!("%:: requires a tag, but received: {}", type_of(&[other.to_owned()])?.lisp_str());
+            let msg = format!("%:: requires a tag, but received: {}", type_of(std::slice::from_ref(other))?.lisp_str());
             let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
@@ -520,7 +520,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            let msg = format!("%:: requires a tag, but received: {}", type_of(&[other.to_owned()])?.lisp_str());
+            let msg = format!("%:: requires a tag, but received: {}", type_of(std::slice::from_ref(other))?.lisp_str());
             let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
@@ -600,7 +600,7 @@ pub fn tuple_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&tuple:enum requires a tuple, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleEnum).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -890,7 +890,7 @@ pub fn impl_get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     other => {
       let msg = format!(
         "&impl:get expects method name as tag/string/symbol, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(other))?.lisp_str()
       );
       return CalcitErr::err_str(CalcitErrKind::Type, msg);
     }
@@ -917,7 +917,7 @@ pub fn impl_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     other => {
       let msg = format!(
         "&impl:nth expects a non-negative integer index, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(other))?.lisp_str()
       );
       return CalcitErr::err_str(CalcitErrKind::Type, msg);
     }
@@ -1065,7 +1065,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   }
   let v0 = &method_args[0];
   if runner::preprocess::is_warn_dyn_method_enabled() {
-    let value_type = type_of(&[v0.to_owned()])
+    let value_type = type_of(std::slice::from_ref(v0))
       .map(|t| t.lisp_str())
       .unwrap_or_else(|_| "<unknown>".to_string());
     eprintln!(
@@ -1284,8 +1284,8 @@ pub fn tuple_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (a, b) => {
       let msg = format!(
         "&tuple:nth requires a tuple and an index, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleNth).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1326,8 +1326,8 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (a, b, ..) => {
       let msg = format!(
         "&tuple:assoc requires a tuple and an index, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1344,7 +1344,7 @@ pub fn tuple_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     x => {
       let msg = format!(
         "&tuple:count requires a tuple, but received: {}",
-        type_of(&[x.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(x))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1363,7 +1363,7 @@ pub fn tuple_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     x => {
       let msg = format!(
         "&tuple:impls requires a tuple, but received: {}",
-        type_of(&[x.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(x))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1387,7 +1387,7 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     x => {
       let msg = format!(
         "&tuple:params requires a tuple, but received: {}",
-        type_of(&[x.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(x))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleParams).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1596,7 +1596,7 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
   if !note.is_empty() {
     eprintln!("Note: {note}");
   }
-  eprintln!("Value type: {}", type_of(&[value.clone()])?);
+  eprintln!("Value type: {}", type_of(std::slice::from_ref(value))?);
   eprintln!("Value: {value}");
   eprintln!("Method call syntax: `.method self p1 p2`");
   eprintln!("  - dot is part of the method name, first arg is the receiver");
@@ -1684,7 +1684,7 @@ fn parse_ns_def_arg(value: &Calcit) -> Result<(String, String), CalcitErr> {
     other => {
       let msg = format!(
         "expected ns/def string or symbol, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(other))?.lisp_str()
       );
       return Err(CalcitErr::use_str(CalcitErrKind::Type, msg));
     }

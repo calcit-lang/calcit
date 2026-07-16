@@ -45,13 +45,12 @@ where
   let mut new_args: Vec<Calcit> = Vec::with_capacity(processed_args.len());
 
   for (idx, arg) in processed_args.iter().enumerate() {
-    if let Some(expected) = arg_types.get(idx) {
-      if let Some(rewritten_arg) = rewrite_single(arg, expected, idx) {
+    if let Some(expected) = arg_types.get(idx)
+      && let Some(rewritten_arg) = rewrite_single(arg, expected, idx) {
         new_args.push(rewritten_arg);
         rewritten = true;
         continue;
       }
-    }
     new_args.push(arg.to_owned());
   }
 
@@ -144,7 +143,7 @@ fn try_rewrite_single_map_to_record(
 
   // Validate: the map literal has flat key-value pairs after the NativeMap head
   let map_items: Vec<&Calcit> = arg_list.iter().skip(1).collect();
-  if map_items.len() % 2 != 0 {
+  if !map_items.len().is_multiple_of(2) {
     return None; // malformed map literal, skip
   }
 
@@ -218,7 +217,7 @@ fn try_rewrite_single_loose_record_to_struct_record(
 
   // Validate: the loose record literal has flat key-value pairs after the NativeLooseRecord head
   let items: Vec<&Calcit> = arg_list.iter().skip(1).collect();
-  if items.len() % 2 != 0 {
+  if !items.len().is_multiple_of(2) {
     return None; // malformed, skip
   }
 

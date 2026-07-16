@@ -41,7 +41,10 @@ pub fn dissoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(ys.to_owned()))
     }
     Some(a) => {
-      let msg = format!("&map:dissoc requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!(
+        "&map:dissoc requires a map, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapDissoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -68,7 +71,10 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       )
     }
     (Some(a), Some(_)) => {
-      let msg = format!("&map:get requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!(
+        "&map:get requires a map, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -155,7 +161,7 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&map:to-pairs requires a map or record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ToPairs).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -207,8 +213,8 @@ pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(b)) => {
       let msg = format!(
         "&map:merge-non-nil requires 2 maps, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMergeNonNil).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -231,7 +237,7 @@ pub fn to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&map:to-list requires a map, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapToList).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -251,7 +257,10 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => {
-      let msg = format!("&map:count requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!(
+        "&map:count requires a map, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -270,7 +279,10 @@ pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => {
-      let msg = format!("&map:empty? requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!(
+        "&map:empty? requires a map, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapEmpty).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -300,7 +312,7 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(_)) => {
       let msg = format!(
         "&map:contains? requires a map, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapContains).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)

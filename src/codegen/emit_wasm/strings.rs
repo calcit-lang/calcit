@@ -393,12 +393,11 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
   // Compile-time fast path: literal tuple constructor like `(:: :tag val0 val1 ...)`.
   // Pre-compute the lispy string and emit it as a string-pool constant.
-  if let Some(tuple_str) = super::try_format_tuple_literal(&args[0]) {
-    if let Some(&ptr) = ctx.string_pool.get(&tuple_str) {
+  if let Some(tuple_str) = super::try_format_tuple_literal(&args[0])
+    && let Some(&ptr) = ctx.string_pool.get(&tuple_str) {
       ctx.emit(super::f64_const(ptr as f64));
       return Ok(());
     }
-  }
 
   let f64_to_str_idx = *ctx
     .runtime_fn_index
@@ -507,10 +506,10 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   // Fast path: `(format-to-lisp (quote X))` — the result is a compile-time constant string.
   // The assert= macro always calls this with a quoted expression for error display.
-  if args.len() == 1 {
-    if let Calcit::List(inner) = &args[0] {
-      if inner.len() >= 2 {
-        if let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0] {
+  if args.len() == 1
+    && let Calcit::List(inner) = &args[0]
+      && inner.len() >= 2
+        && let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0] {
           let s = crate::calcit::format_to_lisp(&inner[1]);
           // Look up in string pool (pre-interned by collect_strings_from_expr)
           if let Some(&ptr) = ctx.string_pool.get(&s) {
@@ -518,9 +517,6 @@ pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
             return Ok(());
           }
         }
-      }
-    }
-  }
   // Fallback: evaluate args for side-effects and return nil
   ctx.stub_proc(args)
 }

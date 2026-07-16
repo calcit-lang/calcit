@@ -158,11 +158,9 @@ fn main() -> Result<(), String> {
     eval_once = true;
     let mut buf = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    match snapshot::create_file_from_snippet(&buf) {
-      Ok(main_file) => {
-        snapshot.files.insert(String::from("app.main"), main_file);
-      }
-      Err(e) => return Err(e),
+    {
+        let main_file = snapshot::create_file_from_snippet(&buf)?;
+      snapshot.files.insert(String::from("app.main"), main_file);
     }
 
     for module_path in &command.dep {
@@ -181,11 +179,9 @@ fn main() -> Result<(), String> {
     } else {
       return Err("No snippet provided. Use a positional argument with `cr eval`, or use `cr exec` to read from stdin.".to_string());
     };
-    match snapshot::create_file_from_snippet(&snippet) {
-      Ok(main_file) => {
-        snapshot.files.insert(String::from("app.main"), main_file);
-      }
-      Err(e) => return Err(e),
+    {
+        let main_file = snapshot::create_file_from_snippet(&snippet)?;
+      snapshot.files.insert(String::from("app.main"), main_file);
     }
 
     for module_path in &command.dep {

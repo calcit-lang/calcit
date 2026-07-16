@@ -128,7 +128,7 @@ fn recursive_partition(root: &Cirru, options: &ChunkDisplayOptions) -> Result<Ve
   let mut finished: Vec<PendingFragment> = vec![];
 
   while !pending.is_empty() {
-    pending.sort_by(|left, right| collect_stats(&right.tree, 0).nodes.cmp(&collect_stats(&left.tree, 0).nodes));
+    pending.sort_by_key(|right| std::cmp::Reverse(collect_stats(&right.tree, 0).nodes));
     let mut current = pending.remove(0);
     let current_stats = collect_stats(&current.tree, 0);
 
@@ -456,10 +456,10 @@ fn collect_name_tokens(node: &Cirru, limit: usize, depth_limit: usize, depth: us
   }
   match node {
     Cirru::Leaf(s) => {
-      if let Some(token) = sanitize_token(s) {
-        if !output.contains(&token) {
-          output.push(token);
-        }
+      if let Some(token) = sanitize_token(s)
+        && !output.contains(&token)
+      {
+        output.push(token);
       }
     }
     Cirru::List(items) => {

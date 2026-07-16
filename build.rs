@@ -305,11 +305,10 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
       "examples" => examples = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:examples`: {e}"))?,
       "tags" => tags = parse_tags_from_edn(value, owner)?,
       "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
-      "schema" => {
-        if !matches!(value, Edn::Nil) {
+      "schema"
+        if !matches!(value, Edn::Nil) => {
           schema = Some(parse_schema_from_edn(value, owner).map_err(|e| format!("{owner}: invalid `:schema`: {e}"))?);
         }
-      }
       _ => {}
     }
   }

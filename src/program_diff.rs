@@ -854,28 +854,26 @@ fn render_context_children(children: &[Cirru], start_index: usize, depth: usize,
     let child_index = start_index + cursor;
     let child = &children[cursor];
 
-    if let Some(text) = child.as_leaf_str() {
-      if !child_starts_expression(child_index, child) {
+    if let Some(text) = child.as_leaf_str()
+      && !child_starts_expression(child_index, child) {
         let mut parts = vec![render_cirru_leaf_value(text)];
         cursor += 1;
 
         while cursor < children.len() {
           let sibling_index = start_index + cursor;
           let sibling = &children[cursor];
-          if !child_starts_expression(sibling_index, sibling) {
-            if let Some(sib_text) = sibling.as_leaf_str() {
+          if !child_starts_expression(sibling_index, sibling)
+            && let Some(sib_text) = sibling.as_leaf_str() {
               parts.push(render_cirru_leaf_value(sib_text));
               cursor += 1;
               continue;
             }
-          }
           break;
         }
 
         lines.push(indent(depth + 1, &format!(", {}", parts.join(" ")).dimmed().to_string()));
         continue;
       }
-    }
 
     lines.extend(render_context_node(
       child,
@@ -1114,8 +1112,8 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
   for (i, row) in dp.iter_mut().enumerate().take(old_mid.len() + 1) {
     row[0] = i;
   }
-  for j in 0..=new_mid.len() {
-    dp[0][j] = j;
+  for (j, cell) in dp[0].iter_mut().enumerate().take(new_mid.len() + 1) {
+    *cell = j;
   }
 
   for i in 1..=old_mid.len() {

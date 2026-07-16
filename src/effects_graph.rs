@@ -512,13 +512,11 @@ fn call_operator(head: &Calcit, current_ns: &str) -> Option<(String, Option<Stri
           }
         }
       }
-      if current_ns != "calcit.core" {
-        if let Some(core) = program_code.get("calcit.core") {
-          if core.defs.contains_key(sym.as_ref()) {
+      if current_ns != "calcit.core"
+        && let Some(core) = program_code.get("calcit.core")
+          && core.defs.contains_key(sym.as_ref()) {
             return Some((sym.to_string(), Some("calcit.core".into())));
           }
-        }
-      }
       Some((sym.to_string(), Some(info.at_ns.to_string())))
     }
     _ => None,
@@ -542,13 +540,11 @@ fn resolve_def_call(head: &Calcit, current_ns: &str) -> Option<(String, String)>
           }
         }
       }
-      if current_ns != "calcit.core" {
-        if let Some(core) = program_code.get("calcit.core") {
-          if core.defs.contains_key(sym.as_ref()) {
+      if current_ns != "calcit.core"
+        && let Some(core) = program_code.get("calcit.core")
+          && core.defs.contains_key(sym.as_ref()) {
             return Some(("calcit.core".into(), sym.to_string()));
           }
-        }
-      }
       let _ = info;
       None
     }
@@ -923,11 +919,10 @@ fn find_best_record_template(code: &Calcit) -> Option<Vec<(String, String)>> {
 }
 
 fn walk_for_record_templates(code: &Calcit, best: &mut Option<Vec<(String, String)>>) {
-  if let Some(fields) = parse_record_field_pairs(code) {
-    if fields.len() >= 2 && best.as_ref().is_none_or(|current| current.len() < fields.len()) {
+  if let Some(fields) = parse_record_field_pairs(code)
+    && fields.len() >= 2 && best.as_ref().is_none_or(|current| current.len() < fields.len()) {
       *best = Some(fields);
     }
-  }
   match code {
     Calcit::List(list) => {
       for item in list.iter() {
@@ -946,11 +941,10 @@ fn walk_for_record_templates(code: &Calcit, best: &mut Option<Vec<(String, Strin
     }
     Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => walk_for_record_templates(code, best),
     Calcit::Record(record) => {
-      if let Some(fields) = record_fields_from_calcit(record) {
-        if fields.len() >= 2 && best.as_ref().is_none_or(|current| current.len() < fields.len()) {
+      if let Some(fields) = record_fields_from_calcit(record)
+        && fields.len() >= 2 && best.as_ref().is_none_or(|current| current.len() < fields.len()) {
           *best = Some(fields);
         }
-      }
     }
     Calcit::Map(map) => {
       for (k, v) in map.iter() {
@@ -1084,11 +1078,10 @@ fn lookup_atom_schema(context_ns: &str, atom_name: &str) -> Option<String> {
     best = Some(pick_richer_schema(best.as_deref(), &hint));
   }
   for (ns, file) in program_code.iter() {
-    if ns.as_ref() != context_ns && file.defs.contains_key(atom_name) {
-      if let Some(hint) = schema_hint_for_atom_def(ns, atom_name, context_ns) {
+    if ns.as_ref() != context_ns && file.defs.contains_key(atom_name)
+      && let Some(hint) = schema_hint_for_atom_def(ns, atom_name, context_ns) {
         best = Some(pick_richer_schema(best.as_deref(), &hint));
       }
-    }
   }
   best.filter(|hint| is_informative_schema(hint))
 }
@@ -1161,17 +1154,15 @@ fn pick_richer_schema(current: Option<&str>, next: &str) -> String {
 fn schema_hint_for_atom_def(ns: &str, def: &str, context_ns: &str) -> Option<String> {
   let mut raw_candidates: Vec<String> = vec![];
 
-  if let Some(code) = lookup_def_code(ns, def) {
-    if let Some(raw) = extract_defatom_init_from_code(&code, context_ns) {
+  if let Some(code) = lookup_def_code(ns, def)
+    && let Some(raw) = extract_defatom_init_from_code(&code, context_ns) {
       raw_candidates.push(raw);
     }
-  }
 
-  if let Some(schema) = lookup_codegen_type_hint(ns, def) {
-    if let Some(hint) = format_schema_annotation(&schema, context_ns, MAX_SCHEMA_DEPTH) {
+  if let Some(schema) = lookup_codegen_type_hint(ns, def)
+    && let Some(hint) = format_schema_annotation(&schema, context_ns, MAX_SCHEMA_DEPTH) {
       raw_candidates.push(hint);
     }
-  }
   if let Some(hint) = format_schema_annotation(&lookup_def_schema(ns, def), context_ns, MAX_SCHEMA_DEPTH) {
     raw_candidates.push(hint);
   }
@@ -1279,11 +1270,10 @@ fn expand_arrow_init(list: &crate::calcit::CalcitList, context_ns: &str) -> Opti
   let base_hint = summarize_type_ref_expr(base, context_ns)?;
   let mut overlays: Vec<String> = vec![];
   for idx in 2..list.len() {
-    if let Some(item) = list.get(idx) {
-      if let Some(overlay) = extract_assoc_overlay(item, context_ns) {
+    if let Some(item) = list.get(idx)
+      && let Some(overlay) = extract_assoc_overlay(item, context_ns) {
         overlays.push(overlay);
       }
-    }
   }
   let base_expanded = finalize_schema_hint(&base_hint, context_ns);
   if overlays.is_empty() {
@@ -1320,14 +1310,13 @@ fn extract_assoc_overlay(expr: &Calcit, context_ns: &str) -> Option<String> {
 fn summarize_call_init(list: &crate::calcit::CalcitList, current_ns: &str) -> Option<String> {
   let head = list.first()?;
 
-  if is_thread_first_head(head) {
-    if let Some(second) = list.get(1) {
+  if is_thread_first_head(head)
+    && let Some(second) = list.get(1) {
       if is_arrow_head(second) {
         return list.get(2).and_then(|expr| summarize_init_expr(expr, current_ns));
       }
       return summarize_init_expr(second, current_ns);
     }
-  }
 
   if is_arrow_head(head) {
     return expand_arrow_init(list, current_ns);

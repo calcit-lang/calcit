@@ -234,8 +234,8 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
       if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
         value_imports.insert(qualified.clone(), compiled.preprocessed_code.to_owned());
       }
-      if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code {
-        if matches!(
+      if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code
+        && matches!(
           xs.first(),
           Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))
         ) {
@@ -249,7 +249,6 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
           };
           atom_initial_values.push(init_val);
         }
-      }
     }
   }
 
@@ -1173,8 +1172,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
-      if let Some((params, body)) = ctx.lambda_locals.get(name).cloned() {
-        if params.len() == args_list.len() {
+      if let Some((params, body)) = ctx.lambda_locals.get(name).cloned()
+        && params.len() == args_list.len() {
           for (param, arg) in params.iter().zip(args_list.iter()) {
             let arg_lambda = match arg {
               Calcit::Local(a) => ctx.lambda_locals.get(a.sym.as_ref()).cloned(),
@@ -1191,7 +1190,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           }
           return emit_body(ctx, &body);
         }
-      }
       let fn_idx = *ctx.fn_index.get(name).ok_or_else(|| format!("unknown function: {sym}"))?;
       let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(args_list.len() as u32);
       let rest_fixed = ctx.fn_has_rest.get(name).copied();
@@ -1288,8 +1286,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
     Calcit::Local(local) => {
       let local_name = local.sym.as_ref().to_string();
       // If this local is an inline lambda, inline the call directly.
-      if let Some((params, body)) = ctx.lambda_locals.get(&local_name).cloned() {
-        if params.len() == args_list.len() {
+      if let Some((params, body)) = ctx.lambda_locals.get(&local_name).cloned()
+        && params.len() == args_list.len() {
           // Bind each arg to its param local then emit the body.
           // If an arg is itself a lambda_local (a thunk/lambda), propagate rather than evaluate.
           for (param, arg) in params.iter().zip(args_list.iter()) {
@@ -1308,7 +1306,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           }
           return emit_body(ctx, &body);
         }
-      }
       let local_idx = *ctx
         .locals
         .get(&local_name)
@@ -2731,14 +2728,12 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
         // Allocate a local slot (unused at runtime) so shadowing cleanup works.
         ctx.declare_local(&var_name);
         // Flatten nested lets
-        if rest.len() == 1 {
-          if let Calcit::List(inner) = &rest[0] {
-            if let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first() {
+        if rest.len() == 1
+          && let Calcit::List(inner) = &rest[0]
+            && let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first() {
               let inner_body: Vec<Calcit> = inner.drop_left().to_vec();
               return emit_let(ctx, &inner_body);
             }
-          }
-        }
         return emit_body(ctx, rest);
       }
 
@@ -2747,14 +2742,12 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
       ctx.emit(Instruction::LocalSet(idx));
 
       // Flatten nested lets
-      if rest.len() == 1 {
-        if let Calcit::List(inner) = &rest[0] {
-          if let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first() {
+      if rest.len() == 1
+        && let Calcit::List(inner) = &rest[0]
+          && let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first() {
             let inner_body: Vec<Calcit> = inner.drop_left().to_vec();
             return emit_let(ctx, &inner_body);
           }
-        }
-      }
 
       emit_body(ctx, rest)
     }
@@ -3051,10 +3044,10 @@ fn collect_record_field_tags_from_program(
 /// literal args (Tag, Str, Number, Bool, Nil), return its lispy string representation.
 /// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
 pub(crate) fn try_format_tuple_literal(expr: &Calcit) -> Option<String> {
-  if let Calcit::List(list) = expr {
-    if !list.is_empty() {
-      if let Calcit::Proc(p) = &list[0] {
-        if *p == CalcitProc::NativeTuple {
+  if let Calcit::List(list) = expr
+    && !list.is_empty()
+      && let Calcit::Proc(p) = &list[0]
+        && *p == CalcitProc::NativeTuple {
           let mut s = String::from("(:: ");
           for (i, item) in list.iter().skip(1).enumerate() {
             if i > 0 {
@@ -3071,9 +3064,6 @@ pub(crate) fn try_format_tuple_literal(expr: &Calcit) -> Option<String> {
           s.push(')');
           return Some(s);
         }
-      }
-    }
-  }
   None
 }
 
@@ -3090,20 +3080,15 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
     Calcit::List(xs) => {
       // Pre-intern strings produced by `(format-to-lisp (quote X))` at compile time.
       // The assert= macro expands to this pattern for the error message.
-      if xs.len() == 2 {
-        if let Calcit::Proc(p) = &xs[0] {
-          if matches!(p.as_ref(), "format-to-lisp") {
-            if let Calcit::List(inner) = &xs[1] {
-              if inner.len() >= 2 {
-                if let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0] {
+      if xs.len() == 2
+        && let Calcit::Proc(p) = &xs[0]
+          && matches!(p.as_ref(), "format-to-lisp")
+            && let Calcit::List(inner) = &xs[1]
+              && inner.len() >= 2
+                && let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0] {
                   let s = crate::calcit::format_to_lisp(&inner[1]);
                   strings.push(s);
                 }
-              }
-            }
-          }
-        }
-      }
       // Pre-intern lispy strings for literal tuple constructors (used by `str`/`turn-string`).
       if let Some(tuple_str) = try_format_tuple_literal(expr) {
         strings.push(tuple_str);

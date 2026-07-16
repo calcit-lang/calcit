@@ -531,11 +531,10 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
   }
 
   for (org_and_folder, version, child) in children {
-    if let Ok(Some(Some(latest_tag))) = child.join() {
-      if latest_tag != *version {
+    if let Ok(Some(Some(latest_tag))) = child.join()
+      && latest_tag != *version {
         outdated_packages.push((org_and_folder.to_owned(), version.to_owned(), latest_tag));
       }
-    }
   }
 
   // Check if calcit-version needs to be added (missing) or upgraded (outdated).
@@ -679,11 +678,10 @@ fn upgrade_packages(deps: PackageDeps, deps_file: &str, opts: &UpgradeCaps) -> R
   }
 
   for (org_and_folder, version, child) in children {
-    if let Ok(Some(Some(latest_tag))) = child.join() {
-      if latest_tag != *version {
+    if let Ok(Some(Some(latest_tag))) = child.join()
+      && latest_tag != *version {
         outdated_packages.push((org_and_folder.to_owned(), version.to_owned(), latest_tag));
       }
-    }
   }
 
   let calcit_version_needs_update = if opts.all {

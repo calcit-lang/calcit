@@ -529,7 +529,7 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
   }
 
   println!("\n{}", "NS declaration:".bold());
-  let ns_str = cirru_parser::format(&[file_data.ns.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+  let ns_str = cirru_parser::format(std::slice::from_ref(&file_data.ns.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
   println!("{}", ns_str.dimmed());
 
   println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
@@ -704,9 +704,9 @@ fn handle_error() -> Result<(), String> {
   }
 
   let metadata = fs::metadata(error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
-  if let Ok(modified) = metadata.modified() {
-    if let Ok(elapsed) = modified.elapsed() {
-      if elapsed.as_secs() > 10 {
+  if let Ok(modified) = metadata.modified()
+    && let Ok(elapsed) = modified.elapsed()
+      && elapsed.as_secs() > 10 {
         println!(
           "{}",
           format!("Warning: .calcit-error.cirru was modified {} seconds ago.", elapsed.as_secs()).yellow()
@@ -714,8 +714,6 @@ fn handle_error() -> Result<(), String> {
         println!("{}", "It might be outdated, please recompile or check the watcher.".yellow());
         println!();
       }
-    }
-  }
 
   let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
 
@@ -893,11 +891,10 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
 
   let mut out = String::new();
 
-  if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![]) {
-    if let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
+  if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![])
+    && let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
       let _ = writeln!(&mut out, "{} {}", "Type:".bold(), summary);
     }
-  }
 
   if !code_entry.doc.is_empty() {
     let _ = writeln!(&mut out, "{} {}", "Doc:".bold(), code_entry.doc);
@@ -938,12 +935,12 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     } else {
       let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
       let cirru_str =
-        cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+        cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
       let _ = writeln!(&mut out, "{cirru_str}");
     }
   } else {
     let _ = writeln!(&mut out, "\n{}", "Cirru:".bold());
-    let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+    let cirru_str = cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
     let _ = writeln!(&mut out, "{cirru_str}");
   }
 
@@ -1006,7 +1003,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
 
       for (i, example) in meta.examples.iter().enumerate() {
         let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
-        let cirru_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+        let cirru_str = cirru_parser::format(std::slice::from_ref(example), true.into()).unwrap_or_else(|_| "(failed)".to_string());
         for line in cirru_str.lines().filter(|line| !line.trim().is_empty()) {
           let _ = writeln!(&mut out, "  {line}");
         }
@@ -1046,7 +1043,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     for (i, example) in code_entry.examples.iter().enumerate() {
       let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
 
-      let cirru_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+      let cirru_str = cirru_parser::format(std::slice::from_ref(example), true.into()).unwrap_or_else(|_| "(failed)".to_string());
       for line in cirru_str.lines().filter(|l| !l.trim().is_empty()) {
         let _ = writeln!(&mut out, "  {line}");
       }
@@ -1393,8 +1390,8 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
       }
 
-      if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-        if let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
+      if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref()
+        && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn()) {
           let found_in_schema = if imports_target || ns_name == target_ns {
             find_symbol_in_cirru(&schema, &resolved_target_def)
           } else {
@@ -1413,7 +1410,6 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
             usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
           }
         }
-      }
     }
   }
 
@@ -1711,20 +1707,18 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
   // Search through files
   for (ns, file_data) in &snapshot.files {
     // Skip if namespace doesn't match filter
-    if let Some(filter_namespace) = filter_ns {
-      if ns != filter_namespace {
+    if let Some(filter_namespace) = filter_ns
+      && ns != filter_namespace {
         continue;
       }
-    }
 
     // Search through definitions in this namespace
     for (def_name, code_entry) in &file_data.defs {
       // Skip if definition doesn't match filter
-      if let Some(filter_definition) = filter_def {
-        if def_name != filter_definition {
+      if let Some(filter_definition) = filter_def
+        && def_name != filter_definition {
           continue;
         }
-      }
 
       // Navigate to start path if specified
       let search_root = if let Some(ref start_p) = parsed_start_path {
@@ -1784,8 +1778,8 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
       print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
 
       // Load code_entry to print results
-      if let Some(file_data) = snapshot.files.get(ns) {
-        if let Some(code_entry) = file_data.defs.get(def_name) {
+      if let Some(file_data) = snapshot.files.get(ns)
+        && let Some(code_entry) = file_data.defs.get(def_name) {
           let total = results.len();
           let (start, end) = detailed_window(common_opts.detail_offset, total);
           let detailed_count = end.saturating_sub(start);
@@ -1824,7 +1818,6 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
             println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
           }
         }
-      }
       println!();
     }
 
@@ -2308,18 +2301,15 @@ fn find_anchors(node: &Cirru, current_path: &[usize]) -> Vec<(Vec<usize>, String
   let mut results = vec![];
   if let Cirru::List(children) = node {
     // Look for `noted @anchor:<name> expr` pattern
-    if children.len() >= 3 {
-      if let Cirru::Leaf(first) = &children[0] {
-        if first.as_ref() == "noted" {
-          if let Cirru::Leaf(tag) = &children[1] {
+    if children.len() >= 3
+      && let Cirru::Leaf(first) = &children[0]
+        && first.as_ref() == "noted"
+          && let Cirru::Leaf(tag) = &children[1] {
             let tag_str = tag.as_ref();
             if let Some(name) = tag_str.strip_prefix("@anchor:") {
               results.push((current_path.to_vec(), name.to_string()));
             }
           }
-        }
-      }
-    }
     // Recurse into children
     for (i, child) in children.iter().enumerate() {
       let mut child_path = current_path.to_vec();

@@ -352,8 +352,8 @@ fn scan_directory(base_path: &str, current_path: &str, results: &mut Vec<String>
     let path = entry.path();
 
     if path.is_file() {
-      if let Some(ext) = path.extension() {
-        if ext == "md" {
+      if let Some(ext) = path.extension()
+        && ext == "md" {
           // Get relative path from base
           let relative_path = path
             .strip_prefix(base_path)
@@ -362,14 +362,12 @@ fn scan_directory(base_path: &str, current_path: &str, results: &mut Vec<String>
             .to_string();
           results.push(relative_path);
         }
-      }
     } else if path.is_dir() {
       // Skip hidden directories
-      if let Some(dir_name) = path.file_name() {
-        if !dir_name.to_string_lossy().starts_with('.') {
+      if let Some(dir_name) = path.file_name()
+        && !dir_name.to_string_lossy().starts_with('.') {
           scan_directory(base_path, &path.to_string_lossy(), results)?;
         }
-      }
     }
   }
 

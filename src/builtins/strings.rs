@@ -44,8 +44,8 @@ pub fn trim(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(b)) => {
       let msg = format!(
         "trim requires strings, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Trim).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -81,7 +81,7 @@ pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into())),
     Some(a) => {
-      let msg = format!("turn-string cannot convert to string: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!("turn-string cannot convert to string: {}", type_of(std::slice::from_ref(a))?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::TurnString).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -109,8 +109,8 @@ pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(b)) => {
       let msg = format!(
         "split requires 2 strings, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Split).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -143,9 +143,9 @@ pub fn display_number_by(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let value = f64_to_usize(*n)? as i32;
       let size = f64_to_usize(*x)?;
       match size {
-        2 => Ok(Calcit::Str(format!("{value:#01b}").into())),
-        8 => Ok(Calcit::Str(format!("{value:#01o}").into())),
-        16 => Ok(Calcit::Str(format!("{value:#01x}").into())),
+        2 => Ok(Calcit::Str(format!("{value:#b}").into())),
+        8 => Ok(Calcit::Str(format!("{value:#o}").into())),
+        16 => Ok(Calcit::Str(format!("{value:#x}").into())),
         _ => CalcitErr::err_str(
           CalcitErrKind::Type,
           format!("&number:display-by only supports base 2, 8, or 16, but received: {size}"),

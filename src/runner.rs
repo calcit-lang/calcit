@@ -290,7 +290,7 @@ pub fn call_expr(
     Calcit::Macro { info, .. } => {
       println!(
         "[Warn] macro should already be handled during preprocessing: {}",
-        &Calcit::from(xs.to_owned()).lisp_str()
+        Calcit::from(xs.to_owned()).lisp_str()
       );
 
       let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
@@ -717,9 +717,9 @@ fn render_marked_args(args: &[CalcitArgLabel]) -> String {
 pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
-    match evaluate_expr(line, scope, file_ns, call_stack) {
-      Ok(v) => ret = v,
-      Err(e) => return Err(e),
+    {
+        let v = evaluate_expr(line, scope, file_ns, call_stack)?;
+        ret = v
     }
   }
   Ok(ret)

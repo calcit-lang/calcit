@@ -302,44 +302,43 @@ impl CallTreeAnalyzer {
           let mut found = false;
 
           // First check current namespace
-          if let Some(file_data) = code_data.get(current_ns) {
-            if file_data.defs.contains_key(sym.as_ref()) {
-              calls.push((current_ns.to_string(), sym.to_string()));
-              found = true;
-            }
+          if let Some(file_data) = code_data.get(current_ns)
+            && file_data.defs.contains_key(sym.as_ref())
+          {
+            calls.push((current_ns.to_string(), sym.to_string()));
+            found = true;
           }
 
           // Then check import map
-          if !found {
-            if let Some(file_data) = code_data.get(info.at_ns.as_ref()) {
-              if let Some(import_rule) = file_data.import_map.get(sym.as_ref()) {
-                match &**import_rule {
-                  crate::program::ImportRule::NsReferDef(ns, def) => {
-                    calls.push((ns.to_string(), def.to_string()));
-                    found = true;
-                  }
-                  crate::program::ImportRule::NsAs(ns) => {
-                    // For :as imports, we'd need more context to know the def
-                    // This is typically handled via Calcit::Import
-                    let _ = ns;
-                  }
-                  crate::program::ImportRule::NsDefault(ns) => {
-                    calls.push((ns.to_string(), "default".to_string()));
-                    found = true;
-                  }
-                }
+          if !found
+            && let Some(file_data) = code_data.get(info.at_ns.as_ref())
+            && let Some(import_rule) = file_data.import_map.get(sym.as_ref())
+          {
+            match &**import_rule {
+              crate::program::ImportRule::NsReferDef(ns, def) => {
+                calls.push((ns.to_string(), def.to_string()));
+                found = true;
+              }
+              crate::program::ImportRule::NsAs(ns) => {
+                // For :as imports, we'd need more context to know the def
+                // This is typically handled via Calcit::Import
+                let _ = ns;
+              }
+              crate::program::ImportRule::NsDefault(ns) => {
+                calls.push((ns.to_string(), "default".to_string()));
+                found = true;
               }
             }
           }
 
           // Finally, check if it's implicitly available from calcit.core
           // (unless we're already in calcit.core to avoid double-counting)
-          if !found && current_ns != "calcit.core" {
-            if let Some(core_data) = code_data.get("calcit.core") {
-              if core_data.defs.contains_key(sym.as_ref()) {
-                calls.push(("calcit.core".to_string(), sym.to_string()));
-              }
-            }
+          if !found
+            && current_ns != "calcit.core"
+            && let Some(core_data) = code_data.get("calcit.core")
+            && core_data.defs.contains_key(sym.as_ref())
+          {
+            calls.push(("calcit.core".to_string(), sym.to_string()));
           }
         }
       }
@@ -434,17 +433,18 @@ impl CallTreeAnalyzer {
       }
 
       // Skip external packages if package name is set
-      if let Some(ref pkg) = self.config.package_name {
-        if !ns.starts_with(pkg) && !ns.starts_with(&format!("{pkg}.")) {
-          continue;
-        }
+      if let Some(ref pkg) = self.config.package_name
+        && !ns.starts_with(pkg)
+        && !ns.starts_with(&format!("{pkg}."))
+      {
+        continue;
       }
 
       // Skip namespaces that don't match the prefix filter
-      if let Some(ref prefix) = self.config.ns_prefix {
-        if !ns.starts_with(prefix) {
-          continue;
-        }
+      if let Some(ref prefix) = self.config.ns_prefix
+        && !ns.starts_with(prefix)
+      {
+        continue;
       }
 
       for (def, entry) in &file_data.defs {
@@ -747,7 +747,7 @@ impl CallCountAnalyzer {
       .collect();
 
     // Sort by count descending by default
-    counts.sort_by(|a, b| b.count.cmp(&a.count));
+    counts.sort_by_key(|b| std::cmp::Reverse(b.count));
 
     let total_calls: usize = counts.iter().map(|e| e.count).sum();
 
@@ -843,7 +843,7 @@ pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String 
   let mut counts = result.counts.clone();
   match sort {
     "name" => counts.sort_by(|a, b| a.fqn.cmp(&b.fqn)),
-    _ => counts.sort_by(|a, b| b.count.cmp(&a.count)),
+    _ => counts.sort_by_key(|a| std::cmp::Reverse(a.count)),
   }
 
   for entry in &counts {

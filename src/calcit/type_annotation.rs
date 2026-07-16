@@ -675,10 +675,10 @@ impl CalcitTypeAnnotation {
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
     let items = Self::get_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
-      if let Some(value) = Self::extract_schema_value_single(item, "generics") {
-        if let Some(vars) = Self::parse_generics_list(value) {
-          return Some(vars);
-        }
+      if let Some(value) = Self::extract_schema_value_single(item, "generics")
+        && let Some(vars) = Self::parse_generics_list(value)
+      {
+        return Some(vars);
       }
     }
     None
@@ -1260,11 +1260,12 @@ impl CalcitTypeAnnotation {
               Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-type" => true,
               _ => false,
             };
-            if is_assert && inner.len() == 3 {
-              if let (Some(Calcit::Symbol { sym, .. }), Some(type_form)) = (inner.get(1), inner.get(2)) {
-                let t = Self::parse_type_annotation_form_with_generics(type_form, generics.as_slice());
-                arg_types.insert(sym.to_owned(), t);
-              }
+            if is_assert
+              && inner.len() == 3
+              && let (Some(Calcit::Symbol { sym, .. }), Some(type_form)) = (inner.get(1), inner.get(2))
+            {
+              let t = Self::parse_type_annotation_form_with_generics(type_form, generics.as_slice());
+              arg_types.insert(sym.to_owned(), t);
             }
           }
         }
@@ -1656,14 +1657,14 @@ impl CalcitTypeAnnotation {
           return Arc::new(CalcitTypeAnnotation::Variadic(parse_nested(inner_form)));
         }
 
-        if let Some(Calcit::Tag(tag)) = xs.get(1) {
-          if is_optional_tag(tag) {
-            if xs.len() != 3 {
-              eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 2);
-            }
-            if let Some(inner_form) = xs.get(2) {
-              return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
-            }
+        if let Some(Calcit::Tag(tag)) = xs.get(1)
+          && is_optional_tag(tag)
+        {
+          if xs.len() != 3 {
+            eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 2);
+          }
+          if let Some(inner_form) = xs.get(2) {
+            return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
           }
         }
 
@@ -2819,15 +2820,13 @@ fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   let Calcit::List(items) = code else {
     return None;
   };
-  if let Some(head) = items.first() {
-    if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+  if let Some(head) = items.first()
+    && (matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
       || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
-      || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "quote")
-    {
-      if let Some(inner) = items.get(1) {
-        return resolve_type_def_from_code(inner);
-      }
-    }
+      || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "quote"))
+    && let Some(inner) = items.get(1)
+  {
+    return resolve_type_def_from_code(inner);
   }
   let head = items.first()?;
   if is_defstruct_head(head) || is_struct_new_head(head) {
@@ -2882,11 +2881,11 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStruct> {
   let mut where_bounds = vec![];
   let mut start_idx = 2;
 
-  if let Some(generics_form) = items.get(2) {
-    if let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form) {
-      generics = vars;
-      start_idx = 3;
-    }
+  if let Some(generics_form) = items.get(2)
+    && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
+  {
+    generics = vars;
+    start_idx = 3;
   }
   let has_where_form = items.get(start_idx).is_some_and(|form| match form {
     Calcit::Map(_) => true,
@@ -2944,11 +2943,11 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnum> {
   let mut where_bounds = vec![];
   let mut start_idx = 2;
 
-  if let Some(generics_form) = items.get(2) {
-    if let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form) {
-      generics = vars;
-      start_idx = 3;
-    }
+  if let Some(generics_form) = items.get(2)
+    && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
+  {
+    generics = vars;
+    start_idx = 3;
   }
   let has_where_form = items.get(start_idx).is_some_and(|form| match form {
     Calcit::Map(_) => true,

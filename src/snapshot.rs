@@ -492,11 +492,10 @@ impl TryFrom<Edn> for CodeEntry {
                   .map_err(|e| format!("failed to parse CodeEntry.code: {}", format_deserialize_error(&e, value)))?,
               );
             }
-            "schema" => {
-              if !matches!(value, Edn::Nil) {
+            "schema"
+              if !matches!(value, Edn::Nil) => {
                 schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
               }
-            }
             _ => {}
           }
         }
@@ -660,8 +659,8 @@ fn parse_schema_cirru_from_edn(value: &Edn) -> Result<Cirru, String> {
 }
 
 pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
-  if let Cirru::List(items) = schema {
-    if let Some(Cirru::Leaf(head)) = items.first() {
+  if let Cirru::List(items) = schema
+    && let Some(Cirru::Leaf(head)) = items.first() {
       if &**head == ":optional" {
         if items.len() != 2 {
           return Err("schema `:optional` expects exactly one payload".to_owned());
@@ -672,7 +671,6 @@ pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
         return parse_schema_data(&items[2]);
       }
     }
-  }
 
   let schema_text =
     cirru_parser::format(std::slice::from_ref(schema), true.into()).map_err(|e| format!("Failed to format schema to Cirru: {e}"))?;
@@ -885,14 +883,12 @@ fn check_no_excess_quotes(node: &Cirru) -> Result<(), String> {
 /// i.e. the source form `'T` parses to `(quote T)`.
 fn collect_type_vars(node: &Cirru, out: &mut HashSet<String>) {
   if let Cirru::List(items) = node {
-    if items.len() == 2 {
-      if let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1)) {
-        if head.as_ref() == "quote" {
+    if items.len() == 2
+      && let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1))
+        && head.as_ref() == "quote" {
           out.insert(name.to_string());
           return;
         }
-      }
-    }
     for item in items.iter() {
       collect_type_vars(item, out);
     }
@@ -987,7 +983,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut has_kind = wrapped_kind.is_some();
   for pair in items.iter().skip(1) {
     let Cirru::List(xs) = pair else {
-      let text = cirru_parser::format(&[pair.clone()], true.into()).unwrap_or_else(|_| format!("{pair:?}"));
+      let text = cirru_parser::format(std::slice::from_ref(pair), true.into()).unwrap_or_else(|_| format!("{pair:?}"));
       return Err(format!("Each schema field must be a `(:key val)` pair list, got: {text}"));
     };
 
@@ -1043,8 +1039,8 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut features_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
-    if let Cirru::List(xs) = pair {
-      if let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1)) {
+    if let Cirru::List(xs) = pair
+      && let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1)) {
         match key.as_ref() {
           ":generics" => generics_node = Some(val),
           ":args" => args_node = Some(val),
@@ -1055,7 +1051,6 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
           _ => {}
         }
       }
-    }
   }
 
   if let Some(gen_node) = generics_node {
@@ -1481,11 +1476,10 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
 
       if all_top_level {
         for line in &body_lines {
-          if let Cirru::List(items) = line {
-            if let Some(name) = extract_def_name(items) {
+          if let Cirru::List(items) = line
+            && let Some(name) = extract_def_name(items) {
               def_dict.insert(name.to_owned(), CodeEntry::from_code(line.clone()));
             }
-          }
         }
         // Each def is registered as its own CodeEntry so the type-checker can
         // analyse multi-def snippets individually.  A no-op main! is still

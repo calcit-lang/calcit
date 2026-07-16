@@ -986,17 +986,15 @@ pub fn analyze_param_arity(args: Option<&Cirru>) -> (usize, bool) {
 pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> TypeCoverageRow {
   // First check if this is a builtin proc in calcit.core
   if ns == calcit::calcit::CORE_NS {
-    if let Ok(proc) = (*def_name).parse::<CalcitProc>() {
-      if let Some(sig) = proc.get_type_signature() {
+    if let Ok(proc) = (*def_name).parse::<CalcitProc>()
+      && let Some(sig) = proc.get_type_signature() {
         return analyze_builtin_proc(def_name, sig);
       }
-    }
     // Then check if this is a builtin syntax
-    if let Ok(syntax) = (*def_name).parse::<CalcitSyntax>() {
-      if let Some(sig) = syntax.get_type_signature() {
+    if let Ok(syntax) = (*def_name).parse::<CalcitSyntax>()
+      && let Some(sig) = syntax.get_type_signature() {
         return analyze_builtin_syntax(def_name, &sig);
       }
-    }
   }
 
   let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {

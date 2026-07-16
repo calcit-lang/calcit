@@ -86,11 +86,10 @@ pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStruct, String> 
         return Err(format!("&%{{}}: compiled def {ns}/{def} is not a struct"));
       }
       // Try source code
-      if let Some(source) = program::lookup_def_code(ns, def) {
-        if let Some(struct_def) = try_parse_defrecord_form(&source) {
+      if let Some(source) = program::lookup_def_code(ns, def)
+        && let Some(struct_def) = try_parse_defrecord_form(&source) {
           return Ok(struct_def);
         }
-      }
       Err(format!("&%{{}}: cannot resolve struct reference {ns}/{def}"))
     }
     other => Err(format!("&%{{}}: expected struct reference, got: {other}")),

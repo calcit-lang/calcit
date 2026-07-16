@@ -297,14 +297,13 @@ fn trim_frontmatter_value(raw: &str) -> String {
 }
 
 fn validate_doc_frontmatter(path: &str, frontmatter: &GuideDocFrontmatter) -> Result<(), String> {
-  if let Some(category) = frontmatter.category.as_deref() {
-    if !VALID_DOC_CATEGORIES.contains(&category) {
+  if let Some(category) = frontmatter.category.as_deref()
+    && !VALID_DOC_CATEGORIES.contains(&category) {
       return Err(format!(
         "Invalid frontmatter category '{category}' in {path}. Use one of: {}. See docs/docs-indexing.md.",
         VALID_DOC_CATEGORIES.join(", ")
       ));
     }
-  }
 
   Ok(())
 }
@@ -421,11 +420,10 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
       _ => continue,
     };
 
-    if let Some(filter) = module_filter {
-      if module_name != filter {
+    if let Some(filter) = module_filter
+      && module_name != filter {
         continue;
       }
-    }
 
     seen_modules.insert(module_name.clone());
     let scope = GuideDocScope::Module(module_name.clone());
@@ -448,13 +446,12 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
     }
   }
 
-  if let Some(filter) = module_filter {
-    if !seen_modules.contains(filter) {
+  if let Some(filter) = module_filter
+    && !seen_modules.contains(filter) {
       return Err(format!(
         "Module '{filter}' not found under {modules_dir:?}. Use 'cr docs list --module <module>' or inspect ~/.config/calcit/modules/."
       ));
     }
-  }
 
   Ok(docs)
 }
@@ -485,11 +482,10 @@ fn list_doc_scopes() -> Result<Vec<String>, String> {
       continue;
     }
 
-    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-      if !name.starts_with('.') {
+    if let Some(name) = path.file_name().and_then(|s| s.to_str())
+      && !name.starts_with('.') {
         scopes.push(name.to_string());
       }
-    }
   }
 
   scopes.sort();
@@ -588,12 +584,11 @@ fn merge_ranges(mut matching_ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)>
   let mut merged_ranges: Vec<(usize, usize)> = Vec::new();
 
   for (start, end) in matching_ranges {
-    if let Some(last) = merged_ranges.last_mut() {
-      if start <= last.1 {
+    if let Some(last) = merged_ranges.last_mut()
+      && start <= last.1 {
         last.1 = last.1.max(end);
         continue;
       }
-    }
     merged_ranges.push((start, end));
   }
 
@@ -613,11 +608,10 @@ fn collect_search_results(
       continue;
     }
 
-    if let Some(filter) = filename_filter {
-      if !doc.filename.contains(filter) && !doc.path.contains(filter) {
+    if let Some(filter) = filename_filter
+      && !doc.filename.contains(filter) && !doc.path.contains(filter) {
         continue;
       }
-    }
 
     let lines: Vec<&str> = doc.content.lines().collect();
     let mut matching_ranges: Vec<(usize, usize)> = Vec::new();

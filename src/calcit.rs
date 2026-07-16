@@ -263,7 +263,6 @@ impl fmt::Display for Calcit {
         name,
         fields,
         field_types,
-        generics: _,
         ..
       }) => {
         f.write_str("(%struct ")?;
@@ -1344,7 +1343,7 @@ pub fn format_examples_hint(ns: &str, def: &str) -> Option<String> {
   let mut hint = String::from("💡 Usage examples:\n");
   for (i, example) in examples.iter().enumerate() {
     // Format each example with cirru-parser
-    if let Ok(formatted) = cirru_parser::format(&[example.clone()], true.into()) {
+    if let Ok(formatted) = cirru_parser::format(std::slice::from_ref(example), true.into()) {
       hint.push_str(&format!("\n  Example {}:\n", i + 1));
       // Indent each line of the example
       for line in formatted.lines() {

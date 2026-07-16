@@ -162,7 +162,7 @@ pub fn atom_deref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&atom:deref requires a ref (atom), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AtomDeref).unwrap_or_default();
       crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
@@ -242,7 +242,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
       let msg = format!(
         "add-watch requires a function as 3rd argument, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
       crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
@@ -250,7 +250,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(..)), Some(a), Some(_)) => {
       let msg = format!(
         "add-watch requires a tag as 2nd argument (watch key), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
       crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
@@ -258,7 +258,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), _, _) => {
       let msg = format!(
         "add-watch requires a ref (atom) as 1st argument, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
       crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
@@ -301,8 +301,8 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(b)) => {
       let msg = format!(
         "remove-watch requires a ref and a tag, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::RemoveWatch).unwrap_or_default();
       crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)

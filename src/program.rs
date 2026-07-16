@@ -728,7 +728,7 @@ fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, 
       }
       _ if xs.len() < 3 => Ok(HashMap::new()),
       _ => {
-        let preview = cirru_parser::format(&[nodes.clone()], true.into()).unwrap_or_else(|_| format!("{nodes:?}"));
+        let preview = cirru_parser::format(std::slice::from_ref(nodes), true.into()).unwrap_or_else(|_| format!("{nodes:?}"));
         let preview_short = if preview.len() > 200 {
           format!("{}...", &preview[..200])
         } else {

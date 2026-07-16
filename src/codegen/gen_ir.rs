@@ -258,11 +258,10 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
         (Edn::tag("method"), Edn::Str(method.to_owned())),
       ];
-      if let MethodKind::Invoke(t) = kind {
-        if !matches!(**t, CalcitTypeAnnotation::Dynamic) {
+      if let MethodKind::Invoke(t) = kind
+        && !matches!(**t, CalcitTypeAnnotation::Dynamic) {
           entries.push((Edn::tag("receiver-type"), dump_type_annotation(t.as_ref())));
         }
-      }
       Edn::map_from_iter(entries)
     }
     Calcit::Map(xs) => {

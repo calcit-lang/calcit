@@ -100,8 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       if let (Some(SnapshotEntry::Def(new_entry)), ChangePath::FunctionDefinition { file_name, def_name }) =
         (&change.new_entry, &change.path)
       {
-        if let Some(detailed_file) = detailed_snapshot.files.get(file_name) {
-          if let Some(detailed_entry) = detailed_file.defs.get(def_name) {
+        if let Some(detailed_file) = detailed_snapshot.files.get(file_name)
+          && let Some(detailed_entry) = detailed_file.defs.get(def_name) {
             match change.change_type {
               ChangeType::ModifiedCode => {
                 let compact_cirru: Cirru = new_entry.code.clone();
@@ -120,11 +120,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
               _ => {}
             }
           }
-        }
       } else if let (Some(SnapshotEntry::Ns(new_entry)), ChangePath::NamespaceDefinition { file_name }) =
         (&change.new_entry, &change.path)
-      {
-        if let Some(detailed_file) = detailed_snapshot.files.get(file_name) {
+        && let Some(detailed_file) = detailed_snapshot.files.get(file_name) {
           match change.change_type {
             ChangeType::ModifiedCode => {
               let compact_cirru: Cirru = new_entry.code.clone();
@@ -143,7 +141,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
           }
         }
-      }
     }
   }
 
@@ -773,8 +770,8 @@ fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entr
 fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entry: &SnapshotEntry, change_type: &ChangeType) {
   match path {
     ChangePath::FunctionDefinition { file_name, def_name } => {
-      if let (Some(file), SnapshotEntry::Def(new_entry)) = (detailed.files.get_mut(file_name), new_entry) {
-        if let Some(existing_def) = file.defs.get_mut(def_name) {
+      if let (Some(file), SnapshotEntry::Def(new_entry)) = (detailed.files.get_mut(file_name), new_entry)
+        && let Some(existing_def) = file.defs.get_mut(def_name) {
           // Update document part
           existing_def.doc = new_entry.doc.clone();
 
@@ -786,7 +783,6 @@ fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_e
             existing_def.code = new_entry.code.clone().into();
           }
         }
-      }
     }
     ChangePath::NamespaceDefinition { file_name } => {
       if let (Some(file), SnapshotEntry::Ns(new_entry)) = (detailed.files.get_mut(file_name), new_entry) {

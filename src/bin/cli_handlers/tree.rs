@@ -460,8 +460,8 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           ),
         );
       }
-      if let Some((shown_fragments, total_fragments)) = shown_fragments {
-        if shown_fragments < total_fragments {
+      if let Some((shown_fragments, total_fragments)) = shown_fragments
+        && shown_fragments < total_fragments {
           tips.add_with_priority(
             TipPriority::High,
             format!(
@@ -472,7 +472,6 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
             ),
           );
         }
-      }
       tips.append(tip_prefer_oneliner_json(show_json));
       emit_cli_output(&out, render_to_stderr);
       tips.print();

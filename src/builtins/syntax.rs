@@ -870,7 +870,7 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
           a => {
             let msg = format!(
               "try requires a function handler, but received: {}",
-              type_of(&[a.to_owned()])?.lisp_str()
+              type_of(std::slice::from_ref(&a))?.lisp_str()
             );
             CalcitErr::err_str(CalcitErrKind::Type, msg)
           }
@@ -927,7 +927,7 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
       a => {
         let msg = format!(
           "gensym requires a string/symbol/tag, but received: {}",
-          type_of(&[a.to_owned()])?.lisp_str()
+          type_of(std::slice::from_ref(a))?.lisp_str()
         );
         return CalcitErr::err_str(CalcitErrKind::Type, msg);
       }
