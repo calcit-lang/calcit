@@ -540,6 +540,20 @@ pub fn assert_type(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
   Ok(value)
 }
 
+/// Evaluate its first argument and discard the declared type. The annotation is
+/// consumed by preprocessing so FFI boundaries can opt into typed downstream code.
+pub fn unsafe_coerce(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "unsafe-coerce expected a value and a type expression, but received:",
+      &expr.to_vec(),
+    );
+  }
+
+  runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)
+}
+
 pub fn assert_traits(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes(

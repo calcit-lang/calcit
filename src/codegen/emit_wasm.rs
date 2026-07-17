@@ -1006,6 +1006,12 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         emit_expr(ctx, &args_list[0])
       }
+      CalcitSyntax::UnsafeCoerce => {
+        if args_list.is_empty() {
+          return Err("unsafe-coerce expects at least 1 arg".into());
+        }
+        emit_expr(ctx, &args_list[0])
+      }
       CalcitSyntax::Defn => {
         // A `fn`/`defn` form in value position creates a closure capturing outer variables.
         // Closures with captured upvalues can't be represented as static WASM function

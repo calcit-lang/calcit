@@ -837,6 +837,19 @@ fn preprocess_list_call(
           // For non-record/trait types (Dynamic, Fn, etc.), silently fall through —
           // `.method` is a normal argument.
         }
+        if warn_dyn_method_enabled()
+          && file_ns != calcit::CORE_NS
+          && resolve_type_value(&head_form, scope_types).is_none_or(|type_info| is_dynamic_annotation(type_info.as_ref()))
+        {
+          let message = format!(
+            "[Warn] postfix method `.{method_name}` has a dynamic receiver in {file_ns}/{def_name}; use prefix syntax `(.{method_name} receiver ...)`, assert-traits, or unsafe-coerce at an FFI boundary"
+          );
+          if let Some(loc) = head_form.get_location().or_else(|| first_arg.get_location()) {
+            gen_check_warning_with_location_code(message, "P_DYNAMIC_POSTFIX_METHOD", loc, check_warnings);
+          } else {
+            gen_check_warning_code(message, "P_DYNAMIC_POSTFIX_METHOD", file_ns, check_warnings);
+          }
+        }
       }
       _ => {}
     }
@@ -1087,6 +1100,10 @@ fn preprocess_list_call(
         CalcitSyntax::AssertType => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_type(name, name_ns, &args, &mut ctx)
+        }
+        CalcitSyntax::UnsafeCoerce => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_unsafe_coerce(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -2139,8 +2156,9 @@ fn warn_on_dynamic_trait_call(
     return;
   }
 
-  let message =
-    format!("[Warn] dynamic trait call `.{method_name}` cannot be monomorphized in {file_ns}/{def_name}; add assert-traits to clarify");
+  let message = format!(
+    "[Warn] dynamic trait call `.{method_name}` cannot be monomorphized in {file_ns}/{def_name}; add assert-traits, or use unsafe-coerce only at a trusted FFI boundary"
+  );
 
   if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
     gen_check_warning_with_location(message, loc, check_warnings);
@@ -3737,6 +3755,45 @@ pub fn preprocess_assert_type(
   ]))
 }
 
+pub fn preprocess_unsafe_coerce(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  if args.len() != 2 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!("{head} expected a value and a type expression, got {}", args.len()),
+      ctx.call_stack,
+      args.first().and_then(|node| node.get_location()),
+    ));
+  }
+
+  let target_form = preprocess_expr(
+    args.first().expect("validated unsafe-coerce target"),
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  let target_type = CalcitTypeAnnotation::parse_type_annotation_form(args.get(1).expect("validated unsafe-coerce type"));
+
+  if let Calcit::Local(local) = &target_form {
+    let mut typed_local = local.to_owned();
+    typed_local.type_info = target_type.clone();
+    ctx.scope_types.insert(typed_local.sym.to_owned(), target_type);
+    return Ok(Calcit::Local(typed_local));
+  }
+
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    target_form,
+    args.get(1).expect("validated unsafe-coerce type").to_owned(),
+  ]))
+}
+
 pub fn preprocess_assert_traits(
   head: &CalcitSyntax,
   _head_ns: &str,
@@ -4017,6 +4074,54 @@ mod tests {
     if let Some(type_val) = scope_types.get("x") {
       assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::DynFn), "type should be fn");
     }
+  }
+
+  #[test]
+  fn unsafe_coerce_attaches_declared_type_without_validation() {
+    let expr = Cirru::List(vec![Cirru::leaf("unsafe-coerce"), Cirru::leaf("x"), Cirru::leaf(":number")]);
+    let code = code_to_calcit(&expr, "tests.unsafe-coerce", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.unsafe-coerce", &warnings, &stack).expect("preprocess coercion");
+
+    let Calcit::Local(local) = resolved else {
+      panic!("unsafe-coerce local should return a typed local");
+    };
+    assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Number));
+    assert!(matches!(
+      scope_types.get("x").map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Number)
+    ));
+    assert!(warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn warns_on_dynamic_postfix_method_when_enabled() {
+    let _lock = lock_preprocess_test_state();
+    let _warn_guard = WarnDynMethodGuard::new(true);
+    let expr = Cirru::List(vec![Cirru::leaf("receiver"), Cirru::leaf(".show")]);
+    let code = code_to_calcit(&expr, "tests.dynamic-postfix", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("receiver"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.dynamic-postfix", &warnings, &stack)
+      .expect("dynamic postfix call should continue preprocessing");
+
+    let warnings = warnings.borrow();
+    let matched = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("P_DYNAMIC_POSTFIX_METHOD"))
+      .collect::<Vec<_>>();
+    assert_eq!(matched.len(), 1, "expected one dynamic postfix warning, got: {warnings:?}");
+    assert!(matched[0].message().contains("unsafe-coerce"));
   }
 
   #[test]
@@ -4614,6 +4719,7 @@ mod tests {
 
   #[test]
   fn warns_on_trait_impl_method_tag_syntax() {
+    let _lock = lock_preprocess_test_state();
     let _warn_guard = WarnDynMethodGuard::new(true);
 
     let expr = Cirru::List(vec![
@@ -5603,6 +5709,7 @@ mod tests {
 
   #[test]
   fn warns_on_dynamic_trait_call() {
+    let _lock = lock_preprocess_test_state();
     let _guard = WarnDynMethodGuard::new(true);
 
     let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);

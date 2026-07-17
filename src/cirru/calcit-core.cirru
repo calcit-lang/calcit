@@ -4156,7 +4156,7 @@
                 quasiquote $ &js-object ~@ys
           :examples $ []
           :schema $ :: :macro
-            {} (:return :dynamic)
+            {}
               :args $ [] :dynamic
               :features $ #{} :js-ffi
           :tags $ #{} :interop :macro
@@ -5502,6 +5502,10 @@
               :generics $ [] 'T
               :rest $ :: :set 'T
               :return $ :: :set 'T
+        |unsafe-coerce $ %{} :CodeEntry (:doc "||Explicitly attach a type annotation without a runtime validation.\\nSyntax: (unsafe-coerce value type-expr)\\nParams: value (any), type-expr (type annotation)\\nReturns: value unchanged\\nUse only at trusted FFI boundaries so downstream code can be statically checked. The declared type is not validated at runtime.") (:schema :dynamic)
+          :code $ quote (def unsafe-coerce &runtime-implementation)
+          :examples $ []
+          :tags $ #{} :builtin :internal :meta :syntax
         |unselect-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn unselect-keys (m xs)

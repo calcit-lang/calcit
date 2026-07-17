@@ -72,6 +72,9 @@ pub enum CalcitSyntax {
   /// placeholder for upcoming local type annotations
   #[strum(serialize = "assert-type")]
   AssertType,
+  /// Explicitly attach a type annotation without a runtime validation.
+  #[strum(serialize = "unsafe-coerce")]
+  UnsafeCoerce,
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
@@ -144,6 +147,11 @@ impl CalcitSyntax {
       }),
       AssertType => Some(SyntaxTypeSignature {
         param_names: vec!["expr", "type"],
+        param_types: vec![dyn_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      UnsafeCoerce => Some(SyntaxTypeSignature {
+        param_names: vec!["value", "type"],
         param_types: vec![dyn_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),

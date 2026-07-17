@@ -438,6 +438,13 @@ fn gen_call_code(
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
+        CalcitSyntax::UnsafeCoerce => match body.first() {
+          Some(value) => Ok(format!(
+            "{return_code}{}",
+            to_js_code(value, ns, local_defs, file_imports, tags, None)?
+          )),
+          None => Err(String::from("unsafe-coerce expected a value")),
+        },
         CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {

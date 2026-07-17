@@ -639,6 +639,7 @@ pub fn handle_syntax(
     MacroInterpolate => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
     AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),
+    UnsafeCoerce => syntax::unsafe_coerce(nodes, scope, file_ns, call_stack),
     AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
     Match => syntax::syntax_match(nodes, scope, file_ns, call_stack),
   }

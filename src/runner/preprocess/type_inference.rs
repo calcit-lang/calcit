@@ -319,6 +319,8 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         }
         Calcit::Syntax(CalcitSyntax::If, _) => infer_if_return_type(xs, scope_types),
 
+        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs.get(2).map(CalcitTypeAnnotation::parse_type_annotation_form),
+
         // Local variable as head (function call)
         // If it's a function type, return its return type
         Calcit::Local(local) => {

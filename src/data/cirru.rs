@@ -26,6 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
       "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
+      "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
