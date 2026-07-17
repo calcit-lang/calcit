@@ -244,10 +244,9 @@ impl TryFrom<Edn> for DetailedCodeEntry {
             "code" => {
               code = Some(value.to_owned().try_into()?);
             }
-            "schema"
-              if !matches!(value, Edn::Nil) => {
-                schema = Some(value.to_owned());
-              }
+            "schema" if !matches!(value, Edn::Nil) => {
+              schema = Some(value.to_owned());
+            }
             _ => {}
           }
         }

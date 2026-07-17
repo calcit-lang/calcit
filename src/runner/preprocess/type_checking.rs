@@ -184,21 +184,23 @@ where
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       for (rest_idx, rest_arg) in ctx.args.iter().skip(idx).enumerate() {
         if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types)
-          && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings) {
-            let expected_str = inner_type.as_ref().to_brief_string();
-            let actual_str = actual_type.as_ref().to_brief_string();
-            ctx.emit_warning(idx + rest_idx + 1, &expected_str, &actual_str, &make_warning);
-          }
+          && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings)
+        {
+          let expected_str = inner_type.as_ref().to_brief_string();
+          let actual_str = actual_type.as_ref().to_brief_string();
+          ctx.emit_warning(idx + rest_idx + 1, &expected_str, &actual_str, &make_warning);
+        }
       }
       return; // Done after variadic
     }
 
     if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types)
-      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
-        let expected_str = expected_type.as_ref().to_brief_string();
-        let actual_str = actual_type.as_ref().to_brief_string();
-        ctx.emit_warning(idx + 1, &expected_str, &actual_str, &make_warning);
-      }
+      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+    {
+      let expected_str = expected_type.as_ref().to_brief_string();
+      let actual_str = actual_type.as_ref().to_brief_string();
+      ctx.emit_warning(idx + 1, &expected_str, &actual_str, &make_warning);
+    }
   }
 
   check_generic_trait_bounds(&ctx, &bindings);
@@ -312,22 +314,23 @@ pub(crate) fn check_proc_arg_types(
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings) {
-        let expected_str = base_type.as_ref().to_brief_string();
-        let actual_str = actual_type.as_ref().to_brief_string();
-        let warning_location = arg.get_location().or_else(|| call_location.clone());
-        gen_check_warning_code_at(
-          format!(
-            "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-            proc.as_ref(),
-            idx + 1
-          ),
-          "W_PROC_ARG_TYPE_MISMATCH",
-          file_ns,
-          warning_location,
-          check_warnings,
-        );
-      }
+      && !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings)
+    {
+      let expected_str = base_type.as_ref().to_brief_string();
+      let actual_str = actual_type.as_ref().to_brief_string();
+      let warning_location = arg.get_location().or_else(|| call_location.clone());
+      gen_check_warning_code_at(
+        format!(
+          "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+          proc.as_ref(),
+          idx + 1
+        ),
+        "W_PROC_ARG_TYPE_MISMATCH",
+        file_ns,
+        warning_location,
+        check_warnings,
+      );
+    }
   }
 }
 
@@ -363,21 +366,22 @@ pub(crate) fn check_core_fn_arg_types(
 
   for (idx, arg) in args.iter().enumerate() {
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
-        let actual_str = actual_type.as_ref().to_brief_string();
-        let warning_location = arg.get_location().or_else(|| call_location.clone());
-        gen_check_warning_code_at(
-          format!(
-            "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-            fn_info.name,
-            idx + 1
-          ),
-          "W_CORE_FN_ARG_TYPE_MISMATCH",
-          file_ns,
-          warning_location,
-          check_warnings,
-        );
-      }
+      && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+    {
+      let actual_str = actual_type.as_ref().to_brief_string();
+      let warning_location = arg.get_location().or_else(|| call_location.clone());
+      gen_check_warning_code_at(
+        format!(
+          "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+          fn_info.name,
+          idx + 1
+        ),
+        "W_CORE_FN_ARG_TYPE_MISMATCH",
+        file_ns,
+        warning_location,
+        check_warnings,
+      );
+    }
   }
 }
 

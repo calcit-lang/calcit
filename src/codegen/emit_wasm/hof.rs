@@ -25,11 +25,12 @@ pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result
         .get(&qualified)
         .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
         .copied()
-        && arity != 2 {
-          return Err(format!(
-            "foldl callee must be a 2-arg fn (acc, elem), but {qualified} has arity {arity}"
-          ));
-        }
+        && arity != 2
+      {
+        return Err(format!(
+          "foldl callee must be a 2-arg fn (acc, elem), but {qualified} has arity {arity}"
+        ));
+      }
       Ok(fn_idx)
     }
     Calcit::Import(import) => {
@@ -127,9 +128,10 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   let fn_call_kind = resolve_callee_kind(ctx, &args[2], acc, elem).map_err(|e| {
     // Provide a more specific error message for the inline lambda path
     if let Some((params, _)) = try_extract_inline_lambda(&args[2])
-      && params.len() < 2 {
-        return format!("foldl inline lambda must have at least 2 params, got {}", params.len());
-      }
+      && params.len() < 2
+    {
+      return format!("foldl inline lambda must have at least 2 params, got {}", params.len());
+    }
     e
   })?;
 

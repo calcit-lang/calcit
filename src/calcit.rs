@@ -260,10 +260,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Struct(CalcitStruct {
-        name,
-        fields,
-        field_types,
-        ..
+        name, fields, field_types, ..
       }) => {
         f.write_str("(%struct ")?;
         f.write_str(&format!(":{name}"))?;

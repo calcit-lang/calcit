@@ -461,17 +461,18 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         );
       }
       if let Some((shown_fragments, total_fragments)) = shown_fragments
-        && shown_fragments < total_fragments {
-          tips.add_with_priority(
-            TipPriority::High,
-            format!(
-              "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
-              opts.chunk_expand_depth,
-              format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
-              "--raw".yellow()
-            ),
-          );
-        }
+        && shown_fragments < total_fragments
+      {
+        tips.add_with_priority(
+          TipPriority::High,
+          format!(
+            "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
+            opts.chunk_expand_depth,
+            format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
+            "--raw".yellow()
+          ),
+        );
+      }
       tips.append(tip_prefer_oneliner_json(show_json));
       emit_cli_output(&out, render_to_stderr);
       tips.print();

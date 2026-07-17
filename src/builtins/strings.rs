@@ -81,7 +81,10 @@ pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into())),
     Some(a) => {
-      let msg = format!("turn-string cannot convert to string: {}", type_of(std::slice::from_ref(a))?.lisp_str());
+      let msg = format!(
+        "turn-string cannot convert to string: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::TurnString).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }

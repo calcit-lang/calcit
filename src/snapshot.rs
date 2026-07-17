@@ -492,10 +492,9 @@ impl TryFrom<Edn> for CodeEntry {
                   .map_err(|e| format!("failed to parse CodeEntry.code: {}", format_deserialize_error(&e, value)))?,
               );
             }
-            "schema"
-              if !matches!(value, Edn::Nil) => {
-                schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
-              }
+            "schema" if !matches!(value, Edn::Nil) => {
+              schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
+            }
             _ => {}
           }
         }
@@ -660,17 +659,18 @@ fn parse_schema_cirru_from_edn(value: &Edn) -> Result<Cirru, String> {
 
 pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
   if let Cirru::List(items) = schema
-    && let Some(Cirru::Leaf(head)) = items.first() {
-      if &**head == ":optional" {
-        if items.len() != 2 {
-          return Err("schema `:optional` expects exactly one payload".to_owned());
-        }
-        return parse_schema_data(&items[1]);
+    && let Some(Cirru::Leaf(head)) = items.first()
+  {
+    if &**head == ":optional" {
+      if items.len() != 2 {
+        return Err("schema `:optional` expects exactly one payload".to_owned());
       }
-      if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
-        return parse_schema_data(&items[2]);
-      }
+      return parse_schema_data(&items[1]);
     }
+    if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+      return parse_schema_data(&items[2]);
+    }
+  }
 
   let schema_text =
     cirru_parser::format(std::slice::from_ref(schema), true.into()).map_err(|e| format!("Failed to format schema to Cirru: {e}"))?;
@@ -885,10 +885,11 @@ fn collect_type_vars(node: &Cirru, out: &mut HashSet<String>) {
   if let Cirru::List(items) = node {
     if items.len() == 2
       && let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1))
-        && head.as_ref() == "quote" {
-          out.insert(name.to_string());
-          return;
-        }
+      && head.as_ref() == "quote"
+    {
+      out.insert(name.to_string());
+      return;
+    }
     for item in items.iter() {
       collect_type_vars(item, out);
     }
@@ -1040,17 +1041,18 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair
-      && let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1)) {
-        match key.as_ref() {
-          ":generics" => generics_node = Some(val),
-          ":args" => args_node = Some(val),
-          ":return" => return_node = Some(val),
-          ":rest" => rest_node = Some(val),
-          ":where" => where_node = Some(val),
-          ":features" => features_node = Some(val),
-          _ => {}
-        }
+      && let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1))
+    {
+      match key.as_ref() {
+        ":generics" => generics_node = Some(val),
+        ":args" => args_node = Some(val),
+        ":return" => return_node = Some(val),
+        ":rest" => rest_node = Some(val),
+        ":where" => where_node = Some(val),
+        ":features" => features_node = Some(val),
+        _ => {}
       }
+    }
   }
 
   if let Some(gen_node) = generics_node {
@@ -1477,9 +1479,10 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       if all_top_level {
         for line in &body_lines {
           if let Cirru::List(items) = line
-            && let Some(name) = extract_def_name(items) {
-              def_dict.insert(name.to_owned(), CodeEntry::from_code(line.clone()));
-            }
+            && let Some(name) = extract_def_name(items)
+          {
+            def_dict.insert(name.to_owned(), CodeEntry::from_code(line.clone()));
+          }
         }
         // Each def is registered as its own CodeEntry so the type-checker can
         // analyse multi-def snippets individually.  A no-op main! is still

@@ -138,14 +138,18 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   call_expr: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  if ns == calcit::CORE_NS && def == "get"
-    && let Some(inferred) = infer_core_get_return_type(call_expr, scope_types) {
-      return Some(inferred);
-    }
-  if ns == calcit::CORE_NS && def == "get-in"
-    && let Some(inferred) = infer_core_get_in_return_type(call_expr, scope_types) {
-      return Some(inferred);
-    }
+  if ns == calcit::CORE_NS
+    && def == "get"
+    && let Some(inferred) = infer_core_get_return_type(call_expr, scope_types)
+  {
+    return Some(inferred);
+  }
+  if ns == calcit::CORE_NS
+    && def == "get-in"
+    && let Some(inferred) = infer_core_get_in_return_type(call_expr, scope_types)
+  {
+    return Some(inferred);
+  }
 
   let compiled = program::lookup_compiled_def(ns, def)?;
 
@@ -330,10 +334,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         // Import: could be a function, try to get its return type
         Calcit::Import(CalcitImport { ns, def, .. }) => {
-          if &**ns == calcit::CORE_NS && (&**def == "record-get" || &**def == "&record:get")
-            && let Some(field_type) = infer_record_get_type(xs, scope_types) {
-              return Some(field_type);
-            }
+          if &**ns == calcit::CORE_NS
+            && (&**def == "record-get" || &**def == "&record:get")
+            && let Some(field_type) = infer_record_get_type(xs, scope_types)
+          {
+            return Some(field_type);
+          }
           infer_return_type_from_compiled_callable(ns, def, xs, scope_types)
         }
 
@@ -346,31 +352,33 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
           if let Some(code) = program::lookup_def_code(&info.at_ns, sym)
             && let Calcit::List(xs) = code
-              && let Some(Calcit::Symbol { sym, .. }) = xs.first()
-              && sym.as_ref() == "defn"
-              && let Some(ret_type) = xs.get(3)
-              && matches!(ret_type, Calcit::Tag(_))
-            {
-              return Some(CalcitTypeAnnotation::parse_type_annotation_form(ret_type));
-            }
+            && let Some(Calcit::Symbol { sym, .. }) = xs.first()
+            && sym.as_ref() == "defn"
+            && let Some(ret_type) = xs.get(3)
+            && matches!(ret_type, Calcit::Tag(_))
+          {
+            return Some(CalcitTypeAnnotation::parse_type_annotation_form(ret_type));
+          }
           None
         }
 
         // Direct Fn call: return the function's return type
         Calcit::Fn { info, .. } => {
           if info.return_type.contains_type_var()
-            && let Some(resolved) = resolve_generic_return_type(info, xs.iter().skip(1), scope_types) {
-              return Some(resolved);
-            }
+            && let Some(resolved) = resolve_generic_return_type(info, xs.iter().skip(1), scope_types)
+          {
+            return Some(resolved);
+          }
           Some(info.return_type.clone())
         }
 
         // Method access: infer record field type when available
         Calcit::Method(field_name, calcit::MethodKind::Access | calcit::MethodKind::TagAccess) => {
           if let Some(receiver) = xs.get(1)
-            && let Some(field_type) = infer_record_field_type(receiver, field_name.as_ref(), scope_types) {
-              return Some(field_type);
-            }
+            && let Some(field_type) = infer_record_field_type(receiver, field_name.as_ref(), scope_types)
+          {
+            return Some(field_type);
+          }
           None
         }
 
@@ -412,10 +420,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   }
   if matches!(proc, CalcitProc::NativeListNth | CalcitProc::NativeListFirst)
     && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref() {
-          return Some(element_type.clone());
-        }
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref()
+  {
+    return Some(element_type.clone());
+  }
   if matches!(
     proc,
     CalcitProc::NativeListRest
@@ -431,12 +440,12 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       | CalcitProc::NativeListAssocBefore
       | CalcitProc::NativeListAssocAfter
       | CalcitProc::NativeListDissoc
-  )
-    && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::List(_) = type_value.as_ref() {
-          return Some(type_value.clone());
-        }
+  ) && let Some(first_arg) = xs.get(1)
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::List(_) = type_value.as_ref()
+  {
+    return Some(type_value.clone());
+  }
   // Range always returns List(Number)
   if matches!(proc, CalcitProc::Range) {
     return Some(Arc::new(CalcitTypeAnnotation::List(tag_annotation("number"))));
@@ -447,10 +456,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   }
   if matches!(proc, CalcitProc::NativeMapGet)
     && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::Map(_key_type, val_type) = type_value.as_ref() {
-          return Some(val_type.clone());
-        }
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::Map(_key_type, val_type) = type_value.as_ref()
+  {
+    return Some(val_type.clone());
+  }
   if matches!(
     proc,
     CalcitProc::NativeMapAssoc
@@ -458,22 +468,23 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       | CalcitProc::NativeMerge
       | CalcitProc::NativeMergeNonNil
       | CalcitProc::NativeMapDiffNew
-  )
-    && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::Map(_, _) = type_value.as_ref() {
-          return Some(type_value.clone());
-        }
+  ) && let Some(first_arg) = xs.get(1)
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::Map(_, _) = type_value.as_ref()
+  {
+    return Some(type_value.clone());
+  }
   // MapToList converts Map(K, V) → List(Dynamic)
   if matches!(proc, CalcitProc::NativeMapToList) {
     return Some(tag_annotation("list"));
   }
   if matches!(proc, CalcitProc::NativeSetToList)
     && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::Set(element_type) = type_value.as_ref() {
-          return Some(Arc::new(CalcitTypeAnnotation::List(element_type.clone())));
-        }
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::Set(element_type) = type_value.as_ref()
+  {
+    return Some(Arc::new(CalcitTypeAnnotation::List(element_type.clone())));
+  }
   if matches!(
     proc,
     CalcitProc::NativeInclude
@@ -481,47 +492,54 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       | CalcitProc::NativeDifference
       | CalcitProc::NativeUnion
       | CalcitProc::NativeSetIntersection
-  )
-    && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::Set(_) = type_value.as_ref() {
-          return Some(type_value.clone());
-        }
+  ) && let Some(first_arg) = xs.get(1)
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::Set(_) = type_value.as_ref()
+  {
+    return Some(type_value.clone());
+  }
   if matches!(proc, CalcitProc::AtomDeref)
     && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::Ref(element_type) = type_value.as_ref() {
-          return Some(element_type.clone());
-        }
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::Ref(element_type) = type_value.as_ref()
+  {
+    return Some(element_type.clone());
+  }
   if matches!(proc, CalcitProc::NativeListToSet)
     && let Some(first_arg) = xs.get(1)
-      && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-        && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref() {
-          return Some(Arc::new(CalcitTypeAnnotation::Set(element_type.clone())));
-        }
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref()
+  {
+    return Some(Arc::new(CalcitTypeAnnotation::Set(element_type.clone())));
+  }
   if matches!(proc, CalcitProc::NativeEnumTupleNew)
-    && let Some(tuple_type) = infer_enum_tuple_annotation(proc, xs, scope_types) {
-      return Some(tuple_type);
-    }
+    && let Some(tuple_type) = infer_enum_tuple_annotation(proc, xs, scope_types)
+  {
+    return Some(tuple_type);
+  }
   if matches!(proc, CalcitProc::NativeStructNew)
-    && let Some(struct_type) = infer_struct_literal_type(xs) {
-      return Some(struct_type);
-    }
+    && let Some(struct_type) = infer_struct_literal_type(xs)
+  {
+    return Some(struct_type);
+  }
   if matches!(proc, CalcitProc::NativeRecord | CalcitProc::NativeRecordPartial)
-    && let Some(record_type) = infer_record_literal_type(xs, scope_types) {
-      return Some(record_type);
-    }
+    && let Some(record_type) = infer_record_literal_type(xs, scope_types)
+  {
+    return Some(record_type);
+  }
   if matches!(proc, CalcitProc::NativeLooseRecord) {
     return Some(tag_annotation("record"));
   }
   if matches!(proc, CalcitProc::NativeRecordGet)
-    && let Some(field_type) = infer_record_get_type(xs, scope_types) {
-      return Some(field_type);
-    }
+    && let Some(field_type) = infer_record_get_type(xs, scope_types)
+  {
+    return Some(field_type);
+  }
   if matches!(proc, CalcitProc::NativeRecordNth)
-    && let Some(field_type) = infer_record_nth_type(xs, scope_types) {
-      return Some(field_type);
-    }
+    && let Some(field_type) = infer_record_nth_type(xs, scope_types)
+  {
+    return Some(field_type);
+  }
   proc.get_type_signature().map(|type_sig| type_sig.return_type.clone())
 }
 

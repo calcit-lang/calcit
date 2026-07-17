@@ -159,7 +159,7 @@ fn main() -> Result<(), String> {
     let mut buf = String::new();
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map_err(|e| format!("Failed to read from stdin: {e}"))?;
     {
-        let main_file = snapshot::create_file_from_snippet(&buf)?;
+      let main_file = snapshot::create_file_from_snippet(&buf)?;
       snapshot.files.insert(String::from("app.main"), main_file);
     }
 
@@ -180,7 +180,7 @@ fn main() -> Result<(), String> {
       return Err("No snippet provided. Use a positional argument with `cr eval`, or use `cr exec` to read from stdin.".to_string());
     };
     {
-        let main_file = snapshot::create_file_from_snippet(&snippet)?;
+      let main_file = snapshot::create_file_from_snippet(&snippet)?;
       snapshot.files.insert(String::from("app.main"), main_file);
     }
 

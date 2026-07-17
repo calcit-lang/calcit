@@ -46,11 +46,12 @@ where
 
   for (idx, arg) in processed_args.iter().enumerate() {
     if let Some(expected) = arg_types.get(idx)
-      && let Some(rewritten_arg) = rewrite_single(arg, expected, idx) {
-        new_args.push(rewritten_arg);
-        rewritten = true;
-        continue;
-      }
+      && let Some(rewritten_arg) = rewrite_single(arg, expected, idx)
+    {
+      new_args.push(rewritten_arg);
+      rewritten = true;
+      continue;
+    }
     new_args.push(arg.to_owned());
   }
 

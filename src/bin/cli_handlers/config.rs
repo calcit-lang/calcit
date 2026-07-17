@@ -184,10 +184,11 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   if let Some(name) = &opts.entry
-    && !snapshot.entries.contains_key(name) {
-      let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-      return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
-    }
+    && !snapshot.entries.contains_key(name)
+  {
+    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
+    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+  }
 
   let entry_label = opts.entry.as_deref().unwrap_or("configs");
 
@@ -239,10 +240,11 @@ fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Resu
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   if let Some(name) = &opts.entry
-    && !snapshot.entries.contains_key(name) {
-      let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-      return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
-    }
+    && !snapshot.entries.contains_key(name)
+  {
+    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
+    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+  }
 
   let configs = match &opts.entry {
     Some(name) => snapshot.entries.get_mut(name).unwrap(),
@@ -265,10 +267,11 @@ fn handle_rm_module(opts: &ConfigRmModuleCommand, snapshot_file: &str) -> Result
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   if let Some(name) = &opts.entry
-    && !snapshot.entries.contains_key(name) {
-      let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-      return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
-    }
+    && !snapshot.entries.contains_key(name)
+  {
+    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
+    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
+  }
 
   let configs = match &opts.entry {
     Some(name) => snapshot.entries.get_mut(name).unwrap(),

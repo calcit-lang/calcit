@@ -77,7 +77,7 @@
               :args $ [] 'test-record.main/Point2D
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-loose-record-rewrite) (test-map-to-record) (do true)
+            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-loose-record-rewrite) (test-map-to-record) (test-postfix) (do true)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
@@ -297,6 +297,17 @@
                 assert= :hangzhou $ get p1 :position
                 assert= :shanghai $ get p2 :position
                 assert= |Chen $ get p2 :name
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
+        |test-postfix $ %{} :CodeEntry (:doc "|test postfix syntax")
+          :code $ quote
+            fn () (log-title "|Testing postfix syntax")
+              let
+                  p $ &%{} Point2D :x 10 :y 20
+                assert= 10 (p :x)
+                assert= 20 (p :y)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)

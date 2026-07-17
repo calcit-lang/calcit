@@ -22,7 +22,10 @@ pub fn call_include(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
     }
     (Some(a), Some(_)) => {
-      let msg = format!("&include requires a set, but received: {}", type_of(std::slice::from_ref(a))?.lisp_str());
+      let msg = format!(
+        "&include requires a set, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeInclude).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -53,7 +56,10 @@ pub fn call_exclude(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
     }
     (Some(a), Some(_)) => {
-      let msg = format!("&exclude requires a set, but received: {}", type_of(std::slice::from_ref(a))?.lisp_str());
+      let msg = format!(
+        "&exclude requires a set, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeExclude).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -166,7 +172,10 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => {
-      let msg = format!("&set:count requires a set, but received: {}", type_of(std::slice::from_ref(a))?.lisp_str());
+      let msg = format!(
+        "&set:count requires a set, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeSetCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -178,7 +187,10 @@ pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => {
-      let msg = format!("&set:empty? requires a set, but received: {}", type_of(std::slice::from_ref(a))?.lisp_str());
+      let msg = format!(
+        "&set:empty? requires a set, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::NativeSetEmpty).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }

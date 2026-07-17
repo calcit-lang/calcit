@@ -873,19 +873,19 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 // Validate field value type against struct field_types
                 if let Some(expected_type) = struct_ref.field_types.get(pos)
                   && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-                    && !value_matches_type_annotation(&xs[v_idx], expected_type)
-                  {
-                    return CalcitErr::err_str(
-                      CalcitErrKind::Type,
-                      format!(
-                        "&record:with field `{}` expects type `{}`, but received `{}` ({})",
-                        s.ref_str(),
-                        expected_type.to_brief_string(),
-                        brief_type_of_value(&xs[v_idx]),
-                        xs[v_idx].lisp_str()
-                      ),
-                    );
-                  }
+                  && !value_matches_type_annotation(&xs[v_idx], expected_type)
+                {
+                  return CalcitErr::err_str(
+                    CalcitErrKind::Type,
+                    format!(
+                      "&record:with field `{}` expects type `{}`, but received `{}` ({})",
+                      s.ref_str(),
+                      expected_type.to_brief_string(),
+                      brief_type_of_value(&xs[v_idx]),
+                      xs[v_idx].lisp_str()
+                    ),
+                  );
+                }
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -900,19 +900,19 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 // Validate field value type against struct field_types
                 if let Some(expected_type) = struct_ref.field_types.get(pos)
                   && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-                    && !value_matches_type_annotation(&xs[v_idx], expected_type)
-                  {
-                    return CalcitErr::err_str(
-                      CalcitErrKind::Type,
-                      format!(
-                        "&record:with field `{}` expects type `{}`, but received `{}` ({})",
-                        s,
-                        expected_type.to_brief_string(),
-                        brief_type_of_value(&xs[v_idx]),
-                        xs[v_idx].lisp_str()
-                      ),
-                    );
-                  }
+                  && !value_matches_type_annotation(&xs[v_idx], expected_type)
+                {
+                  return CalcitErr::err_str(
+                    CalcitErrKind::Type,
+                    format!(
+                      "&record:with field `{}` expects type `{}`, but received `{}` ({})",
+                      s,
+                      expected_type.to_brief_string(),
+                      brief_type_of_value(&xs[v_idx]),
+                      xs[v_idx].lisp_str()
+                    ),
+                  );
+                }
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -1016,18 +1016,20 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Some(idx) => {
             // Validate field value type against struct field_types
             if let Some(expected_type) = struct_ref.field_types.get(idx)
-              && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) && !value_matches_type_annotation(v, expected_type) {
-                return CalcitErr::err_str(
-                  CalcitErrKind::Type,
-                  format!(
-                    "&record:from-map field `{}` expects type `{}`, but received `{}` ({})",
-                    key,
-                    expected_type.to_brief_string(),
-                    brief_type_of_value(v),
-                    v.lisp_str()
-                  ),
-                );
-              }
+              && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+              && !value_matches_type_annotation(v, expected_type)
+            {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!(
+                  "&record:from-map field `{}` expects type `{}`, but received `{}` ({})",
+                  key,
+                  expected_type.to_brief_string(),
+                  brief_type_of_value(v),
+                  v.lisp_str()
+                ),
+              );
+            }
             new_values[idx] = v.to_owned();
           }
           None => {

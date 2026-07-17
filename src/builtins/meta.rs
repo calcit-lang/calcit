@@ -388,7 +388,10 @@ pub fn turn_symbol(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
     a => {
-      let msg = format!("turn-symbol cannot convert to symbol: {}", type_of(std::slice::from_ref(a))?.lisp_str());
+      let msg = format!(
+        "turn-symbol cannot convert to symbol: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::TurnSymbol).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -454,7 +457,10 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            let msg = format!("%:: requires a tag, but received: {}", type_of(std::slice::from_ref(other))?.lisp_str());
+            let msg = format!(
+              "%:: requires a tag, but received: {}",
+              type_of(std::slice::from_ref(other))?.lisp_str()
+            );
             let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
@@ -520,7 +526,10 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            let msg = format!("%:: requires a tag, but received: {}", type_of(std::slice::from_ref(other))?.lisp_str());
+            let msg = format!(
+              "%:: requires a tag, but received: {}",
+              type_of(std::slice::from_ref(other))?.lisp_str()
+            );
             let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }

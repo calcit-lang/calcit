@@ -775,10 +775,9 @@ fn detect_await(xs: &CalcitList) -> bool {
           return true;
         }
       }
-      Calcit::Symbol { sym, .. }
-        if &**sym == "js-await" => {
-          return true;
-        }
+      Calcit::Symbol { sym, .. } if &**sym == "js-await" => {
+        return true;
+      }
       _ => {}
     }
   }

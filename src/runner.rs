@@ -718,8 +718,8 @@ pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
     {
-        let v = evaluate_expr(line, scope, file_ns, call_stack)?;
-        ret = v
+      let v = evaluate_expr(line, scope, file_ns, call_stack)?;
+      ret = v
     }
   }
   Ok(ret)

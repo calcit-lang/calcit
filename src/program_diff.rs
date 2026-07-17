@@ -855,25 +855,27 @@ fn render_context_children(children: &[Cirru], start_index: usize, depth: usize,
     let child = &children[cursor];
 
     if let Some(text) = child.as_leaf_str()
-      && !child_starts_expression(child_index, child) {
-        let mut parts = vec![render_cirru_leaf_value(text)];
-        cursor += 1;
+      && !child_starts_expression(child_index, child)
+    {
+      let mut parts = vec![render_cirru_leaf_value(text)];
+      cursor += 1;
 
-        while cursor < children.len() {
-          let sibling_index = start_index + cursor;
-          let sibling = &children[cursor];
-          if !child_starts_expression(sibling_index, sibling)
-            && let Some(sib_text) = sibling.as_leaf_str() {
-              parts.push(render_cirru_leaf_value(sib_text));
-              cursor += 1;
-              continue;
-            }
-          break;
+      while cursor < children.len() {
+        let sibling_index = start_index + cursor;
+        let sibling = &children[cursor];
+        if !child_starts_expression(sibling_index, sibling)
+          && let Some(sib_text) = sibling.as_leaf_str()
+        {
+          parts.push(render_cirru_leaf_value(sib_text));
+          cursor += 1;
+          continue;
         }
-
-        lines.push(indent(depth + 1, &format!(", {}", parts.join(" ")).dimmed().to_string()));
-        continue;
+        break;
       }
+
+      lines.push(indent(depth + 1, &format!(", {}", parts.join(" ")).dimmed().to_string()));
+      continue;
+    }
 
     lines.extend(render_context_node(
       child,
