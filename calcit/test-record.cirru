@@ -308,6 +308,13 @@
                   p $ &%{} Point2D :x 10 :y 20
                 assert= 10 (p :x)
                 assert= 20 (p :y)
+              let
+                  l1 $ %{} Lagopus (:name |LagopusA)
+                ; postfix method call: (expr .method args...)
+                assert= |LagopusA $ :name l1
+                let
+                    l2 (l1 .rename |LagopusB)
+                  assert= |LagopusB $ :name l2
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
