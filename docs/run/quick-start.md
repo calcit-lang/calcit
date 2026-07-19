@@ -13,6 +13,8 @@ aliases:
 entry_for:
   - "cr query search"
   - "cr tree replace-leaf"
+id: core/run/quick-start
+parent: core/run
 ---
 
 # 快速开始（新 LLM 必读）

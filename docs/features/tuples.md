@@ -7,6 +7,8 @@ aliases:
   - "tuple"
   - "tagged tuple"
   - "tuple match"
+id: core/features/tuples
+parent: core/features
 ---
 
 # Tuples

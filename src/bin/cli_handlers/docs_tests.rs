@@ -1,7 +1,7 @@
 use super::{
   GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
-  find_doc_by_query, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter, score_doc_query,
-  score_doc_shape, validate_doc_frontmatter,
+  find_doc_by_query, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata,
+  score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -167,6 +167,97 @@ fn parse_doc_frontmatter_extracts_lists_and_strips_header() {
   assert_eq!(frontmatter.aliases, vec!["watch mode", "eval"]);
   assert_eq!(frontmatter.entry_for, vec!["cr eval"]);
   assert!(body.starts_with("# Run Calcit"));
+}
+
+#[test]
+fn parse_doc_knowledge_metadata_extracts_graph_fields() {
+  let raw = "---\nid: api/list/nth\nparent: structure/list\nrelated:\n  - api/list/get\nrequires: concept/indexing\nleads_to:\n  - example/list-access\n---\n# List nth\n";
+  let metadata = parse_doc_knowledge_metadata(raw);
+
+  assert_eq!(metadata.id.as_deref(), Some("api/list/nth"));
+  assert_eq!(metadata.parent.as_deref(), Some("structure/list"));
+  assert_eq!(metadata.related, vec!["api/list/get"]);
+  assert_eq!(metadata.requires, vec!["concept/indexing"]);
+  assert_eq!(metadata.leads_to, vec!["example/list-access"]);
+}
+
+#[test]
+fn parse_doc_knowledge_metadata_supports_scalar_and_repeated_edges() {
+  let raw = "---\nid: concept/list\nrelated: structure/sequence\nrelated:\n  - api/list/map\n  - api/list/foldl\nrequires: concept/collection\n---\n# List\n";
+  let metadata = parse_doc_knowledge_metadata(raw);
+
+  assert_eq!(metadata.id.as_deref(), Some("concept/list"));
+  assert_eq!(metadata.related, vec!["structure/sequence", "api/list/map", "api/list/foldl"]);
+  assert_eq!(metadata.requires, vec!["concept/collection"]);
+}
+
+#[test]
+fn parse_doc_knowledge_metadata_ignores_legacy_fields_and_requires_closing_marker() {
+  let legacy = "---\ntitle: List\naliases:\n  - sequence\nentry_for:\n  - list access\n---\n# List\n";
+  let legacy_metadata = parse_doc_knowledge_metadata(legacy);
+  assert_eq!(legacy_metadata.title.as_deref(), Some("List"));
+  assert!(legacy_metadata.id.is_none());
+  assert!(legacy_metadata.related.is_empty());
+
+  let unterminated = "---\nid: broken\nparent: structure/list\n";
+  assert_eq!(parse_doc_knowledge_metadata(unterminated), Default::default());
+}
+
+#[test]
+fn repository_sample_docs_form_a_navigable_learning_chain() {
+  let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+  let sample_paths = [
+    "docs/CalcitAgent.md",
+    "docs/docs.md",
+    "docs/docs-indexing.md",
+    "docs/features.md",
+    "docs/features/list.md",
+    "docs/run.md",
+    "docs/run/query.md",
+    "docs/run/edit-tree.md",
+  ];
+
+  let mut metadata = Vec::new();
+  for relative_path in sample_paths {
+    let content = fs::read_to_string(root.join(relative_path)).expect("sample doc should be readable");
+    metadata.push((relative_path, parse_doc_knowledge_metadata(&content)));
+  }
+
+  let find = |id: &str| {
+    metadata
+      .iter()
+      .find(|(_, item)| item.id.as_deref() == Some(id))
+      .map(|(_, item)| item)
+  };
+  assert!(find("core/agent").unwrap().leads_to.contains(&"core/run/quick-start".to_string()));
+  assert!(find("core/docs").unwrap().leads_to.contains(&"core/docs/indexing".to_string()));
+  assert_eq!(find("core/docs/indexing").unwrap().parent.as_deref(), Some("core/docs"));
+  assert!(
+    find("core/features/list")
+      .unwrap()
+      .related
+      .contains(&"core/features/hashmap".to_string())
+  );
+  assert!(find("core/run/query").unwrap().leads_to.contains(&"core/run/edit-tree".to_string()));
+  assert_eq!(find("core/run/query").unwrap().parent.as_deref(), Some("core/run"));
+  assert_eq!(find("core/run/edit-tree").unwrap().requires, vec!["core/run/query"]);
+
+  let list_content = fs::read_to_string(root.join("docs/features/list.md")).expect("list doc should be readable");
+  let (list_frontmatter, _) = parse_doc_frontmatter(&list_content);
+  assert!(list_frontmatter.entry_for.iter().any(|entry| entry == "calcit.core/nth"));
+  assert!(list_frontmatter.entry_for.iter().any(|entry| entry == "calcit.core/append"));
+}
+
+#[test]
+fn repository_query_doc_frontmatter_keeps_search_metadata_separate() {
+  let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/run/query.md");
+  let content = fs::read_to_string(path).expect("query doc should be readable");
+  let (frontmatter, _) = parse_doc_frontmatter(&content);
+  let knowledge = parse_doc_knowledge_metadata(&content);
+
+  assert_eq!(frontmatter.title.as_deref(), Some("Querying Definitions"));
+  assert!(frontmatter.summary.as_deref().is_some_and(|summary| summary.contains("cr query")));
+  assert_eq!(knowledge.id.as_deref(), Some("core/run/query"));
 }
 
 #[test]

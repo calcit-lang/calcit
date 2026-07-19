@@ -406,6 +406,7 @@ fn render_docs_explanation(cmd: &DocsCommand) -> Option<String> {
     DocsSubcommand::Agents(_) => "reads agent/developer guide".to_string(),
     DocsSubcommand::ReadLines(opts) => format!("reads specific lines from `{}`", opts.filename),
     DocsSubcommand::CheckMd(opts) => format!("validates code snippets in `{}`", opts.file),
+    DocsSubcommand::Graph(_) => "builds or queries the documentation relationship graph".to_string(),
   })
 }
 
@@ -581,6 +582,28 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
     DocsSubcommand::CheckMd(opts) => {
       echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "calcit.cirru", list "dep" => &opts.dep, switch "failures-only" => opts.failures_only)
     }
+    DocsSubcommand::Graph(opts) => match &opts.subcommand {
+      DocsGraphSubcommand::Build(_) => tokens.push("build".to_string()),
+      DocsGraphSubcommand::Check(_) => tokens.push("check".to_string()),
+      DocsGraphSubcommand::Children(opts) => {
+        tokens.push("children".to_string());
+        echo_items!(tokens, pos "node" => &opts.node)
+      }
+      DocsGraphSubcommand::Related(opts) => {
+        tokens.push("related".to_string());
+        echo_items!(tokens, pos "node" => &opts.node)
+      }
+      DocsGraphSubcommand::Path(opts) => {
+        tokens.push("path".to_string());
+        echo_items!(tokens, pos "from" => &opts.from, pos "to" => &opts.to)
+      }
+      DocsGraphSubcommand::Explain(opts) => {
+        tokens.push("explain".to_string());
+        echo_items!(tokens, pos "definition" => &opts.definition)
+      }
+      DocsGraphSubcommand::Missing(_) => tokens.push("missing".to_string()),
+      DocsGraphSubcommand::Orphans(_) => tokens.push("orphans".to_string()),
+    },
   }
 }
 
@@ -904,6 +927,7 @@ fn docs_name(subcommand: &DocsSubcommand) -> &'static str {
     DocsSubcommand::Agents(_) => "agents",
     DocsSubcommand::ReadLines(_) => "read-lines",
     DocsSubcommand::CheckMd(_) => "check-md",
+    DocsSubcommand::Graph(_) => "graph",
   }
 }
 

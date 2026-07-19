@@ -12,6 +12,13 @@ aliases:
 entry_for:
   - "cr docs agents"
   - "cr docs read agent-advanced.md"
+id: core/agent
+related:
+  - core/docs/indexing
+  - core/run/query
+  - core/run/edit-tree
+leads_to:
+  - core/run/quick-start
 ---
 
 # Calcit Agent 快速实践（局部查看与编辑优先）
@@ -51,11 +58,40 @@ entry_for:
 - 查进阶手册某个主题：`cr docs read agent-advanced.md <heading-keyword>`
 - 看进阶手册全文：`cr docs read agent-advanced.md --full`
 - 先看可查文档范围：`cr docs scopes`
+- 构建文档知识图：`cr docs graph build`
+- 检查文档关系断链：`cr docs graph check`
+- 从概念节点找子节点：`cr docs graph children <node-id>`
+- 查看节点周边关系：`cr docs graph related <node-id>`
+- 查找两个知识节点之间的路径：`cr docs graph path <from> <to>`
+- 从 Calcit 定义反查文档：`cr docs graph explain <namespace/definition>`
+- 查看已有源码文档但尚未关联的定义：`cr docs graph missing`
+- 查找没有任何关系的文档节点：`cr docs graph orphans`
+- 图缓存默认位于 `~/.config/calcit/docs-cache/`；文档、解析器版本或内置定义 snapshot 变化后，查询会自动重建
 - 查某个模块的文档目录：`cr docs list --module <module-name>`
 - 看某个文件有哪些章节：`cr docs sections <file> [--module <module-name>]`
 - 查远程库 README / registry：`cr docs remote-libs search <keyword>` / `cr docs remote-libs readme <package>`
 - 语义路径解析为数字坐标：`cr query path <ns> --selector 'path heading def {} :name |fn nth 2'`
 - 列出命名空间内锚点：`cr query anchors <ns>`
+
+知识图导航的推荐流程：
+
+```bash
+# 先从入口或概念找到结构节点
+cr docs graph children core/features
+
+# 从结构节点查看相关 API 和工作流
+cr docs graph related core/features/list
+
+# 直接从源码定义反查对应文档
+cr docs graph explain calcit.core/nth
+
+# 需要继续学习或执行操作时查找路径
+cr docs graph path core/features/list core/run/edit-tree
+```
+
+`cr docs graph missing` 是待补关联的候选清单，不代表源码定义本身缺失；优先为稳定的公共 API 补充 `code_refs`，再逐步处理语法符号和内部辅助定义。
+
+文档节点的 frontmatter 可以使用稳定 `id`、`parent`、`related`、`requires`、`leads_to` 和 `code_refs`。其中 `id` 是知识节点身份，`code_refs` 用 `namespace/definition` 关联真实 Calcit 定义；不要把文件路径或行号当作长期 ID。
 
 ## Cirru 语法速览（先看这个）
 

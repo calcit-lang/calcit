@@ -7,6 +7,8 @@ aliases:
   - "hash map"
   - "map"
   - "key value"
+id: core/features/hashmap
+parent: core/features
 ---
 # HashMap
 

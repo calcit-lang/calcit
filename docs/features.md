@@ -13,6 +13,12 @@ aliases:
 entry_for:
   - "impl-traits"
   - "assert-type"
+id: core/features
+leads_to:
+  - core/features/list
+  - core/features/records
+  - core/features/tuples
+  - core/features/enums
 ---
 
 # Features

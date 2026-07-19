@@ -12,6 +12,7 @@ entry_for:
   - "cr"
   - "cr js"
   - "cr ir"
+id: core/run
 ---
 # Run Calcit
 

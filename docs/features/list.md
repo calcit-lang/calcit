@@ -1,5 +1,6 @@
 ---
 title: "List"
+summary: "Calcit List 的构造、访问、更新、遍历和持久化行为"
 scope: "core"
 kind: "reference"
 category: "features"
@@ -8,6 +9,27 @@ aliases:
   - "range"
   - "append"
   - "nth"
+entry_for:
+  - "calcit.core/nth"
+  - "calcit.core/first"
+  - "calcit.core/rest"
+  - "calcit.core/append"
+  - "calcit.core/assoc"
+code_refs:
+  - "calcit.core/nth"
+  - "calcit.core/first"
+  - "calcit.core/rest"
+  - "calcit.core/append"
+  - "calcit.core/assoc"
+id: core/features/list
+parent: core/features
+related:
+  - core/features/hashmap
+  - core/data/persistent-data
+requires:
+  - core/features
+leads_to:
+  - core/run/query
 ---
 # List
 

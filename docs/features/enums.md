@@ -7,6 +7,8 @@ aliases:
   - "defenum"
   - "tagged union"
   - "tagged unions"
+id: core/features/enums
+parent: core/features
 ---
 
 # Enums (defenum)

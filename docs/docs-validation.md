@@ -1,5 +1,6 @@
 ---
 title: "Documentation Retrieval Validation"
+summary: "通过可执行案例验证 cr docs 的搜索、摘要、章节解析和模块路由"
 scope: "core"
 kind: "reference"
 category: "docs"
@@ -11,6 +12,12 @@ entry_for:
   - "cr docs search"
   - "cr docs read"
   - "cr docs read-lines"
+id: core/docs/validation
+parent: core/docs
+related:
+  - core/docs/indexing
+requires:
+  - core/docs/indexing
 ---
 
 # Documentation Retrieval Validation
@@ -95,6 +102,30 @@ cr docs search "add-import"
 # Filename/path hits should stay useful when several pages mention the same term
 cr docs search traits
 cr docs search docs
+```
+
+## Knowledge Navigation Checks
+
+```bash
+# A definition name should resolve to the structure-level entry document.
+cr docs search "calcit.core/nth" --summary
+cr docs search "calcit.core/append" --summary
+
+# The structured relationship section should be addressable by heading.
+cr docs read "Documentation Indexing Spec" "Knowledge graph fields"
+
+# A structure page should expose its operation-oriented sections.
+cr docs read "List" "Quick Recipes"
+
+# Build and traverse the structured knowledge graph.
+cr docs graph build
+cr docs graph check
+cr docs graph children core/features
+cr docs graph related core/features/list
+cr docs graph path core/features/list core/run/edit-tree
+cr docs graph explain calcit.core/nth
+cr docs graph missing
+cr docs graph orphans
 ```
 
 ## Agents and Module Checks

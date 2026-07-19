@@ -648,7 +648,97 @@ pub enum DocsSubcommand {
   ReadLines(DocsReadLinesCommand),
   /// check ```cirru code blocks in a markdown file via eval
   CheckMd(DocsCheckMdCommand),
+  /// build and query the structured documentation relationship graph
+  Graph(DocsGraphCommand),
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "graph")]
+/// build and query the structured documentation relationship graph
+pub struct DocsGraphCommand {
+  #[argh(subcommand)]
+  pub subcommand: DocsGraphSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum DocsGraphSubcommand {
+  /// parse docs and write the JSON graph cache
+  Build(DocsGraphBuildCommand),
+  /// rebuild the graph and report broken relationships
+  Check(DocsGraphCheckCommand),
+  /// list direct child nodes of a parent node
+  Children(DocsGraphNodeCommand),
+  /// list direct relationships around a node
+  Related(DocsGraphRelatedCommand),
+  /// find a short relationship path between two nodes
+  Path(DocsGraphPathCommand),
+  /// find documentation nodes associated with a Calcit definition
+  Explain(DocsGraphExplainCommand),
+  /// list Calcit definitions without documentation references
+  Missing(DocsGraphMissingCommand),
+  /// list document nodes that have no graph relationships
+  Orphans(DocsGraphOrphansCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "build")]
+/// parse docs and write the JSON graph cache
+pub struct DocsGraphBuildCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "check")]
+/// rebuild the graph and report broken relationships
+pub struct DocsGraphCheckCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "children")]
+/// list direct child nodes of a parent node
+pub struct DocsGraphNodeCommand {
+  /// node id to inspect
+  #[argh(positional)]
+  pub node: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "related")]
+/// list direct relationships around a node
+pub struct DocsGraphRelatedCommand {
+  /// node id to inspect
+  #[argh(positional)]
+  pub node: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "path")]
+/// find a short relationship path between two nodes
+pub struct DocsGraphPathCommand {
+  /// starting node id
+  #[argh(positional)]
+  pub from: String,
+  /// destination node id
+  #[argh(positional)]
+  pub to: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "explain")]
+/// find documentation nodes associated with a Calcit definition
+pub struct DocsGraphExplainCommand {
+  /// namespace/definition or code reference to locate
+  #[argh(positional)]
+  pub definition: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "missing")]
+/// list Calcit definitions without documentation references
+pub struct DocsGraphMissingCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "orphans")]
+/// list document nodes that have no graph relationships
+pub struct DocsGraphOrphansCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "scopes")]

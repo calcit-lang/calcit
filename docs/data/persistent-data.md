@@ -7,6 +7,8 @@ aliases:
   - "persistent collections"
   - "immutable collections"
   - "ternary tree"
+id: core/data/persistent-data
+parent: core/data
 ---
 # Persistent Data
 

@@ -10,6 +10,7 @@ mod command_echo;
 mod common;
 mod config;
 mod docs;
+mod docs_cache;
 pub(crate) mod edit;
 mod libs;
 mod markdown_read;

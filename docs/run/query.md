@@ -1,5 +1,7 @@
 ---
-title: "Querying Definitions"summary: "使用 cr query defs/def/search/find/usages/search-expr 查找和浏览定义"scope: "core"
+title: "Querying Definitions"
+summary: "使用 cr query defs/def/search/find/usages/search-expr 查找和浏览定义"
+scope: "core"
 kind: "reference"
 category: "run"
 aliases:
@@ -17,6 +19,15 @@ entry_for:
   - "cr query find"
   - "cr query usages"
   - "cr query search-expr"
+id: core/run/query
+parent: core/run
+related:
+  - core/run/edit-tree
+  - core/features/list
+requires:
+  - core/agent
+leads_to:
+  - core/run/edit-tree
 ---
 
 # Querying Definitions

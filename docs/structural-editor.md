@@ -8,6 +8,7 @@ aliases:
   - "tree editor"
   - "deprecated editor"
   - "structural editing"
+id: core/structural-editor
 ---
 # Structural Editor
 

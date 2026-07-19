@@ -30,6 +30,7 @@
 | `06-15-effects-graph-rfc.md`                        | Draft         | `cr analyze effects-graph`：State/Transform/Effect 语义分解图与类型驱动 effect 标注路线。 |
 | `06-29-cr-exec-cli-builtins-rfc.md`                 | **Active**    | `cr exec` + `calcit.cli/*` 内建函数：绕过 Shell 转义的 Cirru 函数调用方案。               |
 | `07-06-semantic-tree-navigation-rfc.md`             | Draft         | 语义化树形导航与编辑：路径标注、多候选交互、锚点搜索替换、结构化查询语言。                |
+| `07-19-doc-knowledge-index-rfc.md`                  | Draft         | Markdown/Calcit snapshot 的知识节点、关系索引与用户级增量缓存方案。                       |
 | `07-19-type-introspection-consistency-rfc.md`       | Implemented   | 类型自省一致性改进：`&methods-of` 支持裸类型定义、`Enum` Display 补 variants、`to-pairs`/`keys` 类型签名修正（第 4 项可选新增 proc 延后）。 |
 
 ## 已执行的清理

@@ -14,6 +14,15 @@ entry_for:
   - "cr tree search-replace"
   - "cr edit add-import"
   - "cr query search"
+id: core/run/edit-tree
+parent: core/run
+related:
+  - core/run/query
+  - core/structural-editor
+requires:
+  - core/run/query
+leads_to:
+  - core/structural-editor
 ---
 
 # CLI Code Editing (edit & tree)

@@ -7,6 +7,8 @@ aliases:
   - "record type"
   - "field access"
   - "struct fields"
+id: core/features/records
+parent: core/features
 ---
 
 # Records

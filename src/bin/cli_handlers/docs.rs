@@ -2,9 +2,11 @@
 //!
 //! Handles: cr docs scopes, search, list, sections, read, read-lines
 
-use calcit::cli_args::{DocsCommand, DocsSubcommand};
+use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsSubcommand};
 use colored::Colorize;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,6 +23,7 @@ use calcit::runner;
 use calcit::snapshot;
 use calcit::util;
 
+use super::docs_cache;
 use super::libs::handle_libs_command;
 use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
 use super::tips::command_guidance_enabled;
@@ -56,6 +59,24 @@ struct GuideDocFrontmatter {
   category: Option<String>,
   aliases: Vec<String>,
   entry_for: Vec<String>,
+}
+
+/// Structured knowledge metadata kept separate from the legacy search metadata.
+///
+/// This lets existing `GuideDoc` callers remain source-compatible while the
+/// knowledge-index schema grows independently from the original frontmatter
+/// ranking fields.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct DocKnowledgeMetadata {
+  pub title: Option<String>,
+  pub summary: Option<String>,
+  pub id: Option<String>,
+  pub code_refs: Vec<String>,
+  pub parent: Option<String>,
+  pub related: Vec<String>,
+  pub requires: Vec<String>,
+  pub leads_to: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +171,188 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet, opts.failures_only),
+    DocsSubcommand::Graph(opts) => handle_graph_command(&opts.subcommand),
+  }
+}
+
+fn build_graph_cache(force_rebuild: bool) -> Result<(PathBuf, docs_cache::DocsCache), String> {
+  let docs_dir = get_guidebook_dir()?;
+  if !force_rebuild
+    && let Ok(cache) = docs_cache::read_cache(&docs_dir)
+    && docs_cache::cache_is_fresh(&docs_dir, &cache)?
+  {
+    return Ok((docs_cache::cache_path(&docs_dir)?, cache));
+  }
+  let cache = docs_cache::build_cache(&docs_dir)?;
+  let cache_path = docs_cache::write_cache(&docs_dir, &cache)?;
+  let cache = docs_cache::read_cache(&docs_dir)?;
+  Ok((cache_path, cache))
+}
+
+fn graph_node<'a>(cache: &'a docs_cache::DocsCache, node_id: &str) -> Result<&'a docs_cache::KnowledgeNode, String> {
+  cache
+    .nodes
+    .iter()
+    .find(|node| node.id == node_id)
+    .ok_or_else(|| format!("Documentation node '{node_id}' not found. Use 'cr docs graph build' first or inspect the graph cache."))
+}
+
+fn print_graph_node(node: &docs_cache::KnowledgeNode) {
+  let title = node.title.as_deref().unwrap_or("(untitled)");
+  println!("{}\t{}\t{}", node.id, title, node.path);
+}
+
+fn handle_graph_command(command: &DocsGraphSubcommand) -> Result<(), String> {
+  match command {
+    DocsGraphSubcommand::Build(_) => {
+      let (path, cache) = build_graph_cache(true)?;
+      println!(
+        "Built documentation graph: {} document nodes, {} edges, {} definitions",
+        cache.nodes.len(),
+        cache.edges.len(),
+        cache.definitions.len()
+      );
+      println!("Cache: {}", path.display());
+      Ok(())
+    }
+    DocsGraphSubcommand::Check(_) => {
+      let (_, cache) = build_graph_cache(false)?;
+      let dangling = docs_cache::dangling_edges(&cache);
+      if dangling.is_empty() {
+        println!(
+          "Documentation graph check passed: {} nodes, {} edges",
+          cache.nodes.len(),
+          cache.edges.len()
+        );
+        Ok(())
+      } else {
+        println!("Documentation graph check failed: {} dangling edge(s)", dangling.len());
+        for edge in dangling {
+          println!("{} --{}--> {}", edge.from, edge.relation, edge.to);
+        }
+        Err("Documentation graph contains dangling edges".to_string())
+      }
+    }
+    DocsGraphSubcommand::Children(opts) => {
+      let (_, cache) = build_graph_cache(false)?;
+      graph_node(&cache, &opts.node)?;
+      let mut children = cache
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == "parent" && edge.to == opts.node)
+        .filter_map(|edge| cache.nodes.iter().find(|node| node.id == edge.from))
+        .collect::<Vec<_>>();
+      children.sort_by(|left, right| left.id.cmp(&right.id));
+      for child in children {
+        print_graph_node(child);
+      }
+      Ok(())
+    }
+    DocsGraphSubcommand::Related(opts) => {
+      let (_, cache) = build_graph_cache(false)?;
+      graph_node(&cache, &opts.node)?;
+      let mut related = cache
+        .edges
+        .iter()
+        .filter(|edge| edge.from == opts.node || edge.to == opts.node)
+        .filter_map(|edge| {
+          let other = if edge.from == opts.node { &edge.to } else { &edge.from };
+          cache.nodes.iter().find(|node| &node.id == other)
+        })
+        .collect::<Vec<_>>();
+      related.sort_by(|left, right| left.id.cmp(&right.id));
+      related.dedup_by(|left, right| left.id == right.id);
+      for node in related {
+        print_graph_node(node);
+      }
+      Ok(())
+    }
+    DocsGraphSubcommand::Path(opts) => {
+      let (_, cache) = build_graph_cache(false)?;
+      graph_node(&cache, &opts.from)?;
+      graph_node(&cache, &opts.to)?;
+      let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+      for edge in &cache.edges {
+        adjacency.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+        adjacency.entry(edge.to.as_str()).or_default().push(edge.from.as_str());
+      }
+      let mut queue = VecDeque::from([opts.from.as_str()]);
+      let mut previous = HashMap::from([(opts.from.as_str(), None)]);
+      while let Some(current) = queue.pop_front() {
+        if current == opts.to {
+          break;
+        }
+        for next in adjacency.get(current).into_iter().flatten() {
+          if !previous.contains_key(next) {
+            previous.insert(next, Some(current));
+            queue.push_back(next);
+          }
+        }
+      }
+      if !previous.contains_key(opts.to.as_str()) {
+        return Err(format!("No relationship path from '{}' to '{}'", opts.from, opts.to));
+      }
+      let mut path = Vec::new();
+      let mut current = Some(opts.to.as_str());
+      while let Some(node) = current {
+        path.push(node);
+        current = previous.get(node).copied().flatten();
+      }
+      path.reverse();
+      println!("{}", path.join(" -> "));
+      Ok(())
+    }
+    DocsGraphSubcommand::Explain(opts) => {
+      let (_, cache) = build_graph_cache(false)?;
+      let matches = cache
+        .nodes
+        .iter()
+        .filter(|node| node.id == opts.definition || node.code_refs.iter().any(|reference| reference == &opts.definition))
+        .collect::<Vec<_>>();
+      if matches.is_empty() {
+        return Err(format!("No documentation node references '{}'.", opts.definition));
+      }
+      for node in matches {
+        print_graph_node(node);
+      }
+      Ok(())
+    }
+    DocsGraphSubcommand::Missing(_) => {
+      let (_, cache) = build_graph_cache(false)?;
+      let missing = docs_cache::missing_definitions(&cache);
+      let unresolved = docs_cache::unresolved_code_refs(&cache);
+      println!("Documented Calcit definitions without graph links: {}", missing.len());
+      for definition in missing.iter().take(50) {
+        println!("  {}", definition.id);
+      }
+      if missing.len() > 50 {
+        println!("  ... and {} more", missing.len() - 50);
+      }
+      println!("Unresolved code references: {}", unresolved.len());
+      for (node, reference) in unresolved {
+        println!("  {} -> {}", node, reference);
+      }
+      Ok(())
+    }
+    DocsGraphSubcommand::Orphans(_) => {
+      let (_, cache) = build_graph_cache(false)?;
+      let connected = cache
+        .edges
+        .iter()
+        .flat_map(|edge| [edge.from.as_str(), edge.to.as_str()])
+        .collect::<HashSet<_>>();
+      let mut orphans = cache
+        .nodes
+        .iter()
+        .filter(|node| !connected.contains(node.id.as_str()))
+        .collect::<Vec<_>>();
+      orphans.sort_by(|left, right| left.id.cmp(&right.id));
+      println!("Orphan document nodes: {}", orphans.len());
+      for node in orphans {
+        print_graph_node(node);
+      }
+      Ok(())
+    }
   }
 }
 
@@ -375,6 +578,70 @@ fn parse_doc_frontmatter(raw: &str) -> (GuideDocFrontmatter, String) {
 
   let body = body_lines.join("\n").trim_start_matches('\n').to_string();
   (frontmatter, body)
+}
+
+/// Parse the stable, graph-oriented part of document frontmatter.
+///
+/// This parser intentionally accepts only the first version of the schema;
+/// unknown fields remain ignored by the legacy parser and can be added later
+/// under an extension namespace without changing current search behavior.
+pub(crate) fn parse_doc_knowledge_metadata(raw: &str) -> DocKnowledgeMetadata {
+  if !raw.starts_with("---\n") {
+    return DocKnowledgeMetadata::default();
+  }
+
+  let mut metadata = DocKnowledgeMetadata::default();
+  let mut active_list: Option<&str> = None;
+  let mut saw_closing = false;
+
+  for (index, line) in raw.lines().enumerate() {
+    if index == 0 {
+      continue;
+    }
+    if line.trim() == "---" {
+      saw_closing = true;
+      break;
+    }
+
+    let trimmed = line.trim();
+    if let Some(item) = trimmed.strip_prefix("- ") {
+      let value = trim_frontmatter_value(item);
+      match active_list {
+        Some("related") => metadata.related.push(value),
+        Some("requires") => metadata.requires.push(value),
+        Some("leads_to") => metadata.leads_to.push(value),
+        Some("code_refs") => metadata.code_refs.push(value),
+        _ => {}
+      }
+      continue;
+    }
+
+    let Some((key, value)) = trimmed.split_once(':') else {
+      active_list = None;
+      continue;
+    };
+    let key = key.trim();
+    let value = value.trim();
+    active_list = None;
+    match key {
+      "title" => metadata.title = Some(trim_frontmatter_value(value)),
+      "summary" => metadata.summary = Some(trim_frontmatter_value(value)),
+      "id" => metadata.id = Some(trim_frontmatter_value(value)),
+      "code_ref" => metadata.code_refs.push(trim_frontmatter_value(value)),
+      "code_refs" if value.is_empty() => active_list = Some("code_refs"),
+      "code_refs" => metadata.code_refs.push(trim_frontmatter_value(value)),
+      "parent" => metadata.parent = Some(trim_frontmatter_value(value)),
+      "related" if value.is_empty() => active_list = Some("related"),
+      "requires" if value.is_empty() => active_list = Some("requires"),
+      "leads_to" if value.is_empty() => active_list = Some("leads_to"),
+      "related" => metadata.related.push(trim_frontmatter_value(value)),
+      "requires" => metadata.requires.push(trim_frontmatter_value(value)),
+      "leads_to" => metadata.leads_to.push(trim_frontmatter_value(value)),
+      _ => {}
+    }
+  }
+
+  if saw_closing { metadata } else { DocKnowledgeMetadata::default() }
 }
 
 fn visit_markdown_dir(dir: &Path, base_dir: &Path, docs: &mut Vec<GuideDoc>, scope: &GuideDocScope) -> Result<(), String> {

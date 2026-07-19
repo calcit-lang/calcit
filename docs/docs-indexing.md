@@ -1,5 +1,6 @@
 ---
 title: "Documentation Indexing Spec"
+summary: "cr docs 使用的 Markdown frontmatter、知识节点关系和增量缓存约定"
 scope: "core"
 kind: "spec"
 category: "docs"
@@ -11,6 +12,15 @@ entry_for:
   - "cr docs search"
   - "cr docs read"
   - "cr docs read-lines"
+id: core/docs/indexing
+parent: core/docs
+related:
+  - core/docs/validation
+requires:
+  - core/agent
+leads_to:
+  - core/run/query
+  - core/run/edit-tree
 ---
 
 # Documentation Indexing Spec
@@ -103,6 +113,34 @@ Optional fields:
 
 - `aliases`: extra phrases that users are likely to search for
 - `entry_for`: commands, APIs, or task phrases that should point to this page
+
+### Knowledge graph fields
+
+Knowledge graph fields are optional and can be introduced incrementally:
+
+```yaml
+id: api/list/nth
+code_refs:
+  - calcit.core/nth
+parent: structure/list
+related:
+  - api/list/get
+requires:
+  - concept/indexing
+leads_to:
+  - example/list-access
+```
+
+These fields describe stable navigation relationships and are parsed
+separately from the legacy search metadata, so older documents keep the same
+search behavior. The generated relationship cache is stored outside the
+repository under `~/.config/calcit/docs-cache/` and can always be rebuilt from
+the source documents.
+
+`cr docs graph build` also records a fingerprint of the embedded Calcit core
+snapshot. The cache is rebuilt when a Markdown file, parser/schema version, or
+the indexed definition snapshot changes. The cache is an implementation
+detail, not a source file to commit.
 
 Recommended shape:
 
