@@ -1946,6 +1946,15 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.set);
+  } else if (obj instanceof CalcitStruct) {
+    // Bare type definitions (not yet instantiated) carry their own attached
+    // impls, so introspection tools like `&methods-of` can answer "what
+    // methods will instances of this type have" without a concrete instance.
+    tag = obj.name.toString();
+    impls = obj.impls;
+  } else if (obj instanceof CalcitEnum) {
+    tag = obj.name();
+    impls = obj.impls;
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.number);
@@ -1971,7 +1980,7 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   let tag = pair[1];
   // builtin impl lists are ordered by priority in calcit-core.
   // user-defined values use impl-traits append, so later impls override earlier ones.
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     let klass = impls[idx];
@@ -1991,12 +2000,16 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
 
 export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
   if (arguments.length !== 1) throw new Error("&methods-of expected 1 argument");
+  // Traits declare methods directly rather than through attached impls.
+  if (obj instanceof CalcitTrait) {
+    return new CalcitSliceList(obj.methods.map((m) => invoke_method_closure(m.value)));
+  }
   let pair = lookup_impls(obj);
   if (pair == null) {
     throw new Error(`&methods-of cannot resolve impls for: ${toString(obj, true)}`);
   }
   let impls = pair[0];
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
   let seen = new Set<string>();
   let ys: CalcitValue[] = [];
 
@@ -2005,10 +2018,11 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
     let impl = impls[idx];
     if (impl != null) {
       for (let k = 0; k < impl.fields.length; k++) {
-        let name = "." + impl.fields[k].value;
+        let rawName = impl.fields[k].value;
+        let name = "." + rawName;
         if (!seen.has(name)) {
           seen.add(name);
-          ys.push(name);
+          ys.push(invoke_method_closure(rawName));
         }
       }
     }
@@ -2019,12 +2033,26 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
 
 export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): CalcitValue {
   if (arguments.length !== 2) throw new Error("&inspect-methods expected 2 arguments");
+  if (obj instanceof CalcitTrait) {
+    console.log("\n&inspect-methods");
+    console.log(`Note: ${toString(note, true)}`);
+    console.log(`Value type: ${type_of(obj).toString()}`);
+    console.log(`Value: ${toString(obj, true)}`);
+    console.log("Method call syntax: `.method self p1 p2`");
+    console.log("  - dot is part of the method name, first arg is the receiver\n");
+    const names = obj.methods.map((m) => "." + m.value);
+    console.log(`Trait methods declared directly (no impls): ${names.length}`);
+    console.log(`\nAll methods (unique, high → low): ${names.length}`);
+    console.log("  " + names.join(" "));
+    console.log("\n");
+    return obj;
+  }
   let pair = lookup_impls(obj);
   if (pair == null) {
     throw new Error(`&inspect-methods cannot resolve impls for: ${toString(obj, true)}`);
   }
   let impls = pair[0];
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
 
   console.log("\n&inspect-methods");
   console.log(`Note: ${toString(note, true)}`);
@@ -2054,7 +2082,7 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
 
   let ms = _$n_methods_of(obj);
   console.log(`\nAll methods (unique, high → low): ${ms.len()}`);
-  console.log("  " + (Array.from(ms.items()) as string[]).join(" "));
+  console.log("  " + Array.from(ms.items()).map((m) => toString(m, false)).join(" "));
   console.log("\n");
 
   return obj;
@@ -2078,7 +2106,7 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
     throw new Error(`&trait-call cannot resolve impls for: ${toString(obj, true)}`);
   }
   const impls = pair[0];
-  const reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  const reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     const impl = impls[idx];

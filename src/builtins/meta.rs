@@ -1408,6 +1408,11 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
   match value {
     Calcit::Tuple(tuple) => Ok(tuple.impls().to_owned()),
     Calcit::Record(record) => Ok(record.struct_ref.impls.to_owned()),
+    // Bare type definitions (not yet instantiated) carry their own attached impls,
+    // so introspection tools like `&methods-of` can answer "what methods will
+    // instances of this type have" without needing a concrete instance first.
+    Calcit::Struct(struct_def) => Ok(struct_def.impls.to_owned()),
+    Calcit::Enum(enum_def) => Ok(enum_def.impls().to_owned()),
     Calcit::List(..) => {
       let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
       collect_impl_records_from_value(&impls_value, call_stack)
@@ -1446,8 +1451,10 @@ fn iter_impls_in_precedence_order<'a>(
   impls: &'a [Arc<CalcitImpl>],
 ) -> Box<dyn Iterator<Item = &'a Arc<CalcitImpl>> + 'a> {
   match value {
-    // user values are last-wins, so higher precedence is later entries
-    Calcit::Tuple(..) | Calcit::Record(..) => Box::new(impls.iter().rev()),
+    // user values are last-wins, so higher precedence is later entries.
+    // Bare struct/enum definitions attach impls the same way (via `.extend`
+    // in `&struct:impl-traits`/`&enum:impl-traits`), so they share this order.
+    Calcit::Tuple(..) | Calcit::Record(..) | Calcit::Struct(..) | Calcit::Enum(..) => Box::new(impls.iter().rev()),
     // builtin core impl lists are first-wins and order-sensitive
     _ => Box::new(impls.iter()),
   }
@@ -1563,6 +1570,13 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   ))
 }
 
+/// Method names declared directly on a bare trait definition (with leading dot).
+/// Traits declare methods directly rather than through attached impls, so this
+/// is handled separately from `collect_impl_records_for_value`.
+fn trait_dot_method_names(trait_def: &CalcitTrait) -> Vec<String> {
+  trait_def.methods.iter().map(|m| format!(".{}", m.ref_str())).collect()
+}
+
 /// Returns a list of method names (with leading dot) that can be invoked on a value at runtime.
 /// Usage: (&methods-of value)
 pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -1571,9 +1585,21 @@ pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   }
 
   let value = &xs[0];
-  let impls = collect_impl_records_for_value(value, call_stack)?;
-  let methods = collect_method_names(value, &impls);
-  Ok(Calcit::from(methods.into_iter().map(|s| Calcit::Str(s.into())).collect::<Vec<_>>()))
+  let methods = if let Calcit::Trait(trait_def) = value {
+    trait_dot_method_names(trait_def)
+  } else {
+    let impls = collect_impl_records_for_value(value, call_stack)?;
+    collect_method_names(value, &impls)
+  };
+  Ok(Calcit::from(
+    methods
+      .into_iter()
+      .map(|s| {
+        let name = s.strip_prefix('.').unwrap_or(&s);
+        Calcit::Method(name.into(), crate::calcit::MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone()))
+      })
+      .collect::<Vec<_>>(),
+  ))
 }
 
 /// Inspect and print method information for debugging.
@@ -1598,9 +1624,6 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
     ""
   };
 
-  let impls = collect_impl_records_for_value(value, call_stack)?;
-  let methods = collect_method_names(value, &impls);
-
   eprintln!("\n&inspect-methods");
   if !note.is_empty() {
     eprintln!("Note: {note}");
@@ -1610,13 +1633,21 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
   eprintln!("Method call syntax: `.method self p1 p2`");
   eprintln!("  - dot is part of the method name, first arg is the receiver");
 
-  eprintln!("\nImpl records (high → low precedence): {}", impls.len());
-  for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
-    let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
-    method_keys.sort();
-    let origin_label = imp.trait_name().unwrap_or_else(|| imp.name());
-    eprintln!("  #{idx}: {}  ({})", origin_label, method_keys.join(" "));
-  }
+  let methods = if let Calcit::Trait(trait_def) = value {
+    let names = trait_dot_method_names(trait_def);
+    eprintln!("\nTrait methods declared directly (no impls): {}", names.len());
+    names
+  } else {
+    let impls = collect_impl_records_for_value(value, call_stack)?;
+    eprintln!("\nImpl records (high → low precedence): {}", impls.len());
+    for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
+      let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
+      method_keys.sort();
+      let origin_label = imp.trait_name().unwrap_or_else(|| imp.name());
+      eprintln!("  #{idx}: {}  ({})", origin_label, method_keys.join(" "));
+    }
+    collect_method_names(value, &impls)
+  };
 
   eprintln!("\nAll methods (unique, high → low): {}", methods.len());
   eprintln!("  {}", methods.join(" "));

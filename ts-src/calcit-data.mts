@@ -238,6 +238,14 @@ export let hashFunction = (x: CalcitValue): Hash => {
     return h;
   }
   if (typeof x === "function") {
+    // method values are closures created on the fly (see invoke_method_closure);
+    // hash by method name so equal methods share the same hash, matching isEqual
+    const methodName = (x as { __calcitMethodName?: string }).__calcitMethodName;
+    if (methodName != null) {
+      let h = mergeValueHash(defaultHash_fn, methodName);
+      (x as any)[calcit_dirty_hash_key] = h;
+      return h;
+    }
     fnHashCounter = fnHashCounter + 1;
     let h = mergeValueHash(defaultHash_fn, fnHashCounter);
     (x as any)[calcit_dirty_hash_key] = h;
@@ -412,6 +420,10 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
     return x.toString();
   }
   if (typeof x === "function") {
+    const methodName = (x as { __calcitMethodName?: string }).__calcitMethodName;
+    if (methodName != null) {
+      return "." + methodName;
+    }
     return `(&fn ...)`;
   }
   if (x instanceof CalcitSymbol) {
@@ -579,7 +591,14 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     return false;
   }
   if (tx === "function") {
-    // comparing functions by reference
+    // method values are closures created on the fly (see invoke_method_closure),
+    // so two methods with the same name must compare equal by name, not by reference
+    const mx = (x as { __calcitMethodName?: string }).__calcitMethodName;
+    const my = (y as { __calcitMethodName?: string }).__calcitMethodName;
+    if (mx != null || my != null) {
+      return mx === my;
+    }
+    // comparing plain functions by reference
     return x === y;
   }
   if (x instanceof CalcitTag) {

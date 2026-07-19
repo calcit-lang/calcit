@@ -326,17 +326,24 @@
                   xs $ [] 1 2
                   ms $ &methods-of xs
                 assert= :list $ type-of ms
-                assert= true $ includes? ms |.add
-                assert= true $ includes? ms |.count
-                assert= true $ includes? ms |.includes?
+                assert= true $ includes? ms .add
+                assert= true $ includes? ms .count
+                assert= true $ includes? ms .includes?
                 ; "`&inspect-methods`" returns the original value unchanged
                 assert= xs $ &inspect-methods xs |list
               let
                   Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                   ms2 $ &methods-of p
-                assert= true $ includes? ms2 |.foo
+                assert= true $ includes? ms2 .foo
                 assert= p $ &inspect-methods p |record
+              let
+                  ms3 $ &methods-of (impl-traits Person0 MyFooImpl)
+                  ms4 $ &methods-of DemoBar
+                  ms5 $ &methods-of MyFoo
+                assert= true $ includes? ms3 .foo
+                assert= true $ includes? ms4 .bar
+                assert= true $ includes? ms5 .foo
               println "|  method introspection: ✓"
           :examples $ []
           :schema $ :: :fn
