@@ -6,7 +6,9 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
+use crate::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context,
+};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
@@ -431,6 +433,19 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
   match schema {
     CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
+    // `:struct`/`:enum`/`:trait`/`:impl`/`:record` shorthand tags round-trip through
+    // `Custom(Arc<Calcit>)` when loaded (see `CalcitTypeAnnotation::from_tag_name`).
+    // Coerce the wrapped tag back into its EDN tag on write instead of falling
+    // through to `builtin_tag_name` (which doesn't know about `Custom` and would
+    // silently degrade the schema to `:dynamic`, losing the original kind).
+    CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
+      Calcit::Tag(tag) => Edn::Tag(tag.clone()),
+      _ => Edn::tag("dynamic"),
+    },
+    CalcitTypeAnnotation::Record(_) => Edn::tag("record"),
+    CalcitTypeAnnotation::Struct(..) => Edn::tag("struct"),
+    CalcitTypeAnnotation::Enum(..) => Edn::tag("enum"),
+    CalcitTypeAnnotation::Trait(_) => Edn::tag("trait"),
     other => other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic")),
   }
 }
@@ -2666,6 +2681,24 @@ mod tests {
       saved.contains("|%{} $ %{} :CodeEntry") && saved.contains(":schema $ :: :macro"),
       "saved snapshot should retain wrapped macro schemas"
     );
+  }
+
+  #[test]
+  fn test_custom_kind_schema_tags_round_trip_instead_of_degrading_to_dynamic() {
+    // Regression test: `:struct`/`:enum`/`:trait`/`:impl`/`:record` shorthand tags load
+    // into `CalcitTypeAnnotation::Custom(Arc<Calcit>)` (see `from_tag_name`). Any file
+    // save previously coerced these back through `builtin_tag_name`, which doesn't know
+    // about `Custom` and silently fell back to `:dynamic`, destroying the original kind
+    // on every unrelated `cr edit`/`cr tree` write to the containing file.
+    for kind in ["struct", "enum", "trait", "impl", "record"] {
+      let schema = CalcitTypeAnnotation::from_tag_name(kind);
+      let edn = schema_annotation_to_edn(&schema);
+      assert_eq!(
+        edn,
+        Edn::tag(kind),
+        "schema kind `:{kind}` must round-trip, not degrade to :dynamic"
+      );
+    }
   }
 
   #[test]
