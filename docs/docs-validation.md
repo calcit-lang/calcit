@@ -124,6 +124,7 @@ cr docs graph children core/features
 cr docs graph related core/features/list
 cr docs graph path core/features/list core/run/edit-tree
 cr docs graph explain calcit.core/nth
+cr docs graph explain calcit.core/nth --full
 cr docs graph missing --ns calcit.core --limit 20
 cr docs graph orphans
 ```

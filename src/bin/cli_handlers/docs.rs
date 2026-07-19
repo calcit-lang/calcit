@@ -304,6 +304,7 @@ fn handle_graph_command(command: &DocsGraphSubcommand) -> Result<(), String> {
     }
     DocsGraphSubcommand::Explain(opts) => {
       let (_, cache) = build_graph_cache(false)?;
+      let definition = cache.definitions.iter().find(|definition| definition.id == opts.definition);
       let matches = cache
         .nodes
         .iter()
@@ -311,6 +312,17 @@ fn handle_graph_command(command: &DocsGraphSubcommand) -> Result<(), String> {
         .collect::<Vec<_>>();
       if matches.is_empty() {
         return Err(format!("No documentation node references '{}'.", opts.definition));
+      }
+      if opts.full
+        && let Some(definition) = definition
+      {
+        println!("Definition: {}", definition.id);
+        if definition.doc.trim().is_empty() {
+          println!("Doc: (none)");
+        } else {
+          println!("Doc: {}", definition.doc);
+        }
+        println!("Examples: {}", if definition.has_examples { "available" } else { "none" });
       }
       for node in matches {
         print_graph_node(node);

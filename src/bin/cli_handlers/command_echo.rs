@@ -599,9 +599,12 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       }
       DocsGraphSubcommand::Explain(opts) => {
         tokens.push("explain".to_string());
-        echo_items!(tokens, pos "definition" => &opts.definition)
+        echo_items!(tokens, pos "definition" => &opts.definition, switch "full" => opts.full)
       }
-      DocsGraphSubcommand::Missing(_) => tokens.push("missing".to_string()),
+      DocsGraphSubcommand::Missing(opts) => {
+        tokens.push("missing".to_string());
+        echo_items!(tokens, opt "ns" => opts.ns.as_deref(); default "all", value "limit" => opts.limit; default "50")
+      }
       DocsGraphSubcommand::Orphans(_) => tokens.push("orphans".to_string()),
     },
   }

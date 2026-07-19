@@ -728,6 +728,9 @@ pub struct DocsGraphExplainCommand {
   /// namespace/definition or code reference to locate
   #[argh(positional)]
   pub definition: String,
+  /// include the definition doc and example availability
+  #[argh(switch)]
+  pub full: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

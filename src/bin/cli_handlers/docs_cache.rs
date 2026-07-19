@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 use super::docs::parse_doc_knowledge_metadata;
 
 #[allow(dead_code)]
-pub(crate) const CACHE_SCHEMA_VERSION: u32 = 4;
+pub(crate) const CACHE_SCHEMA_VERSION: u32 = 5;
 #[allow(dead_code)]
 pub(crate) const PARSER_VERSION: u32 = 1;
 
@@ -50,6 +50,8 @@ pub(crate) struct DefinitionRecord {
   pub id: String,
   pub namespace: String,
   pub name: String,
+  #[serde(default)]
+  pub doc: String,
   pub has_doc: bool,
   pub has_examples: bool,
   pub documented_by: Vec<String>,
@@ -219,6 +221,7 @@ pub(crate) fn build_cache(root: &Path) -> Result<DocsCache, String> {
         id,
         namespace: namespace.clone(),
         name: name.clone(),
+        doc: file.defs.get(name).map(|entry| entry.doc.clone()).unwrap_or_default(),
         has_doc: file.defs.get(name).is_some_and(|entry| !entry.doc.trim().is_empty()),
         has_examples: file.defs.get(name).is_some_and(|entry| !entry.examples.is_empty()),
         documented_by,
@@ -498,6 +501,7 @@ mod tests {
           id: "calcit.core/public-api".to_string(),
           namespace: "calcit.core".to_string(),
           name: "public-api".to_string(),
+          doc: "Public API documentation".to_string(),
           has_doc: true,
           has_examples: false,
           documented_by: vec![],
@@ -506,6 +510,7 @@ mod tests {
           id: "calcit.core/$syntax".to_string(),
           namespace: "calcit.core".to_string(),
           name: "$syntax".to_string(),
+          doc: "Syntax documentation".to_string(),
           has_doc: true,
           has_examples: false,
           documented_by: vec![],
@@ -514,6 +519,7 @@ mod tests {
           id: "app.core/private-api".to_string(),
           namespace: "app.core".to_string(),
           name: "private-api".to_string(),
+          doc: "Private API documentation".to_string(),
           has_doc: true,
           has_examples: false,
           documented_by: vec![],

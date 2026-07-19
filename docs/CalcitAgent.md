@@ -63,7 +63,7 @@ leads_to:
 - 从概念节点找子节点：`cr docs graph children <node-id>`
 - 查看节点周边关系：`cr docs graph related <node-id>`
 - 查找两个知识节点之间的路径：`cr docs graph path <from> <to>`
-- 从 Calcit 定义反查文档：`cr docs graph explain <namespace/definition>`
+- 从 Calcit 定义反查文档：`cr docs graph explain <namespace/definition>`；需要定义摘要时加 `--full`
 - 查看已有源码文档但尚未关联的定义：`cr docs graph missing [--ns <namespace-prefix>] [--limit <n>]`
 - 查找没有任何关系的文档节点：`cr docs graph orphans`
 - 图缓存默认位于 `~/.config/calcit/docs-cache/`；文档、解析器版本或内置定义 snapshot 变化后，查询会自动重建
@@ -84,6 +84,9 @@ cr docs graph related core/features/list
 
 # 直接从源码定义反查对应文档
 cr docs graph explain calcit.core/nth
+
+# 查看定义 doc 和 examples 是否存在，再跳转到关联文档
+cr docs graph explain calcit.core/nth --full
 
 # 需要继续学习或执行操作时查找路径
 cr docs graph path core/features/list core/run/edit-tree
