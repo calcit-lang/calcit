@@ -733,7 +733,14 @@ pub struct DocsGraphExplainCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "missing")]
 /// list Calcit definitions without documentation references
-pub struct DocsGraphMissingCommand {}
+pub struct DocsGraphMissingCommand {
+  /// only include definitions whose namespace starts with this prefix
+  #[argh(option)]
+  pub ns: Option<String>,
+  /// maximum number of missing definitions to print
+  #[argh(option, default = "50")]
+  pub limit: usize,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "orphans")]

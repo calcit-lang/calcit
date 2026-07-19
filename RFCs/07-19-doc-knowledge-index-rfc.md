@@ -158,7 +158,7 @@ cr docs graph missing
 当前已实现：
 
 - `cr docs graph check`：检查关系边是否指向已知文档节点；
-- `cr docs graph missing`：检查带有 snapshot 文档说明、但没有 `code_refs` 的用户级定义；
+- `cr docs graph missing [--ns <prefix>] [--limit <n>]`：按 namespace 分批检查带有 snapshot 文档说明、但没有 `code_refs` 的定义；
 - `cr docs graph orphans`：检查没有任何关系的文档节点。
 
 ## 8. 验证标准

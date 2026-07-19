@@ -317,16 +317,17 @@ fn handle_graph_command(command: &DocsGraphSubcommand) -> Result<(), String> {
       }
       Ok(())
     }
-    DocsGraphSubcommand::Missing(_) => {
+    DocsGraphSubcommand::Missing(opts) => {
       let (_, cache) = build_graph_cache(false)?;
-      let missing = docs_cache::missing_definitions(&cache);
+      let missing = docs_cache::missing_definitions(&cache, opts.ns.as_deref());
       let unresolved = docs_cache::unresolved_code_refs(&cache);
-      println!("Documented Calcit definitions without graph links: {}", missing.len());
-      for definition in missing.iter().take(50) {
+      let scope = opts.ns.as_deref().unwrap_or("all namespaces");
+      println!("Documented Calcit definitions without graph links ({scope}): {}", missing.len());
+      for definition in missing.iter().take(opts.limit) {
         println!("  {}", definition.id);
       }
-      if missing.len() > 50 {
-        println!("  ... and {} more", missing.len() - 50);
+      if missing.len() > opts.limit {
+        println!("  ... and {} more", missing.len() - opts.limit);
       }
       println!("Unresolved code references: {}", unresolved.len());
       for (node, reference) in unresolved {

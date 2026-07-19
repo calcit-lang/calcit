@@ -308,7 +308,7 @@ pub(crate) fn dangling_edges(cache: &DocsCache) -> Vec<KnowledgeEdge> {
     .collect()
 }
 
-pub(crate) fn missing_definitions(cache: &DocsCache) -> Vec<&DefinitionRecord> {
+pub(crate) fn missing_definitions<'a>(cache: &'a DocsCache, namespace_prefix: Option<&str>) -> Vec<&'a DefinitionRecord> {
   cache
     .definitions
     .iter()
@@ -318,6 +318,7 @@ pub(crate) fn missing_definitions(cache: &DocsCache) -> Vec<&DefinitionRecord> {
         && !definition.name.starts_with('&')
         && !definition.name.starts_with('$')
         && !definition.name.starts_with('#')
+        && namespace_prefix.is_none_or(|prefix| definition.namespace.starts_with(prefix))
     })
     .collect()
 }
@@ -344,8 +345,8 @@ pub(crate) fn unresolved_code_refs(cache: &DocsCache) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
   use super::{
-    CACHE_SCHEMA_VERSION, CachedFile, DocsCache, KnowledgeEdge, KnowledgeNode, PARSER_VERSION, build_cache, cache_path, content_hash,
-    dangling_edges, file_is_fresh, project_id,
+    CACHE_SCHEMA_VERSION, CachedFile, DefinitionRecord, DocsCache, KnowledgeEdge, KnowledgeNode, PARSER_VERSION, build_cache,
+    cache_path, content_hash, dangling_edges, file_is_fresh, missing_definitions, project_id,
   };
   use std::fs;
   use std::path::Path;
@@ -484,5 +485,49 @@ mod tests {
       definition_source_hash: String::new(),
     };
     assert_eq!(dangling_edges(&cache).len(), 1);
+  }
+
+  #[test]
+  fn missing_definitions_support_namespace_filters_and_skip_syntax_names() {
+    let cache = DocsCache {
+      nodes: vec![],
+      edges: vec![],
+      files: vec![],
+      definitions: vec![
+        DefinitionRecord {
+          id: "calcit.core/public-api".to_string(),
+          namespace: "calcit.core".to_string(),
+          name: "public-api".to_string(),
+          has_doc: true,
+          has_examples: false,
+          documented_by: vec![],
+        },
+        DefinitionRecord {
+          id: "calcit.core/$syntax".to_string(),
+          namespace: "calcit.core".to_string(),
+          name: "$syntax".to_string(),
+          has_doc: true,
+          has_examples: false,
+          documented_by: vec![],
+        },
+        DefinitionRecord {
+          id: "app.core/private-api".to_string(),
+          namespace: "app.core".to_string(),
+          name: "private-api".to_string(),
+          has_doc: true,
+          has_examples: false,
+          documented_by: vec![],
+        },
+      ],
+      definition_source_hash: String::new(),
+    };
+
+    let core_missing = missing_definitions(&cache, Some("calcit.core"));
+    assert_eq!(
+      core_missing.iter().map(|entry| entry.id.as_str()).collect::<Vec<_>>(),
+      vec!["calcit.core/public-api"]
+    );
+    assert_eq!(missing_definitions(&cache, Some("missing")).len(), 0);
+    assert_eq!(missing_definitions(&cache, None).len(), 2);
   }
 }

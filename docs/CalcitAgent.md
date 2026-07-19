@@ -64,7 +64,7 @@ leads_to:
 - 查看节点周边关系：`cr docs graph related <node-id>`
 - 查找两个知识节点之间的路径：`cr docs graph path <from> <to>`
 - 从 Calcit 定义反查文档：`cr docs graph explain <namespace/definition>`
-- 查看已有源码文档但尚未关联的定义：`cr docs graph missing`
+- 查看已有源码文档但尚未关联的定义：`cr docs graph missing [--ns <namespace-prefix>] [--limit <n>]`
 - 查找没有任何关系的文档节点：`cr docs graph orphans`
 - 图缓存默认位于 `~/.config/calcit/docs-cache/`；文档、解析器版本或内置定义 snapshot 变化后，查询会自动重建
 - 查某个模块的文档目录：`cr docs list --module <module-name>`
@@ -89,7 +89,7 @@ cr docs graph explain calcit.core/nth
 cr docs graph path core/features/list core/run/edit-tree
 ```
 
-`cr docs graph missing` 是待补关联的候选清单，不代表源码定义本身缺失；优先为稳定的公共 API 补充 `code_refs`，再逐步处理语法符号和内部辅助定义。
+`cr docs graph missing` 是待补关联的候选清单，不代表源码定义本身缺失；可用 `--ns calcit.core` 分批查看。优先为稳定的公共 API 补充 `code_refs`，再逐步处理语法符号和内部辅助定义。
 
 文档节点的 frontmatter 可以使用稳定 `id`、`parent`、`related`、`requires`、`leads_to` 和 `code_refs`。其中 `id` 是知识节点身份，`code_refs` 用 `namespace/definition` 关联真实 Calcit 定义；不要把文件路径或行号当作长期 ID。
 
