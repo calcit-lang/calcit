@@ -273,6 +273,15 @@ impl fmt::Display for Calcit {
       Enum(enum_def) => {
         f.write_str("(%enum ")?;
         f.write_str(&format!(":{}", enum_def.name()))?;
+        for variant in enum_def.variants() {
+          f.write_char(' ')?;
+          f.write_str(&format!("(:{}", variant.tag))?;
+          for t in variant.payload_types() {
+            f.write_char(' ')?;
+            f.write_str(&t.to_brief_string())?;
+          }
+          f.write_char(')')?;
+        }
         f.write_char(')')
       }
       Trait(t) => write!(f, "{t}"),
@@ -818,6 +827,20 @@ impl Calcit {
     match self {
       Calcit::Nil => String::from(""),
       Calcit::Str(s) => (**s).to_owned(),
+      Calcit::Method(name, method_kind) => match method_kind {
+        MethodKind::Invoke(t) => {
+          if matches!(**t, CalcitTypeAnnotation::Dynamic) {
+            format!(".{name}")
+          } else {
+            format!("(&invoke {name} :type {})", t.as_ref())
+          }
+        }
+        MethodKind::Access => format!(".-{name}"),
+        MethodKind::InvokeNative => format!(".!{name}"),
+        MethodKind::TagAccess => format!(".:{name}"),
+        MethodKind::AccessOptional => format!(".?-{name}"),
+        MethodKind::InvokeNativeOptional => format!(".?!{name}"),
+      },
       _ => format!("{self}"),
     }
   }
@@ -1556,6 +1579,25 @@ mod tests {
     let enum_right = Calcit::Enum(CalcitEnum::from_record(enum_right_record).expect("valid enum"));
     assert_ne!(enum_left, enum_right);
     assert_ne!(enum_left.cmp(&enum_right), Equal);
+  }
+
+  #[test]
+  fn enum_display_includes_variants() {
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::new("Result"),
+        vec![EdnTag::new("ok"), EdnTag::new("err")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::Vector(vec![]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")]))),
+      ]),
+    };
+    let enum_value = Calcit::Enum(CalcitEnum::from_record(enum_record).expect("valid enum"));
+    let text = enum_value.to_string();
+    assert!(text.starts_with("(%enum :Result"), "unexpected display: {text}");
+    assert!(text.contains(":ok)"), "missing zero-payload variant: {text}");
+    assert!(text.contains(":err :string)"), "missing payload variant: {text}");
   }
 
   #[test]

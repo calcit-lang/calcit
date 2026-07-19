@@ -2192,7 +2192,10 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(name, _), Self::Record(base)) | (Self::Record(base), Self::TypeRef(name, _)) => {
-        Self::type_ref_name_matches(name, base.name.ref_str())
+        // Records are structurally map-like (field name -> value), so procs typed as
+        // accepting a generic "map" (e.g. `to-pairs`/`keys`) should also accept records,
+        // in addition to matching the record's own type name.
+        Self::type_ref_name_matches(name, base.name.ref_str()) || Self::type_ref_name_matches(name, "map")
       }
       (Self::TypeRef(name, _), Self::Tuple(base)) | (Self::Tuple(base), Self::TypeRef(name, _)) => {
         Self::type_ref_name_matches(name, base.name().ref_str())
@@ -3059,6 +3062,25 @@ mod tests {
       }),
       location: None,
     }
+  }
+
+  #[test]
+  fn generic_map_type_ref_accepts_records_structurally() {
+    // Records are field-name -> value, structurally map-like, so a proc typed
+    // as accepting a generic "map" (e.g. `to-pairs`/`keys`) should not warn
+    // when called with a record. See RFC 07-19-type-introspection-consistency.
+    let record_struct = CalcitStruct::from_fields(EdnTag::new("Person"), vec![EdnTag::new("name")]);
+    let record_type = CalcitTypeAnnotation::Record(Arc::new(record_struct));
+    let map_type = CalcitTypeAnnotation::TypeRef(Arc::from("map"), Arc::new(vec![]));
+
+    let mut bindings = TypeBindings::new();
+    assert!(record_type.matches_with_bindings(&map_type, &mut bindings));
+    assert!(map_type.matches_with_bindings(&record_type, &mut bindings));
+
+    // unrelated type-ref names still must not match a record structurally
+    let person_type = CalcitTypeAnnotation::TypeRef(Arc::from("SomeOtherName"), Arc::new(vec![]));
+    let mut bindings2 = TypeBindings::new();
+    assert!(!record_type.matches_with_bindings(&person_type, &mut bindings2));
   }
 
   #[test]
