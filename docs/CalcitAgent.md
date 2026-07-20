@@ -302,7 +302,7 @@ echo "range 10" | cr exec
 
 #### 2. 在结构/编辑命令中免参数默认读取 stdin
 
-对于任何接收表达式或代码输入的命令 (例如 `cr tree replace`, `cr tree insert-before`, `cr edit def`, `cr edit add-import`, `cr edit imports`, `cr edit schema` 等)，当**同时省略 `--file` 和 `--code` 参数**时，将**默认直接从 stdin 读取**。格式自动检测：`[` 开头为 JSON，其他为 Cirru EDN（须 `quote` 前缀）。
+对于任何接收表达式或代码输入的命令（例如 `cr tree replace`、`cr tree insert-before`、`cr edit def`、`cr edit add-import`、`cr edit imports`、`cr edit schema` 等），当**同时省略 `--file` 和 `--code` 参数**时，将**默认直接从 stdin 读取**。格式自动检测：`[` 开头为 JSON 数组，其他为 Cirru EDN（须 `quote` 前缀）。
 
 ```bash
 # 同时省略 --file/--code，无需 Shell 转义，直接传递多行内容
@@ -312,7 +312,7 @@ END
 
 # edit commands 同样支持 stdin
 cr calcit.cirru edit add-import app.main << 'END'
-app.config :refer $ dev?
+quote (app.config :refer $ dev?)
 END
 
 # schema 更新也可以用 stdin
@@ -321,7 +321,7 @@ quote (:: :fn ({} (:return :dynamic) (:args ([])) (:features (#{} :js-ffi))))
 END
 ```
 
-Cirru 代码输入（`--code` / `--file` / stdin）必须使用 `quote` 前缀来区分 leaf 和表达式：
+Cirru 代码输入（`--code` / `--file` / stdin）必须使用 `quote` 前缀来区分 leaf 和表达式；只有 JSON 数组输入可以直接裸传：
 
 ```bash
 # leaf 节点

@@ -30,7 +30,7 @@ parent: core/run
 ```bash
 # 搜索 → 修改 → 验证
 cr query search 'symbol' --filter 'ns/def'                    # 1. 定位（输出：@3.2.1 in ...）
-cr tree replace 'ns/def' --path '3.2.1' --code 'new'         # 2. 修改
+cr tree replace 'ns/def' --path '@3.2.1' --code 'quote |new' # 2. 修改
 cr tree show 'ns/def' --path '3.2.1'                         # 3. 验证（可选）
 ```
 
@@ -39,7 +39,7 @@ cr tree show 'ns/def' --path '3.2.1'                         # 3. 验证（可�
 ```bash
 cr query search 'target' --filter 'ns/def'                    # 搜索符号/字符串
 cr query search-expr 'fn (x)' --filter 'ns/def'               # 搜索代码结构
-cr tree replace-leaf 'ns/def' --pattern 'old' --code 'new'    # 批量替换叶子节点
+cr tree replace-leaf 'ns/def' --pattern 'old' --code 'quote |new' # 批量替换叶子节点
 ```
 
 ### 效率对比

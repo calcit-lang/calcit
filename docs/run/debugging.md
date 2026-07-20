@@ -56,7 +56,7 @@ cr -w        # 或 cr js -w / cr ir -w
 
 # 【终端 2】修改代码后触发增量更新
 # 修改定义
-cr edit def app.core/my-fn --code 'defn my-fn (x) (+ x 1)'
+cr edit def app.core/my-fn --code 'quote (defn my-fn (x) (+ x 1))'
 
 # 触发增量更新
 cr edit inc --changed app.core/my-fn

@@ -20,7 +20,7 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 - **Assert Type**: `assert-type total :number`
 - **Local `fn` Hint**: `hint-fn $ {} (:args ([] :number)) (:return :number)`
-- **Top-level `defn` Schema**: `cr edit schema app.main/add --code ':: :fn $ {} (:args $ [] :number :number) (:return :number)'`
+- **Top-level `defn` Schema**: `cr edit schema app.main/add --code 'quote (:: :fn ({} (:args ([] :number :number)) (:return :number)))'`
 - **Return Type**: `hint-fn $ {} (:return :string)`
 - **Compact Hint**: `defn my-fn (x) :string ...`
 - **Check Traits**: `assert-traits x MyTrait`

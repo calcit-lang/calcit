@@ -18,39 +18,39 @@ exclude = ["lib/*", "calcit/*", "ts-src/*", "js-out/*", "scripts/*", "docs/*", "
 [dependencies]
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
-argh = "0.1.13"
+argh = "0.1.19"
 dirs = "6.0.0"
 notify = "8.0.0"
 notify-debouncer-mini = "0.7.0"
 walkdir = "2.5.0"
 hex = "0.4.3"
 md-5 = "0.10.6"
-rpds = "1.1.0"
+rpds = "1.2.1"
 im_ternary_tree = "0.0.20"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
-colored = "3.0.0"
+colored = "3.1.1"
 strum = "0.25"
 strum_macros = "0.25"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-cirru_edn = "0.7.7"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+cirru_edn = "0.7.8"
 cirru_parser = "0.2.8"
 bisection_key = "0.0.1"
-ureq = "3.2.0"
+ureq = "3.3.0"
 rmp-serde = "1.3.0"
-semver = "1.0"
-regex = "1.11.0"
+semver = "1.0.28"
+regex = "1.13.1"
 wasm-encoder = { version = "0.246.2", default-features = false }
 
 [build-dependencies]
-cirru_edn = "0.7.7"
+cirru_edn = "0.7.8"
 rmp-serde = "1.3.0"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
 cirru_parser = "0.2.8"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.9.0"
-ctrlc = "3.4.5"
+ctrlc = "3.5.2"
 
 [lib]
 name = "calcit"

@@ -60,7 +60,7 @@ cr edit rm-ns app.util
 
 ```bash
 # Add an import to a namespace
-cr edit add-import app.main --code 'respo.core :refer $ deftime'
+cr edit add-import app.main --code 'quote (respo.core :refer $ deftime)'
 
 # Bulk reset all imports for a namespace
 cr edit imports app.main --file imports.cirru
@@ -83,7 +83,7 @@ cr tree show app.main/main!
 
 ```bash
 # Replace '1' with '10' inside the definition
-cr tree search-replace app.main/main! --pattern '1' --code '10'
+cr tree search-replace app.main/main! --pattern '1' --code 'quote |10'
 ```
 
 ### Path-based Operations
@@ -92,10 +92,10 @@ You can use numeric paths to locate deep nodes:
 
 ```bash
 # Replace the node at path @1.2.0
-cr tree replace app.main/main! --path '@1.2.0' --code '(+ 1 2)'
+cr tree replace app.main/main! --path '@1.2.0' --code 'quote ((+ 1 2))'
 
 # Insert before a node
-cr tree insert-before app.main/main! --path '@1.0' --code 'println |started'
+cr tree insert-before app.main/main! --path '@1.0' --code 'quote (println |started)'
 
 # Delete a node
 cr tree delete app.main/main! --path '@1.0'
@@ -121,7 +121,14 @@ Editing commands support several ways to provide new code:
 - `--file file.cirru`: Multi-line code from a file (recommended for complex structures).
 - **stdin**: Pipe or redirect input directly; auto-detects JSON vs Cirru.
 
-> Note: For multi-line text input, prefer using `--file` with a temporary file in `.calcit-snippets/`.
+For Cirru input, current CLI expects **Cirru EDN with `quote` prefix**:
+
+- `--code 'quote |leaf'`
+- `--code 'quote (expr ...)'`
+- stdin / `--file` likewise use `quote ...`
+- only JSON array input can be passed without `quote`
+
+> Note: For multi-line text input, prefer `--file` or stdin heredoc. They avoid shell escaping, but Cirru content still needs the `quote` prefix.
 
 ## Best Practices
 
