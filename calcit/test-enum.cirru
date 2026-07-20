@@ -14,6 +14,18 @@
           :code $ quote
             defenum Maybe1 ('T) (:some 'T) (:none)
           :examples $ []
+        |Result0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            defenum Result0 (:err :string) (:ok)
+          :examples $ []
+        |ResultImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            defimpl ResultImpl ResultTrait $ .dummy nil
+          :examples $ []
+        |ResultTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            deftrait ResultTrait $ .dummy :fn
+          :examples $ []
         |ShownBox $ %{} :CodeEntry (:doc "|Generic struct with where-bound on payload type") (:schema :dynamic)
           :code $ quote
             defstruct ShownBox ('T)
@@ -26,18 +38,6 @@
               ({} ('T Show))
               (:some 'T)
               (:none)
-          :examples $ []
-        |Result0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
-          :code $ quote
-            defenum Result0 (:err :string) (:ok)
-          :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
-          :code $ quote
-            defimpl ResultImpl ResultTrait $ .dummy nil
-          :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
-          :code $ quote
-            deftrait ResultTrait $ .dummy :fn
           :examples $ []
         |check-result-type $ %{} :CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote
@@ -159,28 +159,6 @@
           :schema $ :: :fn
             {} (:return :unit)
               :args $ []
-        |test-where-bound-definitions $ %{} :CodeEntry (:doc "|Exercise defstruct/defenum where-map syntax on generic data types")
-          :code $ quote
-            defn test-where-bound-definitions () $ do (println "|Testing data definition where-bounds...")
-              let
-                  box $ %{} ShownBox (:value 1)
-                let
-                    some-value $ %:: ShownMaybe :some 1
-                  let
-                      none-value $ %:: ShownMaybe :none
-                    assert-type box $ :: 'ShownBox :number
-                    assert-type some-value $ :: 'ShownMaybe :number
-                    assert= |1 $ match some-value
-                      (:some item) (.show item)
-                      (:none) |none
-                    assert= |none $ match none-value
-                      (:some item) (.show item)
-                      (:none) |none
-              println "|✓ Data definition where-bounds passed"
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
-              :args $ []
         |test-match $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-match ()
@@ -228,6 +206,28 @@
               ; Verify the rewritten value has enum origin
               assert= true $ check-result-type (:: :ok)
               println "|✓ Tuple-to-enum rewrite passed"
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :unit)
+              :args $ []
+        |test-where-bound-definitions $ %{} :CodeEntry (:doc "|Exercise defstruct/defenum where-map syntax on generic data types")
+          :code $ quote
+            defn test-where-bound-definitions () $ do (println "|Testing data definition where-bounds...")
+              let
+                  box $ %{} ShownBox (:value 1)
+                let
+                    some-value $ %:: ShownMaybe :some 1
+                  let
+                      none-value $ %:: ShownMaybe :none
+                    assert-type box $ :: 'ShownBox :number
+                    assert-type some-value $ :: 'ShownMaybe :number
+                    assert= |1 $ match some-value
+                      (:some item) (.show item)
+                      (:none) |none
+                    assert= |none $ match none-value
+                      (:some item) (.show item)
+                      (:none) |none
+              println "|✓ Data definition where-bounds passed"
           :examples $ []
           :schema $ :: :fn
             {} (:return :unit)

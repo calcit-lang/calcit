@@ -133,7 +133,7 @@ You can read the documentation of any official library, even if not installed lo
 cr docs remote-libs readme respo
 
 # Read a specific markdown file inside package
-cr docs remote-libs readme respo -f Skills.md
+cr docs remote-libs readme respo --file Skills.md
 ```
 
 ### Low-Level File Listing

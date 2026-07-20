@@ -6,22 +6,20 @@
   :files $ {}
     |test-tuple.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
               assert= (:: :parts |1 |23)
                 tag-match (destruct-str |123)
-                    :none
-                    :: :empty
+                  (:none) (:: :empty)
                   (:some s0 ss) (:: :parts s0 ss)
               assert= (:: :empty)
                 tag-match (destruct-str |)
-                    :none
-                    :: :empty
+                  (:none) (:: :empty)
                   (:some s0 ss) (:: :parts s0 ss)
               assert=
                 :: :parts 1 $ [] 2 3
@@ -79,8 +77,7 @@
           :code $ quote
             defn try-size (x)
               tag-match x
-                  :dyn
-                  , 1
+                (:dyn) 1
                 (:dyn x) 2
                 (:dyn x y) 3
                 (:dyn x y z) 4

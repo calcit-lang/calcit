@@ -6,19 +6,19 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |compute $ %{} :CodeEntry (:doc |) (:schema nil)
+        |compute $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn compute (x) :number $ &+ x 10
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () $ println (test-nested-scope)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |test-nested-scope $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-nested-scope $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-nested-scope () (; "测试：外层定义的变量可以被内层使用，并保留类型信息")
               let

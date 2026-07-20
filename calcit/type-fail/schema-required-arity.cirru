@@ -1,5 +1,5 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |type-fail-schema-required-arity)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-schema-required-arity)
   :configs $ {} (:init-fn |type-fail-schema-required-arity.main/main!) (:reload-fn |type-fail-schema-required-arity.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}

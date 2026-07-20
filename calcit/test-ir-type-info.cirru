@@ -6,19 +6,19 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |get-number $ %{} :CodeEntry (:doc |) (:schema nil)
+        |get-number $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn get-number () :number $ do 123
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () $ test-type-info
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |test-type-info $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-type-info $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-type-info () $ let
                 x 123

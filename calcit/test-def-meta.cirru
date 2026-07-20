@@ -13,15 +13,15 @@
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number
-        |main! $ %{} :CodeEntry (:doc "|Run def metadata lookup tests") (:schema nil)
+        |main! $ %{} :CodeEntry (:doc "|Run def metadata lookup tests") (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing def metadata") (test-local-def) (test-core-def) (test-missing-doc)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler") (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc "|Reload handler") (:schema :dynamic)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-        |test-core-def $ %{} :CodeEntry (:doc "|lookup calcit.core definitions") (:schema nil)
+        |test-core-def $ %{} :CodeEntry (:doc "|lookup calcit.core definitions") (:schema :dynamic)
           :code $ quote
             defn test-core-def () $ inside-eval:
               let
@@ -29,9 +29,10 @@
                   schema $ &get-def-schema |calcit.core/map
                 assert= true $ includes? doc |map
                 assert= :fn $ &tuple:nth schema 0
-                assert= true $ some? $ get (&tuple:nth schema 1) :args
+                assert= true $ some?
+                  get (&tuple:nth schema 1) :args
           :examples $ []
-        |test-local-def $ %{} :CodeEntry (:doc "|lookup local definition metadata") (:schema nil)
+        |test-local-def $ %{} :CodeEntry (:doc "|lookup local definition metadata") (:schema :dynamic)
           :code $ quote
             defn test-local-def () $ inside-eval:
               let
@@ -41,7 +42,7 @@
                 assert= :fn $ &tuple:nth schema 0
                 assert= :number $ get (&tuple:nth schema 1) :return
           :examples $ []
-        |test-missing-doc $ %{} :CodeEntry (:doc "|missing definition returns empty doc string") (:schema nil)
+        |test-missing-doc $ %{} :CodeEntry (:doc "|missing definition returns empty doc string") (:schema :dynamic)
           :code $ quote
             defn test-missing-doc () $ inside-eval:
               assert= | $ &get-def-doc |test-def-meta.main/not-a-real-def

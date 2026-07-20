@@ -166,10 +166,10 @@ Use `docs check-md` to validate fenced code blocks in markdown files:
 cr docs check-md README.md
 ```
 
-This defaults to `calcit.cirru` as the eval entry. If your project uses a different snapshot filename, pass it explicitly with `-d`:
+This defaults to `calcit.cirru` as the eval entry. If your project uses a different snapshot filename, pass it explicitly with `--entry`:
 
 ```bash
-cr docs check-md README.md -d compact.cirru
+cr docs check-md README.md --entry compact.cirru
 ```
 
 Load module dependencies with repeatable `--dep` options:

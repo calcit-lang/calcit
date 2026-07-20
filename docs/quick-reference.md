@@ -68,11 +68,14 @@ cr eval "echo |done"
 - `cr docs read <file>` - read a full calcit doc
 - `cr docs read <file> <keyword...>` - fuzzy jump by heading keywords
 - `cr docs read <file> --module <name>` - read a full module doc
-- `cr docs read-lines <file> -s <start> -n <lines>` - precise line-range reading
+- `cr docs read-lines <file> --start <start> --lines <lines>` - precise line-range reading
 - `cr docs search <keyword>` - global keyword search
 - `cr docs search <keyword> --module <name>` - search installed module docs directly
 - `cr docs remote-libs search <keyword>` - search remote library registry
 - `cr docs remote-libs readme <package>` - read a remote or installed package README
+- `cr docs graph build` - build the structured documentation relationship cache
+- `cr docs graph path <from> <to>` - find a short path between knowledge nodes
+- `cr docs graph explain <namespace/definition> --full` - show definition details and linked docs
 
 ## Data Types
 

@@ -6,15 +6,15 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (test-valid-list-methods) (; test-invalid-list-method ; "会导致" preprocess "错误") (; test-invalid-string-method ; "会导致" preprocess "错误") (test-invalid-map-method ; "测试" map "方法验证") (println |All tests passed)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |test-invalid-list-method $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-invalid-list-method $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-invalid-list-method () $ let
                 xs $ [] 1 2 3
@@ -22,7 +22,7 @@
               ; "非法：list" "没有" invalid-method
               .invalid-method xs
           :examples $ []
-        |test-invalid-map-method $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-invalid-map-method $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-invalid-map-method () $ let
                 m $ {} (:a 1)
@@ -30,7 +30,7 @@
               ; "非法：map" "没有" invalid-map-method
               .invalid-map-method m
           :examples $ []
-        |test-invalid-string-method $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-invalid-string-method $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-invalid-string-method () $ let
                 text |hello
@@ -38,7 +38,7 @@
               ; "非法：string" "没有" invalid-string-method
               .invalid-string-method text
           :examples $ []
-        |test-valid-list-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-valid-list-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-valid-list-methods () $ let
                 xs $ [] 1 2 3

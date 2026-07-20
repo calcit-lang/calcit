@@ -6,29 +6,29 @@
   :files $ {}
     |test-optimize.main $ %{} :FileEntry
       :defs $ {}
-        |LocalPerson0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |LocalPerson0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct LocalPerson0 $ :name :string
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Person $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def Person $ impl-traits Person0 ShowImpl
           :examples $ []
-        |Person0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Person0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct Person0 $ :name :string
           :examples $ []
-        |ShowImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ShowImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl ShowImpl ShowTrait $ .show
               fn (self)
                 str "|Person: " $ &record:get self :name
           :examples $ []
-        |ShowTrait $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ShowTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait ShowTrait $ .show :fn
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () $ let
                 p $ %{} Person (:name |Jim)

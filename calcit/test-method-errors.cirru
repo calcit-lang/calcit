@@ -6,15 +6,15 @@
   :files $ {}
     |test-method-errors.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Entry for reproducing preprocess failures") (:schema nil)
+        |main! $ %{} :CodeEntry (:doc "|Entry for reproducing preprocess failures") (:schema :dynamic)
           :code $ quote
             defn main! () (; "运行该入口会在" preprocess "阶段报错，验证类型推断是否生效") (trigger-type-error)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler") (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc "|Reload handler") (:schema :dynamic)
           :code $ quote
             defn reload! () $ :: :unit
           :examples $ []
-        |trigger-type-error $ %{} :CodeEntry (:doc "|Pipeline sample that should fail preprocess type checks") (:schema nil)
+        |trigger-type-error $ %{} :CodeEntry (:doc "|Pipeline sample that should fail preprocess type checks") (:schema :dynamic)
           :code $ quote
             defn trigger-type-error () $ let
                 src $ {} (:a 1) (:b 2)

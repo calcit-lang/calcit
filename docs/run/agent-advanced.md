@@ -746,10 +746,10 @@ cr tree replace 'app.core/checkout' --path @3.2.1 --code 'calculate-discount'
 
 ```bash
 # 仓库内验证本文档全部 cirru 块
-cr calcit/test.cirru docs check-md docs/run/agent-advanced.md -d calcit/test.cirru
+cr calcit/test.cirru docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
 
 # 等价写法（显式 entry）
-cr docs check-md docs/run/agent-advanced.md -d calcit/test.cirru
+cr docs check-md docs/run/agent-advanced.md --entry calcit/test.cirru
 ```
 
 块类型速查：`cirru` = 完整 eval；`cirru.no-check` = 仅语法示意，不参与类型检查。

@@ -6,15 +6,15 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (println "|=== Proc Type Warning Demo ===") (println "|This file demonstrates type checking for Proc (builtin) functions") (println "|Expected warning: Proc &+ arg 1 expects type :number, but got :string") (println |) (test-type-mismatch) (println |Done!)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |test-type-mismatch $ %{} :CodeEntry (:doc "|Demonstrates Proc type checking - intentional type error") (:schema nil)
+        |test-type-mismatch $ %{} :CodeEntry (:doc "|Demonstrates Proc type checking - intentional type error") (:schema :dynamic)
           :code $ quote
             defn test-type-mismatch () (; This should generate a warning: passing string to numeric operation)
               let

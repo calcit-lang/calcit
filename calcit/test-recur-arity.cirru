@@ -52,7 +52,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing recur arity")
               assert= 10 $ sum-to-n 4
@@ -62,7 +62,7 @@
               assert= 120 $ factorial 5 1
               assert= 24 $ factorial 4 1
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () $ println "|Code updated"
           :examples $ []
