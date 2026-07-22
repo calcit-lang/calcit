@@ -36,7 +36,7 @@ Calcit inherits most features from Clojure/ClojureScript while adding its own in
 
 ## Unique to Calcit
 
-- **Indentation-based syntax** - Alternative to parentheses using `bundle_calcit`, similar to Python/Haskell
+- **Indentation-based syntax** - Alternative to parentheses for writing Calcit source, similar to Python/Haskell
 - **Structural editing** - Visual tree-based code editing with Calcit Editor (Electron app)
 - **ES Modules output** - Modern JavaScript module format, tree-shakeable
 - **MCP integration** - Model Context Protocol server for AI assistant tool integration

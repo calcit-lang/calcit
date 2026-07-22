@@ -145,6 +145,50 @@ pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() > 2 {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("read-dir expected 1 or 2 arguments, got {}", xs.len()),
+    );
+  }
+  let (path, recursive) = match (xs.first(), xs.get(1)) {
+    (Some(Calcit::Str(path)), None) => (path, false),
+    (Some(Calcit::Str(path)), Some(Calcit::Bool(recursive))) => (path, *recursive),
+    (Some(path), recursive) => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!(
+          "read-dir requires a string path and an optional boolean, but received: {}{}",
+          type_of(std::slice::from_ref(path))?.lisp_str(),
+          recursive.map_or_else(String::new, |x| format!(" and {}", x.lisp_str()))
+        ),
+      );
+    }
+    (None, _) => return CalcitErr::err_str(CalcitErrKind::Arity, "read-dir expected a directory path, got nothing"),
+  };
+
+  fn collect_paths(path: &std::path::Path, recursive: bool, paths: &mut Vec<String>) -> Result<(), std::io::Error> {
+    for entry in fs::read_dir(path)? {
+      let entry = entry?;
+      let entry_path = entry.path();
+      paths.push(entry_path.to_string_lossy().to_string());
+      if recursive && entry.file_type()?.is_dir() {
+        collect_paths(&entry_path, true, paths)?;
+      }
+    }
+    Ok(())
+  }
+
+  let mut paths = vec![];
+  collect_paths(std::path::Path::new(&**path), recursive, &mut paths)
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Effect, format!("read-dir failed at {}: {e}", &**path)))?;
+  paths.sort();
+  Ok(Calcit::from(
+    paths.into_iter().map(|path| Calcit::Str(path.into())).collect::<Vec<_>>(),
+  ))
+}
+
 pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {

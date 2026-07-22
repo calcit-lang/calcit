@@ -116,6 +116,8 @@ pub enum CalcitProc {
   RegisterCalcitBuiltinImpls,
   #[strum(serialize = "read-file")]
   ReadFile,
+  #[strum(serialize = "read-dir")]
+  ReadDir,
   #[strum(serialize = "write-file")]
   WriteFile,
   #[strum(serialize = "list?")]
@@ -1314,6 +1316,10 @@ impl CalcitProc {
       ReadFile => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("string")],
+      }),
+      ReadDir => Some(ProcTypeSignature {
+        return_type: list_of(some_tag("string")),
+        arg_types: vec![some_tag("string"), optional_tag("bool")],
       }),
       WriteFile => Some(ProcTypeSignature {
         return_type: some_tag("nil"),

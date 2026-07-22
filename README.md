@@ -40,12 +40,11 @@ Installed binaries:
 - `calcit`, the runtime and js compiler
 - `cr-wasm`, standalone WASM codegen tool
 - `caps`, for downloading dependencies declared in `deps.cirru`
-- `bundle_calcit`, bundle code for distribution
 
 When installing from source, explicitly include both runners:
 
 ```bash
-cargo install --path . --bin cr --bin cr-wasm --bin caps --bin bundle_calcit
+cargo install --path . --bin cr --bin cr-wasm --bin caps
 ```
 
 To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/setup-cr).

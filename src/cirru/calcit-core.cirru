@@ -4881,6 +4881,14 @@
             {} (:return :string)
               :args $ [] :string
           :tags $ #{} :builtin :file :internal :io
+        |read-dir $ %{} :CodeEntry (:doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: :fn
+            {}
+              :args $ [] :string (:: :optional :bool)
+              :return $ :: :list :string
+          :tags $ #{} :builtin :file :internal :io
         |record-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro record-match (value & body)

@@ -8,10 +8,8 @@ aliases:
   - "indentation based syntax"
   - "calcit.cirru"
   - "calcit cirru"
-  - "bundle_calcit"
   - "cirru edn"
 entry_for:
-  - "bundle_calcit"
   - "calcit.cirru"
 ---
 
@@ -31,7 +29,7 @@ defn fibo (x)
     + (fibo $ - x 1) (fibo $ - x 2)
 ```
 
-But also, you can write in files and bundle `calcit.cirru` with a command line `bundle_calcit`.
+But also, you can write Calcit code directly in a snapshot file and run it with `cr`.
 
 To run `calcit.cirru` (or legacy `compact.cirru`), internally it's doing steps:
 
