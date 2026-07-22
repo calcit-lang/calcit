@@ -4889,6 +4889,12 @@
               :args $ [] :string (:: :optional :bool)
               :return $ :: :list :string
           :tags $ #{} :builtin :file :internal :io
+        |unix-time-ms $ %{} :CodeEntry (:doc "|Return the current Unix timestamp in milliseconds.\nSyntax: (unix-time-ms)\nReturns: number")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number) (:args $ [])
+          :tags $ #{} :builtin :internal :io :time
         |record-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro record-match (value & body)

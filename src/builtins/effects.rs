@@ -3,7 +3,7 @@ use std::fs;
 use std::process::exit;
 use std::sync::LazyLock;
 use std::sync::RwLock;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
   builtins::meta::type_of,
@@ -125,6 +125,20 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "get-env expected an argument, got nothing"),
   }
+}
+
+pub fn unix_time_ms(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if !xs.is_empty() {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("unix-time-ms expected no arguments, got {}", xs.len()),
+    );
+  }
+  let millis = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Effect, format!("unix-time-ms failed: {e}")))?
+    .as_millis() as f64;
+  Ok(Calcit::Number(millis))
 }
 
 pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {

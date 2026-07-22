@@ -110,6 +110,8 @@ pub enum CalcitProc {
   Quit,
   #[strum(serialize = "get-env")]
   GetEnv,
+  #[strum(serialize = "unix-time-ms")]
+  UnixTimeMs,
   #[strum(serialize = "&get-calcit-backend")]
   NativeGetCalcitBackend,
   #[strum(serialize = "register-calcit-builtin-impls")]
@@ -1336,6 +1338,10 @@ impl CalcitProc {
       GetEnv => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("string"), optional_dynamic()],
+      }),
+      UnixTimeMs => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![],
       }),
 
       // === Time ===

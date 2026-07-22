@@ -65,10 +65,6 @@ name = "caps"
 path = "src/bin/calcit_deps.rs"
 
 [[bin]]
-name = "cr-sync"
-path = "src/bin/cr_sync.rs"
-
-[[bin]]
 name = "cr-wasm"
 path = "src/bin/cr_wasm.rs"
 

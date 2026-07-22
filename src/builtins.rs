@@ -411,6 +411,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     Raise => effects::raise(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),
+    UnixTimeMs => effects::unix_time_ms(args),
     NativeGetCalcitBackend => effects::call_get_calcit_backend(args),
     RegisterCalcitBuiltinImpls => meta::register_calcit_builtin_impls(args),
     ReadFile => effects::read_file(args),

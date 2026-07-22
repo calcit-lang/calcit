@@ -31,7 +31,17 @@ For projects that still keep one namespace per indentation-based `.cirru` source
 BUNDLE_SRC=src \
 BUNDLE_CONFIG=deps.cirru \
 BUNDLE_OUT=calcit.cirru \
-cr /path/to/calcit/calcit/bundle-calcit.cirru
+cr /path/to/calcit/calcit/scripts/bundle-calcit.cirru
 ```
 
 The script recursively reads `.cirru` files, validates their `ns` and definition forms, and writes a runnable snapshot. It intentionally does not implement the retired watch or incremental-file behavior.
+
+To synchronize a legacy runtime `compact.cirru` back into a detailed `calcit.cirru`, use the companion script. It requires locally installed `bisection-key` version `0.0.18` or later:
+
+```bash
+SYNC_COMPACT=compact.cirru \
+SYNC_CALCIT=calcit.cirru \
+cr /path/to/calcit/calcit/scripts/sync-calcit.cirru
+```
+
+The sync script preserves metadata for unchanged code and regenerates detailed lexical keys only for changed code.
