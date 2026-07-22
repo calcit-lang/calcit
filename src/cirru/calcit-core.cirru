@@ -4746,24 +4746,18 @@
                 &let
                   v1# $ gensym |v1
                   quasiquote $ &let (~v1# ~item)
-                    if (nil? ~v1#)
+                    if
+                      if (nil? ~v1#) true $ &= false ~v1#
                       or
                         ~ $ &list:first xs
                         ~@ $ &list:rest xs
-                      if (&= false ~v1#)
-                        or
-                          ~ $ &list:first xs
-                          ~@ $ &list:rest xs
-                        ~ v1#
-                quasiquote $ if (nil? ~item)
+                      ~ v1#
+                quasiquote $ if
+                  if (nil? ~item) true $ &= false ~item
                   or
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
-                  if (&= false ~item)
-                    or
-                      ~ $ &list:first xs
-                      ~@ $ &list:rest xs
-                    ~ item
+                  ~ item
           :examples $ []
             quote $ assert= |done (or nil |done false)
             quote $ assert= false (or false nil)

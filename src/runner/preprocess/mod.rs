@@ -24,6 +24,7 @@ use type_rewriting::{
   try_rewrite_tuple_args_to_enum_tuples,
 };
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +37,7 @@ use strum::ParseError;
 pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
+static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
   static PREPROCESS_COMPILE_GUARD: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
@@ -50,6 +52,39 @@ thread_local! {
   /// Feature flags of the current function being preprocessed.
   /// Used to check whether js-ffi calls are permitted.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
+  static PREPROCESS_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+pub fn set_verbose_preprocess(enabled: bool) {
+  VERBOSE_PREPROCESS.store(enabled, Ordering::SeqCst);
+}
+
+struct PreprocessTrace {
+  ns: Arc<str>,
+  def: Arc<str>,
+}
+
+impl PreprocessTrace {
+  fn enter(ns: &str, def: &str) -> Option<Self> {
+    if !VERBOSE_PREPROCESS.load(Ordering::Relaxed) {
+      return None;
+    }
+    PREPROCESS_DEPTH.with(|depth| {
+      eprintln!("[verbose] preprocess enter depth={} {ns}/{def}", depth.get());
+      depth.set(depth.get() + 1);
+    });
+    Some(Self {
+      ns: Arc::from(ns),
+      def: Arc::from(def),
+    })
+  }
+}
+
+impl Drop for PreprocessTrace {
+  fn drop(&mut self) {
+    PREPROCESS_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    eprintln!("[verbose] preprocess leave {}/{}", self.ns, self.def);
+  }
 }
 
 fn with_preprocess_compile_guard<T>(ns: &str, def: &str, f: impl FnOnce() -> Result<T, CalcitErr>) -> Result<Option<T>, CalcitErr> {
@@ -145,6 +180,8 @@ fn ensure_ns_def_preprocessed(
   if program::lookup_compiled_def(ns, def).is_some() {
     return Ok(());
   }
+
+  let _trace = PreprocessTrace::enter(ns, def);
 
   // Save and clear EXPECTED_FN_TYPE to prevent leaking into nested def compilation.
   // The calling context's fn type hint is only meant for the immediate expression being processed,

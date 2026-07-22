@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
 use std::time::Instant;
 
@@ -264,6 +264,7 @@ fn main() -> Result<(), String> {
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
+  runner::preprocess::set_verbose_preprocess(cli_args.verbose);
 
   // make sure builtin classes are touched
   runner::preprocess::ensure_ns_def_compiled(
@@ -295,13 +296,13 @@ fn main() -> Result<(), String> {
     if cli_args.skip_arity_check {
       codegen::set_code_gen_skip_arity_check(true);
     }
-    run_codegen(&entries, &cli_args.emit_path, false)
+    run_codegen_with_timeout(&entries, &cli_args.emit_path, false, cli_args.timeout, cli_args.verbose)
   } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
     if !ir_options.watch {
       // `cr ir` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
-    run_codegen(&entries, &cli_args.emit_path, true)
+    run_codegen_with_timeout(&entries, &cli_args.emit_path, true, cli_args.timeout, cli_args.verbose)
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
@@ -482,9 +483,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   // In practice, this could be enhanced to maintain documentation state
 
   let task = if let Some(CalcitCommand::EmitJs(_)) = settings.subcommand {
-    run_codegen(entries, &settings.emit_path, false)
+    run_codegen_with_timeout(entries, &settings.emit_path, false, settings.timeout, settings.verbose)
   } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
-    run_codegen(entries, &settings.emit_path, true)
+    run_codegen_with_timeout(entries, &settings.emit_path, true, settings.timeout, settings.verbose)
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
@@ -572,8 +573,45 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   Ok(())
 }
 
-fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Result<(), String> {
+fn run_codegen_with_timeout(
+  entries: &ProgramEntries,
+  emit_path: &str,
+  ir_mode: bool,
+  timeout_secs: u64,
+  verbose: bool,
+) -> Result<(), String> {
+  if timeout_secs == 0 {
+    return run_codegen(entries, emit_path, ir_mode, verbose);
+  }
+  let entries = entries.clone();
+  let emit_path = emit_path.to_owned();
+  let (tx, rx) = channel();
+  std::thread::Builder::new()
+    .name("calcit-codegen".into())
+    // Macro/type preprocessing can be deeply recursive for large schemas.
+    .stack_size(16 * 1024 * 1024)
+    .spawn(move || {
+      let result = run_codegen(&entries, &emit_path, ir_mode, verbose);
+      let _ = tx.send(result);
+    })
+    .map_err(|err| format!("failed to start codegen thread: {err}"))?;
+  match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
+    Ok(result) => result,
+    Err(RecvTimeoutError::Timeout) => Err(format!(
+      "codegen timed out after {timeout_secs}s; re-run with --verbose or --timeout 0 for diagnosis"
+    )),
+    Err(RecvTimeoutError::Disconnected) => Err("codegen thread terminated without returning a result".into()),
+  }
+}
+
+fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose: bool) -> Result<(), String> {
   let started_time = Instant::now();
+  let phase = |name: &str| {
+    if verbose {
+      eprintln!("[verbose] {name} (+{}ms)", started_time.elapsed().as_millis());
+    }
+  };
+  phase("codegen started");
   codegen::set_codegen_mode(true);
 
   if ir_mode {
@@ -593,6 +631,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   gen_stack::clear_stack();
 
   // preprocess to init
+  phase("preprocessing init entry");
   match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
@@ -609,6 +648,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   // preprocess to reload
+  phase("preprocessing reload entry");
   match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
@@ -629,6 +669,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   if ir_mode {
+    phase("emitting IR");
     match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
@@ -638,6 +679,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     }
   } else {
     // TODO entry ns
+    phase("emitting JavaScript");
     match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {
       Ok(_) => (),
       Err(failure) => {

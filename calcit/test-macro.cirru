@@ -8,7 +8,7 @@
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
-            defn main! () (log-title "|Testing cond") (test-cond) (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (do true)
+            defn main! () (log-title "|Testing cond") (test-cond) (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (test-or-linear-expansion) (do true)
           :examples $ []
         |test-assert $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
@@ -240,6 +240,10 @@
             fn () (log-title |misc)
               assert= (noted nothing 1) 1
               inside-eval: $ println (&extract-code-into-edn 'code)
+          :examples $ []
+        |test-or-linear-expansion $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            defn test-or-linear-expansion () $ assert= |done (or false false false false false false false false false false false false false false false false false false false false |done)
           :examples $ []
         |test-thread-macros $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote

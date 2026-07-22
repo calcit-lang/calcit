@@ -49,6 +49,12 @@ pub struct ToplevelCalcit {
   /// print version only
   #[argh(switch)]
   pub version: bool,
+  /// print progress details and timing while loading and compiling
+  #[argh(switch)]
+  pub verbose: bool,
+  /// maximum seconds for one JS/IR compilation (0 disables the limit)
+  #[argh(option, default = "60")]
+  pub timeout: u64,
   /// show full tips output in all commands
   #[argh(switch)]
   pub tips: bool,
