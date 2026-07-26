@@ -48,7 +48,7 @@ cr docs search structural --summary
 
 ```bash
 cr docs search polymorphism
-cr docs search edit-tree -f run.md
+cr docs search edit-tree --filename run.md
 cr docs search search-replace
 cr docs search watch mode
 cr docs search calcit.cirru

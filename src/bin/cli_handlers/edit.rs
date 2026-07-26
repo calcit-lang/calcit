@@ -198,7 +198,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     }
     return Err(format!(
       "Definition '{resolved_definition}' already exists in namespace '{namespace}'.\n\
-       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite -f <file>"
+       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite --file <file>"
     ));
   }
 
@@ -301,7 +301,7 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
 
   if advice.strategy != CirruEditStrategy::Identical || changed_nodes > 0 {
     lines.push(format!(
-      "Locate the smallest path first: cr query search '<keyword>' -f '{target}' && cr tree show '{target}' -p '<path>'"
+      "Locate the smallest path first: cr query search '<keyword>' --filter '{target}' && cr tree show '{target}' --path '<path>'"
     ));
   }
 
@@ -1274,7 +1274,7 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
       Cirru::Leaf(_) => {
         let partial = format_path(&path[..depth]);
         return Err(format!(
-          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show -p {}' to explore the tree structure (use dot-separated indices, e.g. '@2.1.0')",
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show --path {}' to explore the tree structure (use dot-separated indices, e.g. '@2.1.0')",
           format_path(&path[..depth]),
           partial,
         ));
@@ -1283,7 +1283,7 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
         if idx >= items.len() {
           let partial = format_path(&path[..depth]);
           return Err(format!(
-            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: {}\n   Valid path up to: {}\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show -p {}' to see available children",
+            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: {}\n   Valid path up to: {}\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show --path {}' to see available children",
             idx,
             depth,
             items.len(),
@@ -1416,7 +1416,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
         {
           return Err(
             "Do not include ':require' as a prefix in the imports input. \
-               Pass rules directly, e.g. -e 'src-ns :refer $ sym' or use -f for multiple rules."
+               Pass rules directly, e.g. --code 'src-ns :refer $ sym' or use --file for multiple rules."
               .to_string(),
           );
         }

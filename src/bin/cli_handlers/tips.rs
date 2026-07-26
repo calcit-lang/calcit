@@ -135,7 +135,7 @@ pub fn tip_prefer_oneliner_json(show_json: bool) -> Vec<String> {
 pub fn tip_root_edit(path_is_empty: bool) -> Option<String> {
   if path_is_empty {
     Some(
-      "Editing root path; prefer cr edit def --overwrite -f <file> for whole-definition rewrites, and keep tree replace for intentional root-node surgery"
+      "Editing root path; prefer cr edit def --overwrite --file <file> for whole-definition rewrites, and keep tree replace for intentional root-node surgery"
         .to_string(),
     )
   } else {

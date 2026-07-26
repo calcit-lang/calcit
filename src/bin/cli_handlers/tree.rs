@@ -364,7 +364,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!("cr tree show '{}' -p '{}'", resolved_target, format_path(valid_path)).cyan()
+            format!("cr tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
           );
         }
         Cirru::List(items) => {
@@ -377,7 +377,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!("cr tree show '{}' -p '{}'", resolved_target, format_path(valid_path)).cyan()
+            format!("cr tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
           );
 
           // Show first few children as hints

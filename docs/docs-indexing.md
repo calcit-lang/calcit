@@ -185,7 +185,7 @@ cr docs search render --module respo.calcit
 
 - `cr docs search <keyword>` — searches doc body + frontmatter metadata (title, aliases, entry_for, summary)
 - `cr docs search <keyword> --summary` — shows only doc title + summary (no content snippets), ideal for LLM first-pass filtering
-- `cr docs search <keyword> -f <filename>` — filter by filename
+- `cr docs search <keyword> --filename <filename>` — filter by filename
 - `cr docs search <keyword> --module <name>` — search module docs instead of core
 
 ### `summary` field (recommended)

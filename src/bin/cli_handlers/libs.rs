@@ -172,7 +172,7 @@ fn handle_readme(
 
   let render_readme = |content: &str| -> Result<(), String> {
     let no_match_error =
-      format!("No heading matched in {file_name}. Use 'cr docs remote-libs readme {package} -f {file_name}' to list headings.");
+      format!("No heading matched in {file_name}. Use 'cr docs remote-libs readme {package} --file {file_name}' to list headings.");
     render_markdown_sections(
       content,
       heading_queries,
@@ -338,7 +338,7 @@ fn handle_scan_md(module: &str) -> Result<(), String> {
   println!();
   println!(
     "{}",
-    format!("Use 'cr docs remote-libs readme {module} -f <file>' to read a specific file").dimmed()
+    format!("Use 'cr docs remote-libs readme {module} --file <file>' to read a specific file").dimmed()
   );
 
   Ok(())

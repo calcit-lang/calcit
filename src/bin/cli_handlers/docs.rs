@@ -1018,17 +1018,17 @@ fn handle_search(
     if summary_mode {
       println!(
         "{}",
-        "Tip: Omit --summary to see full context snippets. Use -c <num> for more context.".dimmed()
+        "Tip: Omit --summary to see full context snippets. Use --context <num> for more context.".dimmed()
       );
     } else {
       println!(
         "{}",
-        "Tip: Use -c <num> to show more context lines (e.g., 'cr docs search <keyword> -c 20')".dimmed()
+        "Tip: Use --context <num> to show more context lines (e.g., 'cr docs search <keyword> --context 20')".dimmed()
       );
     }
     println!(
       "{}",
-      "    Use -f <filename> to filter by filename. Use --module <name> to search module docs.".dimmed()
+      "    Use --filename <filename> to filter by filename. Use --module <name> to search module docs.".dimmed()
     );
   }
 
