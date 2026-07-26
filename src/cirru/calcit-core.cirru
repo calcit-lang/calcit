@@ -3093,8 +3093,8 @@
                                     &= :method $ type-of k0
                                     let
                                         s $ format-to-lisp k0
-                                      turn-tag $ &str:slice s 9
-                                        &- (count s) 1
+                                      turn-tag $ &str:slice s 1
+                                        count s
                                     raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
                               quasiquote $ [] ~key ~v0
                     do
@@ -3120,8 +3120,8 @@
                                       &= :method $ type-of k0
                                       let
                                           s $ format-to-lisp k0
-                                        turn-tag $ &str:slice s 9
-                                          &- (count s) 1
+                                        turn-tag $ &str:slice s 1
+                                          count s
                                       raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
                                 quasiquote $ [] ~key ~v0
           :examples $ []
@@ -3286,8 +3286,8 @@
                                 &= :method $ type-of m0
                                 let
                                     s $ format-to-lisp m0
-                                  turn-tag $ &str:slice s 9
-                                    &- (count s) 1
+                                  turn-tag $ &str:slice s 1
+                                    count s
                                 raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
                             t1 $ internal/normalize-trait-type t0
                           quasiquote $ [] ~k0 (quote ~t1)

@@ -357,10 +357,12 @@ impl fmt::Display for Calcit {
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(t) if !matches!(**t, CalcitTypeAnnotation::Dynamic) => {
-          f.write_str(&format!("(&invoke {name} :type {})", t.as_ref()))
-        }
-        _ => f.write_str(&format!("(&{method_kind} {name})")),
+        MethodKind::Invoke(_) => f.write_str(&format!(".{name}")),
+        MethodKind::Access => f.write_str(&format!(".-{name}")),
+        MethodKind::InvokeNative => f.write_str(&format!(".!{name}")),
+        MethodKind::TagAccess => f.write_str(&format!(".:{name}")),
+        MethodKind::AccessOptional => f.write_str(&format!(".?-{name}")),
+        MethodKind::InvokeNativeOptional => f.write_str(&format!(".?!{name}")),
       },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
       AnyRef(_r) => f.write_str("(&any-ref ...)"),
@@ -828,13 +830,7 @@ impl Calcit {
       Calcit::Nil => String::from(""),
       Calcit::Str(s) => (**s).to_owned(),
       Calcit::Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(t) => {
-          if matches!(**t, CalcitTypeAnnotation::Dynamic) {
-            format!(".{name}")
-          } else {
-            format!("(&invoke {name} :type {})", t.as_ref())
-          }
-        }
+        MethodKind::Invoke(_) => format!(".{name}"),
         MethodKind::Access => format!(".-{name}"),
         MethodKind::InvokeNative => format!(".!{name}"),
         MethodKind::TagAccess => format!(".:{name}"),
@@ -1395,6 +1391,16 @@ mod tests {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     hasher.finish()
+  }
+
+  #[test]
+  fn display_methods_with_literal_syntax() {
+    let dynamic = Calcit::Method(Arc::from("ceil"), MethodKind::Invoke(DYNAMIC_TYPE.clone()));
+    let typed = Calcit::Method(Arc::from("display-by"), MethodKind::Invoke(Arc::new(CalcitTypeAnnotation::Number)));
+
+    assert_eq!(dynamic.to_string(), ".ceil");
+    assert_eq!(typed.to_string(), ".display-by");
+    assert_eq!(typed.turn_string(), ".display-by");
   }
 
   #[test]
