@@ -251,7 +251,7 @@ let
 把文档示例统一调整为优先使用点号路径，例如：
 
 ```bash
-cr tree show ns/def -p '3.2.1'
+cr tree show ns/def --path '3.2.1'
 ```
 
 逗号兼容只在合适位置说明一次，不重复铺满全文。

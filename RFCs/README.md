@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-06-29
+更新时间：2026-07-26
 
 ## 目录原则
 
@@ -32,6 +32,7 @@
 | `07-06-semantic-tree-navigation-rfc.md`             | Draft         | 语义化树形导航与编辑：路径标注、多候选交互、锚点搜索替换、结构化查询语言。                |
 | `07-19-doc-knowledge-index-rfc.md`                  | Draft         | Markdown/Calcit snapshot 的知识节点、关系索引与用户级增量缓存方案。                       |
 | `07-19-type-introspection-consistency-rfc.md`       | Implemented   | 类型自省一致性改进：`&methods-of` 支持裸类型定义、`Enum` Display 补 variants、`to-pairs`/`keys` 类型签名修正（第 4 项可选新增 proc 延后）。 |
+| `07-26-agent-semantic-interface-roadmap-rfc.md`     | Draft         | 面向 LLM Agent 的统一语义查询、静态类型发现、文档索引、结构化诊断、事务编辑和效率基准路线图。                            |
 
 ## 已执行的清理
 

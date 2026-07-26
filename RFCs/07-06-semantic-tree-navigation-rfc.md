@@ -8,7 +8,7 @@
 
 ## 1. 概要
 
-当前 `cr tree` 系列编辑命令在定位子表达式时依赖纯数字点号路径（如 `-p '0.3.2.1'`）。对于人类而言手动数坐标已经不方便，对于 LLM 而言更是结构性难题——LLM 在精确计数方面的可靠性与人类手动数行号相当。
+当前 `cr tree` 系列编辑命令在定位子表达式时依赖纯数字点号路径（如 `--path '0.3.2.1'`）。对于人类而言手动数坐标已经不方便，对于 LLM 而言更是结构性难题——LLM 在精确计数方面的可靠性与人类手动数行号相当。
 
 本 RFC 提出 **四层互补方案**，从近到远逐步提升编辑体验：
 
@@ -37,7 +37,7 @@
 ```
 1. cr tree show 'app.main/main!'             → 查看代码结构
 2. LLM 自己数目标表达式的坐标                   → 容易数错
-3. cr tree replace 'app.main/main!' -p '...'  → 可能用错路径
+3. cr tree replace 'app.main/main!' --path '...'  → 可能用错路径
 4. 出错后重新数、重新试                          → 迭代成本高
 ```
 
@@ -55,7 +55,7 @@
 ```
 1. cr tree show 'app.main/main!'  → 输出自动带路径注释
 2. LLM 直接从注释中复制路径          → 不需要数
-3. cr tree replace 'app.main/main!' -p '复制来的路径' ...
+3. cr tree replace 'app.main/main!' --path '复制来的路径' ...
    → 一次成功
 ```
 
@@ -147,7 +147,7 @@ defn process (xs)
 - `--path-annotations`：递归为所有嵌套 list 末尾追加注释（flag，无参数）
 - 默认不追加任何注释节点，保持旧行为
 - 当展示的节点子节点较多时，底部输出 tip 提示可开启 `--path-annotations` 或 `--chunked`
-- 注释中的路径数字为相对于当前 `-p` 定位 path 的索引
+- 注释中的路径数字为相对于当前 `--path` 定位 path 的索引
 - 使用 dimmed 颜色渲染注释行，不干扰代码阅读
 - 根节点的 path 为空字符串, 不用显示
 - **末尾追加不改变索引**：注释节点是最后一个 child，不影响已有子节点的相对位置
@@ -422,13 +422,13 @@ cr tree search-replace 'app.main/main!' \
 ```bash
 # 获取路径后用于后续编辑
 PATH=$(cr query path 'app.main' --selector 'path heading def {} :name |init-fn $ nth 2')
-cr tree replace 'app.main/main!' -p "$PATH" --code '...'
+cr tree replace 'app.main/main!' --path "$PATH" --code '...'
 ```
 
 ### 6.6 与现有路径的互操作
 
-- `cr query path` 输出标准数字路径（如 `1.3.0`），可直接用于 `-p`
-- `--path-selector` 是 `-p` 的超集替代，内部先解析为数字路径再执行
+- `cr query path` 输出标准数字路径（如 `1.3.0`），可直接用于 `--path`
+- `--path-selector` 是 `--path` 的超集替代，内部先解析为数字路径再执行
 - 解析失败时给出明确错误信息（哪一步匹配失败、已匹配到的范围、剩余选择器是什么）
 
 ### 6.7 选择器语义对比
@@ -487,7 +487,7 @@ cr tree insert-after 'app.main/main!' \
 
 ### 7.4 锚点与路径的对比
 
-| 特性       | 路径 (`-p '1.3.0'`)    | 锚点 (`--anchor 'init-state'`) |
+| 特性       | 路径 (`--path '1.3.0'`) | 锚点 (`--anchor 'init-state'`) |
 | ---------- | ---------------------- | ------------------------------ |
 | 稳定性     | 编辑后可能失效         | 跟随代码移动，基本稳定         |
 | 可读性     | 无意义数字             | 语义化名称                     |
@@ -519,7 +519,7 @@ cr tree insert-after 'app.main/main!' \
 
 - `path` 选择器解析器
 - `cr query path` 命令
-- `--path-selector` 替代 `-p` 的编辑命令集成
+- `--path-selector` 替代 `--path` 的编辑命令集成
 
 **预计工作量**：~5-7 天  
 **收益**：完整的语义化树形查询能力
@@ -540,7 +540,7 @@ cr tree insert-after 'app.main/main!' \
 - 所有新参数均为 **opt-in**，现有行为完全保留
 - `--path-annotations` 是 flag，默认关闭，传即开启
 - `--chunked` 默认关闭，需手动开启
-- `--pick` 和 `--path-selector` 与现有 `-p` 互斥
+- `--pick` 和 `--path-selector` 与现有 `--path` 互斥
 - 锚点使用已有 `noted` macro，不引入新语法，对现有解析无影响
 
 ---
