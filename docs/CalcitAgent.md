@@ -39,19 +39,28 @@ leads_to:
 | 位置参数 `<code>`       | `cr cirru parse '<cirru_code>'`                                                       | 原始 Cirru 代码，须用引号包裹          |
 | 位置参数 `<json>`       | `cr cirru format '<json>'`                                                            | JSON 字符串                            |
 
-> 本文档中所有命令行示例已统一使用 **完整长参数名**（如 `--filter`、`--file`、`--code`、`--path` 等），不再使用单字符短参数。
+> CLI 只保留 3 个稳定、易记的短参数：`-w`（watch）、`-v`（version）和 `cr cirru parse -e`（单表达式解析）。结构定位与输入统一使用 `--filter`、`--file`、`--code`、`--path` 等完整参数，不再复用历史短参数。
 
 ### 查询导航（先用这个）
 
+- 一次获取定义的 Snapshot 元数据、revision、类型状态、依赖、引用和后续查询：`cr query context '<ns/def>'`；机器读取加 `--format json`
 - 看某个定义的大致结构：`cr query peek '<ns/def>'`
 - 看某个定义的完整实现：`cr query def '<ns/def>'`
 - 找关键词并拿可编辑路径：`cr query search <keyword> --filter '<ns/def>'`
 - 搜索时显示父路径（用于 `cr tree replace` 的操作节点）：`cr query search <keyword> --filter '<ns/def>' --parent-path`
 - 跨命名空间找符号：`cr query find <symbol>`（默认就是 fuzzy；需要精确匹配时加 `--exact`）
-- 查看类型标注：`cr query schema '<ns/def>'`
+- 查看类型标注：`cr query schema '<ns/def>'`；机器读取加 `--json`，返回 canonical schema 与 Cirru tree
+- 静态查询类型可用 method：`cr query type :number`；参数化类型写作 `cr query type ':: :list :number'`
+- 查看定义内某个表达式的推断类型、期望类型和绑定证据：`cr query type-at '<ns/def>' --path code@3.2`；机器读取加 `--format json`
+- 只读取机器结果：`cr query schema '<ns/def>' --json`、`cr query type :number --format json`、`cr query type-at '<ns/def>' --path code@3.2 --format json` 或 `cr query context '<ns/def>' --format json`（stdout 是单个 JSON，命令提示位于 stderr）
 - 查看示例：`cr query examples '<ns/def>'`
 - 查看引用：`cr query usages '<ns/def>'`
+- 机器读取结构搜索：`cr query search <leaf> --filter '<ns/def>' --format json`；需要可编辑父路径再加 `--parent-path`
 - 查看配置：`cr query config`
+- 项目类型覆盖：`cr analyze check-types --ns <ns>`；机器读取加 `--format json`；只要汇总加 `--summary-only`
+- 只看未解决的动态类型：`cr analyze weak-types --ns <ns> --intent unresolved --format json`；只要汇总加 `--summary-only`
+- 单独审计允许的 FFI 动态边界：`cr analyze weak-types --ns <ns> --intent intentional-js-ffi --format json`
+- 只验证一个定义的 examples：`cr analyze check-examples --ns <ns> --def <definition>`
 - 调试 JS 变量改名：`cr analyze js-escape '<symbol>'` / `cr analyze js-unescape '<escaped>'`（`js-unescape` 当前为 best-effort）
 - 比较与 Git ref 的代码差异：`cr analyze program-diff <git-ref>`（全量）或加 `--def '<ns/def>'`（单定义）
 - 比较调用图变化：`cr analyze call-graph-diff <git-ref>`（标注新增/删除/变更的调用关系）
@@ -224,7 +233,7 @@ a
 
 #### 实操规则（最稳）
 
-凡 is改到 `$` 或 `,`（尤其是从单行改成多行）时：
+凡是改到 `$` 或 `,`（尤其是从单行改成多行）时：
 
 1. 先 `tree show` 看当前子树。
 2. 修改后立刻 `query search <keyword> --filter '<ns/def>'` 重拿路径。
@@ -238,7 +247,7 @@ a
 cr docs agents --full
 ```
 
-这个文件默认存储在 `~/./config/calcit/Agents.md`, 后续步骤可以直接读取.
+默认内容由当前版本的 `cr` 直接内嵌，输出中的 `Agent source` 会带对应版本号；只有显式使用 `--refresh` 才读取远端版本。
 
 ---
 
@@ -256,7 +265,7 @@ cr docs agents --full
 ## 2) 5 步最小模板（看大表达式并可编辑）
 
 1. 定位目标定义：`cr query defs <ns>`
-2. 先轻看再全看：`cr query peek '<ns/def>'`，必要时再 `cr query def '<ns/def>'`
+2. 先聚合上下文：`cr query context '<ns/def>'`；只需签名时用 `peek`，需要完整树时再 `query def`
 3. 搜关键词拿路径：`cr query search <keyword> --filter '<ns/def>'`
 4. 聚焦子树确认上下文：`cr tree show '<ns/def>' --path '<path>'`（复杂时可加 `--json`；嵌套多时可加 `--path-annotations` 显示各节点路径坐标；大表达式默认只展开 ROOT + 一层 chunks，需要更多时加 `--chunk-expand-depth 2`）
 5. 修改并验证：`cr tree replace ...` 然后 `cr js`
@@ -280,7 +289,9 @@ cr js
 ### 查询
 
 - `cr query defs <ns>`：列出命名空间定义。
+- `cr query context '<ns/def>'`：一次返回 revision、元数据、类型状态、直接依赖、引用位置和有界代码；Agent 优先使用 `--format json`。
 - `cr query def '<ns/def>'`：查看定义（默认 Cirru）。
+- `cr query type <type>`：不运行项目入口，静态列出类型 method 及其 impl 来源；机器读取加 `--format json`。
 - `cr query search <pattern> --filter '<ns/def>'`：按关键词拿路径。
 - `cr tree show '<ns/def>' --path '<path>'`：查看局部子树；大表达式默认只显示 ROOT 与直接 chunk，继续展开时使用 `--chunk-expand-depth <n>`。
 
@@ -302,7 +313,7 @@ echo "range 10" | cr exec
 
 #### 2. 在结构/编辑命令中免参数默认读取 stdin
 
-对于任何接收表达式或代码输入的命令（例如 `cr tree replace`、`cr tree insert-before`、`cr edit def`、`cr edit add-import`、`cr edit imports`、`cr edit schema` 等），当**同时省略 `--file` 和 `--code` 参数**时，将**默认直接从 stdin 读取**。格式自动检测：`[` 开头为 JSON 数组，其他为 Cirru EDN（须 `quote` 前缀）。
+对于任何接收表达式或代码输入的命令（例如 `cr tree replace`、`cr tree insert-before`、`cr edit def`、`cr edit add-import`、`cr edit imports`、`cr edit schema` 等），当**同时省略 `--file` 和 `--code` 参数**时，将**默认直接从 stdin 读取**。Cirru AST 输入必须使用 `quote` 标明代码数据边界，从而无歧义区分单个 leaf 与表达式。
 
 ```bash
 # 同时省略 --file/--code，无需 Shell 转义，直接传递多行内容
@@ -315,13 +326,16 @@ cr calcit.cirru edit add-import app.main << 'END'
 quote (app.config :refer $ dev?)
 END
 
-# schema 更新也可以用 stdin
+# schema 更新也可以用 stdin；quote 表示“传入一个 AST 节点”
 cr calcit.cirru edit schema app.main/main! << 'END'
-quote (:: :fn ({} (:return :dynamic) (:args ([])) (:features (#{} :js-ffi))))
+quote $ :: :fn $ {} (:return :dynamic) (:args ([])) (:features (#{} :js-ffi))
 END
 ```
 
-Cirru 代码输入（`--code` / `--file` / stdin）必须使用 `quote` 前缀来区分 leaf 和表达式；只有 JSON 数组输入可以直接裸传：
+通用 Cirru 代码输入（`--code` / `--file` / stdin）必须使用 `quote` 前缀来区分 leaf 和表达式；只有本身已明确表示 AST 结构的 JSON 数组可以裸传。`edit schema` 和 `edit examples` 也遵循同一边界：
+
+- `edit schema` 接收一个 quoted 类型 AST，leaf 写作 `quote :string`，参数化类型写作 `quote $ :: :ref :bool`；函数 schema 的 payload 必须使用 `:: :fn $ {}` 形态，不接受裸 `{} (:kind :fn)`；
+- `edit examples` 的每个顶层 `quote` 对应一个 example：表达式写作 `quote $ add 1 2`，leaf 写作 `quote |literal`。不使用会混淆“一个 AST”与“examples 集合”的 JSON 或 `quote $ [] ...` 外层容器。
 
 ```bash
 # leaf 节点
@@ -405,7 +419,9 @@ cr tree show '<ns/def>' --path '<path>'
 
 - `cr edit format`: 重整快照文件，验证数据语法并格式化写法。
 - `cr js`：快速验证当前改动可编译。
-- 全量语义回归建议：`yarn check-all`。
+- `cr analyze check-types`：静态检查定义的类型覆盖情况；`partial` 行的 `schema-issues` 会指出嵌套动态类型及修复方式。
+- `cr analyze weak-types --intent unresolved`：定位仍需补强的动态类型位置；JSON occurrence 带稳定 `path` 与 `suggestion`。
+- 若运行时契约明确允许任意 Calcit 值，使用静态顶类型 `:any`；只有类型确实未知、尚不能静态约束时才保留 `:dynamic`。`:: :list :any` 表示“异构值列表”，它不会被 weak-types 当成漏标。
 
 ---
 
@@ -457,7 +473,7 @@ cr js
 ## 7) `cr` 能力地图
 
 - **运行**：`cr`, `cr js`, `cr ir`, `cr-wasm`, `--watch`
-- **查询**：`cr query defs/def/search/usages/schema/examples/path/anchors`
+- **查询**：`cr query defs/def/type/type-at/context/search/usages/schema/examples/path/anchors`
 - **分析**：`cr analyze call-graph/program-diff`
 - **结构化编辑**：`cr tree show/replace/search-replace/cp/wrap`（`show` 支持 `--path-annotations` 标注坐标；`search-replace` 支持 `--pick`/`--selector`）
 - **定义编辑**：`cr edit def/add-import/imports/mv/rename`

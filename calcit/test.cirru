@@ -19,9 +19,10 @@
             defimpl %r :%demo $ .get
               fn (self) 1
           :examples $ []
-        |*ref-demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |*ref-demo $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
           :examples $ []
+          :schema $ :: :ref :number
         |AtomBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def AtomBox $ impl-traits AtomBox0 %A

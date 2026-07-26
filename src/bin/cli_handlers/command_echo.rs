@@ -157,7 +157,7 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
         desc.push_str(&format!(", filtered by `{filter}`"));
       }
       if opts.json {
-        desc.push_str(" (JSON output)");
+        desc.push_str(" (pattern decoded from JSON)");
       }
       desc
     }
@@ -184,6 +184,9 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
     QuerySubcommand::Peek(opts) => format!("previews definition `{}`", opts.target),
     QuerySubcommand::Examples(opts) => format!("shows usage examples for `{}`", opts.target),
     QuerySubcommand::Schema(opts) => format!("shows type schema for `{}`", opts.target),
+    QuerySubcommand::Type(opts) => format!("lists statically available methods for type `{}`", opts.target),
+    QuerySubcommand::TypeAt(opts) => format!("inspects static type evidence for `{}` at `{}`", opts.target, opts.path),
+    QuerySubcommand::Context(opts) => format!("gathers bounded semantic context for definition `{}`", opts.target),
     QuerySubcommand::Usages(opts) => {
       let mut desc = format!("finds all usages of `{}` in codebase", opts.target);
       if opts.deps {
@@ -431,11 +434,17 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       desc
     }
     AnalyzeSubcommand::ProgramDiff(opts) => format!("compares AST structure since `{}`", opts.git_ref),
-    AnalyzeSubcommand::CheckExamples(_) => "validates all code examples in definitions".to_string(),
+    AnalyzeSubcommand::CheckExamples(opts) => match &opts.definition {
+      Some(definition) => format!("validates code examples for `{}/{definition}`", opts.ns),
+      None => format!("validates all code examples in namespace `{}`", opts.ns),
+    },
     AnalyzeSubcommand::CheckTypes(opts) => {
       let mut desc = "performs type checking".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      if opts.summary_only {
+        desc.push_str(", returning aggregate counts only");
       }
       desc
     }
@@ -443,6 +452,9 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       let mut desc = "analyzes weak/untyped definitions".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      if opts.summary_only {
+        desc.push_str(", returning aggregate counts only");
       }
       desc
     }
@@ -470,6 +482,23 @@ fn render_cirru_explanation(cmd: &CirruCommand) -> Option<String> {
 fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
   match &cmd.subcommand {
     QuerySubcommand::Schema(opts) => echo_items!(tokens, pos "target" => &opts.target, switch "json" => opts.json),
+    QuerySubcommand::Type(opts) => echo_items!(tokens, pos "target" => &opts.target, value "format" => &opts.format; default "human"),
+    QuerySubcommand::TypeAt(opts) => echo_items!(
+      tokens,
+      pos "target" => &opts.target,
+      value "path" => &opts.path,
+      value "format" => &opts.format; default "human"
+    ),
+    QuerySubcommand::Context(opts) => echo_items!(
+      tokens,
+      pos "target" => &opts.target,
+      value "budget" => opts.budget; default "6000",
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      value "dependency-limit" => opts.dependency_limit; default "12",
+      value "usage-limit" => opts.usage_limit; default "8",
+      value "example-limit" => opts.example_limit; default "3"
+    ),
     QuerySubcommand::Ns(opts) => {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
     }
@@ -511,7 +540,9 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       value "max-depth" => opts.max_depth; default "0",
       opt "start-path" => opts.start_path.as_deref(); default "none",
       opt "entry" => opts.entry.as_deref(); default "none",
-      value "detail-offset" => opts.detail_offset; default "0"
+      value "detail-offset" => opts.detail_offset; default "0",
+      switch "parent-path" => opts.parent_path,
+      value "format" => &opts.format; default "human"
     ),
     QuerySubcommand::SearchExpr(opts) => echo_items!(
       tokens,
@@ -521,7 +552,8 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       value "max-depth" => opts.max_depth; default "0",
       switch "json" => opts.json,
       opt "entry" => opts.entry.as_deref(); default "none",
-      value "detail-offset" => opts.detail_offset; default "0"
+      value "detail-offset" => opts.detail_offset; default "0",
+      value "format" => &opts.format; default "human"
     ),
     QuerySubcommand::HostProcs(opts) => {
       echo_items!(tokens, opt "tag" => opts.tag.as_deref(); default "none")
@@ -667,20 +699,29 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
     AnalyzeSubcommand::ProgramDiff(opts) => echo_items!(tokens, pos "git-ref" => &opts.git_ref,
       opt "def" => opts.def.as_deref(); default "none"
     ),
-    AnalyzeSubcommand::CheckExamples(opts) => echo_items!(tokens, value "ns" => &opts.ns),
+    AnalyzeSubcommand::CheckExamples(opts) => echo_items!(
+      tokens,
+      value "ns" => &opts.ns,
+      opt "def" => opts.definition.as_deref(); default "all"
+    ),
     AnalyzeSubcommand::CheckTypes(opts) => echo_items!(
       tokens,
       opt "ns" => opts.ns.as_deref(); default "none",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
-      switch "deps" => opts.deps
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::WeakTypes(opts) => echo_items!(
       tokens,
       opt "ns" => opts.ns.as_deref(); default "none",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
-      switch "deps" => opts.deps
+      opt "intent" => opts.intent.as_deref(); default "all",
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
       tokens,
@@ -913,6 +954,9 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Search(_) => "search",
     QuerySubcommand::SearchExpr(_) => "search-expr",
     QuerySubcommand::Schema(_) => "schema",
+    QuerySubcommand::Type(_) => "type",
+    QuerySubcommand::TypeAt(_) => "type-at",
+    QuerySubcommand::Context(_) => "context",
     QuerySubcommand::HostProcs(_) => "host-procs",
     QuerySubcommand::Path(_) => "path",
     QuerySubcommand::Anchors(_) => "anchors",

@@ -28,6 +28,7 @@ pub use edit::handle_edit_command;
 pub use libs::handle_libs_command;
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
+pub(crate) use query::load_snapshot_for_static_analysis;
 pub use tips::{set_tips_level, suppress_command_guidance};
 pub use tree::handle_tree_command;
 // Re-export when needed by other modules; keep internal for now to avoid unused-import warnings

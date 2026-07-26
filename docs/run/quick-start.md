@@ -21,7 +21,7 @@ parent: core/run
 
 **硬前置步骤：在执行任何 `cr edit` / `cr tree` 修改前，必须先运行一次 `cr docs agents --full`。**
 
-这不是建议项，而是进入实际修改前的检查项。跳过这一步，往往会直接沿用旧用法假设，尤其容易误判 `cr tree replace -p ''`、imports 输入格式和 watcher 验收边界。
+这不是建议项，而是进入实际修改前的检查项。跳过这一步，往往会直接沿用旧用法假设，尤其容易误判 `cr tree replace --path ''`、imports 输入格式和 watcher 验收边界。
 
 **核心原则：用命令行工具（不要直接编辑文件），用 search 定位（比逐层导航快 10 倍）**
 

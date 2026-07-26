@@ -8,7 +8,7 @@ pub struct ToplevelCalcit {
   #[argh(subcommand)]
   pub subcommand: Option<CalcitCommand>,
   /// enable watch mode for direct run mode (default behavior is run once)
-  #[argh(switch)]
+  #[argh(switch, short = 'w')]
   pub watch: bool,
   /// check-only mode: validate without execution or codegen
   #[argh(switch)]
@@ -47,7 +47,7 @@ pub struct ToplevelCalcit {
   #[argh(positional, default = "String::from(crate::DEFAULT_SNAPSHOT_FILE)")]
   pub input: String,
   /// print version only
-  #[argh(switch)]
+  #[argh(switch, short = 'v')]
   pub version: bool,
   /// print progress details and timing while loading and compiling
   #[argh(switch)]
@@ -97,7 +97,7 @@ pub enum CalcitCommand {
 #[argh(subcommand, name = "js")]
 pub struct EmitJsCommand {
   /// enable watch mode (default behavior is run once)
-  #[argh(switch)]
+  #[argh(switch, short = 'w')]
   pub watch: bool,
   /// check-only mode for JS emit
   #[argh(switch)]
@@ -109,7 +109,7 @@ pub struct EmitJsCommand {
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
   /// enable watch mode (default behavior is run once)
-  #[argh(switch)]
+  #[argh(switch, short = 'w')]
   pub watch: bool,
 }
 
@@ -202,9 +202,15 @@ pub struct CheckTypesCommand {
   /// coverage levels to include, comma-separated: none,partial,full
   #[argh(option)]
   pub only: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// include dependency/core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// emit aggregate counts without per-definition details
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
 }
 
 /// locate weakly-typed hotspots in schema and code
@@ -220,9 +226,18 @@ pub struct WeakTypesCommand {
   /// match kinds to include, comma-separated: schema-dynamic,code-dynamic,code-nil
   #[argh(option)]
   pub only: Option<String>,
+  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi
+  #[argh(option)]
+  pub intent: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// include dependency/core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// emit aggregate counts without per-definition details
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
 }
 
 /// check examples in namespace
@@ -232,6 +247,9 @@ pub struct CheckExamplesCommand {
   /// target namespace to check examples
   #[argh(option)]
   pub ns: String,
+  /// check only one definition in the namespace
+  #[argh(option, long = "def")]
+  pub definition: Option<String>,
 }
 
 /// analyze call tree structure from entry point
@@ -387,6 +405,12 @@ pub enum QuerySubcommand {
   SearchExpr(QuerySearchExprCommand),
   /// read a definition's schema (type information)
   Schema(QuerySchemaCommand),
+  /// inspect a type and its statically available methods
+  Type(QueryTypeCommand),
+  /// inspect the inferred and expected type at one Snapshot expression path
+  TypeAt(QueryTypeAtCommand),
+  /// gather bounded semantic context for one definition
+  Context(QueryContextCommand),
   /// list host-injected registered procs and descriptor tags
   HostProcs(QueryHostProcsCommand),
   /// resolve a semantic path expression to numeric indices
@@ -405,6 +429,60 @@ pub struct QuerySchemaCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch)]
   pub json: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "type")]
+/// inspect a type and list methods available through static dispatch metadata
+pub struct QueryTypeCommand {
+  /// builtin type annotation (e.g. :number or ":: :list :number") or namespace/definition
+  #[argh(positional)]
+  pub target: String,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "type-at")]
+/// inspect static type evidence for an expression at a Snapshot path without running the program
+pub struct QueryTypeAtCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// snapshot path, e.g. "code@3.2", "@3.2", or "3.2"
+  #[argh(option)]
+  pub path: String,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "context")]
+/// gather bounded Snapshot metadata, static analysis, dependencies, and usages for one definition
+pub struct QueryContextCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// approximate character budget for variable-size content
+  #[argh(option, default = "6000")]
+  pub budget: usize,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// include references from dependency and core namespaces
+  #[argh(switch)]
+  pub deps: bool,
+  /// maximum number of direct dependencies to include
+  #[argh(option, default = "12")]
+  pub dependency_limit: usize,
+  /// maximum number of usages to include
+  #[argh(option, default = "8")]
+  pub usage_limit: usize,
+  /// maximum number of examples to include
+  #[argh(option, default = "3")]
+  pub example_limit: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -571,6 +649,9 @@ pub struct QuerySearchCommand {
   /// also print parent path for each match (strip trailing index for editable node)
   #[argh(switch, long = "parent-path")]
   pub parent_path: bool,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -598,6 +679,9 @@ pub struct QuerySearchExprCommand {
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -931,7 +1015,7 @@ pub struct CirruParseCommand {
   #[argh(positional)]
   pub code: String,
   /// parse input as a single-line Cirru expression (one-liner parser, default is multi-line)
-  #[argh(switch, long = "expr-one")]
+  #[argh(switch, short = 'e', long = "expr-one")]
   pub expr_one_liner: bool,
   /// perform basic syntax validation after parsing (checks keywords, strings, numbers)
   #[argh(switch, long = "validate")]
@@ -1150,10 +1234,10 @@ pub struct EditSchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read schema from file (auto-detects JSON vs Cirru)
+  /// read one quoted Cirru type node from file
   #[argh(option)]
   pub file: Option<String>,
-  /// schema as inline text (auto-detects JSON vs Cirru)
+  /// one quoted Cirru type node, for example `quote $ :: :ref :bool`
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// clear schema field
@@ -1168,10 +1252,10 @@ pub struct EditExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read examples from file (auto-detects JSON vs Cirru)
+  /// read quoted Cirru nodes from file, one top-level quote per example
   #[argh(option)]
   pub file: Option<String>,
-  /// examples as inline text (auto-detects JSON vs Cirru)
+  /// quoted Cirru nodes, one top-level quote per example
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// clear all examples

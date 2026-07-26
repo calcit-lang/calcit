@@ -154,7 +154,7 @@ cr docs remote-libs scan-md memof
 cr docs check-md README.md
 ```
 
-By default this uses `calcit.cirru` as the entry file. For projects using another snapshot filename, pass `-d` explicitly.
+By default this uses `calcit.cirru` as the entry file. For projects using another snapshot filename, pass `--entry <snapshot-file>` explicitly.
 
 It supports specific block types:
 

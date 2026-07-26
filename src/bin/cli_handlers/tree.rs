@@ -277,7 +277,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     None => {
       eprintln!(
         "{}",
-        "[Warn] No path (-p) specified; showing from root. Use -p '0' to start from a child node.".yellow()
+        "[Warn] No --path specified; showing from root. Use --path '0' to start from a child node.".yellow()
       );
       vec![]
     }
@@ -391,7 +391,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
               } else {
                 format!("{}.{}", format_path(valid_path), i)
               };
-              eprintln!("  [{}] {} {} -p '{}'", i, child_preview.yellow(), "->".dimmed(), child_path);
+              eprintln!("  [{}] {} {} --path '{}'", i, child_preview.yellow(), "->".dimmed(), child_path);
             }
             if items.len() > 3 {
               eprintln!("  {}", format!("... and {} more", items.len() - 3).dimmed());

@@ -29,7 +29,7 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, format_path, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block,
+  ERR_CODE_INPUT_REQUIRED, format_path, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, print_cli_warning_block,
   read_code_input, resolve_definition_lookup,
 };
 use super::tips::{Tips, command_guidance_enabled};
@@ -282,20 +282,22 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
     }
     CirruEditStrategy::Insert => {
       lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
-      lines.push(format!("Try: cr tree insert-before '{target}' -p '<path>' -e '<node>'"));
+      lines.push(format!("Try: cr tree insert-before '{target}' --path '<path>' --code '<node>'"));
       lines.push(format!(
-        "Or: cr tree insert-after '{target}' -p '<path>' -e '<node>' / cr tree append-child '{target}' -p '<path>' -e '<node>'"
+        "Or: cr tree insert-after '{target}' --path '<path>' --code '<node>' / cr tree append-child '{target}' --path '<path>' --code '<node>'"
       ));
     }
     CirruEditStrategy::Delete => {
       lines.push("Most differences are removals. Prefer deleting or lifting nodes from the existing tree.".to_string());
-      lines.push(format!("Try: cr tree delete '{target}' -p '<path>'"));
-      lines.push(format!("Or: cr tree raise '{target}' -p '<child-path>'"));
+      lines.push(format!("Try: cr tree delete '{target}' --path '<path>'"));
+      lines.push(format!("Or: cr tree raise '{target}' --path '<child-path>'"));
     }
     CirruEditStrategy::Rewrite => {
       lines.push("The trees are still close, but the change mixes insert/remove/replace. Prefer a structural rewrite over a blind full overwrite.".to_string());
-      lines.push(format!("Try: cr tree rewrite '{target}' -p '<path>' --with self=. -e '<code>'"));
-      lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
+      lines.push(format!(
+        "Try: cr tree rewrite '{target}' --path '<path>' --with self=. --code '<code>'"
+      ));
+      lines.push(format!("Or: cr tree replace '{target}' --path '<path>' --code '<code>'"));
     }
   }
 
@@ -460,6 +462,34 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
   Ok(())
 }
 
+fn rename_definition_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
+  let Cirru::List(items) = code else {
+    return Ok((code.clone(), false));
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return Ok((code.clone(), false));
+  };
+  if !head.starts_with("def") {
+    return Ok((code.clone(), false));
+  }
+
+  let Some(name_node) = items.get(1) else {
+    return Err(format!("Definition form `{head}` has no declaration name"));
+  };
+  let Cirru::Leaf(declared_name) = name_node else {
+    return Err(format!("Definition form `{head}` has a non-leaf declaration name"));
+  };
+  if declared_name.as_ref() != old_name {
+    return Err(format!(
+      "Definition key `{old_name}` does not match declaration name `{declared_name}`. Repair the mismatch before renaming."
+    ));
+  }
+
+  let mut next_items = items.clone();
+  next_items[1] = Cirru::Leaf(Arc::from(new_name));
+  Ok((Cirru::List(next_items), true))
+}
+
 fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.source)?;
 
@@ -480,10 +510,11 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     ));
   }
 
-  let entry = file_data
+  let mut entry = file_data
     .defs
     .remove(resolved_definition.as_str())
     .expect("resolved definition exists");
+  (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_definition, &opts.new_name)?;
   file_data.defs.insert(opts.new_name.clone(), entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -569,7 +600,7 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
       resolved_definition
     );
     println!(
-      "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
+      "  • Wrap in defn:     {} '{}/{}' --path '' --code 'quote (defn {} ...)'",
       "cr tree replace".cyan(),
       namespace,
       new_name,
@@ -642,10 +673,11 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
       return Err(format!("Definition '{target_def}' already exists in namespace '{source_ns}'"));
     }
 
-    let entry = file_data
+    let mut entry = file_data
       .defs
       .remove(resolved_source_def.as_str())
       .expect("resolved definition exists");
+    (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_source_def, target_def)?;
     file_data.defs.insert(target_def.to_string(), entry);
   } else {
     let target_exists = snapshot
@@ -658,7 +690,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
       return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
     }
 
-    let entry = {
+    let mut entry = {
       let source_file = snapshot
         .files
         .get_mut(source_ns)
@@ -668,6 +700,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
         .remove(resolved_source_def.as_str())
         .expect("resolved definition exists")
     };
+    (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_source_def, target_def)?;
 
     let target_file = snapshot
       .files
@@ -724,21 +757,10 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   Ok(())
 }
 
-fn unwrap_schema_quote_input(schema: Cirru) -> Result<Cirru, String> {
-  match schema {
-    Cirru::List(items) => {
-      if let Some(Cirru::Leaf(head)) = items.first()
-        && &**head == "quote"
-      {
-        if items.len() != 2 {
-          return Err("Schema quote expects exactly one payload expression".to_string());
-        }
-        return Ok(items[1].clone());
-      }
-      Ok(Cirru::List(items))
-    }
-    other => Ok(other),
-  }
+fn parse_schema_input(raw: &str) -> Result<Cirru, String> {
+  parse_input_to_cirru(raw).map_err(|error| {
+    format!("Failed to parse schema code input: {error}\nSchema examples: `quote :string` or `quote $ :: :ref :bool`.")
+  })
 }
 
 fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
@@ -827,13 +849,11 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   }
 
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let schema_node = parse_input_to_cirru(&raw)?;
-  let schema_payload = unwrap_schema_quote_input(schema_node)?;
-  let schema_payload = strip_name_field_from_schema(schema_payload);
+  let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw)?);
 
   validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
 
-  // Primitive type tag leaf (e.g. --code '(quote |:string)') — store directly without going through fn-schema parsing.
+  // Primitive type tag leaf (e.g. --code 'quote :string') — store directly without going through fn-schema parsing.
   if let Cirru::Leaf(tag) = &schema_payload {
     let tag_name = tag.trim_start_matches(':');
     code_entry.schema = Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name));
@@ -851,7 +871,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   let schema_edn = snapshot::schema_cirru_to_edn(schema_payload);
   code_entry.schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
     .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-    .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+    .unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn));
 
   save_snapshot(&snapshot, snapshot_file)?;
 
@@ -863,6 +883,14 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   );
 
   Ok(())
+}
+
+fn parse_examples_input(raw: &str) -> Result<Vec<Cirru>, String> {
+  parse_quoted_cirru_nodes(raw).map_err(|error| {
+    format!(
+      "Failed to parse examples: {error}\nEach top-level example needs its own `quote`, so both leaves and expressions remain representable."
+    )
+  })
 }
 
 fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<(), String> {
@@ -907,18 +935,9 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     .as_deref()
     .ok_or("Examples input required: use --file, --code, or pipe input via stdin")?;
 
-  // Parse examples - auto-detect JSON array vs Cirru text
-  let examples: Vec<Cirru> = if raw.trim().starts_with('[') {
-    // Parse as JSON array
-    let json_value: serde_json::Value = serde_json::from_str(raw.trim()).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    match json_value {
-      serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
-      _ => return Err("Expected JSON array of examples".to_string()),
-    }
-  } else {
-    // Parse as Cirru text - each top-level expression is an example
-    cirru_parser::parse(raw).map_err(|e| format!("Failed to parse Cirru: {e}"))?
-  };
+  // Each top-level quote contributes exactly one example. Requiring a quote
+  // per item preserves the leaf/expression distinction in batch input.
+  let examples = parse_examples_input(raw)?;
 
   let count = examples.len();
   code_entry.examples = examples;
@@ -1982,7 +2001,71 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 
 #[cfg(test)]
 mod tests {
-  use super::bump_semver_value;
+  use super::{bump_semver_value, parse_examples_input, parse_schema_input, rename_definition_declaration};
+  use cirru_parser::Cirru;
+
+  fn leaf(value: &str) -> Cirru {
+    Cirru::Leaf(value.into())
+  }
+
+  fn list(items: Vec<Cirru>) -> Cirru {
+    Cirru::List(items)
+  }
+
+  #[test]
+  fn rename_updates_definition_declaration_name() {
+    let code = list(vec![leaf("defatom"), leaf("*old"), list(vec![leaf("{}")])]);
+    let (renamed, changed) = rename_definition_declaration(&code, "*old", "*next").expect("rename should work");
+
+    assert!(changed);
+    assert_eq!(renamed, list(vec![leaf("defatom"), leaf("*next"), list(vec![leaf("{}")])]));
+  }
+
+  #[test]
+  fn rename_rejects_mismatched_definition_key_and_declaration() {
+    let code = list(vec![leaf("defn"), leaf("actual"), list(vec![]), leaf("nil")]);
+    let error = rename_definition_declaration(&code, "stored-key", "next").expect_err("mismatch should fail");
+
+    assert!(error.contains("does not match declaration name"), "error: {error}");
+  }
+
+  #[test]
+  fn rename_keeps_anonymous_payloads_unchanged() {
+    let code = list(vec![leaf("fn"), list(vec![]), leaf("nil")]);
+    let (renamed, changed) = rename_definition_declaration(&code, "old", "next").expect("anonymous value should be movable");
+
+    assert!(!changed);
+    assert_eq!(renamed, code);
+  }
+
+  #[test]
+  fn examples_require_one_quote_per_ast_node() {
+    let error = parse_examples_input("inc 1").expect_err("bare examples should fail");
+    assert!(error.contains("needs its own `quote`"), "error: {error}");
+  }
+
+  #[test]
+  fn examples_preserve_quoted_expressions_and_leaves() {
+    let examples = parse_examples_input("quote $ inc 1\nquote |literal").expect("examples should parse");
+
+    assert_eq!(examples, vec![list(vec![leaf("inc"), leaf("1")]), leaf("|literal")]);
+  }
+
+  #[test]
+  fn schema_input_requires_quote_for_leaf_and_expression() {
+    let expected = list(vec![leaf("::"), leaf(":ref"), leaf(":bool")]);
+
+    assert_eq!(
+      parse_schema_input("quote $ :: :ref :bool").expect("quoted schema should parse"),
+      expected
+    );
+    assert_eq!(
+      parse_schema_input("quote :string").expect("primitive schema should parse"),
+      leaf(":string")
+    );
+    let error = parse_schema_input(":: :ref :bool").expect_err("bare schema should fail");
+    assert!(error.contains("Schema examples: `quote :string`"), "error: {error}");
+  }
 
   #[test]
   fn bumps_patch_version() {

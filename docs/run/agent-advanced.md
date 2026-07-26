@@ -67,6 +67,8 @@ END
 
 > 💡 提示：如果只需做单行短代码段修改，也可以直接使用传统的 `--code 'quote ...'`。
 
+`edit schema` 同样要求 `quote` 边界：原子类型写成 `--code 'quote :string'`，参数化类型写成 `--code 'quote $ :: :ref :bool'`，函数 schema 的 payload 使用 `:: :fn $ {}` 包装。`edit examples` 则要求每个顶层 example 各自带 `quote`，例如 `quote $ add 1 2` 和 `quote |literal`。这样 leaf 与表达式在 CLI 中始终可表示，也不需要额外的 `--leaf` 分支。
+
 ---
 
 ## 🔧 代码动态运行：`cr exec`
@@ -401,7 +403,7 @@ defn process (xs)
   ; "previous node path: 3"
 ```
 
-> 当节点子节点较多时，底部自动提示可开启 `--path-annotations`。LLM 直接从注释中复制路径即可用于 `-p` 参数。
+> 当节点子节点较多时，底部自动提示可开启 `--path-annotations`。LLM 直接从注释中复制路径即可用于 `--path` 参数。
 
 ### 多匹配候选选择（`--pick`）
 

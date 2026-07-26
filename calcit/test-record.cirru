@@ -299,7 +299,10 @@
                 assert-detect identity $ contains? p1 :name
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1
-                assert= 21 $ get (update p1 :age inc) :age
+                assert= 21 $ get
+                  update p1 :age $ fn (age)
+                    if (nil? age) 1 $ inc age
+                  , :age
                 assert= 20 $ :age p1
           :examples $ []
           :schema $ :: :fn

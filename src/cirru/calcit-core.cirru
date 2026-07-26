@@ -35,7 +35,8 @@
             defn %err (message) (%:: Result :err message)
           :examples $ []
           :schema $ :: :fn
-            {} (:return :tuple)
+            {}
+              :return $ :: 'Result 'T 'E
               :args $ [] 'E
               :generics $ [] 'T 'E
         |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
@@ -43,7 +44,8 @@
             defn %none () $ %:: Option :none
           :examples $ []
           :schema $ :: :fn
-            {} (:return :tuple)
+            {}
+              :return $ :: 'Option 'T
               :args $ []
               :generics $ [] 'T
         |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
@@ -51,7 +53,8 @@
             defn %ok (value) (%:: Result :ok value)
           :examples $ []
           :schema $ :: :fn
-            {} (:return :tuple)
+            {}
+              :return $ :: 'Result 'T 'E
               :args $ [] 'T
               :generics $ [] 'T 'E
         |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
@@ -59,7 +62,8 @@
             defn %some (value) (%:: Option :some value)
           :examples $ []
           :schema $ :: :fn
-            {} (:return :tuple)
+            {}
+              :return $ :: 'Option 'T
               :args $ [] 'T
               :generics $ [] 'T
         |%{} $ %{} :CodeEntry (:doc "|Macro for constructing struct-based records\nSyntax: (%{} StructName & field-value-pairs)\nParams: StructName (struct from defstruct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
@@ -880,7 +884,7 @@
           :examples $ []
           :schema $ :: :fn
             {} (:return :list)
-              :args $ [] :list
+              :args $ [] :dynamic
           :tags $ #{} :internal
         |&list:foldl $ %{} :CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
@@ -4002,7 +4006,7 @@
                   raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
           :schema $ :: :fn
-            {} (:rest :tag) (:return :dynamic)
+            {} (:rest :impl) (:return :dynamic)
               :args $ [] :dynamic
         |inc $ %{} :CodeEntry (:doc "|Increments a number by 1")
           :code $ quote
@@ -4060,8 +4064,9 @@
                   , xs0 ys0
                 defn %interleave (acc xs ys)
                   hint-fn $ {}
-                    :args $ [] (:: :list 'T) (:: :list 'T) (:: :list 'T)
-                    :return $ :: :list 'T
+                    :args $ [] (:: :list :dynamic) (:: :list 'T) (:: :list 'U)
+                    :generics $ [] 'T 'U
+                    :return $ :: :list :dynamic
                   if
                     if (&list:empty? xs) true $ &list:empty? ys
                     , acc $ recur
@@ -4073,9 +4078,9 @@
           :examples $ []
           :schema $ :: :fn
             {}
-              :args $ [] (:: :list 'T) (:: :list 'T)
-              :generics $ [] 'T
-              :return $ :: :list 'T
+              :args $ [] (:: :list 'T) (:: :list 'U)
+              :generics $ [] 'T 'U
+              :return $ :: :list :dynamic
         |intersection $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn intersection (base & xs)
@@ -4615,7 +4620,7 @@
                 {} $ :b 2
                 {} $ :c 3
           :schema $ :: :fn
-            {} (:rest 'T) (:return 'T)
+            {} (:rest :dynamic) (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T
         |merge-non-nil $ %{} :CodeEntry (:doc |)

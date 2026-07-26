@@ -12,7 +12,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Once;
-use std::time::{Duration, SystemTime};
 
 use calcit::ProgramEntries;
 use calcit::calcit::LocatedWarning;
@@ -187,6 +186,39 @@ fn build_graph_cache(force_rebuild: bool) -> Result<(PathBuf, docs_cache::DocsCa
   let cache_path = docs_cache::write_cache(&docs_dir, &cache)?;
   let cache = docs_cache::read_cache(&docs_dir)?;
   Ok((cache_path, cache))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DefinitionDocLink {
+  pub id: String,
+  pub path: String,
+  pub title: Option<String>,
+  pub summary: Option<String>,
+}
+
+/// Resolve documentation nodes for a definition without mutating the docs
+/// cache. Semantic read commands use this to enrich their result while keeping
+/// cache installation an explicit `cr docs graph build` operation.
+pub(crate) fn lookup_definition_docs(definition: &str) -> Result<Vec<DefinitionDocLink>, String> {
+  let docs_dir = get_guidebook_dir()?;
+  let cache = match docs_cache::read_cache(&docs_dir) {
+    Ok(cache) if docs_cache::cache_is_fresh(&docs_dir, &cache)? => cache,
+    _ => docs_cache::build_cache(&docs_dir)?,
+  };
+  let mut links = cache
+    .nodes
+    .iter()
+    .filter(|node| node.id == definition || node.code_refs.iter().any(|reference| reference == definition))
+    .map(|node| DefinitionDocLink {
+      id: node.id.clone(),
+      path: node.path.clone(),
+      title: node.title.clone(),
+      summary: node.summary.clone(),
+    })
+    .collect::<Vec<_>>();
+  links.sort_by(|left, right| left.id.cmp(&right.id).then(left.path.cmp(&right.path)));
+  links.dedup_by(|left, right| left.id == right.id && left.path == right.path);
+  Ok(links)
 }
 
 fn graph_node<'a>(cache: &'a docs_cache::DocsCache, node_id: &str) -> Result<&'a docs_cache::KnowledgeNode, String> {
@@ -370,32 +402,17 @@ fn handle_graph_command(command: &DocsGraphSubcommand) -> Result<(), String> {
 }
 
 const AGENTS_DOC_URL: &str = "https://repo.calcit-lang.org/calcit/docs/CalcitAgent.md";
+const EMBEDDED_AGENTS_DOC: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/CalcitAgent.md"));
+
+struct AgentsDocument {
+  content: String,
+  display_path: String,
+  refreshed: bool,
+}
 
 fn get_agents_cache_path() -> Result<PathBuf, String> {
   let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
   Ok(Path::new(&home_dir).join(".config/calcit/Agents.md"))
-}
-
-fn needs_agents_refresh(cache_path: &Path) -> bool {
-  if !cache_path.exists() {
-    return true;
-  }
-
-  let metadata = match fs::metadata(cache_path) {
-    Ok(m) => m,
-    Err(_) => return true,
-  };
-
-  let modified = match metadata.modified() {
-    Ok(m) => m,
-    Err(_) => return true,
-  };
-
-  let now = SystemTime::now();
-  match now.duration_since(modified) {
-    Ok(age) => age > Duration::from_secs(60 * 60),
-    Err(_) => true,
-  }
 }
 
 fn download_agents_doc() -> Result<String, String> {
@@ -409,19 +426,27 @@ fn download_agents_doc() -> Result<String, String> {
     .map_err(|e| format!("Failed to read Agents.md response: {e}"))
 }
 
-fn ensure_agents_cache(force_refresh: bool) -> Result<(PathBuf, bool), String> {
-  let cache_path = get_agents_cache_path()?;
-  let should_refresh = force_refresh || needs_agents_refresh(&cache_path);
-
-  if should_refresh {
-    let content = download_agents_doc()?;
-    if let Some(parent) = cache_path.parent() {
-      fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache directory {parent:?}: {e}"))?;
-    }
-    fs::write(&cache_path, content).map_err(|e| format!("Failed to write Agents cache {cache_path:?}: {e}"))?;
+fn load_agents_document(force_refresh: bool) -> Result<AgentsDocument, String> {
+  if !force_refresh {
+    return Ok(AgentsDocument {
+      content: EMBEDDED_AGENTS_DOC.to_owned(),
+      display_path: format!("embedded:docs/CalcitAgent.md@{}", env!("CARGO_PKG_VERSION")),
+      refreshed: false,
+    });
   }
 
-  Ok((cache_path, should_refresh))
+  let cache_path = get_agents_cache_path()?;
+  let content = download_agents_doc()?;
+  if let Some(parent) = cache_path.parent() {
+    fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache directory {parent:?}: {e}"))?;
+  }
+  fs::write(&cache_path, &content).map_err(|e| format!("Failed to write Agents cache {cache_path:?}: {e}"))?;
+
+  Ok(AgentsDocument {
+    content,
+    display_path: cache_path.to_string_lossy().to_string(),
+    refreshed: true,
+  })
 }
 
 fn handle_read_content(options: ReadRenderOptions<'_>) -> Result<(), String> {
@@ -1059,21 +1084,16 @@ fn handle_agents(
   with_lines: bool,
   force_refresh: bool,
 ) -> Result<(), String> {
-  let (cache_path, refreshed) = ensure_agents_cache(force_refresh)?;
-  if refreshed {
-    if force_refresh {
-      println!("{}", format!("Force refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
-    } else {
-      println!("{}", format!("Refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
-    }
+  let document = load_agents_document(force_refresh)?;
+  if document.refreshed {
+    println!("{}", format!("Refreshed remote Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
   }
-  let content = fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read Agents cache {cache_path:?}: {e}"))?;
-  let (frontmatter, content) = parse_doc_frontmatter(&content);
-  validate_doc_frontmatter(&cache_path.to_string_lossy(), &frontmatter)?;
+  let (frontmatter, content) = parse_doc_frontmatter(&document.content);
+  validate_doc_frontmatter(&document.display_path, &frontmatter)?;
   let byte_len = content.len();
   let line_len = content.lines().count();
 
-  println!("{} {}", "Agent file:".dimmed(), cache_path.to_string_lossy().cyan());
+  println!("{} {}", "Agent source:".dimmed(), document.display_path.cyan());
   println!(
     "{} {} bytes, {} lines",
     "Agent length:".dimmed(),
@@ -1081,10 +1101,9 @@ fn handle_agents(
     line_len.to_string().cyan()
   );
 
-  let cache_display = cache_path.to_string_lossy().to_string();
   handle_read_content(ReadRenderOptions {
     display_title: frontmatter.title.as_deref().unwrap_or("Agents.md"),
-    display_path: &cache_display,
+    display_path: &document.display_path,
     command_hint: "agents",
     no_match_error: "No heading matched in Agents.md. Run 'cr docs agents' to list available headings.",
     content: &content,
@@ -1163,7 +1182,8 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_
   if command_guidance_enabled() {
     println!(
       "{}",
-      "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read-lines file.md -s 20 -n 30')".dimmed()
+      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'cr docs read-lines file.md --start 20 --lines 30')"
+        .dimmed()
     );
   }
 
@@ -1202,7 +1222,7 @@ fn handle_list(module_filter: Option<&str>) -> Result<(), String> {
     println!("{}", "    'cr docs read <filename>' to read the full document".dimmed());
     println!(
       "{}",
-      "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()
+      "    'cr docs read-lines <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
     );
     println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
   }

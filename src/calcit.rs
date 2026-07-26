@@ -1635,6 +1635,7 @@ mod tests {
           where_bounds: Arc::new(vec![]),
           return_type: DYNAMIC_TYPE.clone(),
           arg_types: vec![],
+          rest_type: None,
         }),
       }]),
     });

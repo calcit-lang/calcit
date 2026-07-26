@@ -8,6 +8,7 @@ use calcit::calcit::{CalcitProc, CalcitSyntax, CalcitTypeAnnotation, ProcTypeSig
 use calcit::cli_args::{CheckTypesCommand, WeakTypesCommand};
 use calcit::snapshot;
 use cirru_parser::Cirru;
+use md5::{Digest, Md5};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefKind {
@@ -20,7 +21,7 @@ pub enum DefKind {
 }
 
 impl DefKind {
-  fn as_str(self) -> &'static str {
+  pub fn as_str(self) -> &'static str {
     match self {
       DefKind::Data => "data",
       DefKind::Fn => "fn",
@@ -40,7 +41,7 @@ pub enum CoverageLevel {
 }
 
 impl CoverageLevel {
-  fn as_str(self) -> &'static str {
+  pub fn as_str(self) -> &'static str {
     match self {
       CoverageLevel::None => "none",
       CoverageLevel::Partial => "partial",
@@ -70,7 +71,7 @@ pub enum WeakTypeKind {
 }
 
 impl WeakTypeKind {
-  fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &'static str {
     match self {
       Self::SchemaDynamic => "schema-dynamic",
       Self::CodeDynamic => "code-dynamic",
@@ -83,9 +84,29 @@ impl WeakTypeKind {
   }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WeakTypeIntent {
+  Unresolved,
+  IntentionalJsFfi,
+}
+
+impl WeakTypeIntent {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Unresolved => "unresolved",
+      Self::IntentionalJsFfi => "intentional-js-ffi",
+    }
+  }
+
+  pub fn all() -> BTreeSet<Self> {
+    BTreeSet::from([Self::Unresolved, Self::IntentionalJsFfi])
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WeakTypeOccurrence {
   pub kind: WeakTypeKind,
+  pub intent: WeakTypeIntent,
   pub detail: String,
   pub path: String,
 }
@@ -116,6 +137,29 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
 
   if selected.is_empty() {
     return Err("Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, code-dynamic, code-nil".to_owned());
+  }
+
+  Ok(selected)
+}
+
+pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, String> {
+  let mut selected = BTreeSet::new();
+
+  for item in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    let intent = match item {
+      "unresolved" => WeakTypeIntent::Unresolved,
+      "intentional-js-ffi" => WeakTypeIntent::IntentionalJsFfi,
+      other => {
+        return Err(format!(
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi"
+        ));
+      }
+    };
+    selected.insert(intent);
+  }
+
+  if selected.is_empty() {
+    return Err("Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi".to_owned());
   }
 
   Ok(selected)
@@ -182,6 +226,7 @@ fn push_weak_type_occurrence(
 ) {
   occurrences.push(WeakTypeOccurrence {
     kind,
+    intent: WeakTypeIntent::Unresolved,
     detail: detail.into(),
     path: path.into(),
   });
@@ -246,6 +291,68 @@ fn scan_schema_dynamic_annotation(
   }
 }
 
+fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
+  if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
+    return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
+  }
+
+  if occurrence.kind == WeakTypeKind::CodeNil {
+    return "Use `:: :optional <type>` when nil is part of the contract; otherwise remove the nil-producing branch.";
+  }
+  if occurrence.kind == WeakTypeKind::CodeDynamic {
+    return "Replace this `:dynamic` slot with a concrete type, or `:any` when the contract explicitly accepts every Calcit value; keep dynamic only at a documented FFI or unresolved global-state boundary.";
+  }
+  if occurrence.detail.contains("ref-item") {
+    return "Replace bare `:ref` with `:: :ref <value-type>`; use `:any` for a ref that intentionally stores every Calcit value, and `:dynamic` only for an unresolved boundary.";
+  }
+  if occurrence.detail.contains("list-item") {
+    return "Replace bare `:list` with `:: :list <item-type>`; choose a concrete item type, or `:any` when heterogeneous Calcit values are the declared contract.";
+  }
+  if occurrence.detail.contains("set-item") {
+    return "Replace bare `:set` with `:: :set <item-type>` and choose a concrete item type.";
+  }
+  if occurrence.detail.contains("map-key") || occurrence.detail.contains("map-value") {
+    return "Use `:: :map <key-type> <value-type>` and replace each unresolved slot with a concrete type or the explicit static top type `:any`.";
+  }
+  "Replace `:dynamic` with a concrete schema type, or `:any` when every Calcit value is accepted; mark `:features $ #{} :js-ffi` only for an intentional JS FFI boundary."
+}
+
+fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, annotation: &CalcitTypeAnnotation) -> Vec<String> {
+  let mut issues = validate_def_vs_schema(ns, def_name, code, annotation);
+  let has_js_ffi_feature = matches!(
+    annotation,
+    CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi")
+  );
+  if has_js_ffi_feature || matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+    return issues;
+  }
+
+  let mut occurrences = vec![];
+  scan_schema_dynamic_annotation(annotation, "schema", "root", &mut occurrences);
+  for occurrence in occurrences {
+    issues.push(format!(
+      "[W_SCHEMA_DYNAMIC] {} is unresolved ({}). Fix: {}",
+      occurrence.path,
+      occurrence.detail,
+      weak_type_suggestion(&occurrence)
+    ));
+  }
+  issues
+}
+
+fn downgrade_coverage_for_dynamic_annotation(level: CoverageLevel, annotation: &CalcitTypeAnnotation) -> CoverageLevel {
+  if level != CoverageLevel::Full {
+    return level;
+  }
+  let mut occurrences = vec![];
+  scan_schema_dynamic_annotation(annotation, "schema", "root", &mut occurrences);
+  if occurrences.is_empty() {
+    CoverageLevel::Full
+  } else {
+    CoverageLevel::Partial
+  }
+}
+
 #[derive(Debug, Clone)]
 struct WeakCodeParent {
   head: Option<String>,
@@ -277,6 +384,14 @@ fn classify_code_nil(parent: Option<&WeakCodeParent>) -> &'static str {
     Some("cond") | Some("case") | Some("case-default") => "branch",
     _ => "literal",
   }
+}
+
+fn code_declares_embedded_type_schema(code: &Cirru) -> bool {
+  matches!(
+    code,
+    Cirru::List(items)
+      if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum" | "deftrait"))
+  )
 }
 
 fn scan_cirru_weak_types(
@@ -338,13 +453,15 @@ pub fn analyze_weak_types_entry(
 ) -> Option<WeakTypeRow> {
   let mut occurrences: Vec<WeakTypeOccurrence> = vec![];
 
-  if matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) && selected.contains(&WeakTypeKind::SchemaDynamic) {
-    push_weak_type_occurrence(
-      &mut occurrences,
-      WeakTypeKind::SchemaDynamic,
-      weak_type_detail(WeakTypeKind::SchemaDynamic, "root"),
-      "schema".to_owned(),
-    );
+  if matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    if selected.contains(&WeakTypeKind::SchemaDynamic) && !code_declares_embedded_type_schema(&entry.code) {
+      push_weak_type_occurrence(
+        &mut occurrences,
+        WeakTypeKind::SchemaDynamic,
+        weak_type_detail(WeakTypeKind::SchemaDynamic, "root"),
+        "schema".to_owned(),
+      );
+    }
   } else if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() {
     if selected.contains(&WeakTypeKind::SchemaDynamic) {
       for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
@@ -370,6 +487,18 @@ pub fn analyze_weak_types_entry(
   let mut code_path = vec![];
   scan_cirru_weak_types(&entry.code, "code", &mut code_path, None, selected, &mut occurrences);
 
+  let has_js_ffi_feature = matches!(
+    entry.schema.as_ref(),
+    CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|feature| feature.ref_str() == "js-ffi")
+  );
+  if has_js_ffi_feature {
+    for occurrence in &mut occurrences {
+      if matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::CodeDynamic) {
+        occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
+      }
+    }
+  }
+
   if occurrences.is_empty() {
     None
   } else {
@@ -381,7 +510,7 @@ pub fn analyze_weak_types_entry(
   }
 }
 
-pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
+pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<WeakTypeRow>, String> {
   if let Some(ns) = &options.ns
     && !snapshot.files.contains_key(ns)
   {
@@ -394,6 +523,12 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     .map(parse_weak_type_kinds)
     .transpose()?
     .unwrap_or_else(WeakTypeKind::all);
+  let selected_intents = options
+    .intent
+    .as_deref()
+    .map(parse_weak_type_intents)
+    .transpose()?
+    .unwrap_or_else(WeakTypeIntent::all);
 
   let pkg = snapshot.package.as_str();
   let explicit_scope = options.ns.is_some() || options.ns_prefix.is_some();
@@ -415,13 +550,21 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     }
 
     for (def_name, entry) in &file.defs {
-      if let Some(row) = analyze_weak_types_entry(ns, def_name, entry, &selected) {
-        rows.push(row);
+      if let Some(mut row) = analyze_weak_types_entry(ns, def_name, entry, &selected) {
+        row.occurrences.retain(|occurrence| selected_intents.contains(&occurrence.intent));
+        if !row.occurrences.is_empty() {
+          rows.push(row);
+        }
       }
     }
   }
 
   rows.sort_by(|a, b| a.ns.cmp(&b.ns).then(a.def.cmp(&b.def)));
+  Ok(rows)
+}
+
+pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
+  let rows = collect_weak_type_rows(options, snapshot)?;
 
   if rows.is_empty() {
     let _ = writeln!(out, "No weak type usage found in selected namespace scope.");
@@ -429,6 +572,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   }
 
   let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut intent_count: BTreeMap<&'static str, usize> = BTreeMap::new();
   let mut detail_count: BTreeMap<&'static str, BTreeMap<String, usize>> = BTreeMap::new();
   let mut schema_shape_count: BTreeMap<String, usize> = BTreeMap::new();
   let mut schema_shape_positions: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
@@ -446,6 +590,10 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     let def_label = format!("{}/{}", row.ns, row.def);
     for occurrence in &row.occurrences {
       *kind_count.entry(occurrence.kind.as_str()).or_insert(0) += 1;
+      *intent_count.entry(occurrence.intent.as_str()).or_insert(0) += 1;
+      if options.summary_only {
+        continue;
+      }
       *detail_count
         .entry(occurrence.kind.as_str())
         .or_default()
@@ -496,6 +644,9 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   if let Some(raw) = &options.only {
     let _ = writeln!(out, "- only: {raw}");
   }
+  if let Some(raw) = &options.intent {
+    let _ = writeln!(out, "- intent-filter: {raw}");
+  }
   let _ = writeln!(
     out,
     "- hits: schema-dynamic={} code-dynamic={} code-nil={}",
@@ -503,6 +654,15 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     kind_count.get("code-dynamic").copied().unwrap_or(0),
     kind_count.get("code-nil").copied().unwrap_or(0)
   );
+  let _ = writeln!(
+    out,
+    "- intents: unresolved={} intentional-js-ffi={}",
+    intent_count.get("unresolved").copied().unwrap_or(0),
+    intent_count.get("intentional-js-ffi").copied().unwrap_or(0)
+  );
+  if options.summary_only {
+    return Ok(());
+  }
   let _ = writeln!(out, "- detail:");
   for kind in ["schema-dynamic", "code-dynamic", "code-nil"] {
     let _ = writeln!(out, "  - {kind}");
@@ -578,11 +738,13 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     for occurrence in &row.occurrences {
       let _ = writeln!(
         out,
-        "  - {} ({}) @ {}",
+        "  - {} [{}] ({}) @ {}",
         occurrence.kind.as_str(),
+        occurrence.intent.as_str(),
         occurrence.detail,
         occurrence.path
       );
+      let _ = writeln!(out, "    fix: {}", weak_type_suggestion(occurrence));
     }
     let _ = writeln!(out,);
   }
@@ -590,7 +752,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   Ok(())
 }
 
-pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
+pub fn collect_type_coverage_rows(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<TypeCoverageRow>, String> {
   if let Some(ns) = &options.ns
     && !snapshot.files.contains_key(ns)
   {
@@ -633,6 +795,11 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
       .then(a.kind.as_str().cmp(b.kind.as_str()))
       .then(a.def.cmp(&b.def))
   });
+  Ok(rows)
+}
+
+pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot, out: &mut String) -> Result<(), String> {
+  let rows = collect_type_coverage_rows(options, snapshot)?;
 
   if rows.is_empty() {
     let _ = writeln!(out, "No definitions found in selected namespace scope.");
@@ -672,6 +839,9 @@ pub fn run_check_types_report(options: &CheckTypesCommand, snapshot: &snapshot::
     kind_count.get("data").copied().unwrap_or(0),
     kind_count.get("other").copied().unwrap_or(0)
   );
+  if options.summary_only {
+    return Ok(());
+  }
   let _ = writeln!(out,);
 
   let mut current_ns: Option<&str> = None;
@@ -999,13 +1169,122 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
     }
   }
 
+  // Function schemas are the canonical source for top-level callable coverage.
+  // Definition payloads may use `fn` values instead of `defn`, so relying on
+  // the source head alone incorrectly classifies typed functions as `other`.
+  if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref()
+    && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+    && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(&schema)
+  {
+    let level = downgrade_coverage_for_dynamic_annotation(level, entry.schema.as_ref());
+    return TypeCoverageRow {
+      ns: ns.to_owned(),
+      def: def_name.to_owned(),
+      kind: match fn_annot.fn_kind {
+        SchemaKind::Fn => DefKind::Fn,
+        SchemaKind::Macro => DefKind::Macro,
+      },
+      level,
+      params,
+      param_annotations,
+      return_type_hints,
+      data_type: None,
+      schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
+    };
+  }
+
+  fn type_form_contains_dynamic(form: &Cirru) -> bool {
+    match form {
+      Cirru::Leaf(value) => value.as_ref() == ":dynamic",
+      Cirru::List(items) => items.iter().any(type_form_contains_dynamic),
+    }
+  }
+
+  fn embedded_type_declaration_coverage(head: &str, items: &[Cirru]) -> CoverageLevel {
+    let mut typed_slots = 0usize;
+    let mut dynamic_slots = 0usize;
+
+    match head {
+      "defstruct" => {
+        for field in items.iter().skip(2) {
+          let field_type = match field {
+            Cirru::List(parts) => parts.get(1),
+            Cirru::Leaf(_) => None,
+          };
+          match field_type {
+            Some(form) if !type_form_contains_dynamic(form) => typed_slots += 1,
+            _ => dynamic_slots += 1,
+          }
+        }
+      }
+      "defenum" => {
+        for variant in items.iter().skip(2) {
+          if let Cirru::List(parts) = variant {
+            for payload_type in parts.iter().skip(1) {
+              if type_form_contains_dynamic(payload_type) {
+                dynamic_slots += 1;
+              } else {
+                typed_slots += 1;
+              }
+            }
+          }
+        }
+      }
+      "deftrait" => {
+        for method in items.iter().skip(2) {
+          if type_form_contains_dynamic(method) {
+            dynamic_slots += 1;
+          } else {
+            typed_slots += 1;
+          }
+        }
+      }
+      _ => {}
+    }
+
+    if dynamic_slots == 0 {
+      CoverageLevel::Full
+    } else if typed_slots > 0 || matches!(head, "defstruct" | "defenum") {
+      CoverageLevel::Partial
+    } else {
+      CoverageLevel::None
+    }
+  }
+
+  fn explicit_data_schema(annotation: &CalcitTypeAnnotation) -> Option<(String, CoverageLevel)> {
+    if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+      return None;
+    }
+    let description = annotation.describe();
+    if matches!(description.as_str(), "dynamic" | "unknown") {
+      return None;
+    }
+    let mut dynamic_parts = vec![];
+    scan_schema_dynamic_annotation(annotation, "schema", "root", &mut dynamic_parts);
+    let level = if dynamic_parts.is_empty() {
+      CoverageLevel::Full
+    } else {
+      CoverageLevel::Partial
+    };
+    Some((description, level))
+  }
+
   let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
     Cirru::List(xs) => match xs.first() {
+      Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum" | "deftrait") => (
+        DefKind::Data,
+        Vec::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        Some(head.trim_start_matches("def").to_owned()),
+        embedded_type_declaration_coverage(head, xs),
+      ),
       Some(Cirru::Leaf(head)) if &**head == "defn" => {
         if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref()
           && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
           && let Some((params, param_annotations, return_type_hints, level)) = extract_fn_schema_hints(&schema)
         {
+          let level = downgrade_coverage_for_dynamic_annotation(level, entry.schema.as_ref());
           return TypeCoverageRow {
             ns: ns.to_owned(),
             def: def_name.to_owned(),
@@ -1015,7 +1294,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
             param_annotations,
             return_type_hints,
             data_type: None,
-            schema_issues: validate_def_vs_schema(ns, def_name, &entry.code, &entry.schema),
+            schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
           };
         }
         if std::env::var("CR_DEBUG_SCHEMA").is_ok() {
@@ -1057,12 +1336,29 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
       }
       Some(Cirru::Leaf(head)) if &**head == "def" => {
         let inferred = xs.get(2).and_then(infer_data_type);
-        let level = CoverageLevel::Full;
-        (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), inferred, level)
+        let explicit = explicit_data_schema(entry.schema.as_ref());
+        let data_type = inferred.or_else(|| explicit.as_ref().map(|(data_type, _)| data_type.clone()));
+        let level = explicit.map(|(_, level)| level).unwrap_or(if data_type.is_some() {
+          CoverageLevel::Full
+        } else {
+          CoverageLevel::None
+        });
+        (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), data_type, level)
       }
-      _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::Full),
+      Some(Cirru::Leaf(head)) if head.as_ref() == "defatom" => {
+        let explicit = explicit_data_schema(entry.schema.as_ref());
+        let (data_type, level) = explicit.unwrap_or_else(|| ("ref<dynamic>".to_owned(), CoverageLevel::Partial));
+        (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), Some(data_type), level)
+      }
+      _ => match explicit_data_schema(entry.schema.as_ref()) {
+        Some((data_type, level)) => (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), Some(data_type), level),
+        None => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::None),
+      },
     },
-    _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::Full),
+    _ => match explicit_data_schema(entry.schema.as_ref()) {
+      Some((data_type, level)) => (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), Some(data_type), level),
+      None => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::None),
+    },
   };
 
   TypeCoverageRow {
@@ -1074,7 +1370,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
     param_annotations,
     return_type_hints,
     data_type,
-    schema_issues: validate_def_vs_schema(ns, def_name, &entry.code, &entry.schema),
+    schema_issues: entry_schema_issues(ns, def_name, &entry.code, &entry.schema),
   }
 }
 
@@ -1425,6 +1721,162 @@ fn infer_data_type(node: &Cirru) -> Option<String> {
       _ => None,
     },
   }
+}
+
+fn analysis_revision(snapshot: &snapshot::Snapshot, definitions: &[(String, String)]) -> Result<String, String> {
+  let mut ids = definitions.to_vec();
+  ids.sort();
+  ids.dedup();
+  let mut hasher = Md5::new();
+  for (namespace, definition) in ids {
+    let entry = snapshot
+      .files
+      .get(&namespace)
+      .and_then(|file| file.defs.get(&definition))
+      .ok_or_else(|| format!("Definition disappeared while computing analysis revision: {namespace}/{definition}"))?;
+    let revision = snapshot::definition_revision(entry)?;
+    let id = format!("{namespace}/{definition}");
+    hasher.update((id.len() as u64).to_le_bytes());
+    hasher.update(id.as_bytes());
+    hasher.update(revision.as_bytes());
+  }
+  Ok(format!("md5:{:x}", hasher.finalize()))
+}
+
+pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
+  let rows = collect_type_coverage_rows(options, snapshot)?;
+  let mut levels = BTreeMap::<&str, usize>::new();
+  let mut kinds = BTreeMap::<&str, usize>::new();
+  let mut namespaces = BTreeSet::<&str>::new();
+  for row in &rows {
+    *levels.entry(row.level.as_str()).or_insert(0) += 1;
+    *kinds.entry(row.kind.as_str()).or_insert(0) += 1;
+    namespaces.insert(row.ns.as_str());
+  }
+  for level in ["none", "partial", "full"] {
+    levels.entry(level).or_insert(0);
+  }
+  for kind in ["fn", "macro", "proc", "syntax", "data", "other"] {
+    kinds.entry(kind).or_insert(0);
+  }
+
+  let definitions = rows
+    .iter()
+    .filter(|_| !options.summary_only)
+    .map(|row| {
+      let parameters = row
+        .params
+        .iter()
+        .map(|name| {
+          serde_json::json!({
+            "name": name,
+            "types": row.param_annotations.get(name).cloned().unwrap_or_default(),
+          })
+        })
+        .collect::<Vec<_>>();
+      serde_json::json!({
+        "id": format!("{}/{}", row.ns, row.def),
+        "namespace": row.ns,
+        "name": row.def,
+        "kind": row.kind.as_str(),
+        "coverage": row.level.as_str(),
+        "parameters": parameters,
+        "return_types": row.return_type_hints,
+        "data_type": row.data_type,
+        "schema_issues": row.schema_issues,
+      })
+    })
+    .collect::<Vec<_>>();
+  let ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
+  let envelope = serde_json::json!({
+    "schema_version": 1,
+    "command": "analyze.check-types",
+    "revision": analysis_revision(snapshot, &ids)?,
+    "data": {
+      "filters": {
+        "namespace": options.ns,
+        "namespace_prefix": options.ns_prefix,
+        "only": options.only,
+        "include_dependencies": options.deps,
+        "summary_only": options.summary_only,
+      },
+      "summary": {
+        "namespaces": namespaces.len(),
+        "definitions": rows.len(),
+        "levels": levels,
+        "kinds": kinds,
+      },
+      "definitions": definitions,
+    },
+    "diagnostics": [],
+  });
+  serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode type coverage JSON: {error}"))
+}
+
+pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {
+  let rows = collect_weak_type_rows(options, snapshot)?;
+  let mut kinds = BTreeMap::<&str, usize>::new();
+  let mut intents = BTreeMap::<&str, usize>::new();
+  let mut namespaces = BTreeSet::<&str>::new();
+  for row in &rows {
+    namespaces.insert(row.ns.as_str());
+    for occurrence in &row.occurrences {
+      *kinds.entry(occurrence.kind.as_str()).or_insert(0) += 1;
+      *intents.entry(occurrence.intent.as_str()).or_insert(0) += 1;
+    }
+  }
+  for kind in ["schema-dynamic", "code-dynamic", "code-nil"] {
+    kinds.entry(kind).or_insert(0);
+  }
+  for intent in ["unresolved", "intentional-js-ffi"] {
+    intents.entry(intent).or_insert(0);
+  }
+
+  let definitions = rows
+    .iter()
+    .filter(|_| !options.summary_only)
+    .map(|row| {
+      serde_json::json!({
+        "id": format!("{}/{}", row.ns, row.def),
+        "namespace": row.ns,
+        "name": row.def,
+        "occurrences": row.occurrences.iter().map(|occurrence| serde_json::json!({
+          "kind": occurrence.kind.as_str(),
+          "intent": occurrence.intent.as_str(),
+          "detail": occurrence.detail,
+          "path": occurrence.path,
+          "suggestion": weak_type_suggestion(occurrence),
+        })).collect::<Vec<_>>(),
+      })
+    })
+    .collect::<Vec<_>>();
+  let ids = rows.iter().map(|row| (row.ns.clone(), row.def.clone())).collect::<Vec<_>>();
+  let hit_count = rows.iter().map(|row| row.occurrences.len()).sum::<usize>();
+  let envelope = serde_json::json!({
+    "schema_version": 1,
+    "command": "analyze.weak-types",
+    "revision": analysis_revision(snapshot, &ids)?,
+    "data": {
+      "filters": {
+        "namespace": options.ns,
+        "namespace_prefix": options.ns_prefix,
+        "only": options.only,
+        "intent": options.intent,
+        "include_dependencies": options.deps,
+        "summary_only": options.summary_only,
+      },
+      "summary": {
+        "namespaces": namespaces.len(),
+        "definitions": rows.len(),
+        "hits": hit_count,
+        "kinds": kinds,
+        "intents": intents,
+      },
+      "definitions": definitions,
+    },
+    "diagnostics": [],
+  });
+  serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode weak type JSON: {error}"))
 }
 
 pub fn format_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {

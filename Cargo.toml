@@ -10,7 +10,7 @@ homepage = "http://calcit-lang.org"
 documentation = "https://docs.rs/crate/calcit/"
 repository = "https://github.com/calcit-lang/calcit.rs"
 readme = "README.md"
-exclude = ["lib/*", "calcit/*", "ts-src/*", "js-out/*", "scripts/*", "docs/*", "editing-history/*", "rfc/*"]
+exclude = ["lib/*", "calcit/*", "ts-src/*", "js-out/*", "scripts/*", "docs/*", "!docs/CalcitAgent.md", "editing-history/*", "rfc/*"]
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

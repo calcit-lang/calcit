@@ -25,6 +25,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
       let return_type = detect_return_type_hint(&body_items);
       let generics = detect_fn_generics(&body_items);
       let where_bounds = detect_fn_where_bounds(&body_items);
+      let declared_rest_type = detect_fn_rest_type(&body_items);
       let parsed_args = get_raw_args_fn(xs)?;
       let param_symbols = match collect_param_symbols(xs) {
         Ok(params) => params,
@@ -52,6 +53,18 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
           arg_types = from_body;
         }
       }
+      let rest_type = declared_rest_type.or_else(|| {
+        arg_types.last().and_then(|type_info| match type_info.as_ref() {
+          CalcitTypeAnnotation::Variadic(inner) => Some(inner.clone()),
+          _ => None,
+        })
+      });
+      if let Some(inner) = &rest_type
+        && matches!(parsed_args, CalcitFnArgs::MarkedArgs(ref labels) if labels.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)))
+        && let Some(last) = arg_types.last_mut()
+      {
+        *last = Arc::new(CalcitTypeAnnotation::Variadic(inner.clone()));
+      }
       let is_macro_gen = s.as_ref().contains('%');
       Ok(Calcit::Fn {
         id: gen_core_id(),
@@ -73,6 +86,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
           where_bounds,
           return_type,
           arg_types,
+          rest_type,
         }),
       })
     }
@@ -137,6 +151,10 @@ fn detect_fn_where_bounds(forms: &[Calcit]) -> Arc<Vec<crate::calcit::CalcitGene
     }
   }
   Arc::new(vec![])
+}
+
+fn detect_fn_rest_type(forms: &[Calcit]) -> Option<Arc<CalcitTypeAnnotation>> {
+  forms.iter().find_map(CalcitTypeAnnotation::extract_rest_type_from_hint_form)
 }
 
 /// Extract arg types from preprocessed Local nodes in the args list.
@@ -270,6 +288,55 @@ mod tests {
       }
       other => panic!("expected function, got {other}"),
     }
+  }
+
+  #[test]
+  fn defn_preserves_schema_rest_type_for_runtime_and_static_callers() {
+    let ns = "tests.fn";
+    let args_list = Calcit::List(Arc::new(CalcitList::Vector(vec![
+      make_local("x", ns, "main"),
+      Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from(ns)),
+      make_local("xs", ns, "main"),
+    ])));
+    let schema_args = Calcit::List(Arc::new(CalcitList::Vector(vec![
+      make_symbol("[]", ns, "main"),
+      Calcit::Tag(EdnTag::new("number")),
+    ])));
+    let hint_form = make_hint_form(
+      ns,
+      vec![
+        make_symbol("{}", ns, "main"),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::Tag(EdnTag::new("args")), schema_args]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![
+          Calcit::Tag(EdnTag::new("rest")),
+          Calcit::Tag(EdnTag::new("number")),
+        ]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![
+          Calcit::Tag(EdnTag::new("return")),
+          Calcit::Tag(EdnTag::new("number")),
+        ]))),
+      ],
+    );
+    let expr = CalcitList::Vector(vec![
+      make_symbol("sum", ns, "main"),
+      args_list,
+      hint_form,
+      make_symbol("x", ns, "main"),
+    ]);
+
+    let Calcit::Fn { info, .. } = defn(&expr, &CalcitScope::default(), ns).expect("variadic defn should compile") else {
+      panic!("expected function");
+    };
+    assert!(matches!(info.rest_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
+    assert!(matches!(
+      info.arg_types.last().map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Variadic(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+    let CalcitTypeAnnotation::Fn(annotation) = CalcitTypeAnnotation::from_calcit_fn(&info) else {
+      panic!("runtime function should expose a static function annotation");
+    };
+    assert_eq!(annotation.arg_types.len(), 1);
+    assert!(matches!(annotation.rest_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
   }
 
   #[test]

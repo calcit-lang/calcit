@@ -66,6 +66,23 @@ cr edit add-import app.main --code 'quote (respo.core :refer $ deftime)'
 cr edit imports app.main --file imports.cirru
 ```
 
+### Managing Schemas and Examples
+
+```bash
+# Schema accepts exactly one quoted Cirru type node.
+cr edit schema 'app.main/*enabled?' --code 'quote $ :: :ref :bool'
+
+# Each top-level quote becomes one example; leaves remain representable.
+cr edit examples app.main/add << 'END'
+quote $ add 1 2
+quote $ add 3 4
+quote |literal
+END
+
+# Execute only the examples attached to one definition.
+cr analyze check-examples --ns app.main --def add
+```
+
 ## Fine-grained AST Operations (cr tree)
 
 The `tree` command allows precise manipulation of nodes within a definition's S-expression tree.
@@ -127,6 +144,8 @@ For Cirru input, current CLI expects **Cirru EDN with `quote` prefix**:
 - `--code 'quote (expr ...)'`
 - stdin / `--file` likewise use `quote ...`
 - only JSON array input can be passed without `quote`
+
+`cr edit schema` follows the same rule and accepts exactly one quoted type node. `cr edit examples` is the batch form: each top-level item must independently be `quote |leaf` or `quote $ expr ...`. A quoted `[]` wrapper is not a batch marker because it would describe one AST node, not a collection of edit operations.
 
 > Note: For multi-line text input, prefer `--file` or stdin heredoc. They avoid shell escaping, but Cirru content still needs the `quote` prefix.
 

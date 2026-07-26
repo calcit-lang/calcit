@@ -8,9 +8,9 @@
 ## 新语法
 
 ```bash
-cr edit schema 'respo.comp.space/style-space' --leaf -e ':string'
-cr edit schema 'some.ns/my-val' --leaf -e ':number'
-cr edit schema 'some.ns/my-flag' --leaf -e ':bool'
+cr edit schema 'respo.comp.space/style-space' --code 'quote :string'
+cr edit schema 'some.ns/my-val' --code 'quote :number'
+cr edit schema 'some.ns/my-flag' --code 'quote :bool'
 ```
 
 接受的 primitive 类型 tag：`bool`, `number`, `string`, `symbol`, `tag`, `list`, `map`, `set`, `fn`, `tuple`, `ref`, `buffer`, `dynamic`, `unit`
@@ -35,7 +35,7 @@ cr edit schema 'some.ns/my-flag' --leaf -e ':bool'
 
 ## 完整数据流（以 `:string` 为例）
 
-1. CLI 收到 `--leaf -e ':string'` → `Cirru::Leaf(":string")`
+1. CLI 收到 quoted schema 输入 `--code 'quote :string'`，取出 payload 后得到 `Cirru::Leaf(":string")`
 2. `validate_schema_for_write` → `"string"` 在 `PRIMITIVE_SCHEMA_TAGS` → Ok
 3. `CalcitTypeAnnotation::from_tag_name("string")` → `CalcitTypeAnnotation::String`
 4. 写入快照 → `CodeEntry::From` 序列化为 `Edn::tag("string")`

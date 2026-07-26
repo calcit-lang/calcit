@@ -12,7 +12,7 @@
 
 ## 命令语义
 
-### `cr tree raise <ns/def> -p <child-path>`
+### `cr tree raise <ns/def> --path <child-path>`
 
 等价 Paredit `raise-sexp`。将指定子节点**整体替换掉其父节点**。
 
@@ -20,11 +20,11 @@
 - `parent_path = path[..n-1]`，用 `apply_operation_at_path(..., "replace", child)` 实现
 - 典型用途：去掉 `if` 只保留某分支、去掉 `let` 只保留最终返回值表达式
 
-### `cr tree wrap <ns/def> -p <path> -e '<template>'`
+### `cr tree wrap <ns/def> --path <path> --code '<template>'`
 
-等价 `cr tree rewrite ... -w 'self=.'`，但更简洁。模板中 `self` 自动绑定为原节点。
+等价 `cr tree rewrite ... --with 'self=.'`，但更简洁。模板中 `self` 自动绑定为原节点。
 
-- 适合"加一层调用"的常见模式：`wrap -e 'println self'`、`wrap -e 'let ((x self)) x'`
+- 适合"加一层调用"的常见模式：`wrap --code 'println self'`、`wrap --code 'let ((x self)) x'`
 - 当需要引用原节点的**子节点**（不只是整体）时，仍需用 `rewrite --with`
 
 ## 知识点

@@ -181,6 +181,7 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+      rest_type: None,
     })
   }
 

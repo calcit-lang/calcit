@@ -605,6 +605,7 @@ mod tests {
           Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
         )),
       ],
+      rest_type: None,
     };
 
     let args = CalcitList::from(&[

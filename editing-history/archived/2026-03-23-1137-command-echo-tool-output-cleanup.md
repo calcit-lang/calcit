@@ -60,8 +60,8 @@
 - `cargo run --bin cr -- calcit/test.cirru analyze js-unescape 'demo_$q_'`
 - `cargo run --bin cr -- calcit/test.cirru query ns app.main`
 - `cargo run --bin cr -- calcit/test.cirru query find render`
-- `cargo run --bin cr -- calcit/test.cirru tree show app.main/test-json -p ''`
-- `cargo run --bin cr -- calcit/test.cirru docs search chunk -f agent-advanced.md`
+- `cargo run --bin cr -- calcit/test.cirru tree show app.main/test-json --path ''`
+- `cargo run --bin cr -- calcit/test.cirru docs search chunk --filename agent-advanced.md`
 - `cargo run --bin cr -- demos/calcit.cirru docs check-md docs/CalcitAgent.md`
 - `cargo run --bin cr -- /tmp/calcit-cli-demo/calcit.cirru tree replace ...` 多次人工检查 replace 输出形态
 

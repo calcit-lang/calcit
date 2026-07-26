@@ -12,8 +12,8 @@ use std::thread_local;
 use cirru_edn::{Edn, EdnListView, EdnMapView, EdnSetView, EdnTag};
 
 use super::{
-  CORE_NS, Calcit, CalcitEnum, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSymbolInfo,
-  CalcitSyntax, CalcitTrait, CalcitTuple,
+  CORE_NS, Calcit, CalcitEnum, CalcitFn, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct,
+  CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple,
 };
 use std::sync::{LazyLock, OnceLock};
 
@@ -383,8 +383,16 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Whether this annotation is the explicit static top type `:any`.
+  /// Unlike `:dynamic`, it is a known contract and must not be treated as
+  /// missing type metadata.
+  pub fn is_static_any(&self) -> bool {
+    matches!(self, Self::Custom(value) if Self::custom_keyword_matches(value, "any"))
+  }
+
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
+      "any" => Some(Self::Custom(Arc::new(Calcit::tag("any")))),
       "bool" => Some(Self::Bool),
       "number" => Some(Self::Number),
       "string" => Some(Self::String),
@@ -406,6 +414,7 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn builtin_tag_name(&self) -> Option<&'static str> {
     match self {
+      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("any"),
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),
       Self::String => Some("string"),
@@ -679,6 +688,21 @@ impl CalcitTypeAnnotation {
         && let Some(vars) = Self::parse_generics_list(value)
       {
         return Some(vars);
+      }
+    }
+    None
+  }
+
+  /// Extract the element type declared by `:rest` from a schema hint-fn form.
+  pub fn extract_rest_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
+    let items = Self::get_hint_fn_items(form)?;
+    for item in items.iter().skip(1) {
+      if let Some(type_expr) = Self::extract_schema_value_single(item, "rest") {
+        return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
+          type_expr,
+          generics.as_slice(),
+        ));
       }
     }
     None
@@ -1004,6 +1028,22 @@ impl CalcitTypeAnnotation {
     }))))
   }
 
+  /// Extract a complete function annotation from the schema map carried by `hint-fn`.
+  ///
+  /// Both supported forms are accepted:
+  ///
+  /// - `(hint-fn schema)` inside a function body;
+  /// - `(hint-fn target schema)` for refining a local function binding.
+  pub fn extract_fn_annotation_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    let items = Self::get_hint_fn_items(form)?;
+    for item in items.iter().skip(1) {
+      if let Some(annotation) = Self::parse_fn_annotation_from_schema_form(item, &[], true) {
+        return Some(annotation);
+      }
+    }
+    None
+  }
+
   /// Extract arg types from a schema hint-fn form, e.g. `(HintFn {:args ([] :number :fn) :return :number})`.
   ///
   /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
@@ -1054,6 +1094,15 @@ impl CalcitTypeAnnotation {
       }),
       _ => Calcit::Nil,
     }
+  }
+
+  /// Parse a standalone schema type expression from its snapshot EDN form.
+  ///
+  /// Unlike function schemas, top-level data annotations such as
+  /// `(:: :ref :number)` or `(:: :list 'app/Item)` do not carry an argument
+  /// scope. Named symbols are therefore interpreted as type references.
+  pub fn parse_type_annotation_from_edn(form: &Edn) -> Arc<CalcitTypeAnnotation> {
+    Self::parse_type_annotation_form_inner(&Self::edn_type_to_calcit(form), &[], true)
   }
 
   /// Parse a schema [`Edn`] map value (as stored in [`crate::snapshot::CodeEntry::schema`])
@@ -1738,6 +1787,12 @@ impl CalcitTypeAnnotation {
             CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs => {
               return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(args)));
             }
+            // In an unscoped assertion, a quoted leaf is historically parsed as a TypeVar.
+            // Type variables are not higher-kinded in Calcit, so applying arguments to one is
+            // unambiguously a named type application such as `(:: 'Box :number)`.
+            CalcitTypeAnnotation::TypeVar(name) if !args.is_empty() => {
+              return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(args)));
+            }
             _ => {}
           }
         }
@@ -1809,7 +1864,7 @@ impl CalcitTypeAnnotation {
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
-      Self::Record(struct_def) => format!("struct {}", struct_def.name),
+      Self::Record(struct_def) => format!("record {}", struct_def.name),
       Self::Tuple(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
       Self::TypeSlot(name) => format!("type-slot({name})"),
@@ -2109,6 +2164,19 @@ impl CalcitTypeAnnotation {
   pub(crate) fn matches_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
+      (_, Self::Custom(expected)) if Self::custom_keyword_matches(expected, "any") => true,
+      (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => true,
+      (actual, Self::TypeVar(var)) => match bindings.get(var) {
+        Some(bound) if bound.as_ref() == actual => true,
+        Some(bound) => {
+          let bound = bound.clone();
+          actual.matches_with_bindings(bound.as_ref(), bindings)
+        }
+        None => {
+          bindings.insert(var.to_owned(), Arc::new(actual.to_owned()));
+          true
+        }
+      },
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
         Self::Unit => true, // nil is always valid for Optional types
@@ -2124,17 +2192,8 @@ impl CalcitTypeAnnotation {
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote)
       | (Self::Unit, Self::Unit) => true,
-      (actual, Self::TypeVar(var)) => match bindings.get(var) {
-        Some(bound) => {
-          let bound = bound.clone();
-          actual.matches_with_bindings(bound.as_ref(), bindings)
-        }
-        None => {
-          bindings.insert(var.to_owned(), Arc::new(actual.to_owned()));
-          true
-        }
-      },
       (Self::TypeVar(var), expected_type) => match bindings.get(var) {
+        Some(bound) if bound.as_ref() == expected_type => true,
         Some(bound) => {
           let bound = bound.clone();
           bound.as_ref().matches_with_bindings(expected_type, bindings)
@@ -2255,6 +2314,19 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(a), Self::Tuple(b)) => a.name() == b.name(),
       (Self::Tuple(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::Tuple(a)) => a.name() == b.name(),
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) => true,
+      (type_ref @ Self::TypeRef(_, _), Self::DynTuple) | (Self::DynTuple, type_ref @ Self::TypeRef(_, _)) => {
+        type_ref.resolve_to_enum().is_some()
+      }
+      (type_ref @ Self::TypeRef(_, _), Self::Custom(expected)) | (Self::Custom(expected), type_ref @ Self::TypeRef(_, _))
+        if Self::custom_keyword_matches(expected, "record") || Self::custom_keyword_matches(expected, "struct") =>
+      {
+        type_ref.resolve_to_struct().is_some()
+      }
+      (type_ref @ Self::TypeRef(_, _), Self::Custom(expected)) | (Self::Custom(expected), type_ref @ Self::TypeRef(_, _))
+        if Self::custom_keyword_matches(expected, "tuple") || Self::custom_keyword_matches(expected, "enum") =>
+      {
+        type_ref.resolve_to_enum().is_some()
+      }
       // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
       // try to resolve it as a type alias by looking up the definition's schema.
       (Self::TypeRef(name, _), other) | (other, Self::TypeRef(name, _)) => {
@@ -2316,7 +2388,7 @@ impl CalcitTypeAnnotation {
           None => Self::DynTuple,
         }
       }
-      Calcit::Fn { info, .. } => Self::from_function_parts(info.arg_types.clone(), info.return_type.clone()),
+      Calcit::Fn { info, .. } => Self::from_calcit_fn(info),
       Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
@@ -2347,13 +2419,42 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn from_function_parts(arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnnotation>) -> Self {
+    let mut fixed_arg_types = arg_types;
+    let rest_type = fixed_arg_types.last().and_then(|last| match last.as_ref() {
+      Self::Variadic(inner) => Some(inner.clone()),
+      _ => None,
+    });
+    if rest_type.is_some() {
+      fixed_arg_types.pop();
+    }
     Self::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
-      arg_types,
+      arg_types: fixed_arg_types,
       return_type,
       fn_kind: SchemaKind::Fn,
-      rest_type: None,
+      rest_type,
+      features: Arc::new(HashSet::new()),
+    }))
+  }
+
+  /// Preserve the complete callable schema carried by a runtime function.
+  pub fn from_calcit_fn(info: &CalcitFn) -> Self {
+    let mut fixed_arg_types = info.arg_types.clone();
+    let trailing_rest = fixed_arg_types.last().and_then(|last| match last.as_ref() {
+      Self::Variadic(inner) => Some(inner.clone()),
+      _ => None,
+    });
+    if trailing_rest.is_some() {
+      fixed_arg_types.pop();
+    }
+    Self::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: info.generics.clone(),
+      where_bounds: info.where_bounds.clone(),
+      arg_types: fixed_arg_types,
+      return_type: info.return_type.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: info.rest_type.clone().or(trailing_rest),
       features: Arc::new(HashSet::new()),
     }))
   }
@@ -2664,7 +2765,7 @@ impl CalcitTypeAnnotation {
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
-      Self::Record(struct_def) => format!("struct {}", struct_def.name),
+      Self::Record(struct_def) => format!("record {}", struct_def.name),
       Self::Tuple(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
       Self::TypeSlot(name) => format!("type-slot({name})"),
@@ -3084,6 +3185,16 @@ mod tests {
   }
 
   #[test]
+  fn repeated_identical_type_vars_do_not_create_recursive_self_bindings() {
+    let type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
+    let mut bindings = TypeBindings::new();
+
+    assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
+    assert!(type_var.matches_with_bindings(&type_var, &mut bindings));
+    assert!(bindings.is_empty(), "an identical type variable needs no self-binding");
+  }
+
+  #[test]
   fn collect_arg_type_hints_keeps_non_variadic() {
     let body_items = vec![Calcit::List(Arc::new(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::AssertType, Arc::from("tests")),
@@ -3169,6 +3280,23 @@ mod tests {
     };
     assert!(matches!(args.first().map(|t| t.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T"));
     assert!(matches!(args.get(1).map(|t| t.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "E"));
+  }
+
+  #[test]
+  fn unscoped_parser_keeps_applied_quoted_name_as_type_ref() {
+    let applied = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      Calcit::List(Arc::new(CalcitList::from(&[
+        Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)),
+        symbol("Box"),
+      ]))),
+      Calcit::Tag(EdnTag::from("number")),
+    ])));
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&applied);
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::TypeRef(name, args)
+        if name.as_ref() == "Box"
+          && matches!(args.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number))));
   }
 
   #[test]
@@ -3591,16 +3719,24 @@ mod tests {
   }
 
   #[test]
-  fn any_is_not_dynamic_alias() {
+  fn any_is_a_static_top_type_not_a_dynamic_alias() {
+    let any = CalcitTypeAnnotation::from_tag_name("any");
     assert!(matches!(
       CalcitTypeAnnotation::from_tag_name("dynamic"),
       CalcitTypeAnnotation::Dynamic
     ));
-    assert!(!matches!(CalcitTypeAnnotation::from_tag_name("any"), CalcitTypeAnnotation::Dynamic));
-    assert!(!matches!(
+    assert!(matches!(any, CalcitTypeAnnotation::Custom(ref value) if CalcitTypeAnnotation::custom_keyword_matches(value, "any")));
+    assert!(matches!(
       CalcitTypeAnnotation::from_calcit(&Calcit::Tag(EdnTag::from("any"))),
-      CalcitTypeAnnotation::Dynamic
+      CalcitTypeAnnotation::Custom(ref value) if CalcitTypeAnnotation::custom_keyword_matches(value, "any")
     ));
+    assert!(CalcitTypeAnnotation::Number.matches_annotation(&any));
+    assert!(!any.matches_annotation(&CalcitTypeAnnotation::Number));
+
+    let list_of_numbers = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
+    let list_of_any = CalcitTypeAnnotation::List(Arc::new(any));
+    assert!(list_of_numbers.matches_annotation(&list_of_any));
+    assert!(!list_of_any.matches_annotation(&list_of_numbers));
   }
 
   #[test]
@@ -3749,6 +3885,72 @@ mod tests {
     assert!(actual.matches_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("T"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("E"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
+  }
+
+  #[test]
+  fn variadic_function_satisfies_fixed_arity_callback_contract() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let actual = CalcitTypeAnnotation::from_function_parts(
+      vec![number.clone(), Arc::new(CalcitTypeAnnotation::Variadic(number.clone()))],
+      number.clone(),
+    );
+    let expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("U"), Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U"))),
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+      ],
+      return_type: Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U"))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    }));
+
+    assert!(actual.matches_annotation(&expected));
+    assert_eq!(actual.to_brief_string(), "fn(:number, & :number) -> :number");
+  }
+
+  #[test]
+  fn fixed_arity_function_does_not_satisfy_larger_or_variadic_contract() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let actual = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], number.clone());
+    let binary_expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone(), number.clone()], number.clone());
+    let variadic_expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![number.clone()],
+      return_type: number.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: Some(number),
+      features: Arc::new(HashSet::new()),
+    }));
+
+    assert!(!actual.matches_annotation(&binary_expected));
+    assert!(!actual.matches_annotation(&variadic_expected));
+  }
+
+  #[test]
+  fn callback_parameter_matching_is_contravariant() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let actual = CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Optional(number.clone()))],
+      Arc::new(CalcitTypeAnnotation::Optional(number.clone())),
+    );
+    let expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], Arc::new(CalcitTypeAnnotation::Optional(number)));
+
+    assert!(actual.matches_annotation(&expected));
+  }
+
+  #[test]
+  fn concrete_struct_matches_struct_category() {
+    let actual = CalcitTypeAnnotation::Struct(
+      Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![EdnTag::new("name")])),
+      Arc::new(vec![]),
+    );
+    let expected = CalcitTypeAnnotation::from_tag_name("struct");
+
+    assert!(actual.matches_annotation(&expected));
   }
 }
 
@@ -4118,12 +4320,11 @@ impl CalcitFnTypeAnnotation {
         .join(", ");
       format!(" where {rendered}")
     };
-    let args = if self.arg_types.is_empty() {
-      "()".to_string()
-    } else {
-      let rendered = self.arg_types.iter().map(|t| t.describe()).collect::<Vec<_>>().join(", ");
-      format!("({rendered})")
-    };
+    let mut rendered_args = self.arg_types.iter().map(|t| t.describe()).collect::<Vec<_>>();
+    if let Some(rest) = &self.rest_type {
+      rendered_args.push(format!("& {}", rest.describe()));
+    }
+    let args = format!("({})", rendered_args.join(", "));
     format!("fn{generics}{where_clause}{args} -> {}", self.return_type.describe())
   }
 
@@ -4145,18 +4346,19 @@ impl CalcitFnTypeAnnotation {
         .join(", ");
       format!(" where {rendered}")
     };
-    let args_repr = if self.arg_types.is_empty() {
-      "()".to_string()
-    } else {
-      let parts = self.arg_types.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(", ");
-      format!("({parts})")
-    };
+    let mut parts = self.arg_types.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>();
+    if let Some(rest) = &self.rest_type {
+      parts.push(format!("& {}", rest.to_brief_string()));
+    }
+    let args_repr = format!("({})", parts.join(", "));
 
     format!("fn{generics}{where_clause}{args_repr} -> {}", self.return_type.to_brief_string())
   }
 
   pub fn matches_signature(&self, other: &CalcitFnTypeAnnotation) -> bool {
-    if self.arg_types.len() != other.arg_types.len() {
+    // `self` is the actual callable and `other` is the expected callback shape. An actual
+    // callable cannot require more fixed arguments than the expected contract guarantees.
+    if self.arg_types.len() > other.arg_types.len() {
       return false;
     }
 
@@ -4165,8 +4367,26 @@ impl CalcitFnTypeAnnotation {
 
     let mut bindings = TypeBindings::new();
 
-    for (lhs, rhs) in self.arg_types.iter().zip(other.arg_types.iter()) {
-      if !lhs.matches_with_bindings(rhs, &mut bindings) {
+    for (idx, expected) in other.arg_types.iter().enumerate() {
+      let actual = self.arg_types.get(idx).or(self.rest_type.as_ref());
+      let Some(actual) = actual else {
+        return false;
+      };
+      // Callback parameters are contravariant: every value promised by the expected contract
+      // must be accepted by the actual callable. This matters for a function accepting
+      // `optional<T>` being used where a callback receives `T`.
+      if !expected.matches_with_bindings(actual, &mut bindings) {
+        return false;
+      }
+    }
+
+    // An expected rest contract may invoke the callback with arbitrarily many values, so the
+    // actual callable must have a compatible rest parameter as well.
+    if let Some(expected_rest) = &other.rest_type {
+      let Some(actual_rest) = &self.rest_type else {
+        return false;
+      };
+      if !expected_rest.matches_with_bindings(actual_rest, &mut bindings) {
         return false;
       }
     }
@@ -4318,10 +4538,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
     Calcit::Ref(..) => Arc::new(CalcitTypeAnnotation::Ref(crate::calcit::DYNAMIC_TYPE.clone())),
     Calcit::Buffer(_) => Arc::new(CalcitTypeAnnotation::Buffer),
     Calcit::CirruQuote(_) => Arc::new(CalcitTypeAnnotation::CirruQuote),
-    Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::from_function_parts(
-      info.arg_types.clone(),
-      info.return_type.clone(),
-    )),
+    Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::from_calcit_fn(info)),
     Calcit::Proc(proc) => proc
       .get_type_signature()
       .map(|signature| {
