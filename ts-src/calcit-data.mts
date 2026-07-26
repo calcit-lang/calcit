@@ -472,7 +472,39 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   return `(#js ${JSON.stringify(x)})`;
 };
 
-export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
+export let to_js_data = (x: CalcitValue, options?: CalcitValue | boolean): any => {
+  let addColon = false;
+  if (typeof options === "boolean") {
+    console.warn("to-js-data: the addColon boolean argument is deprecated; pass an options map instead");
+    addColon = options;
+  } else if (options !== undefined) {
+    let jsOptions = to_js_data_inner(options, false) as Record<string, any>;
+    addColon = jsOptions[":add-colon"] === true || jsOptions["add-colon"] === true;
+    let value = to_js_data_inner(x, addColon);
+    let expectedType =
+      jsOptions[":type"] ??
+      jsOptions.type ??
+      (jsOptions[":js-array"] || jsOptions["js-array"] ? "js-array" : undefined) ??
+      (jsOptions[":js-string"] || jsOptions["js-string"] ? "js-string" : undefined) ??
+      (jsOptions[":js-number"] || jsOptions["js-number"] ? "js-number" : undefined) ??
+      (jsOptions[":js-object"] || jsOptions["js-object"] ? "js-object" : undefined) ??
+      "js-object";
+    let valid =
+      (expectedType === "js-array" && Array.isArray(value)) ||
+      (expectedType === "js-object" &&
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        !(value instanceof Set)) ||
+      (expectedType === "js-string" && typeof value === "string") ||
+      (expectedType === "js-number" && typeof value === "number");
+    if (!valid) throw new Error(`to-js-data expects ${expectedType}`);
+    return value;
+  }
+  return to_js_data_inner(x, addColon);
+};
+
+let to_js_data_inner = (x: CalcitValue, addColon: boolean): any => {
   if (x == null) {
     return null;
   }
@@ -501,17 +533,17 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
     return Symbol(x.value);
   }
   if (x instanceof CalcitTuple) {
-    var result: any[] = [to_js_data(x.tag)];
+    var result: any[] = [to_js_data_inner(x.tag, false)];
     for (let i = 0; i < x.extra.length; i++) {
       let item = x.extra[i];
-      result.push(to_js_data(item));
+      result.push(to_js_data_inner(item, false));
     }
     return result;
   }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     var result: any[] = [];
     for (let item of x.items()) {
-      result.push(to_js_data(item, addColon));
+      result.push(to_js_data_inner(item, addColon));
     }
     return result;
   }
@@ -521,22 +553,22 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
     for (let idx = 0; idx < pairs.length; idx++) {
       let k = pairs[idx][0];
       let v = pairs[idx][1];
-      var key = to_js_data(k, addColon);
-      result[key] = to_js_data(v, addColon);
+      var key = to_js_data_inner(k, addColon);
+      result[key] = to_js_data_inner(v, addColon);
     }
     return result;
   }
   if (x instanceof CalcitSet) {
     let result = new Set();
     x.values().forEach((v) => {
-      result.add(to_js_data(v, addColon));
+      result.add(to_js_data_inner(v, addColon));
     });
     return result;
   }
   if (x instanceof CalcitRecord) {
     let result: Record<string, CalcitValue> = {};
     for (let idx = 0; idx < x.fields.length; idx++) {
-      result[x.fields[idx].value] = to_js_data(x.values[idx]);
+      result[x.fields[idx].value] = to_js_data_inner(x.values[idx], false);
     }
     return result;
   }

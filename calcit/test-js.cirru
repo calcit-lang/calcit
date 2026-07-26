@@ -213,6 +213,9 @@
                 to-js-data $ [] 1 2 3
                 js-array 1 2 3
               assert/deepEqual
+                to-js-data ([] 1 2 3) $ {} (:js-array true)
+                js-array 1 2 3
+              assert/deepEqual
                 to-js-data $ :: :a 1 2
                 js-array |a 1 2
               assert-detect identity $ instance? js/Number (new js/Number 1)

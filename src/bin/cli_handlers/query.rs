@@ -83,9 +83,13 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
     }),
     "to-js-data" => Some(SpecialBuiltinQueryMeta {
-      doc: "convert Calcit data into JS-compatible arrays and plain objects recursively",
-      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
-      examples: parse_special_builtin_examples(&["to-js-data $ [] 1 2 3", "to-js-data $ &{} |a 1 :b ([] 2 3)"])?,
+      doc: "convert Calcit data into JS-compatible data recursively; JS FFI keeps value and options dynamically typed",
+      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()]),
+      examples: parse_special_builtin_examples(&[
+        "to-js-data $ [] 1 2 3",
+        "to-js-data $ &{} |a 1 :b ([] 2 3)",
+        "to-js-data ([] 1 2 3) $ {} (:js-array true)",
+      ])?,
       expr_preview: "builtin proc to-js-data (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
     }),
