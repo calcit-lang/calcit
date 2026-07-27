@@ -1,5 +1,5 @@
 use bisection_key::LexiconKey;
-use cirru_edn::Edn;
+use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::HashMap;
@@ -170,6 +170,8 @@ pub struct DetailedCodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<DetailCirru>,
+  #[serde(default)]
+  pub tags: Vec<String>,
   pub code: DetailCirru,
   #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
   pub schema: Arc<CalcitTypeAnnotation>,
@@ -180,6 +182,7 @@ impl From<CodeEntry> for DetailedCodeEntry {
     DetailedCodeEntry {
       doc: entry.doc,
       examples: entry.examples.into_iter().map(|e| e.into()).collect(),
+      tags: entry.tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect(),
       code: entry.code.into(),
       schema: entry.schema,
     }
@@ -191,6 +194,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
     CodeEntry {
       doc: detailed.doc,
       examples: detailed.examples.into_iter().map(|e| e.into()).collect(),
+      tags: detailed.tags.iter().map(|tag| EdnTag::new(tag.trim_start_matches(':'))).collect(),
       code: detailed.code.into(),
       schema: detailed.schema,
     }
@@ -204,6 +208,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
       Edn::Record(record) => {
         let mut doc = String::new();
         let mut examples = Vec::new();
+        let mut tags = Vec::new();
         let mut code = None;
         let mut schema = None;
 
@@ -221,13 +226,26 @@ impl TryFrom<Edn> for DetailedCodeEntry {
                 }
               }
             }
+            "tags" => {
+              if let Edn::Set(set) = value {
+                for item in &set.0 {
+                  if let Edn::Tag(tag) = item {
+                    tags.push(format!(":{}", tag.ref_str()));
+                  } else {
+                    return Err(format!("DetailedCodeEntry.tags expects tag items, got: {item}"));
+                  }
+                }
+                tags.sort();
+                tags.dedup();
+              } else {
+                return Err(format!("DetailedCodeEntry.tags expects a hashset, got: {value}"));
+              }
+            }
             "code" => {
               code = Some(value.to_owned().try_into()?);
             }
-            "schema" => {
-              if !matches!(value, Edn::Nil) {
-                schema = Some(value.to_owned());
-              }
+            "schema" if !matches!(value, Edn::Nil) => {
+              schema = Some(value.to_owned());
             }
             _ => {}
           }
@@ -243,6 +261,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         Ok(DetailedCodeEntry {
           doc,
           examples,
+          tags,
           code,
           schema: schema_parsed,
         })

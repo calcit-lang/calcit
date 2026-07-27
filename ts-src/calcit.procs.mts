@@ -126,6 +126,61 @@ const list_items = (item: CalcitValue): CalcitValue[] => {
   throw new Error(`Expected list entry, got: ${item}`);
 };
 
+const isQuotedTypeVar = (item: CalcitValue): boolean => {
+  if (item instanceof CalcitSymbol) {
+    return true;
+  }
+  if (item instanceof CalcitList || item instanceof CalcitSliceList) {
+    const items = Array.from(item.items());
+    return items.length === 2 && items[0] instanceof CalcitSymbol && items[0].value === "quote" && items[1] instanceof CalcitSymbol;
+  }
+  return false;
+};
+
+const isGenericsEntry = (entry: CalcitValue): boolean => {
+  if (!(entry instanceof CalcitList || entry instanceof CalcitSliceList)) {
+    return false;
+  }
+  const items = Array.from(entry.items());
+  return items.length > 0 && items.every(isQuotedTypeVar);
+};
+
+const isWhereMapEntry = (entry: CalcitValue): boolean => {
+  // where-bound can be emitted as a CalcitMap (from _$n__$M_) or as a list-of-pairs
+  if (entry instanceof CalcitMap || entry instanceof CalcitSliceMap) {
+    return true;
+  }
+  if (!(entry instanceof CalcitList || entry instanceof CalcitSliceList)) {
+    return false;
+  }
+  const items = Array.from(entry.items());
+  if (items.length < 2) {
+    return false;
+  }
+  const head = items[0];
+  if (head instanceof CalcitTag || head instanceof CalcitSymbol || typeof head === "string") {
+    return false;
+  }
+  return items.slice(1).every((item) => {
+    if (!(item instanceof CalcitList || item instanceof CalcitSliceList)) {
+      return false;
+    }
+    const pair = Array.from(item.items());
+    return pair.length === 2;
+  });
+};
+
+const trimDataDefinitionEntries = (entries: CalcitValue[]): CalcitValue[] => {
+  let start = 0;
+  if (entries[start] != null && isGenericsEntry(entries[start])) {
+    start += 1;
+  }
+  if (entries[start] != null && isWhereMapEntry(entries[start])) {
+    start += 1;
+  }
+  return entries.slice(start);
+};
+
 export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue): CalcitTrait {
   if (arguments.length !== 2) throw new Error("&trait::new expected 2 arguments");
   const items = list_items(methods);
@@ -195,8 +250,9 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
   const structName = castTag(name);
   const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
+  const fieldEntries = trimDataDefinitionEntries(entries);
 
-  for (let entry of entries) {
+  for (let entry of fieldEntries) {
     const items = list_items(entry);
     if (items.length !== 2) {
       throw new Error(`defstruct expects (field type) pairs, got: ${toString(entry, true)}`);
@@ -221,8 +277,9 @@ export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStr
 export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum => {
   const enumName = castTag(name);
   const entries: Array<{ tag: CalcitTag; payload: CalcitSliceList }> = [];
+  const variantEntries = trimDataDefinitionEntries(variants);
 
-  for (let variant of variants) {
+  for (let variant of variantEntries) {
     const items = list_items(variant);
     if (items.length === 0) {
       throw new Error("defenum expects variant tag and payload types, got empty list");
@@ -1283,8 +1340,12 @@ export let _$n_str_$o_find_index = (x: string, y: string): number => {
   return x.indexOf(y);
 };
 
-export let parse_float = (x: string): number => {
-  return parseFloat(x);
+export let parse_float = (x: string): number | null => {
+  const value = parseFloat(x);
+  if (Number.isNaN(value)) {
+    return null;
+  }
+  return value;
 };
 export let trim = (x: string, c: string): string => {
   if (c != null) {
@@ -1885,6 +1946,15 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.set);
+  } else if (obj instanceof CalcitStruct) {
+    // Bare type definitions (not yet instantiated) carry their own attached
+    // impls, so introspection tools like `&methods-of` can answer "what
+    // methods will instances of this type have" without a concrete instance.
+    tag = obj.name.toString();
+    impls = obj.impls;
+  } else if (obj instanceof CalcitEnum) {
+    tag = obj.name();
+    impls = obj.impls;
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.number);
@@ -1910,7 +1980,7 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   let tag = pair[1];
   // builtin impl lists are ordered by priority in calcit-core.
   // user-defined values use impl-traits append, so later impls override earlier ones.
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     let klass = impls[idx];
@@ -1930,12 +2000,16 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
 
 export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
   if (arguments.length !== 1) throw new Error("&methods-of expected 1 argument");
+  // Traits declare methods directly rather than through attached impls.
+  if (obj instanceof CalcitTrait) {
+    return new CalcitSliceList(obj.methods.map((m) => invoke_method_closure(m.value)));
+  }
   let pair = lookup_impls(obj);
   if (pair == null) {
     throw new Error(`&methods-of cannot resolve impls for: ${toString(obj, true)}`);
   }
   let impls = pair[0];
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
   let seen = new Set<string>();
   let ys: CalcitValue[] = [];
 
@@ -1944,10 +2018,11 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
     let impl = impls[idx];
     if (impl != null) {
       for (let k = 0; k < impl.fields.length; k++) {
-        let name = "." + impl.fields[k].value;
+        let rawName = impl.fields[k].value;
+        let name = "." + rawName;
         if (!seen.has(name)) {
           seen.add(name);
-          ys.push(name);
+          ys.push(invoke_method_closure(rawName));
         }
       }
     }
@@ -1958,12 +2033,26 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
 
 export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): CalcitValue {
   if (arguments.length !== 2) throw new Error("&inspect-methods expected 2 arguments");
+  if (obj instanceof CalcitTrait) {
+    console.log("\n&inspect-methods");
+    console.log(`Note: ${toString(note, true)}`);
+    console.log(`Value type: ${type_of(obj).toString()}`);
+    console.log(`Value: ${toString(obj, true)}`);
+    console.log("Method call syntax: `.method self p1 p2`");
+    console.log("  - dot is part of the method name, first arg is the receiver\n");
+    const names = obj.methods.map((m) => "." + m.value);
+    console.log(`Trait methods declared directly (no impls): ${names.length}`);
+    console.log(`\nAll methods (unique, high → low): ${names.length}`);
+    console.log("  " + names.join(" "));
+    console.log("\n");
+    return obj;
+  }
   let pair = lookup_impls(obj);
   if (pair == null) {
     throw new Error(`&inspect-methods cannot resolve impls for: ${toString(obj, true)}`);
   }
   let impls = pair[0];
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
 
   console.log("\n&inspect-methods");
   console.log(`Note: ${toString(note, true)}`);
@@ -1993,7 +2082,7 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
 
   let ms = _$n_methods_of(obj);
   console.log(`\nAll methods (unique, high → low): ${ms.len()}`);
-  console.log("  " + (Array.from(ms.items()) as string[]).join(" "));
+  console.log("  " + Array.from(ms.items()).map((m) => toString(m, false)).join(" "));
   console.log("\n");
 
   return obj;
@@ -2017,7 +2106,7 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
     throw new Error(`&trait-call cannot resolve impls for: ${toString(obj, true)}`);
   }
   const impls = pair[0];
-  const reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  const reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     const impl = impls[idx];
@@ -2217,6 +2306,8 @@ export let gensym = unavailableProc;
 export let macroexpand = unavailableProc;
 export let macroexpand_all = unavailableProc;
 export let _$n_get_calcit_running_mode = unavailableProc;
+export let _$n_get_def_doc = unavailableProc;
+export let _$n_get_def_schema = unavailableProc;
 
 // already handled in code emitter
 export let raise = unavailableProc;

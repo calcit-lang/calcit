@@ -123,8 +123,11 @@ fn handle_list_libs() -> Result<(), String> {
   }
 
   println!("{}", format!("Total: {} libraries", registry.libraries.len()).dimmed());
-  println!("\n{}", "Use 'cr libs readme <package>' to view library README.".dimmed());
-  println!("{}", "Use 'cr libs search <keyword>' to search libraries.".dimmed());
+  println!(
+    "\n{}",
+    "Use 'cr docs remote-libs readme <package>' to view library README.".dimmed()
+  );
+  println!("{}", "Use 'cr docs remote-libs search <keyword>' to search libraries.".dimmed());
   println!("{}", "Use 'caps' command to install libraries.".dimmed());
 
   Ok(())
@@ -168,7 +171,8 @@ fn handle_readme(
   let local_path = format!("{home_dir}/.config/calcit/modules/{package}/{file_name}");
 
   let render_readme = |content: &str| -> Result<(), String> {
-    let no_match_error = format!("No heading matched in {file_name}. Use 'cr libs readme {package} -f {file_name}' to list headings.");
+    let no_match_error =
+      format!("No heading matched in {file_name}. Use 'cr docs remote-libs readme {package} --file {file_name}' to list headings.");
     render_markdown_sections(
       content,
       heading_queries,
@@ -176,7 +180,7 @@ fn handle_readme(
         include_subheadings,
         full,
         with_lines,
-        command_prefix: "cr libs readme <package>",
+        command_prefix: "cr docs remote-libs readme <package>",
         with_file_option: true,
         no_headings_message: "No Markdown headings found, printing full file.",
         print_full_when_no_headings: true,
@@ -294,7 +298,7 @@ fn handle_search(keyword: &str) -> Result<(), String> {
     println!();
   }
 
-  println!("{}", "Use 'cr libs readme <package>' to view library README.".dimmed());
+  println!("{}", "Use 'cr docs remote-libs readme <package>' to view library README.".dimmed());
 
   Ok(())
 }
@@ -334,7 +338,7 @@ fn handle_scan_md(module: &str) -> Result<(), String> {
   println!();
   println!(
     "{}",
-    format!("Use 'cr libs readme {module} -f <file>' to read a specific file").dimmed()
+    format!("Use 'cr docs remote-libs readme {module} --file <file>' to read a specific file").dimmed()
   );
 
   Ok(())
@@ -348,23 +352,23 @@ fn scan_directory(base_path: &str, current_path: &str, results: &mut Vec<String>
     let path = entry.path();
 
     if path.is_file() {
-      if let Some(ext) = path.extension() {
-        if ext == "md" {
-          // Get relative path from base
-          let relative_path = path
-            .strip_prefix(base_path)
-            .map_err(|e| format!("Failed to get relative path: {e}"))?
-            .to_string_lossy()
-            .to_string();
-          results.push(relative_path);
-        }
+      if let Some(ext) = path.extension()
+        && ext == "md"
+      {
+        // Get relative path from base
+        let relative_path = path
+          .strip_prefix(base_path)
+          .map_err(|e| format!("Failed to get relative path: {e}"))?
+          .to_string_lossy()
+          .to_string();
+        results.push(relative_path);
       }
     } else if path.is_dir() {
       // Skip hidden directories
-      if let Some(dir_name) = path.file_name() {
-        if !dir_name.to_string_lossy().starts_with('.') {
-          scan_directory(base_path, &path.to_string_lossy(), results)?;
-        }
+      if let Some(dir_name) = path.file_name()
+        && !dir_name.to_string_lossy().starts_with('.')
+      {
+        scan_directory(base_path, &path.to_string_lossy(), results)?;
       }
     }
   }

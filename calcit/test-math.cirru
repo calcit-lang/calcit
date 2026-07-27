@@ -13,11 +13,11 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing numbers") (test-numbers) (log-title "|Testing math") (test-math) (log-title "|Testing compare") (test-compare) (test-hex) (test-integer) (test-methods) (test-bit-math) (do true)
           :examples $ []
-        |test-bit-math $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-bit-math $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|testing bit math")
               assert= 0 $ bit-shr 1 1
@@ -27,7 +27,7 @@
               assert= 4 $ bit-shl 2 1
               assert= 16 $ bit-shl 4 2
           :examples $ []
-        |test-compare $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-compare $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-compare ()
               assert= 4 $ max ([] 1 2 3 4)
@@ -52,17 +52,17 @@
                 &compare :k $ :: 0 0
                 , -1
           :examples $ []
-        |test-hex $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-hex $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing hex") (assert= 16 0x10) (assert= 15 0xf)
           :examples $ []
-        |test-integer $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-integer $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing integer")
               assert= true $ round? 1
               assert= false $ round? 1.1
           :examples $ []
-        |test-math $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-math $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-math ()
               println "|sin 1" $ sin 1
@@ -84,7 +84,7 @@
               assert= 4 $ abs 4
               assert= (negate -4) (abs -4)
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing number methods")
               assert= 1 $ .floor 1.1
@@ -100,7 +100,7 @@
               assert= 2 $ .rem 11 3
               ; "has problem in comparing float numbers" $ assert= 0.1 (.fract 1.1)
           :examples $ []
-        |test-numbers $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-numbers $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-numbers ()
               assert= 3 $ + 1 2

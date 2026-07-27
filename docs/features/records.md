@@ -7,6 +7,8 @@ aliases:
   - "record type"
   - "field access"
   - "struct fields"
+id: core/features/records
+parent: core/features
 ---
 
 # Records
@@ -34,6 +36,43 @@ Each field is a pair of `(:field-name :type)`. Supported types include `:number`
 ```cirru
 defstruct Person (:name :string) (:age :number) (:position :tag)
 ```
+
+## Generic Structs
+
+`defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `(:: 'TypeName ...)`.
+
+```cirru
+let
+    Box $ defstruct Box ([] 'T) (:value 'T)
+    keep $ fn (box)
+      hint-fn $ {}
+        :generics $ [] 'T
+        :args $ [] (:: 'Box 'T)
+        :return 'T
+      :value box
+    b $ %{} Box (:value 1)
+  assert-type b $ :: 'Box :number
+  assert= 1 $ keep b
+```
+
+Use this pattern when the struct definition owns the type variable. Function-level constraints such as `:where` still stay on the function schema, not on `defstruct` itself.
+
+### Generic Structs with `where` Bounds
+
+`defstruct` may also take a `where` map right after the optional generics list. This lets the struct definition itself require that a type variable implements one or more traits.
+
+```cirru
+let
+    ShownBox $ defstruct ShownBox ([] 'T)
+      {} ('T Show)
+      :value 'T
+    box $ %{} ShownBox (:value 1)
+    item $ :value box
+  assert-type box $ :: 'ShownBox :number
+  assert= |1 $ .show item
+```
+
+Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a record instance, so the constraint lives on the data definition rather than on each individual function schema.
 
 ## Creating Records
 
@@ -299,17 +338,16 @@ let
 When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to record construction (`%{}`). This lets you write ergonomic hashmap syntax while still getting full record type checking at runtime.
 
 ```cirru
-defstruct Point (:x :number) (:y :number)
-
-defn sum-point (p)
-  :: :fn $ {} (:return :number)
-    :args $ [] 'app.main/Point2D
-  &+ (:x p) (:y p)
-
-; Write a hashmap — preprocessor rewrites to record automatically:
-sum-point $ {} (:x 10) (:y 20)
-; Equivalent to:
-sum-point $ %{} Point (:x 10) (:y 20)
+let
+    Point $ defstruct Point (:x :number) (:y :number)
+    sum-point $ fn (p)
+      :: :fn $ {} (:return :number)
+        :args $ [] 'app.main/Point
+      &+ (:x p) (:y p)
+  ; Write a hashmap — preprocessor rewrites to record automatically:
+  assert= 30 $ sum-point $ {} (:x 10) (:y 20)
+  ; Equivalent to:
+  assert= 30 $ sum-point $ %{} Point (:x 10) (:y 20)
 ```
 
 Requirements for the rewrite to trigger:
@@ -341,8 +379,10 @@ Loose records support the same field access operations as struct-backed records:
 ```cirru
 let
     r $ ?{} :x 10 :y 20
-  println $ :x r       ; => 10
-  println $ type-of r   ; => :record
+  println $ :x r
+  ; => 10
+  println $ type-of r
+  ; => :record
 ```
 
 ### Automatic Rewrite to Struct Record
@@ -350,17 +390,16 @@ let
 When a loose record is passed to a function whose parameter is typed as a struct, the preprocessor automatically rewrites it to a struct-backed record — just like the map-to-record rewrite:
 
 ```cirru
-defstruct Point (:x :number) (:y :number)
-
-defn sum-point (p)
-  :: :fn $ {} (:return :number)
-    :args $ [] 'app.main/Point
-  &+ (:x p) (:y p)
-
-; Loose record rewritten to struct record at compile time:
-sum-point $ ?{} :x 10 :y 20
-; Equivalent to:
-sum-point $ %{} Point (:x 10) (:y 20)
+let
+    Point $ defstruct Point (:x :number) (:y :number)
+    sum-point $ fn (p)
+      :: :fn $ {} (:return :number)
+        :args $ [] 'app.main/Point
+      &+ (:x p) (:y p)
+  ; Loose record rewritten to struct record at compile time:
+  assert= 30 $ sum-point $ ?{} :x 10 :y 20
+  ; Equivalent to:
+  assert= 30 $ sum-point $ %{} Point (:x 10) (:y 20)
 ```
 
 The rewrite uses the same requirements as map-to-record rewrite. Fields not present in the loose record but defined in the struct are filled with `nil`.

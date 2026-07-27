@@ -69,7 +69,7 @@ pub fn not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "not requires a boolean or nil as argument, but received: {}",
-        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+        crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint =
         String::from("💡 Hint: Pass a boolean value (true/false) or nil to not\n  Examples: `not true` => false, `not nil` => true");

@@ -1,5 +1,6 @@
 ---
 title: "Documentation Indexing Spec"
+summary: "cr docs 使用的 Markdown frontmatter、知识节点关系和增量缓存约定"
 scope: "core"
 kind: "spec"
 category: "docs"
@@ -11,6 +12,15 @@ entry_for:
   - "cr docs search"
   - "cr docs read"
   - "cr docs read-lines"
+id: core/docs/indexing
+parent: core/docs
+related:
+  - core/docs/validation
+requires:
+  - core/agent
+leads_to:
+  - core/run/query
+  - core/run/edit-tree
 ---
 
 # Documentation Indexing Spec
@@ -70,7 +80,8 @@ The same schema is also supported for:
 
 Required fields:
 
-- `title`: user-facing page title
+- `title`: user-facing page title (required)
+- `summary`: one-sentence description for quick scanning (recommended)
 - `scope`: `core` or `module`
 - `kind`: one of `hub`, `guide`, `reference`, `spec`, `agent`
 - `category`: one value from the category registry below
@@ -79,7 +90,7 @@ Required fields:
 
 Use these categories for core docs unless there is a strong reason not to:
 
-- `run`: CLI execution, eval, query, edit-tree, docs commands, upgrade workflow
+- `run`: CLI execution, eval, query, edit-tree, docs commands, upgrade workflow, quick-start, project-structure, structural-strategies
 - `features`: language features such as traits, macros, records, tuples, enums, collections
 - `installation`: installation, modules directory, CI setup, runtime bindings
 - `data`: data literals and data structures, such as strings, EDN, persistent collections
@@ -103,6 +114,34 @@ Optional fields:
 - `aliases`: extra phrases that users are likely to search for
 - `entry_for`: commands, APIs, or task phrases that should point to this page
 
+### Knowledge graph fields
+
+Knowledge graph fields are optional and can be introduced incrementally:
+
+```yaml
+id: api/list/nth
+code_refs:
+  - calcit.core/nth
+parent: structure/list
+related:
+  - api/list/get
+requires:
+  - concept/indexing
+leads_to:
+  - example/list-access
+```
+
+These fields describe stable navigation relationships and are parsed
+separately from the legacy search metadata, so older documents keep the same
+search behavior. The generated relationship cache is stored outside the
+repository under `~/.config/calcit/docs-cache/` and can always be rebuilt from
+the source documents.
+
+`cr docs graph build` also records a fingerprint of the embedded Calcit core
+snapshot. The cache is rebuilt when a Markdown file, parser/schema version, or
+the indexed definition snapshot changes. The cache is an implementation
+detail, not a source file to commit.
+
 Recommended shape:
 
 ```yaml
@@ -113,10 +152,10 @@ kind: "guide"
 category: "run"
 aliases:
   - "edit tree"
-  - "target-replace"
+  - "search-replace"
   - "imports"
 entry_for:
-  - "cr tree target-replace"
+  - "cr tree search-replace"
   - "cr edit add-import"
 ---
 ```
@@ -138,24 +177,34 @@ Examples:
 
 ## Search Behavior
 
-`cr docs search` now supports 3 scopes:
-
-- `--scope core`
-- `--scope modules`
-- `--scope all`
-
-It also supports narrowing to one installed module:
+`cr docs search` defaults to built-in `calcit` docs and supports narrowing to one installed module:
 
 ```bash
 cr docs search render --module respo.calcit
 ```
 
-When `--module` is provided without `--scope`, the default scope becomes `modules`.
-Without both flags, the default scope stays `core`.
+- `cr docs search <keyword>` — searches doc body + frontmatter metadata (title, aliases, entry_for, summary)
+- `cr docs search <keyword> --summary` — shows only doc title + summary (no content snippets), ideal for LLM first-pass filtering
+- `cr docs search <keyword> --filename <filename>` — filter by filename
+- `cr docs search <keyword> --module <name>` — search module docs instead of core
+
+### `summary` field (recommended)
+
+A one-sentence description of the document's purpose and content. Used by `--summary` mode and search ranking.
+
+```yaml
+summary: "How to use cr tree commands to show, replace, delete, and restructure AST nodes by path or content"
+```
+
+Search scoring: exact match 200, contains match 130.
 
 ## Read Behavior
 
-`cr docs read` now uses the same document resolver style as `search`.
+`cr docs list` lists files in the current doc scope.
+
+`cr docs sections <file>` lists headings in one file.
+
+`cr docs read` uses the same document resolver style as `search`.
 
 `cr docs read-lines` uses the same resolver too.
 
@@ -167,18 +216,18 @@ It can resolve a page by:
 - frontmatter `aliases`
 - frontmatter `entry_for`
 
-It also supports:
-
-- `--scope core|modules|all`
-- `--module <name>`
+It also supports narrowing to one module with `--module <name>`.
 
 Examples:
 
 ```bash
-cr docs read target-replace
+cr docs scopes
+cr docs list
+cr docs sections search-replace
+cr docs read search-replace
 cr docs read "CLI Code Editing"
 cr docs read Respo-Agent --module respo.calcit
-cr docs read-lines target-replace --start 48 --lines 8
+cr docs read-lines search-replace --start 48 --lines 8
 cr docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 

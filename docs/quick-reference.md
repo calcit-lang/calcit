@@ -38,8 +38,8 @@ cr eval "echo |done"
 - `cr ir` - Generate IR representation
 - `cr-wasm` - Generate WASM (experimental, numeric subset)
 - `cr query ...` - Query definitions/usages/search
-- `cr docs ...` - Read/search guidebook docs
-- `cr libs ...` - Search/read library docs
+- `cr docs ...` - Navigate calcit docs and installed module docs with `scopes -> list -> sections -> read`
+- `cr docs remote-libs ...` - Search package registry and read package README files
 - `cr-mcp` - Start MCP server for tool integration
 
 ### CLI Options
@@ -61,10 +61,21 @@ cr eval "echo |done"
 ### Docs Navigation (Fast)
 
 - `cr docs list` - list available chapters
-- `cr docs read <file>` - list headings in one chapter
+- `cr docs list --module <name>` - list docs from one installed module
+- `cr docs scopes` - list available doc scopes (`calcit` and installed modules)
+- `cr docs sections <file>` - list headings in one chapter
+- `cr docs sections <file> --module <name>` - list headings in one module doc
+- `cr docs read <file>` - read a full calcit doc
 - `cr docs read <file> <keyword...>` - fuzzy jump by heading keywords
-- `cr docs read-lines <file> -s <start> -n <lines>` - precise line-range reading
+- `cr docs read <file> --module <name>` - read a full module doc
+- `cr docs read-lines <file> --start <start> --lines <lines>` - precise line-range reading
 - `cr docs search <keyword>` - global keyword search
+- `cr docs search <keyword> --module <name>` - search installed module docs directly
+- `cr docs remote-libs search <keyword>` - search remote library registry
+- `cr docs remote-libs readme <package>` - read a remote or installed package README
+- `cr docs graph build` - build the structured documentation relationship cache
+- `cr docs graph path <from> <to>` - find a short path between knowledge nodes
+- `cr docs graph explain <namespace/definition> --full` - show definition details and linked docs
 
 ## Data Types
 
@@ -286,7 +297,8 @@ let
 - `struct?`, `enum?` - predicates
 - `&tuple:enum-has-variant?` - check variant
 - `&tuple:enum-variant-arity` - get variant arity
-- `tag-match` - pattern matching on enums
+- `match` - native pattern matching on enums and tuples
+- `tag-match` - legacy enum/tuple matching syntax
 
 ## Traits & Methods
 
@@ -323,7 +335,8 @@ let
 - `cond` - multi-way conditional
 - `case` - pattern matching on values
 - `&case` - internal case macro
-- `tag-match` - enum/tuple pattern matching
+- `match` - preferred enum/tuple pattern matching
+- `tag-match` - legacy enum/tuple pattern matching
 - `record-match` - record pattern matching
 - `list-match` - list destructuring match
 - `field-match` - map field matching

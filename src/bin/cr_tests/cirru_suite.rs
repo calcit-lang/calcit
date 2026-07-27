@@ -74,23 +74,37 @@ fn load_and_run_cirru(path: &str) {
   }
 }
 
+/// Run a test in a dedicated thread with a large stack to avoid stack overflows
+/// in deeply recursive Calcit evaluation.  The suite lock is acquired inside the
+/// spawned thread so it is held for the duration of the run and dropped before
+/// the thread exits.
+fn run_with_large_stack(path: &'static str) {
+  const STACK_SIZE: usize = 32 * 1024 * 1024; // 32 MiB
+  std::thread::Builder::new()
+    .stack_size(STACK_SIZE)
+    .spawn(move || {
+      let _guard = lock_suite();
+      load_and_run_cirru(path);
+    })
+    .expect("spawn test thread")
+    .join()
+    .expect("test thread panicked");
+}
+
 /// Main integration test: runs calcit/test.cirru which loads all 23 sub-test
 /// modules plus util.cirru — equivalent to `cargo run --bin cr -- calcit/test.cirru`.
 #[test]
 fn cirru_test_suite() {
-  let _guard = lock_suite();
-  load_and_run_cirru("calcit/test.cirru");
+  run_with_large_stack("calcit/test.cirru");
 }
 
 /// Standalone tests that can run independently (not included in test.cirru).
 #[test]
 fn cirru_test_gynienic() {
-  let _guard = lock_suite();
-  load_and_run_cirru("calcit/test-gynienic.cirru");
+  run_with_large_stack("calcit/test-gynienic.cirru");
 }
 
 #[test]
 fn cirru_test_recur_arity() {
-  let _guard = lock_suite();
-  load_and_run_cirru("calcit/test-recur-arity.cirru");
+  run_with_large_stack("calcit/test-recur-arity.cirru");
 }

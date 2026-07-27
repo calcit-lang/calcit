@@ -1,0 +1,4 @@
+- Documented that `defenum` payloads can reference named structs and applied generic structs.
+- Added runnable examples in `docs/features/enums.md` for plain struct payloads and generic struct payloads.
+- Clarified that `%::` validates struct payload values and generic arity at runtime when constructing enum instances.
+- Validation: `cargo run --bin cr -- demos/calcit.cirru docs check-md docs/features/enums.md`

@@ -122,11 +122,11 @@ pub fn tip_prefer_oneliner_json(show_json: bool) -> Vec<String> {
   let mut tips = Vec::new();
   tips.push(format!(
     "Prefer {} to avoid indentation issues; for messy structures, use {} to inspect JSON format",
-    "-e 'one-liner'".yellow(),
-    "-j".yellow()
+    "--code 'one-liner'".yellow(),
+    "--json".yellow()
   ));
   if !show_json {
-    tips.push(format!("add {} flag to also output JSON format", "-j".yellow()));
+    tips.push(format!("add {} flag to also output JSON format", "--json".yellow()));
   }
   tips
 }
@@ -135,7 +135,7 @@ pub fn tip_prefer_oneliner_json(show_json: bool) -> Vec<String> {
 pub fn tip_root_edit(path_is_empty: bool) -> Option<String> {
   if path_is_empty {
     Some(
-      "Editing root path; prefer cr edit def --overwrite -f <file> for whole-definition rewrites, and keep tree replace for intentional root-node surgery"
+      "Editing root path; prefer cr edit def --overwrite --file <file> for whole-definition rewrites, and keep tree replace for intentional root-node surgery"
         .to_string(),
     )
   } else {

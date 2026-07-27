@@ -6,32 +6,31 @@
   :files $ {}
     |test-types.main $ %{} :FileEntry
       :defs $ {}
-        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata") (:schema nil)
+        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata") (:schema :impl)
           :code $ quote
             defimpl EnumImpl :EnumImpl $ .dummy nil
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks") (:schema nil)
+        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks") (:schema :struct)
           :code $ quote
             defstruct Person (:name :string) (:age nil)
           :examples $ []
-        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks") (:schema nil)
+        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks") (:schema :enum)
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests") (:schema nil)
+        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests") (:schema :impl)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .describe
               fn (self)
                 tag-match self
-                    :ok value
-                    str "|ok " value
+                  (:ok value) (str "|ok " value)
                   (:err msg) (str "|err " msg)
           :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests") (:schema nil)
+        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests") (:schema :trait)
           :code $ quote
             deftrait ResultTrait $ .describe :fn
           :examples $ []
-        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata") (:schema nil)
+        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata") (:schema :impl)
           :code $ quote
             defimpl StructImpl :StructImpl $ .dummy nil
           :examples $ []
@@ -61,7 +60,7 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string :number
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (println "|Testing types...")
               println $ add-numbers 1 2
@@ -102,7 +101,7 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []
@@ -120,11 +119,11 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
-        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning") (:schema nil)
+        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning") (:schema :dynamic)
           :code $ quote
             defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
-        |test-builtin-proc-types $ %{} :CodeEntry (:doc "|Tests that Proc (builtin) functions check argument types during preprocess") (:schema nil)
+        |test-builtin-proc-types $ %{} :CodeEntry (:doc "|Tests that Proc (builtin) functions check argument types during preprocess") (:schema :dynamic)
           :code $ quote
             defn test-builtin-proc-types () (; Test math operations with typed arguments)
               let
@@ -154,7 +153,7 @@
           :schema $ :: :fn
             {} (:return :number)
               :args $ [] :number :number
-        |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples") (:schema nil)
+        |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples") (:schema :dynamic)
           :code $ quote
             defn test-defstruct-defenum ()
               assert= :struct $ type-of Person
@@ -172,7 +171,7 @@
                 assert= "|(%:: :ok 1 (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
           :examples $ []
-        |test-dynamic-methods $ %{} :CodeEntry (:doc "|Ensures .slice target type is validated") (:schema nil)
+        |test-dynamic-methods $ %{} :CodeEntry (:doc "|Ensures .slice target type is validated") (:schema :dynamic)
           :code $ quote
             defn test-dynamic-methods ()
               let
@@ -197,7 +196,7 @@
                   :args $ [] :number
                 , :number
               :generics $ [] 'T
-        |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects") (:schema nil)
+        |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects") (:schema :dynamic)
           :code $ quote
             defn test-list-methods () (; Create a list and annotate its type)
               let
@@ -218,7 +217,7 @@
                   assert= 5 list-len
               , "|List method checks passed"
           :examples $ []
-        |test-method-type-errors $ %{} :CodeEntry (:doc "|Tests that invalid method calls are caught in preprocess") (:schema nil)
+        |test-method-type-errors $ %{} :CodeEntry (:doc "|Tests that invalid method calls are caught in preprocess") (:schema :dynamic)
           :code $ quote
             defn test-method-type-errors () (; "⚠️" "这些代码故意包含错误，用于验证" preprocess "阶段的类型检查") (; "当启用时，会在编译阶段就报错，而不是运行时") (; "测试" 1: list "对象调用不存在的方法") (; let)
               ; xs $ [] 1 2 3
@@ -238,7 +237,7 @@
               println "|Uncomment them to see preprocess-time validation"
               , "|Tests disabled to allow compilation"
           :examples $ []
-        |test-preprocess-method-validation $ %{} :CodeEntry (:doc "|Demonstrates that valid method calls pass preprocess validation") (:schema nil)
+        |test-preprocess-method-validation $ %{} :CodeEntry (:doc "|Demonstrates that valid method calls pass preprocess validation") (:schema :dynamic)
           :code $ quote
             defn test-preprocess-method-validation () (; "所有这些方法调用都是合法的，应该通过" preprocess "检查")
               let
@@ -277,11 +276,11 @@
                 :: :fn $ {} (:return :number)
                   :args $ [] :number :number
                 , :number :number
-        |test-proc-type-warnings $ %{} :CodeEntry (:doc "|Test that should generate type warnings - disabled by default") (:schema nil)
+        |test-proc-type-warnings $ %{} :CodeEntry (:doc "|Test that should generate type warnings - disabled by default") (:schema :dynamic)
           :code $ quote
             defn test-proc-type-warnings () (; This function intentionally contains type errors for testing) (; It is not called in normal tests to avoid blocking execution) (println "|Warning: This test contains intentional type errors")
           :examples $ []
-        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with impls") (:schema nil)
+        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with impls") (:schema :dynamic)
           :code $ quote
             defn test-record-methods () (; "使用" impl-traits "挂载实现" Record methods)
               let
@@ -296,7 +295,7 @@
                   assert= "|Hello, I'm Alice" greeting
               , "|Record method checks passed"
           :examples $ []
-        |test-string-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed string objects") (:schema nil)
+        |test-string-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed string objects") (:schema :dynamic)
           :code $ quote
             defn test-string-methods ()
               let
@@ -328,7 +327,7 @@
           :schema $ :: :fn
             {} (:return :string)
               :args $ [] :string
-        |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns") (:schema nil)
+        |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns") (:schema :dynamic)
           :code $ quote
             defn test-typed-method-access () (; "当对象有类型标注时，方法调用会检查该类型支持的方法")
               let

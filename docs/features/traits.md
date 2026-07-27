@@ -8,6 +8,7 @@ aliases:
   - "trait impl"
   - "assert-traits"
 ---
+
 # Traits
 
 Calcit provides a lightweight trait system for attaching method implementations to struct/enum definitions (and using them from constructed instances and built-in types).
@@ -180,7 +181,7 @@ let
 - Prefer public API in app/library code: `deftrait`, `defimpl`, `impl-traits`, `.method`, `&trait-call`.
 - Treat internal `&...` helpers as runtime-level details; they may change more frequently and are not the stable user contract.
 
-```cirru
+```cirru.no-check
 do
   ; struct example
   let
@@ -204,7 +205,7 @@ do
           :return :string
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
-          tag-match x
+          match x
             (:ok v) (str |ok: v)
             (:err v) (str |err: v)
       Result0 $ defenum Result0 (:ok :string) (:err :string)
@@ -330,7 +331,7 @@ let
 ### Examples (verified with `cr eval`)
 
 ```bash
-cargo run --bin cr -- demos/calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (.len xs)'
+cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (.len xs)'
 ```
 
 Expected output:
@@ -340,7 +341,7 @@ Expected output:
 ```
 
 ```bash
-cargo run --bin cr -- demos/calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (.map xs inc)'
+cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (.map xs inc)'
 ```
 
 Expected output:

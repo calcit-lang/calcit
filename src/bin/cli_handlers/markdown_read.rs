@@ -193,7 +193,7 @@ pub fn print_markdown_read_tips(command_prefix: &str, with_file_option: bool) {
   if with_file_option {
     println!(
       "{}",
-      "     Use '--full' to print the whole file (works with -f <path> too).".dimmed()
+      "     Use '--full' to print the whole file (works with --file <path> too).".dimmed()
     );
   } else {
     println!(

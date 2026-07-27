@@ -86,10 +86,10 @@ pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStruct, String> 
         return Err(format!("&%{{}}: compiled def {ns}/{def} is not a struct"));
       }
       // Try source code
-      if let Some(source) = program::lookup_def_code(ns, def) {
-        if let Some(struct_def) = try_parse_defrecord_form(&source) {
-          return Ok(struct_def);
-        }
+      if let Some(source) = program::lookup_def_code(ns, def)
+        && let Some(struct_def) = try_parse_defrecord_form(&source)
+      {
+        return Ok(struct_def);
       }
       Err(format!("&%{{}}: cannot resolve struct reference {ns}/{def}"))
     }
@@ -135,6 +135,7 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStruct> {
     fields: std::sync::Arc::new(fields),
     field_types: std::sync::Arc::new(vec![]),
     generics: std::sync::Arc::new(vec![]),
+    where_bounds: std::sync::Arc::new(vec![]),
     impls: vec![],
   })
 }

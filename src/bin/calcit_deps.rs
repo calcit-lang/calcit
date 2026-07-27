@@ -16,6 +16,7 @@ use std::{
   fs,
   io::Write,
   path::{Path, PathBuf},
+  process::Command,
   sync::Arc,
   thread,
 };
@@ -98,6 +99,21 @@ pub fn main() -> Result<(), String> {
     match &cli_args.subcommand {
       Some(SubCommand::Outdated(opts)) => {
         let updated = outdated_tags(deps, &cli_args.input, opts.yes)?;
+        if updated {
+          // Re-read deps.cirru and download updated dependencies
+          println!("\nDownloading updated dependencies...");
+          let content = fs::read_to_string(&cli_args.input).map_err(|e| e.to_string())?;
+          let parsed = cirru_edn::parse(&content).map_err(|e| {
+            eprintln!("\nFailed to parse '{}':", cli_args.input);
+            eprintln!("{e}");
+            format!("Failed to parse '{}'", cli_args.input)
+          })?;
+          let updated_deps: PackageDeps = parsed.try_into()?;
+          download_deps(updated_deps.dependencies, cli_args)?;
+        }
+      }
+      Some(SubCommand::Upgrade(opts)) => {
+        let updated = upgrade_packages(deps, &cli_args.input, opts)?;
         if updated {
           // Re-read deps.cirru and download updated dependencies
           println!("\nDownloading updated dependencies...");
@@ -204,6 +220,10 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
   Ok(())
 }
 
+fn wrap_module_error<T>(result: Result<T, String>, org_and_folder: &str, folder_path: &Path, action: &str) -> Result<T, String> {
+  result.map_err(|e| format!("failed to {action} module `{org_and_folder}` at `{}`\n{e}", folder_path.display()))
+}
+
 fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, org_and_folder: Arc<str>) -> Result<(), String> {
   // check if exists
   let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
@@ -215,7 +235,7 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
   if folder_path.exists() {
     // println!("module {} exists", folder);
     // check branch
-    let current_head = git_repo.current_head()?;
+    let current_head = wrap_module_error(git_repo.current_head(), &org_and_folder, &folder_path, "read current git head")?;
 
     if current_head.get_name() == *version {
       dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
@@ -223,12 +243,12 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
         && options.pull_branch
       {
         dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        git_repo.pull(&branch)?;
+        wrap_module_error(git_repo.pull(&branch), &org_and_folder, &folder_path, "pull branch")?;
         dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
 
         // if there's a build.sh file in the folder, run it
         if build_file.exists() {
-          let build_msg = call_build_script(&folder_path)?;
+          let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
           dim_println(format!("ran build script for {}", gray(&org_and_folder)));
           dim_println(build_msg);
         }
@@ -239,30 +259,40 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // println!("  {}", msg.yellow());
 
     // load latest tags
-    git_repo.fetch()?;
+    wrap_module_error(git_repo.fetch(), &org_and_folder, &folder_path, "fetch tags")?;
     // try if tag or branch exists in git history
-    let has_target = git_repo.check_branch_or_tag(&version, folder)?;
+    let has_target = wrap_module_error(
+      git_repo.check_branch_or_tag(&version, folder),
+      &org_and_folder,
+      &folder_path,
+      "check target branch or tag",
+    )?;
     if !has_target {
       dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_repo.fetch()?;
+      wrap_module_error(git_repo.fetch(), &org_and_folder, &folder_path, "fetch tags")?;
       dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
       // fetch git repo and checkout target version
     }
-    git_repo.checkout(&version)?;
+    wrap_module_error(
+      git_repo.checkout(&version),
+      &org_and_folder,
+      &folder_path,
+      &format!("checkout version `{version}`"),
+    )?;
     dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
 
-    let current_head = git_repo.current_head()?;
+    let current_head = wrap_module_error(git_repo.current_head(), &org_and_folder, &folder_path, "read current git head")?;
     if let GitHead::Branch(branch) = current_head
       && options.pull_branch
     {
       dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_repo.pull(&branch)?;
+      wrap_module_error(git_repo.pull(&branch), &org_and_folder, &folder_path, "pull branch")?;
       dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
     }
 
     // if there's a build.sh file in the folder, run it
     if build_file.exists() {
-      let build_msg = call_build_script(&folder_path)?;
+      let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
       dim_println(format!("ran build script for {}", gray(&org_and_folder)));
       dim_println(build_msg);
     }
@@ -273,14 +303,19 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
       format!("git@github.com:{org_and_folder}.git")
     };
     dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-    GitRepo::clone_to(&modules_dir, &url, &version, options.ci)?;
+    wrap_module_error(
+      GitRepo::clone_to(&modules_dir, &url, &version, options.ci),
+      &org_and_folder,
+      &folder_path,
+      &format!("clone version `{version}`"),
+    )?;
     // println!("downloading {} at version {}", url, version);
     dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
 
     if !options.ci {
       // if there's a build.sh file in the folder, run it
       if build_file.exists() {
-        let build_msg = call_build_script(&folder_path)?;
+        let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
         dim_println(format!("ran build script for {}", gray(&org_and_folder)));
         dim_println(build_msg);
       }
@@ -322,9 +357,22 @@ struct TopLevelCaps {
 enum SubCommand {
   /// show outdated versions
   Outdated(OutdatedCaps),
+  Upgrade(UpgradeCaps),
   Download(DownloadCaps),
   Add(AddCaps),
   Remove(RemoveCaps),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// upgrade dependencies
+#[argh(subcommand, name = "upgrade")]
+struct UpgradeCaps {
+  /// packages to upgrade
+  #[argh(positional)]
+  packages: Vec<String>,
+  /// upgrade all dependencies
+  #[argh(switch)]
+  all: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -483,10 +531,10 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
   }
 
   for (org_and_folder, version, child) in children {
-    if let Ok(Some(Some(latest_tag))) = child.join() {
-      if latest_tag != *version {
-        outdated_packages.push((org_and_folder.to_owned(), version.to_owned(), latest_tag));
-      }
+    if let Ok(Some(Some(latest_tag))) = child.join()
+      && latest_tag != *version
+    {
+      outdated_packages.push((org_and_folder.to_owned(), version.to_owned(), latest_tag));
     }
   }
 
@@ -592,6 +640,98 @@ fn update_deps_file(
   }
 
   write_deps_file(deps_file, &deps)
+}
+
+fn upgrade_packages(deps: PackageDeps, deps_file: &str, opts: &UpgradeCaps) -> Result<bool, String> {
+  let mut outdated_packages = Vec::new();
+  let mut children = vec![];
+
+  let targets: Vec<Arc<str>> = if opts.all {
+    deps.dependencies.keys().cloned().collect()
+  } else {
+    opts
+      .packages
+      .iter()
+      .map(|p| normalize_package_name(p).map(|s| s.into()))
+      .collect::<Result<Vec<Arc<str>>, String>>()?
+  };
+
+  if targets.is_empty() && !opts.all {
+    return Err("no packages to upgrade".to_string());
+  }
+
+  for org_and_folder in &targets {
+    if let Some(version) = deps.dependencies.get(org_and_folder) {
+      let org_and_folder_clone = org_and_folder.clone();
+      let version_clone = version.clone();
+      let ret = thread::spawn(move || {
+        let ret = show_package_versions(org_and_folder_clone, version_clone);
+        if let Err(e) = ret {
+          err_println(format!("{e}\n"));
+          return None;
+        }
+        ret.ok()
+      });
+      children.push((org_and_folder.clone(), version.clone(), ret));
+    } else {
+      return Err(format!("package {org_and_folder} not found in deps.cirru"));
+    }
+  }
+
+  for (org_and_folder, version, child) in children {
+    if let Ok(Some(Some(latest_tag))) = child.join()
+      && latest_tag != *version
+    {
+      outdated_packages.push((org_and_folder.to_owned(), version.to_owned(), latest_tag));
+    }
+  }
+
+  let calcit_version_needs_update = if opts.all {
+    let old_calcit_version = deps.calcit_version.as_deref();
+    match old_calcit_version {
+      None => true,
+      Some(version) => match (Version::parse(version).ok(), Version::parse(CALCIT_VERSION).ok()) {
+        (Some(expected), Some(current)) => expected < current,
+        _ => false,
+      },
+    }
+  } else {
+    false
+  };
+
+  if !outdated_packages.is_empty() || calcit_version_needs_update {
+    update_deps_file(&outdated_packages, calcit_version_needs_update, deps_file)?;
+    if opts.all {
+      sync_calcit_procs_package()?;
+    }
+    println!("deps.cirru updated successfully!");
+    Ok(true)
+  } else {
+    println!("Already up to date.");
+    Ok(false)
+  }
+}
+
+fn sync_calcit_procs_package() -> Result<(), String> {
+  if !Path::new("package.json").exists() {
+    println!("skipping {} sync: no package.json found", "@calcit/procs".yellow());
+    return Ok(());
+  }
+
+  println!("syncing npm package {}...", "@calcit/procs".green());
+  let status = Command::new("yarn")
+    .args(["up", "@calcit/procs"])
+    .status()
+    .map_err(|e| format!("failed to run `yarn up @calcit/procs`: {e}"))?;
+
+  if status.success() {
+    Ok(())
+  } else {
+    Err(format!(
+      "`yarn up @calcit/procs` exited with status {}",
+      status.code().map(|code| code.to_string()).unwrap_or_else(|| "signal".to_string())
+    ))
+  }
 }
 
 fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {

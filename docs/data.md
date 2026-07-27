@@ -7,6 +7,7 @@ aliases:
   - "data types"
   - "persistent data"
   - "immutable data"
+id: core/data
 ---
 # Data Types
 

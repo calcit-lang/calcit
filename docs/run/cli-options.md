@@ -36,7 +36,7 @@ Quick note: `cr edit format` rewrites the target snapshot using canonical serial
 cr
 
 # Run specific file
-cr demos/calcit.cirru
+cr calcit.cirru
 ```
 
 ### Run Mode (default once)
@@ -45,7 +45,7 @@ By default, `cr` runs once and exits. Use `--watch` (`-w`) to enable watch mode:
 
 ```bash
 cr --watch
-cr -w demos/calcit.cirru
+cr -w calcit.cirru
 ```
 
 ### Error Stack Trace (--disable-stack)
@@ -166,6 +166,12 @@ Use `docs check-md` to validate fenced code blocks in markdown files:
 cr docs check-md README.md
 ```
 
+This defaults to `calcit.cirru` as the eval entry. If your project uses a different snapshot filename, pass it explicitly with `--entry`:
+
+```bash
+cr docs check-md README.md --entry compact.cirru
+```
+
 Load module dependencies with repeatable `--dep` options:
 
 ```bash
@@ -174,6 +180,6 @@ cr docs check-md README.md --dep ./ --dep ~/.config/calcit/modules/memof/
 
 Recommended block modes:
 
-- `cirru`: run + preprocess + parse (preferred)
+- `cirru`: run + preprocess + parse (preferred; executes injected snippet entry `app.main/main!`, not entry file `:init-fn`)
 - `cirru.no-run`: preprocess + parse when runtime setup is unavailable
 - `cirru.no-check`: parse only for illustrative snippets

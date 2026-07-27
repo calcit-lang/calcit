@@ -1,5 +1,6 @@
 ---
 title: "Querying Definitions"
+summary: "使用 cr query defs/def/search/find/usages/search-expr 查找和浏览定义"
 scope: "core"
 kind: "reference"
 category: "run"
@@ -18,6 +19,15 @@ entry_for:
   - "cr query find"
   - "cr query usages"
   - "cr query search-expr"
+id: core/run/query
+parent: core/run
+related:
+  - core/run/edit-tree
+  - core/features/list
+requires:
+  - core/agent
+leads_to:
+  - core/run/edit-tree
 ---
 
 # Querying Definitions
@@ -41,7 +51,12 @@ cr query ns calcit.core
 ```bash
 # Show full source code of a definition
 cr query def calcit.core/assoc
+
+# Builtin helpers without snapshot source still return metadata
+cr query def calcit.core/to-js-data
 ```
+
+For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
 ### Peek Signature (`peek`)
 
@@ -55,6 +70,9 @@ cr query peek calcit.core/map
 ```bash
 # Extract only the examples section
 cr query examples calcit.core/let
+
+# Builtin helpers can also expose curated examples when available
+cr query examples calcit.core/to-js-data
 ```
 
 ### Find Symbol (`find`)
@@ -78,7 +96,7 @@ cr query usages app.main/main!
 cr query search hello
 
 # Limit to one definition
-cr query search hello -f app.main/main!
+cr query search hello --filter app.main/main!
 ```
 
 ### Search Expressions (`search-expr`)
@@ -88,7 +106,7 @@ cr query search hello -f app.main/main!
 cr query search-expr "fn (x)"
 
 # Limit to one definition
-cr query search-expr "fn (x)" -f app.main/main!
+cr query search-expr "fn (x)" --filter app.main/main!
 ```
 
 ## Quick Recipes (for fast locating)

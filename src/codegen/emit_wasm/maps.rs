@@ -7,7 +7,7 @@ use super::*;
 
 /// `&{} key0 val0 key1 val1 ...` — create a map (key-value pairs).
 pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() % 2 != 0 {
+  if !args.len().is_multiple_of(2) {
     return Err("&{} expects even number of args (key-value pairs)".into());
   }
   let count = args.len() / 2;

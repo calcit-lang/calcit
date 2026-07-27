@@ -36,6 +36,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo test
+        env:
+          RUST_MIN_STACK: "16777216"
       - run: cargo run --bin cr calcit/test.cirru
 
       - name: "try wasm"
@@ -47,6 +49,11 @@ jobs:
         with:
           reporter: "github-pr-review"
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "check docs markdown"
+        run: bash scripts/check-docs-md.sh
+        env:
+          RUST_MIN_STACK: "16777216"
 
       - name: "try js"
         run: >

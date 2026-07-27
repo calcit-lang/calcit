@@ -1,21 +1,19 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |type-fail-type-slot-record-call-arg)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-type-slot-record-call-arg)
   :configs $ {} (:init-fn |type-fail-type-slot-record-call-arg.main/main!) (:reload-fn |type-fail-type-slot-record-call-arg.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
   :files $ {}
     |type-fail-type-slot-record-call-arg.main $ %{} :FileEntry
       :defs $ {}
-        |User $ %{} :CodeEntry (:doc "|Record type used for bind-type fixture")
+        |User $ %{} :CodeEntry (:doc "|Record type used for bind-type fixture") (:schema :dynamic)
           :code $ quote
-            defstruct User (:name :string)
+            defstruct User $ :name :string
           :examples $ []
-          :schema :dynamic
         |main! $ %{} :CodeEntry (:doc "|Entry for type-slot record bind call-site arg type mismatch")
           :code $ quote
-            defn main! () $ do
-              deftype-slot :payload
-              bind-type :payload $ %{} User (:name |demo)
+            defn main! () $ with-type-slot
+              :payload $ %{} User (:name |demo)
               takes-user 1
               , nil
           :examples $ []

@@ -12,7 +12,7 @@ mod symbol;
 mod syntax_name;
 mod thunk;
 mod tuple;
-mod type_annotation;
+pub(crate) mod type_annotation;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -44,8 +44,9 @@ pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
-  CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, bind_type_slot, brief_type_of_value, clear_type_slots,
-  register_program_lookups, register_type_slot, resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
+  CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, brief_type_of_value, clear_type_slots,
+  pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot, resolve_type_slot,
+  value_matches_type_annotation, with_type_annotation_warning_context,
 };
 
 use compare::{
@@ -259,11 +260,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Struct(CalcitStruct {
-        name,
-        fields,
-        field_types,
-        generics: _,
-        ..
+        name, fields, field_types, ..
       }) => {
         f.write_str("(%struct ")?;
         f.write_str(&format!(":{name}"))?;
@@ -276,6 +273,15 @@ impl fmt::Display for Calcit {
       Enum(enum_def) => {
         f.write_str("(%enum ")?;
         f.write_str(&format!(":{}", enum_def.name()))?;
+        for variant in enum_def.variants() {
+          f.write_char(' ')?;
+          f.write_str(&format!("(:{}", variant.tag))?;
+          for t in variant.payload_types() {
+            f.write_char(' ')?;
+            f.write_str(&t.to_brief_string())?;
+          }
+          f.write_char(')')?;
+        }
         f.write_char(')')
       }
       Trait(t) => write!(f, "{t}"),
@@ -509,13 +515,16 @@ impl Hash for Calcit {
         fields,
         field_types,
         generics,
+        where_bounds,
         impls,
+        ..
       }) => {
         "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
         field_types.hash(_state);
         generics.hash(_state);
+        where_bounds.hash(_state);
         for imp in impls {
           imp.name().hash(_state);
           imp.origin().hash(_state);
@@ -526,6 +535,8 @@ impl Hash for Calcit {
       Enum(enum_def) => {
         "enum:".hash(_state);
         enum_def.name().hash(_state);
+        enum_def.generics().hash(_state);
+        enum_def.where_bounds().hash(_state);
         for v in enum_def.variants() {
           v.tag.hash(_state);
           for t in v.payload_types() {
@@ -816,6 +827,20 @@ impl Calcit {
     match self {
       Calcit::Nil => String::from(""),
       Calcit::Str(s) => (**s).to_owned(),
+      Calcit::Method(name, method_kind) => match method_kind {
+        MethodKind::Invoke(t) => {
+          if matches!(**t, CalcitTypeAnnotation::Dynamic) {
+            format!(".{name}")
+          } else {
+            format!("(&invoke {name} :type {})", t.as_ref())
+          }
+        }
+        MethodKind::Access => format!(".-{name}"),
+        MethodKind::InvokeNative => format!(".!{name}"),
+        MethodKind::TagAccess => format!(".:{name}"),
+        MethodKind::AccessOptional => format!(".?-{name}"),
+        MethodKind::InvokeNativeOptional => format!(".?!{name}"),
+      },
       _ => format!("{self}"),
     }
   }
@@ -857,6 +882,72 @@ impl Calcit {
       // variants that need to be further evaluated
       Calcit::Symbol { .. } | Calcit::Local { .. } | Calcit::Import(..) | Calcit::Thunk(..) | Calcit::List(..)
     )
+  }
+
+  /// a semantic description of what kind of Calcit value this is, for displaying in CLI echo
+  pub fn describe_type(&self) -> String {
+    use Calcit::*;
+    match self {
+      Nil => "**Calcit nil** (`nil`)".to_string(),
+      Bool(b) => format!("**Calcit boolean** (`{b}`)"),
+      Number(n) => format!("**Calcit number** (`{n}`)"),
+      Symbol { sym, .. } => {
+        format!("**Calcit symbol** (`{sym}`) — a bare identifier name")
+      }
+      Local(local) => format!("**Calcit local** (`{}`) — a local variable binding", local.sym),
+      Import(import) => format!(
+        "**Calcit import** (`{}/{}`) — a reference to imported definition",
+        import.ns, import.def
+      ),
+      Registered(alias) => {
+        format!("**Calcit registered** (`{alias}`) — a runtime-registered value")
+      }
+      Tag(tag) => {
+        format!("**Calcit keyword/tag** (`:{tag}`) — used as keys and identifiers")
+      }
+      Str(s) => {
+        format!("**Calcit string literal** (`|{s}`) — Cirru strings use `|` prefix")
+      }
+      Thunk(_) => "**Calcit thunk** — a delayed-evaluation expression".to_string(),
+      Ref(name, _) => format!("**Calcit atom/ref** (`{name}`) — a mutable state container"),
+      Tuple(tuple) => {
+        format!("**Calcit tuple** (`{}`) — a tagged union", tuple.tag)
+      }
+      Buffer(buf) => format!("**Calcit buffer** ({} bytes) — binary data", buf.len()),
+      BufList(items) => {
+        format!(
+          "**Calcit buffer list** ({} items) — mutable list",
+          items.lock().expect("BufList lock").len()
+        )
+      }
+      CirruQuote(code) => format!("**Calcit cirru-quoted** — quoted Cirru AST: `{code}`"),
+      Recur(xs) => format!("**Calcit recur** ({} args) — for tail recursion", xs.len()),
+      List(xs) => format!("**Calcit list** ({} items) — vector/list", xs.len()),
+      Set(xs) => format!("**Calcit set** ({} items) — unique values set", xs.size()),
+      Map(xs) => format!("**Calcit map** ({} pairs) — key-value map", xs.size()),
+      Record(record) => format!("**Calcit record** (`{}`) — typed struct", record.name()),
+      Struct(strukt) => format!("**Calcit struct** (`{}`) — struct definition", strukt.name),
+      Enum(enm) => format!("**Calcit enum** (`{}`) — enum/sum-type definition", enm.name()),
+      Trait(trt) => format!("**Calcit trait** (`{}`) — trait definition", trt.name),
+      Impl(imp) => format!("**Calcit impl** (`{}`) — trait implementation", imp.name),
+      Proc(p) => format!("**Calcit procedure** (`{p}`) — native function"),
+      Macro { id, .. } => format!("**Calcit macro** (`{id}`)"),
+      Fn { id, .. } => format!("**Calcit function** (`{id}`)"),
+      Syntax(syntax, _ns) => format!("**Calcit special syntax** (`{syntax}`)"),
+      Method(name, kind) => {
+        let kind_label = match kind {
+          crate::calcit::MethodKind::Access => "attribute access",
+          crate::calcit::MethodKind::InvokeNative => "native method call",
+          crate::calcit::MethodKind::Invoke(_) => "method call",
+          crate::calcit::MethodKind::TagAccess => "tag attribute access",
+          crate::calcit::MethodKind::AccessOptional => "optional attribute access",
+          crate::calcit::MethodKind::InvokeNativeOptional => "optional native method call",
+        };
+        format!("**Calcit method shorthand** (`.{name}`, {kind_label})")
+      }
+      RawCode(_, code) => format!("**Calcit raw code** (`{code}`) — inline code snippet"),
+      AnyRef(_) => "**Calcit any-ref** — reference to native Rust data".to_string(),
+    }
   }
 }
 
@@ -1118,13 +1209,17 @@ impl From<&NodeLocation> for Edn {
 
 impl fmt::Display for NodeLocation {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(
-      f,
-      "{}/{} [{}]",
-      self.ns,
-      self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
-    )
+    if self.coord.is_empty() {
+      write!(f, "{}/{}", self.ns, self.def)
+    } else {
+      write!(
+        f,
+        "{}/{} @{}",
+        self.ns,
+        self.def,
+        self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
+      )
+    }
   }
 }
 
@@ -1268,7 +1363,7 @@ pub fn format_examples_hint(ns: &str, def: &str) -> Option<String> {
   let mut hint = String::from("💡 Usage examples:\n");
   for (i, example) in examples.iter().enumerate() {
     // Format each example with cirru-parser
-    if let Ok(formatted) = cirru_parser::format(&[example.clone()], true.into()) {
+    if let Ok(formatted) = cirru_parser::format(std::slice::from_ref(example), true.into()) {
       hint.push_str(&format!("\n  Example {}:\n", i + 1));
       // Indent each line of the example
       for line in formatted.lines() {
@@ -1458,6 +1553,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("age")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
     let struct_right = Calcit::Struct(CalcitStruct {
@@ -1465,6 +1561,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("age")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
       generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
     assert_ne!(struct_left, struct_right);
@@ -1482,6 +1579,25 @@ mod tests {
     let enum_right = Calcit::Enum(CalcitEnum::from_record(enum_right_record).expect("valid enum"));
     assert_ne!(enum_left, enum_right);
     assert_ne!(enum_left.cmp(&enum_right), Equal);
+  }
+
+  #[test]
+  fn enum_display_includes_variants() {
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::new("Result"),
+        vec![EdnTag::new("ok"), EdnTag::new("err")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::Vector(vec![]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")]))),
+      ]),
+    };
+    let enum_value = Calcit::Enum(CalcitEnum::from_record(enum_record).expect("valid enum"));
+    let text = enum_value.to_string();
+    assert!(text.starts_with("(%enum :Result"), "unexpected display: {text}");
+    assert!(text.contains(":ok)"), "missing zero-payload variant: {text}");
+    assert!(text.contains(":err :string)"), "missing payload variant: {text}");
   }
 
   #[test]
@@ -1510,6 +1626,7 @@ mod tests {
           args: Arc::new(CalcitFnArgs::Args(vec![])),
           body: vec![Calcit::Str(Arc::from("ok"))],
           generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
           return_type: DYNAMIC_TYPE.clone(),
           arg_types: vec![],
         }),
@@ -1520,6 +1637,7 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("v")]),
       field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
       generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
 
@@ -1538,6 +1656,6 @@ mod tests {
       Arc::from("comp-sidebar"),
       Arc::from(vec![3, 2, 1, 0]),
     );
-    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar [3.2.1.0]");
+    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar @3.2.1.0");
   }
 }

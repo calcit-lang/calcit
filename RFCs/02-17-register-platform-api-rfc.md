@@ -42,6 +42,7 @@ descriptor 已用于统一校验：
 - 平台可用性（`platforms`）
 - 回调最后位约束（`callback_last`）
 - 稳定级别 warning（`stability` + once-warning）
+- 副作用 / 分析标签（`tags`，与 `calcit.core` CodeEntry `:tags` 同名，如 `:log`、`:io`、`:interop`）
 
 ### 2.3 FFI 注入与命名
 

@@ -16,9 +16,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::type_inference::infer_record_field_type;
 use crate::calcit::{
-  self, Calcit, CalcitFn, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, NodeLocation,
+  self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
+  NodeLocation,
 };
+use crate::program;
 
 use super::{
   ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code,
@@ -33,6 +36,7 @@ struct CheckContext<'a> {
   head_form: &'a Calcit,
   args: &'a CalcitList,
   expected_types: &'a [Arc<CalcitTypeAnnotation>],
+  where_bounds: &'a [CalcitGenericBound],
   scope_types: &'a ScopeTypes,
   file_ns: &'a str,
   call_location: Option<NodeLocation>,
@@ -40,10 +44,88 @@ struct CheckContext<'a> {
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
 }
 
+fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
+  if ctx.where_bounds.is_empty() {
+    return;
+  }
+
+  let expr_str = format!(
+    "{} {}",
+    ctx.head_form,
+    ctx.args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
+  );
+
+  for bound in ctx.where_bounds {
+    let Some(actual_type) = bindings.get(&bound.name) else {
+      continue;
+    };
+    if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+      continue;
+    }
+
+    let required = bound.as_type_annotation();
+    if actual_type.as_ref().matches_annotation(required.as_ref()) {
+      continue;
+    }
+
+    let warning_location = ctx
+      .call_location
+      .clone()
+      .or_else(|| ctx.args.first().and_then(Calcit::get_location));
+    gen_check_warning_code_at(
+      format!(
+        "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy trait bound `{}` at {}/{}\n  Expression: `{}`",
+        bound.name,
+        actual_type.to_brief_string(),
+        required.to_brief_string(),
+        ctx.file_ns,
+        match ctx.head_form {
+          Calcit::Import(import) => import.def.as_ref(),
+          Calcit::Symbol { sym, .. } => sym.as_ref(),
+          Calcit::Local(local) => local.sym.as_ref(),
+          _ => "<call>",
+        },
+        expr_str
+      ),
+      "W_GENERIC_WHERE_BOUND_MISMATCH",
+      ctx.file_ns,
+      warning_location,
+      ctx.check_warnings,
+    );
+  }
+}
+
 pub(crate) struct CallTypeCheckInfo<'a> {
   pub file_ns: &'a str,
   pub def_name: &'a str,
   pub call_location: Option<NodeLocation>,
+}
+
+fn specialize_update_expected_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if fn_info.def_ns.as_ref() != calcit::CORE_NS || fn_info.name.as_ref() != "update" {
+    return None;
+  }
+  if expected_types.len() < 3 || args.len() < 3 {
+    return None;
+  }
+
+  let receiver = args.first()?;
+  let field_name = match args.get(1)? {
+    Calcit::Tag(tag) => tag.ref_str(),
+    Calcit::Str(text) => text.as_ref(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
+    _ => return None,
+  };
+
+  let field_type = infer_record_field_type(receiver, field_name, scope_types)?;
+  let mut specialized = expected_types.to_vec();
+  specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![field_type.clone()], field_type));
+  Some(specialized)
 }
 
 impl<'a> CheckContext<'a> {
@@ -101,25 +183,27 @@ where
     // Handle variadic argument type
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       for (rest_idx, rest_arg) in ctx.args.iter().skip(idx).enumerate() {
-        if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
-          if !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings) {
-            let expected_str = inner_type.as_ref().to_brief_string();
-            let actual_str = actual_type.as_ref().to_brief_string();
-            ctx.emit_warning(idx + rest_idx + 1, &expected_str, &actual_str, &make_warning);
-          }
+        if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types)
+          && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings)
+        {
+          let expected_str = inner_type.as_ref().to_brief_string();
+          let actual_str = actual_type.as_ref().to_brief_string();
+          ctx.emit_warning(idx + rest_idx + 1, &expected_str, &actual_str, &make_warning);
         }
       }
       return; // Done after variadic
     }
 
-    if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
-      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
-        let expected_str = expected_type.as_ref().to_brief_string();
-        let actual_str = actual_type.as_ref().to_brief_string();
-        ctx.emit_warning(idx + 1, &expected_str, &actual_str, &make_warning);
-      }
+    if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types)
+      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+    {
+      let expected_str = expected_type.as_ref().to_brief_string();
+      let actual_str = actual_type.as_ref().to_brief_string();
+      ctx.emit_warning(idx + 1, &expected_str, &actual_str, &make_warning);
     }
   }
+
+  check_generic_trait_bounds(&ctx, &bindings);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,23 +313,23 @@ pub(crate) fn check_proc_arg_types(
       continue;
     }
 
-    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
-      if !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings) {
-        let expected_str = base_type.as_ref().to_brief_string();
-        let actual_str = actual_type.as_ref().to_brief_string();
-        let warning_location = arg.get_location().or_else(|| call_location.clone());
-        gen_check_warning_code_at(
-          format!(
-            "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-            proc.as_ref(),
-            idx + 1
-          ),
-          "W_PROC_ARG_TYPE_MISMATCH",
-          file_ns,
-          warning_location,
-          check_warnings,
-        );
-      }
+    if let Some(actual_type) = resolve_type_value(arg, scope_types)
+      && !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings)
+    {
+      let expected_str = base_type.as_ref().to_brief_string();
+      let actual_str = actual_type.as_ref().to_brief_string();
+      let warning_location = arg.get_location().or_else(|| call_location.clone());
+      gen_check_warning_code_at(
+        format!(
+          "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+          proc.as_ref(),
+          idx + 1
+        ),
+        "W_PROC_ARG_TYPE_MISMATCH",
+        file_ns,
+        warning_location,
+        check_warnings,
+      );
     }
   }
 }
@@ -281,22 +365,22 @@ pub(crate) fn check_core_fn_arg_types(
   let expected_type = tag_annotation("number");
 
   for (idx, arg) in args.iter().enumerate() {
-    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
-      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
-        let actual_str = actual_type.as_ref().to_brief_string();
-        let warning_location = arg.get_location().or_else(|| call_location.clone());
-        gen_check_warning_code_at(
-          format!(
-            "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-            fn_info.name,
-            idx + 1
-          ),
-          "W_CORE_FN_ARG_TYPE_MISMATCH",
-          file_ns,
-          warning_location,
-          check_warnings,
-        );
-      }
+    if let Some(actual_type) = resolve_type_value(arg, scope_types)
+      && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+    {
+      let actual_str = actual_type.as_ref().to_brief_string();
+      let warning_location = arg.get_location().or_else(|| call_location.clone());
+      gen_check_warning_code_at(
+        format!(
+          "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+          fn_info.name,
+          idx + 1
+        ),
+        "W_CORE_FN_ARG_TYPE_MISMATCH",
+        file_ns,
+        warning_location,
+        check_warnings,
+      );
     }
   }
 }
@@ -339,6 +423,7 @@ pub(crate) fn check_local_fn_call_arg_types(
     head_form,
     args,
     expected_types: &fn_annot.arg_types,
+    where_bounds: fn_annot.where_bounds.as_ref(),
     scope_types,
     file_ns: call_info.file_ns,
     call_location: call_info.call_location.clone(),
@@ -361,9 +446,35 @@ pub(crate) fn check_user_fn_arg_types(
   call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
-    return;
-  }
+  let effective_schema = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name);
+  let schema_fn_annot = match effective_schema.as_ref() {
+    CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.as_ref()),
+    _ => None,
+  };
+
+  let expected_types = if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic))
+  {
+    let Some(fn_annot) = schema_fn_annot else {
+      return;
+    };
+    if fn_annot.arg_types.is_empty() || fn_annot.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
+      return;
+    }
+    fn_annot.arg_types.as_slice()
+  } else {
+    fn_info.arg_types.as_slice()
+  };
+
+  let where_bounds = if fn_info.where_bounds.is_empty() {
+    schema_fn_annot
+      .map(|fn_annot| fn_annot.where_bounds.as_slice())
+      .unwrap_or(fn_info.where_bounds.as_ref())
+  } else {
+    fn_info.where_bounds.as_ref()
+  };
+
+  let specialized_expected_types = specialize_update_expected_types(fn_info, args, scope_types, expected_types);
+  let expected_types = specialized_expected_types.as_deref().unwrap_or(expected_types);
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
@@ -372,7 +483,8 @@ pub(crate) fn check_user_fn_arg_types(
   let ctx = CheckContext {
     head_form,
     args,
-    expected_types: &fn_info.arg_types,
+    expected_types,
+    where_bounds,
     scope_types,
     file_ns: call_info.file_ns,
     call_location: call_info.call_location.clone(),
@@ -440,5 +552,81 @@ pub(crate) fn check_function_return_type(
       file_ns,
       check_warnings,
     );
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitLocal, CalcitStruct, CalcitSymbolInfo};
+  use cirru_edn::EdnTag;
+
+  fn make_local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
+    let sym: Arc<str> = Arc::from(name);
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym: sym.clone(),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.update"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info,
+    })
+  }
+
+  #[test]
+  fn specialize_update_uses_record_field_type_for_callback() {
+    let task_struct = Arc::new(CalcitStruct {
+      name: EdnTag::new("Task"),
+      fields: Arc::new(vec![EdnTag::new("done?")]),
+      field_types: Arc::new(vec![tag_annotation("bool")]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+
+    let fn_info = CalcitFn {
+      name: Arc::from("update"),
+      def_ns: Arc::from(calcit::CORE_NS),
+      def_ref: None,
+      usage: Default::default(),
+      scope: Arc::new(Default::default()),
+      args: Arc::new(crate::calcit::CalcitFnArgs::Args(vec![])),
+      body: vec![],
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      arg_types: vec![
+        Arc::new(CalcitTypeAnnotation::Record(task_struct.clone())),
+        crate::calcit::DYNAMIC_TYPE.clone(),
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        )),
+      ],
+    };
+
+    let args = CalcitList::from(&[
+      make_local("task", Arc::new(CalcitTypeAnnotation::Record(task_struct))),
+      Calcit::Tag(EdnTag::new("done?")),
+      make_local(
+        "not",
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![tag_annotation("bool")],
+          tag_annotation("bool"),
+        )),
+      ),
+    ]);
+
+    let scope_types = ScopeTypes::new();
+    let specialized = specialize_update_expected_types(&fn_info, &args, &scope_types, fn_info.arg_types.as_slice())
+      .expect("update callback type should specialize from record field");
+
+    let CalcitTypeAnnotation::Fn(callback) = specialized[2].as_ref() else {
+      panic!("specialized callback should be fn type");
+    };
+    assert!(matches!(callback.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Bool)));
+    assert!(matches!(callback.return_type.as_ref(), CalcitTypeAnnotation::Bool));
   }
 }

@@ -4,14 +4,14 @@ use std::fmt::Write as _;
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, format_path_bracketed, parse_input_to_cirru, parse_path,
-  print_cli_warning_block, read_code_input, resolve_definition_lookup,
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, parse_input_to_cirru, parse_path, print_cli_warning_block,
+  read_code_input, resolve_definition_lookup,
 };
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
-  TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
-  TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
-  TreeSwapNextCommand, TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeUnwrapCommand, TreeWrapCommand,
+  TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
+  TreeInsertChildCommand, TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeSearchReplaceCommand, TreeShowCommand,
+  TreeStructuralCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -19,6 +19,7 @@ use super::edit::{
   apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target, process_node_with_references,
   save_snapshot,
 };
+use super::query::resolve_path_expression;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helper functions
@@ -40,8 +41,9 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::Unwrap(opts) => handle_unwrap(opts, snapshot_file),
     TreeSubcommand::Raise(opts) => handle_raise(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
-    TreeSubcommand::TargetReplace(opts) => handle_target_replace(opts, snapshot_file),
+    TreeSubcommand::SearchReplace(opts) => handle_search_replace(opts, snapshot_file),
     TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
+    TreeSubcommand::BatchDelete(opts) => handle_batch_delete(opts, snapshot_file),
   }
 }
 
@@ -242,13 +244,44 @@ fn render_chunked_display(display: &ChunkedDisplay, chunk_expand_depth: usize) -
   (out, visible_fragments.len())
 }
 
+/// Recursively annotate each list node with its path index as a trailing comment.
+/// Appends `; "previous node path: X.Y.Z"` as the last child of each list.
+fn annotate_paths(node: &mut Cirru, current_path: &[usize], annotate_root: bool) {
+  if let Cirru::List(children) = node {
+    // Recurse into children first, tracking their paths
+    for (i, child) in children.iter_mut().enumerate() {
+      let mut child_path = current_path.to_vec();
+      child_path.push(i);
+      annotate_paths(child, &child_path, true);
+    }
+    // Append path comment at the end (skip root if annotate_root is false)
+    if annotate_root && !current_path.is_empty() {
+      let path_str = format_path(current_path);
+      let comment = Cirru::List(vec![
+        Cirru::Leaf(";".into()),
+        Cirru::Leaf(format!("previous node path: {path_str}").into()),
+      ]);
+      children.push(comment);
+    }
+  }
+}
+
 // ============================================================================
 // Command handlers
 // ============================================================================
 
 fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
-  let path = parse_path(&opts.path)?;
+  let path = match &opts.path {
+    Some(p) => parse_path(p)?,
+    None => {
+      eprintln!(
+        "{}",
+        "[Warn] No path (-p) specified; showing from root. Use -p '0' to start from a child node.".yellow()
+      );
+      vec![]
+    }
+  };
 
   let snapshot = load_snapshot(snapshot_file)?;
 
@@ -271,7 +304,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
     .expect("resolved definition exists");
 
   // Try to navigate to path, provide enhanced error message on failure
-  let node = match navigate_to_path(&code_entry.code, &path) {
+  let mut node = match navigate_to_path(&code_entry.code, &path) {
     Ok(n) => n,
     Err(original_error) => {
       // Find the longest valid path
@@ -300,7 +333,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       let valid_node = navigate_to_path(&code_entry.code, valid_path).unwrap();
 
       // Format the valid path display
-      let valid_path_display = format_path_bracketed(valid_path);
+      let valid_path_display = format_path(valid_path);
 
       // Get preview of the valid node
       let node_preview = match &valid_node {
@@ -331,7 +364,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!("cr tree show '{}' -p '{}'", resolved_target, format_path(valid_path)).cyan()
+            format!("cr tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
           );
         }
         Cirru::List(items) => {
@@ -344,7 +377,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!("cr tree show '{}' -p '{}'", resolved_target, format_path(valid_path)).cyan()
+            format!("cr tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
           );
 
           // Show first few children as hints
@@ -370,6 +403,11 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       return Err(String::new()); // Empty error since we already printed detailed message
     }
   };
+
+  // Apply path annotations if requested
+  if opts.path_annotations {
+    annotate_paths(&mut node, &path, !path.is_empty());
+  }
 
   let node_type = match &node {
     Cirru::Leaf(_) => "leaf",
@@ -411,18 +449,29 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       }
 
       let mut tips = Tips::new();
-      if let Some((shown_fragments, total_fragments)) = shown_fragments {
-        if shown_fragments < total_fragments {
-          tips.add_with_priority(
-            TipPriority::High,
-            format!(
-              "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
-              opts.chunk_expand_depth,
-              format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
-              "--raw".yellow()
-            ),
-          );
-        }
+      // Tip: suggest path-annotations for nodes with many children
+      if items.len() > 8 && !opts.path_annotations {
+        tips.add_with_priority(
+          TipPriority::High,
+          format!(
+            "This node has {} children. Use {} to annotate each nested list with its path index for easier editing.",
+            items.len(),
+            "--path-annotations".yellow()
+          ),
+        );
+      }
+      if let Some((shown_fragments, total_fragments)) = shown_fragments
+        && shown_fragments < total_fragments
+      {
+        tips.add_with_priority(
+          TipPriority::High,
+          format!(
+            "Showing ROOT plus {} chunk layer(s). Use {} to reveal deeper nested fragments, or {} to disable chunking.",
+            opts.chunk_expand_depth,
+            format!("--chunk-expand-depth {}", opts.chunk_expand_depth + 1).yellow(),
+            "--raw".yellow()
+          ),
+        );
       }
       tips.append(tip_prefer_oneliner_json(show_json));
       emit_cli_output(&out, render_to_stderr);
@@ -458,11 +507,11 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let new_node = parse_input_to_cirru(raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -523,11 +572,11 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let new_node = parse_input_to_cirru(raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -578,10 +627,10 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
 fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let replacement_node = parse_input_to_cirru(raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -597,7 +646,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
   // Find all leaf nodes that match the pattern
-  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
+  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, opts.regex, &[]);
 
   if matches.is_empty() {
     println!("{}", "No matches found.".yellow());
@@ -609,8 +658,12 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
 
   // Show preview of matches
   for (i, (path, old_value)) in matches.iter().enumerate().take(20) {
-    let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
-    println!("  {}. Path [{}]: {}", i + 1, path_str.dimmed(), format!("{old_value:?}").yellow());
+    println!(
+      "  {}. Path {}: {}",
+      i + 1,
+      format_path(path).dimmed(),
+      format!("{old_value:?}").yellow()
+    );
   }
 
   if matches.len() > 20 {
@@ -633,12 +686,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
         replaced_count += 1;
       }
       Err(e) => {
-        eprintln!(
-          "{} Failed to replace at path [{}]: {}",
-          "Warning:".yellow(),
-          path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
-          e
-        );
+        eprintln!("{} Failed to replace at path {}: {}", "Warning:".yellow(), format_path(&path), e);
       }
     }
   }
@@ -659,13 +707,13 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   Ok(())
 }
 
-fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+  let replacement_node = parse_input_to_cirru(raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -680,59 +728,124 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  // Find all leaf nodes that match the pattern
-  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
+  // L3: resolve search scope via --selector
+  let (search_root_path, search_root) = if let Some(selector) = &opts.selector {
+    let path = resolve_path_expression(&code_entry.code, selector)?;
+    let root = navigate_to_path(&code_entry.code, &path)?;
+    (path, root)
+  } else {
+    (vec![], code_entry.code.clone())
+  };
+
+  // Find all leaf nodes that match the pattern within the search scope
+  let matches = find_all_leaf_matches(&search_root, &opts.pattern, opts.regex, &[]);
+
+  // Compose full paths: prefix search_root_path to each match path
+  let compose_path = |rel: &[usize]| -> Vec<usize> {
+    let mut full = search_root_path.clone();
+    full.extend_from_slice(rel);
+    full
+  };
 
   if matches.is_empty() {
     return Err("No matches found for target pattern".to_string());
   }
 
   if matches.len() > 1 {
-    println!("{} Found {} matches.", "Notice:".yellow().bold(), matches.len());
-    println!("Please use specific path to replace:");
+    // If --pick is specified, use that candidate directly
+    if let Some(pick_index) = opts.pick {
+      if pick_index >= matches.len() {
+        return Err(format!(
+          "--pick {} is out of range (found {} matches, valid indices: 0-{})",
+          pick_index,
+          matches.len(),
+          matches.len() - 1
+        ));
+      }
+      let (path, old_value) = &matches[pick_index];
+      let full_path = compose_path(path);
+      let old_node = Cirru::Leaf(old_value.to_string().into());
+      println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
+
+      let new_code = apply_operation_at_path(&code_entry.code, &full_path, "replace", Some(&replacement_node))?;
+      code_entry.code = new_code;
+      save_snapshot(&snapshot, snapshot_file)?;
+      println!("{} Replaced occurrence [{}]", "✓".green(), pick_index);
+      return Ok(());
+    }
+
+    // No --pick: show candidates with context
+    println!(
+      "{} Found {} matches for pattern {:?}:",
+      "Search:".bold(),
+      matches.len(),
+      opts.pattern
+    );
     println!();
 
     let replacement_arg = if let Some(c) = &opts.code {
-      format!("-e '{c}'")
-    } else if let Some(j) = &opts.json {
-      format!("-j '{j}'")
+      format!("--code '{c}'")
     } else if let Some(f) = &opts.file {
-      format!("-f '{f}'")
+      format!("--file '{f}'")
     } else {
-      "-e '...'".to_string()
+      "--code '...'".to_string()
     };
 
-    for (i, (path, _)) in matches.iter().enumerate().take(10) {
-      let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
+    for (i, (path, value)) in matches.iter().enumerate().take(20) {
+      let full_path = compose_path(path);
+      let path_str = format_path(&full_path);
+      println!("  [{}] Path {}: {:?}", i, path_str.dimmed(), value.to_string().yellow());
+      // Show context: get the parent node for a quick preview
+      if !full_path.is_empty() {
+        let parent_path = &full_path[..full_path.len() - 1];
+        if let Ok(parent) = navigate_to_path(&code_entry.code, parent_path) {
+          let preview = parent.format_one_liner().unwrap_or_else(|_| "<expr>".to_string());
+          let truncated = if preview.len() > 80 {
+            format!("{}...", &preview[..80])
+          } else {
+            preview
+          };
+          println!("    Context: {}", truncated.dimmed());
+        }
+      }
       println!(
-        "  {}. {} {} -p '{}' {}",
-        i + 1,
-        "cr tree replace".cyan(),
+        "    Command: {} {} --pattern '{}' {} --pick {}",
+        "cr tree search-replace".cyan(),
         opts.target,
-        path_str,
-        replacement_arg
+        opts.pattern,
+        replacement_arg,
+        i
       );
+      println!();
     }
 
-    if matches.len() > 10 {
-      println!("  ... and {} more", matches.len() - 10);
+    if matches.len() > 20 {
+      println!("  ... and {} more", matches.len() - 20);
     }
     println!();
     if command_guidance_enabled() {
-      println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+      println!(
+        "{}",
+        "Tip: Use --pick <index> to select a candidate, or use 'tree replace-leaf' to replace ALL occurrences.".blue()
+      );
     }
 
-    return Err(String::new());
+    return Err(format!(
+      "Found {} matches for pattern '{}'. Use --pick <index> to select one (see candidates above).",
+      matches.len(),
+      opts.pattern
+    ));
   }
 
   // Exactly one match
   let (path, old_value) = &matches[0];
+  let full_path = compose_path(path);
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace"));
+  println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
 
-  let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&replacement_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, &full_path, "replace", Some(&replacement_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -742,14 +855,33 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   Ok(())
 }
 
-/// Find all leaf nodes that exactly match the pattern
-fn find_all_leaf_matches(node: &Cirru, pattern: &str, current_path: &[usize]) -> Vec<(Vec<usize>, String)> {
+/// Find leaf nodes matching the pattern; uses exact match or regex based on flag
+fn find_all_leaf_matches(node: &Cirru, pattern: &str, regex: bool, current_path: &[usize]) -> Vec<(Vec<usize>, String)> {
   let mut results = Vec::new();
+
+  // Compile regex once if needed
+  let regex_pattern = if regex {
+    match regex::Regex::new(pattern) {
+      Ok(r) => Some(r),
+      Err(e) => {
+        eprintln!("{} Invalid regex '{}': {}", "Error:".red().bold(), pattern, e);
+        return results;
+      }
+    }
+  } else {
+    None
+  };
 
   match node {
     Cirru::Leaf(s) => {
-      // Exact match only
-      if s.as_ref() == pattern {
+      let matched = if regex {
+        regex_pattern.as_ref().is_some_and(|r| r.is_match(s))
+      } else {
+        // Exact match (default)
+        s.as_ref() == pattern
+      };
+
+      if matched {
         results.push((current_path.to_vec(), s.to_string()));
       }
     }
@@ -758,7 +890,7 @@ fn find_all_leaf_matches(node: &Cirru, pattern: &str, current_path: &[usize]) ->
       for (i, item) in items.iter().enumerate() {
         let mut new_path = current_path.to_vec();
         new_path.push(i);
-        results.extend(find_all_leaf_matches(item, pattern, &new_path));
+        results.extend(find_all_leaf_matches(item, pattern, regex, &new_path));
       }
     }
   }
@@ -834,10 +966,10 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
       deleted_index
     );
     println!(
-      "   Example: path [{},{}] is now [{},{}]",
-      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      "   Example: path {}.{} is now {}.{}",
+      format_path(&parent_path),
       deleted_index + 1,
-      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      format_path(&parent_path),
       deleted_index
     );
     println!(
@@ -847,6 +979,31 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     );
   }
 
+  Ok(())
+}
+
+fn handle_batch_delete(opts: &TreeBatchDeleteCommand, snapshot_file: &str) -> Result<(), String> {
+  // First, parse and validate all paths, sorting by path descending
+  // so we delete from highest index to lowest, avoiding index drift
+  let mut parsed: Vec<(Vec<usize>, String)> = Vec::new();
+  for p in &opts.paths {
+    let path = parse_path(p).map_err(|e| format!("Invalid path '{p}': {e}"))?;
+    parsed.push((path, p.clone()));
+  }
+  // Sort by path descending
+  parsed.sort_by(|a, b| b.0.cmp(&a.0));
+
+  for (_, original_path) in &parsed {
+    let delete_opts = TreeDeleteCommand {
+      target: opts.target.clone(),
+      path: original_path.clone(),
+      depth: opts.depth,
+    };
+    handle_delete(&delete_opts, snapshot_file)?;
+    println!();
+  }
+
+  println!("{} Deleted {} path(s) via batch-delete", "✓".green(), parsed.len());
   Ok(())
 }
 
@@ -870,9 +1027,6 @@ fn handle_append_child(opts: &TreeAppendChildCommand, snapshot_file: &str) -> Re
 trait InsertOperation {
   fn file(&self) -> &Option<String>;
   fn code(&self) -> &Option<String>;
-  fn json(&self) -> &Option<String>;
-  fn json_input(&self) -> bool;
-  fn leaf(&self) -> bool;
   fn with(&self) -> &[String] {
     &[]
   }
@@ -885,15 +1039,6 @@ impl InsertOperation for TreeInsertBeforeCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
 }
 
 impl InsertOperation for TreeInsertAfterCommand {
@@ -902,15 +1047,6 @@ impl InsertOperation for TreeInsertAfterCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
-  }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
   }
 }
 
@@ -921,15 +1057,6 @@ impl InsertOperation for TreeInsertChildCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
 }
 
 impl InsertOperation for TreeAppendChildCommand {
@@ -939,32 +1066,14 @@ impl InsertOperation for TreeAppendChildCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
 }
 
-impl InsertOperation for TreeTargetReplaceCommand {
+impl InsertOperation for TreeSearchReplaceCommand {
   fn file(&self) -> &Option<String> {
     &self.file
   }
   fn code(&self) -> &Option<String> {
     &self.code
-  }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
   }
 }
 
@@ -974,15 +1083,6 @@ impl InsertOperation for TreeStructuralCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
-  }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
   }
   fn with(&self) -> &[String] {
     &self.with
@@ -1000,11 +1100,11 @@ fn generic_insert_handler<T: InsertOperation>(
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
-  let code_input = read_code_input(opts.file(), opts.code(), opts.json())?;
+  let code_input = read_code_input(opts.file(), opts.code())?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf(), true)?;
+  let new_node = parse_input_to_cirru(raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -1082,10 +1182,10 @@ fn generic_insert_handler<T: InsertOperation>(
           insert_index
         );
         println!(
-          "   Old path [{},{}] → New path [{},{}]",
-          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          "   Old path {}.{} → New path {}.{}",
+          format_path(&parent_path),
           insert_index,
-          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          format_path(&parent_path),
           insert_index + 1
         );
       }
@@ -1167,7 +1267,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     let parent_display = if parent_path.is_empty() {
       "root".to_string()
     } else {
-      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
+      format!("@{}", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
     };
 
     match operation {
@@ -1347,9 +1447,8 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let auto_json = opts.code.is_some();
-  let template = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let template = parse_input_to_cirru(&raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;

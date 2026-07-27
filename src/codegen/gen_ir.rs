@@ -258,10 +258,10 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
         (Edn::tag("method"), Edn::Str(method.to_owned())),
       ];
-      if let MethodKind::Invoke(t) = kind {
-        if !matches!(**t, CalcitTypeAnnotation::Dynamic) {
-          entries.push((Edn::tag("receiver-type"), dump_type_annotation(t.as_ref())));
-        }
+      if let MethodKind::Invoke(t) = kind
+        && !matches!(**t, CalcitTypeAnnotation::Dynamic)
+      {
+        entries.push((Edn::tag("receiver-type"), dump_type_annotation(t.as_ref())));
       }
       Edn::map_from_iter(entries)
     }
@@ -479,6 +479,7 @@ mod tests {
   use super::{dump_code, dump_type_annotation};
   use crate::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitImpl, CalcitProc, CalcitTypeAnnotation, SchemaKind};
   use cirru_edn::{Edn, EdnTag};
+  use std::collections::HashSet;
   use std::sync::Arc;
 
   #[test]
@@ -533,10 +534,12 @@ mod tests {
 
     let fn_type = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String)],
       return_type: Arc::new(CalcitTypeAnnotation::Bool),
       fn_kind: SchemaKind::Fn,
       rest_type: None,
+      features: Arc::new(HashSet::new()),
     }));
     assert_eq!(
       dump_type_annotation(&fn_type),

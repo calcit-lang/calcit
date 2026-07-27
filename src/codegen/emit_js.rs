@@ -381,7 +381,7 @@ fn gen_call_code(
             gen_stack::pop_call_stack();
             Ok(format!(
               "\n({}peekDefatom({}) ?? {}defatom({}, {value_code}))\n",
-              &var_prefix, &ref_path, &var_prefix, &ref_path
+              var_prefix, ref_path, var_prefix, ref_path
             ))
           }
           (_, _) => Err(format!("defatom expected name and value, got: {body}")),
@@ -438,6 +438,13 @@ fn gen_call_code(
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
+        CalcitSyntax::UnsafeCoerce => match body.first() {
+          Some(value) => Ok(format!(
+            "{return_code}{}",
+            to_js_code(value, ns, local_defs, file_imports, tags, None)?
+          )),
+          None => Err(String::from("unsafe-coerce expected a value")),
+        },
         CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
@@ -469,8 +476,8 @@ fn gen_call_code(
         None => Err(format!("raise expected 1~2 arguments, got: {body}")),
       }
     }
-    // deftype-slot and bind-type are preprocessing-only; they have no JS runtime effect.
-    Calcit::Proc(CalcitProc::DeftypeSlot) | Calcit::Proc(CalcitProc::BindType) => Ok(format!("{return_code}null")),
+    // deftype-slot is preprocessing-only; it has no JS runtime effect.
+    Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     // &record:nth: with 3 args (record, idx, :field-tag), use record.get(tag) for JS
     // because JS CalcitRecord fields are sorted by tag.idx (registration order), not alphabetically.
     // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).
@@ -502,7 +509,7 @@ fn gen_call_code(
     // &record:with-at: optimized with pre-resolved indices.
     // JS ignores indices and calls the same _$n_record_$o_with(proto, tag, val, ...) function.
     Calcit::Proc(CalcitProc::NativeRecordWithAt) => {
-      if body.len() >= 3 && (body.len() - 1) % 3 == 0 {
+      if body.len() >= 3 && (body.len() - 1).is_multiple_of(3) {
         let proc_prefix = get_proc_prefix(ns);
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let triple_count = (body.len() - 1) / 3;
@@ -775,10 +782,8 @@ fn detect_await(xs: &CalcitList) -> bool {
           return true;
         }
       }
-      Calcit::Symbol { sym, .. } => {
-        if &**sym == "js-await" {
-          return true;
-        }
+      Calcit::Symbol { sym, .. } if &**sym == "js-await" => {
+        return true;
       }
       _ => {}
     }
@@ -916,10 +921,10 @@ fn gen_let_code(
               break;
             }
           }
-          _ => return Err(format!("Expected symbol in &let binding, got: {}", &pair)),
+          _ => return Err(format!("Expected symbol in &let binding, got: {}", pair)),
         }
       }
-      Calcit::List(_xs) => return Err(format!("expected pair of length 2, got: {}", &pair)),
+      Calcit::List(_xs) => return Err(format!("expected pair of length 2, got: {}", pair)),
       _ => return Err(format!("expected pair of a list of length 2, got: {pair}")),
     }
   }

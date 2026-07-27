@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use calcit::{
   builtins,
-  builtins::{RegisteredProcDescriptor, RegisteredProcPlatform, RegisteredProcStability},
+  builtins::{RegisteredProcDescriptor, RegisteredProcPlatform, RegisteredProcStability, proc_tags},
   calcit::{Calcit, CalcitErr, CalcitErrKind},
   call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit, sanitize_edn_for_format},
@@ -150,7 +150,13 @@ fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<()
 
 const ABI_VERSION: &str = "0.0.9";
 
+static PLATFORM_APIS_INJECTED: AtomicBool = AtomicBool::new(false);
+
+#[allow(dead_code)]
 pub fn inject_platform_apis() {
+  if PLATFORM_APIS_INJECTED.swap(true, Ordering::Relaxed) {
+    return;
+  }
   builtins::register_import_proc_with_descriptor(
     "&call-dylib-edn",
     call_dylib_edn,
@@ -161,11 +167,34 @@ pub fn inject_platform_apis() {
       stability: RegisteredProcStability::Public,
       docs_hint: Some(Arc::from("Fix: use native runtime and pass (lib-name method ...args).")),
       callback_last: false,
+      tags: proc_tags(["interop", "io"]),
     },
   );
-  builtins::register_import_proc("echo", stdout_println);
-  builtins::register_import_proc("println", stdout_println);
-  builtins::register_import_proc("eprintln", stderr_println);
+  let log_io = proc_tags(["log", "io"]);
+  builtins::register_import_proc_with_descriptor(
+    "echo",
+    stdout_println,
+    RegisteredProcDescriptor {
+      tags: log_io.clone(),
+      ..Default::default()
+    },
+  );
+  builtins::register_import_proc_with_descriptor(
+    "println",
+    stdout_println,
+    RegisteredProcDescriptor {
+      tags: log_io.clone(),
+      ..Default::default()
+    },
+  );
+  builtins::register_import_proc_with_descriptor(
+    "eprintln",
+    stderr_println,
+    RegisteredProcDescriptor {
+      tags: log_io,
+      ..Default::default()
+    },
+  );
   builtins::register_import_proc_with_descriptor(
     "&call-dylib-edn-fn",
     call_dylib_edn_fn,
@@ -176,6 +205,7 @@ pub fn inject_platform_apis() {
       stability: RegisteredProcStability::Public,
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
+      tags: proc_tags(["interop", "io"]),
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -188,10 +218,26 @@ pub fn inject_platform_apis() {
       stability: RegisteredProcStability::Public,
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
+      tags: proc_tags(["interop", "io"]),
     },
   );
-  builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
-  builtins::register_import_proc("on-control-c", on_ctrl_c);
+  builtins::register_import_proc_with_descriptor(
+    "async-sleep",
+    builtins::meta::async_sleep,
+    RegisteredProcDescriptor {
+      tags: proc_tags(["io"]),
+      ..Default::default()
+    },
+  );
+  builtins::register_import_proc_with_descriptor(
+    "on-control-c",
+    on_ctrl_c,
+    RegisteredProcDescriptor {
+      tags: proc_tags(["control", "io"]),
+      ..Default::default()
+    },
+  );
+
   if !calcit::quiet_tool_output() {
     eprintln!("{}", "registered platform APIs".dimmed());
   }

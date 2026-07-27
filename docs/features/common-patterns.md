@@ -1,5 +1,6 @@
 ---
 title: "Common Patterns"
+summary: "实用编程模式：集合操作、错误处理、字符串处理、状态管理、控制流（含 case-default/try/cond/pipe）、文件操作"
 scope: "core"
 kind: "guide"
 category: "features"
@@ -8,6 +9,7 @@ aliases:
   - "pattern examples"
   - "common tasks"
 ---
+
 # Common Patterns
 
 This document provides practical examples and patterns for common programming tasks in Calcit.
@@ -79,7 +81,7 @@ let
         %:: MyResult :err "|Division by zero"
         %:: MyResult :ok (/ a b)
     handle-result $ fn (result)
-      tag-match result
+      match result
         (:ok v) (println $ str "|Result: " v)
         (:err msg) (println $ str "|Error: " msg)
   handle-result $ safe-divide 10 2
@@ -302,6 +304,22 @@ defn fibonacci (n)
         recur b (&+ a b) (&- n 1)
 ```
 
+### `case-default` (Multi-branch dispatch)
+
+`case-default` dispatches on a value against multiple patterns with a fallback:
+
+```cirru.no-check
+case-default action nil
+  :mount $ do
+    js/console.log |Mounted
+  :update $ do
+    js/console.log |Updated
+  :unmount $ do
+    js/console.log |Unmounted
+```
+
+The first argument is the value to match, the second is the default/fallback, followed by pattern-result pairs. Useful for lifecycle hooks, event handling, and state machine transitions.
+
 ## Working with Files
 
 ### Reading and Writing
@@ -409,7 +427,7 @@ let
 
 1. **Use type annotations** for function parameters and return values
 2. **Prefer immutable data** - use `swap!` instead of manual mutation
-3. **Use pattern matching** (`tag-match`, `record-match`) for control flow
+3. **Use pattern matching** (`match`, `record-match`) for control flow; `match` also works on plain tuples, while `tag-match` is mainly for legacy code
 4. **Leverage threading macros** (`->`, `->>`) for data pipelines
 5. **Use enums for result types** instead of exceptions
 6. **Keep functions small** and focused on a single responsibility

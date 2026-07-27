@@ -77,7 +77,7 @@
               :args $ [] 'test-record.main/Point2D
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-loose-record-rewrite) (test-map-to-record) (do true)
+            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-loose-record-rewrite) (test-map-to-record) (test-postfix) (do true)
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)
@@ -233,6 +233,27 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+        |test-postfix $ %{} :CodeEntry (:doc "|test postfix syntax")
+          :code $ quote
+            fn () (log-title "|Testing postfix syntax")
+              let
+                  p $ &%{} Point2D :x 10 :y 20
+                assert= 10 $ p :x
+                assert= 20 $ p :y
+              let
+                  ffi-point $ unsafe-coerce (?{} :x 30 :y 40) Point2D
+                assert= 30 $ ffi-point :x
+                assert= 40 $ ffi-point :y
+              let
+                  l1 $ %{} Lagopus (:name |LagopusA)
+                assert= |LagopusA $ :name l1
+                let
+                    l2 $ l1 .rename |LagopusB
+                  assert= |LagopusB $ :name l2
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :dynamic)
+              :args $ []
         |test-record $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record")
@@ -284,6 +305,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+              :features $ #{} :js-ffi
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")

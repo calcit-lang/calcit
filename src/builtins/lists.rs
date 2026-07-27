@@ -28,7 +28,7 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&list:count requires a list as argument, but received a value of type: {}",
-        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+        crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::NativeListCount).unwrap_or_else(|| {
         String::from(
@@ -167,7 +167,7 @@ pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&list:rest requires a list as argument, but received: {}",
-        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+        crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = String::from(
         "💡 Hint: Use the higher-level `rest` function which works on multiple types,\n  or ensure you're passing a list to &list:rest",

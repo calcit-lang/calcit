@@ -6,7 +6,10 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
+use crate::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context,
+};
+use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
 
@@ -15,14 +18,7 @@ fn default_version() -> String {
 }
 
 fn format_edn_preview(value: &Edn) -> String {
-  let raw = cirru_edn::format(value, true).unwrap_or_else(|_| format!("{value:?}"));
-  const LIMIT: usize = 220;
-  if raw.chars().count() > LIMIT {
-    let truncated = raw.chars().take(LIMIT).collect::<String>();
-    format!("{truncated}…")
-  } else {
-    raw
-  }
+  format_edn_display(value)
 }
 
 fn schema_path_label(path: &[String]) -> String {
@@ -45,6 +41,7 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "return" => Some("return"),
     "rest" => Some("rest"),
     "generics" => Some("generics"),
+    "where" => Some("where"),
     _ => None,
   }
 }
@@ -110,6 +107,8 @@ struct RawCodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default)]
+  pub tags: Vec<String>,
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
@@ -140,6 +139,7 @@ impl RawCodeEntry {
     Ok(CodeEntry {
       doc: self.doc,
       examples: self.examples,
+      tags: tags_vec_to_set(self.tags),
       code: self.code,
       schema,
     })
@@ -188,7 +188,10 @@ impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Map(_) => from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {e}")),
+      Edn::Map(_) => {
+        let preview = data.clone();
+        from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {}", format_deserialize_error(&e, &preview)))
+      }
       Edn::Record(record) => {
         let mut ns = None;
         let mut defs = None;
@@ -209,7 +212,10 @@ impl TryFrom<Edn> for FileInSnapShot {
         let defs = defs.ok_or("Missing defs field in FileEntry")?;
         Ok(FileInSnapShot { ns, defs })
       }
-      _ => Err(format!("Expected FileInSnapShot map or record, but got: {data:?}")),
+      _ => Err(format!(
+        "Expected FileInSnapShot map or record, but got: {}",
+        format_edn_display(&data)
+      )),
     }
   }
 }
@@ -235,10 +241,14 @@ impl TryFrom<Edn> for NsEntry {
         for (key, value) in &record.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
-              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+              doc = from_edn(value.to_owned())
+                .map_err(|e| format!("failed to parse NsEntry.doc: {}", format_deserialize_error(&e, value)))?;
             }
             "code" => {
-              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+              code = Some(
+                from_edn(value.to_owned())
+                  .map_err(|e| format!("failed to parse NsEntry.code: {}", format_deserialize_error(&e, value)))?,
+              );
             }
             _ => {}
           }
@@ -246,14 +256,20 @@ impl TryFrom<Edn> for NsEntry {
       }
       Edn::Map(map) => {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
-          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {e}"))?;
+          doc =
+            from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.doc: {}", format_deserialize_error(&e, value)))?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
-          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {e}"))?);
+          code = Some(
+            from_edn(value.to_owned()).map_err(|e| format!("failed to parse NsEntry.code: {}", format_deserialize_error(&e, value)))?,
+          );
         }
       }
       other => {
-        return Err(format!("failed to parse NsEntry: expected record/map, got: {other:?}"));
+        return Err(format!(
+          "failed to parse NsEntry: expected record/map, got: {}",
+          format_edn_display(&other)
+        ));
       }
     }
 
@@ -319,6 +335,25 @@ mod schema_serde {
   }
 }
 
+mod tags_serde {
+  use super::*;
+
+  pub fn serialize<S>(tags: &HashSet<EdnTag>, s: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    tags_set_to_vec(tags).serialize(s)
+  }
+
+  pub fn deserialize<'de, D>(d: D) -> Result<HashSet<EdnTag>, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    let tags = Vec::<String>::deserialize(d)?;
+    Ok(tags_vec_to_set(tags))
+  }
+}
+
 fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
   if matches!(value, Edn::Nil) {
     return Ok(DYNAMIC_TYPE.clone());
@@ -357,11 +392,86 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     })
 }
 
+fn tags_vec_to_set(tags: Vec<String>) -> HashSet<EdnTag> {
+  tags.into_iter().map(|tag| EdnTag::new(tag.trim_start_matches(':'))).collect()
+}
+
+fn tags_set_to_vec(tags: &HashSet<EdnTag>) -> Vec<String> {
+  let mut items: Vec<String> = tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect();
+  items.sort();
+  items
+}
+
+pub fn parse_code_entry_tags_from_edn(value: &Edn) -> Result<HashSet<EdnTag>, String> {
+  match value {
+    Edn::Set(set) => {
+      let mut tags = HashSet::with_capacity(set.0.len());
+      for item in &set.0 {
+        match item {
+          Edn::Tag(tag) => {
+            tags.insert(tag.clone());
+          }
+          other => {
+            return Err(format!("CodeEntry.tags expects tag items, got: {}", format_edn_preview(other)));
+          }
+        }
+      }
+      Ok(tags)
+    }
+    other => Err(format!("CodeEntry.tags expects a hashset, got: {}", format_edn_preview(other))),
+  }
+}
+
+fn tags_to_edn(tags: &HashSet<EdnTag>) -> Edn {
+  #[allow(clippy::mutable_key_type)]
+  let items: HashSet<Edn> = tags.iter().map(|tag| Edn::Tag(tag.clone())).collect();
+  Edn::Set(EdnSetView(items))
+}
+
+/// Convert a loaded definition schema annotation into snapshot-style EDN.
+pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
+  match schema {
+    CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
+    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
+    // `:struct`/`:enum`/`:trait`/`:impl`/`:record` shorthand tags round-trip through
+    // `Custom(Arc<Calcit>)` when loaded (see `CalcitTypeAnnotation::from_tag_name`).
+    // Coerce the wrapped tag back into its EDN tag on write instead of falling
+    // through to `builtin_tag_name` (which doesn't know about `Custom` and would
+    // silently degrade the schema to `:dynamic`, losing the original kind).
+    CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
+      Calcit::Tag(tag) => Edn::Tag(tag.clone()),
+      _ => Edn::tag("dynamic"),
+    },
+    CalcitTypeAnnotation::Record(_) => Edn::tag("record"),
+    CalcitTypeAnnotation::Struct(..) => Edn::tag("struct"),
+    CalcitTypeAnnotation::Enum(..) => Edn::tag("enum"),
+    CalcitTypeAnnotation::Trait(_) => Edn::tag("trait"),
+    other => other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic")),
+  }
+}
+
+fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
+  let schema = normalize_schema_for_code(&data.code, &data.schema);
+  let schema_edn = schema_annotation_to_edn(schema.as_ref());
+  let mut pairs = vec![
+    ("doc".into(), data.doc.to_owned().into()),
+    ("examples".into(), data.examples.to_owned().into()),
+    ("code".into(), data.code.to_owned().into()),
+    ("schema".into(), schema_edn),
+  ];
+  if !data.tags.is_empty() {
+    pairs.insert(2, ("tags".into(), tags_to_edn(&data.tags)));
+  }
+  pairs
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default, with = "tags_serde")]
+  pub tags: HashSet<EdnTag>,
   pub code: Cirru,
   #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
   pub schema: Arc<CalcitTypeAnnotation>,
@@ -372,6 +482,7 @@ impl TryFrom<Edn> for CodeEntry {
   fn try_from(data: Edn) -> Result<Self, String> {
     let mut doc = String::new();
     let mut examples: Vec<Cirru> = vec![];
+    let mut tags: HashSet<EdnTag> = HashSet::new();
     let mut code: Option<Cirru> = None;
     let mut schema: Arc<CalcitTypeAnnotation> = DYNAMIC_TYPE.clone();
 
@@ -380,18 +491,24 @@ impl TryFrom<Edn> for CodeEntry {
         for (key, value) in &record.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
-              doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.doc: {e}"))?;
+              doc = from_edn(value.to_owned())
+                .map_err(|e| format!("failed to parse CodeEntry.doc: {}", format_deserialize_error(&e, value)))?;
             }
             "examples" => {
-              examples = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.examples: {e}"))?;
+              examples = from_edn(value.to_owned())
+                .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
+            }
+            "tags" => {
+              tags = parse_code_entry_tags_from_edn(value)?;
             }
             "code" => {
-              code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.code: {e}"))?);
+              code = Some(
+                from_edn(value.to_owned())
+                  .map_err(|e| format!("failed to parse CodeEntry.code: {}", format_deserialize_error(&e, value)))?,
+              );
             }
-            "schema" => {
-              if !matches!(value, Edn::Nil) {
-                schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
-              }
+            "schema" if !matches!(value, Edn::Nil) => {
+              schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
             }
             _ => {}
           }
@@ -399,13 +516,21 @@ impl TryFrom<Edn> for CodeEntry {
       }
       Edn::Map(map) => {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("doc"))) {
-          doc = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.doc: {e}"))?;
+          doc = from_edn(value.to_owned())
+            .map_err(|e| format!("failed to parse CodeEntry.doc: {}", format_deserialize_error(&e, value)))?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("examples"))) {
-          examples = from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.examples: {e}"))?;
+          examples = from_edn(value.to_owned())
+            .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("tags"))) {
+          tags = parse_code_entry_tags_from_edn(value)?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("code"))) {
-          code = Some(from_edn(value.to_owned()).map_err(|e| format!("failed to parse CodeEntry.code: {e}"))?);
+          code = Some(
+            from_edn(value.to_owned())
+              .map_err(|e| format!("failed to parse CodeEntry.code: {}", format_deserialize_error(&e, value)))?,
+          );
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("schema")))
           && !matches!(value, Edn::Nil)
@@ -414,7 +539,10 @@ impl TryFrom<Edn> for CodeEntry {
         }
       }
       other => {
-        return Err(format!("failed to parse CodeEntry: expected record/map, got: {other:?}"));
+        return Err(format!(
+          "failed to parse CodeEntry: expected record/map, got: {}",
+          format_edn_display(&other)
+        ));
       }
     }
 
@@ -424,6 +552,7 @@ impl TryFrom<Edn> for CodeEntry {
     Ok(CodeEntry {
       doc,
       examples,
+      tags,
       code,
       schema,
     })
@@ -544,17 +673,17 @@ fn parse_schema_cirru_from_edn(value: &Edn) -> Result<Cirru, String> {
 }
 
 pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
-  if let Cirru::List(items) = schema {
-    if let Some(Cirru::Leaf(head)) = items.first() {
-      if &**head == ":optional" {
-        if items.len() != 2 {
-          return Err("schema `:optional` expects exactly one payload".to_owned());
-        }
-        return parse_schema_data(&items[1]);
+  if let Cirru::List(items) = schema
+    && let Some(Cirru::Leaf(head)) = items.first()
+  {
+    if &**head == ":optional" {
+      if items.len() != 2 {
+        return Err("schema `:optional` expects exactly one payload".to_owned());
       }
-      if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
-        return parse_schema_data(&items[2]);
-      }
+      return parse_schema_data(&items[1]);
+    }
+    if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
+      return parse_schema_data(&items[2]);
     }
   }
 
@@ -572,14 +701,79 @@ pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
 /// `cr edit format` normalises old quote-wrapped schemas to this format.
 /// Returns `Edn::Nil` if conversion fails (should not happen for valid schemas).
 pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
-  let text = match cirru_parser::format(&[schema], true.into()) {
-    Ok(t) => t,
-    Err(_) => return Edn::Nil,
-  };
-  match cirru_edn::parse(&text) {
-    Ok(edn) => edn,
-    Err(_) => Edn::Nil,
+  fn cirru_schema_to_edn(node: &Cirru) -> Option<Edn> {
+    match node {
+      Cirru::Leaf(text) => {
+        let value = text.as_ref();
+        if let Some(stripped) = value.strip_prefix(':') {
+          Some(Edn::Tag(EdnTag::new(stripped)))
+        } else if let Some(stripped) = value.strip_prefix('\'') {
+          Some(Edn::Symbol(Arc::from(stripped)))
+        } else if let Some(stripped) = value.strip_prefix('|') {
+          Some(Edn::str(stripped))
+        } else {
+          Some(Edn::Symbol(text.clone()))
+        }
+      }
+      Cirru::List(items) => match items.first() {
+        Some(Cirru::Leaf(head)) if head.as_ref() == "quote" && items.len() == 2 => match items.get(1) {
+          Some(Cirru::Leaf(name)) => Some(Edn::Symbol(name.clone())),
+          _ => None,
+        },
+        Some(Cirru::Leaf(head)) if head.as_ref() == "{}" => {
+          let mut map = EdnMapView::default();
+          for pair in items.iter().skip(1) {
+            let Cirru::List(xs) = pair else {
+              return None;
+            };
+            if xs.len() < 2 {
+              return None;
+            }
+            let key = cirru_schema_to_edn(&xs[0])?;
+            let value_node = if xs.len() == 2 {
+              xs[1].clone()
+            } else {
+              Cirru::List(xs.iter().skip(1).cloned().collect())
+            };
+            let value = cirru_schema_to_edn(&value_node)?;
+            map.insert(key, value);
+          }
+          Some(Edn::Map(map))
+        }
+        Some(Cirru::Leaf(head)) if head.as_ref() == "[]" => {
+          let values: Option<Vec<Edn>> = items.iter().skip(1).map(cirru_schema_to_edn).collect();
+          values.map(|xs| Edn::List(cirru_edn::EdnListView(xs)))
+        }
+        Some(Cirru::Leaf(head)) if head.as_ref() == "#{}" => {
+          let values: Option<Vec<Edn>> = items.iter().skip(1).map(cirru_schema_to_edn).collect();
+          values.map(|xs| {
+            let mut set = EdnSetView::default();
+            for item in xs {
+              set.insert(item);
+            }
+            Edn::Set(set)
+          })
+        }
+        Some(Cirru::Leaf(head)) if head.as_ref() == "::" && items.len() >= 2 => {
+          let tag = cirru_schema_to_edn(&items[1])?;
+          let extra: Option<Vec<Edn>> = items.iter().skip(2).map(cirru_schema_to_edn).collect();
+          extra.map(|xs| {
+            Edn::Tuple(cirru_edn::EdnTupleView {
+              tag: Arc::new(tag),
+              enum_tag: None,
+              extra: xs,
+            })
+          })
+        }
+        _ => {
+          let values: Option<Vec<Edn>> = items.iter().map(cirru_schema_to_edn).collect();
+          values.map(|xs| Edn::List(cirru_edn::EdnListView(xs)))
+        }
+      },
+    }
   }
+
+  cirru_schema_to_edn(&schema).unwrap_or(Edn::Nil)
 }
 
 fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnotation>) -> Result<(), String> {
@@ -652,7 +846,7 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
 }
 
 /// Valid top-level field names accepted in a schema map.
-pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics"];
+pub const VALID_SCHEMA_FIELDS: &[&str] = &[":kind", ":args", ":return", ":rest", ":generics", ":where", ":features"];
 
 /// Recursively check a Cirru schema tree for deprecated `:nil` type annotations.
 fn check_no_nil_type(node: &Cirru) -> Result<(), String> {
@@ -704,13 +898,12 @@ fn check_no_excess_quotes(node: &Cirru) -> Result<(), String> {
 /// i.e. the source form `'T` parses to `(quote T)`.
 fn collect_type_vars(node: &Cirru, out: &mut HashSet<String>) {
   if let Cirru::List(items) = node {
-    if items.len() == 2 {
-      if let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1)) {
-        if head.as_ref() == "quote" {
-          out.insert(name.to_string());
-          return;
-        }
-      }
+    if items.len() == 2
+      && let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1))
+      && head.as_ref() == "quote"
+    {
+      out.insert(name.to_string());
+      return;
     }
     for item in items.iter() {
       collect_type_vars(item, out);
@@ -737,7 +930,8 @@ fn parse_generics_vars(node: &Cirru) -> HashSet<String> {
 
 /// Allowed primitive tag types usable as a bare leaf schema (e.g. `:string`, `:number`).
 pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
-  "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit",
+  "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit", "record",
+  "struct", "enum", "trait", "impl",
 ];
 
 /// Strict validation for schemas submitted via `cr edit schema`.
@@ -805,7 +999,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut has_kind = wrapped_kind.is_some();
   for pair in items.iter().skip(1) {
     let Cirru::List(xs) = pair else {
-      let text = cirru_parser::format(&[pair.clone()], true.into()).unwrap_or_else(|_| format!("{pair:?}"));
+      let text = cirru_parser::format(std::slice::from_ref(pair), true.into()).unwrap_or_else(|_| format!("{pair:?}"));
       return Err(format!("Each schema field must be a `(:key val)` pair list, got: {text}"));
     };
 
@@ -857,17 +1051,21 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut args_node: Option<&Cirru> = None;
   let mut return_node: Option<&Cirru> = None;
   let mut rest_node: Option<&Cirru> = None;
+  let mut where_node: Option<&Cirru> = None;
+  let mut features_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
-    if let Cirru::List(xs) = pair {
-      if let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1)) {
-        match key.as_ref() {
-          ":generics" => generics_node = Some(val),
-          ":args" => args_node = Some(val),
-          ":return" => return_node = Some(val),
-          ":rest" => rest_node = Some(val),
-          _ => {}
-        }
+    if let Cirru::List(xs) = pair
+      && let (Some(Cirru::Leaf(key)), Some(val)) = (xs.first(), xs.get(1))
+    {
+      match key.as_ref() {
+        ":generics" => generics_node = Some(val),
+        ":args" => args_node = Some(val),
+        ":return" => return_node = Some(val),
+        ":rest" => rest_node = Some(val),
+        ":where" => where_node = Some(val),
+        ":features" => features_node = Some(val),
+        _ => {}
       }
     }
   }
@@ -884,6 +1082,9 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       collect_type_vars(node, &mut used);
     }
     if let Some(node) = rest_node {
+      collect_type_vars(node, &mut used);
+    }
+    if let Some(node) = where_node {
       collect_type_vars(node, &mut used);
     }
 
@@ -916,8 +1117,34 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     if let Some(node) = rest_node {
       collect_type_vars(node, &mut used);
     }
+    if let Some(node) = where_node {
+      collect_type_vars(node, &mut used);
+    }
     if let Some(var) = used.iter().next() {
       return Err(format!("Type variable `'{var}` is used but no `:generics` field is declared."));
+    }
+  }
+
+  // Validate :features value — must be a hashset of tags
+  if let Some(features_val) = features_node {
+    match features_val {
+      Cirru::List(items) => {
+        // Check it's a hashset: `(#{} tag1 tag2 ...)`
+        let Some(Cirru::Leaf(first)) = items.first() else {
+          return Err("`:features` must be a hashset like `(#{} :tag1 :tag2)`".to_owned());
+        };
+        if first.as_ref() != "#{}" {
+          return Err("`:features` must be a hashset like `(#{} :tag1 :tag2)`".to_owned());
+        }
+        for item in items.iter().skip(1) {
+          if !matches!(item, Cirru::Leaf(_)) {
+            return Err("`:features` hashset items must be simple leaf tags".to_owned());
+          }
+        }
+      }
+      _ => {
+        return Err("`:features` must be a hashset like `(#{} :tag1 :tag2)`".to_owned());
+      }
     }
   }
 
@@ -926,47 +1153,13 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
 impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
-    let schema = normalize_schema_for_code(&data.code, &data.schema);
-    let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-      other => {
-        // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
-      }
-    };
-    Edn::record_from_pairs(
-      "CodeEntry".into(),
-      &[
-        ("doc".into(), data.doc.into()),
-        ("examples".into(), data.examples.into()),
-        ("code".into(), data.code.into()),
-        ("schema".into(), schema_edn),
-      ],
-    )
+    Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(&data))
   }
 }
 
 impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
-    let schema = normalize_schema_for_code(&data.code, &data.schema);
-    let schema_edn: Edn = match schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-      other => {
-        // Primitive type tag schema (e.g. :string, :number) — serialize as plain EDN tag.
-        other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic"))
-      }
-    };
-    Edn::record_from_pairs(
-      "CodeEntry".into(),
-      &[
-        ("doc".into(), data.doc.to_owned().into()),
-        ("examples".into(), data.examples.to_owned().into()),
-        ("code".into(), data.code.to_owned().into()),
-        ("schema".into(), schema_edn),
-      ],
-    )
+    Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(data))
   }
 }
 
@@ -975,6 +1168,7 @@ impl CodeEntry {
     CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code,
       schema: DYNAMIC_TYPE.clone(),
     }
@@ -996,10 +1190,12 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
 
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     generics: fn_annot.generics.clone(),
+    where_bounds: fn_annot.where_bounds.clone(),
     arg_types: fn_annot.arg_types.clone(),
     return_type: fn_annot.return_type.clone(),
     fn_kind: SchemaKind::Macro,
     rest_type: fn_annot.rest_type.clone(),
+    features: fn_annot.features.clone(),
   })))
 }
 
@@ -1237,6 +1433,30 @@ impl Default for Snapshot {
   }
 }
 
+/// Keywords that introduce a named top-level definition in Calcit.
+/// When a snippet contains multiple such forms, each is extracted as its own
+/// `CodeEntry` so the type-checker can inspect them individually (no-run mode).
+const TOP_LEVEL_DEF_HEADS: &[&str] = &[
+  "def",
+  "defn",
+  "defcomp",
+  "defeffect",
+  "defatom",
+  "defstruct",
+  "defenum",
+  "defmacro",
+  "defrecord",
+];
+
+/// Extract the binding name from a top-level definition form.
+/// Returns `Some(name)` for recognised `(def name ...)` / `(defn name args ...)` etc.
+fn extract_def_name(items: &[Cirru]) -> Option<&str> {
+  match (items.first(), items.get(1)) {
+    (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) if TOP_LEVEL_DEF_HEADS.contains(&head.as_ref()) => Some(name.as_ref()),
+    _ => None,
+  }
+}
+
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
@@ -1255,16 +1475,48 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         body_start = 1;
       }
 
-      let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(2);
-      let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
-      for line in lines.into_iter().skip(body_start) {
-        func_code.push(line.to_owned());
+      let body_lines: Vec<Cirru> = lines.into_iter().skip(body_start).collect();
+
+      // If every body line is a top-level definition (def/defn/defcomp/…), promote
+      // each to its own CodeEntry.  This lets the type-checker handle multi-def
+      // snippets that appear in documentation (no-run mode).
+      let all_top_level = !body_lines.is_empty()
+        && body_lines.iter().all(|line| {
+          if let Cirru::List(items) = line {
+            extract_def_name(items).is_some()
+          } else {
+            false
+          }
+        });
+
+      let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(body_lines.len() + 2);
+
+      if all_top_level {
+        for line in &body_lines {
+          if let Cirru::List(items) = line
+            && let Some(name) = extract_def_name(items)
+          {
+            def_dict.insert(name.to_owned(), CodeEntry::from_code(line.clone()));
+          }
+        }
+        // Each def is registered as its own CodeEntry so the type-checker can
+        // analyse multi-def snippets individually.  A no-op main! is still
+        // required so run_eval_in_process (Run mode) can find the entry point.
+      } else {
+        let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
+        for line in body_lines {
+          func_code.push(line);
+        }
+        def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
       }
-      def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
-      def_dict.insert(
-        "reload!".into(),
-        CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()),
-      );
+
+      def_dict
+        .entry("main!".to_string())
+        .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])].into()));
+      def_dict
+        .entry("reload!".to_string())
+        .or_insert_with(|| CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()));
+
       Ok(FileInSnapShot {
         ns: NsEntry {
           doc: "".to_owned(),
@@ -1594,6 +1846,7 @@ mod tests {
         Cirru::List(vec![Cirru::leaf("+"), Cirru::leaf("a"), Cirru::leaf("b")]),
       ]),
       examples,
+      tags: HashSet::new(),
       schema: {
         let schema_edn = schema_cirru_to_edn(Cirru::List(vec![
           Cirru::leaf("{}"),
@@ -1637,6 +1890,40 @@ mod tests {
   }
 
   #[test]
+  fn test_code_entry_tags_field_defaults_and_round_trip() {
+    let entry_edn = Edn::record_from_pairs(
+      "CodeEntry".into(),
+      &[
+        ("doc".into(), Edn::str("tagged def")),
+        ("examples".into(), Edn::List(EdnListView(vec![]))),
+        ("code".into(), Cirru::leaf("x").into()),
+        ("schema".into(), Edn::tag("dynamic")),
+      ],
+    );
+    let parsed: CodeEntry = entry_edn.try_into().expect("missing tags should default to empty set");
+    assert!(parsed.tags.is_empty());
+
+    let mut tagged = parsed.clone();
+    tagged.tags.insert(EdnTag::new("smoke"));
+    tagged.tags.insert(EdnTag::new("doc"));
+
+    let serialized = Edn::from(&tagged);
+    let Edn::Record(record) = &serialized else {
+      panic!("expected CodeEntry record");
+    };
+    assert!(record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
+
+    let reloaded: CodeEntry = serialized.try_into().expect("tags should round-trip");
+    assert_eq!(reloaded.tags, tagged.tags);
+
+    let empty_serialized = Edn::from(&parsed);
+    let Edn::Record(empty_record) = &empty_serialized else {
+      panic!("expected CodeEntry record");
+    };
+    assert!(!empty_record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
+  }
+
+  #[test]
   fn test_parse_schema_data_valid_and_invalid() {
     let valid = Cirru::List(vec![
       Cirru::leaf("{}"),
@@ -1677,6 +1964,17 @@ mod tests {
       Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":bool")]),
     ]);
     assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
+
+    let valid_with_where =
+      cirru_parser::parse("{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)")
+        .expect("schema should parse")
+        .into_iter()
+        .next()
+        .expect("schema should have one node");
+    assert!(
+      validate_schema_for_write(&valid_with_where).is_ok(),
+      "schema with :where should pass"
+    );
 
     let wrapped_macro = Cirru::List(vec![
       Cirru::leaf("::"),
@@ -1724,6 +2022,16 @@ mod tests {
     assert!(validate_schema_for_write(&leaf_fn).is_ok(), ":fn leaf should pass");
     let leaf_number = Cirru::Leaf(Arc::from(":number"));
     assert!(validate_schema_for_write(&leaf_number).is_ok(), ":number leaf should pass");
+    let leaf_trait = Cirru::Leaf(Arc::from(":trait"));
+    assert!(validate_schema_for_write(&leaf_trait).is_ok(), ":trait leaf should pass");
+    let leaf_enum = Cirru::Leaf(Arc::from(":enum"));
+    assert!(validate_schema_for_write(&leaf_enum).is_ok(), ":enum leaf should pass");
+    let leaf_record = Cirru::Leaf(Arc::from(":record"));
+    assert!(validate_schema_for_write(&leaf_record).is_ok(), ":record leaf should pass");
+    let leaf_struct = Cirru::Leaf(Arc::from(":struct"));
+    assert!(validate_schema_for_write(&leaf_struct).is_ok(), ":struct leaf should pass");
+    let leaf_impl = Cirru::Leaf(Arc::from(":impl"));
+    assert!(validate_schema_for_write(&leaf_impl).is_ok(), ":impl leaf should pass");
 
     // Unknown leaf (not a known primitive type) must still fail.
     let leaf_unknown = Cirru::Leaf(Arc::from(":not-a-type"));
@@ -1864,6 +2172,35 @@ mod tests {
     assert!(
       !saved_text.contains("''T"),
       "saved schema must not contain double-leading-quote generics: {saved_text}"
+    );
+  }
+
+  #[test]
+  fn test_schema_where_round_trip_is_preserved() {
+    let schema_text = "{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)";
+    let schema_cirru = cirru_parser::parse(schema_text)
+      .expect("should parse")
+      .into_iter()
+      .next()
+      .expect("should have one node");
+
+    validate_schema_for_write(&schema_cirru).expect("schema with where should be writable");
+
+    let schema_edn = schema_cirru_to_edn(schema_cirru);
+    let fn_schema =
+      CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn).unwrap_or_else(|| panic!("must parse where schema: {schema_edn:?}"));
+    assert_eq!(fn_schema.where_bounds.len(), 1, "schema_edn={schema_edn:?}");
+    assert_eq!(fn_schema.where_bounds[0].name.as_ref(), "T");
+    assert_eq!(fn_schema.where_bounds[0].traits[0].name.ref_str(), "Show");
+
+    let saved_edn = fn_schema.to_schema_edn();
+    let saved_cirru = schema_edn_to_cirru(&saved_edn).expect("schema edn to cirru");
+    validate_schema_for_write(&saved_cirru).expect("saved where schema should still be writable");
+    let saved_text = cirru_parser::format(&[saved_cirru], true.into()).expect("format schema");
+    assert!(saved_text.contains(":where"), "saved schema should keep :where: {saved_text}");
+    assert!(
+      saved_text.contains("Show"),
+      "saved schema should keep trait bound payload: {saved_text}"
     );
   }
 
@@ -2024,6 +2361,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "test fn".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defmacro", "test-fn", "(a b)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(fn_schema))),
     };
@@ -2038,8 +2376,8 @@ mod tests {
       "macro schema should use wrapped :macro tag: {cirru_text}"
     );
     assert!(
-      !cirru_text.contains(":return"),
-      "macro schema should omit redundant return field during serialization: {cirru_text}"
+      cirru_text.contains(":return :bool"),
+      "macro schema should preserve non-dynamic return field during serialization: {cirru_text}"
     );
     let parsed_edn = cirru_edn::parse(&cirru_text).expect("parse should succeed");
 
@@ -2067,13 +2405,16 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped schema".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),
+        where_bounds: std::sync::Arc::new(vec![]),
         arg_types: vec![],
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
+        features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
     };
 
@@ -2108,13 +2449,16 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped macro schema".to_owned(),
       examples: vec![],
+      tags: HashSet::new(),
       code: vec!["defmacro", "wrapped", "(& body)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         generics: std::sync::Arc::new(vec![]),
+        where_bounds: std::sync::Arc::new(vec![]),
         arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
         return_type: crate::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Macro,
         rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
+        features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
     };
 
@@ -2142,6 +2486,48 @@ mod tests {
     );
     assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit redundant return");
     assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
+  }
+
+  #[test]
+  fn test_code_entry_serializes_macro_non_dynamic_return() {
+    use crate::calcit::SchemaKind;
+
+    let entry = CodeEntry {
+      doc: "wrapped macro schema".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: vec!["defmacro", "wrapped", "(x)", "x"].into(),
+      schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+        generics: std::sync::Arc::new(vec![]),
+        where_bounds: std::sync::Arc::new(vec![]),
+        arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
+        return_type: std::sync::Arc::new(CalcitTypeAnnotation::Custom(std::sync::Arc::new(crate::calcit::Calcit::tag(
+          "record",
+        )))),
+        fn_kind: SchemaKind::Macro,
+        rest_type: None,
+        features: std::sync::Arc::new(std::collections::HashSet::new()),
+      }))),
+    };
+
+    let entry_edn: Edn = Edn::from(&entry);
+    let schema = match entry_edn {
+      Edn::Record(record) => record
+        .pairs
+        .iter()
+        .find(|(k, _)| k.arc_str().as_ref() == "schema")
+        .map(|(_, v)| v.to_owned())
+        .expect("schema field should exist"),
+      _ => panic!("expected record edn"),
+    };
+
+    let Edn::Tuple(view) = schema else {
+      panic!("top-level schema should serialize as wrapped macro tuple");
+    };
+    let Some(Edn::Map(map)) = view.extra.first() else {
+      panic!("wrapped schema payload should be a map");
+    };
+    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "record"));
   }
 
   #[test]
@@ -2298,6 +2684,24 @@ mod tests {
   }
 
   #[test]
+  fn test_custom_kind_schema_tags_round_trip_instead_of_degrading_to_dynamic() {
+    // Regression test: `:struct`/`:enum`/`:trait`/`:impl`/`:record` shorthand tags load
+    // into `CalcitTypeAnnotation::Custom(Arc<Calcit>)` (see `from_tag_name`). Any file
+    // save previously coerced these back through `builtin_tag_name`, which doesn't know
+    // about `Custom` and silently fell back to `:dynamic`, destroying the original kind
+    // on every unrelated `cr edit`/`cr tree` write to the containing file.
+    for kind in ["struct", "enum", "trait", "impl", "record"] {
+      let schema = CalcitTypeAnnotation::from_tag_name(kind);
+      let edn = schema_annotation_to_edn(&schema);
+      assert_eq!(
+        edn,
+        Edn::tag(kind),
+        "schema kind `:{kind}` must round-trip, not degrade to :dynamic"
+      );
+    }
+  }
+
+  #[test]
   fn test_validate_serialized_snapshot_content_rejects_double_quoted_generics() {
     let content = r#"{} (:package |mini)
   :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version |0.0.0)
@@ -2344,5 +2748,29 @@ mod tests {
       err.contains(":configs (:version ...)") || err.contains("got ||"),
       "unexpected error: {err}"
     );
+  }
+
+  #[test]
+  fn create_file_from_snippet_promotes_top_level_defs() {
+    let raw = r#"ns app.demo
+  :require
+    respo.core :refer $ div
+
+def style-space $ {}
+  :width "|1px"
+
+defn compute (w h)
+  + w h
+
+defcomp comp-space (w h)
+  div $ {}
+"#;
+    let file = create_file_from_snippet(raw).expect("snippet should parse");
+    assert!(file.defs.contains_key("style-space"));
+    assert!(file.defs.contains_key("compute"));
+    assert!(file.defs.contains_key("comp-space"));
+    // main! and reload! are always injected as no-op entry points
+    assert!(file.defs.contains_key("main!"));
+    assert!(file.defs.contains_key("reload!"));
   }
 }

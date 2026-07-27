@@ -10,8 +10,9 @@ aliases:
   - "caps"
 entry_for:
   - "caps install"
-  - "cr libs scan-md"
+  - "cr docs remote-libs scan-md"
 ---
+
 # Modules directory
 
 Packages are managed with `caps` command, which wraps `git clone` and `git pull` to manage modules.

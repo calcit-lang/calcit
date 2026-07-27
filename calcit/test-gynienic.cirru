@@ -6,7 +6,7 @@
   :files $ {}
     |test-gynienic.lib $ %{} :FileEntry
       :defs $ {}
-        |add-11 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |add-11 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defmacro add-11 (a b)
               let
@@ -26,11 +26,11 @@
         :code $ quote (:ns test-gynienic.lib)
     |test-gynienic.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
-        |try-hygienic $ %{} :CodeEntry (:doc |) (:schema nil)
+        |try-hygienic $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn try-hygienic () (println "|Testing gynienic")
               let

@@ -4,21 +4,23 @@
 //! Shared by: cr tree - fine-grained tree operations (replace, insert, delete, swap, wrap)
 //!
 //! Supports code input via:
-//! - `--file <path>` - read from file
-//! - `--json <string>` - inline JSON string
-//! - `--code <string>` - inline Cirru string
+//! - `--file <path>` - read from file (auto-detects JSON vs Cirru)
+//! - `--code <string>` - inline text (auto-detects JSON vs Cirru)
+//! - stdin - pipe or redirect input (auto-detects JSON vs Cirru)
 
 use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
-  EditDefCommand, EditDocCommand, EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
-  EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand,
-  EditRmModuleCommand, EditRmNsCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand,
+  EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
+  EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand,
+  EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
+  EditSplitDefCommand, EditSubcommand, EditTagsCommand,
 };
+use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
   validate_schema_for_write,
 };
+use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 use colored::Colorize;
 use semver::Version;
@@ -27,8 +29,8 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block, read_code_input,
-  resolve_definition_lookup,
+  ERR_CODE_INPUT_REQUIRED, format_path, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block,
+  read_code_input, resolve_definition_lookup,
 };
 use super::tips::{Tips, command_guidance_enabled};
 
@@ -76,15 +78,13 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
     EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
+    EditSubcommand::Tags(opts) => handle_tags(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
     EditSubcommand::Imports(opts) => handle_imports(opts, snapshot_file),
     EditSubcommand::AddImport(opts) => handle_add_import(opts, snapshot_file),
     EditSubcommand::RmImport(opts) => handle_rm_import(opts, snapshot_file),
     EditSubcommand::NsDoc(opts) => handle_ns_doc(opts, snapshot_file),
-    EditSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
-    EditSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
-    EditSubcommand::Config(opts) => handle_config(opts, snapshot_file),
     EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
   }
 }
@@ -141,10 +141,9 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let auto_json = opts.code.is_some();
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let syntax_tree = parse_input_to_cirru(&raw)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -178,24 +177,36 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   let resolved_definition = lookup.as_ref().map(|it| it.resolved.as_str()).unwrap_or(definition);
 
   let exists = file_data.defs.contains_key(resolved_definition);
+  let previous_entry = if exists {
+    file_data.defs.get(resolved_definition).cloned()
+  } else {
+    None
+  };
+  let existing_edit_advice = previous_entry
+    .as_ref()
+    .and_then(|entry| format_existing_definition_advice(namespace, resolved_definition, &entry.code, &syntax_tree));
+
+  if opts.overwrite
+    && let Some(advice) = existing_edit_advice.as_deref()
+  {
+    print_cli_warning_block(advice);
+  }
 
   if exists && !opts.overwrite {
+    if let Some(advice) = existing_edit_advice.as_deref() {
+      print_cli_warning_block(advice);
+    }
     return Err(format!(
       "Definition '{resolved_definition}' already exists in namespace '{namespace}'.\n\
-       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite -f <file>"
+       Use --overwrite to replace it. For full-definition rewrites, prefer: cr edit def {namespace}/{resolved_definition} --overwrite --file <file>"
     ));
   }
 
   // Create or overwrite definition.
   // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
-  let code_entry = if exists {
-    if let Some(previous_entry) = file_data.defs.get(resolved_definition).cloned() {
-      let mut updated_entry = previous_entry;
-      updated_entry.code = syntax_tree;
-      updated_entry
-    } else {
-      CodeEntry::from_code(syntax_tree)
-    }
+  let code_entry = if let Some(mut updated_entry) = previous_entry {
+    updated_entry.code = syntax_tree;
+    updated_entry
   } else {
     CodeEntry::from_code(syntax_tree)
   };
@@ -243,6 +254,58 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     tips.print();
   }
   Ok(())
+}
+
+fn format_existing_definition_advice(namespace: &str, definition: &str, existing: &Cirru, incoming: &Cirru) -> Option<String> {
+  let advice = analyze_cirru_edit_advice(existing, incoming)?;
+  let changed_nodes = advice.stats.added + advice.stats.removed + advice.stats.modified;
+  let target = format!("{namespace}/{definition}");
+  let mut lines = vec![format!(
+    "Incoming code is {:.0}% structurally similar to the existing definition (changed nodes: ~{} +{} -{}).",
+    advice.similarity * 100.0,
+    advice.stats.modified,
+    advice.stats.added,
+    advice.stats.removed,
+  )];
+
+  match advice.strategy {
+    CirruEditStrategy::Identical => {
+      lines.push("The incoming definition is identical. Prefer skipping the write and inspect the current code first.".to_string());
+      lines.push(format!("Inspect: cr query def '{target}'"));
+    }
+    CirruEditStrategy::Replace => {
+      lines.push("Most differences are replacements. Prefer a local tree edit instead of a full overwrite.".to_string());
+      lines.push(format!(
+        "Try: cr tree search-replace '{target}' --pattern '<leaf>' --code '(quote |<new-leaf>')"
+      ));
+      lines.push(format!("Or: cr tree replace '{target}' --path '<path>' --code '(quote |<code>)'"));
+    }
+    CirruEditStrategy::Insert => {
+      lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
+      lines.push(format!("Try: cr tree insert-before '{target}' -p '<path>' -e '<node>'"));
+      lines.push(format!(
+        "Or: cr tree insert-after '{target}' -p '<path>' -e '<node>' / cr tree append-child '{target}' -p '<path>' -e '<node>'"
+      ));
+    }
+    CirruEditStrategy::Delete => {
+      lines.push("Most differences are removals. Prefer deleting or lifting nodes from the existing tree.".to_string());
+      lines.push(format!("Try: cr tree delete '{target}' -p '<path>'"));
+      lines.push(format!("Or: cr tree raise '{target}' -p '<child-path>'"));
+    }
+    CirruEditStrategy::Rewrite => {
+      lines.push("The trees are still close, but the change mixes insert/remove/replace. Prefer a structural rewrite over a blind full overwrite.".to_string());
+      lines.push(format!("Try: cr tree rewrite '{target}' -p '<path>' --with self=. -e '<code>'"));
+      lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
+    }
+  }
+
+  if advice.strategy != CirruEditStrategy::Identical || changed_nodes > 0 {
+    lines.push(format!(
+      "Locate the smallest path first: cr query search '<keyword>' --filter '{target}' && cr tree show '{target}' --path '<path>'"
+    ));
+  }
+
+  Some(lines.join("\n"))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -763,14 +826,14 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     return Ok(());
   }
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let schema_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let schema_node = parse_input_to_cirru(&raw)?;
   let schema_payload = unwrap_schema_quote_input(schema_node)?;
   let schema_payload = strip_name_field_from_schema(schema_payload);
 
   validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
 
-  // Primitive type tag leaf (e.g. --leaf -e ':string') — store directly without going through fn-schema parsing.
+  // Primitive type tag leaf (e.g. --code '(quote |:string)') — store directly without going through fn-schema parsing.
   if let Cirru::Leaf(tag) = &schema_payload {
     let tag_name = tag.trim_start_matches(':');
     code_entry.schema = Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name));
@@ -839,17 +902,15 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
   }
 
   // Read examples input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Examples input required: use --file, --code, --json, or --clear")?;
+    .ok_or("Examples input required: use --file, --code, or pipe input via stdin")?;
 
-  // Parse examples - expect an array of Cirru expressions
-  let examples: Vec<Cirru> = if opts.leaf {
-    vec![Cirru::Leaf(Arc::from(raw))]
-  } else if opts.json.is_some() || opts.json_input {
+  // Parse examples - auto-detect JSON array vs Cirru text
+  let examples: Vec<Cirru> = if raw.trim().starts_with('[') {
     // Parse as JSON array
-    let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    let json_value: serde_json::Value = serde_json::from_str(raw.trim()).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
       serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
       _ => return Err("Expected JSON array of examples".to_string()),
@@ -897,13 +958,13 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .expect("resolved definition exists");
 
   // Read example input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Example input required: use --file, --code, or --json")?;
+    .ok_or("Example input required: use --file, --code, or pipe via stdin")?;
 
   // Parse example
-  let example: Cirru = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
+  let example: Cirru = parse_input_to_cirru(raw)?;
 
   // Insert at specified position or append
   let position = opts.at.unwrap_or(code_entry.examples.len());
@@ -925,6 +986,115 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     namespace,
     total_count
   );
+
+  Ok(())
+}
+
+fn parse_tag_token(raw: &str) -> Result<EdnTag, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("empty tag".to_string());
+  }
+  let name = trimmed.strip_prefix(':').unwrap_or(trimmed);
+  if name.is_empty() {
+    return Err(format!("invalid tag: {raw}"));
+  }
+  Ok(EdnTag::new(name))
+}
+
+fn parse_tags_csv(raw: &str) -> Result<HashSet<EdnTag>, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Ok(HashSet::new());
+  }
+  let mut tags = HashSet::new();
+  for token in trimmed.split(',') {
+    let piece = token.trim();
+    if piece.is_empty() {
+      return Err("tags must be comma-separated without empty items".to_string());
+    }
+    tags.insert(parse_tag_token(piece)?);
+  }
+  Ok(tags)
+}
+
+fn get_code_entry<'a>(snapshot: &'a Snapshot, namespace: &str, definition: &str) -> Result<(String, &'a CodeEntry), String> {
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+  let code_entry = file_data
+    .defs
+    .get(resolved_definition.as_str())
+    .ok_or_else(|| format!("Definition '{resolved_definition}' not found in namespace '{namespace}'"))?;
+  Ok((resolved_definition, code_entry))
+}
+
+fn get_code_entry_mut<'a>(
+  snapshot: &'a mut Snapshot,
+  namespace: &str,
+  definition: &str,
+) -> Result<(String, &'a mut CodeEntry), String> {
+  check_ns_editable(snapshot, namespace)?;
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+  let code_entry = file_data
+    .defs
+    .get_mut(resolved_definition.as_str())
+    .ok_or_else(|| format!("Definition '{resolved_definition}' not found in namespace '{namespace}'"))?;
+  Ok((resolved_definition, code_entry))
+}
+
+fn format_tags_csv(tags: &HashSet<EdnTag>) -> String {
+  let mut items: Vec<String> = tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect();
+  items.sort();
+  items.join(",")
+}
+
+fn handle_tags(opts: &EditTagsCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  if opts.tags.is_none() {
+    let snapshot = load_snapshot(snapshot_file)?;
+    let (resolved_definition, code_entry) = get_code_entry(&snapshot, namespace, definition)?;
+    let tags_text = format_tags_csv(&code_entry.tags);
+    if tags_text.is_empty() {
+      println!("{namespace}/{resolved_definition}: (none)");
+    } else {
+      println!("{namespace}/{resolved_definition}: {tags_text}");
+    }
+    return Ok(());
+  }
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  let (resolved_definition, code_entry) = get_code_entry_mut(&mut snapshot, namespace, definition)?;
+  let tags = parse_tags_csv(opts.tags.as_deref().unwrap_or(""))?;
+  let cleared = tags.is_empty();
+  let tags_summary = format_tags_csv(&tags);
+  code_entry.tags = tags;
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  if cleared {
+    println!(
+      "{} Cleared tags for '{}' in namespace '{}'",
+      "✓".green(),
+      resolved_definition.cyan(),
+      namespace
+    );
+  } else {
+    println!(
+      "{} Set tags for '{}' in namespace '{}': {tags_summary}",
+      "✓".green(),
+      resolved_definition.cyan(),
+      namespace
+    );
+  }
 
   Ok(())
 }
@@ -1102,23 +1272,25 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
   for (depth, &idx) in path.iter().enumerate() {
     match current {
       Cirru::Leaf(_) => {
-        let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        let partial = format_path(&path[..depth]);
         return Err(format!(
-          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: [{partial_path}]\n   Tip: Use 'cr tree show' to explore the tree structure"
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: {}\n   Tip: Use 'cr tree show --path {}' to explore the tree structure (use dot-separated indices, e.g. '@2.1.0')",
+          format_path(&path[..depth]),
+          partial,
         ));
       }
       Cirru::List(items) => {
         if idx >= items.len() {
-          let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
-          let attempted_path = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+          let partial = format_path(&path[..depth]);
           return Err(format!(
-            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: [{}]\n   Valid path: [{}]\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show' with parent path to see available indices",
+            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: {}\n   Valid path up to: {}\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show --path {}' to see available children",
             idx,
             depth,
             items.len(),
-            attempted_path,
-            partial_path,
-            items.len().saturating_sub(1)
+            format_path(path),
+            format_path(&path[..depth]),
+            items.len().saturating_sub(1),
+            partial,
           ));
         }
         current = &items[idx];
@@ -1144,24 +1316,19 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   }
 
   // Create ns code
-  let auto_json = opts.code.is_some();
-
-  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json)? {
-    let code = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code)? {
+    let code = parse_input_to_cirru(&raw)?;
     // Validate: if input looks like a `ns` expression, the name inside must match
-    if let Cirru::List(ref items) = code {
-      if let Some(Cirru::Leaf(kw)) = items.first() {
-        if kw.as_ref() == "ns" {
-          if let Some(Cirru::Leaf(ns_in_expr)) = items.get(1) {
-            if ns_in_expr.as_ref() != opts.namespace.as_str() {
-              return Err(format!(
-                "Namespace name mismatch: positional argument is '{}' but ns expression contains '{}'. They must be identical.",
-                opts.namespace, ns_in_expr
-              ));
-            }
-          }
-        }
-      }
+    if let Cirru::List(ref items) = code
+      && let Some(Cirru::Leaf(kw)) = items.first()
+      && kw.as_ref() == "ns"
+      && let Some(Cirru::Leaf(ns_in_expr)) = items.get(1)
+      && ns_in_expr.as_ref() != opts.namespace.as_str()
+    {
+      return Err(format!(
+        "Namespace name mismatch: positional argument is '{}' but ns expression contains '{}'. They must be identical.",
+        opts.namespace, ns_in_expr
+      ));
     }
     code
   } else {
@@ -1204,8 +1371,7 @@ fn handle_rm_ns(opts: &EditRmNsCommand, snapshot_file: &str) -> Result<(), Strin
 }
 
 fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Imports input required: use --file, --code, or --json")?;
-  let auto_json = opts.code.is_some();
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or("Imports input required: use --file, --code, or pipe via stdin")?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -1217,13 +1383,12 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     .get_mut(&opts.namespace)
     .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
 
-  // Determine input format: JSON (if requested) or Cirru (default)
-  let imports_json: serde_json::Value = if opts.json.is_some() || opts.json_input {
-    serde_json::from_str(&raw)
-      .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
+  // Determine input format: auto-detect JSON array vs Cirru EDN
+  let imports_json: serde_json::Value = if raw.trim().starts_with('[') {
+    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse imports JSON: {e}"))?
   } else {
     // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+    let cirru_node = parse_input_to_cirru(&raw)?;
     use super::common::cirru_to_json_value;
     cirru_to_json_value(&cirru_node)
   };
@@ -1246,14 +1411,14 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       } else {
         // The whole array is a single import rule (e.g. from `-e 'src-ns :refer $ sym'`)
         // Guard: user may have accidentally included ':require' prefix
-        if let Some(serde_json::Value::String(first_str)) = elems.first() {
-          if first_str == ":require" {
-            return Err(
-              "Do not include ':require' as a prefix in the imports input. \
-               Pass rules directly, e.g. -e 'src-ns :refer $ sym' or use -f for multiple rules."
-                .to_string(),
-            );
-          }
+        if let Some(serde_json::Value::String(first_str)) = elems.first()
+          && first_str == ":require"
+        {
+          return Err(
+            "Do not include ':require' as a prefix in the imports input. \
+               Pass rules directly, e.g. --code 'src-ns :refer $ sym' or use --file for multiple rules."
+              .to_string(),
+          );
         }
         vec![json_value_to_cirru(&imports_json)?]
       }
@@ -1318,12 +1483,11 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     // Parse each added import string to provide tips
     for added_str in &added {
       // Parse the import string back to Cirru to analyze it
-      if let Ok(parsed) = cirru_parser::parse(added_str) {
-        if let Some(rule) = parsed.first() {
-          if let Some(source_ns) = get_require_source_ns(rule) {
-            print_import_usage_tips(rule, &source_ns);
-          }
-        }
+      if let Ok(parsed) = cirru_parser::parse(added_str)
+        && let Some(rule) = parsed.first()
+        && let Some(source_ns) = get_require_source_ns(rule)
+      {
+        print_import_usage_tips(rule, &source_ns);
       }
     }
   }
@@ -1338,11 +1502,11 @@ fn extract_require_list(ns_code: &Cirru) -> Vec<String> {
   if let Cirru::List(items) = ns_code {
     let mut in_require = false;
     for item in items {
-      if let Cirru::Leaf(s) = item {
-        if s.as_ref() == ":require" {
-          in_require = true;
-          continue;
-        }
+      if let Cirru::Leaf(s) = item
+        && s.as_ref() == ":require"
+      {
+        in_require = true;
+        continue;
       }
       if in_require {
         // Format each import as one-liner
@@ -1375,14 +1539,13 @@ fn extract_require_rules(ns_code: &Cirru) -> Vec<Cirru> {
   if let Cirru::List(items) = ns_code {
     for item in items.iter().skip(2) {
       // skip "ns" and namespace name
-      if let Cirru::List(inner) = item {
-        if let Some(Cirru::Leaf(first)) = inner.first() {
-          if first.as_ref() == ":require" {
-            // Found [:require rule1 rule2 ...]
-            rules.extend(inner.iter().skip(1).cloned());
-            break;
-          }
-        }
+      if let Cirru::List(inner) = item
+        && let Some(Cirru::Leaf(first)) = inner.first()
+        && first.as_ref() == ":require"
+      {
+        // Found [:require rule1 rule2 ...]
+        rules.extend(inner.iter().skip(1).cloned());
+        break;
       }
     }
   }
@@ -1404,11 +1567,9 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
 }
 
 fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Import rule input required: use --file, --code, or --json")?;
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or("Import rule input required: use --file, --code, or pipe via stdin")?;
 
-  let auto_json = opts.code.is_some();
-
-  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+  let new_rule = parse_input_to_cirru(&raw)?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =
@@ -1529,59 +1690,20 @@ fn handle_ns_doc(opts: &EditNsDocCommand, snapshot_file: &str) -> Result<(), Str
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Module operations
+// Semver helpers (pub(crate) so cr config can reuse them)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_add_module(opts: &EditAddModuleCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  if snapshot.configs.modules.contains(&opts.module_path) {
-    return Err(format!("Module '{}' already exists in configs", opts.module_path));
-  }
-
-  snapshot.configs.modules.push(opts.module_path.clone());
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{} Added module '{}'", "✓".green(), opts.module_path.cyan());
-
-  Ok(())
-}
-
-fn handle_rm_module(opts: &EditRmModuleCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  let original_len = snapshot.configs.modules.len();
-  snapshot.configs.modules.retain(|m| m != &opts.module_path);
-
-  if snapshot.configs.modules.len() == original_len {
-    return Err(format!("Module '{}' not found in configs", opts.module_path));
-  }
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{} Deleted module '{}'", "✓".green(), opts.module_path.cyan());
-
-  Ok(())
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Config operations
-// ═══════════════════════════════════════════════════════════════════════════════
-
-fn parse_semver_value(v: &str) -> Result<Version, String> {
+pub(crate) fn parse_semver_value(v: &str) -> Result<Version, String> {
   if v.starts_with('|') {
     return Err(format!(
       "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
     ));
   }
-
   Version::parse(v).map_err(|_| format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"))
 }
 
-fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
+pub(crate) fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
   let mut version = parse_semver_value(current)?;
-
   match level {
     "patch" => {
       version.patch += 1;
@@ -1599,57 +1721,9 @@ fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
       return Err(format!("Unknown bump level '{level}'. Valid levels: patch, minor, major"));
     }
   }
-
   version.pre = semver::Prerelease::EMPTY;
   version.build = semver::BuildMetadata::EMPTY;
-
   Ok(version.to_string())
-}
-
-fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  let message = match opts.key.as_str() {
-    "init-fn" | "init_fn" => {
-      snapshot.configs.init_fn = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-    }
-    "reload-fn" | "reload_fn" => {
-      snapshot.configs.reload_fn = opts.value.clone();
-      format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-    }
-    "version" => {
-      let message = if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
-        let previous = snapshot.configs.version.clone();
-        let next = bump_semver_value(&previous, &opts.value)?;
-        snapshot.configs.version = next.clone();
-        format!(
-          "{} Bumped config '{}' from '{}' to '{}'",
-          "✓".green(),
-          "version".cyan(),
-          previous,
-          next
-        )
-      } else {
-        parse_semver_value(&opts.value)?;
-        snapshot.configs.version = opts.value.clone();
-        format!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-      };
-      message
-    }
-    _ => {
-      return Err(format!(
-        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
-        opts.key
-      ));
-    }
-  };
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{message}");
-
-  Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1818,19 +1892,19 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
           }
           ":as" => {
             import_type = Some("as");
-            if i + 1 < items.len() {
-              if let Cirru::Leaf(a) = &items[i + 1] {
-                alias = Some(a.to_string());
-              }
+            if i + 1 < items.len()
+              && let Cirru::Leaf(a) = &items[i + 1]
+            {
+              alias = Some(a.to_string());
             }
             break;
           }
           ":default" => {
             import_type = Some("default");
-            if i + 1 < items.len() {
-              if let Cirru::Leaf(s) = &items[i + 1] {
-                symbols.push(s.to_string());
-              }
+            if i + 1 < items.len()
+              && let Cirru::Leaf(s) = &items[i + 1]
+            {
+              symbols.push(s.to_string());
             }
             break;
           }

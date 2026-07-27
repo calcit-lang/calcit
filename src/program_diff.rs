@@ -82,7 +82,7 @@ impl DiffNode {
   }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProgramDiffStats {
   pub unchanged: usize,
   pub added: usize,
@@ -98,7 +98,23 @@ pub struct ProgramDiffResult {
   pub stats: ProgramDiffStats,
 }
 
-pub fn analyze_program_diff(git_ref: &str, input_path: &str) -> Result<ProgramDiffResult, String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CirruEditStrategy {
+  Identical,
+  Replace,
+  Insert,
+  Delete,
+  Rewrite,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CirruEditAdvice {
+  pub similarity: f64,
+  pub stats: ProgramDiffStats,
+  pub strategy: CirruEditStrategy,
+}
+
+pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &str) -> Result<ProgramDiffResult, String> {
   let cwd = env::current_dir().map_err(|e| format!("Failed to read current directory: {e}"))?;
   let input_abs = resolve_input_path(&cwd, input_path)?;
   let repo_search_dir = input_abs.parent().unwrap_or(cwd.as_path());
@@ -107,22 +123,47 @@ pub fn analyze_program_diff(git_ref: &str, input_path: &str) -> Result<ProgramDi
 
   let snapshot_path = repo_rel_path.to_string_lossy().to_string();
 
-  let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;
-  let current_snapshot = parse_snapshot(&current_content, input_path, &snapshot_path)?;
+  match base_ref {
+    Some(base) => {
+      // Two-ref mode: both sides from git history
+      let base_content = git_show_file(&repo_root, base, &repo_rel_path)?;
+      let base_label = format!("{base}:{}", repo_rel_path.display());
+      let base_snapshot = parse_snapshot(&base_content, &base_label, &snapshot_path)?;
 
-  let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
-  let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
-  let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+      let target_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
+      let target_label = format!("{git_ref}:{}", repo_rel_path.display());
+      let target_snapshot = parse_snapshot(&target_content, &target_label, &snapshot_path)?;
 
-  let root = diff_snapshot(&historical_snapshot, &current_snapshot);
-  let stats = collect_stats(&root);
+      let root = diff_snapshot(&base_snapshot, &target_snapshot);
+      let stats = collect_stats(&root);
 
-  Ok(ProgramDiffResult {
-    git_ref: git_ref.to_string(),
-    file_path: repo_rel_path.to_string_lossy().to_string(),
-    root,
-    stats,
-  })
+      Ok(ProgramDiffResult {
+        git_ref: format!("{base}..{git_ref}"),
+        file_path: repo_rel_path.to_string_lossy().to_string(),
+        root,
+        stats,
+      })
+    }
+    None => {
+      // Single-ref mode: working tree vs git ref (backward-compatible)
+      let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;
+      let current_snapshot = parse_snapshot(&current_content, input_path, &snapshot_path)?;
+
+      let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
+      let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
+      let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+
+      let root = diff_snapshot(&historical_snapshot, &current_snapshot);
+      let stats = collect_stats(&root);
+
+      Ok(ProgramDiffResult {
+        git_ref: git_ref.to_string(),
+        file_path: repo_rel_path.to_string_lossy().to_string(),
+        root,
+        stats,
+      })
+    }
+  }
 }
 
 pub fn format_program_diff(result: &ProgramDiffResult) -> String {
@@ -137,6 +178,111 @@ pub fn format_program_diff(result: &ProgramDiffResult) -> String {
   output.push_str("## Tree Diff\n\n");
   format_tree_node(&result.root, &mut output, "", true, true, true);
   output
+}
+
+pub fn analyze_cirru_edit_advice(old: &Cirru, new: &Cirru) -> Option<CirruEditAdvice> {
+  if old == new {
+    return Some(CirruEditAdvice {
+      similarity: 1.0,
+      stats: ProgramDiffStats::default(),
+      strategy: CirruEditStrategy::Identical,
+    });
+  }
+
+  let similarity = cirru_similarity(old, new);
+  if similarity < 0.58 {
+    return None;
+  }
+
+  let stats = collect_cirru_change_stats(old, new);
+  let total_changed = stats.added + stats.removed + stats.modified;
+  if total_changed == 0 {
+    return Some(CirruEditAdvice {
+      similarity,
+      stats,
+      strategy: CirruEditStrategy::Identical,
+    });
+  }
+
+  let added_ratio = stats.added as f64 / total_changed as f64;
+  let removed_ratio = stats.removed as f64 / total_changed as f64;
+  let modified_ratio = stats.modified as f64 / total_changed as f64;
+  let has_mixed_add_remove = stats.added > 0 && stats.removed > 0;
+  let mixed_change_floor = stats.added.min(stats.removed);
+
+  let strategy = if has_mixed_add_remove && mixed_change_floor >= 3 {
+    CirruEditStrategy::Rewrite
+  } else if modified_ratio >= 0.58 && added_ratio <= 0.22 && removed_ratio <= 0.22 {
+    CirruEditStrategy::Replace
+  } else if added_ratio >= 0.55 && removed_ratio <= 0.10 {
+    CirruEditStrategy::Insert
+  } else if removed_ratio >= 0.55 && added_ratio <= 0.10 {
+    CirruEditStrategy::Delete
+  } else {
+    CirruEditStrategy::Rewrite
+  };
+
+  Some(CirruEditAdvice {
+    similarity,
+    stats,
+    strategy,
+  })
+}
+
+fn collect_cirru_change_stats(old: &Cirru, new: &Cirru) -> ProgramDiffStats {
+  let mut stats = ProgramDiffStats::default();
+  tally_cirru_changes(old, new, &mut stats);
+  stats
+}
+
+fn tally_cirru_changes(old: &Cirru, new: &Cirru, stats: &mut ProgramDiffStats) {
+  if old == new {
+    stats.unchanged += count_cirru_nodes(new);
+    return;
+  }
+
+  match (old, new) {
+    (Cirru::Leaf(_), Cirru::Leaf(_)) => {
+      stats.modified += 1;
+    }
+    (Cirru::List(old_items), Cirru::List(new_items)) => {
+      let edits = align_sequence(old_items, new_items);
+      for edit in edits {
+        match edit {
+          SeqEdit::Match(i, j) => tally_cirru_changes(&old_items[i], &new_items[j], stats),
+          SeqEdit::Replace(i, j) => match (&old_items[i], &new_items[j]) {
+            (Cirru::Leaf(_), Cirru::Leaf(_)) => {
+              stats.modified += 1;
+            }
+            (Cirru::List(_), Cirru::List(_)) if cirru_similarity(&old_items[i], &new_items[j]) >= 0.58 => {
+              tally_cirru_changes(&old_items[i], &new_items[j], stats);
+            }
+            _ => {
+              stats.removed += count_cirru_nodes(&old_items[i]);
+              stats.added += count_cirru_nodes(&new_items[j]);
+            }
+          },
+          SeqEdit::Remove(i) => {
+            stats.removed += count_cirru_nodes(&old_items[i]);
+          }
+          SeqEdit::Insert(j) => {
+            stats.added += count_cirru_nodes(&new_items[j]);
+          }
+        }
+      }
+    }
+    _ => {
+      stats.removed += count_cirru_nodes(old);
+      stats.added += count_cirru_nodes(new);
+    }
+  }
+}
+
+fn count_cirru_nodes(node: &Cirru) -> usize {
+  match node {
+    Cirru::Leaf(_) => 1,
+    Cirru::List(items) => 1 + items.iter().map(count_cirru_nodes).sum::<usize>(),
+  }
 }
 
 pub(crate) fn resolve_input_path(cwd: &Path, input_path: &str) -> Result<PathBuf, String> {
@@ -306,6 +452,7 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
       let children = vec![
         diff_string("doc", Some(old.doc.as_str()), Some(new.doc.as_str())),
         diff_string("schema", Some(&old.schema.to_string()), Some(&new.schema.to_string())),
+        diff_tag_set("tags", &old.tags, &new.tags),
         diff_cirru_list("examples", &old.examples, &new.examples),
         diff_cirru("code", Some(&old.code), Some(&new.code), "0"),
       ];
@@ -331,6 +478,18 @@ fn diff_string(label: &str, old: Option<&str>, new: Option<&str>) -> DiffNode {
 
 fn diff_optional_string(label: &str, old: Option<&str>, new: Option<&str>) -> DiffNode {
   diff_string(label, old, new)
+}
+
+fn diff_tag_set(
+  label: &str,
+  old: &std::collections::HashSet<cirru_edn::EdnTag>,
+  new: &std::collections::HashSet<cirru_edn::EdnTag>,
+) -> DiffNode {
+  let mut old_tags: Vec<String> = old.iter().map(|tag| tag.ref_str().to_string()).collect();
+  let mut new_tags: Vec<String> = new.iter().map(|tag| tag.ref_str().to_string()).collect();
+  old_tags.sort();
+  new_tags.sort();
+  diff_string_list(label, &old_tags, &new_tags)
 }
 
 fn diff_string_list(label: &str, old: &[String], new: &[String]) -> DiffNode {
@@ -439,9 +598,13 @@ fn build_code_entry_tree(label: &str, value: &CodeEntry, status: DiffStatus) -> 
     .map(|(idx, node)| build_cirru_tree(&format!("[{idx}]"), node, status, &idx.to_string()))
     .collect::<Vec<_>>();
 
+  let mut tags: Vec<String> = value.tags.iter().map(|tag| tag.ref_str().to_string()).collect();
+  tags.sort();
+
   DiffNode::new(label, status).with_children(vec![
     DiffNode::new("doc", status).with_detail(render_text(&value.doc)),
     DiffNode::new("schema", status).with_detail(render_text(&value.schema.to_string())),
+    build_string_list_tree("tags", &tags, status),
     DiffNode::new("examples", status).with_children(examples),
     build_cirru_tree("code", &value.code, status, "0"),
   ])
@@ -691,27 +854,27 @@ fn render_context_children(children: &[Cirru], start_index: usize, depth: usize,
     let child_index = start_index + cursor;
     let child = &children[cursor];
 
-    if let Some(text) = child.as_leaf_str() {
-      if !child_starts_expression(child_index, child) {
-        let mut parts = vec![render_cirru_leaf_value(text)];
-        cursor += 1;
+    if let Some(text) = child.as_leaf_str()
+      && !child_starts_expression(child_index, child)
+    {
+      let mut parts = vec![render_cirru_leaf_value(text)];
+      cursor += 1;
 
-        while cursor < children.len() {
-          let sibling_index = start_index + cursor;
-          let sibling = &children[cursor];
-          if !child_starts_expression(sibling_index, sibling) {
-            if let Some(sib_text) = sibling.as_leaf_str() {
-              parts.push(render_cirru_leaf_value(sib_text));
-              cursor += 1;
-              continue;
-            }
-          }
-          break;
+      while cursor < children.len() {
+        let sibling_index = start_index + cursor;
+        let sibling = &children[cursor];
+        if !child_starts_expression(sibling_index, sibling)
+          && let Some(sib_text) = sibling.as_leaf_str()
+        {
+          parts.push(render_cirru_leaf_value(sib_text));
+          cursor += 1;
+          continue;
         }
-
-        lines.push(indent(depth + 1, &format!(", {}", parts.join(" ")).dimmed().to_string()));
-        continue;
+        break;
       }
+
+      lines.push(indent(depth + 1, &format!(", {}", parts.join(" ")).dimmed().to_string()));
+      continue;
     }
 
     lines.extend(render_context_node(
@@ -951,8 +1114,8 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
   for (i, row) in dp.iter_mut().enumerate().take(old_mid.len() + 1) {
     row[0] = i;
   }
-  for j in 0..=new_mid.len() {
-    dp[0][j] = j;
+  for (j, cell) in dp[0].iter_mut().enumerate().take(new_mid.len() + 1) {
+    *cell = j;
   }
 
   for i in 1..=old_mid.len() {
@@ -1010,7 +1173,10 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 
 #[cfg(test)]
 mod tests {
-  use super::{DiffStatus, SeqEdit, align_sequence, cirru_similarity, diff_cirru, render_cirru_diff, render_text};
+  use super::{
+    CirruEditStrategy, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, cirru_similarity, diff_cirru, render_cirru_diff,
+    render_text,
+  };
   use cirru_parser::Cirru;
 
   fn leaf(text: &str) -> Cirru {
@@ -1069,6 +1235,60 @@ mod tests {
     let diff = diff_cirru("code", Some(&old), Some(&new), "0");
     assert_eq!(diff.status, DiffStatus::Modified);
     assert!(diff.body.is_some());
+  }
+
+  #[test]
+  fn classifies_additive_similar_edits_as_insert_strategy() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let new = list(vec![leaf("defn"), leaf("demo"), leaf("x"), leaf("y")]);
+    let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for similar edit");
+    assert_eq!(advice.strategy, CirruEditStrategy::Insert);
+  }
+
+  #[test]
+  fn classifies_leaf_updates_as_replace_strategy() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let new = list(vec![leaf("defn"), leaf("demo"), leaf("y")]);
+    let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for similar edit");
+    assert_eq!(advice.strategy, CirruEditStrategy::Replace);
+  }
+
+  #[test]
+  fn reports_identical_trees() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let advice = analyze_cirru_edit_advice(&old, &old).expect("expected advice for identical trees");
+    assert_eq!(advice.strategy, CirruEditStrategy::Identical);
+  }
+
+  #[test]
+  fn classifies_large_mixed_add_remove_as_rewrite_strategy() {
+    let old = list(vec![
+      leaf("defn"),
+      leaf("main!"),
+      list(vec![]),
+      list(vec![leaf("println"), leaf("|a")]),
+      list(vec![leaf("println"), leaf("|b")]),
+      list(vec![leaf("println"), leaf("|c")]),
+      list(vec![leaf("println"), leaf("|d")]),
+      list(vec![leaf("println"), leaf("|e")]),
+      list(vec![leaf("println"), leaf("|f")]),
+      list(vec![leaf("do"), leaf("true")]),
+    ]);
+    let new = list(vec![
+      leaf("defn"),
+      leaf("main!"),
+      list(vec![]),
+      list(vec![leaf("println"), leaf("|a")]),
+      list(vec![leaf("println"), leaf("|extra-1")]),
+      list(vec![leaf("println"), leaf("|extra-2")]),
+      list(vec![leaf("println"), leaf("|extra-3")]),
+      list(vec![leaf("println"), leaf("|extra-4")]),
+      list(vec![leaf("println"), leaf("|extra-5")]),
+      list(vec![leaf("println"), leaf("|extra-6")]),
+      list(vec![leaf("do"), leaf("true")]),
+    ]);
+    let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for mixed structural edit");
+    assert_eq!(advice.strategy, CirruEditStrategy::Rewrite);
   }
 
   #[test]

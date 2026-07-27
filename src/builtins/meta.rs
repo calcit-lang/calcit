@@ -1,10 +1,10 @@
+use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 use crate::{
   builtins,
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
-    bind_type_slot, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, resolve_type_slot,
-    value_matches_type_annotation,
+    brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -13,8 +13,9 @@ use crate::{
     data_to_calcit,
     edn::{self, edn_to_calcit},
   },
-  runner,
+  program, runner, snapshot,
   util::number::f64_to_usize,
+  util::string::extract_ns_def,
 };
 
 use cirru_edn::EdnTag;
@@ -211,7 +212,7 @@ pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "parse-cirru-list requires a string, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ParseCirruList).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -241,7 +242,7 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "parse-cirru requires a string, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ParseCirru).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -315,7 +316,7 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "parse-cirru-edn requires a string, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ParseCirruEdn).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -357,7 +358,7 @@ pub fn cirru_quote_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&cirru-quote:to-list requires a Cirru quote, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeCirruQuoteToList).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -387,7 +388,10 @@ pub fn turn_symbol(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
     a => {
-      let msg = format!("turn-symbol cannot convert to symbol: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!(
+        "turn-symbol cannot convert to symbol: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      );
       let hint = format_proc_examples_hint(&CalcitProc::TurnSymbol).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -403,7 +407,7 @@ pub fn turn_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Tag(s) => Ok(Calcit::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Calcit::tag(sym)),
     a => {
-      let msg = format!("turn-tag cannot convert to tag: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let msg = format!("turn-tag cannot convert to tag: {}", type_of(std::slice::from_ref(a))?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::TurnTag).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
@@ -453,7 +457,10 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            let msg = format!("%:: requires a tag, but received: {}", type_of(&[other.to_owned()])?.lisp_str());
+            let msg = format!(
+              "%:: requires a tag, but received: {}",
+              type_of(std::slice::from_ref(other))?.lisp_str()
+            );
             let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
@@ -463,6 +470,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Some(variant) => {
             let payload_count = xs.len() - 2;
             let expected_arity = variant.arity();
+            let mut bindings = std::collections::HashMap::new();
             if payload_count != expected_arity {
               return CalcitErr::err_str(
                 CalcitErrKind::Arity,
@@ -487,6 +495,13 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                   ),
                 );
               }
+              collect_runtime_type_bindings(payload, expected_type.as_ref(), &mut bindings);
+            }
+            if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, enum_proto.where_bounds()) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("%:: failed generic where-bound validation for enum `{}`: {msg}", enum_proto.name()),
+              );
             }
           }
           None => {
@@ -511,7 +526,10 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            let msg = format!("%:: requires a tag, but received: {}", type_of(&[other.to_owned()])?.lisp_str());
+            let msg = format!(
+              "%:: requires a tag, but received: {}",
+              type_of(std::slice::from_ref(other))?.lisp_str()
+            );
             let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
@@ -521,6 +539,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Some(variant) => {
             let payload_count = xs.len() - 2;
             let expected_arity = variant.arity();
+            let mut bindings = std::collections::HashMap::new();
             if payload_count != expected_arity {
               return CalcitErr::err_str(
                 CalcitErrKind::Arity,
@@ -545,6 +564,13 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                   ),
                 );
               }
+              collect_runtime_type_bindings(payload, expected_type.as_ref(), &mut bindings);
+            }
+            if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, enum_proto.where_bounds()) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("%:: failed generic where-bound validation for enum `{}`: {msg}", enum_proto.name()),
+              );
             }
           }
           None => {
@@ -583,7 +609,7 @@ pub fn tuple_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&tuple:enum requires a tuple, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleEnum).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -873,7 +899,7 @@ pub fn impl_get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     other => {
       let msg = format!(
         "&impl:get expects method name as tag/string/symbol, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(other))?.lisp_str()
       );
       return CalcitErr::err_str(CalcitErrKind::Type, msg);
     }
@@ -900,7 +926,7 @@ pub fn impl_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     other => {
       let msg = format!(
         "&impl:nth expects a non-negative integer index, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(other))?.lisp_str()
       );
       return CalcitErr::err_str(CalcitErrKind::Type, msg);
     }
@@ -1048,7 +1074,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   }
   let v0 = &method_args[0];
   if runner::preprocess::is_warn_dyn_method_enabled() {
-    let value_type = type_of(&[v0.to_owned()])
+    let value_type = type_of(std::slice::from_ref(v0))
       .map(|t| t.lisp_str())
       .unwrap_or_else(|_| "<unknown>".to_string());
     eprintln!(
@@ -1267,8 +1293,8 @@ pub fn tuple_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (a, b) => {
       let msg = format!(
         "&tuple:nth requires a tuple and an index, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleNth).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1309,8 +1335,8 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (a, b, ..) => {
       let msg = format!(
         "&tuple:assoc requires a tuple and an index, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1327,7 +1353,7 @@ pub fn tuple_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     x => {
       let msg = format!(
         "&tuple:count requires a tuple, but received: {}",
-        type_of(&[x.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(x))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1346,7 +1372,7 @@ pub fn tuple_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     x => {
       let msg = format!(
         "&tuple:impls requires a tuple, but received: {}",
-        type_of(&[x.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(x))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1370,7 +1396,7 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     x => {
       let msg = format!(
         "&tuple:params requires a tuple, but received: {}",
-        type_of(&[x.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(x))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeTupleParams).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1382,6 +1408,11 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
   match value {
     Calcit::Tuple(tuple) => Ok(tuple.impls().to_owned()),
     Calcit::Record(record) => Ok(record.struct_ref.impls.to_owned()),
+    // Bare type definitions (not yet instantiated) carry their own attached impls,
+    // so introspection tools like `&methods-of` can answer "what methods will
+    // instances of this type have" without needing a concrete instance first.
+    Calcit::Struct(struct_def) => Ok(struct_def.impls.to_owned()),
+    Calcit::Enum(enum_def) => Ok(enum_def.impls().to_owned()),
     Calcit::List(..) => {
       let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
       collect_impl_records_from_value(&impls_value, call_stack)
@@ -1420,8 +1451,10 @@ fn iter_impls_in_precedence_order<'a>(
   impls: &'a [Arc<CalcitImpl>],
 ) -> Box<dyn Iterator<Item = &'a Arc<CalcitImpl>> + 'a> {
   match value {
-    // user values are last-wins, so higher precedence is later entries
-    Calcit::Tuple(..) | Calcit::Record(..) => Box::new(impls.iter().rev()),
+    // user values are last-wins, so higher precedence is later entries.
+    // Bare struct/enum definitions attach impls the same way (via `.extend`
+    // in `&struct:impl-traits`/`&enum:impl-traits`), so they share this order.
+    Calcit::Tuple(..) | Calcit::Record(..) | Calcit::Struct(..) | Calcit::Enum(..) => Box::new(impls.iter().rev()),
     // builtin core impl lists are first-wins and order-sensitive
     _ => Box::new(impls.iter()),
   }
@@ -1537,6 +1570,13 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   ))
 }
 
+/// Method names declared directly on a bare trait definition (with leading dot).
+/// Traits declare methods directly rather than through attached impls, so this
+/// is handled separately from `collect_impl_records_for_value`.
+fn trait_dot_method_names(trait_def: &CalcitTrait) -> Vec<String> {
+  trait_def.methods.iter().map(|m| format!(".{}", m.ref_str())).collect()
+}
+
 /// Returns a list of method names (with leading dot) that can be invoked on a value at runtime.
 /// Usage: (&methods-of value)
 pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -1545,9 +1585,21 @@ pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   }
 
   let value = &xs[0];
-  let impls = collect_impl_records_for_value(value, call_stack)?;
-  let methods = collect_method_names(value, &impls);
-  Ok(Calcit::from(methods.into_iter().map(|s| Calcit::Str(s.into())).collect::<Vec<_>>()))
+  let methods = if let Calcit::Trait(trait_def) = value {
+    trait_dot_method_names(trait_def)
+  } else {
+    let impls = collect_impl_records_for_value(value, call_stack)?;
+    collect_method_names(value, &impls)
+  };
+  Ok(Calcit::from(
+    methods
+      .into_iter()
+      .map(|s| {
+        let name = s.strip_prefix('.').unwrap_or(&s);
+        Calcit::Method(name.into(), crate::calcit::MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone()))
+      })
+      .collect::<Vec<_>>(),
+  ))
 }
 
 /// Inspect and print method information for debugging.
@@ -1572,25 +1624,30 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
     ""
   };
 
-  let impls = collect_impl_records_for_value(value, call_stack)?;
-  let methods = collect_method_names(value, &impls);
-
   eprintln!("\n&inspect-methods");
   if !note.is_empty() {
     eprintln!("Note: {note}");
   }
-  eprintln!("Value type: {}", type_of(&[value.clone()])?);
+  eprintln!("Value type: {}", type_of(std::slice::from_ref(value))?);
   eprintln!("Value: {value}");
   eprintln!("Method call syntax: `.method self p1 p2`");
   eprintln!("  - dot is part of the method name, first arg is the receiver");
 
-  eprintln!("\nImpl records (high → low precedence): {}", impls.len());
-  for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
-    let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
-    method_keys.sort();
-    let origin_label = imp.trait_name().unwrap_or_else(|| imp.name());
-    eprintln!("  #{idx}: {}  ({})", origin_label, method_keys.join(" "));
-  }
+  let methods = if let Calcit::Trait(trait_def) = value {
+    let names = trait_dot_method_names(trait_def);
+    eprintln!("\nTrait methods declared directly (no impls): {}", names.len());
+    names
+  } else {
+    let impls = collect_impl_records_for_value(value, call_stack)?;
+    eprintln!("\nImpl records (high → low precedence): {}", impls.len());
+    for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
+      let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
+      method_keys.sort();
+      let origin_label = imp.trait_name().unwrap_or_else(|| imp.name());
+      eprintln!("  #{idx}: {}  ({})", origin_label, method_keys.join(" "));
+    }
+    collect_method_names(value, &impls)
+  };
 
   eprintln!("\nAll methods (unique, high → low): {}", methods.len());
   eprintln!("  {}", methods.join(" "));
@@ -1658,6 +1715,45 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
 pub fn get_os(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
   Ok(Calcit::tag(std::env::consts::OS))
+}
+
+fn parse_ns_def_arg(value: &Calcit) -> Result<(String, String), CalcitErr> {
+  let text = match value {
+    Calcit::Str(s) => s.as_ref().trim_start_matches('|').to_string(),
+    Calcit::Symbol { sym, .. } => sym.to_string(),
+    other => {
+      let msg = format!(
+        "expected ns/def string or symbol, but received: {}",
+        type_of(std::slice::from_ref(other))?.lisp_str()
+      );
+      return Err(CalcitErr::use_str(CalcitErrKind::Type, msg));
+    }
+  };
+  extract_ns_def(&text).map_err(|e| CalcitErr::use_str(CalcitErrKind::Syntax, e))
+}
+
+/// Lookup `:doc` metadata for a definition in `ns/def` form.
+pub fn get_def_doc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&get-def-doc expected 1 argument, but received:", xs);
+  }
+  let (ns, def) = parse_ns_def_arg(&xs[0])?;
+  let doc = program::lookup_def_doc(&ns, &def).unwrap_or_default();
+  Ok(Calcit::Str(doc.into()))
+}
+
+/// Lookup `:schema` metadata for a definition in `ns/def` form, returned as EDN data.
+pub fn get_def_schema(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&get-def-schema expected 1 argument, but received:", xs);
+  }
+  let (ns, def) = parse_ns_def_arg(&xs[0])?;
+  if !program::has_def_code(&ns, &def) {
+    return CalcitErr::err_str(CalcitErrKind::Var, format!("definition not found: {ns}/{def}"));
+  }
+  let schema = program::lookup_def_schema(&ns, &def);
+  let edn = snapshot::schema_annotation_to_edn(schema.as_ref());
+  Ok(edn::edn_to_calcit(&edn, &Calcit::Nil))
 }
 
 pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -1942,48 +2038,69 @@ pub fn deftype_slot(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }
 
-/// `bind-type` proc: bind a concrete type (enum/struct) to a declared type slot.
-/// Usage: `(bind-type :dispatch-op Op)` where `Op` is a defenum definition.
-///
-/// At runtime this is a no-op when the slot was already bound during preprocessing —
-/// the preprocessing phase eagerly resolves and binds the slot, so the runtime call
-/// simply returns nil to avoid a "double-bind" error.
-pub fn bind_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(
-      CalcitErrKind::Arity,
-      "bind-type expected 2 arguments (slot-name, type-value), but received:",
-      xs,
+/// `with-type-slot` runtime stub: type binding is handled entirely at preprocess time.
+/// At runtime the body has already been evaluated by the interpreter; this proc is a no-op.
+pub fn with_type_slot_runtime(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  // Return the last body value, or nil if the call somehow reaches here with no args.
+  Ok(xs.last().cloned().unwrap_or(Calcit::Nil))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitGenericBound, CalcitSymbolInfo};
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("test.meta"),
+        at_def: Arc::from("enum-where-tests"),
+      }),
+      location: None,
+    }
+  }
+
+  fn shown_maybe_enum() -> CalcitEnum {
+    CalcitEnum::from_record(CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct {
+        name: EdnTag::new("ShownMaybe"),
+        fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),
+        field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![CalcitGenericBound {
+          name: Arc::from("T"),
+          traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+        }]),
+        impls: vec![],
+      }),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::Vector(vec![]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
+      ]),
+    })
+    .expect("valid enum")
+  }
+
+  #[test]
+  fn generic_enum_where_bounds_accept_show_values() {
+    let result = new_enum_tuple_no_class(&[Calcit::Enum(shown_maybe_enum()), Calcit::tag("some"), Calcit::Number(1.0)]);
+
+    assert!(result.is_ok(), "expected shown maybe creation to pass: {result:?}");
+  }
+
+  #[test]
+  fn generic_enum_where_bounds_reject_non_show_values() {
+    let err = new_enum_tuple_no_class(&[
+      Calcit::Enum(shown_maybe_enum()),
+      Calcit::tag("some"),
+      Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
+    ])
+    .expect_err("expected shown maybe creation to fail on non-Show payload");
+
+    assert!(
+      err.msg.contains("does not satisfy `trait Show`") || err.msg.contains("does not satisfy `Show`"),
+      "unexpected error: {err:?}"
     );
   }
-  let name: &str = match &xs[0] {
-    Calcit::Tag(t) => t.ref_str(),
-    Calcit::Str(s) => s.as_ref(),
-    a => {
-      return CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("bind-type expected a tag or string as slot name, got: {a}"),
-      );
-    }
-  };
-  // If the slot was already bound (typically by preprocessing), skip the runtime bind.
-  if resolve_type_slot(name).is_some() {
-    return Ok(Calcit::Nil);
-  }
-  let ty: Arc<CalcitTypeAnnotation> = match &xs[1] {
-    Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
-    Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-    Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
-    a => {
-      return CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!(
-          "bind-type expected an enum, struct, or record as type value, got: {}",
-          brief_type_of_value(a)
-        ),
-      );
-    }
-  };
-  bind_type_slot(name, ty).map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, e))?;
-  Ok(Calcit::Nil)
 }

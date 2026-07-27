@@ -8,6 +8,7 @@ aliases:
   - "tree editor"
   - "deprecated editor"
   - "structural editing"
+id: core/structural-editor
 ---
 # Structural Editor
 
@@ -20,7 +21,7 @@ Structural editing makes Calcit a lot different from existing languages, even un
 Calcit Editor uses `calcit.cirru` as the preferred snapshot file, which contains much informations. Legacy `compact.cirru` remains compatible as a runtime snapshot filename.
 Example of a `calcit.cirru` file is more readable:
 
-```cirru.no-run
+```cirru.no-check
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
     :modules $ []

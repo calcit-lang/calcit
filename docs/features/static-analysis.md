@@ -20,7 +20,7 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 - **Assert Type**: `assert-type total :number`
 - **Local `fn` Hint**: `hint-fn $ {} (:args ([] :number)) (:return :number)`
-- **Top-level `defn` Schema**: `cr edit schema app.main/add -e ':: :fn $ {} (:args $ [] :number :number) (:return :number)'`
+- **Top-level `defn` Schema**: `cr edit schema app.main/add --code 'quote (:: :fn ({} (:args ([] :number :number)) (:return :number)))'`
 - **Return Type**: `hint-fn $ {} (:return :string)`
 - **Compact Hint**: `defn my-fn (x) :string ...`
 - **Check Traits**: `assert-traits x MyTrait`
@@ -71,6 +71,8 @@ Use `hint-fn` with schema map at the start of a local function body:
 
 Legacy clause syntax such as `(hint-fn (return-type ...))`, `(generics ...)`, and `(type-vars ...)` is no longer supported and now fails during preprocessing.
 
+Generic trait bounds use the same schema map. Follow the Rust-style split: declare variables in `:generics`, then put trait constraints in `:where`.
+
 ```cirru
 let
     get-name $ fn (user)
@@ -78,6 +80,21 @@ let
       , |demo
   get-name nil
 ```
+
+```cirru
+let
+    print-it $ fn (x)
+      hint-fn $ {}
+        :generics $ [] 'T
+        :where $ {}
+          'T Show
+        :args $ [] 'T
+        :return :string
+      .show x
+  print-it 1
+```
+
+Do not use the old tuple/list form such as `:where $ [] (:: 'Show 'T)`.
 
 #### 2. Compact Hint (Trailing Label)
 
@@ -97,12 +114,12 @@ For namespace-level `defn` / `defmacro`, parameter and return metadata should st
 ```cirru
 let
     add $ fn (a b) :number
-      hint-fn $ {} (:args ([] :number :number))
+      hint-fn $ {} (:args $ [] :number :number) (:return :number)
       let
           total $ + a b
         assert-type total :number
-        total
-  add 1 2
+        , total
+  assert= 3 $ add 1 2
 ```
 
 ## Supported Types
@@ -505,29 +522,29 @@ Then reference the slot in type annotations with the `*name` syntax:
 
 ### Binding a Type Slot (Application Side)
 
-In the application's entry point (e.g. `main!`), bind a concrete type to the slot:
+In the application's entry point (e.g. `main!`), use `with-type-slot` to bind a concrete type locally for the scope of the body:
 
 ```cirru.no-check
 defenum Op (:add :string) (:remove :tag) (:clear)
 
-defn main! ()
-  bind-type :dispatch-op Op
-  ;; subsequent code benefits from full type checking
+defn main! () $ with-type-slot (:dispatch-op Op)
+  ;; all code in this body benefits from full type checking
 ```
+
+`with-type-slot` takes a binding pair `(:slot-name TypeExpr)` as its first argument and a body of expressions. The slot is active only within that scope.
 
 ### How It Works
 
-1. `deftype-slot :name` registers a placeholder in the global `TYPE_SLOTS` registry (value = `None`).
-2. `bind-type :name ConcreteType` sets the slot value to the given enum/struct/record type.
-3. Both operations execute during **preprocessing** (not runtime), so type checking in the same compilation pass immediately sees the binding.
-4. When type annotations encounter `*name`, the slot is resolved and standard type matching proceeds.
+1. `deftype-slot :name` registers a placeholder (optional, for documentation/library contracts).
+2. `with-type-slot (:name ConcreteType) body...` pushes a scoped override for `*name` during preprocessing of the body, then pops it when the body finishes.
+3. When type annotations encounter `*name`, the override is resolved and standard type matching proceeds.
+4. Multiple entries can each bind the same slot independently without conflict, since each binding is scoped.
 
 ### Constraints
 
-- Each slot can only be declared and bound **once** per program.
 - Only enum, struct, and record types can be bound to slots.
-- Unbound slots are treated as `:dynamic` (no type checking, no error).
-- At runtime, `bind-type` is a no-op if the slot was already bound during preprocessing (avoids double-bind errors).
+- Unbound slots (no active `with-type-slot` override) are treated as `:dynamic` (no type checking, no error).
+- `with-type-slot` bindings are scoped — they do not persist outside the body.
 
 ### Example: Detecting Wrong Dispatch Calls
 

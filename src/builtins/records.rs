@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::ops::Rem;
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
+use crate::calcit::CORE_NS;
+use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 use crate::calcit::{
-  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax,
-  CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
+  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct,
+  CalcitSyntax, CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
 };
 
 fn mark_fn_used_in_impl(value: &Calcit) -> Calcit {
@@ -47,12 +50,63 @@ fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
     return None;
   };
 
+  let start = if matches!(items.first(), Some(Calcit::Proc(CalcitProc::List))) {
+    1
+  } else {
+    0
+  };
+
   let mut vars = Vec::with_capacity(items.len());
-  for item in items.iter() {
-    let name = parse_type_var_form(item)?;
-    vars.push(name);
+  for item in items.iter().skip(start) {
+    if let Some(name) = parse_type_var_form(item) {
+      vars.push(name);
+      continue;
+    }
+    if let Calcit::Symbol { sym, .. } = item {
+      vars.push(sym.to_owned());
+      continue;
+    }
+    return None;
   }
   Some(vars)
+}
+
+fn is_list_literal_head(form: &Calcit) -> bool {
+  match form {
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "[]",
+    Calcit::Proc(CalcitProc::List) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == CORE_NS && def.as_ref() == "[]",
+    Calcit::Macro { info, .. } => info.def_ns.as_ref() == CORE_NS && info.name.as_ref() == "[]",
+    _ => false,
+  }
+}
+
+fn is_where_map_head(form: &Calcit) -> bool {
+  matches!(form, Calcit::Symbol { sym, .. } if sym.as_ref() == "{}")
+    || matches!(form, Calcit::Proc(CalcitProc::NativeMap))
+    || matches!(form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == CORE_NS && def.as_ref() == "{}")
+    || matches!(form, Calcit::Macro { info, .. } if info.def_ns.as_ref() == CORE_NS && info.name.as_ref() == "{}")
+}
+
+fn normalize_where_bounds_form(form: &Calcit) -> Option<Calcit> {
+  match form {
+    Calcit::Map(_) => Some(form.to_owned()),
+    Calcit::List(items) => {
+      if items.first().is_some_and(is_where_map_head) {
+        Some(form.to_owned())
+      } else if items.first().is_some_and(is_list_literal_head) && items.get(1).is_some_and(is_where_map_head) {
+        Some(Calcit::List(Arc::new(CalcitList::Vector(items.iter().skip(1).cloned().collect()))))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+fn parse_where_bounds(form: &Calcit, generics: &[Arc<str>]) -> Option<Vec<crate::calcit::CalcitGenericBound>> {
+  let normalized = normalize_where_bounds_form(form)?;
+  Some(CalcitTypeAnnotation::parse_where_bounds_form(&normalized, generics, true))
 }
 
 pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -67,7 +121,7 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&impl::new requires a trait or name (symbol/tag/string), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
@@ -161,7 +215,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&struct::new expects a name (symbol or tag), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
@@ -173,6 +227,11 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if let Some(generics_form) = xs.get(1).and_then(parse_generics_list) {
     generics = generics_form;
     start_idx = 2;
+  }
+  let mut where_bounds = vec![];
+  if let Some(form) = xs.get(start_idx).and_then(|form| parse_where_bounds(form, generics.as_slice())) {
+    where_bounds = form;
+    start_idx += 1;
   }
 
   let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = vec![];
@@ -243,6 +302,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
     generics: Arc::new(generics),
+    where_bounds: Arc::new(where_bounds),
     impls: vec![],
   }))
 }
@@ -264,15 +324,27 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&enum::new expects a name (symbol or tag), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeEnumNew).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
 
+  let mut generics: Vec<Arc<str>> = vec![];
+  let mut start_idx = 1;
+  if let Some(generics_form) = xs.get(1).and_then(parse_generics_list) {
+    generics = generics_form;
+    start_idx = 2;
+  }
+  let mut where_bounds = vec![];
+  if let Some(form) = xs.get(start_idx).and_then(|form| parse_where_bounds(form, generics.as_slice())) {
+    where_bounds = form;
+    start_idx += 1;
+  }
+
   let mut variants: Vec<(EdnTag, Calcit)> = vec![];
-  for item in xs.iter().skip(1) {
+  for item in xs.iter().skip(start_idx) {
     match item {
       Calcit::List(xs) => {
         let tag = match xs.first() {
@@ -319,6 +391,10 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
 
   let mut struct_ref = CalcitStruct::from_fields(name_id, fields);
+  generics.sort();
+  generics.dedup();
+  struct_ref.generics = Arc::new(generics);
+  struct_ref.where_bounds = Arc::new(where_bounds);
   struct_ref.impls = vec![Arc::new(enum_prototype_marker())];
 
   let record = CalcitRecord {
@@ -361,13 +437,14 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErrKind::Type,
         format!(
           "&%{{}}? requires a struct as prototype, but received: {}",
-          type_of(&[a.to_owned()])?.lisp_str()
+          type_of(std::slice::from_ref(a))?.lisp_str()
         ),
       );
     }
   };
   let size = (args_size - 1) / 2;
   let mut seen_positions: Vec<bool> = vec![false; base_struct.fields.len()];
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   for idx in 0..size {
     let k_idx = idx * 2 + 1;
     let v_idx = k_idx + 1;
@@ -379,7 +456,7 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           CalcitErrKind::Type,
           format!(
             "&%{{}}? requires field in string/tag, but received: {}",
-            type_of(&[a.to_owned()])?.lisp_str()
+            type_of(std::slice::from_ref(a))?.lisp_str()
           ),
         );
       }
@@ -406,6 +483,7 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               ),
             );
           }
+          collect_runtime_type_bindings(&xs[v_idx], expected_type.as_ref(), &mut bindings);
         }
         xs[v_idx].clone_into(&mut base_values[pos]);
       }
@@ -416,6 +494,12 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         );
       }
     }
+  }
+  if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, base_struct.where_bounds.as_ref()) {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&%{{}}? failed generic where-bound validation for `{}`: {msg}", base_struct.name),
+    );
   }
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: base_struct,
@@ -575,7 +659,7 @@ pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// Args: (record, idx1, :tag1, val1, idx2, :tag2, val2, ...)
 /// Tags are carried for JS codegen; Rust runtime uses indices directly.
 pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.is_empty() || (xs.len() - 1) % 3 != 0 {
+  if xs.is_empty() || !(xs.len() - 1).is_multiple_of(3) {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
       "&record:with-at expected (record, idx, tag, val, ...) triples, but received:",
@@ -645,7 +729,7 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&%{{}} requires a struct as prototype, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -672,6 +756,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   }
   let mut values: Vec<Calcit> = (**v0).to_owned();
   let mut seen_positions: Vec<bool> = vec![false; struct_ref.fields.len()];
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   for idx in 0..size {
     let k_idx = idx * 2 + 1;
@@ -699,6 +784,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
                 ),
               );
             }
+            collect_runtime_type_bindings(&xs[v_idx], expected_type.as_ref(), &mut bindings);
           }
           xs[v_idx].clone_into(&mut values[pos]);
         }
@@ -727,6 +813,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
                 ),
               );
             }
+            collect_runtime_type_bindings(&xs[v_idx], expected_type.as_ref(), &mut bindings);
           }
           xs[v_idx].clone_into(&mut values[pos]);
         }
@@ -740,12 +827,19 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
       a => {
         let msg = format!(
           "&%{{}} requires field in string/tag, but received: {}",
-          type_of(&[a.to_owned()])?.lisp_str()
+          type_of(std::slice::from_ref(a))?.lisp_str()
         );
         let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
+  }
+
+  if let Err(msg) = validate_runtime_generic_where_bounds(&bindings, struct_ref.where_bounds.as_ref()) {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&%{{}} failed generic where-bound validation for `{}`: {msg}", struct_ref.name),
+    );
   }
 
   Ok(Calcit::Record(CalcitRecord {
@@ -777,21 +871,20 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             Calcit::Tag(s) => match record.index_of(s.ref_str()) {
               Some(pos) => {
                 // Validate field value type against struct field_types
-                if let Some(expected_type) = struct_ref.field_types.get(pos) {
-                  if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-                    && !value_matches_type_annotation(&xs[v_idx], expected_type)
-                  {
-                    return CalcitErr::err_str(
-                      CalcitErrKind::Type,
-                      format!(
-                        "&record:with field `{}` expects type `{}`, but received `{}` ({})",
-                        s.ref_str(),
-                        expected_type.to_brief_string(),
-                        brief_type_of_value(&xs[v_idx]),
-                        xs[v_idx].lisp_str()
-                      ),
-                    );
-                  }
+                if let Some(expected_type) = struct_ref.field_types.get(pos)
+                  && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+                  && !value_matches_type_annotation(&xs[v_idx], expected_type)
+                {
+                  return CalcitErr::err_str(
+                    CalcitErrKind::Type,
+                    format!(
+                      "&record:with field `{}` expects type `{}`, but received `{}` ({})",
+                      s.ref_str(),
+                      expected_type.to_brief_string(),
+                      brief_type_of_value(&xs[v_idx]),
+                      xs[v_idx].lisp_str()
+                    ),
+                  );
                 }
                 xs[v_idx].clone_into(&mut values[pos]);
               }
@@ -805,21 +898,20 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
               Some(pos) => {
                 // Validate field value type against struct field_types
-                if let Some(expected_type) = struct_ref.field_types.get(pos) {
-                  if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-                    && !value_matches_type_annotation(&xs[v_idx], expected_type)
-                  {
-                    return CalcitErr::err_str(
-                      CalcitErrKind::Type,
-                      format!(
-                        "&record:with field `{}` expects type `{}`, but received `{}` ({})",
-                        s,
-                        expected_type.to_brief_string(),
-                        brief_type_of_value(&xs[v_idx]),
-                        xs[v_idx].lisp_str()
-                      ),
-                    );
-                  }
+                if let Some(expected_type) = struct_ref.field_types.get(pos)
+                  && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+                  && !value_matches_type_annotation(&xs[v_idx], expected_type)
+                {
+                  return CalcitErr::err_str(
+                    CalcitErrKind::Type,
+                    format!(
+                      "&record:with field `{}` expects type `{}`, but received `{}` ({})",
+                      s,
+                      expected_type.to_brief_string(),
+                      brief_type_of_value(&xs[v_idx]),
+                      xs[v_idx].lisp_str()
+                    ),
+                  );
                 }
                 xs[v_idx].clone_into(&mut values[pos]);
               }
@@ -833,7 +925,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             a => {
               let msg = format!(
                 "&record:with requires field in string/tag, but received: {}",
-                type_of(&[a.to_owned()])?.lisp_str()
+                type_of(std::slice::from_ref(a))?.lisp_str()
               );
               let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
               return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
@@ -852,7 +944,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:with requires a record as prototype, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -880,7 +972,7 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:impls requires a record as prototype, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -898,7 +990,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:from-map requires a struct as prototype, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
@@ -914,7 +1006,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           a => {
             let msg = format!(
               "&record:from-map requires field in string/tag, but received: {}",
-              type_of(&[a.to_owned()])?.lisp_str()
+              type_of(std::slice::from_ref(a))?.lisp_str()
             );
             let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
@@ -923,19 +1015,20 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         match struct_ref.fields.iter().position(|f| f.ref_str() == key.as_ref()) {
           Some(idx) => {
             // Validate field value type against struct field_types
-            if let Some(expected_type) = struct_ref.field_types.get(idx) {
-              if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) && !value_matches_type_annotation(v, expected_type) {
-                return CalcitErr::err_str(
-                  CalcitErrKind::Type,
-                  format!(
-                    "&record:from-map field `{}` expects type `{}`, but received `{}` ({})",
-                    key,
-                    expected_type.to_brief_string(),
-                    brief_type_of_value(v),
-                    v.lisp_str()
-                  ),
-                );
-              }
+            if let Some(expected_type) = struct_ref.field_types.get(idx)
+              && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+              && !value_matches_type_annotation(v, expected_type)
+            {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!(
+                  "&record:from-map field `{}` expects type `{}`, but received `{}` ({})",
+                  key,
+                  expected_type.to_brief_string(),
+                  brief_type_of_value(v),
+                  v.lisp_str()
+                ),
+              );
             }
             new_values[idx] = v.to_owned();
           }
@@ -955,7 +1048,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     b => {
       let msg = format!(
         "&record:from-map requires a map as second argument, but received: {}",
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -972,7 +1065,7 @@ pub fn get_record_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:get-name requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGetName).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -989,7 +1082,7 @@ pub fn get_record_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:struct requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordStruct).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1012,13 +1105,14 @@ pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:to-map requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordToMap).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
 }
+
 pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:matches? expected 2 arguments, but received:", xs);
@@ -1030,7 +1124,7 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     b => {
       let msg = format!(
         "&record:matches? second argument requires a record or struct, but received: {}",
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
@@ -1045,7 +1139,7 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:matches? first argument requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1062,7 +1156,7 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     a => {
       let msg = format!(
         "&record:count requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1078,7 +1172,7 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       a => {
         let msg = format!(
           "&record:contains? requires a field in string/tag, but received: {}",
-          type_of(&[a.to_owned()])?.lisp_str()
+          type_of(std::slice::from_ref(a))?.lisp_str()
         );
         let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1096,7 +1190,7 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(_)) => {
       let msg = format!(
         "&record:contains? requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1127,7 +1221,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       a => {
         let msg = format!(
           "&record:get requires a field in string/tag, but received: {}",
-          type_of(&[a.to_owned()])?.lisp_str()
+          type_of(std::slice::from_ref(a))?.lisp_str()
         );
         let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1140,7 +1234,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(_)) => {
       let msg = format!(
         "&record:get requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1186,7 +1280,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       a => {
         let msg = format!(
           "&record:assoc requires a field in string/tag, but received: {} for record: {:?}",
-          type_of(&[a.to_owned()])?.lisp_str(),
+          type_of(std::slice::from_ref(a))?.lisp_str(),
           struct_ref.fields
         );
         let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
@@ -1200,7 +1294,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(_), Some(_)) => {
       let msg = format!(
         "&record:assoc requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -1235,7 +1329,7 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       a => {
         let msg = format!(
           "&record:extend-as requires a field in string/tag, but received: {} for record: {:?}",
-          type_of(&[a.to_owned()])?.lisp_str(),
+          type_of(std::slice::from_ref(a))?.lisp_str(),
           record.struct_ref.fields
         );
         let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
@@ -1245,11 +1339,53 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), ..) => {
       let msg = format!(
         "&record:extend-as requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:extend-as expected 4 arguments, but received:", xs),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitGenericBound, CalcitTrait};
+
+  fn shown_box_struct() -> CalcitStruct {
+    CalcitStruct {
+      name: EdnTag::new("ShownBox"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![CalcitGenericBound {
+        name: Arc::from("T"),
+        traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+      }]),
+      impls: vec![],
+    }
+  }
+
+  #[test]
+  fn generic_struct_where_bounds_accept_show_values() {
+    let result = call_record(&[Calcit::Struct(shown_box_struct()), Calcit::tag("value"), Calcit::Number(1.0)]);
+
+    assert!(result.is_ok(), "expected shown box creation to pass: {result:?}");
+  }
+
+  #[test]
+  fn generic_struct_where_bounds_reject_non_show_values() {
+    let err = call_record(&[
+      Calcit::Struct(shown_box_struct()),
+      Calcit::tag("value"),
+      Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
+    ])
+    .expect_err("expected shown box creation to fail on non-Show payload");
+
+    assert!(
+      err.msg.contains("does not satisfy `trait Show`") || err.msg.contains("does not satisfy `Show`"),
+      "unexpected error: {err:?}"
+    );
   }
 }

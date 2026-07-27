@@ -6,23 +6,23 @@
   :files $ {}
     |test-algebra.main $ %{} :FileEntry
       :defs $ {}
-        |AlgebraApply $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraApply $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait AlgebraApply $ .apply :fn
           :examples $ []
-        |AlgebraBind $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBind $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait AlgebraBind $ .bind :fn
           :examples $ []
-        |AlgebraBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def AlgebraBox $ impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl
           :examples $ []
-        |AlgebraBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct AlgebraBox0 $ :value :dynamic
           :examples $ []
-        |AlgebraBoxApplyImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBoxApplyImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl AlgebraBoxApplyImpl AlgebraApply $ .apply
               fn (box fs)
@@ -30,29 +30,29 @@
                     f $ :value fs
                   assoc box :value $ f (:value box)
           :examples $ []
-        |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl AlgebraBoxBindImpl AlgebraBind $ .bind
               fn (box f)
                 f $ :value box
           :examples $ []
-        |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl AlgebraBoxMapImpl AlgebraMap $ .map
               fn (box f)
                 assoc box :value $ f (:value box)
           :examples $ []
-        |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl AlgebraBoxMappendImpl AlgebraMappend $ .mappend
               fn (a b)
                 assoc a :value $ + (:value a) (:value b)
           :examples $ []
-        |AlgebraMap $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraMap $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait AlgebraMap $ .map :fn
           :examples $ []
-        |AlgebraMappend $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AlgebraMappend $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait AlgebraMappend $ .mappend :fn
           :examples $ []

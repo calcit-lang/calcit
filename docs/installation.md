@@ -35,9 +35,7 @@ cr eval "echo |done"
 Several binaries are included:
 
 - `cr`: the main command-line tool for running Calcit programs
-- `bundle_calcit`: bundles Calcit code into a `calcit.cirru` file (legacy filename: `compact.cirru`)
 - `caps`: downloads Calcit packages
 - `cr-mcp`: provides a Model Context Protocol (MCP) server for Calcit compact files
-- `cr-sync`: syncs changes from a runtime snapshot file back to `calcit.cirru`
 
 Another important command is `ct`, which is the "Calcit Editor" and is available in a separate repository.

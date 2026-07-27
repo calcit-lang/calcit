@@ -437,12 +437,10 @@ export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): st
     return "\ndo nil" + "\n";
   }
   if (typeof data === "string") {
-    return "\ndo " + to_cirru_edn(data) + "\n";
+    let quoted = writeCirruCode([[to_cirru_edn(data)]], { useInline: useInline }).trim();
+    return "\ndo " + quoted + "\n";
   }
   if (typeof data === "boolean") {
-    return "\ndo " + to_cirru_edn(data) + "\n";
-  }
-  if (typeof data === "string") {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
   if (data instanceof CalcitSymbol) {

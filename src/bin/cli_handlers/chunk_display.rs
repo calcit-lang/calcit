@@ -128,7 +128,7 @@ fn recursive_partition(root: &Cirru, options: &ChunkDisplayOptions) -> Result<Ve
   let mut finished: Vec<PendingFragment> = vec![];
 
   while !pending.is_empty() {
-    pending.sort_by(|left, right| collect_stats(&right.tree, 0).nodes.cmp(&collect_stats(&left.tree, 0).nodes));
+    pending.sort_by_key(|right| std::cmp::Reverse(collect_stats(&right.tree, 0).nodes));
     let mut current = pending.remove(0);
     let current_stats = collect_stats(&current.tree, 0);
 
@@ -456,10 +456,10 @@ fn collect_name_tokens(node: &Cirru, limit: usize, depth_limit: usize, depth: us
   }
   match node {
     Cirru::Leaf(s) => {
-      if let Some(token) = sanitize_token(s) {
-        if !output.contains(&token) {
-          output.push(token);
-        }
+      if let Some(token) = sanitize_token(s)
+        && !output.contains(&token)
+      {
+        output.push(token);
       }
     }
     Cirru::List(items) => {
@@ -495,15 +495,17 @@ fn make_placeholder_name(node: &Cirru, index: usize, used_names: &mut HashSet<St
 }
 
 fn compare_coords(left: &str, right: &str) -> std::cmp::Ordering {
-  let left_parts: Vec<usize> = if left == "root" {
+  let left_clean = left.strip_prefix('@').unwrap_or(left);
+  let right_clean = right.strip_prefix('@').unwrap_or(right);
+  let left_parts: Vec<usize> = if left_clean == "root" {
     vec![]
   } else {
-    left.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
+    left_clean.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
   };
-  let right_parts: Vec<usize> = if right == "root" {
+  let right_parts: Vec<usize> = if right_clean == "root" {
     vec![]
   } else {
-    right.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
+    right_clean.split('.').filter_map(|item| item.parse::<usize>().ok()).collect()
   };
 
   for index in 0..left_parts.len().max(right_parts.len()) {
@@ -537,7 +539,7 @@ mod tests {
       coord: if path.is_empty() {
         "root".to_string()
       } else {
-        path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(".")
+        format!("@{}", path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join("."))
       },
       path: path.to_vec(),
       nodes: 1,

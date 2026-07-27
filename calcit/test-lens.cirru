@@ -6,15 +6,15 @@
   :files $ {}
     |test-lens.main $ %{} :FileEntry
       :defs $ {}
-        |log-title $ %{} :CodeEntry (:doc |) (:schema nil)
+        |log-title $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing lens") (test-lens) (do true)
           :examples $ []
-        |test-lens $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-lens $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-lens ()
               assert=

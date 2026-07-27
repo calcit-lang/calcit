@@ -58,6 +58,11 @@ fn resolve_runtime_or_compiled_def(
   program::resolve_runtime_or_compiled_def(ns, def, def_id, program::RuntimeResolveMode::Strict, call_stack).map_err(|err| match err {
     program::RuntimeResolveError::RuntimeCell(cell) => build_runtime_cell_error(ns, def, call_stack, cell),
     program::RuntimeResolveError::Eval(failure) => failure,
+    program::RuntimeResolveError::RuntimeSeed(message) => CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      format!("failed to seed runtime for {ns}/{def}: {message}"),
+      call_stack,
+    ),
   })
 }
 
@@ -285,7 +290,7 @@ pub fn call_expr(
     Calcit::Macro { info, .. } => {
       println!(
         "[Warn] macro should already be handled during preprocessing: {}",
-        &Calcit::from(xs.to_owned()).lisp_str()
+        Calcit::from(xs.to_owned()).lisp_str()
       );
 
       let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
@@ -712,9 +717,9 @@ fn render_marked_args(args: &[CalcitArgLabel]) -> String {
 pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
-    match evaluate_expr(line, scope, file_ns, call_stack) {
-      Ok(v) => ret = v,
-      Err(e) => return Err(e),
+    {
+      let v = evaluate_expr(line, scope, file_ns, call_stack)?;
+      ret = v
     }
   }
   Ok(ret)

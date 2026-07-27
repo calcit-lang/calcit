@@ -24,6 +24,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
       let body_items = expr.skip(2)?.to_vec();
       let return_type = detect_return_type_hint(&body_items);
       let generics = detect_fn_generics(&body_items);
+      let where_bounds = detect_fn_where_bounds(&body_items);
       let parsed_args = get_raw_args_fn(xs)?;
       let param_symbols = match collect_param_symbols(xs) {
         Ok(params) => params,
@@ -69,6 +70,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
           args: Arc::new(parsed_args),
           body: body_items,
           generics,
+          where_bounds,
           return_type,
           arg_types,
         }),
@@ -123,6 +125,15 @@ fn detect_fn_generics(forms: &[Calcit]) -> Arc<Vec<Arc<str>>> {
   for form in forms {
     if let Some(vars) = CalcitTypeAnnotation::extract_generics_from_hint_form(form) {
       return Arc::new(vars);
+    }
+  }
+  Arc::new(vec![])
+}
+
+fn detect_fn_where_bounds(forms: &[Calcit]) -> Arc<Vec<crate::calcit::CalcitGenericBound>> {
+  for form in forms {
+    if let Some(bounds) = CalcitTypeAnnotation::extract_where_bounds_from_hint_form(form) {
+      return Arc::new(bounds);
     }
   }
   Arc::new(vec![])
@@ -529,6 +540,20 @@ pub fn assert_type(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
   Ok(value)
 }
 
+/// Evaluate its first argument and discard the declared type. The annotation is
+/// consumed by preprocessing so FFI boundaries can opt into typed downstream code.
+pub fn unsafe_coerce(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "unsafe-coerce expected a value and a type expression, but received:",
+      &expr.to_vec(),
+    );
+  }
+
+  runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)
+}
+
 pub fn assert_traits(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes(
@@ -859,7 +884,7 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
           a => {
             let msg = format!(
               "try requires a function handler, but received: {}",
-              type_of(&[a.to_owned()])?.lisp_str()
+              type_of(std::slice::from_ref(&a))?.lisp_str()
             );
             CalcitErr::err_str(CalcitErrKind::Type, msg)
           }
@@ -916,7 +941,7 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
       a => {
         let msg = format!(
           "gensym requires a string/symbol/tag, but received: {}",
-          type_of(&[a.to_owned()])?.lisp_str()
+          type_of(std::slice::from_ref(a))?.lisp_str()
         );
         return CalcitErr::err_str(CalcitErrKind::Type, msg);
       }

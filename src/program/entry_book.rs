@@ -115,10 +115,7 @@ where
     for (idx, piece) in self.0.iter_mut().enumerate() {
       // println!("comparing {} and {}", &*piece.key, key);
       if &*piece.key == key {
-        match &mut piece.value {
-          Some(v) => return Some((v, idx as u16)),
-          None => return None,
-        }
+        return Some((piece.value.as_mut()?, idx as u16));
       }
     }
     None

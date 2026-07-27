@@ -7,8 +7,8 @@ pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a + b)),
     (Some(a), Some(b)) => {
-      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
-      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let type_a = crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(std::slice::from_ref(b))?.lisp_str();
       let msg = format!("&+ requires 2 numbers, but received: ({type_a}, {type_b})");
       let hint = String::from("💡 Usage: `&+ number1 number2`\n  Example: `&+ 3 5` => 8");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -21,8 +21,8 @@ pub fn binary_minus(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a - b)),
     (Some(a), Some(b)) => {
-      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
-      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let type_a = crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(std::slice::from_ref(b))?.lisp_str();
       let msg = format!("&- requires 2 numbers, but received: ({type_a}, {type_b})");
       let hint = String::from("💡 Usage: `&- number1 number2`\n  Example: `&- 5 3` => 2");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -35,8 +35,8 @@ pub fn binary_multiply(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a * b)),
     (Some(a), Some(b)) => {
-      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
-      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let type_a = crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(std::slice::from_ref(b))?.lisp_str();
       let msg = format!("&* requires 2 numbers, but received: ({type_a}, {type_b})");
       let hint = String::from("💡 Usage: `&* number1 number2`\n  Example: `&* 3 4` => 12");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -49,8 +49,8 @@ pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a / b)),
     (Some(a), Some(b)) => {
-      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
-      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let type_a = crate::builtins::meta::type_of(std::slice::from_ref(a))?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(std::slice::from_ref(b))?.lisp_str();
       let msg = format!("&/ requires 2 numbers, but received: ({type_a}, {type_b})");
       let hint =
         String::from("💡 Usage: `&/ number1 number2`\n  Example: `&/ 10 2` => 5\n  Warning: Division by zero returns infinity");
@@ -66,7 +66,7 @@ pub fn round_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:round? requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::IsRound).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -81,7 +81,7 @@ pub fn floor(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:floor requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Floor).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -97,7 +97,7 @@ pub fn fractional(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:fract requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeNumberFract).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -130,7 +130,7 @@ pub fn round(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:round requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Round).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -144,7 +144,7 @@ pub fn sin(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:sin requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Sin).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -158,7 +158,7 @@ pub fn cos(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:cos requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Cos).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -185,7 +185,7 @@ pub fn ceil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:ceil requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Ceil).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -199,7 +199,7 @@ pub fn sqrt(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:sqrt requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Sqrt).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -340,7 +340,7 @@ pub fn bit_not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "&math:bit-not requires a number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::BitNot).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)

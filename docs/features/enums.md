@@ -7,6 +7,8 @@ aliases:
   - "defenum"
   - "tagged union"
   - "tagged unions"
+id: core/features/enums
+parent: core/features
 ---
 
 # Enums (defenum)
@@ -18,7 +20,7 @@ Calcit enums are tagged unions — each variant has a tag (keyword) and zero or 
 - **Define**: `defenum Shape (:circle :number) (:rect :number :number)`
 - **Create**: `%:: Shape :circle 5`
 - **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Match** (legacy): `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
+- **Legacy Fallback**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape :enum`
 
 ## Defining Enums
@@ -43,6 +45,74 @@ let
   println r
   ; => (%:: :rect 3 4 (:enum Shape))
 ```
+
+## Generic Enums
+
+`defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then use the applied named type syntax `(:: 'TypeName ...)` in schemas and assertions.
+
+```cirru
+let
+    ResultX $ defenum ResultX ([] 'T 'E) (:ok 'T) (:err 'E)
+    ok $ %:: ResultX :ok 1
+    err $ %:: ResultX :err |oops
+  assert-type ok $ :: 'ResultX :number :string
+  assert-type err $ :: 'ResultX :number :string
+  assert= 1 $ &tuple:nth ok 1
+  assert= |oops $ &tuple:nth err 1
+```
+
+At the type level, `(:: 'ResultX :number :string)` means the first slot is bound to `T` and the second slot is bound to `E`.
+
+### Generic Enums with `where` Bounds
+
+After the optional generics list, `defenum` may also take a `where` map to constrain type variables with traits. This is useful when enum payloads must support methods like `.show`.
+
+```cirru
+let
+    ShownMaybe $ defenum ShownMaybe ([] 'T)
+      {} ('T Show)
+      :some 'T
+      :none
+    some-val $ %:: ShownMaybe :some 1
+    none-val $ %:: ShownMaybe :none
+  assert-type some-val $ :: 'ShownMaybe :number
+  assert= |1 $ match some-val
+    (:some item) (.show item)
+    (:none) |none
+  assert= |none $ match none-val
+    (:some item) (.show item)
+    (:none) |none
+```
+
+The `where` map uses type variables as keys and trait names as values. `%::` checks the variant payloads against those bounds at runtime, so invalid type arguments are rejected when the enum value is created.
+
+## Enums with Struct Payloads
+
+Enum payload slots can reference named structs, not just primitive tags. Use the same applied named type syntax that `defstruct` uses in schemas.
+
+```cirru
+let
+    Point $ defstruct Point (:x :number) (:y :number)
+    Shape $ defenum Shape (:point Point) (:label :string)
+    p $ %{} Point (:x 1) (:y 2)
+    shape $ %:: Shape :point p
+  assert-type shape Shape
+  assert= 1 $ get (&tuple:nth shape 1) :x
+```
+
+Applied generic structs also work in enum payloads:
+
+```cirru
+let
+    Box $ defstruct Box ([] 'T) (:value 'T)
+    Wrapped $ defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
+    value $ %:: Wrapped :box $ %{} Box (:value 1)
+    boxed $ &tuple:nth value 1
+  assert-type value $ :: 'Wrapped :number
+  assert= 1 $ :value boxed
+```
+
+When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.
 
 ## Creating Instances
 
@@ -170,14 +240,14 @@ This is an explicit crash, not a silent `nil`. `tag-match` has the same behavior
 
 ### `match` vs `tag-match`
 
-| Feature              | `match`              | `tag-match`                    |
-| -------------------- | -------------------- | ------------------------------ |
-| Implementation       | Native syntax        | Macro (expands to nested `if`) |
-| Exhaustiveness check | Compile-time warning | None                           |
-| Variant arity check  | Yes                  | No                             |
-| Binding type inference | Yes (from defenum) | No                             |
-| JS output            | Direct if-else chain | Nested ternaries               |
-| Recommended          | Yes                  | Legacy use                     |
+| Feature                | `match`              | `tag-match`                    |
+| ---------------------- | -------------------- | ------------------------------ |
+| Implementation         | Native syntax        | Macro (expands to nested `if`) |
+| Exhaustiveness check   | Compile-time warning | None                           |
+| Variant arity check    | Yes                  | No                             |
+| Binding type inference | Yes (from defenum)   | No                             |
+| JS output              | Direct if-else chain | Nested ternaries               |
+| Recommended            | Yes                  | Legacy use                     |
 
 Both syntaxes share the same branch format: each branch is `(pattern body)`.
 
@@ -185,7 +255,7 @@ Both syntaxes share the same branch format: each branch is `(pattern body)`.
 
 The branch syntax is identical — migration is a single keyword replacement:
 
-```cirru
+```cirru.no-check
 ; Before (tag-match)
 tag-match r
   (:ok v) (str-spaced |ok: v)
@@ -280,8 +350,20 @@ defenum ApiResult (:ok :string) (:err :string)
 ; (:point :number :number) means :point has two :number payloads
 defenum Shape (:point :number :number) (:circle :number)
 
+; generic struct payloads use applied named types
+defstruct Box ([] 'T) (:value 'T)
+defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
+
 ; (:none) means no payload
 defenum MaybeInt (:some :number) (:none)
+```
+
+Payloads may also reference named struct types (illustrative, cross-file type ref):
+
+```cirru.no-check
+; defstruct and defenum from the same snippet context:
+defstruct Point (:x :number) (:y :number)
+defenum Shape2 (:point Point) (:circle :number)
 ```
 
 Runtime type validation is enforced at instance creation — passing the wrong type to `%::` will raise an error.
@@ -291,17 +373,16 @@ Runtime type validation is enforced at instance creation — passing the wrong t
 When a function parameter is typed as an enum in its schema, the preprocessor automatically rewrites untyped tuple literal (`::`) arguments to typed enum tuple construction (`%::`). This lets you write shorter tuple syntax while still getting full enum type checking.
 
 ```cirru
-defenum Result0 (:err :string) (:ok)
-
-defn takes-result (r)
-  :: :fn $ {} (:return :dynamic)
-    :args $ [] 'app.main/Result0
-  tag-match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
-
-; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
-takes-result $ :: :ok
-; Equivalent to:
-takes-result $ %:: Result0 :ok
+let
+    Result0 $ defenum Result0 (:err :string) (:ok)
+    takes-result $ fn (r)
+      :: :fn $ {} (:return :dynamic)
+        :args $ [] 'app.main/Result0
+      match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
+  ; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
+  assert= :ok $ takes-result $ :: :ok
+  ; Equivalent to:
+  assert= :ok $ takes-result $ %:: Result0 :ok
 ```
 
 Requirements for the rewrite to trigger:
@@ -316,7 +397,7 @@ If any condition is not met, the argument is left unchanged (no error is raised)
 
 - Enum instances are immutable tuples with a class reference.
 - `match` is the recommended pattern matching syntax with exhaustiveness checking.
-- `tag-match` is a legacy macro; unmatched tags raise a runtime error without compile-time warning.
+- `tag-match` is a legacy macro; keep it for legacy code paths or when you explicitly want the old syntax.
 - Use `&tuple:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
 - Enums vs plain tuples: plain `:: :tag val` tuples have no class; `%:: Enum :tag val` tuples carry their enum class for origin checking.
 

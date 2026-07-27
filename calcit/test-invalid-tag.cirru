@@ -6,19 +6,19 @@
   :files $ {}
     |test-invalid-tag.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum Result (:err :string) (:ok)
           :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ResultImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy nil
           :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ResultTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait ResultTrait $ .dummy :fn
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (println "|Testing %:: call") (println |Result: Result)
               println |ResultImpl: ResultImpl (; Direct call to %:: to see if function is invoked) (println "|Calling %:: ...")
@@ -26,7 +26,7 @@
                   result $ %:: Result :invalid
                 println "|Should not reach here:" result
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []

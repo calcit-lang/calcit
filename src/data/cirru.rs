@@ -26,6 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
       "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
+      "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
@@ -178,15 +179,16 @@ fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
   ];
 
   for (prefix, kind) in prefixes.iter() {
-    if let Some((obj, method)) = s.split_once(prefix) {
-      if is_valid_symbol(obj) && is_valid_symbol(method) {
-        let method_kind = if matches!(kind, MethodKind::Invoke(_)) {
-          MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone())
-        } else {
-          kind.to_owned()
-        };
-        return Some((obj.to_owned(), Calcit::Method(method.into(), method_kind)));
-      }
+    if let Some((obj, method)) = s.split_once(prefix)
+      && is_valid_symbol(obj)
+      && is_valid_symbol(method)
+    {
+      let method_kind = if matches!(kind, MethodKind::Invoke(_)) {
+        MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone())
+      } else {
+        kind.to_owned()
+      };
+      return Some((obj.to_owned(), Calcit::Method(method.into(), method_kind)));
     }
   }
 

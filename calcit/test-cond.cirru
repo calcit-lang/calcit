@@ -13,11 +13,11 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) (test-field-match) true
           :examples $ []
-        |test-and $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-and $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing and")
               assert= (and 1) 1
@@ -38,7 +38,7 @@
                 and (> 10 9) (> 10 11)
                 , false
           :examples $ []
-        |test-case $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-case $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-case ()
               let
@@ -59,7 +59,7 @@
                 assert= (detect-x 1) |one
                 assert= (detect-x 2) |two
           :examples $ []
-        |test-cond $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-cond $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -73,7 +73,7 @@
               assert= (compare-x 6) |>5
               assert= (compare-x 4) |<=5
           :examples $ []
-        |test-either $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-either $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing either")
               assert= 1 $ either nil 1
@@ -82,7 +82,7 @@
               assert= 1 $ either nil nil 1
               assert= 1 $ either (do nil) (do 1) (do nil)
           :examples $ []
-        |test-field-match $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-field-match $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing field-match")
               &let
@@ -99,7 +99,7 @@
                   [] :b 2
                 assert= :other $ match-ab (&{} :tag :c)
           :examples $ []
-        |test-or $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-or $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing or")
               assert= (or 1) 1
@@ -121,21 +121,19 @@
                 or (> 10 12) (> 10 11)
                 , false
           :examples $ []
-        |test-tag-match $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-tag-match $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing tag-match")
               ; println |EXPANDED $ format-to-cirru
                 macroexpand-all $ quote
                   tag-match (:: :a 1)
-                      :a x
-                      , 1
+                    (:a x) 1
                     (:a x y) 2
                     _ :none
               &let
                 match-ab $ fn (data)
                   tag-match data
-                      :a x
-                      ' "|pattern a:" x
+                    (:a x) (' "|pattern a:" x)
                     (:b x y) (' "|pattern b:" x y)
                     _ $ ' "|no match"
                 assert=
@@ -157,7 +155,7 @@
                   match-ab $ :: :c 1 2
                   [] "|no match"
           :examples $ []
-        |test-when $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-when $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing when")
               assert= 1 $ when true 1

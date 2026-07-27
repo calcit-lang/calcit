@@ -1,17 +1,17 @@
 
-{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |macro-ns)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |macro-ns)
   :configs $ {} (:init-fn |macro-ns.main/main!) (:reload-fn |macro-ns.main/reload!) (:version |0.0.0)
     :modules $ []
   :entries $ {}
   :files $ {}
     |macro-ns.lib $ %{} :FileEntry
       :defs $ {}
-        |expand-1 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |expand-1 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defmacro expand-1 (n) (println "|local data" v)
               quasiquote $ println ~n ~v
           :examples $ []
-        |v $ %{} :CodeEntry (:doc |) (:schema nil)
+        |v $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote (def v 100)
           :examples $ []
       :ns $ %{} :NsEntry (:doc |)
@@ -20,7 +20,7 @@
             [] util.core :refer $ [] log-title inside-eval:
     |macro-ns.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () $ expand-1 1
           :examples $ []

@@ -1,12 +1,12 @@
 
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.0)
-    :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./util.cirru
+    :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
   :entries $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |%A $ %{} :CodeEntry (:doc |) (:schema nil)
+        |%A $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl %A :%A $ .deref
               fn (self)
@@ -14,65 +14,65 @@
                   :atom x
                   , x
           :examples $ []
-        |%r $ %{} :CodeEntry (:doc |) (:schema nil)
+        |%r $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl %r :%demo $ .get
               fn (self) 1
           :examples $ []
-        |*ref-demo $ %{} :CodeEntry (:doc |) (:schema nil)
+        |*ref-demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote (defatom *ref-demo 0)
           :examples $ []
-        |AtomBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AtomBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def AtomBox $ impl-traits AtomBox0 %A
           :examples $ []
-        |AtomBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |AtomBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum AtomBox $ :atom :dynamic
           :examples $ []
-        |Demo $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def Demo $ impl-traits Demo0 %r
           :examples $ []
-        |Demo0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Demo0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum Demo $ :a :dynamic
           :examples $ []
-        |Deref $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Deref $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl Deref :Deref $ .deref
               fn (self) 2
           :examples $ []
-        |Num $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Num $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defimpl Num NumTrait
               .inc $ fn (x) (update x 1 inc)
               .show $ fn (x)
                 str $ &tuple:nth x 1
           :examples $ []
-        |NumBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |NumBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
           :examples $ []
-        |NumBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |NumBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum NumBox $ :number :number
           :examples $ []
-        |NumTrait $ %{} :CodeEntry (:doc |) (:schema nil)
+        |NumTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
-        |ValueBox $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ValueBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def ValueBox $ impl-traits ValueBox0 Deref
           :examples $ []
-        |ValueBox0 $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ValueBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum ValueBox $ :value :dynamic
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! ()
+            defn main! () (&init-builtin-impls!)
               println $ &get-os
               println "|gen id:" $ generate-id!
               inside-js: $ load-console-formatter!
@@ -113,6 +113,7 @@
               test-enum/main!
               test-traits/main!
               test-doc-smoke/main!
+              test-def-meta/main!
               test-buffer
               test-atom
               inside-js: $ test-js/main!
@@ -121,6 +122,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
+              :features $ #{} :js-ffi
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
@@ -456,5 +458,5 @@
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
-          ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke)
+          ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)
             util.core :refer $ log-title inside-eval: inside-js:

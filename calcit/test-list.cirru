@@ -6,7 +6,7 @@
   :files $ {}
     |test-list.main $ %{} :FileEntry
       :defs $ {}
-        |*counted $ %{} :CodeEntry (:doc |) (:schema nil)
+        |*counted $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote (defatom *counted 0)
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
@@ -162,7 +162,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ []
-        |test-list $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-list $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-list () $ let
                 a $ [] 1 2 3
@@ -313,7 +313,7 @@
                   , 0
                 , 0
           :examples $ []
-        |test-match $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-match $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing list match")
               assert= :empty $ list-match ([])
@@ -323,8 +323,7 @@
                 () :empty
                 (a b) :something
               assert= :something0 $ list-match ([] 1)
-                  a b
-                  , :something0
+                (a b) :something0
                 () :empty
               assert=
                 [] 1 $ [] 2 3
@@ -337,7 +336,7 @@
                   () nil
                   (l0 ls) (println "|...effect in match") ([] l0 ls)
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn () (log-title "|Testing list methods")
               assert= true $ .any? ([] 1 2 3 4)
@@ -472,7 +471,7 @@
               assert= ([] 1 2 3)
                 distinct $ [] 1 2 3 1 2
           :examples $ []
-        |test-methods-shorthand $ %{} :CodeEntry (:doc "|test shorthand") (:schema nil)
+        |test-methods-shorthand $ %{} :CodeEntry (:doc "|test shorthand") (:schema :dynamic)
           :code $ quote
             fn () $ &let
               xs $ [] 1 2 3 4
@@ -480,7 +479,7 @@
               assert= true $ xs.any?
                 fn (x) (&> x 3)
           :examples $ []
-        |test-pair $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-pair $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn ()
               assert=
@@ -495,7 +494,7 @@
                   [] ([] :a 2) ([] :b 12) ([] :b 112)
                   fn (k n) (> n 10)
           :examples $ []
-        |test-repeat $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-repeat $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn ()
               assert= (repeat :a 5) ([] :a :a :a :a :a)
@@ -505,7 +504,7 @@
               assert= ([] :a 1 :b 2 :c 3 :d 4)
                 interleave ([] :a :b :c :d) ([] 1 2 3 4)
           :examples $ []
-        |test-sort $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-sort $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn ()
               assert=

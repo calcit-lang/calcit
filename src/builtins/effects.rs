@@ -3,7 +3,7 @@ use std::fs;
 use std::process::exit;
 use std::sync::LazyLock;
 use std::sync::RwLock;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{
   builtins::meta::type_of,
@@ -85,7 +85,7 @@ pub fn quit(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "quit requires an i32 number, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::Quit).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -118,13 +118,27 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "get-env requires a string (environment variable name), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::GetEnv).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "get-env expected an argument, got nothing"),
   }
+}
+
+pub fn unix_time_ms(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if !xs.is_empty() {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("unix-time-ms expected no arguments, got {}", xs.len()),
+    );
+  }
+  let millis = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Effect, format!("unix-time-ms failed: {e}")))?
+    .as_millis() as f64;
+  Ok(Calcit::Number(millis))
 }
 
 pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -136,13 +150,57 @@ pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(a) => {
       let msg = format!(
         "read-file requires a string (file path), but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ReadFile).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     None => CalcitErr::err_str(CalcitErrKind::Arity, "read-file expected a filename, got nothing"),
   }
+}
+
+pub fn read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() > 2 {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("read-dir expected 1 or 2 arguments, got {}", xs.len()),
+    );
+  }
+  let (path, recursive) = match (xs.first(), xs.get(1)) {
+    (Some(Calcit::Str(path)), None) => (path, false),
+    (Some(Calcit::Str(path)), Some(Calcit::Bool(recursive))) => (path, *recursive),
+    (Some(path), recursive) => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!(
+          "read-dir requires a string path and an optional boolean, but received: {}{}",
+          type_of(std::slice::from_ref(path))?.lisp_str(),
+          recursive.map_or_else(String::new, |x| format!(" and {}", x.lisp_str()))
+        ),
+      );
+    }
+    (None, _) => return CalcitErr::err_str(CalcitErrKind::Arity, "read-dir expected a directory path, got nothing"),
+  };
+
+  fn collect_paths(path: &std::path::Path, recursive: bool, paths: &mut Vec<String>) -> Result<(), std::io::Error> {
+    for entry in fs::read_dir(path)? {
+      let entry = entry?;
+      let entry_path = entry.path();
+      paths.push(entry_path.to_string_lossy().to_string());
+      if recursive && entry.file_type()?.is_dir() {
+        collect_paths(&entry_path, true, paths)?;
+      }
+    }
+    Ok(())
+  }
+
+  let mut paths = vec![];
+  collect_paths(std::path::Path::new(&**path), recursive, &mut paths)
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Effect, format!("read-dir failed at {}: {e}", &**path)))?;
+  paths.sort();
+  Ok(Calcit::from(
+    paths.into_iter().map(|path| Calcit::Str(path.into())).collect::<Vec<_>>(),
+  ))
 }
 
 pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -154,8 +212,8 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(a), Some(b)) => {
       let msg = format!(
         "write-file requires 2 strings (path and content), but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(a))?.lisp_str(),
+        type_of(std::slice::from_ref(b))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::WriteFile).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)

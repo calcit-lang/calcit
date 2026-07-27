@@ -1,4 +1,4 @@
-use cirru_edn::{Edn, EdnRecordView, from_edn};
+use cirru_edn::{Edn, EdnMapView, EdnRecordView, from_edn};
 use cirru_parser::Cirru;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -23,6 +23,8 @@ pub struct CodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default)]
+  pub tags: Vec<String>,
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
@@ -102,6 +104,56 @@ fn map_key_path_segment(key: &Edn) -> String {
   }
 }
 
+fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
+  match text.trim_start_matches(':') {
+    "kind" => Some("kind"),
+    "args" => Some("args"),
+    "return" => Some("return"),
+    "rest" => Some("rest"),
+    "generics" => Some("generics"),
+    "where" => Some("where"),
+    _ => None,
+  }
+}
+
+fn canonical_schema_kind_name(text: &str) -> Option<&'static str> {
+  match text.trim_start_matches(':') {
+    "fn" => Some("fn"),
+    "macro" => Some("macro"),
+    _ => None,
+  }
+}
+
+fn normalize_schema_map(map: &EdnMapView) -> Edn {
+  let mut normalized = EdnMapView::default();
+
+  for (key, value) in &map.0 {
+    let normalized_key = match key {
+      Edn::Tag(tag) => Edn::tag(tag.ref_str()),
+      Edn::Str(text) => canonical_schema_field_name(text.as_ref())
+        .map(Edn::tag)
+        .unwrap_or_else(|| key.clone()),
+      Edn::Symbol(text) => canonical_schema_field_name(text.as_ref())
+        .map(Edn::tag)
+        .unwrap_or_else(|| key.clone()),
+      _ => key.clone(),
+    };
+
+    let normalized_value = match (&normalized_key, value) {
+      (Edn::Tag(tag), Edn::Str(text)) | (Edn::Tag(tag), Edn::Symbol(text)) if tag.ref_str() == "kind" => {
+        canonical_schema_kind_name(text.as_ref())
+          .map(Edn::tag)
+          .unwrap_or_else(|| value.clone())
+      }
+      _ => value.clone(),
+    };
+
+    normalized.insert(normalized_key, normalized_value);
+  }
+
+  Edn::Map(normalized)
+}
+
 /// Convert a schema Edn value (either old Quote-wrapped or new direct map) into Edn map form.
 fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
   // Simple scalar schemas (e.g. :dynamic, :nil) are valid as-is — skip Cirru path
@@ -109,6 +161,29 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
     Edn::Tag(_) | Edn::Nil => {
       validate_schema_edn_no_legacy_quotes(value, owner)?;
       return Ok(value.clone());
+    }
+    Edn::Map(map) => {
+      let normalized = normalize_schema_map(map);
+      validate_schema_edn_no_legacy_quotes(&normalized, owner)?;
+      return Ok(normalized);
+    }
+    Edn::Tuple(view)
+      if matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
+        && matches!(view.extra.first(), Some(Edn::Map(_))) =>
+    {
+      let Some(Edn::Map(map)) = view.extra.first() else {
+        unreachable!();
+      };
+      let mut normalized = match normalize_schema_map(map) {
+        Edn::Map(map) => map,
+        _ => unreachable!(),
+      };
+      if normalized.tag_get("kind").is_none() && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro") {
+        normalized.insert_key("kind", Edn::tag("macro"));
+      }
+      let normalized = Edn::Map(normalized);
+      validate_schema_edn_no_legacy_quotes(&normalized, owner)?;
+      return Ok(normalized);
     }
     _ => {}
   }
@@ -188,6 +263,32 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn, owner: &str) -> Result<(), 
   walk(value, owner, &mut path)
 }
 
+fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> {
+  match value {
+    Edn::Set(set) => {
+      let mut tags = Vec::with_capacity(set.0.len());
+      for item in &set.0 {
+        match item {
+          Edn::Tag(tag) => tags.push(format!(":{}", tag.ref_str())),
+          other => {
+            return Err(format!(
+              "{owner}: CodeEntry.tags expects tag items, got {}",
+              format_edn_preview(other)
+            ));
+          }
+        }
+      }
+      tags.sort();
+      tags.dedup();
+      Ok(tags)
+    }
+    other => Err(format!(
+      "{owner}: CodeEntry.tags expects a hashset, got {}",
+      format_edn_preview(other)
+    )),
+  }
+}
+
 fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   let record: EdnRecordView = match edn {
     Edn::Record(r) => r,
@@ -195,17 +296,17 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   };
   let mut doc = String::new();
   let mut examples: Vec<Cirru> = vec![];
+  let mut tags: Vec<String> = Vec::new();
   let mut code: Option<Cirru> = None;
   let mut schema: Option<Edn> = None;
   for (key, value) in &record.pairs {
     match key.arc_str().as_ref() {
       "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
       "examples" => examples = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:examples`: {e}"))?,
+      "tags" => tags = parse_tags_from_edn(value, owner)?,
       "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
-      "schema" => {
-        if !matches!(value, Edn::Nil) {
-          schema = Some(parse_schema_from_edn(value, owner).map_err(|e| format!("{owner}: invalid `:schema`: {e}"))?);
-        }
+      "schema" if !matches!(value, Edn::Nil) => {
+        schema = Some(parse_schema_from_edn(value, owner).map_err(|e| format!("{owner}: invalid `:schema`: {e}"))?);
       }
       _ => {}
     }
@@ -213,6 +314,7 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   Ok(CodeEntry {
     doc,
     examples,
+    tags,
     code: code.ok_or_else(|| format!("{owner}: missing `:code` field in CodeEntry"))?,
     schema,
   })

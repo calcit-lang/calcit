@@ -1,11 +1,15 @@
 ---
 title: "Imports"
+summary: "命名空间导入语法：:require、:refer、:as、:default，以及 cr edit add-import/imports 命令管理"
 scope: "core"
 kind: "reference"
 category: "features"
 aliases:
   - "namespace imports"
   - "require"
+  - "import module"
+  - "import namespace"
+  - "add-import"
   - "refer"
   - "module imports"
   - "add import"
@@ -25,7 +29,7 @@ Calcit loads namespaces from `calcit.cirru` (legacy filename: `compact.cirru`). 
 - **Alias**: `:require (app.lib :as lib)`
 - **Refer**: `:require (app.lib :refer $ f1 f2)`
 - **Core**: `calcit.core` is auto-imported
-- **CLI Add**: `cr edit add-import app.main -e 'app.lib :refer $ f1'`
+- **CLI Add**: `cr edit add-import app.main --code 'quote (app.lib :refer $ f1)'`
 
 ## The `ns` Form
 
@@ -116,10 +120,10 @@ The `cr edit` CLI commands help manage imports safely:
 
 ```bash
 # Add a new import to a namespace
-cr app.cirru edit add-import app.demo -e 'app.util :refer $ helper'
+cr app.cirru edit add-import app.demo --code 'quote (app.util :refer $ helper)'
 
 # Override an existing import (same source namespace)
-cr app.cirru edit add-import app.demo -e 'app.util :refer $ helper new-fn' -o
+cr app.cirru edit add-import app.demo --code 'quote (app.util :refer $ helper new-fn)' --overwrite
 ```
 
 See `cr edit --help` for all available operations.

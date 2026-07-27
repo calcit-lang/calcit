@@ -7,7 +7,10 @@ aliases:
   - "tuple"
   - "tagged tuple"
   - "tuple match"
+id: core/features/tuples
+parent: core/features
 ---
+
 # Tuples
 
 Tuples in Calcit are tagged unions that can hold multiple values with a tag. They are used for representing structured data and are the foundation for records and enums.
@@ -17,7 +20,8 @@ Tuples in Calcit are tagged unions that can hold multiple values with a tag. The
 - **Create**: `:: :point 10 20`
 - **Create Typed**: `%:: Shape :circle 5`
 - **Access**: `&tuple:nth t 1`
-- **Match**: `match t ((:point x y) ...)` (recommended) / `tag-match t ((:point x y) ...)` (legacy)
+- **Match Tuples**: `match t ((:point x y) ...)` (recommended for both plain tuples and enum-backed tuples)
+- **Legacy Match**: `tag-match t ((:point x y) ...)`
 - **Update**: `&tuple:assoc t 1 99`
 
 ## Creating Tuples
@@ -175,7 +179,7 @@ let
     _ |Unknown
 ```
 
-`tag-match` is the only option when matching plain (untyped) tuples — `match` requires an enum definition.
+`tag-match` remains available as a legacy alternative, but `match` also works on plain (untyped) tuples.
 
 ### list-match
 
@@ -257,12 +261,12 @@ let
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :string) (:err :string)
-    process-result $ defn process-result (r)
-  hint-fn $ {} (:args ([] :dynamic)) (:return :string)
-      tag-match r
+    process-result $ fn (r)
+      hint-fn $ {} (:args $ [] :dynamic) (:return :string)
+      match r
         (:ok v) (str v)
         (:err msg) msg
-  process-result (%:: ApiResult :ok |done)
+  process-result $ %:: ApiResult :ok |done
 ```
 
 ## Tuple vs Record

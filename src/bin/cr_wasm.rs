@@ -7,6 +7,10 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "../type_coverage.rs"]
+mod type_coverage;
+
 use argh::FromArgs;
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;

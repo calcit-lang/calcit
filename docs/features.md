@@ -1,5 +1,6 @@
 ---
 title: "Features"
+summary: "Calcit 语言特性概览：不可变数据结构、函数式编程、JS 互操作、宏、类型系统、热重载"
 scope: "core"
 kind: "hub"
 category: "features"
@@ -12,6 +13,12 @@ aliases:
 entry_for:
   - "impl-traits"
   - "assert-type"
+id: core/features
+leads_to:
+  - core/features/list
+  - core/features/records
+  - core/features/tuples
+  - core/features/enums
 ---
 
 # Features
@@ -29,7 +36,7 @@ Calcit inherits most features from Clojure/ClojureScript while adding its own in
 
 ## Unique to Calcit
 
-- **Indentation-based syntax** - Alternative to parentheses using `bundle_calcit`, similar to Python/Haskell
+- **Indentation-based syntax** - Alternative to parentheses for writing Calcit source, similar to Python/Haskell
 - **Structural editing** - Visual tree-based code editing with Calcit Editor (Electron app)
 - **ES Modules output** - Modern JavaScript module format, tree-shakeable
 - **MCP integration** - Model Context Protocol server for AI assistant tool integration
@@ -62,7 +69,7 @@ For detailed information about specific features:
 Use this section as a keyword index for `cr docs read`:
 
 - **Collections**: list, map, set, tuple, record
-- **Pattern Matching**: enum, match, tag-match, tuple-match, result, exhaustiveness
+- **Pattern Matching**: enum, match, legacy tag-match, tuple-match, result, exhaustiveness
 - **Types**: static-analysis, assert-type, optional, variadic
 - **Methods**: trait, impl-traits, method dispatch, trait-call
 - **Interop**: js interop, async, promise, js-await

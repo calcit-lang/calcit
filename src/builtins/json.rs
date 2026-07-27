@@ -18,7 +18,7 @@ pub fn parse(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     [value] => {
       let msg = format!(
         "json-parse expected a string, but received: {}",
-        type_of(&[value.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(value))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::JsonParse).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -149,7 +149,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     | Calcit::BufList(..) => {
       let msg = format!(
         "json-stringify cannot encode value of type: {}",
-        type_of(&[value.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(value))?.lisp_str()
       );
       Err(CalcitErr::use_str(CalcitErrKind::Type, msg))
     }
@@ -185,7 +185,7 @@ fn json_key(value: &Calcit) -> Result<String, CalcitErr> {
     other => {
       let msg = format!(
         "json-stringify expected object keys to be tags or strings, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
+        type_of(std::slice::from_ref(other))?.lisp_str()
       );
       Err(CalcitErr::use_str(CalcitErrKind::Type, msg))
     }

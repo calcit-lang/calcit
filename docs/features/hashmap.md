@@ -7,6 +7,8 @@ aliases:
   - "hash map"
   - "map"
   - "key value"
+id: core/features/hashmap
+parent: core/features
 ---
 # HashMap
 
@@ -46,7 +48,7 @@ let
 
 The low-level primitive `&{}` takes flat key-value pairs:
 
-```cirru.no-run
+```cirru
 &{} :a 1 :b 2
 ```
 

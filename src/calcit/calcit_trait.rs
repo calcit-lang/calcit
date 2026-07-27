@@ -178,6 +178,7 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![1])),
       body: vec![crate::Calcit::Nil; body_len],
       generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
     })

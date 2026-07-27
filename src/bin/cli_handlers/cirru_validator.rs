@@ -208,7 +208,7 @@ fn format_path(path: &[usize]) -> String {
   if path.is_empty() {
     "root".to_string()
   } else {
-    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+    format!("@{}", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("."))
   }
 }
 

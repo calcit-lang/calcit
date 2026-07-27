@@ -6,26 +6,25 @@
   :files $ {}
     |test-sum-types.main $ %{} :FileEntry
       :defs $ {}
-        |ActionImpl $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ActionImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             let
                 ActionTrait $ deftrait ActionTrait (.describe :fn)
               defimpl ActionImpl ActionTrait $ .describe
                 fn (self)
                   tag-match self
-                      :ok value
-                      str "|Action ok -> " value
+                    (:ok value) (str "|Action ok -> " value)
                     (:err message) (str "|Action err -> " message)
           :examples $ []
-        |ActionResult $ %{} :CodeEntry (:doc |) (:schema nil)
+        |ActionResult $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             def ActionResult $ impl-traits Result ActionImpl
           :examples $ []
-        |Result $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum Result (:ok :number) (:err :string)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (println "|Testing sum types...")
               let
@@ -56,7 +55,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-        |reload! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn reload! () nil
           :examples $ []
@@ -64,8 +63,7 @@
           :code $ quote
             defn summarize (action)
               tag-match action
-                  :ok value
-                  str "|handled ok " value
+                (:ok value) (str "|handled ok " value)
                 (:err message) (str "|handled err " message)
           :examples $ []
           :schema $ :: :fn

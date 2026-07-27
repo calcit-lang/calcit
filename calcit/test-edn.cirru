@@ -6,15 +6,15 @@
   :files $ {}
     |test-edn.main $ %{} :FileEntry
       :defs $ {}
-        |A $ %{} :CodeEntry (:doc |) (:schema nil)
+        |A $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct A $ :a :dynamic
           :examples $ []
-        |DemoEnum $ %{} :CodeEntry (:doc |) (:schema nil)
+        |DemoEnum $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defenum DemoEnum (:ok) (:err :string)
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |) (:schema nil)
+        |Person $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defstruct Person (:name :string) (:age :number)
           :examples $ []
@@ -25,13 +25,13 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)
               inside-eval: $ test-symbol
               test-atom
           :examples $ []
-        |test-atom $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-atom $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-atom () (log-title "|Testing atom to edn")
               let
@@ -41,7 +41,7 @@
                 assert= 1 $ deref a
                 assert= "|atom 1" $ trim (format-cirru-edn a)
           :examples $ []
-        |test-edn $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-edn $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-edn () $ let
                 edn-demo "|%{} :Person (:age 23) (:name |Chen)"
@@ -111,8 +111,10 @@
                     {} $ :DemoEnum DemoEnum
                 assert= :err $ &tuple:nth enum-err 0
                 assert= "|%:: :DemoEnum :err |oops" $ trim (format-cirru-edn enum-err)
+              assert= "|do \"|a b\"" $ trim (format-cirru-edn "|a b")
+              assert= "|do |hello" $ trim (format-cirru-edn |hello)
           :examples $ []
-        |test-edn-comment $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-edn-comment $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-edn-comment () (log-title "|Testing edn comment")
               assert=
@@ -123,7 +125,7 @@
                 parse-cirru-edn "|{} (:a 1) (:b 2)"
               assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
-        |test-symbol $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-symbol $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-symbol () (log-title "|Testing symbol to edn")
               assert= (&extract-code-into-edn 'aa)

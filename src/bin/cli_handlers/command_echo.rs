@@ -40,9 +40,6 @@ macro_rules! echo_items {
       &CodeInputParts::new(
         opts.file.as_deref(),
         opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
       ),
     );
     echo_items!($tokens $(, $($rest)*)?);
@@ -57,6 +54,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Libs(_))
       | Some(CalcitCommand::Edit(_))
       | Some(CalcitCommand::Tree(_))
+      | Some(CalcitCommand::Config(_))
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
   )
@@ -68,16 +66,27 @@ pub fn print_command_echo(cli_args: &ToplevelCalcit) {
   };
 
   eprintln!("{}", format!("Command: {command}").blue().bold());
+
+  if let Some(explanation) = render_command_explanation(cli_args) {
+    eprintln!("{}", format!("# Explanation: {explanation}").blue().bold());
+  }
 }
 
 fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let subcommand = cli_args.subcommand.as_ref()?;
   let mut tokens = vec![match subcommand {
     CalcitCommand::Query(cmd) => format!("cr query {}", query_name(&cmd.subcommand)),
-    CalcitCommand::Docs(cmd) => format!("cr docs {}", docs_name(&cmd.subcommand)),
+    CalcitCommand::Docs(cmd) => match &cmd.subcommand {
+      DocsSubcommand::RemoteLibs(opts) => match opts.subcommand.as_ref() {
+        Some(subcommand) => format!("cr docs remote-libs {}", libs_name(subcommand)),
+        None => "cr docs remote-libs".to_string(),
+      },
+      other => format!("cr docs {}", docs_name(other)),
+    },
     CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("cr edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("cr tree {}", tree_name(&cmd.subcommand)),
+    CalcitCommand::Config(cmd) => format!("cr config {}", config_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("cr analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("cr cirru {}", cirru_name(&cmd.subcommand)),
     _ => return None,
@@ -89,6 +98,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Libs(cmd) => push_libs(&mut tokens, cmd.subcommand.as_ref()?),
     CalcitCommand::Edit(cmd) => push_edit(&mut tokens, cmd),
     CalcitCommand::Tree(cmd) => push_tree(&mut tokens, cmd),
+    CalcitCommand::Config(cmd) => push_config(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
     CalcitCommand::Cirru(cmd) => push_cirru(&mut tokens, cmd),
     _ => return None,
@@ -97,13 +107,375 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   Some(tokens.join(" "))
 }
 
+fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
+  let subcommand = cli_args.subcommand.as_ref()?;
+  match subcommand {
+    CalcitCommand::Query(cmd) => render_query_explanation(cmd),
+    CalcitCommand::Edit(cmd) => render_edit_explanation(cmd),
+    CalcitCommand::Tree(cmd) => render_tree_explanation(cmd),
+    CalcitCommand::Docs(cmd) => render_docs_explanation(cmd),
+    CalcitCommand::Analyze(cmd) => render_analyze_explanation(cmd),
+    CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
+    _ => None,
+  }
+}
+
+fn describe_code_input(parts: &CodeInputParts<'_>) -> String {
+  let mut desc = String::new();
+  if parts.code.is_some() {
+    desc.push_str("--code is an inline expression (auto-detects JSON vs Cirru). ");
+  }
+  if let Some(_file) = parts.file {
+    desc.push_str("--file reads input from a file (auto-detects JSON vs Cirru). ");
+  }
+  desc
+}
+
+fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    QuerySubcommand::Search(opts) => {
+      let mut desc = format!("searches for `{}` in AST leaf nodes", opts.pattern);
+      if let Some(filter) = &opts.filter {
+        desc.push_str(&format!(", filtered by definitions matching `{filter}`"));
+      }
+      if opts.exact {
+        desc.push_str(" (exact match)");
+      } else if !opts.regex {
+        desc.push_str(" (case-insensitive contains, default)");
+      }
+      if opts.regex {
+        desc.push_str(" (regex match)");
+      }
+      if opts.max_depth > 0 {
+        desc.push_str(&format!(", max tree depth={}", opts.max_depth));
+      }
+      desc
+    }
+    QuerySubcommand::SearchExpr(opts) => {
+      let mut desc = format!("searches for Cirru expression `{}` in definitions", opts.pattern);
+      if let Some(filter) = &opts.filter {
+        desc.push_str(&format!(", filtered by `{filter}`"));
+      }
+      if opts.json {
+        desc.push_str(" (JSON output)");
+      }
+      desc
+    }
+    QuerySubcommand::Find(opts) => {
+      let mut desc = format!("finds all references to symbol `{}`", opts.symbol);
+      if opts.deps {
+        desc.push_str(" (including dependencies)");
+      }
+      if opts.exact {
+        desc.push_str(" (exact match)");
+      }
+      desc
+    }
+    QuerySubcommand::Def(opts) => {
+      let mut desc = format!("displays definition `{}` (namespace/definition format)", opts.target);
+      if opts.json {
+        desc.push_str(" (JSON output)");
+      }
+      if opts.raw {
+        desc.push_str(" (raw, no chunking)");
+      }
+      desc
+    }
+    QuerySubcommand::Peek(opts) => format!("previews definition `{}`", opts.target),
+    QuerySubcommand::Examples(opts) => format!("shows usage examples for `{}`", opts.target),
+    QuerySubcommand::Schema(opts) => format!("shows type schema for `{}`", opts.target),
+    QuerySubcommand::Usages(opts) => {
+      let mut desc = format!("finds all usages of `{}` in codebase", opts.target);
+      if opts.deps {
+        desc.push_str(" (including dependencies)");
+      }
+      desc
+    }
+    QuerySubcommand::Ns(opts) => {
+      let mut desc = "lists all namespaces".to_string();
+      if let Some(ns) = &opts.namespace {
+        desc.push_str(&format!(" matching `{ns}`"));
+      }
+      if opts.deps {
+        desc.push_str(" (including dependency namespaces)");
+      }
+      desc
+    }
+    QuerySubcommand::Defs(opts) => {
+      let mut desc = format!("lists all definitions in namespace `{}`", opts.namespace);
+      if let Some(tag) = &opts.tag {
+        desc.push_str(&format!(" filtered by tag `{tag}`"));
+      }
+      desc
+    }
+    QuerySubcommand::Pkg(_) => "shows package metadata".to_string(),
+    QuerySubcommand::Config(_) => "shows project configuration".to_string(),
+    QuerySubcommand::Error(_) => "shows recent build errors".to_string(),
+    QuerySubcommand::Modules(_) => "lists loaded modules".to_string(),
+    QuerySubcommand::HostProcs(opts) => {
+      let mut desc = "lists host procedures (FFI)".to_string();
+      if let Some(tag) = &opts.tag {
+        desc.push_str(&format!(" filtered by tag `{tag}`"));
+      }
+      desc
+    }
+    QuerySubcommand::Path(_) => "resolves semantic path to numeric indices".to_string(),
+    QuerySubcommand::Anchors(_) => "lists @anchor annotations in namespace".to_string(),
+  })
+}
+
+fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    EditSubcommand::Format(_) => "rewrites snapshot file in canonical format".to_string(),
+    EditSubcommand::Def(opts) => {
+      let desc = format!("adds/updates definition `{}`", opts.target);
+      format!(
+        "{}; {}",
+        desc,
+        describe_code_input(&CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()))
+      )
+    }
+    EditSubcommand::MvDef(opts) => format!("moves/renames definition from `{}` to `{}`", opts.source, opts.target),
+    EditSubcommand::RmDef(opts) => format!("deletes definition `{}`", opts.target),
+    EditSubcommand::Doc(opts) => format!("updates documentation for `{}`", opts.target),
+    EditSubcommand::Schema(opts) => {
+      let mut desc = format!("updates type schema for `{}`", opts.target);
+      if opts.clear {
+        desc.push_str(" (clears existing schema)");
+      }
+      desc
+    }
+    EditSubcommand::Examples(opts) => {
+      let mut desc = format!("sets usage examples for `{}`", opts.target);
+      if opts.clear {
+        desc.push_str(" (clears existing examples)");
+      }
+      desc
+    }
+    EditSubcommand::AddExample(opts) => format!(
+      "adds example to `{}`{}",
+      opts.target,
+      opts.at.as_ref().map_or(String::new(), |at| format!(" at position `{at}`"))
+    ),
+    EditSubcommand::RmExample(opts) => format!("removes example at index {} from `{}`", opts.index, opts.target),
+    EditSubcommand::Tags(opts) => {
+      let mut desc = format!("views/updates tags for `{}`", opts.target);
+      if let Some(tags) = &opts.tags {
+        desc.push_str(&format!(" to `{tags}`"));
+      }
+      desc
+    }
+    EditSubcommand::AddNs(opts) => {
+      let desc = format!("adds namespace `{}`", opts.namespace);
+      format!(
+        "{}; {}",
+        desc,
+        describe_code_input(&CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()))
+      )
+    }
+    EditSubcommand::RmNs(opts) => format!("deletes namespace `{}`", opts.namespace),
+    EditSubcommand::Imports(opts) => {
+      let desc = format!("replaces all imports in namespace `{}`", opts.namespace);
+      format!(
+        "{}; {}",
+        desc,
+        describe_code_input(&CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()))
+      )
+    }
+    EditSubcommand::AddImport(opts) => {
+      let desc = format!("adds import rule to namespace `{}`", opts.namespace);
+      format!(
+        "{}; {} {}",
+        desc,
+        describe_code_input(&CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref())),
+        if opts.overwrite { "(overwrites existing)" } else { "" }
+      )
+    }
+    EditSubcommand::RmImport(opts) => format!("removes import `{}` from namespace `{}`", opts.source_ns, opts.namespace),
+    EditSubcommand::NsDoc(opts) => format!("updates documentation for namespace `{}`", opts.namespace),
+    EditSubcommand::Inc(_) => "describes incremental code changes (added/removed/changed defs)".to_string(),
+    EditSubcommand::Cp(opts) => format!(
+      "copies AST node from path `{}` to `{}` in `{}` (position: {})",
+      opts.from, opts.path, opts.target, opts.at
+    ),
+    EditSubcommand::Mv(opts) => format!(
+      "moves AST node from path `{}` to `{}` in `{}` (position: {})",
+      opts.from, opts.path, opts.target, opts.at
+    ),
+    EditSubcommand::Rename(opts) => format!("renames `{}` to `{}` (same namespace)", opts.source, opts.new_name),
+    EditSubcommand::SplitDef(opts) => format!(
+      "extracts sub-expression at path `{}` from `{}` into new definition `{}`",
+      opts.path, opts.target, opts.new_name
+    ),
+  })
+}
+
+fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    TreeSubcommand::Show(opts) => {
+      let mut desc = format!("displays AST subtree of `{}`", opts.target);
+      if let Some(path) = &opts.path {
+        desc.push_str(&format!(" at path `{path}`"));
+      }
+      if opts.json {
+        desc.push_str(" (JSON output)");
+      }
+      if opts.raw {
+        desc.push_str(" (raw, no chunking)");
+      }
+      desc
+    }
+    TreeSubcommand::Replace(opts) => {
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref());
+      let mut desc = format!("replaces AST node at path `{}` in `{}`", opts.path, opts.target);
+      let code_desc = describe_code_input(&code_parts);
+      if !code_desc.is_empty() {
+        desc.push_str(&format!("; {code_desc}"));
+      }
+      desc
+    }
+    TreeSubcommand::ReplaceLeaf(opts) => {
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref());
+      let mode = if opts.regex { "regex match" } else { "exact match" };
+      let mut desc = format!("replaces all leaf nodes matching `{}` in `{}` ({mode})", opts.pattern, opts.target);
+      let code_desc = describe_code_input(&code_parts);
+      if !code_desc.is_empty() {
+        desc.push_str(&format!("; {code_desc}"));
+      }
+      desc
+    }
+    TreeSubcommand::SearchReplace(opts) => {
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref());
+      let mut desc = format!("finds unique leaf `{}` in `{}` and replaces it", opts.pattern, opts.target);
+      let code_desc = describe_code_input(&code_parts);
+      if !code_desc.is_empty() {
+        desc.push_str(&format!("; {code_desc}"));
+      }
+      desc
+    }
+    TreeSubcommand::Delete(opts) => format!("removes AST node at path `{}` from `{}`", opts.path, opts.target),
+    TreeSubcommand::InsertBefore(opts) => format!("inserts code before path `{}` in `{}`", opts.path, opts.target),
+    TreeSubcommand::InsertAfter(opts) => format!("inserts code after path `{}` in `{}`", opts.path, opts.target),
+    TreeSubcommand::InsertChild(opts) => format!("inserts child node at path `{}` in `{}`", opts.path, opts.target),
+    TreeSubcommand::AppendChild(opts) => format!("appends child node at path `{}` in `{}`", opts.path, opts.target),
+    TreeSubcommand::SwapNext(opts) => format!("swaps node at path `{}` with its next sibling in `{}`", opts.path, opts.target),
+    TreeSubcommand::SwapPrev(opts) => format!("swaps node at path `{}` with its previous sibling in `{}`", opts.path, opts.target),
+    TreeSubcommand::Unwrap(opts) => format!(
+      "removes list wrapping at path `{}` in `{}`, promotes children up",
+      opts.path, opts.target
+    ),
+    TreeSubcommand::Raise(opts) => format!("raises node at path `{}` one level up in `{}`", opts.path, opts.target),
+    TreeSubcommand::Wrap(opts) => {
+      let code_parts = CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref());
+      let mut desc = format!("wraps node at path `{}` in a new list in `{}`", opts.path, opts.target);
+      let code_desc = describe_code_input(&code_parts);
+      if !code_desc.is_empty() {
+        desc.push_str(&format!("; {code_desc}"));
+      }
+      desc
+    }
+    TreeSubcommand::Rewrite(opts) => {
+      let mut desc = format!("structural rewrite at path `{}` in `{}`", opts.path, opts.target);
+      if !opts.with.is_empty() {
+        desc.push_str(&format!("; binds: {}", opts.with.join(", ")));
+      }
+      desc
+    }
+    TreeSubcommand::BatchDelete(opts) => format!(
+      "deletes {} path(s) from `{}` (sorted highest-to-lowest)",
+      opts.paths.len(),
+      opts.target
+    ),
+  })
+}
+
+fn render_docs_explanation(cmd: &DocsCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    DocsSubcommand::Scopes(_) => "lists available documentation scopes".to_string(),
+    DocsSubcommand::RemoteLibs(_) => "searches remote library documentation".to_string(),
+    DocsSubcommand::Search(opts) => format!("searches documentation for `{}`", opts.keyword),
+    DocsSubcommand::List(opts) => {
+      let mut desc = "lists available documentation files".to_string();
+      if let Some(module) = &opts.module {
+        desc.push_str(&format!(" in module `{module}`"));
+      }
+      desc
+    }
+    DocsSubcommand::Sections(opts) => format!("shows sections in `{}`", opts.filename),
+    DocsSubcommand::Read(opts) => format!("reads documentation from `{}`", opts.filename),
+    DocsSubcommand::Agents(_) => "reads agent/developer guide".to_string(),
+    DocsSubcommand::ReadLines(opts) => format!("reads specific lines from `{}`", opts.filename),
+    DocsSubcommand::CheckMd(opts) => format!("validates code snippets in `{}`", opts.file),
+    DocsSubcommand::Graph(_) => "builds or queries the documentation relationship graph".to_string(),
+  })
+}
+
+fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    AnalyzeSubcommand::CallGraph(opts) => {
+      let mut desc = "analyzes function call graph".to_string();
+      if let Some(root) = &opts.root {
+        desc.push_str(&format!(" from root `{root}`"));
+      }
+      if let Some(prefix) = &opts.ns_prefix {
+        desc.push_str(&format!(", namespace prefix `{prefix}`"));
+      }
+      desc
+    }
+    AnalyzeSubcommand::CallGraphDiff(opts) => format!("compares call graph changes since `{}`", opts.git_ref),
+    AnalyzeSubcommand::CountCalls(opts) => {
+      let mut desc = "counts function call frequencies".to_string();
+      if let Some(root) = &opts.root {
+        desc.push_str(&format!(" from root `{root}`"));
+      }
+      desc
+    }
+    AnalyzeSubcommand::ProgramDiff(opts) => format!("compares AST structure since `{}`", opts.git_ref),
+    AnalyzeSubcommand::CheckExamples(_) => "validates all code examples in definitions".to_string(),
+    AnalyzeSubcommand::CheckTypes(opts) => {
+      let mut desc = "performs type checking".to_string();
+      if let Some(ns) = &opts.ns {
+        desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      desc
+    }
+    AnalyzeSubcommand::WeakTypes(opts) => {
+      let mut desc = "analyzes weak/untyped definitions".to_string();
+      if let Some(ns) = &opts.ns {
+        desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      desc
+    }
+    AnalyzeSubcommand::EffectsGraph(opts) => {
+      let mut desc = "builds effects dependency graph".to_string();
+      if let Some(root) = &opts.root {
+        desc.push_str(&format!(" from root `{root}`"));
+      }
+      desc
+    }
+    AnalyzeSubcommand::JsEscape(opts) => format!("escapes Calcit symbol `{}` to JS-safe name", opts.symbol),
+    AnalyzeSubcommand::JsUnescape(opts) => format!("unescapes JS name back to Calcit symbol `{}`", opts.symbol),
+  })
+}
+
+fn render_cirru_explanation(cmd: &CirruCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    CirruSubcommand::Parse(opts) => format!("parses Cirru code `{}` into AST", opts.code),
+    CirruSubcommand::Format(opts) => format!("formats JSON-encoded Cirru AST: `{}`", opts.json),
+    CirruSubcommand::ParseEdn(opts) => format!("parses EDN data: `{}`", opts.edn),
+    CirruSubcommand::ShowGuide(_) => "displays Cirru language syntax guide".to_string(),
+  })
+}
+
 fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
   match &cmd.subcommand {
     QuerySubcommand::Schema(opts) => echo_items!(tokens, pos "target" => &opts.target, switch "json" => opts.json),
     QuerySubcommand::Ns(opts) => {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
     }
-    QuerySubcommand::Defs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
+    QuerySubcommand::Defs(opts) => {
+      echo_items!(tokens, pos "namespace" => &opts.namespace, opt "tag" => opts.tag.as_deref(); default "none")
+    }
     QuerySubcommand::Pkg(_) | QuerySubcommand::Config(_) | QuerySubcommand::Error(_) | QuerySubcommand::Modules(_) => {}
     QuerySubcommand::Def(opts) => echo_items!(
       tokens,
@@ -135,6 +507,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       pos "pattern" => &opts.pattern,
       opt "filter" => opts.filter.as_deref(); default "none",
       switch "exact" => opts.exact,
+      switch "regex" => opts.regex,
       value "max-depth" => opts.max_depth; default "0",
       opt "start-path" => opts.start_path.as_deref(); default "none",
       opt "entry" => opts.entry.as_deref(); default "none",
@@ -150,18 +523,37 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       opt "entry" => opts.entry.as_deref(); default "none",
       value "detail-offset" => opts.detail_offset; default "0"
     ),
+    QuerySubcommand::HostProcs(opts) => {
+      echo_items!(tokens, opt "tag" => opts.tag.as_deref(); default "none")
+    }
+    QuerySubcommand::Path(opts) => {
+      echo_items!(tokens, opt "selector" => Some(opts.selector.as_str()); default "none")
+    }
+    QuerySubcommand::Anchors(_) => {}
   }
 }
 
 fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
   match &cmd.subcommand {
+    DocsSubcommand::Scopes(_) => {}
+    DocsSubcommand::RemoteLibs(opts) => {
+      if let Some(subcommand) = opts.subcommand.as_ref() {
+        push_libs(tokens, subcommand);
+      }
+    }
     DocsSubcommand::Search(opts) => echo_items!(
       tokens,
       pos "keyword" => &opts.keyword,
       value "context" => opts.context; default "5",
       opt "filename" => opts.filename.as_deref(); default "none",
-      opt "scope" => opts.scope.as_deref(); default "none",
       opt "module" => opts.module.as_deref(); default "none"
+    ),
+    DocsSubcommand::List(opts) => echo_items!(tokens, opt "module" => opts.module.as_deref(); default "none"),
+    DocsSubcommand::Sections(opts) => echo_items!(
+      tokens,
+      pos "filename" => &opts.filename,
+      opt "module" => opts.module.as_deref(); default "none",
+      switch "with-lines" => opts.with_lines
     ),
     DocsSubcommand::Read(opts) => echo_items!(
       tokens,
@@ -170,7 +562,6 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       switch "no-subheadings" => opts.no_subheadings,
       switch "full" => opts.full,
       switch "with-lines" => opts.with_lines,
-      opt "scope" => opts.scope.as_deref(); default "none",
       opt "module" => opts.module.as_deref(); default "none"
     ),
     DocsSubcommand::Agents(opts) => echo_items!(
@@ -186,13 +577,36 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       pos "filename" => &opts.filename,
       value "start" => opts.start; default "0",
       value "lines" => opts.lines; default "80",
-      opt "scope" => opts.scope.as_deref(); default "none",
       opt "module" => opts.module.as_deref(); default "none"
     ),
-    DocsSubcommand::List(_) => {}
     DocsSubcommand::CheckMd(opts) => {
-      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "demos/calcit.cirru", list "dep" => &opts.dep)
+      echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "calcit.cirru", list "dep" => &opts.dep, switch "failures-only" => opts.failures_only)
     }
+    DocsSubcommand::Graph(opts) => match &opts.subcommand {
+      DocsGraphSubcommand::Build(_) => tokens.push("build".to_string()),
+      DocsGraphSubcommand::Check(_) => tokens.push("check".to_string()),
+      DocsGraphSubcommand::Children(opts) => {
+        tokens.push("children".to_string());
+        echo_items!(tokens, pos "node" => &opts.node)
+      }
+      DocsGraphSubcommand::Related(opts) => {
+        tokens.push("related".to_string());
+        echo_items!(tokens, pos "node" => &opts.node)
+      }
+      DocsGraphSubcommand::Path(opts) => {
+        tokens.push("path".to_string());
+        echo_items!(tokens, pos "from" => &opts.from, pos "to" => &opts.to)
+      }
+      DocsGraphSubcommand::Explain(opts) => {
+        tokens.push("explain".to_string());
+        echo_items!(tokens, pos "definition" => &opts.definition, switch "full" => opts.full)
+      }
+      DocsGraphSubcommand::Missing(opts) => {
+        tokens.push("missing".to_string());
+        echo_items!(tokens, opt "ns" => opts.ns.as_deref(); default "all", value "limit" => opts.limit; default "50")
+      }
+      DocsGraphSubcommand::Orphans(_) => tokens.push("orphans".to_string()),
+    },
   }
 }
 
@@ -261,6 +675,23 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "only" => opts.only.as_deref(); default "all",
       switch "deps" => opts.deps
     ),
+    AnalyzeSubcommand::WeakTypes(opts) => echo_items!(
+      tokens,
+      opt "ns" => opts.ns.as_deref(); default "none",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
+      opt "only" => opts.only.as_deref(); default "all",
+      switch "deps" => opts.deps
+    ),
+    AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
+      tokens,
+      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
+      switch "include-core" => opts.include_core,
+      value "max-depth" => opts.max_depth; default "2",
+      value "format" => &opts.format; default "tree",
+      value "detail" => &opts.detail; default "summary",
+      value "color" => opts.color; default "true"
+    ),
     AnalyzeSubcommand::JsEscape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
     AnalyzeSubcommand::JsUnescape(opts) => echo_items!(tokens, pos "symbol" => &opts.symbol),
   }
@@ -281,6 +712,13 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts)
     }
     EditSubcommand::RmExample(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "index" => &opts.index.to_string()),
+    EditSubcommand::Tags(opts) => {
+      echo_items!(
+        tokens,
+        pos "target" => &opts.target,
+        opt "tags" => opts.tags.as_deref(); default "none"
+      )
+    }
     EditSubcommand::AddNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
     EditSubcommand::RmNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
     EditSubcommand::Imports(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts),
@@ -289,9 +727,6 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
     }
     EditSubcommand::RmImport(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, pos "source-ns" => &opts.source_ns),
     EditSubcommand::NsDoc(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace, pos "doc" => &opts.doc),
-    EditSubcommand::AddModule(opts) => echo_items!(tokens, pos "module-path" => &opts.module_path),
-    EditSubcommand::RmModule(opts) => echo_items!(tokens, pos "module-path" => &opts.module_path),
-    EditSubcommand::Config(opts) => echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value),
     EditSubcommand::Inc(opts) => {
       echo_items!(tokens, list "added-ns" => &opts.added_ns, list "removed-ns" => &opts.removed_ns, list "ns-updated" => &opts.ns_updated, list "added" => &opts.added, list "removed" => &opts.removed, list "changed" => &opts.changed)
     }
@@ -313,7 +748,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
     TreeSubcommand::Show(opts) => echo_items!(
       tokens,
       pos "target" => &opts.target,
-      value "path" => &opts.path,
+      opt "path" => opts.path.as_deref(); default "none",
       value "depth" => opts.depth; default "2",
       switch "json" => opts.json,
       value "chunk-target-nodes" => opts.chunk_target_nodes; default "56",
@@ -326,7 +761,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, code_input opts, value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::ReplaceLeaf(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, code_input opts, value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::Delete(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, value "depth" => opts.depth; default "2")
@@ -335,52 +770,28 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
       opts.depth,
     ),
     TreeSubcommand::InsertAfter(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
       opts.depth,
     ),
     TreeSubcommand::InsertChild(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
       opts.depth,
     ),
     TreeSubcommand::AppendChild(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
-      CodeInputParts::new(
-        opts.file.as_deref(),
-        opts.code.as_deref(),
-        opts.json.as_deref(),
-        opts.json_input,
-        opts.leaf,
-      ),
+      CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
       opts.depth,
     ),
     TreeSubcommand::SwapNext(opts) => push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth),
@@ -391,12 +802,15 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
       echo_items!(tokens, code_input opts);
     }
-    TreeSubcommand::TargetReplace(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, code_input opts, value "depth" => opts.depth; default "2")
+    TreeSubcommand::SearchReplace(opts) => {
+      echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::Rewrite(opts) => {
       push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
       echo_items!(tokens, code_input opts, list "with" => &opts.with);
+    }
+    TreeSubcommand::BatchDelete(opts) => {
+      echo_items!(tokens, pos "target" => &opts.target, list "paths" => &opts.paths, value "depth" => opts.depth; default "2");
     }
   }
 }
@@ -404,20 +818,11 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
 struct CodeInputParts<'a> {
   file: Option<&'a str>,
   code: Option<&'a str>,
-  json: Option<&'a str>,
-  json_input: bool,
-  leaf: bool,
 }
 
 impl<'a> CodeInputParts<'a> {
-  fn new(file: Option<&'a str>, code: Option<&'a str>, json: Option<&'a str>, json_input: bool, leaf: bool) -> Self {
-    Self {
-      file,
-      code,
-      json,
-      json_input,
-      leaf,
-    }
+  fn new(file: Option<&'a str>, code: Option<&'a str>) -> Self {
+    Self { file, code }
   }
 }
 
@@ -435,9 +840,6 @@ fn push_tree_path_depth(tokens: &mut Vec<String>, target: &str, path: &str, dept
 fn push_code_input(tokens: &mut Vec<String>, code_input: &CodeInputParts<'_>) {
   push_optional(tokens, "file", code_input.file, "none");
   push_optional(tokens, "code", code_input.code, "none");
-  push_optional(tokens, "json", code_input.json, "none");
-  push_switch(tokens, "json-input", code_input.json_input);
-  push_switch(tokens, "leaf", code_input.leaf);
 }
 
 fn push_switch(tokens: &mut Vec<String>, name: &str, enabled: bool) {
@@ -511,17 +913,24 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Search(_) => "search",
     QuerySubcommand::SearchExpr(_) => "search-expr",
     QuerySubcommand::Schema(_) => "schema",
+    QuerySubcommand::HostProcs(_) => "host-procs",
+    QuerySubcommand::Path(_) => "path",
+    QuerySubcommand::Anchors(_) => "anchors",
   }
 }
 
 fn docs_name(subcommand: &DocsSubcommand) -> &'static str {
   match subcommand {
+    DocsSubcommand::Scopes(_) => "scopes",
+    DocsSubcommand::RemoteLibs(_) => "remote-libs",
     DocsSubcommand::Search(_) => "search",
+    DocsSubcommand::List(_) => "list",
+    DocsSubcommand::Sections(_) => "sections",
     DocsSubcommand::Read(_) => "read",
     DocsSubcommand::Agents(_) => "agents",
     DocsSubcommand::ReadLines(_) => "read-lines",
-    DocsSubcommand::List(_) => "list",
     DocsSubcommand::CheckMd(_) => "check-md",
+    DocsSubcommand::Graph(_) => "graph",
   }
 }
 
@@ -550,6 +959,8 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::ProgramDiff(_) => "program-diff",
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
+    AnalyzeSubcommand::WeakTypes(_) => "weak-types",
+    AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
     AnalyzeSubcommand::JsUnescape(_) => "js-unescape",
   }
@@ -566,15 +977,13 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::Examples(_) => "examples",
     EditSubcommand::AddExample(_) => "add-example",
     EditSubcommand::RmExample(_) => "rm-example",
+    EditSubcommand::Tags(_) => "tags",
     EditSubcommand::AddNs(_) => "add-ns",
     EditSubcommand::RmNs(_) => "rm-ns",
     EditSubcommand::Imports(_) => "imports",
     EditSubcommand::AddImport(_) => "add-import",
     EditSubcommand::RmImport(_) => "rm-import",
     EditSubcommand::NsDoc(_) => "ns-doc",
-    EditSubcommand::AddModule(_) => "add-module",
-    EditSubcommand::RmModule(_) => "rm-module",
-    EditSubcommand::Config(_) => "config",
     EditSubcommand::Inc(_) => "inc",
     EditSubcommand::Cp(_) => "cp",
     EditSubcommand::Mv(_) => "mv",
@@ -598,7 +1007,39 @@ fn tree_name(subcommand: &TreeSubcommand) -> &'static str {
     TreeSubcommand::Unwrap(_) => "unwrap",
     TreeSubcommand::Raise(_) => "raise",
     TreeSubcommand::Wrap(_) => "wrap",
-    TreeSubcommand::TargetReplace(_) => "target-replace",
+    TreeSubcommand::SearchReplace(_) => "search-replace",
     TreeSubcommand::Rewrite(_) => "rewrite",
+    TreeSubcommand::BatchDelete(_) => "batch-delete",
+  }
+}
+
+fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
+  match subcommand {
+    ConfigSubcommand::Show(_) => "show",
+    ConfigSubcommand::Modules(_) => "modules",
+    ConfigSubcommand::Version(_) => "version",
+    ConfigSubcommand::Set(_) => "set",
+    ConfigSubcommand::AddModule(_) => "add-module",
+    ConfigSubcommand::RmModule(_) => "rm-module",
+  }
+}
+
+fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
+  match &cmd.subcommand {
+    ConfigSubcommand::Show(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
+    ConfigSubcommand::Modules(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
+    ConfigSubcommand::Version(opts) => echo_items!(tokens, opt "value" => opts.value.as_deref(); default "none"),
+    ConfigSubcommand::Set(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "key" => &opts.key, pos "value" => &opts.value);
+    }
+    ConfigSubcommand::AddModule(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "module_path" => &opts.module_path);
+    }
+    ConfigSubcommand::RmModule(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "module_path" => &opts.module_path);
+    }
   }
 }

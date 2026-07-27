@@ -6,7 +6,7 @@
   :files $ {}
     |test-recursion.main $ %{} :FileEntry
       :defs $ {}
-        |*count-effects $ %{} :CodeEntry (:doc |) (:schema nil)
+        |*count-effects $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote (defatom *count-effects 0)
           :examples $ []
         |hole-series $ %{} :CodeEntry (:doc |)
@@ -42,7 +42,7 @@
           :schema $ :: :fn
             {} (:return :dynamic)
               :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema nil)
+        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
               ; println $ hole-series 100
@@ -50,14 +50,14 @@
               test-loop
               do true
           :examples $ []
-        |test-hole-series $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-hole-series $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             defn test-hole-series () $ assert "|hole series numbers"
               =
                 map (range 1 20) hole-series
                 [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
           :examples $ []
-        |test-loop $ %{} :CodeEntry (:doc |) (:schema nil)
+        |test-loop $ %{} :CodeEntry (:doc |) (:schema :dynamic)
           :code $ quote
             fn ()
               assert= 55 $ apply

@@ -46,7 +46,7 @@ caps outdated
 To update `deps.cirru` directly without confirmation:
 
 ```bash
-caps outdated --yes
+caps upgrade --all
 ```
 
 ### CLI Options

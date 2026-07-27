@@ -34,7 +34,7 @@ export class CalcitRecord {
     if (idx >= 0) {
       return this.values[idx];
     } else {
-      throw new Error(`Cannot find :${field} among (${this.fields.join(",")})`);
+      return undefined;
     }
   }
   getOrNil(k: CalcitValue) {
