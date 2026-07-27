@@ -159,10 +159,20 @@ pub fn main() -> Result<(), String> {
         println!("updated {}", cli_args.input.green());
         download_deps(updated_deps.dependencies, cli_args)?;
       }
+      Some(SubCommand::Status(_)) => {
+        let issues = check_dependency_status(&deps, &cli_args, false)?;
+        if issues > 0 {
+          return Err(format!("{issues} module(s) are not in the expected state"));
+        }
+      }
+      Some(SubCommand::Reset(_)) => {
+        reset_dependency_status(&deps, &cli_args)?;
+      }
       Some(SubCommand::Download(dep_names)) => {
         unreachable!("already handled: {:?}", dep_names);
       }
       None => {
+        check_dependency_status(&deps, &cli_args, true)?;
         download_deps(deps.dependencies, cli_args)?;
       }
     }
@@ -217,6 +227,72 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
     child.join().unwrap();
   }
 
+  Ok(())
+}
+
+fn modules_dir(options: &TopLevelCaps) -> Result<PathBuf, String> {
+  let dir = if options.local_debug {
+    ".config/calcit/test-modules"
+  } else {
+    ".config/calcit/modules"
+  };
+  Ok(dirs::home_dir().ok_or("no config dir")?.join(dir))
+}
+
+fn check_dependency_status(deps: &PackageDeps, options: &TopLevelCaps, warn_only: bool) -> Result<usize, String> {
+  let modules_dir = modules_dir(options)?;
+  let mut issues = 0;
+  for (org_and_folder, version) in &deps.dependencies {
+    let folder = org_and_folder.split_once('/').ok_or("invalid name")?.1;
+    let folder_path = modules_dir.join(folder);
+    if !folder_path.exists() {
+      issues += 1;
+      println!("{}", format!("- {org_and_folder} not found (expected {version})").red());
+      continue;
+    }
+    let repo = GitRepo { dir: folder_path.clone() };
+    let changes = wrap_module_error(repo.status_porcelain(), org_and_folder, &folder_path, "read working tree status")?;
+    let head = wrap_module_error(repo.current_head(), org_and_folder, &folder_path, "read current git head")?;
+    if !changes.is_empty() {
+      issues += 1;
+      let message = format!(
+        "! {org_and_folder} has local modifications (expected {version}, at {})",
+        head.get_name()
+      );
+      if warn_only {
+        eprintln!("{}", message.yellow());
+      } else {
+        println!("{}", message.yellow());
+      }
+    } else if head.get_name() != **version {
+      issues += 1;
+      println!(
+        "{}",
+        format!("! {org_and_folder} is at {}, expected {version}", head.get_name()).yellow()
+      );
+    } else {
+      println!("{}", format!("√ {org_and_folder} at {version}").dimmed());
+    }
+  }
+  Ok(issues)
+}
+
+fn reset_dependency_status(deps: &PackageDeps, options: &TopLevelCaps) -> Result<(), String> {
+  let modules_dir = modules_dir(options)?;
+  for org_and_folder in deps.dependencies.keys() {
+    let folder = org_and_folder.split_once('/').ok_or("invalid name")?.1;
+    let folder_path = modules_dir.join(folder);
+    if !folder_path.exists() {
+      continue;
+    }
+    let repo = GitRepo { dir: folder_path.clone() };
+    let changes = wrap_module_error(repo.status_porcelain(), org_and_folder, &folder_path, "read working tree status")?;
+    if changes.is_empty() {
+      continue;
+    }
+    wrap_module_error(repo.reset_hard(), org_and_folder, &folder_path, "reset local changes")?;
+    println!("reset {}", org_and_folder.green());
+  }
   Ok(())
 }
 
@@ -361,7 +437,21 @@ enum SubCommand {
   Download(DownloadCaps),
   Add(AddCaps),
   Remove(RemoveCaps),
+  /// check installed modules for local modifications and version mismatches
+  Status(StatusCaps),
+  /// discard tracked local modifications in installed modules
+  Reset(ResetCaps),
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// check installed module versions and local modifications
+#[argh(subcommand, name = "status")]
+struct StatusCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// discard tracked local modifications in installed modules
+#[argh(subcommand, name = "reset")]
+struct ResetCaps {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// upgrade dependencies
