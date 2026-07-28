@@ -64,13 +64,18 @@ cr calcit.cirru cursor push
 cr calcit.cirru cursor pop
 ```
 
-Existing path-based tree commands accept `@cursor`. The explicit definition target must match the cursor target:
+Definition-oriented `query`, `tree`, and `edit` commands accept `@cursor` as their target. Path-based commands also accept it as the path, so the current definition and selection do not need to be repeated:
 
 ```bash
-cr calcit.cirru tree show app.main/render! --path @cursor
-cr calcit.cirru tree replace app.main/render! --path @cursor \
+cr calcit.cirru query context @cursor --format json
+cr calcit.cirru query type-at @cursor --path @cursor --format json
+cr calcit.cirru tree show @cursor --path @cursor
+cr calcit.cirru tree replace @cursor --path @cursor \
   --code 'quote $ render-list items'
+cr calcit.cirru edit split-def @cursor --path @cursor --name render-items
 ```
+
+For commands with two definition targets, `@cursor` denotes the source (`edit mv-def @cursor app.ui/render-items`). An explicit target/path that disagrees with the active cursor is rejected. Transaction operation files remain self-contained and should use concrete targets and paths rather than depending on mutable cursor state.
 
 For the most common mutations, `cursor apply` infers both the definition target and path from the active selection. The operation is still delegated to the existing `tree` implementation, so validation, cursor migration, and result previews stay identical:
 
@@ -101,21 +106,26 @@ cr --cursor-after focus calcit.cirru tree replace app.main/render! \
 The cursor state has independent navigation history and an explicit stack:
 
 ```bash
-cr calcit.cirru cursor back       # undo the last set/parent/child/next/prev location change
+cr calcit.cirru cursor back       # restore the previous cursor location; source is unchanged
 cr calcit.cirru cursor push       # remember a location before a detour
 cr calcit.cirru cursor pop        # restore that explicit location
 ```
 
 `cursor child` defaults to child 0, while `cursor child --last` resolves the final child from the current tree. `next` and `prev` move only among siblings. `forward` and `backward` walk the whole definition in depth-first structural order, entering and leaving nested lists without requiring a separate `parent` or `child` command. All four accept `--count N`; `back` accepts the same option for history. A multi-step move is recorded as one history transition. Invalid zero counts and out-of-range moves leave the cursor unchanged. With top-level `--cursor-after focus`, selection and navigation commands immediately print the focused structural context.
 
+`cursor back` rewinds only navigation state; it is not source undo. Parallel agents should use separate worktrees or Snapshots because the sidecar has one active cursor and does not coordinate concurrent source writes.
+
 The first Paredit-style moves operate directly on the active selection:
 
 ```bash
 cr calcit.cirru cursor slurp-next  # selected list absorbs its next sibling
+cr calcit.cirru cursor slurp-prev  # selected list absorbs its previous sibling
 cr calcit.cirru cursor barf-last   # selected list ejects its last child
+cr calcit.cirru cursor barf-first  # selected list ejects its first child
+cr calcit.cirru cursor duplicate --at after
 ```
 
-Both reuse the checked node-move operation and keep the cursor attached to the selected list. They reject roots, leaves, empty lists, and missing siblings before changing the Snapshot.
+The four slurp/barf commands keep the cursor attached to the selected list and cover both structural directions. `duplicate` selects the new copy without replacing the cursor clipboard. Composite changes stage the Snapshot and cursor sidecar before committing, and reject roots, leaves, empty lists, missing siblings, and unsupported positions before changing the Snapshot.
 
 Search results expose a zero-based global cursor index as `[#N]` in human output and `cursor_index` in JSON. Use `--set-cursor N` to select a result in the same invocation:
 
@@ -124,9 +134,11 @@ cr calcit.cirru query search render-item \
   --filter app.main/render! --exact --set-cursor 0
 cr calcit.cirru query search-expr 'map items' \
   --filter app.main/render! --set-cursor 1 --format json
+cr calcit.cirru query search state --start-path @cursor --set-cursor 0
+cr calcit.cirru query search-expr 'div $ {}' --start-path @cursor
 ```
 
-The cursor confirmation is written to stderr, so JSON stdout remains one parseable object. Search results from configured dependencies remain readable, but cannot become the editable project cursor unless that definition also belongs to the current snapshot.
+`--filter @cursor` searches the active definition. `--start-path @cursor` further restricts either leaf or expression search to the selected subtree and automatically infers the definition filter; a conflicting explicit filter is rejected. The cursor confirmation is written to stderr, so JSON stdout remains one parseable object. Search results from configured dependencies remain readable, but cannot become the editable project cursor unless that definition also belongs to the current snapshot.
 
 Its clipboard stores a quoted Cirru tree directly in `.calcit-cursor.cirru`, so code never round-trips through JSON or escaped text:
 
