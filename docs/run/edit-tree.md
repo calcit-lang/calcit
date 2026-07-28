@@ -6,6 +6,8 @@ kind: "reference"
 category: "run"
 aliases:
   - "edit tree"
+  - "edit transaction"
+  - "tree cursor"
   - "search-replace"
   - "add-import"
   - "tree replace"
@@ -13,6 +15,8 @@ aliases:
 entry_for:
   - "cr tree search-replace"
   - "cr edit add-import"
+  - "cr edit transaction"
+  - "cr cursor"
   - "cr query search"
 id: core/run/edit-tree
 parent: core/run
@@ -39,6 +43,121 @@ cr edit format
 ```
 
 This command also rewrites older namespace records into the canonical `NsEntry` snapshot shape.
+
+### Persistent Tree Cursor
+
+For a sequence of edits in one complex expression, `cr cursor` stores the active tree selection in `.calcit-cursor.cirru` next to the snapshot. The file is Cirru EDN local state and does not become part of the source snapshot:
+
+```bash
+cr calcit.cirru cursor set app.main/render! --path @3.2.1
+cr calcit.cirru cursor show
+cr calcit.cirru cursor parent
+cr calcit.cirru cursor child             # first child
+cr calcit.cirru cursor child 2
+cr calcit.cirru cursor child --last      # last child
+cr calcit.cirru cursor next --count 3
+cr calcit.cirru cursor prev --count 2
+cr calcit.cirru cursor back --count 4
+cr calcit.cirru cursor push
+cr calcit.cirru cursor pop
+```
+
+Existing path-based tree commands accept `@cursor`. The explicit definition target must match the cursor target:
+
+```bash
+cr calcit.cirru tree show app.main/render! --path @cursor
+cr calcit.cirru tree replace app.main/render! --path @cursor \
+  --code 'quote $ render-list items'
+```
+
+`edit cp`, `edit mv`, and `edit split-def` also accept `@cursor` in their path options. Definition overwrite, rename, move, split, and delete operations update the cursor target/path when the result is provable; ambiguous external or move changes still require a unique fingerprint match.
+
+Once a cursor is set, successful tree mutations in that definition maintain it even when the command uses a concrete path. Inserting or deleting a sibling before the selected subtree shifts the saved coordinate; swaps follow the selected subtree; deleting the selected subtree moves the cursor to its parent. Cursor feedback is written to stderr and controlled by the top-level `--cursor-after none|summary|focus` option (`summary` is the default):
+
+```text
+[Cursor] app.main/render! @3.5 — @3.4 → @3.5 (node inserted before cursor)
+```
+
+```bash
+cr --cursor-after focus calcit.cirru tree replace app.main/render! \
+  --path @cursor --code 'quote $ render-list next-items'
+```
+
+`cursor show` reparses the snapshot and verifies the saved subtree fingerprint. If an external change invalidated the numeric path, a unique fingerprint match may relocate it; zero or multiple matches are rejected rather than guessed. The default `--view focus` uses Cirru's structural focus formatter on the surrounding definition and preserves its signature; `--view node` shows only the selection, while `--view full` shows the whole definition. Human display wraps only the presentation copy in `CURSOR`; `cursor show --format json` returns the real subtree as `tree` and the presentation tree as `preview_tree`, so the wrapper never changes source paths.
+
+The cursor state has independent navigation history and an explicit stack:
+
+```bash
+cr calcit.cirru cursor back       # undo the last set/parent/child/next/prev location change
+cr calcit.cirru cursor push       # remember a location before a detour
+cr calcit.cirru cursor pop        # restore that explicit location
+```
+
+`cursor child` defaults to child 0, while `cursor child --last` resolves the final child from the current tree. `next`, `prev`, and `back` accept `--count N`; a multi-step move is recorded as one history transition. Invalid zero counts and out-of-range moves leave the cursor unchanged.
+
+Search results expose a zero-based global cursor index as `[#N]` in human output and `cursor_index` in JSON. Use `--set-cursor N` to select a result in the same invocation:
+
+```bash
+cr calcit.cirru query search render-item \
+  --filter app.main/render! --exact --set-cursor 0
+cr calcit.cirru query search-expr 'map items' \
+  --filter app.main/render! --set-cursor 1 --format json
+```
+
+The cursor confirmation is written to stderr, so JSON stdout remains one parseable object. Search results from configured dependencies remain readable, but cannot become the editable project cursor unless that definition also belongs to the current snapshot.
+
+Its clipboard stores a quoted Cirru tree directly in `.calcit-cursor.cirru`, so code never round-trips through JSON or escaped text:
+
+```bash
+cr calcit.cirru cursor copy
+cr calcit.cirru cursor cut
+cr calcit.cirru cursor clipboard --format json
+cr calcit.cirru cursor paste --at before
+cr calcit.cirru cursor clear-clipboard
+```
+
+`cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Add `.calcit-cursor.cirru` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule.
+
+Use `cr calcit.cirru cursor clear` to remove the local selection and clipboard together. Transaction child operations deliberately do not mutate the real cursor file; after a committed transaction, the parent command revalidates or uniquely relocates the cursor against the final snapshot and warns if manual recovery is required.
+
+### Atomic Transactions
+
+`cr edit transaction` applies existing `edit`, `tree`, and `config` mutations to a staged snapshot. The original snapshot is replaced only after every operation succeeds and the staged result can be loaded and serialized again. A failed operation, stale revision, or `--dry-run` leaves the original file unchanged.
+
+The primary input format is a Cirru EDN list of CLI argument lists. Each inner list is exactly the argument sequence that would follow the snapshot path in an ordinary command. A `quote` value can be embedded directly after `--code`, so multiline Calcit code remains structured rather than escaped inside a string:
+
+```cirru.no-check
+[]
+  [] |edit |doc |app.main/main! "|Updated by transaction"
+  []
+    , |tree
+    , |replace
+    , |app.main/main!
+    , |--path
+    , |@3.2
+    , |--code
+    quote $ println |done
+```
+
+```bash
+# Preview and obtain the current snapshot revision.
+cr calcit.cirru edit transaction --file changes.cirru --dry-run --format json
+
+# Commit only if the snapshot still has that revision.
+cr calcit.cirru edit transaction --file changes.cirru \
+  --expect-revision md5:... --format json
+```
+
+JSON argument lists remain accepted as a compatibility format for callers that already construct JSON, but JSON is not the recommended authoring format when operations contain Calcit code:
+
+```json
+[
+  ["edit", "doc", "app.main/main!", "Updated by transaction"],
+  ["tree", "replace", "app.main/main!", "--path", "@3.2", "--code", "quote $ println |done"]
+]
+```
+
+Nested transactions and non-mutating command groups are rejected. JSON output contains the old/new snapshot revision and captures each existing subcommand's stdout/stderr without mixing it into the transaction stdout.
 
 ### Managing Namespaces
 

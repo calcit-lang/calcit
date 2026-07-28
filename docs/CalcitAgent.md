@@ -143,7 +143,7 @@ defn demo (state)
 ```
 
 - `query def` 先看全貌，不改。
-- `query search collect! --filter 'app.main/demo'` 拿到路径（假设返回 `@3.1.2`）。
+- `query search collect! --filter 'app.main/demo' --set-cursor 0` 可直接采用首个搜索结果；多结果时先根据 `[#N]` 预览，再以对应的 `--set-cursor N` 重跑。
 - `tree show 'app.main/demo' --path '@3.1.2'` 验证该坐标确实是目标子树。
 - 再做 replace/rewrite，避免“猜路径”。
 
@@ -299,7 +299,10 @@ cr js
 
 - `cr query search <pattern> --filter '<ns/def>' --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
 - `cr tree search-replace` 多匹配时可用 `--pick <N>` 直接选择第 N 个候选；也可用 `--selector 'path heading ... nth ...'` 限定搜索范围。
+- 连续编辑复杂表达式时，先用 `cr <snapshot-file> cursor set '<ns/def>' --path '<path>'` 保存虚拟光标，或在 `query search/search-expr` 中传 `--set-cursor <全局结果序号>` 直接采用搜索结果；human 结果以 `[#N]` 标号，JSON 使用 `cursor_index`。之后 tree 命令以及 `edit cp/mv/split-def` 的 path 可传 `@cursor`。同 definition 中的 mutation 会维护 cursor：前方插入/删除自动调整坐标，删除目标时退回 parent，definition rename/move/split 时跟随目标。`cursor show` 默认用 Cirru 结构化 focus 展示 definition 上下文，可切换 `--view node|full`；机器读取使用 `--format json`。编辑后的 stderr 回显用顶层 `--cursor-after none|summary|focus` 控制。
+- 导航可用 `cursor child [index]`（省略时首节点）、`cursor child --last`、`cursor next/prev --count N`；`cursor back --count N` 回退多条普通历史，`cursor push/pop` 管理独立栈。`cursor copy/cut/paste` 的 clipboard 直接保存 Cirru tree；`cut` 后退到 parent，`paste` 后选中新节点。`.calcit-cursor.cirru` 是项目本地状态，应加入 `.gitignore`。
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
+- 多个现有 `edit/tree/config` 修改需要原子提交时，用 `cr <snapshot-file> edit transaction --file <changes.cirru> --dry-run --format json` 先预览并取得 snapshot revision，再去掉 `--dry-run` 并传 `--expect-revision <revision>` 提交。transaction 以 Cirru EDN 为主格式，`--code` 后可直接嵌入 `quote` 节点；JSON 仅作为兼容输入。
 
 `cr tree` 的 `--code` 和 `--pattern` 常含 `$`、括号等特殊字符，Shell 转义成本高。**可以使用 stdin/heredoc 完全规避转义问题**：
 
@@ -421,7 +424,7 @@ cr tree show '<ns/def>' --path '<path>'
 - `cr js`：快速验证当前改动可编译。
 - `cr analyze check-types`：静态检查定义的类型覆盖情况；`partial` 行的 `schema-issues` 会指出嵌套动态类型及修复方式。
 - `cr analyze weak-types --intent unresolved`：定位仍需补强的动态类型位置；JSON occurrence 带稳定 `path` 与 `suggestion`。
-- 若运行时契约明确允许任意 Calcit 值，使用静态顶类型 `:any`；只有类型确实未知、尚不能静态约束时才保留 `:dynamic`。`:: :list :any` 表示“异构值列表”，它不会被 weak-types 当成漏标。
+- `:dynamic` 同时表示允许任意 Calcit 值或缺少更具体的静态约束。`:any` 仅为旧版本兼容写法；新增 schema 与文档统一使用 `:dynamic`，旧 `:any` 后续逐步迁移。
 
 ---
 
@@ -475,8 +478,8 @@ cr js
 - **运行**：`cr`, `cr js`, `cr ir`, `cr-wasm`, `--watch`
 - **查询**：`cr query defs/def/type/type-at/context/search/usages/schema/examples/path/anchors`
 - **分析**：`cr analyze call-graph/program-diff`
-- **结构化编辑**：`cr tree show/replace/search-replace/cp/wrap`（`show` 支持 `--path-annotations` 标注坐标；`search-replace` 支持 `--pick`/`--selector`）
-- **定义编辑**：`cr edit def/add-import/imports/mv/rename`
+- **结构化编辑**：`cr tree show/replace/search-replace/cp/wrap`（`show` 支持 `--path-annotations` 标注坐标；`search-replace` 支持 `--pick`/`--selector`；连续操作可用 `cr cursor`、`@cursor`、history/stack 与结构化 clipboard）
+- **定义编辑**：`cr edit def/add-import/imports/mv/rename/transaction`
 - **配置**：`cr config show/modules/version`
 - **文档**：`cr docs scopes/list/read/search/agents`
 - **语法**：`cr cirru show-guide`
