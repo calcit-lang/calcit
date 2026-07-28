@@ -6,6 +6,7 @@ use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node
 use super::common::{
   cirru_to_json_value, emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup,
 };
+use super::cursor::set_cursor_from_query_match;
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
@@ -49,6 +50,7 @@ struct SearchCommonOpts<'a> {
   detail_offset: usize,
   parent_path: bool,
   format: QueryRenderFormat,
+  set_cursor: Option<usize>,
 }
 
 const DETAILED_RESULTS_WINDOW: usize = 3;
@@ -596,6 +598,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         detail_offset: opts.detail_offset,
         parent_path: opts.parent_path,
         format: parse_query_render_format(&opts.format)?,
+        set_cursor: opts.set_cursor,
       };
       handle_search_leaf(input_path, &opts.pattern, opts.start_path.as_deref(), &common_opts)
     }
@@ -609,6 +612,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         detail_offset: opts.detail_offset,
         parent_path: false,
         format: parse_query_render_format(&opts.format)?,
+        set_cursor: opts.set_cursor,
       };
       handle_search_expr(input_path, &opts.pattern, opts.json, &common_opts)
     }
@@ -766,6 +770,54 @@ mod type_query_tests {
       format_example_node(&Cirru::List(vec![Cirru::Leaf("inc".into()), Cirru::Leaf("1".into())])),
       "inc 1"
     );
+  }
+
+  #[test]
+  fn search_results_share_cursor_indices_and_can_select_one() {
+    let nonce = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .expect("test clock should be valid")
+      .as_nanos();
+    let directory = std::env::temp_dir().join(format!("calcit-query-cursor-test-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&directory).expect("query cursor test directory should be created");
+    let snapshot_file = directory.join("calcit.cirru");
+    std::fs::copy("calcit/test.cirru", &snapshot_file).expect("query cursor fixture should copy");
+    let snapshot_path = snapshot_file.to_string_lossy().into_owned();
+
+    let results = vec![(
+      "app.main".to_string(),
+      "main!".to_string(),
+      vec![(vec![48, 0], Cirru::leaf("do")), (vec![48, 1], Cirru::leaf("true"))],
+    )];
+    maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(1)).expect("second search result should become cursor");
+    assert_eq!(
+      crate::cli_handlers::cursor::resolve_cursor_path_argument(&snapshot_path, "app.main/main!", "@cursor")
+        .expect("query-selected cursor should resolve"),
+      "@48.1"
+    );
+    let error = maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(2))
+      .expect_err("out-of-range search cursor index should fail");
+    assert!(error.contains("returned 2 match"), "error: {error}");
+
+    let snapshot = load_main_snapshot(&snapshot_path).expect("query cursor fixture should load");
+    let options = SearchCommonOpts {
+      filter: Some("app.main/main!"),
+      loose: false,
+      regex: false,
+      max_depth: 0,
+      entry: None,
+      detail_offset: 0,
+      parent_path: false,
+      format: QueryRenderFormat::Json,
+      set_cursor: None,
+    };
+    let output = format_search_results_json("query.search", "true", false, None, &options, &snapshot, &results)
+      .expect("search JSON should format");
+    let value: serde_json::Value = serde_json::from_str(&output).expect("search output should be valid JSON");
+    assert_eq!(value["data"]["definitions"][0]["matches"][0]["cursor_index"], 0);
+    assert_eq!(value["data"]["definitions"][0]["matches"][1]["cursor_index"], 1);
+
+    std::fs::remove_dir_all(directory).expect("query cursor test directory should be removed");
   }
 
   #[test]
@@ -3675,6 +3727,7 @@ fn format_search_results_json(
   results: &SearchResults,
 ) -> Result<String, String> {
   let total_matches = results.iter().map(|(_, _, matches)| matches.len()).sum::<usize>();
+  let mut cursor_index = 0_usize;
   let definitions = results
     .iter()
     .map(|(namespace, definition, matches)| {
@@ -3684,6 +3737,8 @@ fn format_search_results_json(
         "name": definition,
         "match_count": matches.len(),
         "matches": matches.iter().map(|(path, node)| {
+          let current_cursor_index = cursor_index;
+          cursor_index += 1;
           let parent_path = common_opts.parent_path.then(|| {
             if path.is_empty() {
               None
@@ -3692,6 +3747,7 @@ fn format_search_results_json(
             }
           }).flatten();
           serde_json::json!({
+            "cursor_index": current_cursor_index,
             "path": snapshot_code_path(path),
             "parent_path": parent_path,
             "tree": cirru_to_json_value(node),
@@ -3741,6 +3797,29 @@ fn format_search_results_json(
     "diagnostics": [],
   });
   serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode search JSON: {error}"))
+}
+
+fn maybe_set_cursor_from_search_results(
+  input_path: &str,
+  results: &SearchResults,
+  selected_index: Option<usize>,
+) -> Result<(), String> {
+  let Some(selected_index) = selected_index else {
+    return Ok(());
+  };
+  let total_matches = results.iter().map(|(_, _, matches)| matches.len()).sum::<usize>();
+  let mut current_index = 0_usize;
+  for (namespace, definition, matches) in results {
+    for (path, _) in matches {
+      if current_index == selected_index {
+        return set_cursor_from_query_match(input_path, &format!("{namespace}/{definition}"), path.clone(), selected_index);
+      }
+      current_index += 1;
+    }
+  }
+  Err(format!(
+    "Search cursor index {selected_index} is out of range; query returned {total_matches} match(es)."
+  ))
 }
 
 /// Search for leaf nodes (strings) in a definition
@@ -3835,6 +3914,8 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
 
   all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
 
+  maybe_set_cursor_from_search_results(input_path, &all_results, common_opts.set_cursor)?;
+
   if common_opts.format == QueryRenderFormat::Json {
     println!(
       "{}",
@@ -3855,6 +3936,7 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
       all_results.len()
     );
 
+    let mut definition_offset = 0_usize;
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
       print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
@@ -3866,15 +3948,25 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
         let total = results.len();
         let (start, end) = detailed_window(common_opts.detail_offset, total);
         let detailed_count = end.saturating_sub(start);
-        let compressed_count = total.saturating_sub(detailed_count);
 
-        for (path, node) in results.iter().skip(start).take(detailed_count) {
+        for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
+          let cursor_index = definition_offset + local_index;
           if path.is_empty() {
             let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
             if truncated {
-              println!("    {} {} ⟪…⟫", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             } else {
-              println!("    {} {}", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             }
           } else {
             let path_str = format_path(path);
@@ -3885,9 +3977,19 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
               .map(|(text, truncated)| (text.as_str(), *truncated))
               .unwrap_or((expr_preview.as_str(), expr_truncated));
             if display_truncated {
-              println!("    {} {} ⟪…⟫", path_str.cyan(), display_preview);
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                path_str.cyan(),
+                display_preview
+              );
             } else {
-              println!("    {} {}", path_str.cyan(), display_preview);
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                path_str.cyan(),
+                display_preview
+              );
             }
             // Print parent path (stripped last index) when --parent-path is requested
             if common_opts.parent_path && !path.is_empty() {
@@ -3897,10 +3999,31 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
           }
         }
 
-        if compressed_count > 0 {
-          println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
+        if start > 0 {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {start} matches compressed before window",
+              definition_offset,
+              definition_offset + start - 1
+            )
+            .dimmed()
+          );
+        }
+        if end < total {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {} matches compressed after window",
+              definition_offset + end,
+              definition_offset + total - 1,
+              total - end
+            )
+            .dimmed()
+          );
         }
       }
+      definition_offset += results.len();
       println!();
     }
 
@@ -3980,6 +4103,8 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
 
   all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
 
+  maybe_set_cursor_from_search_results(input_path, &all_results, common_opts.set_cursor)?;
+
   if common_opts.format == QueryRenderFormat::Json {
     println!(
       "{}",
@@ -3999,6 +4124,7 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
       all_results.len()
     );
 
+    let mut definition_offset = 0_usize;
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
       print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
@@ -4009,16 +4135,26 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
         let total = results.len();
         let (start, end) = detailed_window(common_opts.detail_offset, total);
         let detailed_count = end.saturating_sub(start);
-        let compressed_count = total.saturating_sub(detailed_count);
 
-        for (path, node) in results.iter().skip(start).take(detailed_count) {
+        for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
+          let cursor_index = definition_offset + local_index;
           let path_str = format_path(path);
           if path.is_empty() {
             let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
             if truncated {
-              println!("    {} {} ⟪…⟫", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             } else {
-              println!("    {} {}", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             }
           } else {
             let ((expr_preview, expr_truncated), parent_previews) =
@@ -4028,17 +4164,49 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
               .map(|(text, truncated)| (text.as_str(), *truncated))
               .unwrap_or((expr_preview.as_str(), expr_truncated));
             if display_truncated {
-              println!("    {} {} ⟪…⟫", format!("[{path_str}]").cyan(), display_preview);
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                format!("[{path_str}]").cyan(),
+                display_preview
+              );
             } else {
-              println!("    {} {}", format!("[{path_str}]").cyan(), display_preview);
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                format!("[{path_str}]").cyan(),
+                display_preview
+              );
             }
           }
         }
 
-        if compressed_count > 0 {
-          println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
+        if start > 0 {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {start} matches compressed before window",
+              definition_offset,
+              definition_offset + start - 1
+            )
+            .dimmed()
+          );
+        }
+        if end < total {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {} matches compressed after window",
+              definition_offset + end,
+              definition_offset + total - 1,
+              total - end
+            )
+            .dimmed()
+          );
         }
       }
+
+      definition_offset += results.len();
 
       println!();
     }

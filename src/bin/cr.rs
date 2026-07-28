@@ -67,6 +67,8 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
 fn main() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
 
+  cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;
+
   if cli_args.version {
     println!("{}", cli_args::CALCIT_VERSION);
     return Ok(());
@@ -114,6 +116,9 @@ fn main() -> Result<(), String> {
     }
     Some(CalcitCommand::Tree(tree_cmd)) => {
       return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
+    }
+    Some(CalcitCommand::Cursor(cursor_cmd)) => {
+      return cli_handlers::handle_cursor_command(cursor_cmd, &cli_args.input);
     }
     Some(CalcitCommand::Config(config_cmd)) => {
       return cli_handlers::handle_config_command(config_cmd, &cli_args.input);

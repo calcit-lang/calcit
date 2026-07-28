@@ -61,6 +61,9 @@ pub struct ToplevelCalcit {
   /// control tips verbosity: minimal (default), full, none
   #[argh(option)]
   pub tips_level: Option<String>,
+  /// cursor feedback after mutating edit/tree commands: none, summary (default), focus
+  #[argh(option, default = "String::from(\"summary\")")]
+  pub cursor_after: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -88,6 +91,8 @@ pub enum CalcitCommand {
   Edit(EditCommand),
   /// fine-grained tree operations (view and modify AST nodes within definitions)
   Tree(TreeCommand),
+  /// maintain a persistent virtual cursor for tree navigation and editing
+  Cursor(CursorCommand),
   /// manage project configuration (show, set, modules, add-module, rm-module)
   Config(ConfigCommand),
 }
@@ -652,6 +657,9 @@ pub struct QuerySearchCommand {
   /// output format: human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
+  /// set the persistent cursor to this zero-based global match index
+  #[argh(option, long = "set-cursor")]
+  pub set_cursor: Option<usize>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -682,6 +690,9 @@ pub struct QuerySearchExprCommand {
   /// output format: human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
+  /// set the persistent cursor to this zero-based global match index
+  #[argh(option, long = "set-cursor")]
+  pub set_cursor: Option<usize>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1127,6 +1138,8 @@ pub struct EditCommand {
 pub enum EditSubcommand {
   /// rewrite snapshot file in canonical format without semantic changes
   Format(EditFormatCommand),
+  /// apply multiple existing edit/tree/config commands against one staged snapshot
+  Transaction(EditTransactionCommand),
   /// add or update a definition
   Def(EditDefCommand),
   /// move a definition to another namespace
@@ -1173,6 +1186,27 @@ pub enum EditSubcommand {
 #[argh(subcommand, name = "format")]
 /// rewrite target snapshot file in canonical format
 pub struct EditFormatCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "transaction")]
+/// apply multiple existing mutating commands atomically (input via --file, --code, or stdin)
+pub struct EditTransactionCommand {
+  /// read transaction operations from a Cirru EDN file (JSON is also accepted)
+  #[argh(option)]
+  pub file: Option<String>,
+  /// transaction operations as inline Cirru EDN (JSON is also accepted)
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// require the snapshot content to match this revision before applying
+  #[argh(option, long = "expect-revision")]
+  pub expect_revision: Option<String>,
+  /// validate and preview the transaction without replacing the snapshot
+  #[argh(switch, long = "dry-run")]
+  pub dry_run: bool,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
 
 // --- Definition operations ---
 
@@ -1838,6 +1872,154 @@ pub struct TreeWrapCommand {
   #[argh(option, default = "2")]
   pub depth: usize,
 }
+
+// ========================================================================
+// Cursor command - persistent virtual tree selection
+// ========================================================================
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "cursor")]
+/// maintain the project-local virtual tree cursor
+pub struct CursorCommand {
+  #[argh(subcommand)]
+  pub subcommand: CursorSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum CursorSubcommand {
+  Set(CursorSetCommand),
+  Show(CursorShowCommand),
+  Clear(CursorClearCommand),
+  Parent(CursorParentCommand),
+  Child(CursorChildCommand),
+  Next(CursorNextCommand),
+  Prev(CursorPrevCommand),
+  Back(CursorBackCommand),
+  Push(CursorPushCommand),
+  Pop(CursorPopCommand),
+  Copy(CursorCopyCommand),
+  Cut(CursorCutCommand),
+  Paste(CursorPasteCommand),
+  Clipboard(CursorClipboardCommand),
+  ClearClipboard(CursorClearClipboardCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set")]
+/// set the virtual cursor to a definition tree path
+pub struct CursorSetCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the selected node (dot-separated, e.g. "@2.1.0")
+  #[argh(option)]
+  pub path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "show")]
+/// validate and display the current virtual cursor
+pub struct CursorShowCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// preview view: focus (default), node, or full
+  #[argh(option, default = "String::from(\"focus\")")]
+  pub view: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clear")]
+/// remove the current virtual cursor
+pub struct CursorClearCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "parent")]
+/// move the virtual cursor to its parent node
+pub struct CursorParentCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "child")]
+/// move the virtual cursor to a child node
+pub struct CursorChildCommand {
+  /// zero-based child index (defaults to the first child)
+  #[argh(positional)]
+  pub index: Option<usize>,
+  /// enter the last child instead of an explicit index
+  #[argh(switch)]
+  pub last: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "next")]
+/// move the virtual cursor to the next sibling
+pub struct CursorNextCommand {
+  /// number of siblings to skip
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "prev")]
+/// move the virtual cursor to the previous sibling
+pub struct CursorPrevCommand {
+  /// number of siblings to skip
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "back")]
+/// return to the previous cursor location
+pub struct CursorBackCommand {
+  /// number of recorded cursor locations to rewind
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "push")]
+/// push the current cursor location onto the explicit stack
+pub struct CursorPushCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "pop")]
+/// restore and remove the most recently pushed cursor location
+pub struct CursorPopCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "copy")]
+/// copy the selected expression into the cursor clipboard
+pub struct CursorCopyCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "cut")]
+/// cut the selected expression into the cursor clipboard
+pub struct CursorCutCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "paste")]
+/// paste the cursor clipboard relative to the selected expression
+pub struct CursorPasteCommand {
+  /// position relative to the cursor: before, after, prepend-child, append-child, replace
+  #[argh(option, default = "String::from(\"after\")")]
+  pub at: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clipboard")]
+/// display the cursor clipboard
+pub struct CursorClipboardCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clear-clipboard")]
+/// clear the cursor clipboard without changing the selection
+pub struct CursorClearClipboardCommand {}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Config command — top-level shortcut for configuration management

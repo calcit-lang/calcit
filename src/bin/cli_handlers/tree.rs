@@ -7,6 +7,7 @@ use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, parse_input_to_cirru, parse_path, print_cli_warning_block,
   read_code_input, resolve_definition_lookup,
 };
+use super::cursor::{TreeCursorMutation, maintain_cursor_after_tree_mutation, resolve_cursor_path_argument};
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
@@ -27,7 +28,11 @@ use super::query::resolve_path_expression;
 
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
-  match &cmd.subcommand {
+  let mut resolved = cmd.clone();
+  resolve_tree_cursor_references(&mut resolved, snapshot_file)?;
+  let cursor_mutation = prepare_cursor_mutation(&resolved, snapshot_file)?;
+
+  let result = match &resolved.subcommand {
     TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file, opts.json),
     TreeSubcommand::Replace(opts) => handle_replace(opts, snapshot_file),
     TreeSubcommand::ReplaceLeaf(opts) => handle_replace_leaf(opts, snapshot_file),
@@ -44,7 +49,133 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SearchReplace(opts) => handle_search_replace(opts, snapshot_file),
     TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
     TreeSubcommand::BatchDelete(opts) => handle_batch_delete(opts, snapshot_file),
+  };
+
+  result?;
+  if let Some((target, mutation)) = cursor_mutation {
+    maintain_cursor_after_tree_mutation(snapshot_file, &target, &mutation)?;
   }
+  Ok(())
+}
+
+fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) -> Result<(), String> {
+  let resolve = |target: &str, path: &mut String| -> Result<(), String> {
+    *path = resolve_cursor_path_argument(snapshot_file, target, path)?;
+    Ok(())
+  };
+
+  match &mut cmd.subcommand {
+    TreeSubcommand::Show(opts) => {
+      if let Some(path) = &mut opts.path {
+        resolve(&opts.target, path)?;
+      }
+    }
+    TreeSubcommand::Replace(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::ReplaceLeaf(_) | TreeSubcommand::SearchReplace(_) => {}
+    TreeSubcommand::Delete(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::InsertBefore(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::InsertAfter(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::InsertChild(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::AppendChild(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::SwapNext(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::SwapPrev(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::Unwrap(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::Raise(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::Wrap(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::Rewrite(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::BatchDelete(opts) => {
+      for path in &mut opts.paths {
+        resolve(&opts.target, path)?;
+      }
+    }
+  }
+  Ok(())
+}
+
+fn prepare_cursor_mutation(cmd: &TreeCommand, snapshot_file: &str) -> Result<Option<(String, TreeCursorMutation)>, String> {
+  let prepared = match &cmd.subcommand {
+    TreeSubcommand::Show(_) => return Ok(None),
+    TreeSubcommand::Replace(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::Replace {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::ReplaceLeaf(opts) => (opts.target.clone(), TreeCursorMutation::NoPathShift),
+    TreeSubcommand::Delete(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::Delete {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::InsertBefore(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::InsertBefore {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::InsertAfter(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::InsertAfter {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::InsertChild(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::InsertChild {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::AppendChild(opts) => (opts.target.clone(), TreeCursorMutation::NoPathShift),
+    TreeSubcommand::SwapNext(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::SwapNext {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::SwapPrev(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::SwapPrev {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::Unwrap(opts) => {
+      let path = parse_path(&opts.path)?;
+      let (namespace, definition) = parse_target(&opts.target)?;
+      let snapshot = load_snapshot(snapshot_file)?;
+      let entry = snapshot
+        .files
+        .get(namespace)
+        .and_then(|file| file.defs.get(definition))
+        .ok_or_else(|| format!("Definition '{}' not found", opts.target))?;
+      let child_count = match navigate_to_path(&entry.code, &path)? {
+        Cirru::List(children) => children.len(),
+        Cirru::Leaf(_) => 0,
+      };
+      (opts.target.clone(), TreeCursorMutation::Unwrap { path, child_count })
+    }
+    TreeSubcommand::Raise(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::Raise {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::Wrap(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::Wrap {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::SearchReplace(opts) => (opts.target.clone(), TreeCursorMutation::NoPathShift),
+    TreeSubcommand::Rewrite(opts) => (
+      opts.target.clone(),
+      TreeCursorMutation::Replace {
+        path: parse_path(&opts.path)?,
+      },
+    ),
+    TreeSubcommand::BatchDelete(_) => return Ok(None),
+  };
+  Ok(Some(prepared))
 }
 
 fn parse_with_references(with_strs: &[String], original_node: &Cirru) -> Result<std::collections::BTreeMap<String, Cirru>, String> {
@@ -993,13 +1124,14 @@ fn handle_batch_delete(opts: &TreeBatchDeleteCommand, snapshot_file: &str) -> Re
   // Sort by path descending
   parsed.sort_by(|a, b| b.0.cmp(&a.0));
 
-  for (_, original_path) in &parsed {
+  for (path, original_path) in &parsed {
     let delete_opts = TreeDeleteCommand {
       target: opts.target.clone(),
       path: original_path.clone(),
       depth: opts.depth,
     };
     handle_delete(&delete_opts, snapshot_file)?;
+    maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::Delete { path: path.clone() })?;
     println!();
   }
 

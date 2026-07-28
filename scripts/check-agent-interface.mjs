@@ -148,6 +148,39 @@ const scenarios = [
     },
   },
   {
+    name: "staged edit transaction",
+    args: [
+      "calcit/test.cirru",
+      "edit",
+      "transaction",
+      "--code",
+      `[]
+  [] |config |version |9.0.0
+  []
+    , |tree
+    , |replace
+    , |app.main/main!
+    , |--path
+    , |@48.1
+    , |--code
+    quote false`,
+      "--dry-run",
+      "--format",
+      "json",
+    ],
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "edit.transaction") {
+        throw new Error("unexpected edit.transaction envelope");
+      }
+      if (!result.dry_run || !result.changed || result.operations.length !== 2) {
+        throw new Error("edit.transaction did not preserve dry-run batch semantics");
+      }
+      if (!result.original_revision.startsWith("md5:") || !result.new_revision.startsWith("md5:")) {
+        throw new Error("edit.transaction did not expose snapshot revisions");
+      }
+    },
+  },
+  {
     name: "machine value schema",
     args: [
       "calcit/test.cirru",

@@ -2,6 +2,7 @@
 
 calcit/.compact-inc.cirru
 .calcit-error.cirru
+.calcit-cursor.cirru
 
 js-out/
 

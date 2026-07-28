@@ -177,9 +177,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_parser"
-version = "0.2.13"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1d3f9a399964c7b2abfe816ef4af6f89b27569d6f4c882499b04f1ddc45f87"
+checksum = "91044eb215dc0a2a75af6d3955f0074a4e7024ed4608a3be812024a950bb4e73"
 dependencies = [
  "serde",
 ]
