@@ -300,7 +300,9 @@ cr js
 - `cr query search <pattern> --filter '<ns/def>' --parent-path`：搜索时同时显示父路径（去掉末尾索引的可编辑节点路径）。
 - `cr tree search-replace` 多匹配时可用 `--pick <N>` 直接选择第 N 个候选；也可用 `--selector 'path heading ... nth ...'` 限定搜索范围。
 - 连续编辑复杂表达式时，先用 `cr <snapshot-file> cursor set '<ns/def>' --path '<path>'` 保存虚拟光标，或在 `query search/search-expr` 中传 `--set-cursor <全局结果序号>` 直接采用搜索结果；human 结果以 `[#N]` 标号，JSON 使用 `cursor_index`。之后 tree 命令以及 `edit cp/mv/split-def` 的 path 可传 `@cursor`。同 definition 中的 mutation 会维护 cursor：前方插入/删除自动调整坐标，删除目标时退回 parent，definition rename/move/split 时跟随目标。`cursor show` 默认用 Cirru 结构化 focus 展示 definition 上下文，可切换 `--view node|full`；机器读取使用 `--format json`。编辑后的 stderr 回显用顶层 `--cursor-after none|summary|focus` 控制。
-- 导航可用 `cursor child [index]`（省略时首节点）、`cursor child --last`、`cursor next/prev --count N`；`cursor back --count N` 回退多条普通历史，`cursor push/pop` 管理独立栈。`cursor copy/cut/paste` 的 clipboard 直接保存 Cirru tree；`cut` 后退到 parent，`paste` 后选中新节点。`.calcit-cursor.cirru` 是项目本地状态，应加入 `.gitignore`。
+- 导航可用 `cursor child [index]`（省略时首节点）、`cursor child --last`、同级 `cursor next/prev --count N`；`cursor forward/backward --count N` 按深度优先顺序跨 list 边界移动，整次命令只产生一条 history。`cursor back --count N` 回退多条普通历史，`cursor push/pop` 管理独立栈。顶层 `--cursor-after focus` 会在 set/search/导航后直接展示 focus。
+- 常用 mutation 可写成 `cursor apply <operation>`，由 active cursor 推导 target/path，再复用既有 tree 实现；支持 `delete/swap-*/unwrap/raise/replace/wrap/insert-*`。`cursor slurp-next` 把下一 sibling 移入选中 list 末尾，`cursor barf-last` 把末 child 移到选中 list 之后。`unwrap` 展开全部 child，不保证与含额外节点的 wrap 模板互逆。
+- `cursor copy/cut/paste` 的 clipboard 直接保存 Cirru tree；`cut` 后退到 parent，`paste` 后选中新节点。`.calcit-cursor.cirru` 是项目本地状态，应加入 `.gitignore`。
 - `cr <snapshot-file> edit format`：按当前快照序列化逻辑重写 snapshot 文件，不改语义。
 - 多个现有 `edit/tree/config` 修改需要原子提交时，用 `cr <snapshot-file> edit transaction --file <changes.cirru> --dry-run --format json` 先预览并取得 snapshot revision，再去掉 `--dry-run` 并传 `--expect-revision <revision>` 提交。transaction 以 Cirru EDN 为主格式，`--code` 后可直接嵌入 `quote` 节点；JSON 仅作为兼容输入。
 

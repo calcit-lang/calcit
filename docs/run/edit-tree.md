@@ -57,6 +57,8 @@ cr calcit.cirru cursor child 2
 cr calcit.cirru cursor child --last      # last child
 cr calcit.cirru cursor next --count 3
 cr calcit.cirru cursor prev --count 2
+cr calcit.cirru cursor forward --count 8
+cr calcit.cirru cursor backward --count 5
 cr calcit.cirru cursor back --count 4
 cr calcit.cirru cursor push
 cr calcit.cirru cursor pop
@@ -69,6 +71,17 @@ cr calcit.cirru tree show app.main/render! --path @cursor
 cr calcit.cirru tree replace app.main/render! --path @cursor \
   --code 'quote $ render-list items'
 ```
+
+For the most common mutations, `cursor apply` infers both the definition target and path from the active selection. The operation is still delegated to the existing `tree` implementation, so validation, cursor migration, and result previews stay identical:
+
+```bash
+cr calcit.cirru cursor apply swap-next
+cr calcit.cirru cursor apply replace --code 'quote $ render-list items'
+cr calcit.cirru cursor apply wrap --code 'quote $ when visible? self'
+cr calcit.cirru cursor apply insert-after --file .calcit-snippets/branch.cirru
+```
+
+`cursor apply unwrap` splices every child of the selected list into its parent. It is not necessarily the inverse of a wrapper template containing extra syntax such as `quote $ do self`; use `raise` when the intent is to replace a parent with one selected child.
 
 `edit cp`, `edit mv`, and `edit split-def` also accept `@cursor` in their path options. Definition overwrite, rename, move, split, and delete operations update the cursor target/path when the result is provable; ambiguous external or move changes still require a unique fingerprint match.
 
@@ -93,7 +106,16 @@ cr calcit.cirru cursor push       # remember a location before a detour
 cr calcit.cirru cursor pop        # restore that explicit location
 ```
 
-`cursor child` defaults to child 0, while `cursor child --last` resolves the final child from the current tree. `next`, `prev`, and `back` accept `--count N`; a multi-step move is recorded as one history transition. Invalid zero counts and out-of-range moves leave the cursor unchanged.
+`cursor child` defaults to child 0, while `cursor child --last` resolves the final child from the current tree. `next` and `prev` move only among siblings. `forward` and `backward` walk the whole definition in depth-first structural order, entering and leaving nested lists without requiring a separate `parent` or `child` command. All four accept `--count N`; `back` accepts the same option for history. A multi-step move is recorded as one history transition. Invalid zero counts and out-of-range moves leave the cursor unchanged. With top-level `--cursor-after focus`, selection and navigation commands immediately print the focused structural context.
+
+The first Paredit-style moves operate directly on the active selection:
+
+```bash
+cr calcit.cirru cursor slurp-next  # selected list absorbs its next sibling
+cr calcit.cirru cursor barf-last   # selected list ejects its last child
+```
+
+Both reuse the checked node-move operation and keep the cursor attached to the selected list. They reject roots, leaves, empty lists, and missing siblings before changing the Snapshot.
 
 Search results expose a zero-based global cursor index as `[#N]` in human output and `cursor_index` in JSON. Use `--set-cursor N` to select a result in the same invocation:
 

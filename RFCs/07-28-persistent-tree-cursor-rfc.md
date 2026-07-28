@@ -68,9 +68,15 @@ cr cursor child 2
 cr cursor child --last          # last child
 cr cursor next --count 3
 cr cursor prev --count 2
+cr cursor forward --count 8
+cr cursor backward --count 5
 cr cursor back --count 4
 cr cursor push
 cr cursor pop
+cr cursor apply swap-next
+cr cursor apply wrap --code 'quote $ when visible? self'
+cr cursor slurp-next
+cr cursor barf-last
 cr cursor copy
 cr cursor cut
 cr cursor paste --at after
@@ -79,13 +85,17 @@ cr cursor clear-clipboard
 cr cursor clear
 ```
 
-现有 tree 命令通过 `--path @cursor` 引用 active cursor，不复制另一套 mutation 命令：
+现有 tree 命令通过 `--path @cursor` 引用 active cursor：
 
 ```bash
 cr tree show app.main/render! --path @cursor
 cr tree replace app.main/render! --path @cursor --code 'quote $ render-list items'
 cr tree wrap app.main/render! --path @cursor --code 'quote $ when visible? self'
 ```
+
+对连续编辑中最常用的操作，`cursor apply <operation>` 进一步省略重复的 target 和 path，但内部仍构造并调用既有 tree 命令，不另外实现 mutation 语义。支持 `delete`、`swap-next`、`swap-prev`、`unwrap`、`raise`、`replace`、`wrap`、`insert-before`、`insert-after`、`insert-child` 与 `append-child`。其中 `unwrap` 的语义是把选中 list 的所有 child 展开到 parent，不承诺与包含额外语法节点的 wrap 模板严格互逆。
+
+`cursor slurp-next` 与 `cursor barf-last` 是第一组 Paredit 风格复合命令：前者把选中 list 的下一 sibling 移到 list 末尾，后者把 list 的末 child 移为下一 sibling。两者复用已有 `edit mv`，保持其边界校验、Snapshot 原子写入与 cursor subtree 跟随语义。
 
 显式 target 必须与 cursor 的 `namespace/definition` 一致，否则拒绝执行。后续可增加 `@cursor:<name>`，第一版不承诺该语法。
 
@@ -109,7 +119,7 @@ cr --cursor-after focus calcit.cirru tree wrap app.main/render! --path @cursor -
 
 `summary` 是默认值，只向 stderr 输出 target、更新后 path 与迁移原因；`focus` 额外输出结构聚焦预览；`none` 关闭自动回显。三种模式都不改变 cursor 的实际维护。
 
-导航命令按当前 snapshot 的真实树验证边界：`child` 省略 index 时进入首子节点，`child --last` 按当前 child count 进入末子节点；`next` / `prev` 的 `--count N` 一次跨越 N 个 sibling；`back --count N` 一次回退 N 条普通导航历史。`--count 0`、越界和同时传 child index 与 `--last` 都拒绝执行，且不改变 cursor。
+导航命令按当前 snapshot 的真实树验证边界：`child` 省略 index 时进入首子节点，`child --last` 按当前 child count 进入末子节点；`next` / `prev` 的 `--count N` 一次跨越 N 个 sibling；`forward` / `backward` 按 definition 的深度优先结构顺序跨 list 边界移动；`back --count N` 一次回退 N 条普通导航历史。所有多步移动只写一条 history。`--count 0`、越界和同时传 child index 与 `--last` 都拒绝执行，且不改变 cursor。顶层 `--cursor-after focus` 用于 set、search 选中和导航时，会紧接成功提示展示新的 focus，不要求 Agent 再调用一次 `cursor show`。
 
 搜索结果可直接成为 cursor，不需要 Agent 从展示文本复制 target/path：
 
@@ -175,7 +185,7 @@ snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。�
 ## 7. 第一阶段实现范围
 
 1. Cirru EDN cursor 状态的读取、v1/v2→v3 兼容、校验和原子写入；
-2. `cr cursor set/show/clear/parent/child/next/prev/back/push/pop`，含末子节点与多步导航；
+2. `cr cursor set/show/clear/parent/child/next/prev/forward/backward/back/push/pop`，含末子节点、同级多步与跨 list 的深度优先导航；
 3. 结构化 `copy/cut/paste/clipboard`，clipboard 不经过文本序列化；
 4. `tree show/replace/delete/insert-*/swap-*/wrap/rewrite/raise/unwrap` 接受 `--path @cursor`；
 5. `edit cp/mv/split-def` 接受 `@cursor`，definition replace/rename/move/delete 与 cursor 协作；
@@ -183,6 +193,7 @@ snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。�
 7. 外部 revision 变化下的 same-path 校验与唯一 fingerprint 重定位；
 8. 单元测试覆盖前方插入、前方删除、swap、目标删除、状态扩展字段、clipboard round-trip 和 focus 展示不影响真实 path。
 9. `query search` / `query search-expr` 为结果提供全局 cursor index，并可显式设置 active cursor。
+10. `cursor apply` 复用 tree mutation；`slurp-next` / `barf-last` 复用 node move，并保持 active selection。
 
 transaction 内逐 operation 的 cursor preview、named cursor，以及跨 definition 的 clipboard 引用策略在后续阶段接入；未接入的 mutation 必须让 cursor 在下次使用时经过 stale 校验，不能绕过 fingerprint。
 
@@ -195,7 +206,9 @@ transaction 内逐 operation 的 cursor preview、named cursor，以及跨 defin
 - cursor 展示 wrapper 不改变真实 path 或 JSON tree；
 - focus 展示保留 definition 签名，并对无关分支使用结构化 folded marker；
 - `back` 与 `push/pop` 语义独立，clipboard 的 cut/paste 保持 Cirru subtree；
-- `child --last`、`next/prev/back --count N` 在成功时只产生一条 history 记录，越界时不修改 cursor；
+- `child --last`、`next/prev/forward/backward/back --count N` 在成功时只产生一条 history 记录，越界时不修改 cursor；
+- `cursor apply` 与对应 tree 命令的 mutation、校验和 preview 一致；
+- `slurp-next` / `barf-last` 跨 parent 边界移动表达式后 cursor 仍选择原 list；
 - search human/JSON 中的 cursor index 一致，`--set-cursor N` 不污染 JSON stdout；
 - `--cursor-after none|summary|focus` 只改变 stderr 反馈，不改变 mutation 结果；
 - snapshot 被外部修改后，重复 subtree 不会被猜测性选中；
