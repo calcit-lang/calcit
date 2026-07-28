@@ -1,7 +1,7 @@
 use calcit::cli_args::{
-  CursorApplyCommand, CursorCommand, CursorSubcommand, EditCommand, EditMvNodeCommand, EditSubcommand, TreeAppendChildCommand,
-  TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand, TreeRaiseCommand,
-  TreeReplaceCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
+  CursorApplyCommand, CursorCommand, CursorDuplicateCommand, CursorSubcommand, EditCommand, EditMvNodeCommand, EditSubcommand,
+  TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
+  TreeRaiseCommand, TreeReplaceCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
 };
 use calcit::snapshot;
 use cirru_edn::{Edn, EdnListView};
@@ -155,7 +155,10 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     CursorSubcommand::ClearClipboard(_) => clear_cursor_clipboard(snapshot_file),
     CursorSubcommand::Apply(opts) => apply_at_cursor(snapshot_file, opts),
     CursorSubcommand::SlurpNext(_) => slurp_next(snapshot_file),
+    CursorSubcommand::SlurpPrev(_) => slurp_prev(snapshot_file),
     CursorSubcommand::BarfLast(_) => barf_last(snapshot_file),
+    CursorSubcommand::BarfFirst(_) => barf_first(snapshot_file),
+    CursorSubcommand::Duplicate(opts) => duplicate_cursor(snapshot_file, opts),
     CursorSubcommand::Forward(opts) => move_cursor_depth_first(snapshot_file, opts.count, true),
     CursorSubcommand::Backward(opts) => move_cursor_depth_first(snapshot_file, opts.count, false),
   }
@@ -333,6 +336,24 @@ fn slurp_next(snapshot_file: &str) -> Result<(), String> {
   move_node_for_paredit(snapshot_file, &state, &next_path, "append-child")
 }
 
+fn slurp_prev(snapshot_file: &str) -> Result<(), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  if state.path.is_empty() {
+    return Err("Definition root has no previous sibling to slurp.".to_string());
+  }
+  let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
+  if !matches!(selected, Cirru::List(_)) {
+    return Err("`cursor slurp-prev` requires the selected node to be a list.".to_string());
+  }
+  let mut previous_path = state.path.clone();
+  let current_index = *previous_path.last().expect("non-root cursor has a final index");
+  if current_index == 0 {
+    return Err("Selected list has no previous sibling to slurp.".to_string());
+  }
+  *previous_path.last_mut().expect("non-root cursor has a final index") -= 1;
+  move_node_for_paredit(snapshot_file, &state, &previous_path, "prepend-child")
+}
+
 fn barf_last(snapshot_file: &str) -> Result<(), String> {
   let state = validate_cursor(snapshot_file, true)?;
   if state.path.is_empty() {
@@ -348,6 +369,97 @@ fn barf_last(snapshot_file: &str) -> Result<(), String> {
   let mut child_path = state.path.clone();
   child_path.push(last_index);
   move_node_for_paredit(snapshot_file, &state, &child_path, "after")
+}
+
+fn barf_first(snapshot_file: &str) -> Result<(), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  if state.path.is_empty() {
+    return Err("Cannot barf a child out of the definition root.".to_string());
+  }
+  let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
+  let Cirru::List(children) = selected else {
+    return Err("`cursor barf-first` requires the selected node to be a list.".to_string());
+  };
+  if children.is_empty() {
+    return Err("Selected list has no child to barf.".to_string());
+  }
+  let mut child_path = state.path.clone();
+  child_path.push(0);
+  let first_child = children[0].clone();
+  let mut document = load_cursor_document(snapshot_file)?;
+  let (namespace, definition) = parse_target(&state.target)?;
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+  let entry = snapshot
+    .files
+    .get_mut(namespace)
+    .and_then(|file| file.defs.get_mut(definition))
+    .ok_or_else(|| format!("Definition '{}' not found", state.target))?;
+  let without_first = apply_operation_at_path(&entry.code, &child_path, "delete", None)?;
+  entry.code = apply_operation_at_path(&without_first, &state.path, "insert-before", Some(&first_child))?;
+
+  let mut selected_path = state.path.clone();
+  *selected_path.last_mut().expect("root was rejected above") += 1;
+  push_bounded(&mut document.history, state, CURSOR_HISTORY_LIMIT);
+  document.active.path = selected_path;
+  refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
+
+  let staged_snapshot = stage_snapshot(snapshot_file, &snapshot)?;
+  let staged_cursor = stage_cursor_document(snapshot_file, &document)?;
+  commit_snapshot_then_cursor_staged_files(staged_snapshot, staged_cursor, "Barf-first", false)?;
+  println!(
+    "{} Moved the selected list's first child out before it; cursor now at {}",
+    "✓".green(),
+    format_path(&document.active.path)
+  );
+  emit_cursor_after(snapshot_file, &document.active, "cursor follows list after barf-first")?;
+  Ok(())
+}
+
+fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Result<(), String> {
+  if !matches!(opts.at.as_str(), "before" | "after") {
+    return Err(format!("Unsupported duplicate position '{}'. Use before or after.", opts.at));
+  }
+  let state = validate_cursor(snapshot_file, true)?;
+  if state.path.is_empty() {
+    return Err("Cannot duplicate the definition root as a sibling.".to_string());
+  }
+  let mut document = load_cursor_document(snapshot_file)?;
+  let (namespace, definition) = parse_target(&state.target)?;
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+  let entry = snapshot
+    .files
+    .get_mut(namespace)
+    .and_then(|file| file.defs.get_mut(definition))
+    .ok_or_else(|| format!("Definition '{}' not found", state.target))?;
+  let selected = navigate_to_path(&entry.code, &state.path)?;
+  entry.code = apply_operation_at_path(
+    &entry.code,
+    &state.path,
+    if opts.at == "before" { "insert-before" } else { "insert-after" },
+    Some(&selected),
+  )?;
+
+  let mut duplicated_path = state.path.clone();
+  if opts.at == "after" {
+    *duplicated_path.last_mut().expect("root was rejected above") += 1;
+  }
+  push_bounded(&mut document.history, state, CURSOR_HISTORY_LIMIT);
+  document.active.path = duplicated_path;
+  refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
+
+  let staged_snapshot = stage_snapshot(snapshot_file, &snapshot)?;
+  let staged_cursor = stage_cursor_document(snapshot_file, &document)?;
+  commit_snapshot_then_cursor_staged_files(staged_snapshot, staged_cursor, "Duplicate", false)?;
+  println!(
+    "{} Duplicated selection {} cursor; cursor now at {}",
+    "✓".green(),
+    opts.at,
+    format_path(&document.active.path)
+  );
+  emit_cursor_after(snapshot_file, &document.active, "cursor follows duplicated expression")?;
+  Ok(())
 }
 
 fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(), String> {
@@ -799,18 +911,31 @@ pub(crate) fn resolve_cursor_path_argument(snapshot_file: &str, target: &str, pa
   if path != "@cursor" {
     return Ok(path.to_string());
   }
-  let state = validate_cursor(snapshot_file, true)?;
-  if state.target != target {
+  let (cursor_target, cursor_path) = resolve_active_cursor_reference(snapshot_file)?;
+  if cursor_target != target {
     return Err(format!(
       "Cursor target mismatch: cursor points to '{}', but command targets '{}'.",
-      state.target, target
+      cursor_target, target
     ));
   }
-  Ok(if state.path.is_empty() {
+  Ok(cursor_path)
+}
+
+pub(crate) fn resolve_cursor_target_argument(snapshot_file: &str, target: &str) -> Result<String, String> {
+  if target != "@cursor" {
+    return Ok(target.to_string());
+  }
+  Ok(resolve_active_cursor_reference(snapshot_file)?.0)
+}
+
+pub(crate) fn resolve_active_cursor_reference(snapshot_file: &str) -> Result<(String, String), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  let path = if state.path.is_empty() {
     String::new()
   } else {
     format_path(&state.path)
-  })
+  };
+  Ok((state.target, path))
 }
 
 pub(crate) fn maintain_cursor_after_tree_mutation(
@@ -1514,12 +1639,26 @@ fn commit_cut_staged_files(staged_cursor: StagedFile, staged_snapshot: StagedFil
 }
 
 fn commit_paste_staged_files(staged_snapshot: StagedFile, staged_cursor: StagedFile) -> Result<(), String> {
+  commit_snapshot_then_cursor_staged_files(staged_snapshot, staged_cursor, "Paste", true)
+}
+
+fn commit_snapshot_then_cursor_staged_files(
+  staged_snapshot: StagedFile,
+  staged_cursor: StagedFile,
+  action: &str,
+  clipboard_available: bool,
+) -> Result<(), String> {
   staged_snapshot
     .commit()
-    .map_err(|error| format!("Paste was not applied: {error}"))?;
+    .map_err(|error| format!("{action} was not applied: {error}"))?;
   staged_cursor.commit().map_err(|error| {
     format!(
-      "Paste succeeded in the snapshot, but cursor state could not be updated: {error}. Do not retry blindly; run `cr cursor show` or `cr cursor set` first. The clipboard remains available."
+      "{action} succeeded in the snapshot, but cursor state could not be updated: {error}. Do not retry blindly; run `cr cursor show` or `cr cursor set` first.{}",
+      if clipboard_available {
+        " The clipboard remains available."
+      } else {
+        ""
+      }
     )
   })
 }
@@ -1694,19 +1833,23 @@ fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutation) -> (Ve
 #[cfg(test)]
 mod tests {
   use super::{
-    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, apply_at_cursor, barf_last, build_cursor_preview,
-    commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_state_to_edn, load_cursor_document, load_cursor_state,
-    maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_depth_first,
-    move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, read_cursor_target, restore_cursor, save_cursor_document,
-    save_cursor_state, set_cursor_selection, slurp_next, stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
+    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, apply_at_cursor, barf_first, barf_last,
+    build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_state_to_edn, duplicate_cursor,
+    load_cursor_document, load_cursor_state, maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation,
+    move_cursor_across_siblings, move_cursor_depth_first, move_cursor_to_child, node_fingerprint, paste_cursor_clipboard,
+    read_cursor_target, restore_cursor, save_cursor_document, save_cursor_state, set_cursor_selection, slurp_next, slurp_prev,
+    stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
-  use calcit::cli_args::CursorApplyCommand;
+  use calcit::cli_args::{CursorApplyCommand, CursorDuplicateCommand};
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
   use std::fs;
   use std::path::PathBuf;
+  use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
   use std::time::{SystemTime, UNIX_EPOCH};
+
+  static TEST_CURSOR_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
   struct TestCursorSnapshot {
     directory: PathBuf,
@@ -1719,7 +1862,8 @@ mod tests {
         .duration_since(UNIX_EPOCH)
         .expect("test clock should be valid")
         .as_nanos();
-      let directory = std::env::temp_dir().join(format!("calcit-cursor-test-{}-{nonce}", std::process::id()));
+      let counter = TEST_CURSOR_DIRECTORY_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+      let directory = std::env::temp_dir().join(format!("calcit-cursor-test-{}-{nonce}-{counter}", std::process::id()));
       fs::create_dir(&directory).expect("cursor test directory should be created");
       let snapshot = directory.join("calcit.cirru");
       fs::copy("calcit/test.cirru", &snapshot).expect("cursor fixture should copy");
@@ -2081,7 +2225,7 @@ mod tests {
   }
 
   #[test]
-  fn cursor_native_swap_and_forward_paredit_keep_selection_attached() {
+  fn cursor_native_swap_paredit_and_duplicate_keep_selection_attached() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
     let mut snapshot = load_snapshot(&snapshot_file).expect("cursor paredit fixture should load");
@@ -2091,15 +2235,13 @@ mod tests {
       .and_then(|file| file.defs.get_mut("main!"))
       .expect("cursor paredit definition should exist");
     entry.code = Cirru::List(vec![
-      Cirru::leaf("defn"),
-      Cirru::leaf("main!"),
-      Cirru::List(vec![]),
+      Cirru::leaf("head"),
       Cirru::List(vec![Cirru::leaf("a"), Cirru::leaf("b")]),
       Cirru::leaf("tail"),
     ]);
     save_snapshot(&snapshot, &snapshot_file).expect("cursor paredit fixture should save");
 
-    set_cursor_selection(&snapshot_file, "app.main/main!", vec![3, 0]).expect("cursor should select first list child");
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![1, 0]).expect("cursor should select first list child");
     apply_at_cursor(
       &snapshot_file,
       &CursorApplyCommand {
@@ -2112,29 +2254,50 @@ mod tests {
     .expect("cursor-native swap should succeed");
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("swapped cursor should load").path,
-      vec![3, 1]
+      vec![1, 1]
     );
 
-    set_cursor_selection(&snapshot_file, "app.main/main!", vec![3]).expect("cursor should select list");
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![1]).expect("cursor should select list");
     slurp_next(&snapshot_file).expect("selected list should slurp its next sibling");
-    assert_eq!(load_cursor_state(&snapshot_file).expect("slurped cursor should load").path, vec![3]);
+    assert_eq!(load_cursor_state(&snapshot_file).expect("slurped cursor should load").path, vec![1]);
     assert_eq!(
-      read_cursor_target(&snapshot_file, "app.main/main!", &[3])
+      read_cursor_target(&snapshot_file, "app.main/main!", &[1])
         .expect("slurped list should exist")
         .0,
       Cirru::List(vec![Cirru::leaf("b"), Cirru::leaf("a"), Cirru::leaf("tail")])
     );
 
     barf_last(&snapshot_file).expect("selected list should barf its last child");
-    assert_eq!(load_cursor_state(&snapshot_file).expect("barfed cursor should load").path, vec![3]);
+    assert_eq!(load_cursor_state(&snapshot_file).expect("barfed cursor should load").path, vec![1]);
+    slurp_prev(&snapshot_file).expect("selected list should slurp its previous sibling");
+    assert_eq!(
+      load_cursor_state(&snapshot_file).expect("backward-slurped cursor should load").path,
+      vec![0]
+    );
+    assert_eq!(
+      read_cursor_target(&snapshot_file, "app.main/main!", &[0])
+        .expect("backward-slurped list should exist")
+        .0,
+      Cirru::List(vec![Cirru::leaf("head"), Cirru::leaf("b"), Cirru::leaf("a")])
+    );
+
+    barf_first(&snapshot_file).expect("selected list should barf its first child");
+    assert_eq!(
+      load_cursor_state(&snapshot_file).expect("first-barfed cursor should load").path,
+      vec![1]
+    );
+    duplicate_cursor(&snapshot_file, &CursorDuplicateCommand { at: "after".to_string() }).expect("cursor duplicate should succeed");
+    assert_eq!(
+      load_cursor_state(&snapshot_file).expect("duplicate cursor should load").path,
+      vec![2]
+    );
     assert_eq!(
       read_cursor_target(&snapshot_file, "app.main/main!", &[])
-        .expect("barfed definition should exist")
+        .expect("duplicated definition should exist")
         .0,
       Cirru::List(vec![
-        Cirru::leaf("defn"),
-        Cirru::leaf("main!"),
-        Cirru::List(vec![]),
+        Cirru::leaf("head"),
+        Cirru::List(vec![Cirru::leaf("b"), Cirru::leaf("a")]),
         Cirru::List(vec![Cirru::leaf("b"), Cirru::leaf("a")]),
         Cirru::leaf("tail"),
       ])
@@ -2202,11 +2365,36 @@ mod tests {
         .contains("Definition root")
     );
     assert!(barf_last(&snapshot_file).expect_err("root cannot barf").contains("definition root"));
+    assert!(
+      barf_first(&snapshot_file)
+        .expect_err("root cannot barf first")
+        .contains("definition root")
+    );
+    assert!(
+      duplicate_cursor(&snapshot_file, &CursorDuplicateCommand { at: "after".to_string() },)
+        .expect_err("root cannot duplicate")
+        .contains("definition root")
+    );
+    assert!(
+      duplicate_cursor(
+        &snapshot_file,
+        &CursorDuplicateCommand {
+          at: "sideways".to_string(),
+        },
+      )
+      .expect_err("invalid duplicate position should fail")
+      .contains("Use before or after")
+    );
 
     set_cursor_selection(&snapshot_file, "app.main/main!", vec![0]).expect("cursor should select leaf");
     assert!(
       slurp_next(&snapshot_file)
         .expect_err("leaf cannot slurp")
+        .contains("requires the selected node to be a list")
+    );
+    assert!(
+      slurp_prev(&snapshot_file)
+        .expect_err("first sibling cannot slurp previous")
         .contains("requires the selected node to be a list")
     );
     let error = apply_at_cursor(
@@ -2228,6 +2416,11 @@ mod tests {
         .contains("no next sibling")
     );
     assert!(barf_last(&snapshot_file).expect_err("empty list cannot barf").contains("no child"));
+    assert!(
+      barf_first(&snapshot_file)
+        .expect_err("empty list cannot barf first")
+        .contains("no child")
+    );
     assert_eq!(
       fs::read_to_string(&snapshot_file).expect("cursor boundary fixture should reread"),
       original
