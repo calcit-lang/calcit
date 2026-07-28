@@ -431,7 +431,10 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
     CursorSubcommand::ClearClipboard(_) => "clears the cursor clipboard".to_string(),
     CursorSubcommand::Apply(opts) => format!("applies `{}` to the active cursor", opts.operation),
     CursorSubcommand::SlurpNext(_) => "moves the next sibling into the selected list".to_string(),
+    CursorSubcommand::SlurpPrev(_) => "moves the previous sibling into the selected list".to_string(),
     CursorSubcommand::BarfLast(_) => "moves the selected list's last child out as its next sibling".to_string(),
+    CursorSubcommand::BarfFirst(_) => "moves the selected list's first child out as its previous sibling".to_string(),
+    CursorSubcommand::Duplicate(opts) => format!("duplicates the selected expression {} the cursor", opts.at),
     CursorSubcommand::Forward(opts) => format!("moves forward {} structural node(s)", opts.count),
     CursorSubcommand::Backward(opts) => format!("moves backward {} structural node(s)", opts.count),
   })
@@ -596,6 +599,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       opt "filter" => opts.filter.as_deref(); default "none",
       switch "exact" => opts.exact,
       value "max-depth" => opts.max_depth; default "0",
+      opt "start-path" => opts.start_path.as_deref(); default "none",
       switch "json" => opts.json,
       opt "entry" => opts.entry.as_deref(); default "none",
       value "detail-offset" => opts.detail_offset; default "0",
@@ -926,7 +930,9 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     | CursorSubcommand::Cut(_)
     | CursorSubcommand::ClearClipboard(_)
     | CursorSubcommand::SlurpNext(_)
-    | CursorSubcommand::BarfLast(_) => {}
+    | CursorSubcommand::SlurpPrev(_)
+    | CursorSubcommand::BarfLast(_)
+    | CursorSubcommand::BarfFirst(_) => {}
     CursorSubcommand::Child(opts) => {
       if let Some(index) = opts.index {
         push_positional(tokens, "index", &index.to_string());
@@ -943,6 +949,7 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     CursorSubcommand::Apply(opts) => {
       echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "depth" => opts.depth; default "2")
     }
+    CursorSubcommand::Duplicate(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
     CursorSubcommand::Forward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
     CursorSubcommand::Backward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
   }
@@ -1169,7 +1176,10 @@ fn cursor_name(subcommand: &CursorSubcommand) -> &'static str {
     CursorSubcommand::ClearClipboard(_) => "clear-clipboard",
     CursorSubcommand::Apply(_) => "apply",
     CursorSubcommand::SlurpNext(_) => "slurp-next",
+    CursorSubcommand::SlurpPrev(_) => "slurp-prev",
     CursorSubcommand::BarfLast(_) => "barf-last",
+    CursorSubcommand::BarfFirst(_) => "barf-first",
+    CursorSubcommand::Duplicate(_) => "duplicate",
     CursorSubcommand::Forward(_) => "forward",
     CursorSubcommand::Backward(_) => "backward",
   }
