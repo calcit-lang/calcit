@@ -76,7 +76,10 @@ cr cursor pop
 cr cursor apply swap-next
 cr cursor apply wrap --code 'quote $ when visible? self'
 cr cursor slurp-next
+cr cursor slurp-prev
 cr cursor barf-last
+cr cursor barf-first
+cr cursor duplicate --at after
 cr cursor copy
 cr cursor cut
 cr cursor paste --at after
@@ -85,19 +88,22 @@ cr cursor clear-clipboard
 cr cursor clear
 ```
 
-现有 tree 命令通过 `--path @cursor` 引用 active cursor：
+definition-oriented query/tree/edit 命令的 target 与 tree path 都可用 `@cursor` 引用 active cursor：
 
 ```bash
-cr tree show app.main/render! --path @cursor
-cr tree replace app.main/render! --path @cursor --code 'quote $ render-list items'
-cr tree wrap app.main/render! --path @cursor --code 'quote $ when visible? self'
+cr query context @cursor --format json
+cr query type-at @cursor --path @cursor --format json
+cr tree show @cursor --path @cursor
+cr tree replace @cursor --path @cursor --code 'quote $ render-list items'
+cr tree wrap @cursor --path @cursor --code 'quote $ when visible? self'
+cr edit split-def @cursor --path @cursor --name render-items
 ```
 
 对连续编辑中最常用的操作，`cursor apply <operation>` 进一步省略重复的 target 和 path，但内部仍构造并调用既有 tree 命令，不另外实现 mutation 语义。支持 `delete`、`swap-next`、`swap-prev`、`unwrap`、`raise`、`replace`、`wrap`、`insert-before`、`insert-after`、`insert-child` 与 `append-child`。其中 `unwrap` 的语义是把选中 list 的所有 child 展开到 parent，不承诺与包含额外语法节点的 wrap 模板严格互逆。
 
-`cursor slurp-next` 与 `cursor barf-last` 是第一组 Paredit 风格复合命令：前者把选中 list 的下一 sibling 移到 list 末尾，后者把 list 的末 child 移为下一 sibling。两者复用已有 `edit mv`，保持其边界校验、Snapshot 原子写入与 cursor subtree 跟随语义。
+`cursor slurp-next/slurp-prev` 与 `cursor barf-last/barf-first` 构成双向 Paredit 风格复合命令：slurp 把相邻 sibling 移入选中 list 对应一端，barf 把首/末 child 移到 list 外对应一侧。能够安全表达为通用 node move 的操作复用 `edit mv`；跨 parent 删除会使 destination 暂时失效的 `barf-first` 使用一次内存树变换。`cursor duplicate --at before|after` 直接复制当前表达式并选中新副本，不污染 clipboard。复合 Snapshot/sidecar 改动都先 stage 两个文件，再按 Snapshot→cursor 顺序提交并报告 partial success。
 
-显式 target 必须与 cursor 的 `namespace/definition` 一致，否则拒绝执行。后续可增加 `@cursor:<name>`，第一版不承诺该语法。
+对双 target 命令，`@cursor` 表示 source；destination 必须显式给出。显式 target/path 与 cursor 的 `namespace/definition` 不一致时拒绝执行。transaction operation 文件必须保持自包含，使用 concrete target/path，不解析依赖外部可变状态的 cursor alias。后续可增加 `@cursor:<name>`，当前不承诺该语法。
 
 `cursor show` 默认调用 Cirru Parser 0.2.15 的 `focus_cirru_preview_with_options`，通过 `CirruFocusOptions` 在 definition 级展示副本中折叠无关分支、保留 definition 的 head/name/参数，并直接使用 `CURSOR` marker。Calcit 不再遍历重写 `'FOCUSED` 或手工拼接 definition header；该依赖使用精确版本约束，防止全局安装忽略 lockfile 时出现未经验证的展示语义漂移。目标表达式只在展示副本中渲染为：
 
@@ -121,14 +127,30 @@ cr --cursor-after focus calcit.cirru tree wrap app.main/render! --path @cursor -
 
 导航命令按当前 snapshot 的真实树验证边界：`child` 省略 index 时进入首子节点，`child --last` 按当前 child count 进入末子节点；`next` / `prev` 的 `--count N` 一次跨越 N 个 sibling；`forward` / `backward` 按 definition 的深度优先结构顺序跨 list 边界移动；`back --count N` 一次回退 N 条普通导航历史。所有多步移动只写一条 history。`--count 0`、越界和同时传 child index 与 `--last` 都拒绝执行，且不改变 cursor。顶层 `--cursor-after focus` 用于 set、search 选中和导航时，会紧接成功提示展示新的 focus，不要求 Agent 再调用一次 `cursor show`。
 
+`back` 只回退 cursor 位置，不撤销 Snapshot mutation。源码恢复仍应使用版本控制或显式的反向结构编辑，避免把导航历史误当成 source undo。
+
 搜索结果可直接成为 cursor，不需要 Agent 从展示文本复制 target/path：
 
 ```bash
 cr query search render-item --filter app.main/render! --exact --set-cursor 0
 cr query search-expr 'map items' --filter app.main/render! --set-cursor 1
+cr query search state --start-path @cursor --set-cursor 0
+cr query search-expr 'div $ {}' --start-path @cursor
 ```
 
-`query search` 与 `query search-expr` 在 human 输出为每个 match 显示稳定的全局 `[#N]`，JSON match 增加 `cursor_index`。显式 `--set-cursor N` 采用同一排序后的结果，在返回查询结果前更新 sidecar；成功提示写 stderr，因此 `--format json` 的 stdout 仍是单个 JSON。越界或 dependency-only match 无法映射到当前可编辑 snapshot 时拒绝设置，不猜测其他位置。
+`query search` 与 `query search-expr` 在 human 输出为每个 match 显示稳定的全局 `[#N]`，JSON match 增加 `cursor_index`。`--filter @cursor` 限定当前 definition；`--start-path @cursor` 同时推导 definition filter 并把搜索根限制到当前 subtree，冲突 filter 直接报错。显式 `--set-cursor N` 采用同一排序后的结果，在返回查询结果前更新 sidecar；成功提示写 stderr，因此 `--format json` 的 stdout 仍是单个 JSON。越界或 dependency-only match 无法映射到当前可编辑 snapshot 时拒绝设置，不猜测其他位置。
+
+## 3.1 高频开发场景覆盖
+
+- **定位后连续小改**：search `--set-cursor` 后用 `cursor apply`，无需复制容易漂移的数字路径。
+- **组件/分支样板扩展**：`cursor duplicate` 后继续 replace/wrap；clipboard 保留给跨位置搬运。
+- **调整调用或属性层级**：双向 slurp/barf、swap、wrap/unwrap/raise 覆盖 Lisp 编辑器最常见的结构操作。
+- **在大表达式内二次查找**：`search/search-expr --start-path @cursor` 只遍历选中 subtree，并可把结果再次设为 cursor。
+- **编辑后语义确认**：`query type-at @cursor --path @cursor`、`query context @cursor` 复用当前 definition/selection。
+- **抽取与跨位置重构**：`edit split-def @cursor --path @cursor`，或 push/cut/search/pop/paste 组合保留起点和结构化代码。
+- **definition 元数据维护**：schema、examples、doc、tags 等 edit target 接受 `@cursor`，definition rename/move 后 cursor 跟随。
+
+workspace/module 解析、全项目分析、namespace 批量更新与可复现 transaction 输入不依赖 cursor；这些操作使用显式目标更清晰，也避免把本地临时状态引入项目语义。
 
 ## 4. Cursor 迁移规则
 
@@ -182,18 +204,21 @@ transaction 的 staged 子命令不得直接更新真实 cursor 文件。完整�
 
 snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。若 snapshot 已成功而 cursor 写入失败，后续调用会通过 revision/fingerprint 检出 stale；错误必须明确报告“源码已提交、cursor 未更新”，不能声称整体回滚。
 
+当前 sidecar 只有一个 active cursor。原子 rename 保证文件完整性，但不提供多个进程共享同一 Snapshot 时的语义并发控制；并行 Agent 应使用独立 worktree/Snapshot，或改用带 precondition 的 transaction 与显式路径。named cursor 只能隔离导航位置，不能解决并发源码写入，因此不作为并发安全方案。
+
 ## 7. 第一阶段实现范围
 
 1. Cirru EDN cursor 状态的读取、v1/v2→v3 兼容、校验和原子写入；
 2. `cr cursor set/show/clear/parent/child/next/prev/forward/backward/back/push/pop`，含末子节点、同级多步与跨 list 的深度优先导航；
 3. 结构化 `copy/cut/paste/clipboard`，clipboard 不经过文本序列化；
-4. `tree show/replace/delete/insert-*/swap-*/wrap/rewrite/raise/unwrap` 接受 `--path @cursor`；
+4. definition-oriented query/tree/edit 接受 `@cursor` target；tree/type-at/edit 的 path 可同时引用 `@cursor`；
 5. `edit cp/mv/split-def` 接受 `@cursor`，definition replace/rename/move/delete 与 cursor 协作；
 6. 所有直接 tree mutation 对 active cursor 执行确定性 path 迁移，并按 `--cursor-after` 控制回显；
 7. 外部 revision 变化下的 same-path 校验与唯一 fingerprint 重定位；
 8. 单元测试覆盖前方插入、前方删除、swap、目标删除、状态扩展字段、clipboard round-trip 和 focus 展示不影响真实 path。
 9. `query search` / `query search-expr` 为结果提供全局 cursor index，并可显式设置 active cursor。
-10. `cursor apply` 复用 tree mutation；`slurp-next` / `barf-last` 复用 node move，并保持 active selection。
+10. `cursor apply` 复用 tree mutation；双向 slurp/barf 与 duplicate 保持 active selection；
+11. leaf/expression search 都支持 `--filter @cursor` 与 `--start-path @cursor`，并继续支持 `--set-cursor`。
 
 transaction 内逐 operation 的 cursor preview、named cursor，以及跨 definition 的 clipboard 引用策略在后续阶段接入；未接入的 mutation 必须让 cursor 在下次使用时经过 stale 校验，不能绕过 fingerprint。
 
@@ -208,7 +233,8 @@ transaction 内逐 operation 的 cursor preview、named cursor，以及跨 defin
 - `back` 与 `push/pop` 语义独立，clipboard 的 cut/paste 保持 Cirru subtree；
 - `child --last`、`next/prev/forward/backward/back --count N` 在成功时只产生一条 history 记录，越界时不修改 cursor；
 - `cursor apply` 与对应 tree 命令的 mutation、校验和 preview 一致；
-- `slurp-next` / `barf-last` 跨 parent 边界移动表达式后 cursor 仍选择原 list；
+- 双向 slurp/barf 跨 parent 边界移动表达式后 cursor 仍选择原 list；duplicate 选中新副本且不修改 clipboard；
+- query/tree/edit 的 `@cursor` target、type-at path 与 subtree search scope 解析到同一 active selection，target 冲突时拒绝执行；
 - search human/JSON 中的 cursor index 一致，`--set-cursor N` 不污染 JSON stdout；
 - `--cursor-after none|summary|focus` 只改变 stderr 反馈，不改变 mutation 结果；
 - snapshot 被外部修改后，重复 subtree 不会被猜测性选中；
