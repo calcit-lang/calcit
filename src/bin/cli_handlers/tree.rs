@@ -7,7 +7,10 @@ use super::common::{
   ERR_CODE_INPUT_REQUIRED, cirru_to_json, emit_cli_output, format_path, parse_input_to_cirru, parse_path, print_cli_warning_block,
   read_code_input, resolve_definition_lookup,
 };
-use super::cursor::{TreeCursorMutation, maintain_cursor_after_tree_mutation, resolve_cursor_path_argument};
+use super::cursor::{
+  TreeCursorMutation, maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument,
+  resolve_cursor_target_argument,
+};
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
@@ -59,8 +62,47 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
 }
 
 fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) -> Result<(), String> {
+  let target = match &mut cmd.subcommand {
+    TreeSubcommand::Show(opts) => &mut opts.target,
+    TreeSubcommand::Replace(opts) => &mut opts.target,
+    TreeSubcommand::ReplaceLeaf(opts) => &mut opts.target,
+    TreeSubcommand::Delete(opts) => &mut opts.target,
+    TreeSubcommand::InsertBefore(opts) => &mut opts.target,
+    TreeSubcommand::InsertAfter(opts) => &mut opts.target,
+    TreeSubcommand::InsertChild(opts) => &mut opts.target,
+    TreeSubcommand::AppendChild(opts) => &mut opts.target,
+    TreeSubcommand::SwapNext(opts) => &mut opts.target,
+    TreeSubcommand::SwapPrev(opts) => &mut opts.target,
+    TreeSubcommand::Unwrap(opts) => &mut opts.target,
+    TreeSubcommand::Raise(opts) => &mut opts.target,
+    TreeSubcommand::Wrap(opts) => &mut opts.target,
+    TreeSubcommand::SearchReplace(opts) => &mut opts.target,
+    TreeSubcommand::Rewrite(opts) => &mut opts.target,
+    TreeSubcommand::BatchDelete(opts) => &mut opts.target,
+  };
+  let active_reference = if target == "@cursor" {
+    Some(resolve_active_cursor_reference(snapshot_file)?)
+  } else {
+    None
+  };
+  *target = match &active_reference {
+    Some((active_target, _)) => active_target.clone(),
+    None => resolve_cursor_target_argument(snapshot_file, target)?,
+  };
+
   let resolve = |target: &str, path: &mut String| -> Result<(), String> {
-    *path = resolve_cursor_path_argument(snapshot_file, target, path)?;
+    *path = if path == "@cursor"
+      && let Some((active_target, active_path)) = &active_reference
+    {
+      if active_target != target {
+        return Err(format!(
+          "Cursor target mismatch: cursor points to '{active_target}', but command targets '{target}'."
+        ));
+      }
+      active_path.clone()
+    } else {
+      resolve_cursor_path_argument(snapshot_file, target, path)?
+    };
     Ok(())
   };
 
