@@ -678,6 +678,9 @@ pub struct QuerySearchExprCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, default = "0")]
   pub max_depth: usize,
+  /// start search from a concrete path or the active cursor
+  #[argh(option, long = "start-path")]
+  pub start_path: Option<String>,
   /// treat pattern as JSON array instead of Cirru expr
   #[argh(switch)]
   pub json: bool,
@@ -1905,7 +1908,10 @@ pub enum CursorSubcommand {
   ClearClipboard(CursorClearClipboardCommand),
   Apply(CursorApplyCommand),
   SlurpNext(CursorSlurpNextCommand),
+  SlurpPrev(CursorSlurpPrevCommand),
   BarfLast(CursorBarfLastCommand),
+  BarfFirst(CursorBarfFirstCommand),
+  Duplicate(CursorDuplicateCommand),
   Forward(CursorForwardCommand),
   Backward(CursorBackwardCommand),
 }
@@ -2050,9 +2056,28 @@ pub struct CursorApplyCommand {
 pub struct CursorSlurpNextCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "slurp-prev")]
+/// move the previous sibling into the selected list as its first child
+pub struct CursorSlurpPrevCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "barf-last")]
 /// move the selected list's last child out as its next sibling
 pub struct CursorBarfLastCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "barf-first")]
+/// move the selected list's first child out as its previous sibling
+pub struct CursorBarfFirstCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "duplicate")]
+/// duplicate the selected expression and select the new copy
+pub struct CursorDuplicateCommand {
+  /// position of the new copy relative to the cursor: before or after
+  #[argh(option, default = "String::from(\"after\")")]
+  pub at: String,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "forward")]
