@@ -42,7 +42,7 @@ use super::cursor::{
   TreeCursorMutation, maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete,
   maintain_cursor_after_definition_move, maintain_cursor_after_definition_replace, maintain_cursor_after_namespace_delete,
   maintain_cursor_after_node_move, maintain_cursor_after_split_definition, maintain_cursor_after_tree_mutation,
-  resolve_cursor_path_argument,
+  resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
 use super::tips::{Tips, command_guidance_enabled};
 
@@ -107,17 +107,68 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
 }
 
 fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) -> Result<(), String> {
+  let target = match &mut cmd.subcommand {
+    EditSubcommand::Def(opts) => Some(&mut opts.target),
+    EditSubcommand::MvDef(opts) => Some(&mut opts.source),
+    EditSubcommand::RmDef(opts) => Some(&mut opts.target),
+    EditSubcommand::Doc(opts) => Some(&mut opts.target),
+    EditSubcommand::Schema(opts) => Some(&mut opts.target),
+    EditSubcommand::Examples(opts) => Some(&mut opts.target),
+    EditSubcommand::AddExample(opts) => Some(&mut opts.target),
+    EditSubcommand::RmExample(opts) => Some(&mut opts.target),
+    EditSubcommand::Tags(opts) => Some(&mut opts.target),
+    EditSubcommand::Cp(opts) => Some(&mut opts.target),
+    EditSubcommand::Mv(opts) => Some(&mut opts.target),
+    EditSubcommand::Rename(opts) => Some(&mut opts.source),
+    EditSubcommand::SplitDef(opts) => Some(&mut opts.target),
+    EditSubcommand::Format(_)
+    | EditSubcommand::Transaction(_)
+    | EditSubcommand::AddNs(_)
+    | EditSubcommand::RmNs(_)
+    | EditSubcommand::Imports(_)
+    | EditSubcommand::AddImport(_)
+    | EditSubcommand::RmImport(_)
+    | EditSubcommand::NsDoc(_)
+    | EditSubcommand::Inc(_) => None,
+  };
+  let active_reference = if target.as_deref().is_some_and(|target| target == "@cursor") {
+    Some(resolve_active_cursor_reference(snapshot_file)?)
+  } else {
+    None
+  };
+  if let Some(target) = target {
+    *target = match &active_reference {
+      Some((active_target, _)) => active_target.clone(),
+      None => resolve_cursor_target_argument(snapshot_file, target)?,
+    };
+  }
+
+  let resolve_path = |target: &str, path: &str| -> Result<String, String> {
+    if path == "@cursor"
+      && let Some((active_target, active_path)) = &active_reference
+    {
+      if active_target != target {
+        return Err(format!(
+          "Cursor target mismatch: cursor points to '{active_target}', but command targets '{target}'."
+        ));
+      }
+      Ok(active_path.clone())
+    } else {
+      resolve_cursor_path_argument(snapshot_file, target, path)
+    }
+  };
+
   match &mut cmd.subcommand {
     EditSubcommand::Cp(opts) => {
-      opts.from = resolve_cursor_path_argument(snapshot_file, &opts.target, &opts.from)?;
-      opts.path = resolve_cursor_path_argument(snapshot_file, &opts.target, &opts.path)?;
+      opts.from = resolve_path(&opts.target, &opts.from)?;
+      opts.path = resolve_path(&opts.target, &opts.path)?;
     }
     EditSubcommand::Mv(opts) => {
-      opts.from = resolve_cursor_path_argument(snapshot_file, &opts.target, &opts.from)?;
-      opts.path = resolve_cursor_path_argument(snapshot_file, &opts.target, &opts.path)?;
+      opts.from = resolve_path(&opts.target, &opts.from)?;
+      opts.path = resolve_path(&opts.target, &opts.path)?;
     }
     EditSubcommand::SplitDef(opts) => {
-      opts.path = resolve_cursor_path_argument(snapshot_file, &opts.target, &opts.path)?;
+      opts.path = resolve_path(&opts.target, &opts.path)?;
     }
     _ => {}
   }
