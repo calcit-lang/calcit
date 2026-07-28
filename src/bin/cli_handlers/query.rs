@@ -6,7 +6,9 @@ use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node
 use super::common::{
   cirru_to_json_value, emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup,
 };
-use super::cursor::set_cursor_from_query_match;
+use super::cursor::{
+  resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument, set_cursor_from_query_match,
+};
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
@@ -557,8 +559,70 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
     .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 
+fn resolve_search_cursor_references(
+  input_path: &str,
+  filter: &mut Option<String>,
+  start_path: &mut Option<String>,
+) -> Result<(), String> {
+  if filter.as_deref() == Some("@cursor") || start_path.as_deref() == Some("@cursor") {
+    let (cursor_target, cursor_path) = resolve_active_cursor_reference(input_path)?;
+    if let Some(filter_target) = filter.as_deref()
+      && filter_target != "@cursor"
+      && filter_target != cursor_target
+    {
+      return Err(format!(
+        "Cursor-scoped search targets '{cursor_target}', but --filter targets '{filter_target}'. Omit --filter or use --filter @cursor."
+      ));
+    }
+    *filter = Some(cursor_target);
+    if start_path.as_deref() == Some("@cursor") {
+      *start_path = Some(cursor_path);
+    }
+  }
+  Ok(())
+}
+
+fn resolve_query_cursor_references(cmd: &mut QueryCommand, input_path: &str) -> Result<(), String> {
+  match &mut cmd.subcommand {
+    QuerySubcommand::Def(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Peek(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Examples(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Usages(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Search(opts) => {
+      resolve_search_cursor_references(input_path, &mut opts.filter, &mut opts.start_path)?;
+    }
+    QuerySubcommand::SearchExpr(opts) => {
+      resolve_search_cursor_references(input_path, &mut opts.filter, &mut opts.start_path)?;
+    }
+    QuerySubcommand::Schema(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Type(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::TypeAt(opts) => {
+      if opts.target == "@cursor" && opts.path == "@cursor" {
+        (opts.target, opts.path) = resolve_active_cursor_reference(input_path)?;
+      } else {
+        opts.target = resolve_cursor_target_argument(input_path, &opts.target)?;
+        opts.path = resolve_cursor_path_argument(input_path, &opts.target, &opts.path)?;
+      }
+    }
+    QuerySubcommand::Context(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Ns(_)
+    | QuerySubcommand::Defs(_)
+    | QuerySubcommand::Pkg(_)
+    | QuerySubcommand::Config(_)
+    | QuerySubcommand::Error(_)
+    | QuerySubcommand::Modules(_)
+    | QuerySubcommand::Find(_)
+    | QuerySubcommand::HostProcs(_)
+    | QuerySubcommand::Path(_)
+    | QuerySubcommand::Anchors(_) => {}
+  }
+  Ok(())
+}
+
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
-  match &cmd.subcommand {
+  let mut resolved = cmd.clone();
+  resolve_query_cursor_references(&mut resolved, input_path)?;
+  match &resolved.subcommand {
     QuerySubcommand::Ns(opts) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
@@ -614,7 +678,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         format: parse_query_render_format(&opts.format)?,
         set_cursor: opts.set_cursor,
       };
-      handle_search_expr(input_path, &opts.pattern, opts.json, &common_opts)
+      handle_search_expr(input_path, &opts.pattern, opts.json, opts.start_path.as_deref(), &common_opts)
     }
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
@@ -795,6 +859,34 @@ mod type_query_tests {
         .expect("query-selected cursor should resolve"),
       "@48.1"
     );
+
+    let mut filter = None;
+    let mut start_path = Some("@cursor".to_string());
+    resolve_search_cursor_references(&snapshot_path, &mut filter, &mut start_path)
+      .expect("cursor-scoped search should infer target and path");
+    assert_eq!(filter.as_deref(), Some("app.main/main!"));
+    assert_eq!(start_path.as_deref(), Some("@48.1"));
+
+    let mut type_at = QueryCommand {
+      subcommand: QuerySubcommand::TypeAt(QueryTypeAtCommand {
+        target: "@cursor".to_string(),
+        path: "@cursor".to_string(),
+        format: "json".to_string(),
+      }),
+    };
+    resolve_query_cursor_references(&mut type_at, &snapshot_path).expect("type-at should resolve cursor target and path");
+    let QuerySubcommand::TypeAt(type_at) = type_at.subcommand else {
+      panic!("type-at command should remain type-at")
+    };
+    assert_eq!(type_at.target, "app.main/main!");
+    assert_eq!(type_at.path, "@48.1");
+
+    let mut mismatched_filter = Some("app.other/demo".to_string());
+    let mut cursor_start = Some("@cursor".to_string());
+    let error = resolve_search_cursor_references(&snapshot_path, &mut mismatched_filter, &mut cursor_start)
+      .expect_err("cursor search should reject mismatched target");
+    assert!(error.contains("Cursor-scoped search targets"), "error: {error}");
+
     let error = maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(2))
       .expect_err("out-of-range search cursor index should fail");
     assert!(error.contains("returned 2 match"), "error: {error}");
@@ -4044,8 +4136,17 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
 }
 
 /// Search for structural expressions across project or in filtered scope
-fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: &SearchCommonOpts) -> Result<(), String> {
+fn handle_search_expr(
+  input_path: &str,
+  pattern: &str,
+  json: bool,
+  start_path: Option<&str>,
+  common_opts: &SearchCommonOpts,
+) -> Result<(), String> {
   let snapshot = load_snapshot_for_search(input_path, common_opts)?;
+  let parsed_start_path = start_path
+    .map(|path| parse_path(path).map_err(|error| format!("Invalid start path '{path}': {error}")))
+    .transpose()?;
 
   let pattern_node = if json {
     let json_val: serde_json::Value = serde_json::from_str(pattern).map_err(|e| format!("Failed to parse JSON pattern: {e}"))?;
@@ -4094,7 +4195,25 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
         continue;
       }
 
-      let results = search_expr_nodes(&code_entry.code, &pattern_node, common_opts.loose, common_opts.max_depth, &[]);
+      let search_root = if let Some(path) = &parsed_start_path {
+        match navigate_to_path(&code_entry.code, path) {
+          Ok(node) => node,
+          Err(error) => {
+            eprintln!(
+              "{} Failed to navigate to start path in {}/{}: {}",
+              "Warning:".yellow(),
+              ns,
+              def_name,
+              error
+            );
+            continue;
+          }
+        }
+      } else {
+        code_entry.code.clone()
+      };
+      let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
+      let results = search_expr_nodes(&search_root, &pattern_node, common_opts.loose, common_opts.max_depth, base_path);
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }
@@ -4108,7 +4227,7 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
   if common_opts.format == QueryRenderFormat::Json {
     println!(
       "{}",
-      format_search_results_json("query.search-expr", pattern, json, None, common_opts, &snapshot, &all_results)?
+      format_search_results_json("query.search-expr", pattern, json, start_path, common_opts, &snapshot, &all_results,)?
     );
     return Ok(());
   }
