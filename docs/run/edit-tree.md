@@ -116,7 +116,7 @@ cr calcit.cirru cursor paste --at before
 cr calcit.cirru cursor clear-clipboard
 ```
 
-`cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Add `.calcit-cursor.cirru` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule.
+`cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Both commands stage Snapshot and sidecar output before committing: cut persists the recoverable clipboard first, while paste reports explicitly if the Snapshot succeeded but cursor state did not, so callers must not retry that partial-success case blindly. Cursor schema v3 keeps full Cirru only in the clipboard, not in every history/stack entry. Add `.calcit-cursor.cirru` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule.
 
 Use `cr calcit.cirru cursor clear` to remove the local selection and clipboard together. Transaction child operations deliberately do not mutate the real cursor file; after a committed transaction, the parent command revalidates or uniquely relocates the cursor against the final snapshot and warns if manual recovery is required.
 

@@ -14,11 +14,11 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
 
 ## 2. 文件格式
 
-当前只有一个 active cursor，但文件保留扩展 named cursor 的结构。schema v2 在 v1 的 selection 上增加历史、显式栈和结构化 clipboard；读取器继续接受 v1，并在下一次写入时迁移：
+当前只有一个 active cursor，但文件保留扩展 named cursor 的结构。schema v2 在 v1 的 selection 上增加历史、显式栈和结构化 clipboard；schema v3 移除每个位置中重复保存的完整 subtree preview，避免大表达式在 history/stack 中成倍放大。读取器继续接受 v1/v2，并在下一次写入时迁移：
 
 ```cirru
 {}
-  :schema-version 2
+  :schema-version 3
   :active :main
   :cursors $ {}
     :main $ {}
@@ -28,9 +28,6 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
       :path $ [] 3 2 1
       :definition-revision |md5:...
       :fingerprint |md5:...
-      :preview $ quote
-        map items $ fn (item)
-          render-item item
   :history $ []
     {}
       :snapshot |calcit.cirru
@@ -39,8 +36,6 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
       :path $ [] 3 2
       :definition-revision |md5:...
       :fingerprint |md5:...
-      :preview $ quote
-        map items
   :stack $ []
   :clipboard $ {}
     :mode |cut
@@ -55,7 +50,6 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
 - `:path` 是快速坐标，不是跨 revision 的身份；
 - `:fingerprint` 校验 path 处仍是预期 subtree；
 - `:definition-revision` 用于发现外部修改；
-- `:preview` 是有界的 Cirru quote，供提示与人工恢复，不是真实源码；
 - `:section` 第一版只接受 `:code`，为 schema、example 与结构化 docs 预留空间。
 - `:history` 由 `set` 和导航命令维护，最多保存 32 个位置，供 `back` 使用；
 - `:stack` 只由 `push` / `pop` 控制，最多保存 16 个位置，不与普通导航历史混用；
@@ -151,7 +145,7 @@ cr query search-expr 'map items' --filter app.main/render! --set-cursor 1
 - `raise M`：cursor 位于被提升 child 内时删除 parent 到 child 的 path 段；位于被丢弃 sibling 内时降级到被替换的 parent。
 - `wrap M`：`C == M` 时选择 wrapper；若 cursor 位于原 subtree 内，只有能从模板中的唯一 `self` 映射证明新路径时才跟随，否则降级到 wrapper。
 
-所有迁移完成后必须用新 snapshot 重新读取 cursor path，刷新 fingerprint、preview 和 definition revision。新 path 无法读取时不写一个看似有效的 cursor。
+所有迁移完成后必须用新 snapshot 重新读取 cursor path，刷新 fingerprint 和 definition revision。preview 每次从当前 Snapshot 构造，不持久化到 cursor history。新 path 无法读取时不写一个看似有效的 cursor。
 
 ## 5. 外部变化与 stale 恢复
 
@@ -160,7 +154,7 @@ cr query search-expr 'map items' --filter app.main/render! --set-cursor 1
 1. revision 与 fingerprint 均匹配时状态为 `exact`；
 2. revision 变化但 path fingerprint 仍匹配时刷新 revision，状态为 `verified-at-path`；
 3. path 不匹配时，全 definition 搜索旧 fingerprint；唯一命中则重定位并提示 `relocated`；
-4. 零命中或多命中时拒绝作为 mutation target，展示保存的 preview 与候选，要求重新 set。
+4. 零命中或多命中时拒绝作为 mutation target，报告命中数量并要求重新 set。
 
 自动恢复必须宁可失败，也不能在重复结构中猜测。
 
@@ -174,11 +168,13 @@ transaction 的 staged 子命令不得直接更新真实 cursor 文件。完整�
 
 当前实现先满足较保守的兼容路径：staged 子命令禁用 cursor sidecar 写入；transaction 提交后重新解析最终 snapshot，并用 same-path fingerprint 或全 definition 唯一 fingerprint 验证 active cursor。无法唯一恢复时只提示 cursor 需要处理，不把已经成功提交的 transaction 误报成回滚。逐 operation 的 staged cursor 迁移以及 dry-run 的 `cursor_before` / `cursor_after` 仍是后续增强。
 
+`cursor cut` 与 `cursor paste` 同时影响 Snapshot 和 sidecar，两个文件不能由普通 rename 构成单一原子事务。实现必须先把两边都写入同目录 staged 文件，再按可恢复顺序提交：cut 先提交含完整 clipboard 的 sidecar，再提交删除后的 Snapshot，保证后一步失败时表达式仍可恢复；paste 先提交 Snapshot，再提交新 cursor，并在第二步失败时明确报告“源码已修改”，禁止把它伪装成可安全重试的普通失败。
+
 snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。若 snapshot 已成功而 cursor 写入失败，后续调用会通过 revision/fingerprint 检出 stale；错误必须明确报告“源码已提交、cursor 未更新”，不能声称整体回滚。
 
 ## 7. 第一阶段实现范围
 
-1. Cirru EDN cursor 状态的读取、v1→v2 兼容、校验和原子写入；
+1. Cirru EDN cursor 状态的读取、v1/v2→v3 兼容、校验和原子写入；
 2. `cr cursor set/show/clear/parent/child/next/prev/back/push/pop`，含末子节点与多步导航；
 3. 结构化 `copy/cut/paste/clipboard`，clipboard 不经过文本序列化；
 4. `tree show/replace/delete/insert-*/swap-*/wrap/rewrite/raise/unwrap` 接受 `--path @cursor`；
@@ -204,3 +200,4 @@ transaction 内逐 operation 的 cursor preview、named cursor，以及跨 defin
 - `--cursor-after none|summary|focus` 只改变 stderr 反馈，不改变 mutation 结果；
 - snapshot 被外部修改后，重复 subtree 不会被猜测性选中；
 - cursor 文件始终是可由 `cirru_edn::parse` 读取的单个 EDN value。
+- cut 的 Snapshot 提交失败时 clipboard 已可恢复；paste 的 cursor 提交失败时必须明确报告 Snapshot 已修改。

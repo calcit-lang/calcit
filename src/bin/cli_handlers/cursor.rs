@@ -11,12 +11,12 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::common::{cirru_to_json_value, format_path, parse_path};
-use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target, save_snapshot};
+use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target};
 
 const CURSOR_FILE: &str = ".calcit-cursor.cirru";
 const ACTIVE_CURSOR: &str = "main";
 const CURSOR_MAINTENANCE_ENV: &str = "CALCIT_CURSOR_MAINTENANCE";
-const CURSOR_SCHEMA_VERSION: u8 = 2;
+const CURSOR_SCHEMA_VERSION: u8 = 3;
 const CURSOR_HISTORY_LIMIT: usize = 32;
 const CURSOR_STACK_LIMIT: usize = 16;
 
@@ -30,7 +30,6 @@ struct CursorState {
   path: Vec<usize>,
   definition_revision: String,
   fingerprint: String,
-  preview: Cirru,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +47,34 @@ struct CursorDocument {
   history: Vec<CursorState>,
   stack: Vec<CursorState>,
   clipboard: Option<CursorClipboard>,
+}
+
+struct StagedFile {
+  destination: PathBuf,
+  temporary: PathBuf,
+  committed: bool,
+}
+
+impl StagedFile {
+  fn commit(mut self) -> Result<(), String> {
+    fs::rename(&self.temporary, &self.destination).map_err(|error| {
+      format!(
+        "Failed to atomically replace '{}' with '{}': {error}",
+        self.destination.display(),
+        self.temporary.display()
+      )
+    })?;
+    self.committed = true;
+    Ok(())
+  }
+}
+
+impl Drop for StagedFile {
+  fn drop(&mut self) {
+    if !self.committed {
+      let _ = fs::remove_file(&self.temporary);
+    }
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,7 +159,6 @@ fn set_cursor_selection(snapshot_file: &str, target: &str, path: Vec<usize>) -> 
     path,
     definition_revision: String::new(),
     fingerprint: String::new(),
-    preview: Cirru::List(vec![]),
   };
   refresh_cursor_state(&mut state, snapshot_file)?;
   let mut document = load_cursor_document_optional(snapshot_file)?.unwrap_or_else(|| CursorDocument {
@@ -176,8 +202,8 @@ fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(
     return Err(format!("Unsupported cursor view '{view}'. Expected focus, node, or full."));
   }
   let (state, status) = validate_cursor_with_status(snapshot_file, true)?;
-  let (node, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
-  let preview = build_cursor_preview(snapshot_file, &state, view)?;
+  let (definition, node, _) = read_cursor_context(snapshot_file, &state.target, &state.path)?;
+  let preview = build_cursor_preview_from_tree(&definition, &node, &state.path, view)?;
 
   if format == "json" {
     println!(
@@ -286,20 +312,23 @@ fn move_cursor_across_siblings(snapshot_file: &str, count: usize, forward: bool)
 }
 
 fn build_cursor_preview(snapshot_file: &str, state: &CursorState, view: &str) -> Result<Cirru, String> {
-  let (node, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
+  let (definition, node, _) = read_cursor_context(snapshot_file, &state.target, &state.path)?;
+  build_cursor_preview_from_tree(&definition, &node, &state.path, view)
+}
+
+fn build_cursor_preview_from_tree(definition: &Cirru, node: &Cirru, path: &[usize], view: &str) -> Result<Cirru, String> {
   if view == "node" {
-    return Ok(Cirru::List(vec![Cirru::leaf("CURSOR"), node]));
+    return Ok(Cirru::List(vec![Cirru::leaf("CURSOR"), node.clone()]));
   }
 
-  let (definition, _) = read_cursor_definition(snapshot_file, &state.target)?;
   if view == "focus" {
     let options = cirru_parser::CirruFocusOptions::default()
       .with_focus_marker("CURSOR")
       .with_root_prefix(3);
-    Ok(cirru_parser::focus_cirru_preview_with_options(&definition, &state.path, &options))
+    Ok(cirru_parser::focus_cirru_preview_with_options(definition, path, &options))
   } else {
-    let marker = Cirru::List(vec![Cirru::leaf("CURSOR"), node]);
-    apply_operation_at_path(&definition, &state.path, "replace", Some(&marker))
+    let marker = Cirru::List(vec![Cirru::leaf("CURSOR"), node.clone()]);
+    apply_operation_at_path(definition, path, "replace", Some(&marker))
   }
 }
 
@@ -421,12 +450,15 @@ fn store_cursor_clipboard(snapshot_file: &str, mode: &str, cut: bool) -> Result<
       .and_then(|file| file.defs.get_mut(definition))
       .ok_or_else(|| format!("Definition '{}' not found", state.target))?;
     entry.code = apply_operation_at_path(&entry.code, &state.path, "delete", None)?;
-    save_snapshot(&snapshot, snapshot_file)?;
-
     document.active.path = transform_delete(&state.path, &state.path).0;
-    refresh_cursor_state(&mut document.active, snapshot_file)?;
+    refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
+
+    let staged_cursor = stage_cursor_document(snapshot_file, &document)?;
+    let staged_snapshot = stage_snapshot(snapshot_file, &snapshot)?;
+    commit_cut_staged_files(staged_cursor, staged_snapshot)?;
+  } else {
+    save_cursor_document(snapshot_file, &document)?;
   }
-  save_cursor_document(snapshot_file, &document)?;
   println!(
     "{} {} expression at {} {} into cursor clipboard",
     "✓".green(),
@@ -478,7 +510,6 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
     Cirru::Leaf(_) => 0,
   };
   entry.code = apply_operation_at_path(&entry.code, &state.path, operation, Some(&clipboard.tree))?;
-  save_snapshot(&snapshot, snapshot_file)?;
 
   let mut pasted_path = state.path.clone();
   match at {
@@ -490,8 +521,11 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
   }
   push_bounded(&mut document.history, state, CURSOR_HISTORY_LIMIT);
   document.active.path = pasted_path;
-  refresh_cursor_state(&mut document.active, snapshot_file)?;
-  save_cursor_document(snapshot_file, &document)?;
+  refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
+
+  let staged_snapshot = stage_snapshot(snapshot_file, &snapshot)?;
+  let staged_cursor = stage_cursor_document(snapshot_file, &document)?;
+  commit_paste_staged_files(staged_snapshot, staged_cursor)?;
   println!(
     "{} Pasted cursor clipboard {} selection; cursor now at {}",
     "✓".green(),
@@ -819,10 +853,25 @@ fn node_fingerprint(node: &Cirru) -> String {
   format!("md5:{:x}", hasher.finalize())
 }
 
+fn read_cursor_context(snapshot_file: &str, target: &str, path: &[usize]) -> Result<(Cirru, Cirru, String), String> {
+  let (namespace, definition_name) = parse_target(target)?;
+  let snapshot = load_snapshot(snapshot_file)?;
+  let file = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Cursor namespace '{namespace}' no longer exists."))?;
+  let entry = file
+    .defs
+    .get(definition_name)
+    .ok_or_else(|| format!("Cursor definition '{target}' no longer exists."))?;
+  let node = navigate_to_path(&entry.code, path)
+    .map_err(|error| format!("Cursor path {} is no longer valid in '{}': {error}", format_path(path), target))?
+    .clone();
+  Ok((entry.code.clone(), node, snapshot::definition_revision(entry)?))
+}
+
 fn read_cursor_target(snapshot_file: &str, target: &str, path: &[usize]) -> Result<(Cirru, String), String> {
-  let (definition, revision) = read_cursor_definition(snapshot_file, target)?;
-  let node = navigate_to_path(&definition, path)
-    .map_err(|error| format!("Cursor path {} is no longer valid in '{}': {error}", format_path(path), target))?;
+  let (_, node, revision) = read_cursor_context(snapshot_file, target, path)?;
   Ok((node, revision))
 }
 
@@ -841,11 +890,30 @@ fn read_cursor_definition(snapshot_file: &str, target: &str) -> Result<(Cirru, S
 }
 
 fn refresh_cursor_state(state: &mut CursorState, snapshot_file: &str) -> Result<(), String> {
-  let (node, revision) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
+  let snapshot = load_snapshot(snapshot_file)?;
+  refresh_cursor_state_from_snapshot(state, snapshot_file, &snapshot)
+}
+
+fn refresh_cursor_state_from_snapshot(state: &mut CursorState, snapshot_file: &str, value: &snapshot::Snapshot) -> Result<(), String> {
+  let (namespace, definition_name) = parse_target(&state.target)?;
+  let file = value
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Cursor namespace '{namespace}' no longer exists."))?;
+  let entry = file
+    .defs
+    .get(definition_name)
+    .ok_or_else(|| format!("Cursor definition '{}' no longer exists.", state.target))?;
+  let node = navigate_to_path(&entry.code, &state.path).map_err(|error| {
+    format!(
+      "Cursor path {} is no longer valid in '{}': {error}",
+      format_path(&state.path),
+      state.target
+    )
+  })?;
   state.snapshot = snapshot_file.to_string();
-  state.definition_revision = revision;
+  state.definition_revision = snapshot::definition_revision(entry)?;
   state.fingerprint = node_fingerprint(&node);
-  state.preview = node;
   Ok(())
 }
 
@@ -879,7 +947,6 @@ fn validate_cursor_with_status(snapshot_file: &str, announce: bool) -> Result<(C
     if state.definition_revision != revision || state.snapshot != snapshot_file {
       state.definition_revision = revision;
       state.snapshot = snapshot_file.to_string();
-      state.preview = node;
       document.active = state.clone();
       save_cursor_document(snapshot_file, &document)?;
     }
@@ -963,7 +1030,10 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
     .tag_get("schema-version")
     .ok_or("Cursor file is missing :schema-version")?
     .read_number()?;
-  if (version - 1.0).abs() > f64::EPSILON && (version - f64::from(CURSOR_SCHEMA_VERSION)).abs() > f64::EPSILON {
+  if ![1.0, 2.0, f64::from(CURSOR_SCHEMA_VERSION)]
+    .iter()
+    .any(|supported| (version - supported).abs() <= f64::EPSILON)
+  {
     return Err(format!("Unsupported cursor schema version {version}."));
   }
   let active = root
@@ -1034,10 +1104,6 @@ fn cursor_state_from_edn(value: &Edn) -> Result<CursorState, String> {
     path,
     definition_revision: required_string(&entry, "definition-revision")?,
     fingerprint: required_string(&entry, "fingerprint")?,
-    preview: entry
-      .tag_get("preview")
-      .ok_or("Cursor entry is missing :preview")?
-      .read_quoted_cirru()?,
   })
 }
 
@@ -1103,7 +1169,6 @@ fn cursor_state_to_edn(state: &CursorState) -> Edn {
     ),
     (Edn::tag("definition-revision"), Edn::str(state.definition_revision.as_str())),
     (Edn::tag("fingerprint"), Edn::str(state.fingerprint.as_str())),
-    (Edn::tag("preview"), Edn::Quote(state.preview.clone())),
   ])
 }
 
@@ -1132,8 +1197,8 @@ fn save_cursor_state(snapshot_file: &str, state: &CursorState) -> Result<(), Str
   save_cursor_document(snapshot_file, &document)
 }
 
-fn save_cursor_document(snapshot_file: &str, document: &CursorDocument) -> Result<(), String> {
-  let content = cirru_edn::format(
+fn render_cursor_document(document: &CursorDocument) -> Result<String, String> {
+  let mut content = cirru_edn::format(
     &Edn::map_from_iter([
       (Edn::tag("schema-version"), Edn::from(CURSOR_SCHEMA_VERSION)),
       (Edn::tag("active"), Edn::tag(ACTIVE_CURSOR)),
@@ -1157,33 +1222,86 @@ fn save_cursor_document(snapshot_file: &str, document: &CursorDocument) -> Resul
     false,
   )
   .map_err(|error| format!("Failed to format cursor Cirru EDN: {error}"))?;
+  content.push('\n');
+  Ok(content)
+}
 
-  let destination = cursor_file_path(snapshot_file);
+fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Result<StagedFile, String> {
   let parent = destination.parent().unwrap_or(Path::new("."));
   let nonce = SystemTime::now()
     .duration_since(UNIX_EPOCH)
-    .map_err(|error| format!("System clock error while saving cursor: {error}"))?
+    .map_err(|error| format!("System clock error while staging {label}: {error}"))?
     .as_nanos();
-  let temporary = parent.join(format!(".calcit-cursor.{}.{nonce}.tmp", std::process::id()));
-  let mut file = OpenOptions::new()
-    .write(true)
-    .create_new(true)
-    .open(&temporary)
-    .map_err(|error| format!("Failed to create cursor temporary file '{}': {error}", temporary.display()))?;
-  file
-    .write_all(content.as_bytes())
-    .and_then(|_| file.write_all(b"\n"))
-    .and_then(|_| file.sync_all())
-    .map_err(|error| format!("Failed to write cursor temporary file '{}': {error}", temporary.display()))?;
-  fs::rename(&temporary, &destination).map_err(|error| {
-    let _ = fs::remove_file(&temporary);
-    format!(
-      "Failed to atomically replace cursor file '{}' with '{}': {error}",
-      destination.display(),
-      temporary.display()
-    )
+  let file_name = destination.file_name().and_then(|value| value.to_str()).unwrap_or("calcit-state");
+  let permissions = fs::metadata(destination).ok().map(|metadata| metadata.permissions());
+
+  for attempt in 0..32_u8 {
+    let temporary = parent.join(format!(".{file_name}.{}.{nonce}.{attempt}.tmp", std::process::id()));
+    let mut file = match OpenOptions::new().write(true).create_new(true).open(&temporary) {
+      Ok(file) => file,
+      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+      Err(error) => return Err(format!("Failed to create staged {label} file '{}': {error}", temporary.display())),
+    };
+    if let Err(error) = file.write_all(content).and_then(|_| file.sync_all()) {
+      let _ = fs::remove_file(&temporary);
+      return Err(format!("Failed to write staged {label} file '{}': {error}", temporary.display()));
+    }
+    if let Some(permissions) = &permissions
+      && let Err(error) = fs::set_permissions(&temporary, permissions.clone())
+    {
+      let _ = fs::remove_file(&temporary);
+      return Err(format!(
+        "Failed to preserve permissions on staged {label} file '{}': {error}",
+        temporary.display()
+      ));
+    }
+    return Ok(StagedFile {
+      destination: destination.to_path_buf(),
+      temporary,
+      committed: false,
+    });
+  }
+  Err(format!(
+    "Failed to allocate a unique staged {label} file in '{}'.",
+    parent.display()
+  ))
+}
+
+fn stage_cursor_document(snapshot_file: &str, document: &CursorDocument) -> Result<StagedFile, String> {
+  let destination = cursor_file_path(snapshot_file);
+  let content = render_cursor_document(document)?;
+  stage_atomic_file(&destination, content.as_bytes(), "cursor")
+}
+
+fn stage_snapshot(snapshot_file: &str, value: &snapshot::Snapshot) -> Result<StagedFile, String> {
+  let content = snapshot::render_snapshot_content(value)?;
+  stage_atomic_file(Path::new(snapshot_file), content.as_bytes(), "snapshot")
+}
+
+fn commit_cut_staged_files(staged_cursor: StagedFile, staged_snapshot: StagedFile) -> Result<(), String> {
+  staged_cursor.commit().map_err(|error| {
+    format!("Cut was not applied because the clipboard could not be persisted safely: {error}. The source expression is unchanged.")
   })?;
-  Ok(())
+  staged_snapshot.commit().map_err(|error| {
+    format!(
+      "Cut was not applied because the staged snapshot could not be committed: {error}. The expression remains in source and is also recoverable from `cr cursor clipboard`."
+    )
+  })
+}
+
+fn commit_paste_staged_files(staged_snapshot: StagedFile, staged_cursor: StagedFile) -> Result<(), String> {
+  staged_snapshot
+    .commit()
+    .map_err(|error| format!("Paste was not applied: {error}"))?;
+  staged_cursor.commit().map_err(|error| {
+    format!(
+      "Paste succeeded in the snapshot, but cursor state could not be updated: {error}. Do not retry blindly; run `cr cursor show` or `cr cursor set` first. The clipboard remains available."
+    )
+  })
+}
+
+fn save_cursor_document(snapshot_file: &str, document: &CursorDocument) -> Result<(), String> {
+  stage_cursor_document(snapshot_file, document)?.commit()
 }
 
 fn warn_cursor_gitignore(snapshot_file: &str) {
@@ -1352,10 +1470,11 @@ fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutation) -> (Ve
 #[cfg(test)]
 mod tests {
   use super::{
-    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, build_cursor_preview, cursor_file_path,
-    cursor_state_to_edn, load_cursor_document, load_cursor_state, maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation,
-    move_cursor_across_siblings, move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, read_cursor_target, restore_cursor,
-    save_cursor_document, save_cursor_state, set_cursor_selection, store_cursor_clipboard, transform_cursor_path,
+    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, build_cursor_preview, commit_cut_staged_files,
+    commit_paste_staged_files, cursor_file_path, cursor_state_to_edn, load_cursor_document, load_cursor_state,
+    maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_to_child,
+    node_fingerprint, paste_cursor_clipboard, read_cursor_target, restore_cursor, save_cursor_document, save_cursor_state,
+    set_cursor_selection, stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
   use cirru_edn::Edn;
@@ -1434,11 +1553,67 @@ mod tests {
       path,
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
-      preview: node,
     };
 
     save_cursor_state(&snapshot_file, &state).expect("cursor state should save");
     assert_eq!(load_cursor_state(&snapshot_file).expect("cursor state should load"), state);
+    let content = fs::read_to_string(cursor_file_path(&snapshot_file)).expect("cursor state file should read");
+    let root = cirru_edn::parse(&content)
+      .expect("cursor state should parse")
+      .view_map()
+      .expect("cursor state should be a map");
+    assert_eq!(
+      root
+        .tag_get("schema-version")
+        .expect("cursor schema version should exist")
+        .read_number()
+        .expect("cursor schema version should be numeric"),
+      3.0
+    );
+    assert!(
+      !content.contains(":preview"),
+      "cursor history should not persist full subtree previews"
+    );
+  }
+
+  #[test]
+  fn staged_cut_keeps_clipboard_recoverable_when_snapshot_commit_fails() {
+    let fixture = TestCursorSnapshot::from_fixture();
+    let cursor_destination = fixture.directory.join("cut-cursor.cirru");
+    let snapshot_destination = fixture.directory.join("cut-snapshot.cirru");
+    fs::write(&snapshot_destination, "source").expect("cut snapshot destination should initialize");
+    let staged_cursor = stage_atomic_file(&cursor_destination, b"clipboard", "test cursor").expect("cursor should stage");
+    let staged_snapshot = stage_atomic_file(&snapshot_destination, b"cut", "test snapshot").expect("snapshot should stage");
+    fs::remove_file(&snapshot_destination).expect("snapshot destination should be replaced for failure injection");
+    fs::create_dir(&snapshot_destination).expect("snapshot failure directory should be created");
+
+    let error = commit_cut_staged_files(staged_cursor, staged_snapshot).expect_err("snapshot commit should fail");
+    assert!(error.contains("recoverable from `cr cursor clipboard`"), "error: {error}");
+    assert_eq!(
+      fs::read_to_string(&cursor_destination).expect("clipboard checkpoint should persist"),
+      "clipboard"
+    );
+  }
+
+  #[test]
+  fn staged_paste_reports_snapshot_success_when_cursor_commit_fails() {
+    let fixture = TestCursorSnapshot::from_fixture();
+    let snapshot_destination = fixture.directory.join("paste-snapshot.cirru");
+    let cursor_destination = fixture.directory.join("paste-cursor.cirru");
+    fs::write(&snapshot_destination, "source").expect("paste snapshot destination should initialize");
+    fs::write(&cursor_destination, "cursor").expect("paste cursor destination should initialize");
+    let staged_snapshot = stage_atomic_file(&snapshot_destination, b"pasted", "test snapshot").expect("snapshot should stage");
+    let staged_cursor = stage_atomic_file(&cursor_destination, b"next cursor", "test cursor").expect("cursor should stage");
+    fs::remove_file(&cursor_destination).expect("cursor destination should be replaced for failure injection");
+    fs::create_dir(&cursor_destination).expect("cursor failure directory should be created");
+
+    let error = commit_paste_staged_files(staged_snapshot, staged_cursor).expect_err("cursor commit should fail");
+    assert!(error.contains("Paste succeeded in the snapshot"), "error: {error}");
+    assert!(error.contains("Do not retry blindly"), "error: {error}");
+    assert_eq!(
+      fs::read_to_string(&snapshot_destination).expect("pasted snapshot should persist"),
+      "pasted"
+    );
   }
 
   #[test]
@@ -1456,7 +1631,6 @@ mod tests {
         path: cursor_path,
         definition_revision: revision,
         fingerprint: node_fingerprint(&node),
-        preview: node,
       },
     )
     .expect("cursor state should save");
@@ -1479,7 +1653,12 @@ mod tests {
     .expect("cursor maintenance should succeed");
     let updated = load_cursor_state(&snapshot_file).expect("updated cursor should load");
     assert_eq!(updated.path, vec![48, 2]);
-    assert_eq!(updated.preview, cirru_parser::Cirru::leaf("true"));
+    assert_eq!(
+      read_cursor_target(&snapshot_file, "app.main/main!", &updated.path)
+        .expect("updated cursor target should exist")
+        .0,
+      cirru_parser::Cirru::leaf("true")
+    );
   }
 
   #[test]
@@ -1494,7 +1673,6 @@ mod tests {
       path: path.clone(),
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
-      preview: node.clone(),
     };
     let document = CursorDocument {
       active: state.clone(),
@@ -1525,7 +1703,6 @@ mod tests {
       path,
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
-      preview: node,
     };
     let legacy = cirru_edn::format(
       &Edn::map_from_iter([
@@ -1560,7 +1737,6 @@ mod tests {
       path,
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
-      preview: node,
     };
 
     let preview = build_cursor_preview(&snapshot_file, &state, "focus").expect("focused preview should build");
@@ -1589,7 +1765,6 @@ mod tests {
         path: path.clone(),
         definition_revision: revision,
         fingerprint: node_fingerprint(&node),
-        preview: node.clone(),
       },
     )
     .expect("cursor state should save");
@@ -1624,7 +1799,6 @@ mod tests {
         path: path.clone(),
         definition_revision: revision,
         fingerprint: node_fingerprint(&node),
-        preview: node.clone(),
       },
     )
     .expect("cursor state should save");
