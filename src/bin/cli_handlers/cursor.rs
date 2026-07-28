@@ -1,4 +1,8 @@
-use calcit::cli_args::{CursorCommand, CursorSubcommand};
+use calcit::cli_args::{
+  CursorApplyCommand, CursorCommand, CursorSubcommand, EditCommand, EditMvNodeCommand, EditSubcommand, TreeAppendChildCommand,
+  TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand, TreeRaiseCommand,
+  TreeReplaceCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
+};
 use calcit::snapshot;
 use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
@@ -117,7 +121,7 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
       let state = set_cursor_selection(snapshot_file, &opts.target, path)?;
       warn_cursor_gitignore(snapshot_file);
       println!("{} Cursor set: {} {}", "✓".green(), state.target, format_path(&state.path));
-      Ok(())
+      emit_focus_after_cursor_action(snapshot_file, &state, "cursor selected")
     }
     CursorSubcommand::Show(opts) => handle_cursor_show(snapshot_file, &opts.format, &opts.view),
     CursorSubcommand::Clear(_) => {
@@ -149,6 +153,11 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     CursorSubcommand::Paste(opts) => paste_cursor_clipboard(snapshot_file, &opts.at),
     CursorSubcommand::Clipboard(opts) => show_cursor_clipboard(snapshot_file, &opts.format),
     CursorSubcommand::ClearClipboard(_) => clear_cursor_clipboard(snapshot_file),
+    CursorSubcommand::Apply(opts) => apply_at_cursor(snapshot_file, opts),
+    CursorSubcommand::SlurpNext(_) => slurp_next(snapshot_file),
+    CursorSubcommand::BarfLast(_) => barf_last(snapshot_file),
+    CursorSubcommand::Forward(opts) => move_cursor_depth_first(snapshot_file, opts.count, true),
+    CursorSubcommand::Backward(opts) => move_cursor_depth_first(snapshot_file, opts.count, false),
   }
 }
 
@@ -191,7 +200,154 @@ pub(crate) fn set_cursor_from_query_match(
     state.target,
     format_path(&state.path)
   );
-  Ok(())
+  emit_focus_after_cursor_action(snapshot_file, &state, "cursor selected from search")
+}
+
+fn concrete_cursor_path(path: &[usize]) -> String {
+  if path.is_empty() { String::new() } else { format_path(path) }
+}
+
+fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  let target = state.target;
+  let path = concrete_cursor_path(&state.path);
+  let accepts_code = matches!(
+    opts.operation.as_str(),
+    "replace" | "wrap" | "insert-before" | "insert-after" | "insert-child" | "append-child"
+  );
+  if !accepts_code && (opts.file.is_some() || opts.code.is_some()) {
+    return Err(format!("Cursor operation '{}' does not accept --file or --code.", opts.operation));
+  }
+
+  let subcommand = match opts.operation.as_str() {
+    "delete" => TreeSubcommand::Delete(TreeDeleteCommand {
+      target,
+      path,
+      depth: opts.depth,
+    }),
+    "swap-next" => TreeSubcommand::SwapNext(TreeSwapNextCommand {
+      target,
+      path,
+      depth: opts.depth,
+    }),
+    "swap-prev" => TreeSubcommand::SwapPrev(TreeSwapPrevCommand {
+      target,
+      path,
+      depth: opts.depth,
+    }),
+    "unwrap" | "splice" => TreeSubcommand::Unwrap(TreeUnwrapCommand {
+      target,
+      path,
+      depth: opts.depth,
+    }),
+    "raise" => TreeSubcommand::Raise(TreeRaiseCommand {
+      target,
+      path,
+      depth: opts.depth,
+    }),
+    "replace" => TreeSubcommand::Replace(TreeReplaceCommand {
+      target,
+      path,
+      file: opts.file.clone(),
+      code: opts.code.clone(),
+      depth: opts.depth,
+    }),
+    "wrap" => TreeSubcommand::Wrap(TreeWrapCommand {
+      target,
+      path,
+      code: opts.code.clone(),
+      file: opts.file.clone(),
+      depth: opts.depth,
+    }),
+    "insert-before" => TreeSubcommand::InsertBefore(TreeInsertBeforeCommand {
+      target,
+      path,
+      file: opts.file.clone(),
+      code: opts.code.clone(),
+      depth: opts.depth,
+    }),
+    "insert-after" => TreeSubcommand::InsertAfter(TreeInsertAfterCommand {
+      target,
+      path,
+      file: opts.file.clone(),
+      code: opts.code.clone(),
+      depth: opts.depth,
+    }),
+    "insert-child" => TreeSubcommand::InsertChild(TreeInsertChildCommand {
+      target,
+      path,
+      file: opts.file.clone(),
+      code: opts.code.clone(),
+      depth: opts.depth,
+    }),
+    "append-child" => TreeSubcommand::AppendChild(TreeAppendChildCommand {
+      target,
+      path,
+      file: opts.file.clone(),
+      code: opts.code.clone(),
+      depth: opts.depth,
+    }),
+    other => {
+      return Err(format!(
+        "Unsupported cursor operation '{other}'. Use delete, swap-next, swap-prev, unwrap, splice, raise, replace, wrap, insert-before, insert-after, insert-child, or append-child."
+      ));
+    }
+  };
+  super::tree::handle_tree_command(&TreeCommand { subcommand }, snapshot_file)
+}
+
+fn move_node_for_paredit(snapshot_file: &str, state: &CursorState, from_path: &[usize], at: &str) -> Result<(), String> {
+  super::edit::handle_edit_command(
+    &EditCommand {
+      subcommand: EditSubcommand::Mv(EditMvNodeCommand {
+        target: state.target.clone(),
+        from: concrete_cursor_path(from_path),
+        path: concrete_cursor_path(&state.path),
+        at: at.to_string(),
+      }),
+    },
+    snapshot_file,
+  )
+}
+
+fn slurp_next(snapshot_file: &str) -> Result<(), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  if state.path.is_empty() {
+    return Err("Definition root has no next sibling to slurp.".to_string());
+  }
+  let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
+  if !matches!(selected, Cirru::List(_)) {
+    return Err("`cursor slurp-next` requires the selected node to be a list.".to_string());
+  }
+  let mut next_path = state.path.clone();
+  let current_index = *next_path.last().expect("non-root cursor has a final index");
+  let parent_path = &state.path[..state.path.len() - 1];
+  let (parent, _) = read_cursor_target(snapshot_file, &state.target, parent_path)?;
+  let Cirru::List(siblings) = parent else {
+    return Err("Cursor parent is not a list and has no sibling sequence.".to_string());
+  };
+  if current_index + 1 >= siblings.len() {
+    return Err("Selected list has no next sibling to slurp.".to_string());
+  }
+  *next_path.last_mut().expect("non-root cursor has a final index") += 1;
+  move_node_for_paredit(snapshot_file, &state, &next_path, "append-child")
+}
+
+fn barf_last(snapshot_file: &str) -> Result<(), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  if state.path.is_empty() {
+    return Err("Cannot barf a child out of the definition root.".to_string());
+  }
+  let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
+  let Cirru::List(children) = selected else {
+    return Err("`cursor barf-last` requires the selected node to be a list.".to_string());
+  };
+  let Some(last_index) = children.len().checked_sub(1) else {
+    return Err("Selected list has no child to barf.".to_string());
+  };
+  let mut child_path = state.path.clone();
+  child_path.push(last_index);
+  move_node_for_paredit(snapshot_file, &state, &child_path, "after")
 }
 
 fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(), String> {
@@ -250,7 +406,7 @@ fn commit_cursor_move(snapshot_file: &str, old_state: CursorState, mut state: Cu
     format_path(&old_path),
     format_path(&state.path)
   );
-  Ok(())
+  emit_focus_after_cursor_action(snapshot_file, &state, "cursor moved")
 }
 
 fn move_cursor_to_child(snapshot_file: &str, index: Option<usize>, last: bool) -> Result<(), String> {
@@ -308,6 +464,66 @@ fn move_cursor_across_siblings(snapshot_file: &str, count: usize, forward: bool)
     ));
   }
   *state.path.last_mut().expect("non-root cursor path has a final index") = new_index;
+  commit_cursor_move(snapshot_file, old_state, state)
+}
+
+fn depth_first_step(root: &Cirru, path: &[usize], forward: bool) -> Result<Option<Vec<usize>>, String> {
+  if forward {
+    if let Cirru::List(children) = navigate_to_path(root, path)?
+      && !children.is_empty()
+    {
+      let mut child = path.to_vec();
+      child.push(0);
+      return Ok(Some(child));
+    }
+
+    let mut candidate = path.to_vec();
+    while let Some(index) = candidate.pop() {
+      let Cirru::List(siblings) = navigate_to_path(root, &candidate)? else {
+        return Err(format!("Cursor parent {} is not a list.", format_path(&candidate)));
+      };
+      if index + 1 < siblings.len() {
+        candidate.push(index + 1);
+        return Ok(Some(candidate));
+      }
+    }
+    Ok(None)
+  } else {
+    let mut candidate = path.to_vec();
+    let Some(index) = candidate.pop() else {
+      return Ok(None);
+    };
+    if index == 0 {
+      return Ok(Some(candidate));
+    }
+    candidate.push(index - 1);
+    loop {
+      match navigate_to_path(root, &candidate)? {
+        Cirru::List(children) if !children.is_empty() => candidate.push(children.len() - 1),
+        _ => return Ok(Some(candidate)),
+      }
+    }
+  }
+}
+
+fn move_cursor_depth_first(snapshot_file: &str, count: usize, forward: bool) -> Result<(), String> {
+  if count == 0 {
+    return Err("`--count` must be greater than zero.".to_string());
+  }
+  let mut state = validate_cursor(snapshot_file, true)?;
+  let old_state = state.clone();
+  let (definition, _) = read_cursor_definition(snapshot_file, &state.target)?;
+  for completed in 0..count {
+    let Some(next) = depth_first_step(&definition, &state.path, forward)? else {
+      return Err(format!(
+        "Cannot move {} {count} structural node(s) from {}; reached the definition {} after {completed} step(s).",
+        if forward { "forward" } else { "backward" },
+        format_path(&old_state.path),
+        if forward { "end" } else { "start" }
+      ));
+    };
+    state.path = next;
+  }
   commit_cursor_move(snapshot_file, old_state, state)
 }
 
@@ -411,7 +627,7 @@ fn restore_cursor(snapshot_file: &str, source: RestoreSource, count: usize) -> R
     restored.target,
     format_path(&restored.path)
   );
-  Ok(())
+  emit_focus_after_cursor_action(snapshot_file, &restored, "cursor restored")
 }
 
 fn push_cursor(snapshot_file: &str) -> Result<(), String> {
@@ -802,6 +1018,14 @@ pub(crate) fn maintain_cursor_after_any_mutation(snapshot_file: &str, detail: &s
       }
       Ok(())
     }
+  }
+}
+
+fn emit_focus_after_cursor_action(snapshot_file: &str, state: &CursorState, detail: &str) -> Result<(), String> {
+  if CURSOR_AFTER_MODE.load(Ordering::Relaxed) == 2 {
+    emit_cursor_after(snapshot_file, state, detail)
+  } else {
+    Ok(())
   }
 }
 
@@ -1470,13 +1694,14 @@ fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutation) -> (Ve
 #[cfg(test)]
 mod tests {
   use super::{
-    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, build_cursor_preview, commit_cut_staged_files,
-    commit_paste_staged_files, cursor_file_path, cursor_state_to_edn, load_cursor_document, load_cursor_state,
-    maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_to_child,
-    node_fingerprint, paste_cursor_clipboard, read_cursor_target, restore_cursor, save_cursor_document, save_cursor_state,
-    set_cursor_selection, stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
+    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, apply_at_cursor, barf_last, build_cursor_preview,
+    commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_state_to_edn, load_cursor_document, load_cursor_state,
+    maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_depth_first,
+    move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, read_cursor_target, restore_cursor, save_cursor_document,
+    save_cursor_state, set_cursor_selection, slurp_next, stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
+  use calcit::cli_args::CursorApplyCommand;
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
   use std::fs;
@@ -1852,6 +2077,160 @@ mod tests {
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("failed move should preserve cursor").path,
       vec![48, 0]
+    );
+  }
+
+  #[test]
+  fn cursor_native_swap_and_forward_paredit_keep_selection_attached() {
+    let fixture = TestCursorSnapshot::from_fixture();
+    let snapshot_file = fixture.snapshot_string();
+    let mut snapshot = load_snapshot(&snapshot_file).expect("cursor paredit fixture should load");
+    let entry = snapshot
+      .files
+      .get_mut("app.main")
+      .and_then(|file| file.defs.get_mut("main!"))
+      .expect("cursor paredit definition should exist");
+    entry.code = Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("main!"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![Cirru::leaf("a"), Cirru::leaf("b")]),
+      Cirru::leaf("tail"),
+    ]);
+    save_snapshot(&snapshot, &snapshot_file).expect("cursor paredit fixture should save");
+
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![3, 0]).expect("cursor should select first list child");
+    apply_at_cursor(
+      &snapshot_file,
+      &CursorApplyCommand {
+        operation: "swap-next".to_string(),
+        file: None,
+        code: None,
+        depth: 2,
+      },
+    )
+    .expect("cursor-native swap should succeed");
+    assert_eq!(
+      load_cursor_state(&snapshot_file).expect("swapped cursor should load").path,
+      vec![3, 1]
+    );
+
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![3]).expect("cursor should select list");
+    slurp_next(&snapshot_file).expect("selected list should slurp its next sibling");
+    assert_eq!(load_cursor_state(&snapshot_file).expect("slurped cursor should load").path, vec![3]);
+    assert_eq!(
+      read_cursor_target(&snapshot_file, "app.main/main!", &[3])
+        .expect("slurped list should exist")
+        .0,
+      Cirru::List(vec![Cirru::leaf("b"), Cirru::leaf("a"), Cirru::leaf("tail")])
+    );
+
+    barf_last(&snapshot_file).expect("selected list should barf its last child");
+    assert_eq!(load_cursor_state(&snapshot_file).expect("barfed cursor should load").path, vec![3]);
+    assert_eq!(
+      read_cursor_target(&snapshot_file, "app.main/main!", &[])
+        .expect("barfed definition should exist")
+        .0,
+      Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf("main!"),
+        Cirru::List(vec![]),
+        Cirru::List(vec![Cirru::leaf("b"), Cirru::leaf("a")]),
+        Cirru::leaf("tail"),
+      ])
+    );
+  }
+
+  #[test]
+  fn cursor_depth_first_navigation_crosses_list_boundaries_once_per_command() {
+    let fixture = TestCursorSnapshot::from_fixture();
+    let snapshot_file = fixture.snapshot_string();
+    let mut snapshot = load_snapshot(&snapshot_file).expect("cursor traversal fixture should load");
+    let entry = snapshot
+      .files
+      .get_mut("app.main")
+      .and_then(|file| file.defs.get_mut("main!"))
+      .expect("cursor traversal definition should exist");
+    entry.code = Cirru::List(vec![
+      Cirru::leaf("a"),
+      Cirru::List(vec![Cirru::leaf("b"), Cirru::List(vec![Cirru::leaf("c")])]),
+      Cirru::leaf("d"),
+    ]);
+    save_snapshot(&snapshot, &snapshot_file).expect("cursor traversal fixture should save");
+
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![]).expect("cursor should select definition root");
+    move_cursor_depth_first(&snapshot_file, 5, true).expect("cursor should cross into a nested list");
+    assert_eq!(
+      load_cursor_state(&snapshot_file).expect("forward cursor should load").path,
+      vec![1, 1, 0]
+    );
+
+    move_cursor_depth_first(&snapshot_file, 3, false).expect("cursor should cross back out of a nested list");
+    assert_eq!(
+      load_cursor_state(&snapshot_file).expect("backward cursor should load").path,
+      vec![1]
+    );
+
+    let error = move_cursor_depth_first(&snapshot_file, 10, true).expect_err("cursor should not move past definition end");
+    assert!(error.contains("reached the definition end"), "error: {error}");
+    assert_eq!(
+      load_cursor_state(&snapshot_file)
+        .expect("failed traversal should preserve cursor")
+        .path,
+      vec![1]
+    );
+  }
+
+  #[test]
+  fn cursor_native_edits_reject_invalid_boundaries_without_changing_snapshot() {
+    let fixture = TestCursorSnapshot::from_fixture();
+    let snapshot_file = fixture.snapshot_string();
+    let mut snapshot = load_snapshot(&snapshot_file).expect("cursor boundary fixture should load");
+    let entry = snapshot
+      .files
+      .get_mut("app.main")
+      .and_then(|file| file.defs.get_mut("main!"))
+      .expect("cursor boundary definition should exist");
+    entry.code = Cirru::List(vec![Cirru::leaf("a"), Cirru::List(vec![])]);
+    save_snapshot(&snapshot, &snapshot_file).expect("cursor boundary fixture should save");
+    let original = fs::read_to_string(&snapshot_file).expect("cursor boundary fixture should read");
+
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![]).expect("cursor should select definition root");
+    assert!(
+      slurp_next(&snapshot_file)
+        .expect_err("root cannot slurp")
+        .contains("Definition root")
+    );
+    assert!(barf_last(&snapshot_file).expect_err("root cannot barf").contains("definition root"));
+
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![0]).expect("cursor should select leaf");
+    assert!(
+      slurp_next(&snapshot_file)
+        .expect_err("leaf cannot slurp")
+        .contains("requires the selected node to be a list")
+    );
+    let error = apply_at_cursor(
+      &snapshot_file,
+      &CursorApplyCommand {
+        operation: "swap-next".to_string(),
+        file: None,
+        code: Some("quote ignored".to_string()),
+        depth: 2,
+      },
+    )
+    .expect_err("code should be rejected for a code-free operation");
+    assert!(error.contains("does not accept --file or --code"), "error: {error}");
+
+    set_cursor_selection(&snapshot_file, "app.main/main!", vec![1]).expect("cursor should select empty list");
+    assert!(
+      slurp_next(&snapshot_file)
+        .expect_err("last sibling cannot slurp")
+        .contains("no next sibling")
+    );
+    assert!(barf_last(&snapshot_file).expect_err("empty list cannot barf").contains("no child"));
+    assert_eq!(
+      fs::read_to_string(&snapshot_file).expect("cursor boundary fixture should reread"),
+      original
     );
   }
 }

@@ -429,6 +429,11 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
     CursorSubcommand::Paste(opts) => format!("pastes the cursor clipboard {} the selected expression", opts.at),
     CursorSubcommand::Clipboard(_) => "displays the cursor clipboard".to_string(),
     CursorSubcommand::ClearClipboard(_) => "clears the cursor clipboard".to_string(),
+    CursorSubcommand::Apply(opts) => format!("applies `{}` to the active cursor", opts.operation),
+    CursorSubcommand::SlurpNext(_) => "moves the next sibling into the selected list".to_string(),
+    CursorSubcommand::BarfLast(_) => "moves the selected list's last child out as its next sibling".to_string(),
+    CursorSubcommand::Forward(opts) => format!("moves forward {} structural node(s)", opts.count),
+    CursorSubcommand::Backward(opts) => format!("moves backward {} structural node(s)", opts.count),
   })
 }
 
@@ -919,7 +924,9 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     | CursorSubcommand::Pop(_)
     | CursorSubcommand::Copy(_)
     | CursorSubcommand::Cut(_)
-    | CursorSubcommand::ClearClipboard(_) => {}
+    | CursorSubcommand::ClearClipboard(_)
+    | CursorSubcommand::SlurpNext(_)
+    | CursorSubcommand::BarfLast(_) => {}
     CursorSubcommand::Child(opts) => {
       if let Some(index) = opts.index {
         push_positional(tokens, "index", &index.to_string());
@@ -933,6 +940,11 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     CursorSubcommand::Back(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
     CursorSubcommand::Paste(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
     CursorSubcommand::Clipboard(opts) => echo_items!(tokens, value "format" => &opts.format; default "human"),
+    CursorSubcommand::Apply(opts) => {
+      echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "depth" => opts.depth; default "2")
+    }
+    CursorSubcommand::Forward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
+    CursorSubcommand::Backward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
   }
 }
 
@@ -1155,6 +1167,11 @@ fn cursor_name(subcommand: &CursorSubcommand) -> &'static str {
     CursorSubcommand::Paste(_) => "paste",
     CursorSubcommand::Clipboard(_) => "clipboard",
     CursorSubcommand::ClearClipboard(_) => "clear-clipboard",
+    CursorSubcommand::Apply(_) => "apply",
+    CursorSubcommand::SlurpNext(_) => "slurp-next",
+    CursorSubcommand::BarfLast(_) => "barf-last",
+    CursorSubcommand::Forward(_) => "forward",
+    CursorSubcommand::Backward(_) => "backward",
   }
 }
 

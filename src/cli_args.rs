@@ -1903,6 +1903,11 @@ pub enum CursorSubcommand {
   Paste(CursorPasteCommand),
   Clipboard(CursorClipboardCommand),
   ClearClipboard(CursorClearClipboardCommand),
+  Apply(CursorApplyCommand),
+  SlurpNext(CursorSlurpNextCommand),
+  BarfLast(CursorBarfLastCommand),
+  Forward(CursorForwardCommand),
+  Backward(CursorBackwardCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2020,6 +2025,52 @@ pub struct CursorClipboardCommand {
 #[argh(subcommand, name = "clear-clipboard")]
 /// clear the cursor clipboard without changing the selection
 pub struct CursorClearClipboardCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "apply")]
+/// apply a structural tree operation to the active cursor without repeating target or path
+pub struct CursorApplyCommand {
+  /// operation: delete, swap-next, swap-prev, unwrap, raise, replace, wrap, insert-before, insert-after, insert-child, append-child
+  #[argh(positional)]
+  pub operation: String,
+  /// read the replacement, wrapper, or inserted expression from a file
+  #[argh(option)]
+  pub file: Option<String>,
+  /// replacement, wrapper, or inserted expression as inline Cirru/JSON
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// max depth for the underlying tree command result preview
+  #[argh(option, default = "2")]
+  pub depth: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "slurp-next")]
+/// move the next sibling into the selected list as its last child
+pub struct CursorSlurpNextCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "barf-last")]
+/// move the selected list's last child out as its next sibling
+pub struct CursorBarfLastCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "forward")]
+/// move forward through the definition in depth-first structural order
+pub struct CursorForwardCommand {
+  /// number of structural nodes to advance
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "backward")]
+/// move backward through the definition in depth-first structural order
+pub struct CursorBackwardCommand {
+  /// number of structural nodes to rewind
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Config command — top-level shortcut for configuration management
