@@ -2258,13 +2258,19 @@ pub(crate) fn bump_semver_value(current: &str, level: &str) -> Result<String, St
 
 fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> {
   let inc_file = ".compact-inc.cirru";
-  let error_file = ".calcit-error.cirru";
+  let project_directory = calcit::project_state::project_directory_for_snapshot(snapshot_file);
+  let error_file = calcit::project_state::state_file(project_directory, calcit::project_state::ERROR_STATE_FILE);
+  let legacy_error_file = project_directory.join(".calcit-error.cirru");
+  calcit::project_state::migrate_legacy_file(&legacy_error_file, &error_file)
+    .map_err(|error| format!("Failed to migrate legacy error file: {error}"))?;
+  calcit::project_state::ensure_state_directory(project_directory)
+    .map_err(|error| format!("Failed to create project state directory: {error}"))?;
 
   // Clear error file at the beginning
-  if let Err(e) = fs::write(error_file, "") {
-    eprintln!("{} Failed to clear {}: {}", "⚠".yellow(), error_file, e);
+  if let Err(e) = fs::write(&error_file, "") {
+    eprintln!("{} Failed to clear {}: {}", "⚠".yellow(), error_file.display(), e);
   } else {
-    println!("{} Cleared {}", "→".cyan(), error_file);
+    println!("{} Cleared {}", "→".cyan(), error_file.display());
   }
 
   if opts.added.is_empty()

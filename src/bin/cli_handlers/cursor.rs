@@ -3,11 +3,13 @@ use calcit::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeRaiseCommand, TreeReplaceCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
 };
+use calcit::project_state::{self, CURSOR_STATE_FILE};
 use calcit::snapshot;
 use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use md5::{Digest, Md5};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,12 +19,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::common::{cirru_to_json_value, format_path, parse_path};
 use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target};
 
-const CURSOR_FILE: &str = ".calcit-cursor.cirru";
+const LEGACY_CURSOR_FILE: &str = ".calcit-cursor.cirru";
 const ACTIVE_CURSOR: &str = "main";
 const CURSOR_MAINTENANCE_ENV: &str = "CALCIT_CURSOR_MAINTENANCE";
-const CURSOR_SCHEMA_VERSION: u8 = 3;
+const CURSOR_SCHEMA_VERSION: u8 = 4;
 const CURSOR_HISTORY_LIMIT: usize = 32;
 const CURSOR_STACK_LIMIT: usize = 16;
+const CURSOR_MARK_LIMIT: usize = 16;
+const CURSOR_FILE_MAX_BYTES: usize = 64 * 1024;
 
 /// 0 = none, 1 = summary, 2 = focus.
 static CURSOR_AFTER_MODE: AtomicU8 = AtomicU8::new(1);
@@ -46,10 +50,28 @@ struct CursorClipboard {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CursorLastQuery {
+  pub command: String,
+  pub pattern: String,
+  pub filter: Option<String>,
+  pub exact: bool,
+  pub regex: bool,
+  pub max_depth: usize,
+  pub start_path: Option<String>,
+  pub entry: Option<String>,
+  pub pattern_is_json: bool,
+  pub selected_index: usize,
+  pub snapshot_revision: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct CursorDocument {
   active: CursorState,
   history: Vec<CursorState>,
   stack: Vec<CursorState>,
+  anchor: Option<CursorState>,
+  marks: BTreeMap<String, CursorState>,
+  last_query: Option<CursorLastQuery>,
   clipboard: Option<CursorClipboard>,
 }
 
@@ -126,8 +148,18 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     CursorSubcommand::Show(opts) => handle_cursor_show(snapshot_file, &opts.format, &opts.view),
     CursorSubcommand::Clear(_) => {
       let file = cursor_file_path(snapshot_file);
+      let legacy_file = legacy_cursor_file_path(snapshot_file);
+      let mut removed = false;
       if file.exists() {
         fs::remove_file(&file).map_err(|error| format!("Failed to remove cursor file '{}': {error}", file.display()))?;
+        removed = true;
+      }
+      if legacy_file.exists() {
+        fs::remove_file(&legacy_file)
+          .map_err(|error| format!("Failed to remove legacy cursor file '{}': {error}", legacy_file.display()))?;
+        removed = true;
+      }
+      if removed {
         println!("{} Cursor cleared", "✓".green());
       } else {
         println!("{} No cursor is set", "•".dimmed());
@@ -148,6 +180,13 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     CursorSubcommand::Back(opts) => restore_cursor(snapshot_file, RestoreSource::History, opts.count),
     CursorSubcommand::Push(_) => push_cursor(snapshot_file),
     CursorSubcommand::Pop(_) => restore_cursor(snapshot_file, RestoreSource::Stack, 1),
+    CursorSubcommand::Anchor(_) => set_cursor_anchor(snapshot_file),
+    CursorSubcommand::ClearAnchor(_) => clear_cursor_anchor(snapshot_file),
+    CursorSubcommand::Region(opts) => show_cursor_region(snapshot_file, &opts.format),
+    CursorSubcommand::Mark(opts) => save_cursor_mark(snapshot_file, &opts.name),
+    CursorSubcommand::Goto(opts) => goto_cursor_mark(snapshot_file, &opts.name),
+    CursorSubcommand::Marks(opts) => show_cursor_marks(snapshot_file, &opts.format),
+    CursorSubcommand::RmMark(opts) => remove_cursor_mark(snapshot_file, &opts.name),
     CursorSubcommand::Copy(_) => store_cursor_clipboard(snapshot_file, "copy", false),
     CursorSubcommand::Cut(_) => store_cursor_clipboard(snapshot_file, "cut", true),
     CursorSubcommand::Paste(opts) => paste_cursor_clipboard(snapshot_file, &opts.at),
@@ -165,6 +204,15 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
 }
 
 fn set_cursor_selection(snapshot_file: &str, target: &str, path: Vec<usize>) -> Result<CursorState, String> {
+  set_cursor_selection_with_last_query(snapshot_file, target, path, None)
+}
+
+fn set_cursor_selection_with_last_query(
+  snapshot_file: &str,
+  target: &str,
+  path: Vec<usize>,
+  last_query: Option<CursorLastQuery>,
+) -> Result<CursorState, String> {
   let mut state = CursorState {
     snapshot: snapshot_file.to_string(),
     target: target.to_string(),
@@ -177,12 +225,18 @@ fn set_cursor_selection(snapshot_file: &str, target: &str, path: Vec<usize>) -> 
     active: state.clone(),
     history: vec![],
     stack: vec![],
+    anchor: None,
+    marks: BTreeMap::new(),
+    last_query: None,
     clipboard: None,
   });
   if document.active.target != state.target || document.active.path != state.path {
     push_bounded(&mut document.history, document.active.clone(), CURSOR_HISTORY_LIMIT);
   }
   document.active = state.clone();
+  if let Some(last_query) = last_query {
+    document.last_query = Some(last_query);
+  }
   save_cursor_document(snapshot_file, &document)?;
   Ok(state)
 }
@@ -192,8 +246,9 @@ pub(crate) fn set_cursor_from_query_match(
   target: &str,
   path: Vec<usize>,
   match_index: usize,
+  last_query: CursorLastQuery,
 ) -> Result<(), String> {
-  let state = set_cursor_selection(snapshot_file, target, path)
+  let state = set_cursor_selection_with_last_query(snapshot_file, target, path, Some(last_query))
     .map_err(|error| format!("Search match #{match_index} cannot become the project cursor: {error}"))?;
   warn_cursor_gitignore(snapshot_file);
   eprintln!(
@@ -204,6 +259,12 @@ pub(crate) fn set_cursor_from_query_match(
     format_path(&state.path)
   );
   emit_focus_after_cursor_action(snapshot_file, &state, "cursor selected from search")
+}
+
+pub(crate) fn load_cursor_last_query(snapshot_file: &str) -> Result<CursorLastQuery, String> {
+  load_cursor_document(snapshot_file)?
+    .last_query
+    .ok_or("No repeatable cursor search is saved. Run `cr query search ... --set-cursor <index>` first.".to_string())
 }
 
 fn concrete_cursor_path(path: &[usize]) -> String {
@@ -400,7 +461,7 @@ fn barf_first(snapshot_file: &str) -> Result<(), String> {
 
   let mut selected_path = state.path.clone();
   *selected_path.last_mut().expect("root was rejected above") += 1;
-  push_bounded(&mut document.history, state, CURSOR_HISTORY_LIMIT);
+  push_bounded(&mut document.history, state.clone(), CURSOR_HISTORY_LIMIT);
   document.active.path = selected_path;
   refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
 
@@ -470,6 +531,7 @@ fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(
     return Err(format!("Unsupported cursor view '{view}'. Expected focus, node, or full."));
   }
   let (state, status) = validate_cursor_with_status(snapshot_file, true)?;
+  let document = load_cursor_document(snapshot_file)?;
   let (definition, node, _) = read_cursor_context(snapshot_file, &state.target, &state.path)?;
   let preview = build_cursor_preview_from_tree(&definition, &node, &state.path, view)?;
 
@@ -477,7 +539,7 @@ fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(
     println!(
       "{}",
       serde_json::json!({
-        "schema_version": 2,
+        "schema_version": 3,
         "command": "cursor.show",
         "status": status,
         "view": view,
@@ -485,12 +547,31 @@ fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(
         "path": format_path(&state.path),
         "definition_revision": state.definition_revision,
         "fingerprint": state.fingerprint,
+        "state_file": cursor_file_path(snapshot_file),
+        "anchor": document.anchor.as_ref().map(|anchor| serde_json::json!({
+          "target": anchor.target,
+          "path": format_path(&anchor.path),
+          "fingerprint": anchor.fingerprint,
+        })),
+        "marks": document.marks.iter().map(|(name, mark)| serde_json::json!({
+          "name": name,
+          "target": mark.target,
+          "path": format_path(&mark.path),
+          "fingerprint": mark.fingerprint,
+        })).collect::<Vec<_>>(),
+        "last_query": document.last_query.as_ref().map(|query| serde_json::json!({
+          "command": query.command,
+          "pattern": query.pattern,
+          "filter": query.filter,
+          "selected_index": query.selected_index,
+          "snapshot_revision": query.snapshot_revision,
+        })),
         "tree": cirru_to_json_value(&node),
         "preview_tree": cirru_to_json_value(&preview),
       })
     );
   } else {
-    println!("{}", render_cursor_human(&state, status, &preview)?);
+    println!("{}", render_cursor_human(&state, &document, status, &preview)?);
   }
   Ok(())
 }
@@ -660,14 +741,14 @@ fn build_cursor_preview_from_tree(definition: &Cirru, node: &Cirru, path: &[usiz
   }
 }
 
-fn render_cursor_human(state: &CursorState, status: &str, preview: &Cirru) -> Result<String, String> {
+fn render_cursor_human(state: &CursorState, document: &CursorDocument, status: &str, preview: &Cirru) -> Result<String, String> {
   let rendered = cirru_parser::format(
     std::slice::from_ref(preview),
     cirru_parser::CirruWriterOptions { use_inline: false },
   )
   .map_err(|error| format!("Failed to render cursor preview: {error}"))?;
   Ok(format!(
-    "{}: {}\n{}: {}\n{}: {}\n{}: {}\n\n{}",
+    "{}: {}\n{}: {}\n{}: {}\n{}: {}\n{}: {}\n{}: {}/{}\n{}: {}\n\n{}",
     "Target".green().bold(),
     state.target,
     "Path".green().bold(),
@@ -676,6 +757,21 @@ fn render_cursor_human(state: &CursorState, status: &str, preview: &Cirru) -> Re
     state.definition_revision,
     "Status".green().bold(),
     status,
+    "Anchor".green().bold(),
+    document
+      .anchor
+      .as_ref()
+      .map(|anchor| format!("{} {}", anchor.target, format_path(&anchor.path)))
+      .unwrap_or_else(|| "(none)".to_string()),
+    "Marks".green().bold(),
+    document.marks.len(),
+    CURSOR_MARK_LIMIT,
+    "Last query".green().bold(),
+    document
+      .last_query
+      .as_ref()
+      .map(|query| format!("{} #{}", query.command, query.selected_index))
+      .unwrap_or_else(|| "(none)".to_string()),
     rendered
   ))
 }
@@ -752,6 +848,245 @@ fn push_cursor(snapshot_file: &str) -> Result<(), String> {
   Ok(())
 }
 
+fn set_cursor_anchor(snapshot_file: &str) -> Result<(), String> {
+  let state = validate_cursor(snapshot_file, true)?;
+  if state.path.is_empty() {
+    return Err("A region anchor must select a child node, not the definition root.".to_string());
+  }
+  let mut document = load_cursor_document(snapshot_file)?;
+  document.anchor = Some(state.clone());
+  save_cursor_document(snapshot_file, &document)?;
+  println!("{} Region anchor set: {} {}", "✓".green(), state.target, format_path(&state.path));
+  Ok(())
+}
+
+fn clear_cursor_anchor(snapshot_file: &str) -> Result<(), String> {
+  let mut document = load_cursor_document(snapshot_file)?;
+  if document.anchor.take().is_some() {
+    save_cursor_document(snapshot_file, &document)?;
+    println!("{} Region anchor cleared", "✓".green());
+  } else {
+    println!("{} No region anchor is set", "•".dimmed());
+  }
+  Ok(())
+}
+
+fn cursor_region_bounds(anchor: &CursorState, active: &CursorState) -> Result<(Vec<usize>, usize, usize), String> {
+  if anchor.target != active.target {
+    return Err(format!(
+      "Region endpoints target different definitions: '{}' and '{}'.",
+      anchor.target, active.target
+    ));
+  }
+  let (Some(&anchor_index), Some(&active_index)) = (anchor.path.last(), active.path.last()) else {
+    return Err("A region cannot use the definition root as an endpoint.".to_string());
+  };
+  let anchor_parent = &anchor.path[..anchor.path.len() - 1];
+  let active_parent = &active.path[..active.path.len() - 1];
+  if anchor_parent != active_parent {
+    return Err(format!(
+      "Region endpoints must be contiguous siblings under one parent; anchor is {} and cursor is {}.",
+      format_path(&anchor.path),
+      format_path(&active.path)
+    ));
+  }
+  Ok((
+    anchor_parent.to_vec(),
+    anchor_index.min(active_index),
+    anchor_index.max(active_index),
+  ))
+}
+
+fn show_cursor_region(snapshot_file: &str, format: &str) -> Result<(), String> {
+  if !matches!(format, "human" | "json") {
+    return Err(format!("Unsupported region format '{format}'. Expected human or json."));
+  }
+  let active = validate_cursor(snapshot_file, true)?;
+  let mut document = load_cursor_document(snapshot_file)?;
+  let saved_anchor = document
+    .anchor
+    .clone()
+    .ok_or("No region anchor is set. Run `cr cursor anchor` first.")?;
+  let anchor = relocate_saved_state(snapshot_file, saved_anchor)?;
+  let (parent_path, start, end) = cursor_region_bounds(&anchor, &active)?;
+  let (parent, _) = read_cursor_target(snapshot_file, &active.target, &parent_path)?;
+  let Cirru::List(children) = parent else {
+    return Err("Region parent is no longer a list.".to_string());
+  };
+  if end >= children.len() {
+    return Err(format!(
+      "Region endpoint {end} is outside a parent with {} child(ren).",
+      children.len()
+    ));
+  }
+  let selected = children[start..=end].to_vec();
+  if document.anchor.as_ref() != Some(&anchor) {
+    document.anchor = Some(anchor.clone());
+    save_cursor_document(snapshot_file, &document)?;
+  }
+
+  if format == "json" {
+    println!(
+      "{}",
+      serde_json::json!({
+        "schema_version": 1,
+        "command": "cursor.region",
+        "target": active.target,
+        "parent_path": format_path(&parent_path),
+        "start": start,
+        "end": end,
+        "count": selected.len(),
+        "anchor_path": format_path(&anchor.path),
+        "cursor_path": format_path(&active.path),
+        "trees": selected.iter().map(cirru_to_json_value).collect::<Vec<_>>(),
+      })
+    );
+  } else {
+    let preview = Cirru::List(std::iter::once(Cirru::leaf("REGION")).chain(selected).collect());
+    let rendered = cirru_parser::format(&[preview], cirru_parser::CirruWriterOptions { use_inline: false })
+      .map_err(|error| format!("Failed to render cursor region: {error}"))?;
+    println!(
+      "{}: {}\n{}: {}..{} ({} siblings)\n{}: {}\n{}: {}\n\n{}",
+      "Target".green().bold(),
+      active.target,
+      "Region".green().bold(),
+      start,
+      end,
+      end - start + 1,
+      "Anchor".green().bold(),
+      format_path(&anchor.path),
+      "Cursor".green().bold(),
+      format_path(&active.path),
+      rendered
+    );
+  }
+  Ok(())
+}
+
+fn validate_mark_name(name: &str) -> Result<(), String> {
+  if name.is_empty()
+    || name.len() > 32
+    || !name
+      .chars()
+      .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+  {
+    return Err("Mark name must contain 1..32 ASCII letters, digits, underscores, or hyphens.".to_string());
+  }
+  Ok(())
+}
+
+fn save_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
+  validate_mark_name(name)?;
+  let state = validate_cursor(snapshot_file, true)?;
+  let mut document = load_cursor_document(snapshot_file)?;
+  if !document.marks.contains_key(name) && document.marks.len() == CURSOR_MARK_LIMIT {
+    return Err(format!(
+      "Cursor mark limit ({CURSOR_MARK_LIMIT}) reached. Remove an unused mark with `cr cursor rm-mark <name>`."
+    ));
+  }
+  document.marks.insert(name.to_string(), state.clone());
+  save_cursor_document(snapshot_file, &document)?;
+  println!(
+    "{} Mark '{}' saved at {} {}",
+    "✓".green(),
+    name,
+    state.target,
+    format_path(&state.path)
+  );
+  Ok(())
+}
+
+fn goto_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
+  validate_mark_name(name)?;
+  let mut document = load_cursor_document(snapshot_file)?;
+  let saved = document
+    .marks
+    .get(name)
+    .cloned()
+    .ok_or_else(|| format!("Cursor mark '{name}' does not exist."))?;
+  let restored = relocate_saved_state(snapshot_file, saved)?;
+  if document.active.target != restored.target || document.active.path != restored.path {
+    push_bounded(&mut document.history, document.active.clone(), CURSOR_HISTORY_LIMIT);
+  }
+  document.active = restored.clone();
+  document.marks.insert(name.to_string(), restored.clone());
+  save_cursor_document(snapshot_file, &document)?;
+  println!(
+    "{} Cursor moved to mark '{}': {} {}",
+    "✓".green(),
+    name,
+    restored.target,
+    format_path(&restored.path)
+  );
+  emit_focus_after_cursor_action(snapshot_file, &restored, "cursor restored from named mark")
+}
+
+fn show_cursor_marks(snapshot_file: &str, format: &str) -> Result<(), String> {
+  if !matches!(format, "human" | "json") {
+    return Err(format!("Unsupported marks format '{format}'. Expected human or json."));
+  }
+  let mut document = load_cursor_document(snapshot_file)?;
+  let snapshot = load_snapshot(snapshot_file)?;
+  let mut changed = false;
+  let mut rows = vec![];
+  for (name, saved) in document.marks.clone() {
+    match relocate_saved_state_from_snapshot(snapshot_file, saved, &snapshot) {
+      Ok(state) => {
+        if document.marks.get(&name) != Some(&state) {
+          document.marks.insert(name.clone(), state.clone());
+          changed = true;
+        }
+        rows.push((name, Some(state), None));
+      }
+      Err(error) => rows.push((name, None, Some(error))),
+    }
+  }
+  if changed {
+    save_cursor_document(snapshot_file, &document)?;
+  }
+
+  if format == "json" {
+    println!(
+      "{}",
+      serde_json::json!({
+        "schema_version": 1,
+        "command": "cursor.marks",
+        "limit": CURSOR_MARK_LIMIT,
+        "marks": rows.iter().map(|(name, state, error)| serde_json::json!({
+          "name": name,
+          "status": if state.is_some() { "ready" } else { "stale" },
+          "target": state.as_ref().map(|value| value.target.as_str()),
+          "path": state.as_ref().map(|value| format_path(&value.path)),
+          "error": error,
+        })).collect::<Vec<_>>(),
+      })
+    );
+  } else if rows.is_empty() {
+    println!("{} No cursor marks are saved", "•".dimmed());
+  } else {
+    println!("{} ({}/{CURSOR_MARK_LIMIT})", "Cursor marks:".bold(), rows.len());
+    for (name, state, error) in rows {
+      if let Some(state) = state {
+        println!("  {}  {} {}", name.cyan(), state.target, format_path(&state.path));
+      } else {
+        println!("  {}  {}", name.cyan(), format!("stale: {}", error.unwrap_or_default()).yellow());
+      }
+    }
+  }
+  Ok(())
+}
+
+fn remove_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
+  validate_mark_name(name)?;
+  let mut document = load_cursor_document(snapshot_file)?;
+  if document.marks.remove(name).is_none() {
+    return Err(format!("Cursor mark '{name}' does not exist."));
+  }
+  save_cursor_document(snapshot_file, &document)?;
+  println!("{} Mark '{}' removed", "✓".green(), name);
+  Ok(())
+}
+
 fn store_cursor_clipboard(snapshot_file: &str, mode: &str, cut: bool) -> Result<(), String> {
   let state = validate_cursor(snapshot_file, true)?;
   if cut && state.path.is_empty() {
@@ -780,6 +1115,9 @@ fn store_cursor_clipboard(snapshot_file: &str, mode: &str, cut: bool) -> Result<
     entry.code = apply_operation_at_path(&entry.code, &state.path, "delete", None)?;
     document.active.path = transform_delete(&state.path, &state.path).0;
     refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
+    transform_auxiliary_positions(&mut document, &state.target, snapshot_file, &snapshot, |path| {
+      transform_delete(path, &state.path).0
+    })?;
 
     let staged_cursor = stage_cursor_document(snapshot_file, &document)?;
     let staged_snapshot = stage_snapshot(snapshot_file, &snapshot)?;
@@ -847,9 +1185,20 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
     "before" | "replace" => {}
     _ => unreachable!(),
   }
-  push_bounded(&mut document.history, state, CURSOR_HISTORY_LIMIT);
+  push_bounded(&mut document.history, state.clone(), CURSOR_HISTORY_LIMIT);
   document.active.path = pasted_path;
   refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
+  let mutation = match at {
+    "before" => TreeCursorMutation::InsertBefore { path: state.path.clone() },
+    "after" => TreeCursorMutation::InsertAfter { path: state.path.clone() },
+    "prepend-child" => TreeCursorMutation::InsertChild { path: state.path.clone() },
+    "append-child" => TreeCursorMutation::NoPathShift,
+    "replace" => TreeCursorMutation::Replace { path: state.path.clone() },
+    _ => unreachable!(),
+  };
+  transform_auxiliary_positions(&mut document, &state.target, snapshot_file, &snapshot, |path| {
+    transform_cursor_path(path, &mutation).0
+  })?;
 
   let staged_snapshot = stage_snapshot(snapshot_file, &snapshot)?;
   let staged_cursor = stage_cursor_document(snapshot_file, &document)?;
@@ -946,26 +1295,40 @@ pub(crate) fn maintain_cursor_after_tree_mutation(
   if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") {
     return Ok(());
   }
-  if !cursor_file_path(snapshot_file).exists() {
+  if !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
 
   let mut document = load_cursor_document(snapshot_file)?;
   if document.active.target != target {
-    return Ok(());
+    let has_auxiliary_target = document.anchor.as_ref().is_some_and(|state| state.target == target)
+      || document.marks.values().any(|state| state.target == target);
+    if !has_auxiliary_target {
+      return Ok(());
+    }
   }
 
+  let snapshot = load_snapshot(snapshot_file)?;
   let old_path = document.active.path.clone();
-  let (new_path, note) = transform_cursor_path(&document.active.path, mutation);
-  document.active.path = new_path;
-  refresh_cursor_state(&mut document.active, snapshot_file).map_err(|error| {
-    format!("Snapshot mutation succeeded, but cursor maintenance failed: {error}. Run `cr cursor set` to select it again.")
+  let mut note = "auxiliary cursor state updated";
+  if document.active.target == target {
+    let (new_path, active_note) = transform_cursor_path(&document.active.path, mutation);
+    document.active.path = new_path;
+    note = active_note;
+    refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot).map_err(|error| {
+      format!("Snapshot mutation succeeded, but cursor maintenance failed: {error}. Run `cr cursor set` to select it again.")
+    })?;
+  }
+  transform_auxiliary_positions(&mut document, target, snapshot_file, &snapshot, |path| {
+    transform_cursor_path(path, mutation).0
   })?;
   save_cursor_document(snapshot_file, &document).map_err(|error| {
     format!("Snapshot mutation succeeded, but cursor state could not be saved: {error}. Run `cr cursor show` before editing again.")
   })?;
 
-  let detail = if old_path != document.active.path {
+  let detail = if document.active.target != target {
+    note.to_string()
+  } else if old_path != document.active.path {
     format!("{} → {} ({note})", format_path(&old_path), format_path(&document.active.path))
   } else {
     format!("{} ({note})", format_path(&document.active.path))
@@ -975,19 +1338,72 @@ pub(crate) fn maintain_cursor_after_tree_mutation(
 }
 
 pub(crate) fn maintain_cursor_after_definition_move(snapshot_file: &str, source: &str, target: &str) -> Result<(), String> {
-  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_file_path(snapshot_file).exists() {
+  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
   let mut document = load_cursor_document(snapshot_file)?;
-  if document.active.target != source {
+  let has_auxiliary_target =
+    document.anchor.as_ref().is_some_and(|state| state.target == source) || document.marks.values().any(|state| state.target == source);
+  if document.active.target != source && !has_auxiliary_target {
     return Ok(());
   }
-  document.active.target = target.to_string();
-  refresh_cursor_state(&mut document.active, snapshot_file).map_err(|error| {
-    format!("Definition move succeeded, but cursor maintenance failed: {error}. Run `cr cursor set` to select it again.")
-  })?;
+  let snapshot = load_snapshot(snapshot_file)?;
+  if document.active.target == source {
+    document.active.target = target.to_string();
+    refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot).map_err(|error| {
+      format!("Definition move succeeded, but cursor maintenance failed: {error}. Run `cr cursor set` to select it again.")
+    })?;
+  }
+  retarget_auxiliary_positions(&mut document, source, target, snapshot_file, &snapshot)?;
   save_cursor_document(snapshot_file, &document)?;
   emit_cursor_after(snapshot_file, &document.active, &format!("target updated: {source} → {target}"))
+}
+
+fn transform_auxiliary_positions<F>(
+  document: &mut CursorDocument,
+  target: &str,
+  snapshot_file: &str,
+  snapshot: &snapshot::Snapshot,
+  transform: F,
+) -> Result<(), String>
+where
+  F: Fn(&[usize]) -> Vec<usize>,
+{
+  if let Some(anchor) = document.anchor.as_mut()
+    && anchor.target == target
+  {
+    anchor.path = transform(&anchor.path);
+    refresh_cursor_state_from_snapshot(anchor, snapshot_file, snapshot)?;
+  }
+  for mark in document.marks.values_mut() {
+    if mark.target == target {
+      mark.path = transform(&mark.path);
+      refresh_cursor_state_from_snapshot(mark, snapshot_file, snapshot)?;
+    }
+  }
+  Ok(())
+}
+
+fn retarget_auxiliary_positions(
+  document: &mut CursorDocument,
+  source: &str,
+  target: &str,
+  snapshot_file: &str,
+  snapshot: &snapshot::Snapshot,
+) -> Result<(), String> {
+  if let Some(anchor) = document.anchor.as_mut()
+    && anchor.target == source
+  {
+    anchor.target = target.to_string();
+    refresh_cursor_state_from_snapshot(anchor, snapshot_file, snapshot)?;
+  }
+  for mark in document.marks.values_mut() {
+    if mark.target == source {
+      mark.target = target.to_string();
+      refresh_cursor_state_from_snapshot(mark, snapshot_file, snapshot)?;
+    }
+  }
+  Ok(())
 }
 
 pub(crate) fn maintain_cursor_after_definition_replace(snapshot_file: &str, target: &str) -> Result<(), String> {
@@ -995,7 +1411,7 @@ pub(crate) fn maintain_cursor_after_definition_replace(snapshot_file: &str, targ
 }
 
 pub(crate) fn maintain_cursor_after_definition_delete(snapshot_file: &str, target: &str) -> Result<(), String> {
-  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_file_path(snapshot_file).exists() {
+  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
   let document = load_cursor_document(snapshot_file)?;
@@ -1009,7 +1425,7 @@ pub(crate) fn maintain_cursor_after_definition_delete(snapshot_file: &str, targe
 }
 
 pub(crate) fn maintain_cursor_after_namespace_delete(snapshot_file: &str, namespace: &str) -> Result<(), String> {
-  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_file_path(snapshot_file).exists() {
+  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
   let document = load_cursor_document(snapshot_file)?;
@@ -1029,7 +1445,7 @@ pub(crate) fn maintain_cursor_after_split_definition(
   split_path: &[usize],
   target: &str,
 ) -> Result<(), String> {
-  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_file_path(snapshot_file).exists() {
+  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
   let mut document = load_cursor_document(snapshot_file)?;
@@ -1058,7 +1474,7 @@ pub(crate) fn maintain_cursor_after_node_move(
   operation: &str,
   append_index: usize,
 ) -> Result<(), String> {
-  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_file_path(snapshot_file).exists() {
+  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
   let mut document = load_cursor_document(snapshot_file)?;
@@ -1129,7 +1545,7 @@ fn adjusted_source_path_after_insertion(source: &[usize], destination: &[usize],
 }
 
 pub(crate) fn maintain_cursor_after_any_mutation(snapshot_file: &str, detail: &str) -> Result<(), String> {
-  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_file_path(snapshot_file).exists() {
+  if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
     return Ok(());
   }
   match validate_cursor(snapshot_file, true) {
@@ -1187,12 +1603,27 @@ fn emit_cursor_after(snapshot_file: &str, state: &CursorState, detail: &str) -> 
 }
 
 fn cursor_file_path(snapshot_file: &str) -> PathBuf {
-  let snapshot = Path::new(snapshot_file);
-  let parent = snapshot
-    .parent()
-    .filter(|path| !path.as_os_str().is_empty())
-    .unwrap_or(Path::new("."));
-  parent.join(CURSOR_FILE)
+  project_state::state_file_for_snapshot(snapshot_file, CURSOR_STATE_FILE)
+}
+
+fn legacy_cursor_file_path(snapshot_file: &str) -> PathBuf {
+  project_state::project_directory_for_snapshot(snapshot_file).join(LEGACY_CURSOR_FILE)
+}
+
+fn migrate_legacy_cursor(snapshot_file: &str) -> Result<bool, String> {
+  let legacy = legacy_cursor_file_path(snapshot_file);
+  let destination = cursor_file_path(snapshot_file);
+  project_state::migrate_legacy_file(&legacy, &destination).map_err(|error| {
+    format!(
+      "Failed to migrate legacy cursor file '{}' to '{}': {error}",
+      legacy.display(),
+      destination.display()
+    )
+  })
+}
+
+fn cursor_state_exists(snapshot_file: &str) -> bool {
+  cursor_file_path(snapshot_file).exists() || legacy_cursor_file_path(snapshot_file).exists()
 }
 
 fn node_fingerprint(node: &Cirru) -> String {
@@ -1329,17 +1760,34 @@ fn validate_cursor_with_status(snapshot_file: &str, announce: bool) -> Result<(C
   }
 }
 
-fn relocate_saved_state(snapshot_file: &str, mut state: CursorState) -> Result<CursorState, String> {
-  let (definition, _) = read_cursor_definition(snapshot_file, &state.target)?;
-  if let Ok(node) = navigate_to_path(&definition, &state.path)
+fn relocate_saved_state(snapshot_file: &str, state: CursorState) -> Result<CursorState, String> {
+  let snapshot = load_snapshot(snapshot_file)?;
+  relocate_saved_state_from_snapshot(snapshot_file, state, &snapshot)
+}
+
+fn relocate_saved_state_from_snapshot(
+  snapshot_file: &str,
+  mut state: CursorState,
+  snapshot: &snapshot::Snapshot,
+) -> Result<CursorState, String> {
+  let (namespace, definition_name) = parse_target(&state.target)?;
+  let definition = &snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Saved cursor namespace '{namespace}' no longer exists."))?
+    .defs
+    .get(definition_name)
+    .ok_or_else(|| format!("Saved cursor definition '{}' no longer exists.", state.target))?
+    .code;
+  if let Ok(node) = navigate_to_path(definition, &state.path)
     && node_fingerprint(&node) == state.fingerprint
   {
-    refresh_cursor_state(&mut state, snapshot_file)?;
+    refresh_cursor_state_from_snapshot(&mut state, snapshot_file, snapshot)?;
     return Ok(state);
   }
 
   let mut matches = vec![];
-  collect_fingerprint_paths(&definition, &state.fingerprint, &mut vec![], &mut matches);
+  collect_fingerprint_paths(definition, &state.fingerprint, &mut vec![], &mut matches);
   if matches.len() != 1 {
     return Err(format!(
       "Saved cursor location {} in '{}' has {} fingerprint match(es); refusing to restore ambiguously.",
@@ -1349,7 +1797,7 @@ fn relocate_saved_state(snapshot_file: &str, mut state: CursorState) -> Result<C
     ));
   }
   state.path = matches.remove(0);
-  refresh_cursor_state(&mut state, snapshot_file)?;
+  refresh_cursor_state_from_snapshot(&mut state, snapshot_file, snapshot)?;
   Ok(state)
 }
 
@@ -1367,6 +1815,13 @@ fn collect_fingerprint_paths(node: &Cirru, fingerprint: &str, path: &mut Vec<usi
 }
 
 fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDocument>, String> {
+  if migrate_legacy_cursor(snapshot_file)? {
+    eprintln!(
+      "{} Moved legacy cursor state into '{}'.",
+      "[Cursor]".cyan().bold(),
+      cursor_file_path(snapshot_file).display()
+    );
+  }
   let file = cursor_file_path(snapshot_file);
   let content = match fs::read_to_string(&file) {
     Ok(content) => content,
@@ -1379,7 +1834,7 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
     .tag_get("schema-version")
     .ok_or("Cursor file is missing :schema-version")?
     .read_number()?;
-  if ![1.0, 2.0, f64::from(CURSOR_SCHEMA_VERSION)]
+  if ![1.0, 2.0, 3.0, f64::from(CURSOR_SCHEMA_VERSION)]
     .iter()
     .any(|supported| (version - supported).abs() <= f64::EPSILON)
   {
@@ -1398,6 +1853,15 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
   let active = cursor_state_from_edn(&entry)?;
   let history = optional_state_list(&root, "history")?;
   let stack = optional_state_list(&root, "stack")?;
+  let anchor = match root.tag_get("anchor") {
+    None | Some(Edn::Nil) => None,
+    Some(value) => Some(cursor_state_from_edn(value)?),
+  };
+  let marks = optional_marks(&root)?;
+  let last_query = match root.tag_get("last-query") {
+    None | Some(Edn::Nil) => None,
+    Some(value) => Some(cursor_last_query_from_edn(value)?),
+  };
   let clipboard = match root.tag_get("clipboard") {
     None | Some(Edn::Nil) => None,
     Some(value) => Some(cursor_clipboard_from_edn(value)?),
@@ -1407,6 +1871,9 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
     active,
     history,
     stack,
+    anchor,
+    marks,
+    last_query,
     clipboard,
   }))
 }
@@ -1470,6 +1937,45 @@ fn cursor_clipboard_from_edn(value: &Edn) -> Result<CursorClipboard, String> {
   })
 }
 
+fn cursor_last_query_from_edn(value: &Edn) -> Result<CursorLastQuery, String> {
+  let entry = value.view_map()?;
+  Ok(CursorLastQuery {
+    command: required_string(&entry, "command")?,
+    pattern: required_string(&entry, "pattern")?,
+    filter: optional_string(&entry, "filter")?,
+    exact: required_bool(&entry, "exact")?,
+    regex: required_bool(&entry, "regex")?,
+    max_depth: required_usize(&entry, "max-depth")?,
+    start_path: optional_string(&entry, "start-path")?,
+    entry: optional_string(&entry, "entry")?,
+    pattern_is_json: required_bool(&entry, "pattern-is-json")?,
+    selected_index: required_usize(&entry, "selected-index")?,
+    snapshot_revision: required_string(&entry, "snapshot-revision")?,
+  })
+}
+
+fn optional_marks(map: &cirru_edn::EdnMapView) -> Result<BTreeMap<String, CursorState>, String> {
+  let Some(value) = map.tag_get("marks") else {
+    return Ok(BTreeMap::new());
+  };
+  let values = value.view_map()?;
+  if values.0.len() > CURSOR_MARK_LIMIT {
+    return Err(format!(
+      "Cursor file contains {} marks, exceeding the supported limit of {CURSOR_MARK_LIMIT}.",
+      values.0.len()
+    ));
+  }
+  values
+    .0
+    .iter()
+    .map(|(key, value)| {
+      let name = key.read_tag_str()?.to_string();
+      validate_mark_name(&name)?;
+      Ok((name, cursor_state_from_edn(value)?))
+    })
+    .collect()
+}
+
 fn optional_state_list(map: &cirru_edn::EdnMapView, key: &str) -> Result<Vec<CursorState>, String> {
   let Some(value) = map.tag_get(key) else {
     return Ok(vec![]);
@@ -1507,6 +2013,33 @@ fn required_string(map: &cirru_edn::EdnMapView, key: &str) -> Result<String, Str
     .read_string()
 }
 
+fn optional_string(map: &cirru_edn::EdnMapView, key: &str) -> Result<Option<String>, String> {
+  match map.tag_get(key) {
+    None | Some(Edn::Nil) => Ok(None),
+    Some(value) => value.read_string().map(Some),
+  }
+}
+
+fn required_bool(map: &cirru_edn::EdnMapView, key: &str) -> Result<bool, String> {
+  match map.tag_get(key) {
+    Some(Edn::Bool(value)) => Ok(*value),
+    Some(value) => Err(format!("Cursor entry :{key} must be a boolean, got {value:?}.")),
+    None => Err(format!("Cursor entry is missing :{key}")),
+  }
+}
+
+fn required_usize(map: &cirru_edn::EdnMapView, key: &str) -> Result<usize, String> {
+  let number = map
+    .tag_get(key)
+    .ok_or_else(|| format!("Cursor entry is missing :{key}"))?
+    .read_number()?;
+  if number < 0.0 || number.fract().abs() > f64::EPSILON {
+    Err(format!("Cursor entry :{key} must be a non-negative integer, got {number}."))
+  } else {
+    Ok(number as usize)
+  }
+}
+
 fn cursor_state_to_edn(state: &CursorState) -> Edn {
   Edn::map_from_iter([
     (Edn::tag("snapshot"), Edn::str(state.snapshot.as_str())),
@@ -1534,12 +2067,40 @@ fn cursor_clipboard_to_edn(clipboard: &CursorClipboard) -> Edn {
   ])
 }
 
+fn cursor_last_query_to_edn(query: &CursorLastQuery) -> Edn {
+  Edn::map_from_iter([
+    (Edn::tag("command"), Edn::str(query.command.as_str())),
+    (Edn::tag("pattern"), Edn::str(query.pattern.as_str())),
+    (
+      Edn::tag("filter"),
+      query.filter.as_ref().map(|value| Edn::str(value.as_str())).unwrap_or(Edn::Nil),
+    ),
+    (Edn::tag("exact"), Edn::Bool(query.exact)),
+    (Edn::tag("regex"), Edn::Bool(query.regex)),
+    (Edn::tag("max-depth"), Edn::from(query.max_depth)),
+    (
+      Edn::tag("start-path"),
+      query.start_path.as_ref().map(|value| Edn::str(value.as_str())).unwrap_or(Edn::Nil),
+    ),
+    (
+      Edn::tag("entry"),
+      query.entry.as_ref().map(|value| Edn::str(value.as_str())).unwrap_or(Edn::Nil),
+    ),
+    (Edn::tag("pattern-is-json"), Edn::Bool(query.pattern_is_json)),
+    (Edn::tag("selected-index"), Edn::from(query.selected_index)),
+    (Edn::tag("snapshot-revision"), Edn::str(query.snapshot_revision.as_str())),
+  ])
+}
+
 #[cfg(test)]
 fn save_cursor_state(snapshot_file: &str, state: &CursorState) -> Result<(), String> {
   let mut document = load_cursor_document_optional(snapshot_file)?.unwrap_or_else(|| CursorDocument {
     active: state.clone(),
     history: vec![],
     stack: vec![],
+    anchor: None,
+    marks: BTreeMap::new(),
+    last_query: None,
     clipboard: None,
   });
   document.active = state.clone();
@@ -1564,6 +2125,23 @@ fn render_cursor_document(document: &CursorDocument) -> Result<String, String> {
         Edn::List(EdnListView(document.stack.iter().map(cursor_state_to_edn).collect())),
       ),
       (
+        Edn::tag("anchor"),
+        document.anchor.as_ref().map(cursor_state_to_edn).unwrap_or(Edn::Nil),
+      ),
+      (
+        Edn::tag("marks"),
+        Edn::map_from_iter(
+          document
+            .marks
+            .iter()
+            .map(|(name, state)| (Edn::tag(name.as_str()), cursor_state_to_edn(state))),
+        ),
+      ),
+      (
+        Edn::tag("last-query"),
+        document.last_query.as_ref().map(cursor_last_query_to_edn).unwrap_or(Edn::Nil),
+      ),
+      (
         Edn::tag("clipboard"),
         document.clipboard.as_ref().map(cursor_clipboard_to_edn).unwrap_or(Edn::Nil),
       ),
@@ -1572,11 +2150,20 @@ fn render_cursor_document(document: &CursorDocument) -> Result<String, String> {
   )
   .map_err(|error| format!("Failed to format cursor Cirru EDN: {error}"))?;
   content.push('\n');
+  if content.len() > CURSOR_FILE_MAX_BYTES {
+    return Err(format!(
+      "Cursor state is {} bytes, exceeding the {} byte limit. Clear an oversized clipboard or remove unused marks before retrying.",
+      content.len(),
+      CURSOR_FILE_MAX_BYTES
+    ));
+  }
   Ok(content)
 }
 
 fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Result<StagedFile, String> {
   let parent = destination.parent().unwrap_or(Path::new("."));
+  fs::create_dir_all(parent)
+    .map_err(|error| format!("Failed to create directory '{}' for staged {label}: {error}", parent.display()))?;
   let nonce = SystemTime::now()
     .duration_since(UNIX_EPOCH)
     .map_err(|error| format!("System clock error while staging {label}: {error}"))?
@@ -1668,21 +2255,20 @@ fn save_cursor_document(snapshot_file: &str, document: &CursorDocument) -> Resul
 }
 
 fn warn_cursor_gitignore(snapshot_file: &str) {
-  let cursor_path = cursor_file_path(snapshot_file);
-  let project_dir = cursor_path.parent().unwrap_or(Path::new("."));
+  let project_dir = project_state::project_directory_for_snapshot(snapshot_file);
   let gitignore = project_dir.join(".gitignore");
   let ignored = fs::read_to_string(&gitignore).is_ok_and(|content| {
     content.lines().any(|line| {
       let pattern = line.trim();
       matches!(
         pattern,
-        ".calcit-cursor.cirru" | "/.calcit-cursor.cirru" | "**/.calcit-cursor.cirru" | "*.cirru"
+        ".calcit" | ".calcit/" | "/.calcit" | "/.calcit/" | "**/.calcit/" | ".calcit/cursor.cirru" | "*.cirru"
       )
     })
   });
   if !ignored {
     eprintln!(
-      "{} Add `.calcit-cursor.cirru` to '{}' so local cursor state is not committed.",
+      "{} Add `.calcit/` to '{}' so local Calcit state is not committed.",
       "[Cursor]".yellow().bold(),
       gitignore.display()
     );
@@ -1833,17 +2419,19 @@ fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutation) -> (Ve
 #[cfg(test)]
 mod tests {
   use super::{
-    CursorClipboard, CursorDocument, CursorState, RestoreSource, TreeCursorMutation, apply_at_cursor, barf_first, barf_last,
-    build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_state_to_edn, duplicate_cursor,
-    load_cursor_document, load_cursor_state, maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation,
-    move_cursor_across_siblings, move_cursor_depth_first, move_cursor_to_child, node_fingerprint, paste_cursor_clipboard,
-    read_cursor_target, restore_cursor, save_cursor_document, save_cursor_state, set_cursor_selection, slurp_next, slurp_prev,
+    CursorClipboard, CursorDocument, CursorLastQuery, CursorState, RestoreSource, TreeCursorMutation, apply_at_cursor, barf_first,
+    barf_last, build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_region_bounds,
+    cursor_state_to_edn, duplicate_cursor, legacy_cursor_file_path, load_cursor_document, load_cursor_state,
+    maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_depth_first,
+    move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, read_cursor_target, render_cursor_document, restore_cursor,
+    save_cursor_document, save_cursor_mark, save_cursor_state, set_cursor_anchor, set_cursor_selection, slurp_next, slurp_prev,
     stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
   use calcit::cli_args::{CursorApplyCommand, CursorDuplicateCommand};
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
+  use std::collections::BTreeMap;
   use std::fs;
   use std::path::PathBuf;
   use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -1898,6 +2486,27 @@ mod tests {
   }
 
   #[test]
+  fn region_requires_contiguous_siblings_and_normalizes_direction() {
+    let anchor = CursorState {
+      snapshot: "calcit.cirru".to_string(),
+      target: "app.main/view".to_string(),
+      path: vec![3, 5],
+      definition_revision: "revision".to_string(),
+      fingerprint: "fingerprint".to_string(),
+    };
+    let mut active = anchor.clone();
+    active.path = vec![3, 2];
+    assert_eq!(
+      cursor_region_bounds(&anchor, &active).expect("sibling region should resolve"),
+      (vec![3], 2, 5)
+    );
+
+    active.path = vec![4, 2];
+    let error = cursor_region_bounds(&anchor, &active).expect_err("different parents should fail");
+    assert!(error.contains("contiguous siblings"), "error: {error}");
+  }
+
+  #[test]
   fn swap_and_unwrap_keep_cursor_attached_to_subtree() {
     let swap = TreeCursorMutation::SwapPrev { path: vec![3, 4] };
     assert_eq!(transform_cursor_path(&[3, 3, 1], &swap).0, vec![3, 4, 1]);
@@ -1937,7 +2546,7 @@ mod tests {
         .expect("cursor schema version should exist")
         .read_number()
         .expect("cursor schema version should be numeric"),
-      3.0
+      4.0
     );
     assert!(
       !content.contains(":preview"),
@@ -2003,6 +2612,8 @@ mod tests {
       },
     )
     .expect("cursor state should save");
+    set_cursor_anchor(&snapshot_file).expect("cursor anchor should save");
+    save_cursor_mark(&snapshot_file, "insertion").expect("cursor mark should save");
 
     let mut snapshot = load_snapshot(&snapshot_file).expect("fixture snapshot should load");
     let entry = snapshot
@@ -2022,6 +2633,15 @@ mod tests {
     .expect("cursor maintenance should succeed");
     let updated = load_cursor_state(&snapshot_file).expect("updated cursor should load");
     assert_eq!(updated.path, vec![48, 2]);
+    let document = load_cursor_document(&snapshot_file).expect("cursor document should load");
+    assert_eq!(
+      document.anchor.as_ref().map(|state| state.path.as_slice()),
+      Some([48, 2].as_slice())
+    );
+    assert_eq!(
+      document.marks.get("insertion").map(|state| state.path.as_slice()),
+      Some([48, 2].as_slice())
+    );
     assert_eq!(
       read_cursor_target(&snapshot_file, "app.main/main!", &updated.path)
         .expect("updated cursor target should exist")
@@ -2047,6 +2667,21 @@ mod tests {
       active: state.clone(),
       history: vec![state.clone()],
       stack: vec![state.clone()],
+      anchor: Some(state.clone()),
+      marks: BTreeMap::from([("main".to_string(), state.clone())]),
+      last_query: Some(CursorLastQuery {
+        command: "search".to_string(),
+        pattern: "true".to_string(),
+        filter: Some("app.main/main!".to_string()),
+        exact: true,
+        regex: false,
+        max_depth: 0,
+        start_path: None,
+        entry: None,
+        pattern_is_json: false,
+        selected_index: 0,
+        snapshot_revision: "md5:test".to_string(),
+      }),
       clipboard: Some(CursorClipboard {
         mode: "copy".to_string(),
         source_target: state.target.clone(),
@@ -2058,6 +2693,39 @@ mod tests {
 
     save_cursor_document(&snapshot_file, &document).expect("cursor document should save");
     assert_eq!(load_cursor_document(&snapshot_file).expect("cursor document should load"), document);
+  }
+
+  #[test]
+  fn oversized_cursor_clipboard_is_rejected_before_writing() {
+    let fixture = TestCursorSnapshot::from_fixture();
+    let snapshot_file = fixture.snapshot_string();
+    let path = vec![48, 1];
+    let (node, revision) = read_cursor_target(&snapshot_file, "app.main/main!", &path).expect("fixture cursor target should exist");
+    let state = CursorState {
+      snapshot: snapshot_file,
+      target: "app.main/main!".to_string(),
+      path: path.clone(),
+      definition_revision: revision,
+      fingerprint: node_fingerprint(&node),
+    };
+    let document = CursorDocument {
+      active: state.clone(),
+      history: vec![],
+      stack: vec![],
+      anchor: None,
+      marks: BTreeMap::new(),
+      last_query: None,
+      clipboard: Some(CursorClipboard {
+        mode: "copy".to_string(),
+        source_target: state.target,
+        source_path: path,
+        fingerprint: state.fingerprint,
+        tree: Cirru::leaf(format!("|{}", "x".repeat(70 * 1024))),
+      }),
+    };
+
+    let error = render_cursor_document(&document).expect_err("oversized clipboard should fail");
+    assert!(error.contains("exceeding the 65536 byte limit"), "error: {error}");
   }
 
   #[test]
@@ -2085,12 +2753,15 @@ mod tests {
       false,
     )
     .expect("legacy cursor should format");
-    fs::write(cursor_file_path(&snapshot_file), legacy).expect("legacy cursor should write");
+    fs::write(legacy_cursor_file_path(&snapshot_file), legacy).expect("legacy cursor should write");
 
     let loaded = load_cursor_document(&snapshot_file).expect("legacy cursor should load");
     assert_eq!(loaded.active, state);
     assert!(loaded.history.is_empty());
     assert!(loaded.stack.is_empty());
+    assert!(loaded.anchor.is_none());
+    assert!(loaded.marks.is_empty());
+    assert!(loaded.last_query.is_none());
     assert!(loaded.clipboard.is_none());
   }
 

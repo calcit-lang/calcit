@@ -66,6 +66,7 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
 
 fn main() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
+  calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
 
   cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;
 

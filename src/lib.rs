@@ -12,6 +12,7 @@ pub mod detailed_snapshot;
 pub mod effects_graph;
 pub mod program;
 pub mod program_diff;
+pub mod project_state;
 pub mod runner;
 pub mod snapshot;
 pub mod util;

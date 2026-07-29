@@ -390,7 +390,7 @@ pub enum QuerySubcommand {
   Pkg(QueryPkgCommand),
   /// read project configs
   Config(QueryConfigCommand),
-  /// read .calcit-error.cirru file
+  /// read .calcit/error.cirru file
   Error(QueryErrorCommand),
   /// list modules in the project
   Modules(QueryModulesCommand),
@@ -408,6 +408,10 @@ pub enum QuerySubcommand {
   Search(QuerySearchCommand),
   /// search for structural expressions (Cirru expr or JSON array) in definition
   SearchExpr(QuerySearchExprCommand),
+  /// recompute the last cursor-setting search and select its next match
+  Next(QueryNextCommand),
+  /// recompute the last cursor-setting search and select its previous match
+  Prev(QueryPrevCommand),
   /// read a definition's schema (type information)
   Schema(QuerySchemaCommand),
   /// inspect a type and its statically available methods
@@ -537,7 +541,7 @@ pub struct QueryConfigCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "error")]
-/// read .calcit-error.cirru file for error stack traces
+/// read .calcit/error.cirru file for error stack traces
 pub struct QueryErrorCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -697,6 +701,16 @@ pub struct QuerySearchExprCommand {
   #[argh(option, long = "set-cursor")]
   pub set_cursor: Option<usize>,
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "next")]
+/// recompute the last cursor-setting search and select its next match
+pub struct QueryNextCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "prev")]
+/// recompute the last cursor-setting search and select its previous match
+pub struct QueryPrevCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "path")]
@@ -1173,7 +1187,7 @@ pub enum EditSubcommand {
   RmImport(EditRmImportCommand),
   /// update namespace documentation
   NsDoc(EditNsDocCommand),
-  /// describe incremental code changes and export them to .calcit-error.cirru
+  /// describe incremental code changes and clear .calcit/error.cirru
   Inc(EditIncCommand),
   /// copy node from one path to another within a definition
   Cp(EditCpCommand),
@@ -1901,6 +1915,13 @@ pub enum CursorSubcommand {
   Back(CursorBackCommand),
   Push(CursorPushCommand),
   Pop(CursorPopCommand),
+  Anchor(CursorAnchorCommand),
+  ClearAnchor(CursorClearAnchorCommand),
+  Region(CursorRegionCommand),
+  Mark(CursorMarkCommand),
+  Goto(CursorGotoCommand),
+  Marks(CursorMarksCommand),
+  RmMark(CursorRmMarkCommand),
   Copy(CursorCopyCommand),
   Cut(CursorCutCommand),
   Paste(CursorPasteCommand),
@@ -1998,6 +2019,61 @@ pub struct CursorPushCommand {}
 #[argh(subcommand, name = "pop")]
 /// restore and remove the most recently pushed cursor location
 pub struct CursorPopCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "anchor")]
+/// set the region anchor to the current cursor location
+pub struct CursorAnchorCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clear-anchor")]
+/// clear the region anchor without changing the cursor
+pub struct CursorClearAnchorCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "region")]
+/// display the contiguous sibling region between the anchor and cursor
+pub struct CursorRegionCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "mark")]
+/// save the current cursor location as a bounded named mark
+pub struct CursorMarkCommand {
+  /// mark name (letters, digits, underscore, and hyphen)
+  #[argh(positional)]
+  pub name: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "goto")]
+/// move the cursor to a named mark
+pub struct CursorGotoCommand {
+  /// saved mark name
+  #[argh(positional)]
+  pub name: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "marks")]
+/// list the bounded named cursor marks
+pub struct CursorMarksCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rm-mark")]
+/// remove a named cursor mark
+pub struct CursorRmMarkCommand {
+  /// saved mark name
+  #[argh(positional)]
+  pub name: String,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "copy")]
