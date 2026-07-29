@@ -2,11 +2,11 @@
 
 ## 改动概要
 
-新增 `cr edit split-def <ns/def> -p <path> -n <new-name>` 命令，用于将某定义内指定路径的子表达式提取为同命名空间内的一个新定义，原位置替换为新定义的名字。
+新增 `cr edit split-def <ns/def> --path <path> --name <new-name>` 命令，用于将某定义内指定路径的子表达式提取为同命名空间内的一个新定义，原位置替换为新定义的名字。
 
 ## 修改文件
 
-- `src/cli_args.rs`：新增 `EditSplitDefCommand` struct（参数：`target`, `-p/--path`, `-n/--name`）；在 `EditSubcommand` 枚举中新增 `SplitDef(EditSplitDefCommand)` 变体。
+- `src/cli_args.rs`：新增 `EditSplitDefCommand` struct（参数：`target`, `--path`, `--name`）；在 `EditSubcommand` 枚举中新增 `SplitDef(EditSplitDefCommand)` 变体。
 - `src/bin/cli_handlers/edit.rs`：import 增加 `EditSplitDefCommand`；dispatch 增加 `EditSubcommand::SplitDef`；实现 `handle_split_def` 函数。
 - `docs/CalcitAgent.md`：
   1. 修复 `tree unwrap` 示例（移除已废弃的 `-i 1` 参数，更新描述为 splice 所有子节点语义）。
@@ -26,4 +26,4 @@
 
 - `split-def` 只操作 AST，不会自动添加 import。如果新定义需要被其他 ns 引用，需手动 `cr edit add-import`。
 - 路径索引规则与 `cr tree` 系列一致（逗号分隔，0-based）。
-- 提取后如需给新定义包装成 `defn` 函数形式，用 `cr tree replace <ns/new-name> -p '' -e 'defn new-name (args...) ...'`。
+- 提取后如需给新定义包装成 `defn` 函数形式，用 `cr tree replace <ns/new-name> --path '' --code 'quote (defn new-name (args...) ...)'`。

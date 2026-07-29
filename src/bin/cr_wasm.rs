@@ -38,7 +38,7 @@ struct WasmArgs {
   #[argh(switch)]
   check_only: bool,
   /// print version only
-  #[argh(switch)]
+  #[argh(switch, short = 'v')]
   version: bool,
   /// input source file, defaults to "calcit.cirru" and falls back to "compact.cirru"
   #[argh(positional, default = "String::from(calcit::DEFAULT_SNAPSHOT_FILE)")]
@@ -46,14 +46,14 @@ struct WasmArgs {
 }
 
 fn main() -> Result<(), String> {
-  builtins::effects::init_effects_states();
-
   let cli_args: WasmArgs = argh::from_env();
 
   if cli_args.version {
     println!("{}", calcit::cli_args::CALCIT_VERSION);
     return Ok(());
   }
+
+  builtins::effects::init_effects_states();
 
   #[cfg(not(target_arch = "wasm32"))]
   injection::inject_platform_apis();

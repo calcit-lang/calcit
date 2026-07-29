@@ -3,20 +3,33 @@
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
-use super::common::{emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup};
+use super::common::{
+  cirru_to_json_value, emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup,
+};
+use super::cursor::{
+  resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument, set_cursor_from_query_match,
+};
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
-use calcit::calcit::DYNAMIC_TYPE;
+use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
+use calcit::call_stack::CallStackList;
+use calcit::call_tree::{CallTreeAnalyzer, CallTreeConfig};
 use calcit::cli_args::{
-  QueryAnchorsCommand, QueryCommand, QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QueryPathCommand, QuerySubcommand,
+  QueryAnchorsCommand, QueryCommand, QueryContextCommand, QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QueryPathCommand,
+  QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
 };
+use calcit::data::cirru::code_to_calcit;
 use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
+use calcit::{program, runner};
 use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 use colored::Colorize;
-use std::collections::HashSet;
+use md5::{Digest, Md5};
+use serde::Serialize;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
@@ -38,6 +51,8 @@ struct SearchCommonOpts<'a> {
   entry: Option<&'a str>,
   detail_offset: usize,
   parent_path: bool,
+  format: QueryRenderFormat,
+  set_cursor: Option<usize>,
 }
 
 const DETAILED_RESULTS_WINDOW: usize = 3;
@@ -48,6 +63,174 @@ struct SpecialBuiltinQueryMeta {
   examples: Vec<Cirru>,
   expr_preview: &'static str,
   cirru_note: &'static str,
+  semantic_tags: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueryRenderFormat {
+  Human,
+  Json,
+}
+
+fn parse_query_render_format(raw: &str) -> Result<QueryRenderFormat, String> {
+  match raw {
+    "human" | "text" => Ok(QueryRenderFormat::Human),
+    "json" => Ok(QueryRenderFormat::Json),
+    other => Err(format!("Unknown query output format `{other}`. Expected `human` or `json`.")),
+  }
+}
+
+fn semantic_revision(parts: &[&str]) -> String {
+  let mut hasher = Md5::new();
+  for part in parts {
+    hasher.update((part.len() as u64).to_le_bytes());
+    hasher.update(part.as_bytes());
+  }
+  format!("md5:{:x}", hasher.finalize())
+}
+
+#[derive(Debug, Serialize)]
+struct SemanticQueryEnvelope<T> {
+  schema_version: u32,
+  command: &'static str,
+  revision: String,
+  data: T,
+  diagnostics: Vec<ContextDiagnostic>,
+  next: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextMethod {
+  name: String,
+  origin: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TypeQueryData {
+  target: String,
+  canonical_type: String,
+  resolved_from: &'static str,
+  methods: Option<Vec<ContextMethod>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TypeAtEvidence {
+  kind: String,
+  detail: String,
+  path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TypeAtBinding {
+  name: String,
+  r#type: String,
+  path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TypeAtData {
+  id: String,
+  path: String,
+  expression: String,
+  tree: serde_json::Value,
+  inferred_type: Option<String>,
+  expected_type: Option<String>,
+  expected_from: Option<String>,
+  confidence: &'static str,
+  dynamic_intent: Option<&'static str>,
+  evidence: Vec<TypeAtEvidence>,
+  bindings: Vec<TypeAtBinding>,
+  bindings_complete: bool,
+  static_methods: Option<Vec<ContextMethod>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextCollection<T> {
+  total: usize,
+  returned: usize,
+  truncated: bool,
+  items: Vec<T>,
+}
+
+impl<T> ContextCollection<T> {
+  fn new(total: usize, items: Vec<T>) -> Self {
+    let returned = items.len();
+    Self {
+      total,
+      returned,
+      truncated: returned < total,
+      items,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextCode {
+  root: &'static str,
+  nodes: usize,
+  cirru: String,
+  tree: Option<serde_json::Value>,
+  truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextExample {
+  index: usize,
+  cirru: String,
+  tree: Option<serde_json::Value>,
+  truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextDependency {
+  id: String,
+  source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextUsage {
+  id: String,
+  source: String,
+  area: String,
+  paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextDocLink {
+  id: String,
+  path: String,
+  title: Option<String>,
+  summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ContextDiagnostic {
+  code: String,
+  phase: &'static str,
+  severity: &'static str,
+  message: String,
+  path: Option<String>,
+  intent: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DefinitionContextData {
+  id: String,
+  uri: String,
+  source: String,
+  kind: String,
+  coverage: String,
+  doc: Option<String>,
+  doc_truncated: bool,
+  tags: Vec<String>,
+  schema: Option<String>,
+  features: Vec<String>,
+  code: ContextCode,
+  examples: ContextCollection<ContextExample>,
+  dependencies: ContextCollection<ContextDependency>,
+  usages: ContextCollection<ContextUsage>,
+  docs: ContextCollection<ContextDocLink>,
+  static_methods: Option<ContextCollection<ContextMethod>>,
 }
 
 fn special_builtin_dynamic_fn(arg_types: Vec<Arc<CalcitTypeAnnotation>>) -> Arc<CalcitTypeAnnotation> {
@@ -81,6 +264,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       ])?,
       expr_preview: "builtin proc to-calcit-data (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
+      semantic_tags: &["js-ffi"],
     }),
     "to-js-data" => Some(SpecialBuiltinQueryMeta {
       doc: "convert Calcit data into JS-compatible data recursively; JS FFI keeps value and options dynamically typed",
@@ -92,6 +276,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       ])?,
       expr_preview: "builtin proc to-js-data (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
+      semantic_tags: &["js-ffi"],
     }),
     "to-cirru-edn" => Some(SpecialBuiltinQueryMeta {
       doc: "convert Calcit data into Cirru EDN data",
@@ -99,6 +284,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       examples: vec![],
       expr_preview: "builtin proc to-cirru-edn (data conversion helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
+      semantic_tags: &[],
     }),
     "extract-cirru-edn" => Some(SpecialBuiltinQueryMeta {
       doc: "extract Cirru EDN data into regular Calcit values when possible",
@@ -106,6 +292,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       examples: vec![],
       expr_preview: "builtin proc extract-cirru-edn (data conversion helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
+      semantic_tags: &[],
     }),
     "js-array" => Some(SpecialBuiltinQueryMeta {
       doc: "build a JS array value in JS interop contexts",
@@ -113,6 +300,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       examples: vec![],
       expr_preview: "builtin proc js-array (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
+      semantic_tags: &["js-ffi"],
     }),
     "&js-object" => Some(SpecialBuiltinQueryMeta {
       doc: "build a plain JS object value in JS interop contexts",
@@ -120,6 +308,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
       examples: vec![],
       expr_preview: "builtin proc &js-object (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
+      semantic_tags: &["js-ffi"],
     }),
     _ => None,
   };
@@ -127,21 +316,64 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
   Ok(meta)
 }
 
-fn format_query_schema(annotation: &CalcitTypeAnnotation, wrapped: bool) -> String {
-  match annotation {
-    CalcitTypeAnnotation::Fn(fn_annot) => {
-      let schema_edn = if wrapped {
-        fn_annot.to_wrapped_schema_edn()
-      } else {
-        fn_annot.to_schema_edn()
-      };
-      match snapshot::schema_edn_to_cirru(&schema_edn) {
-        Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
-        Err(e) => format!("(schema error: {e})"),
+fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
+  let schema_edn = match annotation {
+    CalcitTypeAnnotation::Dynamic => return Ok(None),
+    CalcitTypeAnnotation::Fn(fn_annot) if wrapped => fn_annot.to_wrapped_schema_edn(),
+    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
+    other => other.to_type_edn(),
+  };
+  snapshot::schema_edn_to_cirru(&schema_edn).map(|cirru| {
+    let normalized = match cirru {
+      Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "do") => {
+        items[1].clone()
       }
-    }
-    _ => "(none)".to_string(),
+      other => other,
+    };
+    Some(normalized)
+  })
+}
+
+fn normalize_single_schema_display(text: String) -> String {
+  let trimmed = text.trim();
+  trimmed.strip_prefix("do ").unwrap_or(trimmed).to_owned()
+}
+
+fn format_query_schema_oneline(cirru: &Cirru) -> Result<String, String> {
+  match cirru {
+    Cirru::Leaf(value) => Ok(value.to_string()),
+    Cirru::List(_) => cirru.format_one_liner().map(normalize_single_schema_display),
   }
+}
+
+fn format_query_schema(annotation: &CalcitTypeAnnotation, wrapped: bool) -> String {
+  match query_schema_cirru(annotation, wrapped) {
+    Ok(Some(Cirru::Leaf(value))) => value.to_string(),
+    Ok(Some(cirru @ Cirru::List(_))) => cirru_parser::format(std::slice::from_ref(&cirru), true.into())
+      .map(normalize_single_schema_display)
+      .unwrap_or_else(|_| "(failed to format)".to_string()),
+    Ok(None) => "(none)".to_string(),
+    Err(error) => format!("(schema error: {error})"),
+  }
+}
+
+fn format_schema_query_json(id: &str, source: &str, annotation: &CalcitTypeAnnotation, revision: String) -> Result<String, String> {
+  let schema = query_schema_cirru(annotation, true)?;
+  let canonical_schema = schema.as_ref().map(format_query_schema_oneline).transpose()?;
+  let tree = schema.as_ref().map(cirru_to_json_value);
+  let envelope = serde_json::json!({
+    "schema_version": 1,
+    "command": "query.schema",
+    "revision": revision,
+    "data": {
+      "id": id,
+      "source": source,
+      "canonical_schema": canonical_schema,
+      "tree": tree,
+    },
+    "diagnostics": [],
+  });
+  serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode schema query JSON: {error}"))
 }
 
 fn detailed_window(detail_offset: usize, total: usize) -> (usize, usize) {
@@ -327,8 +559,70 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
     .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 
+fn resolve_search_cursor_references(
+  input_path: &str,
+  filter: &mut Option<String>,
+  start_path: &mut Option<String>,
+) -> Result<(), String> {
+  if filter.as_deref() == Some("@cursor") || start_path.as_deref() == Some("@cursor") {
+    let (cursor_target, cursor_path) = resolve_active_cursor_reference(input_path)?;
+    if let Some(filter_target) = filter.as_deref()
+      && filter_target != "@cursor"
+      && filter_target != cursor_target
+    {
+      return Err(format!(
+        "Cursor-scoped search targets '{cursor_target}', but --filter targets '{filter_target}'. Omit --filter or use --filter @cursor."
+      ));
+    }
+    *filter = Some(cursor_target);
+    if start_path.as_deref() == Some("@cursor") {
+      *start_path = Some(cursor_path);
+    }
+  }
+  Ok(())
+}
+
+fn resolve_query_cursor_references(cmd: &mut QueryCommand, input_path: &str) -> Result<(), String> {
+  match &mut cmd.subcommand {
+    QuerySubcommand::Def(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Peek(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Examples(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Usages(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Search(opts) => {
+      resolve_search_cursor_references(input_path, &mut opts.filter, &mut opts.start_path)?;
+    }
+    QuerySubcommand::SearchExpr(opts) => {
+      resolve_search_cursor_references(input_path, &mut opts.filter, &mut opts.start_path)?;
+    }
+    QuerySubcommand::Schema(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Type(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::TypeAt(opts) => {
+      if opts.target == "@cursor" && opts.path == "@cursor" {
+        (opts.target, opts.path) = resolve_active_cursor_reference(input_path)?;
+      } else {
+        opts.target = resolve_cursor_target_argument(input_path, &opts.target)?;
+        opts.path = resolve_cursor_path_argument(input_path, &opts.target, &opts.path)?;
+      }
+    }
+    QuerySubcommand::Context(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Ns(_)
+    | QuerySubcommand::Defs(_)
+    | QuerySubcommand::Pkg(_)
+    | QuerySubcommand::Config(_)
+    | QuerySubcommand::Error(_)
+    | QuerySubcommand::Modules(_)
+    | QuerySubcommand::Find(_)
+    | QuerySubcommand::HostProcs(_)
+    | QuerySubcommand::Path(_)
+    | QuerySubcommand::Anchors(_) => {}
+  }
+  Ok(())
+}
+
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
-  match &cmd.subcommand {
+  let mut resolved = cmd.clone();
+  resolve_query_cursor_references(&mut resolved, input_path)?;
+  match &resolved.subcommand {
     QuerySubcommand::Ns(opts) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
@@ -367,6 +661,8 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         entry: opts.entry.as_deref(),
         detail_offset: opts.detail_offset,
         parent_path: opts.parent_path,
+        format: parse_query_render_format(&opts.format)?,
+        set_cursor: opts.set_cursor,
       };
       handle_search_leaf(input_path, &opts.pattern, opts.start_path.as_deref(), &common_opts)
     }
@@ -379,17 +675,1813 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         entry: opts.entry.as_deref(),
         detail_offset: opts.detail_offset,
         parent_path: false,
+        format: parse_query_render_format(&opts.format)?,
+        set_cursor: opts.set_cursor,
       };
-      handle_search_expr(input_path, &opts.pattern, opts.json, &common_opts)
+      handle_search_expr(input_path, &opts.pattern, opts.json, opts.start_path.as_deref(), &common_opts)
     }
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
       handle_schema(input_path, ns, def, opts.json)
     }
+    QuerySubcommand::Type(opts) => handle_type(input_path, opts),
+    QuerySubcommand::TypeAt(opts) => handle_type_at(input_path, opts),
+    QuerySubcommand::Context(opts) => handle_context(input_path, opts),
     QuerySubcommand::HostProcs(opts) => handle_host_procs(opts),
     QuerySubcommand::Path(opts) => handle_query_path(input_path, opts),
     QuerySubcommand::Anchors(opts) => handle_query_anchors(input_path, opts),
   }
+}
+
+fn prepare_program_for_type_query(snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  program::clear_runtime_caches_for_reload(Arc::from("query.type"), Arc::from("query.type"), true)?;
+  {
+    let mut program_data = program::PROGRAM_CODE_DATA
+      .write()
+      .map_err(|_| "Failed to open program data".to_owned())?;
+    *program_data = program::extract_program_data(snapshot)?;
+  }
+
+  let warnings = RefCell::<Vec<LocatedWarning>>::new(vec![]);
+  runner::preprocess::ensure_ns_def_compiled(
+    calcit::calcit::CORE_NS,
+    calcit::calcit::BUILTIN_IMPLS_ENTRY,
+    &warnings,
+    &CallStackList::default(),
+  )
+  .map_err(|error| error.msg)
+}
+
+fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
+  const SIMPLE_TYPES: &[&str] = &[
+    "any",
+    "bool",
+    "number",
+    "string",
+    "symbol",
+    "tag",
+    "list",
+    "map",
+    "set",
+    "tuple",
+    "fn",
+    "ref",
+    "buffer",
+    "cirru-quote",
+    "unit",
+    "nil",
+    "js-object",
+    "dynamic",
+  ];
+
+  let trimmed = target.trim();
+  if trimmed.is_empty() {
+    return Err("Type query cannot be empty".to_owned());
+  }
+  if trimmed.starts_with('(') {
+    return Err(format!(
+      "Type annotation `{target}` has an extra outer parenthesis layer. Use Cirru directly, for example `:: :list :number`."
+    ));
+  }
+  if !trimmed.chars().any(char::is_whitespace) {
+    let name = trimmed.trim_start_matches(':');
+    if !SIMPLE_TYPES.contains(&name) {
+      return Err(format!(
+        "Unknown builtin type `{target}`. Use a builtin type tag such as `:number`, a type expression such as `:: :list :number`, or `namespace/definition`."
+      ));
+    }
+    return Ok(Arc::new(CalcitTypeAnnotation::from_tag_name(name)));
+  }
+
+  let nodes = cirru_parser::parse(trimmed).map_err(|error| format!("Failed to parse type annotation `{target}`: {error}"))?;
+  if nodes.len() != 1 {
+    return Err(format!("Type annotation must contain exactly one expression, got {}", nodes.len()));
+  }
+  let form = code_to_calcit(&nodes[0], "query.type", "target", vec![])?;
+  Ok(CalcitTypeAnnotation::parse_type_annotation_form(&form))
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod type_query_tests {
+  use super::*;
+
+  #[test]
+  fn parses_simple_type_tag_without_treating_it_as_a_call() {
+    let annotation = parse_type_annotation_query(":number").expect("number type should parse");
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn parses_any_as_a_static_top_type() {
+    let annotation = parse_type_annotation_query(":any").expect("any type should parse");
+    assert_eq!(annotation.to_brief_string(), ":any");
+    assert!(CalcitTypeAnnotation::String.matches_annotation(annotation.as_ref()));
+    assert!(!annotation.matches_annotation(&CalcitTypeAnnotation::String));
+  }
+
+  #[test]
+  fn parses_compound_type_with_cirru_structure() {
+    let annotation = parse_type_annotation_query(":: :list :number").expect("compound list type should parse");
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)));
+  }
+
+  #[test]
+  fn rejects_extra_outer_parenthesis_layer() {
+    let error = parse_type_annotation_query("(:: :list :number)").expect_err("extra call layer should be rejected");
+    assert!(error.contains("extra outer parenthesis"));
+  }
+
+  #[test]
+  fn renders_type_annotations_without_edn_top_level_wrapper() {
+    assert_eq!(
+      format_type_query_annotation(&CalcitTypeAnnotation::Number).expect("number should format"),
+      ":number"
+    );
+    let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
+    assert_eq!(
+      format_type_query_annotation(&list_type).expect("list should format"),
+      ":: :list :number"
+    );
+    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), ":ref");
+  }
+
+  #[test]
+  fn schema_json_is_a_versioned_machine_readable_envelope() {
+    let annotation = CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Bool));
+    let output =
+      format_schema_query_json("app.main/*enabled?", "local", &annotation, "revision-1".to_owned()).expect("schema JSON should format");
+    let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
+
+    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["command"], "query.schema");
+    assert_eq!(value["data"]["id"], "app.main/*enabled?");
+    assert_eq!(value["data"]["canonical_schema"], ":: :ref :bool");
+    assert_eq!(value["data"]["tree"], serde_json::json!(["::", ":ref", ":bool"]));
+
+    let broad_ref = CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone());
+    let output =
+      format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned()).expect("broad ref JSON should format");
+    let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
+    assert_eq!(value["data"]["canonical_schema"], ":ref");
+    assert_eq!(value["data"]["tree"], ":ref");
+  }
+
+  #[test]
+  fn examples_render_leaf_nodes_without_formatter_failure() {
+    assert_eq!(format_example_node(&Cirru::Leaf("|literal".into())), "|literal");
+    assert_eq!(
+      format_example_node(&Cirru::List(vec![Cirru::Leaf("inc".into()), Cirru::Leaf("1".into())])),
+      "inc 1"
+    );
+  }
+
+  #[test]
+  fn search_results_share_cursor_indices_and_can_select_one() {
+    let nonce = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .expect("test clock should be valid")
+      .as_nanos();
+    let directory = std::env::temp_dir().join(format!("calcit-query-cursor-test-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&directory).expect("query cursor test directory should be created");
+    let snapshot_file = directory.join("calcit.cirru");
+    std::fs::copy("calcit/test.cirru", &snapshot_file).expect("query cursor fixture should copy");
+    let snapshot_path = snapshot_file.to_string_lossy().into_owned();
+
+    let results = vec![(
+      "app.main".to_string(),
+      "main!".to_string(),
+      vec![(vec![48, 0], Cirru::leaf("do")), (vec![48, 1], Cirru::leaf("true"))],
+    )];
+    maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(1)).expect("second search result should become cursor");
+    assert_eq!(
+      crate::cli_handlers::cursor::resolve_cursor_path_argument(&snapshot_path, "app.main/main!", "@cursor")
+        .expect("query-selected cursor should resolve"),
+      "@48.1"
+    );
+
+    let mut filter = None;
+    let mut start_path = Some("@cursor".to_string());
+    resolve_search_cursor_references(&snapshot_path, &mut filter, &mut start_path)
+      .expect("cursor-scoped search should infer target and path");
+    assert_eq!(filter.as_deref(), Some("app.main/main!"));
+    assert_eq!(start_path.as_deref(), Some("@48.1"));
+
+    let mut type_at = QueryCommand {
+      subcommand: QuerySubcommand::TypeAt(QueryTypeAtCommand {
+        target: "@cursor".to_string(),
+        path: "@cursor".to_string(),
+        format: "json".to_string(),
+      }),
+    };
+    resolve_query_cursor_references(&mut type_at, &snapshot_path).expect("type-at should resolve cursor target and path");
+    let QuerySubcommand::TypeAt(type_at) = type_at.subcommand else {
+      panic!("type-at command should remain type-at")
+    };
+    assert_eq!(type_at.target, "app.main/main!");
+    assert_eq!(type_at.path, "@48.1");
+
+    let mut mismatched_filter = Some("app.other/demo".to_string());
+    let mut cursor_start = Some("@cursor".to_string());
+    let error = resolve_search_cursor_references(&snapshot_path, &mut mismatched_filter, &mut cursor_start)
+      .expect_err("cursor search should reject mismatched target");
+    assert!(error.contains("Cursor-scoped search targets"), "error: {error}");
+
+    let error = maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(2))
+      .expect_err("out-of-range search cursor index should fail");
+    assert!(error.contains("returned 2 match"), "error: {error}");
+
+    let snapshot = load_main_snapshot(&snapshot_path).expect("query cursor fixture should load");
+    let options = SearchCommonOpts {
+      filter: Some("app.main/main!"),
+      loose: false,
+      regex: false,
+      max_depth: 0,
+      entry: None,
+      detail_offset: 0,
+      parent_path: false,
+      format: QueryRenderFormat::Json,
+      set_cursor: None,
+    };
+    let output = format_search_results_json("query.search", "true", false, None, &options, &snapshot, &results)
+      .expect("search JSON should format");
+    let value: serde_json::Value = serde_json::from_str(&output).expect("search output should be valid JSON");
+    assert_eq!(value["data"]["definitions"][0]["matches"][0]["cursor_index"], 0);
+    assert_eq!(value["data"]["definitions"][0]["matches"][1]["cursor_index"], 1);
+
+    std::fs::remove_dir_all(directory).expect("query cursor test directory should be removed");
+  }
+
+  #[test]
+  fn number_type_query_uses_static_dispatch_metadata() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query(&snapshot).expect("static type metadata should prepare");
+
+    let methods = runner::preprocess::static_method_descriptors(&CalcitTypeAnnotation::Number)
+      .expect("number method metadata should resolve")
+      .into_iter()
+      .map(|method| method.name)
+      .collect::<Vec<_>>();
+
+    assert_eq!(
+      methods,
+      vec![
+        ".ceil",
+        ".display-by",
+        ".empty",
+        ".floor",
+        ".format",
+        ".fract",
+        ".inc",
+        ".negate",
+        ".pow",
+        ".rem",
+        ".round",
+        ".round?",
+        ".sqrt",
+        ".show",
+        ".eq?",
+        ".add",
+        ".multiply",
+      ]
+    );
+  }
+
+  #[test]
+  fn query_format_and_unicode_truncation_are_deterministic() {
+    assert_eq!(parse_query_render_format("human"), Ok(QueryRenderFormat::Human));
+    assert_eq!(parse_query_render_format("json"), Ok(QueryRenderFormat::Json));
+    assert!(parse_query_render_format("edn").is_err());
+    assert_eq!(truncate_chars("你好 Calcit", 2), ("你好…".to_owned(), true));
+    assert_eq!(truncate_chars("你好", 2), ("你好".to_owned(), false));
+  }
+
+  fn context_test_options(target: &str) -> QueryContextCommand {
+    QueryContextCommand {
+      target: target.to_owned(),
+      budget: 2400,
+      format: "json".to_owned(),
+      deps: false,
+      dependency_limit: 12,
+      usage_limit: 8,
+      example_limit: 3,
+    }
+  }
+
+  #[test]
+  fn special_builtin_context_preserves_examples_and_intent() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    let meta = lookup_special_builtin_query_meta("calcit.core", "to-js-data")
+      .expect("metadata lookup should work")
+      .expect("to-js-data metadata should exist");
+    let envelope = build_special_builtin_context(
+      &snapshot,
+      "calcit.core",
+      "to-js-data",
+      meta,
+      &context_test_options("calcit.core/to-js-data"),
+    )
+    .expect("context should build");
+
+    assert_eq!(envelope.command, "query.context");
+    assert_eq!(envelope.data.coverage, "intentional-dynamic");
+    assert_eq!(envelope.data.examples.total, 3);
+    assert_eq!(
+      envelope.data.examples.items[2]
+        .tree
+        .as_ref()
+        .and_then(|tree| tree.as_array())
+        .map(Vec::len),
+      Some(3)
+    );
+    assert!(
+      envelope
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "I_DYNAMIC_TYPE_INTENTIONAL")
+    );
+  }
+
+  #[test]
+  fn regular_context_carries_snapshot_revision_and_tree_location() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    let entry = snapshot
+      .files
+      .get("calcit.core")
+      .and_then(|file| file.defs.get("map"))
+      .expect("core map should exist");
+    let envelope = build_regular_context(&snapshot, "calcit.core", "map", entry, &context_test_options("calcit.core/map"))
+      .expect("context should build");
+
+    assert_eq!(envelope.data.id, "calcit.core/map");
+    assert_eq!(envelope.data.source, "core");
+    assert_eq!(envelope.data.code.root, "code");
+    assert!(envelope.data.code.nodes > 0);
+    assert_eq!(
+      envelope.revision,
+      snapshot::definition_revision(entry).expect("revision should match")
+    );
+  }
+
+  #[test]
+  fn project_function_schema_argument_resolves_source_backed_struct() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_snapshot("calcit/test.cirru").expect("test snapshot should load");
+    prepare_program_for_type_query(&snapshot).expect("static metadata should prepare");
+    let schema = program::lookup_def_schema("test-record.main", "sum-point");
+    let CalcitTypeAnnotation::Fn(annotation) = schema.as_ref() else {
+      panic!("sum-point should have a function schema");
+    };
+    let argument_type = annotation.arg_types.first().expect("sum-point argument type");
+    let struct_def = argument_type.resolve_to_struct().expect("source-backed Point2D should resolve");
+
+    assert_eq!(struct_def.name.ref_str(), "Point2D");
+    assert_eq!(struct_def.index_of("x"), Some(0));
+    assert!(matches!(
+      struct_def.field_types.first().map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::Number)
+    ));
+    let result_type = CalcitTypeAnnotation::TypeRef(Arc::from("test-enum.main/Result0"), Arc::new(vec![]));
+    assert!(result_type.resolve_to_enum().is_some(), "source-backed Result0 should resolve");
+    assert!(
+      result_type.matches_annotation(&CalcitTypeAnnotation::DynTuple),
+      "a source-backed enum reference should satisfy tuple operations"
+    );
+    let person_symbol =
+      code_to_calcit(&Cirru::Leaf(Arc::from("Person")), "test-record.main", "test-record", vec![]).expect("Person symbol should parse");
+    let person_type = runner::preprocess::infer_static_type_from_expr(&person_symbol).expect("Person type should infer statically");
+    assert!(
+      matches!(person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-record.main/Person"),
+      "data definitions should remain named type refs rather than synthetic record instances: {person_type}"
+    );
+    let (queried_person_type, source) =
+      resolve_type_query_target(&snapshot, "test-record.main/Person").expect("type query should infer defstruct type");
+    assert_eq!(source, "definition inference");
+    assert!(
+      matches!(queried_person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-record.main/Person"),
+      "query type should expose the source-backed struct type: {queried_person_type}"
+    );
+
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::compile_source_def_for_snapshot("test-record.main", "sum-point", &warnings, &CallStackList::default())
+      .expect("sum-point should preprocess");
+    let compiled = program::lookup_compiled_def("test-record.main", "sum-point").expect("compiled sum-point");
+    let target = find_preprocessed_node_at_path(&compiled.preprocessed_code, "test-record.main", "sum-point", &[3, 1], true)
+      .expect("field access expression should retain a source path");
+    let Calcit::List(field_access) = target else {
+      panic!("field access should remain a call");
+    };
+    assert!(
+      matches!(field_access.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeRecordNth))),
+      "typed tag access should specialize to record nth, got {target}"
+    );
+  }
+
+  #[test]
+  fn type_at_path_parser_accepts_semantic_code_prefixes() {
+    assert_eq!(parse_type_at_path("code@3.2"), Ok(vec![3, 2]));
+    assert_eq!(parse_type_at_path("@3.2"), Ok(vec![3, 2]));
+    assert_eq!(parse_type_at_path("3.2"), Ok(vec![3, 2]));
+  }
+
+  #[test]
+  fn definition_return_schema_does_not_leak_into_nested_functions() {
+    let mut nodes = cirru_parser::parse("fn ()\n  fn () 1").expect("test function should parse");
+    let mut entry = snapshot::CodeEntry::from_code(nodes.remove(0));
+    entry.schema = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+
+    let root_expected = expected_type_at_path(&entry, None, "tests.type-at", "demo", &[2])
+      .expect("root body should inherit the definition return schema");
+    assert!(matches!(root_expected.0.as_ref(), CalcitTypeAnnotation::String));
+    assert!(
+      expected_type_at_path(&entry, None, "tests.type-at", "demo", &[2, 2]).is_none(),
+      "nested fn body must use its own context rather than the enclosing definition schema"
+    );
+  }
+
+  #[test]
+  fn type_at_reports_expected_type_mismatches_without_rejecting_optional_values() {
+    let mismatch = type_at_expected_mismatch_diagnostic(
+      &CalcitTypeAnnotation::Number,
+      &CalcitTypeAnnotation::String,
+      "callable parameter",
+      "code@3.1",
+    )
+    .expect("number should not satisfy string");
+    assert_eq!(mismatch.code, "W_TYPE_AT_EXPECTED_MISMATCH");
+    assert_eq!(mismatch.path.as_deref(), Some("code@3.1"));
+
+    assert!(
+      type_at_expected_mismatch_diagnostic(
+        &CalcitTypeAnnotation::Number,
+        &CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number)),
+        "return schema",
+        "code@3",
+      )
+      .is_none(),
+      "a concrete number satisfies optional<number>"
+    );
+  }
+}
+
+fn definition_type_query_target(target: &str) -> Option<(&str, &str)> {
+  let (namespace, definition) = target.split_once('/')?;
+  if namespace.is_empty() || definition.is_empty() || target.chars().any(char::is_whitespace) {
+    None
+  } else {
+    Some((namespace, definition))
+  }
+}
+
+fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Result<(Arc<CalcitTypeAnnotation>, &'static str), String> {
+  if let Some((namespace, definition)) = definition_type_query_target(target) {
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Namespace `{namespace}` not found"))?;
+    if !file.defs.contains_key(definition) {
+      return Err(format!("Definition `{target}` not found"));
+    }
+
+    let annotation = program::lookup_def_schema(namespace, definition);
+    if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      return Ok((annotation, "definition schema"));
+    }
+
+    let symbol = code_to_calcit(&Cirru::Leaf(Arc::from(definition)), namespace, "&query:type", vec![])?;
+    if let Some(inferred) = runner::preprocess::infer_static_type_from_expr(&symbol)
+      && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic)
+    {
+      return Ok((inferred, "definition inference"));
+    }
+
+    return Err(format!(
+      "Definition `{target}` has neither an explicit schema nor an inferable static type. Add a schema or query a concrete type annotation such as `:number`."
+    ));
+  }
+
+  Ok((parse_type_annotation_query(target)?, "type annotation"))
+}
+
+fn format_type_query_annotation(annotation: &CalcitTypeAnnotation) -> Result<String, String> {
+  cirru_edn::format(&annotation.to_type_edn(), true)
+    .map(|text| {
+      let rendered = text.trim();
+      rendered.strip_prefix("do ").unwrap_or(rendered).to_owned()
+    })
+    .map_err(|error| format!("Failed to format resolved type: {error}"))
+}
+
+fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> {
+  let format = parse_query_render_format(&opts.format)?;
+  let snapshot = match definition_type_query_target(&opts.target) {
+    Some((namespace, _)) if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" => load_core_snapshot()?,
+    Some(_) => load_snapshot(input_path)?,
+    None => load_core_snapshot()?,
+  };
+  prepare_program_for_type_query(&snapshot)?;
+  let (annotation, source) = resolve_type_query_target(&snapshot, &opts.target)?;
+  let rendered_type = format_type_query_annotation(annotation.as_ref())?;
+  let methods = runner::preprocess::static_method_descriptors(annotation.as_ref()).map(|items| {
+    items
+      .into_iter()
+      .map(|method| ContextMethod {
+        name: method.name,
+        origin: method.origin,
+      })
+      .collect::<Vec<_>>()
+  });
+  let method_fingerprint = methods
+    .as_ref()
+    .map(|items| {
+      items
+        .iter()
+        .map(|method| format!("{}@{}", method.name, method.origin))
+        .collect::<Vec<_>>()
+        .join("\n")
+    })
+    .unwrap_or_else(|| "unknown".to_owned());
+  let revision = definition_type_query_target(&opts.target)
+    .and_then(|(namespace, definition)| snapshot.files.get(namespace).and_then(|file| file.defs.get(definition)))
+    .map(snapshot::definition_revision)
+    .transpose()?
+    .unwrap_or_else(|| semantic_revision(&[&rendered_type, &method_fingerprint]));
+
+  let data = TypeQueryData {
+    target: opts.target.clone(),
+    canonical_type: rendered_type,
+    resolved_from: source,
+    methods,
+  };
+
+  if format == QueryRenderFormat::Json {
+    let envelope = SemanticQueryEnvelope {
+      schema_version: 1,
+      command: "query.type",
+      revision,
+      data,
+      diagnostics: vec![],
+      next: vec![],
+    };
+    println!(
+      "{}",
+      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode type query result: {error}"))?
+    );
+    return Ok(());
+  }
+
+  if data.canonical_type.contains('\n') {
+    println!("{}\n{}", "Type:".bold(), data.canonical_type);
+  } else {
+    println!("{} {}", "Type:".bold(), data.canonical_type);
+  }
+  println!("{} {}", "Resolved from:".bold(), data.resolved_from);
+  println!("{} {revision}", "Revision:".bold());
+
+  match data.methods {
+    Some(methods) if methods.is_empty() => {
+      println!("{} 0", "Methods:".bold());
+      println!("  (no methods registered for this type)");
+    }
+    Some(methods) => {
+      println!("{} {} (high → low precedence)", "Methods:".bold(), methods.len());
+      for method in methods {
+        println!("  {:<20} {}", method.name, format!("({})", method.origin).dimmed());
+      }
+    }
+    None => {
+      println!("{} unknown", "Methods:".bold());
+      println!("  This type has no statically resolvable method metadata.");
+    }
+  }
+
+  Ok(())
+}
+
+fn parse_type_at_path(raw: &str) -> Result<Vec<usize>, String> {
+  let path = raw.strip_prefix("code").unwrap_or(raw);
+  parse_path(path)
+}
+
+fn semantic_code_path(path: &[usize]) -> String {
+  if path.is_empty() {
+    "code".to_owned()
+  } else {
+    format!("code@{}", path.iter().map(usize::to_string).collect::<Vec<_>>().join("."))
+  }
+}
+
+fn format_cirru_expression(node: &Cirru) -> String {
+  cirru_parser::format(std::slice::from_ref(node), true.into())
+    .map(|text| text.trim().to_owned())
+    .unwrap_or_else(|_| format!("{node:?}"))
+}
+
+fn calcit_direct_source_path(node: &Calcit, namespace: &str, definition: &str) -> Option<Vec<usize>> {
+  let location = node.get_location()?;
+  if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+    return None;
+  }
+  Some(location.coord.iter().map(|idx| *idx as usize).collect())
+}
+
+/// Recover the source path represented by a preprocessed expression. Imports, procs and literals
+/// do not carry locations, so list paths are derived from the nearest direct child that does.
+fn calcit_expression_source_path(node: &Calcit, namespace: &str, definition: &str) -> Option<Vec<usize>> {
+  if let Some(path) = calcit_direct_source_path(node, namespace, definition) {
+    return Some(path);
+  }
+  let Calcit::List(items) = node else {
+    return None;
+  };
+  for child in items.iter() {
+    if let Some(mut child_path) = calcit_expression_source_path(child, namespace, definition) {
+      child_path.pop();
+      return Some(child_path);
+    }
+  }
+  None
+}
+
+fn find_preprocessed_node_at_path<'a>(
+  node: &'a Calcit,
+  namespace: &str,
+  definition: &str,
+  target_path: &[usize],
+  target_is_list: bool,
+) -> Option<&'a Calcit> {
+  let shape_matches = matches!(node, Calcit::List(_)) == target_is_list;
+  if shape_matches
+    && calcit_expression_source_path(node, namespace, definition)
+      .as_deref()
+      .is_some_and(|path| path == target_path)
+  {
+    return Some(node);
+  }
+
+  if let Calcit::List(items) = node {
+    for child in items.iter() {
+      if let Some(found) = find_preprocessed_node_at_path(child, namespace, definition, target_path, target_is_list) {
+        return Some(found);
+      }
+    }
+  }
+  None
+}
+
+#[derive(Debug, Clone)]
+struct StaticCallableSignature {
+  arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+  rest_type: Option<Arc<CalcitTypeAnnotation>>,
+}
+
+impl StaticCallableSignature {
+  fn from_fn_annotation(annotation: &CalcitFnTypeAnnotation) -> Self {
+    Self {
+      arg_types: annotation.arg_types.clone(),
+      rest_type: annotation.rest_type.clone(),
+    }
+  }
+
+  fn expected_arg(&self, index: usize) -> Option<Arc<CalcitTypeAnnotation>> {
+    if let Some(value) = self.arg_types.get(index) {
+      return match value.as_ref() {
+        CalcitTypeAnnotation::Variadic(inner) => Some(inner.clone()),
+        _ => Some(value.clone()),
+      };
+    }
+    self.rest_type.clone().or_else(|| {
+      self.arg_types.last().and_then(|value| match value.as_ref() {
+        CalcitTypeAnnotation::Variadic(inner) => Some(inner.clone()),
+        _ => None,
+      })
+    })
+  }
+}
+
+fn callable_signature_from_head(head: &Calcit) -> Option<StaticCallableSignature> {
+  match head {
+    Calcit::Proc(proc) => {
+      let signature = proc.get_type_signature()?;
+      Some(StaticCallableSignature {
+        arg_types: signature.arg_types.clone(),
+        rest_type: None,
+      })
+    }
+    Calcit::Fn { info, .. } => Some(StaticCallableSignature {
+      arg_types: info.arg_types.clone(),
+      rest_type: info.rest_type.clone(),
+    }),
+    Calcit::Local(local) => local
+      .type_info
+      .resolve_to_fn()
+      .map(|annotation| StaticCallableSignature::from_fn_annotation(annotation.as_ref())),
+    Calcit::Import(import) => program::lookup_def_schema(&import.ns, &import.def)
+      .resolve_to_fn()
+      .map(|annotation| StaticCallableSignature::from_fn_annotation(annotation.as_ref())),
+    Calcit::Symbol { sym, info, .. } => program::lookup_def_schema(&info.at_ns, sym)
+      .resolve_to_fn()
+      .map(|annotation| StaticCallableSignature::from_fn_annotation(annotation.as_ref())),
+    _ => None,
+  }
+}
+
+fn expected_type_at_path(
+  entry: &snapshot::CodeEntry,
+  processed_root: Option<&Calcit>,
+  namespace: &str,
+  definition: &str,
+  target_path: &[usize],
+) -> Option<(Arc<CalcitTypeAnnotation>, String)> {
+  let (&target_index, parent_path) = target_path.split_last()?;
+  let parent_node = navigate_to_path(&entry.code, parent_path).ok()?;
+  let Cirru::List(parent_items) = parent_node else {
+    return None;
+  };
+  let head_name = parent_items.first().and_then(|head| match head {
+    Cirru::Leaf(name) => Some(name.as_ref()),
+    Cirru::List(_) => None,
+  });
+
+  if parent_path.is_empty()
+    && matches!(head_name, Some("defn" | "fn"))
+    && target_index == parent_items.len().saturating_sub(1)
+    && let CalcitTypeAnnotation::Fn(annotation) = entry.schema.as_ref()
+  {
+    return Some((annotation.return_type.clone(), "definition return schema".to_owned()));
+  }
+  if matches!(head_name, Some("if" | "&if")) && target_index == 1 {
+    return Some((Arc::new(CalcitTypeAnnotation::Bool), "if condition".to_owned()));
+  }
+
+  let processed_parent = processed_root.and_then(|root| {
+    find_preprocessed_node_at_path(root, namespace, definition, parent_path, true).and_then(|node| match node {
+      Calcit::List(items) => Some(items),
+      _ => None,
+    })
+  })?;
+
+  if matches!(processed_parent.first(), Some(Calcit::Syntax(calcit::CalcitSyntax::AssertType, _)))
+    && target_index == 1
+    && let Some(type_form) = processed_parent.get(2)
+  {
+    return Some((
+      CalcitTypeAnnotation::parse_type_annotation_form(type_form),
+      "assert-type annotation".to_owned(),
+    ));
+  }
+
+  let signature = callable_signature_from_head(processed_parent.first()?)?;
+  let arg_index = target_index.checked_sub(1)?;
+  signature
+    .expected_arg(arg_index)
+    .map(|expected| (expected, "callable parameter".to_owned()))
+}
+
+fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeAtEvidence {
+  let kind = match node {
+    Calcit::Number(_) | Calcit::Str(_) | Calcit::Bool(_) | Calcit::Nil | Calcit::Tag(_) => "literal",
+    Calcit::Local(_) => "local-binding",
+    Calcit::Import(_) | Calcit::Symbol { .. } => "definition-schema",
+    Calcit::Proc(_) => "proc-signature",
+    Calcit::Fn { .. } => "function-schema",
+    Calcit::List(items) => match items.first() {
+      Some(Calcit::Proc(calcit::CalcitProc::List | calcit::CalcitProc::Set | calcit::CalcitProc::NativeMap)) => "collection-literal",
+      Some(Calcit::Proc(_)) => "proc-return",
+      Some(Calcit::Import(_) | Calcit::Symbol { .. }) => "definition-return",
+      Some(Calcit::Local(_)) => "local-function-return",
+      Some(Calcit::Method(_, _)) => "method-dispatch",
+      Some(Calcit::Syntax(_, _)) => "syntax-rule",
+      _ => "expression-synthesis",
+    },
+    _ => "value-shape",
+  };
+  TypeAtEvidence {
+    kind: kind.to_owned(),
+    detail: if used_preprocessed {
+      "inferred from preprocessed code and lexical type metadata".to_owned()
+    } else {
+      "inferred from the selected source subtree; lexical bindings were unavailable".to_owned()
+    },
+    path: Some(path.to_owned()),
+  }
+}
+
+fn collect_type_at_bindings(node: &Calcit, values: &mut BTreeMap<String, (Arc<CalcitTypeAnnotation>, Option<String>)>) {
+  match node {
+    Calcit::Local(local) => {
+      let path = local
+        .location
+        .as_ref()
+        .map(|coord| semantic_code_path(&coord.iter().map(|idx| *idx as usize).collect::<Vec<_>>()));
+      let should_replace = values
+        .get(local.sym.as_ref())
+        .is_none_or(|(current, _)| matches!(current.as_ref(), CalcitTypeAnnotation::Dynamic));
+      if should_replace {
+        values.insert(local.sym.to_string(), (local.type_info.clone(), path));
+      }
+    }
+    Calcit::List(items) => {
+      for child in items.iter() {
+        collect_type_at_bindings(child, values);
+      }
+    }
+    _ => {}
+  }
+}
+
+fn format_type_at_bindings(processed_root: Option<&Calcit>, target: Option<&Calcit>) -> Result<Vec<TypeAtBinding>, String> {
+  let mut values: BTreeMap<String, (Arc<CalcitTypeAnnotation>, Option<String>)> = BTreeMap::new();
+  if let Some(Calcit::List(root_items)) = processed_root
+    && let Some(Calcit::List(params)) = root_items.get(2)
+  {
+    collect_type_at_bindings(&Calcit::List(params.clone()), &mut values);
+  }
+  if let Some(target) = target {
+    collect_type_at_bindings(target, &mut values);
+  }
+
+  values
+    .into_iter()
+    .map(|(name, (annotation, path))| {
+      Ok(TypeAtBinding {
+        name,
+        r#type: format_type_query_annotation(annotation.as_ref())?,
+        path,
+      })
+    })
+    .collect()
+}
+
+fn type_at_confidence(annotation: Option<&CalcitTypeAnnotation>) -> &'static str {
+  let Some(annotation) = annotation else {
+    return "unknown";
+  };
+  if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+    return "unknown";
+  }
+  let rendered = annotation.to_brief_string();
+  if rendered.contains("dynamic") || matches!(annotation, CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Custom(_)) {
+    "partial"
+  } else if annotation.contains_type_var() {
+    "generic"
+  } else {
+    "exact"
+  }
+}
+
+fn warning_matches_type_at(warning: &LocatedWarning, namespace: &str, definition: &str, path: &[usize]) -> bool {
+  let location = warning.location();
+  if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+    return false;
+  }
+  let warning_path = location.coord.iter().map(|idx| *idx as usize).collect::<Vec<_>>();
+  warning_path.starts_with(path) || path.starts_with(&warning_path)
+}
+
+fn warning_to_context_diagnostic(warning: &LocatedWarning) -> ContextDiagnostic {
+  ContextDiagnostic {
+    code: warning.code().unwrap_or("W_PREPROCESS").to_owned(),
+    phase: "type-check",
+    severity: "warning",
+    message: warning.message().to_owned(),
+    path: Some(semantic_code_path(
+      &warning.location().coord.iter().map(|idx| *idx as usize).collect::<Vec<_>>(),
+    )),
+    intent: None,
+  }
+}
+
+fn type_at_expected_mismatch_diagnostic(
+  actual: &CalcitTypeAnnotation,
+  required: &CalcitTypeAnnotation,
+  source: &str,
+  path: &str,
+) -> Option<ContextDiagnostic> {
+  if actual.matches_annotation(required) {
+    return None;
+  }
+  Some(ContextDiagnostic {
+    code: "W_TYPE_AT_EXPECTED_MISMATCH".to_owned(),
+    phase: "type-check",
+    severity: "warning",
+    message: format!(
+      "Inferred type `{}` does not satisfy expected type `{}` from {source}",
+      actual.to_brief_string(),
+      required.to_brief_string()
+    ),
+    path: Some(path.to_owned()),
+    intent: None,
+  })
+}
+
+fn render_type_at_human(envelope: &SemanticQueryEnvelope<TypeAtData>) -> String {
+  let data = &envelope.data;
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "Definition: {}", data.id);
+  let _ = writeln!(&mut out, "Path: {}", data.path);
+  let _ = writeln!(&mut out, "Revision: {}", envelope.revision);
+  let _ = writeln!(&mut out, "Expression: {}", data.expression);
+  let _ = writeln!(&mut out, "Inferred type: {}", data.inferred_type.as_deref().unwrap_or("unknown"));
+  if let Some(expected) = &data.expected_type {
+    let _ = writeln!(
+      &mut out,
+      "Expected type: {} ({})",
+      expected,
+      data.expected_from.as_deref().unwrap_or("static context")
+    );
+  }
+  let _ = writeln!(&mut out, "Confidence: {}", data.confidence);
+  if let Some(intent) = data.dynamic_intent {
+    let _ = writeln!(&mut out, "Dynamic intent: {intent}");
+  }
+  let _ = writeln!(&mut out, "Evidence:");
+  for evidence in &data.evidence {
+    let _ = writeln!(&mut out, "  - {}: {}", evidence.kind, evidence.detail);
+  }
+  let _ = writeln!(
+    &mut out,
+    "Bindings: {} (referenced/top-level; not a complete scope dump)",
+    data.bindings.len()
+  );
+  for binding in &data.bindings {
+    let location = binding.path.as_deref().map(|path| format!(" @ {path}")).unwrap_or_default();
+    let _ = writeln!(&mut out, "  - {}: {}{}", binding.name, binding.r#type, location);
+  }
+  let _ = writeln!(&mut out, "Static methods:");
+  match &data.static_methods {
+    Some(methods) => {
+      for method in methods {
+        let _ = writeln!(&mut out, "  - {} ({})", method.name, method.origin);
+      }
+    }
+    None => {
+      let _ = writeln!(&mut out, "  unknown");
+    }
+  }
+  let _ = writeln!(&mut out, "Diagnostics: {}", envelope.diagnostics.len());
+  for diagnostic in &envelope.diagnostics {
+    let location = diagnostic.path.as_deref().map(|path| format!(" @ {path}")).unwrap_or_default();
+    let _ = writeln!(
+      &mut out,
+      "  - {} {}{}: {}",
+      diagnostic.severity, diagnostic.code, location, diagnostic.message
+    );
+  }
+  if !envelope.next.is_empty() {
+    let _ = writeln!(&mut out, "Next:");
+    for command in &envelope.next {
+      let _ = writeln!(&mut out, "  - {command}");
+    }
+  }
+  out
+}
+
+fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), String> {
+  let format = parse_query_render_format(&opts.format)?;
+  let target_path = parse_type_at_path(&opts.path)?;
+  let (namespace, requested_definition) = parse_target(&opts.target)?;
+  let resolved_input = calcit::resolve_snapshot_path_alias(Path::new(input_path));
+  let snapshot = if resolved_input.exists() {
+    load_snapshot(input_path)?
+  } else if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
+    load_core_snapshot()?
+  } else {
+    return Err(format!("{} does not exist", resolved_input.display()));
+  };
+  let file = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace `{namespace}` not found"))?;
+  let lookup = resolve_definition_lookup(namespace, requested_definition, file.defs.keys().map(String::as_str), true)?;
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let definition = lookup.resolved;
+  let entry = file.defs.get(&definition).expect("resolved definition exists");
+  let target_node = navigate_to_path(&entry.code, &target_path)?;
+  let semantic_path = semantic_code_path(&target_path);
+  let expression = format_cirru_expression(&target_node);
+  let revision = snapshot::definition_revision(entry)?;
+
+  prepare_program_for_type_query(&snapshot)?;
+  let warnings = RefCell::<Vec<LocatedWarning>>::new(vec![]);
+  let compile_error =
+    runner::preprocess::compile_source_def_for_snapshot(namespace, &definition, &warnings, &CallStackList::default()).err();
+  let compiled = program::lookup_compiled_def(namespace, &definition);
+  let processed_root = compiled.as_ref().map(|compiled| &compiled.preprocessed_code);
+  let processed_target = processed_root
+    .and_then(|root| find_preprocessed_node_at_path(root, namespace, &definition, &target_path, matches!(target_node, Cirru::List(_))));
+  let source_target = code_to_calcit(
+    &target_node,
+    namespace,
+    &definition,
+    target_path
+      .iter()
+      .map(|idx| u16::try_from(*idx).map_err(|_| format!("Path index {idx} exceeds Snapshot coordinate range")))
+      .collect::<Result<Vec<_>, _>>()?,
+  )?;
+  let inference_target = processed_target.unwrap_or(&source_target);
+  let inferred = runner::preprocess::infer_static_type_from_expr(inference_target);
+  let expected = expected_type_at_path(entry, processed_root, namespace, &definition, &target_path);
+  let inferred_rendered = inferred
+    .as_ref()
+    .map(|annotation| format_type_query_annotation(annotation.as_ref()))
+    .transpose()?;
+  let (expected_rendered, expected_from) = match expected.as_ref() {
+    Some((annotation, source)) => (Some(format_type_query_annotation(annotation.as_ref())?), Some(source.clone())),
+    None => (None, None),
+  };
+  let methods = inferred.as_ref().and_then(|annotation| {
+    runner::preprocess::static_method_descriptors(annotation.as_ref()).map(|items| {
+      items
+        .into_iter()
+        .map(|method| ContextMethod {
+          name: method.name,
+          origin: method.origin,
+        })
+        .collect::<Vec<_>>()
+    })
+  });
+
+  let fn_features = context_features(entry.schema.as_ref());
+  let dynamic_intent = if inferred
+    .as_ref()
+    .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
+    && fn_features.iter().any(|feature| feature == ":js-ffi")
+  {
+    Some("intentional-js-ffi")
+  } else if inferred
+    .as_ref()
+    .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
+    Some("unresolved")
+  } else {
+    None
+  };
+
+  let mut diagnostics = warnings
+    .borrow()
+    .iter()
+    .filter(|warning| warning_matches_type_at(warning, namespace, &definition, &target_path))
+    .map(warning_to_context_diagnostic)
+    .collect::<Vec<_>>();
+  if let Some(error) = compile_error {
+    diagnostics.push(ContextDiagnostic {
+      code: error.code.unwrap_or_else(|| format!("E_{}", error.kind.to_string().to_uppercase())),
+      phase: "preprocess",
+      severity: "error",
+      message: error.msg,
+      path: error
+        .location
+        .as_ref()
+        .map(|location| semantic_code_path(&location.coord.iter().map(|idx| *idx as usize).collect::<Vec<_>>())),
+      intent: None,
+    });
+  }
+  if inferred.is_none() {
+    diagnostics.push(ContextDiagnostic {
+      code: "W_TYPE_AT_UNRESOLVED".to_owned(),
+      phase: "type-inference",
+      severity: "warning",
+      message: "Static inference could not determine a type for this expression without executing the program".to_owned(),
+      path: Some(semantic_path.clone()),
+      intent: dynamic_intent.map(str::to_owned),
+    });
+  }
+  if let (Some(actual), Some((required, source))) = (inferred.as_ref(), expected.as_ref())
+    && let Some(diagnostic) = type_at_expected_mismatch_diagnostic(actual.as_ref(), required.as_ref(), source, &semantic_path)
+  {
+    diagnostics.push(diagnostic);
+  }
+
+  let mut evidence = vec![type_at_evidence(inference_target, &semantic_path, processed_target.is_some())];
+  if let Some(source) = &expected_from {
+    evidence.push(TypeAtEvidence {
+      kind: "expected-context".to_owned(),
+      detail: source.clone(),
+      path: target_path
+        .split_last()
+        .map(|(_, parent)| semantic_code_path(parent))
+        .or_else(|| Some("code".to_owned())),
+    });
+  }
+  let bindings = format_type_at_bindings(processed_root, processed_target)?;
+  let confidence = type_at_confidence(inferred.as_deref());
+  let data = TypeAtData {
+    id: format!("{namespace}/{definition}"),
+    path: semantic_path.clone(),
+    expression,
+    tree: cirru_to_json_value(&target_node),
+    inferred_type: inferred_rendered,
+    expected_type: expected_rendered,
+    expected_from,
+    confidence,
+    dynamic_intent,
+    evidence,
+    bindings,
+    bindings_complete: false,
+    static_methods: methods,
+  };
+  let mut next = vec![format!("cr tree show '{namespace}/{definition}' --path '{semantic_path}'")];
+  if confidence != "exact" {
+    next.push(format!("cr query schema '{namespace}/{definition}'"));
+    next.push(format!(
+      "cr analyze weak-types --ns '{namespace}' --intent unresolved --format json"
+    ));
+  }
+  let envelope = SemanticQueryEnvelope {
+    schema_version: 1,
+    command: "query.type-at",
+    revision,
+    data,
+    diagnostics,
+    next,
+  };
+
+  match format {
+    QueryRenderFormat::Human => print!("{}", render_type_at_human(&envelope)),
+    QueryRenderFormat::Json => println!(
+      "{}",
+      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode type-at result: {error}"))?
+    ),
+  }
+  Ok(())
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> (String, bool) {
+  if max_chars == 0 {
+    return (String::new(), !text.is_empty());
+  }
+  let Some((byte_index, _)) = text.char_indices().nth(max_chars) else {
+    return (text.to_owned(), false);
+  };
+  (format!("{}…", &text[..byte_index]), true)
+}
+
+fn count_cirru_nodes(node: &Cirru) -> usize {
+  match node {
+    Cirru::Leaf(_) => 1,
+    Cirru::List(items) => 1 + items.iter().map(count_cirru_nodes).sum::<usize>(),
+  }
+}
+
+fn namespace_source(snapshot: &snapshot::Snapshot, namespace: &str) -> String {
+  if namespace == calcit::calcit::CORE_NS || namespace.starts_with("calcit.") || namespace.starts_with("calcit-test.") {
+    "core".to_owned()
+  } else if namespace == snapshot.package || namespace.starts_with(&format!("{}.", snapshot.package)) {
+    "project".to_owned()
+  } else {
+    "dependency".to_owned()
+  }
+}
+
+fn context_schema(annotation: &CalcitTypeAnnotation) -> Result<Option<String>, String> {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic => Ok(None),
+    CalcitTypeAnnotation::Fn(_) => Ok(Some(format_query_schema(annotation, true).trim().to_owned())),
+    _ => Ok(Some(format_type_query_annotation(annotation)?)),
+  }
+}
+
+fn context_features(annotation: &CalcitTypeAnnotation) -> Vec<String> {
+  let mut features = match annotation {
+    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot
+      .features
+      .iter()
+      .map(|feature| feature.ref_str().to_owned())
+      .collect::<Vec<_>>(),
+    _ => vec![],
+  };
+  features.sort();
+  features
+}
+
+fn build_context_code(node: &Cirru, max_chars: usize) -> Result<ContextCode, String> {
+  let nodes = count_cirru_nodes(node);
+  let rendered = cirru_parser::format(std::slice::from_ref(node), true.into())
+    .map_err(|error| format!("Failed to format definition code: {error}"))?;
+  let (cirru, truncated) = truncate_chars(rendered.trim(), max_chars);
+  let tree = if !truncated && nodes <= 180 {
+    Some(cirru_to_json(node))
+  } else {
+    None
+  };
+  Ok(ContextCode {
+    root: "code",
+    nodes,
+    cirru,
+    tree,
+    truncated,
+  })
+}
+
+fn build_context_examples(examples: &[Cirru], limit: usize, budget: usize) -> Result<ContextCollection<ContextExample>, String> {
+  let returned_count = examples.len().min(limit);
+  let per_example_budget = budget
+    .checked_div(returned_count)
+    .map(|value| value.clamp(120, 1200))
+    .unwrap_or_default();
+  let mut items = Vec::with_capacity(returned_count);
+
+  for (index, example) in examples.iter().take(returned_count).enumerate() {
+    let nodes = count_cirru_nodes(example);
+    let rendered = cirru_parser::format(std::slice::from_ref(example), true.into())
+      .map_err(|error| format!("Failed to format definition example {index}: {error}"))?;
+    let (cirru, truncated) = truncate_chars(rendered.trim(), per_example_budget);
+    items.push(ContextExample {
+      index,
+      cirru,
+      tree: if !truncated && nodes <= 100 {
+        Some(cirru_to_json(example))
+      } else {
+        None
+      },
+      truncated,
+    });
+  }
+
+  Ok(ContextCollection::new(examples.len(), items))
+}
+
+fn collect_direct_dependencies(
+  snapshot: &snapshot::Snapshot,
+  namespace: &str,
+  definition: &str,
+) -> Result<Vec<(String, String)>, String> {
+  let mut analyzer = CallTreeAnalyzer::new(CallTreeConfig {
+    include_core: true,
+    max_depth: 1,
+    show_unused: false,
+    package_name: Some(snapshot.package.clone()),
+    ns_prefix: None,
+  });
+  let result = analyzer.analyze(namespace, definition)?;
+  let mut dependencies = result
+    .tree
+    .calls
+    .into_iter()
+    .map(|node| (node.fqn, node.source))
+    .collect::<Vec<_>>();
+  dependencies.sort();
+  dependencies.dedup_by(|left, right| left.0 == right.0);
+  Ok(dependencies)
+}
+
+fn context_usages(
+  snapshot: &snapshot::Snapshot,
+  namespace: &str,
+  definition: &str,
+  include_deps: bool,
+  limit: usize,
+) -> ContextCollection<ContextUsage> {
+  let mut usages = collect_usages_from_snapshot(snapshot, namespace, definition, true)
+    .into_iter()
+    .filter_map(|(usage_ns, usage_def, _context, coords, area)| {
+      let source = namespace_source(snapshot, &usage_ns);
+      if !include_deps && source != "project" {
+        return None;
+      }
+      Some(ContextUsage {
+        id: format!("{usage_ns}/{usage_def}"),
+        source,
+        area: area.to_owned(),
+        paths: coords.iter().map(|path| format!("{area}{}", format_path(path))).collect(),
+      })
+    })
+    .collect::<Vec<_>>();
+  usages.sort_by(|left, right| (&left.id, &left.area).cmp(&(&right.id, &right.area)));
+  let total = usages.len();
+  usages.truncate(limit);
+  ContextCollection::new(total, usages)
+}
+
+fn context_docs(definition: &str, diagnostics: &mut Vec<ContextDiagnostic>) -> ContextCollection<ContextDocLink> {
+  match super::docs::lookup_definition_docs(definition) {
+    Ok(links) => {
+      let total = links.len();
+      let items = links
+        .into_iter()
+        .take(6)
+        .map(|link| ContextDocLink {
+          id: link.id,
+          path: link.path,
+          title: link.title,
+          summary: link.summary,
+        })
+        .collect();
+      ContextCollection::new(total, items)
+    }
+    Err(error) => {
+      diagnostics.push(ContextDiagnostic {
+        code: "I_DOC_INDEX_UNAVAILABLE".to_owned(),
+        phase: "documentation",
+        severity: "info",
+        message: error.lines().next().unwrap_or(&error).to_owned(),
+        path: None,
+        intent: None,
+      });
+      ContextCollection::new(0, vec![])
+    }
+  }
+}
+
+fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize) -> Option<ContextCollection<ContextMethod>> {
+  let methods = runner::preprocess::static_method_descriptors(annotation)?;
+  let total = methods.len();
+  let limit = (budget / 90).clamp(4, 80);
+  let items = methods
+    .into_iter()
+    .take(limit)
+    .map(|method| ContextMethod {
+      name: method.name,
+      origin: method.origin,
+    })
+    .collect();
+  Some(ContextCollection::new(total, items))
+}
+
+fn weak_type_diagnostics(entry: &snapshot::CodeEntry, budget: usize) -> Vec<ContextDiagnostic> {
+  let Some(row) =
+    crate::type_coverage::analyze_weak_types_entry("context", "target", entry, &crate::type_coverage::WeakTypeKind::all())
+  else {
+    return vec![];
+  };
+
+  let limit = (budget / 220).clamp(4, 24);
+  let total = row.occurrences.len();
+  let mut diagnostics = row
+    .occurrences
+    .into_iter()
+    .take(limit)
+    .map(|occurrence| {
+      let intentional = occurrence.intent == crate::type_coverage::WeakTypeIntent::IntentionalJsFfi;
+      ContextDiagnostic {
+        code: if intentional {
+          "I_DYNAMIC_TYPE_INTENTIONAL".to_owned()
+        } else {
+          "W_DYNAMIC_TYPE_UNRESOLVED".to_owned()
+        },
+        phase: "static-analysis",
+        severity: if intentional { "info" } else { "warning" },
+        message: format!("{} ({})", occurrence.kind.as_str(), occurrence.detail),
+        path: Some(occurrence.path),
+        intent: Some(occurrence.intent.as_str().to_owned()),
+      }
+    })
+    .collect::<Vec<_>>();
+  if diagnostics.len() < total {
+    diagnostics.push(ContextDiagnostic {
+      code: "I_DIAGNOSTICS_TRUNCATED".to_owned(),
+      phase: "static-analysis",
+      severity: "info",
+      message: format!(
+        "{} additional weak-type diagnostic(s) omitted by the context budget",
+        total - diagnostics.len()
+      ),
+      path: None,
+      intent: None,
+    });
+  }
+  diagnostics
+}
+
+fn build_regular_context(
+  snapshot: &snapshot::Snapshot,
+  namespace: &str,
+  definition: &str,
+  entry: &snapshot::CodeEntry,
+  opts: &QueryContextCommand,
+) -> Result<SemanticQueryEnvelope<DefinitionContextData>, String> {
+  let revision = snapshot::definition_revision(entry)?;
+  let coverage = crate::type_coverage::analyze_code_entry(namespace, definition, entry);
+  let intentional_ffi = context_features(entry.schema.as_ref()).iter().any(|feature| feature == "js-ffi");
+  let mut diagnostics = weak_type_diagnostics(entry, opts.budget);
+  if coverage.level == crate::type_coverage::CoverageLevel::None && !intentional_ffi {
+    diagnostics.insert(
+      0,
+      ContextDiagnostic {
+        code: "W_TYPE_COVERAGE_NONE".to_owned(),
+        phase: "static-analysis",
+        severity: "warning",
+        message: "definition has no trusted static type coverage".to_owned(),
+        path: Some("schema".to_owned()),
+        intent: None,
+      },
+    );
+  }
+  for issue in &coverage.schema_issues {
+    diagnostics.push(ContextDiagnostic {
+      code: "W_SCHEMA_MISMATCH".to_owned(),
+      phase: "static-analysis",
+      severity: "warning",
+      message: issue.clone(),
+      path: Some("schema".to_owned()),
+      intent: None,
+    });
+  }
+
+  let metadata_ready = prepare_program_for_type_query(snapshot);
+  if let Err(error) = &metadata_ready {
+    diagnostics.push(ContextDiagnostic {
+      code: "W_STATIC_METADATA_UNAVAILABLE".to_owned(),
+      phase: "preprocess",
+      severity: "warning",
+      message: error.clone(),
+      path: None,
+      intent: None,
+    });
+  }
+
+  let dependencies = if metadata_ready.is_ok() {
+    match collect_direct_dependencies(snapshot, namespace, definition) {
+      Ok(items) => items,
+      Err(error) => {
+        diagnostics.push(ContextDiagnostic {
+          code: "W_DEPENDENCY_ANALYSIS_FAILED".to_owned(),
+          phase: "static-analysis",
+          severity: "warning",
+          message: error,
+          path: Some("code".to_owned()),
+          intent: None,
+        });
+        vec![]
+      }
+    }
+  } else {
+    vec![]
+  };
+  let dependency_total = dependencies.len();
+  let dependency_items = dependencies
+    .into_iter()
+    .take(opts.dependency_limit)
+    .map(|(id, source)| ContextDependency { id, source })
+    .collect();
+
+  let mut tags = entry.tags.iter().map(|tag| tag.ref_str().to_owned()).collect::<Vec<_>>();
+  tags.sort();
+  let doc_limit = (opts.budget / 6).clamp(160, 1200);
+  let (doc, doc_truncated) = if entry.doc.trim().is_empty() {
+    (None, false)
+  } else {
+    let (text, truncated) = truncate_chars(entry.doc.trim(), doc_limit);
+    (Some(text), truncated)
+  };
+  let code = build_context_code(&entry.code, (opts.budget / 3).clamp(320, 2600))?;
+  let examples = build_context_examples(&entry.examples, opts.example_limit, opts.budget / 4)?;
+  let usages = context_usages(snapshot, namespace, definition, opts.deps, opts.usage_limit);
+  let id = format!("{namespace}/{definition}");
+  let docs = context_docs(&id, &mut diagnostics);
+  let static_methods = if metadata_ready.is_ok() {
+    context_methods(entry.schema.as_ref(), opts.budget / 3)
+  } else {
+    None
+  };
+
+  let data = DefinitionContextData {
+    id,
+    uri: format!("calcit://definition/{namespace}/{definition}"),
+    source: namespace_source(snapshot, namespace),
+    kind: coverage.kind.as_str().to_owned(),
+    coverage: if intentional_ffi && coverage.level == crate::type_coverage::CoverageLevel::None {
+      "intentional-dynamic"
+    } else {
+      coverage.level.as_str()
+    }
+    .to_owned(),
+    doc,
+    doc_truncated,
+    tags,
+    schema: context_schema(entry.schema.as_ref())?,
+    features: context_features(entry.schema.as_ref()),
+    code,
+    examples,
+    dependencies: ContextCollection::new(dependency_total, dependency_items),
+    usages,
+    docs,
+    static_methods,
+  };
+
+  let mut next = vec![
+    format!("cr query schema {namespace}/{definition}"),
+    format!("cr docs graph explain {namespace}/{definition} --full"),
+  ];
+  if data.code.truncated || data.code.tree.is_none() {
+    next.push(format!("cr query def {namespace}/{definition}"));
+  }
+  if data.examples.truncated {
+    next.push(format!("cr query examples {namespace}/{definition}"));
+  }
+  if data.usages.truncated {
+    next.push(format!("cr query usages {namespace}/{definition}"));
+  }
+
+  Ok(SemanticQueryEnvelope {
+    schema_version: 1,
+    command: "query.context",
+    revision,
+    data,
+    diagnostics,
+    next,
+  })
+}
+
+fn build_special_builtin_context(
+  snapshot: &snapshot::Snapshot,
+  namespace: &str,
+  definition: &str,
+  meta: SpecialBuiltinQueryMeta,
+  opts: &QueryContextCommand,
+) -> Result<SemanticQueryEnvelope<DefinitionContextData>, String> {
+  let schema = format_query_schema(meta.schema.as_ref(), true).trim().to_owned();
+  let examples_fingerprint = meta
+    .examples
+    .iter()
+    .map(|example| example.format_one_liner().unwrap_or_default())
+    .collect::<Vec<_>>()
+    .join("\n");
+  let revision = semantic_revision(&[meta.doc, &schema, &examples_fingerprint, meta.cirru_note]);
+  let tags = meta.semantic_tags.iter().map(|tag| (*tag).to_owned()).collect::<Vec<_>>();
+  let intentional_ffi = meta.semantic_tags.contains(&"js-ffi");
+  let (doc, doc_truncated) = truncate_chars(meta.doc, (opts.budget / 6).clamp(160, 1200));
+  let usages = context_usages(snapshot, namespace, definition, opts.deps, opts.usage_limit);
+  let examples = build_context_examples(&meta.examples, opts.example_limit, opts.budget / 4)?;
+  let id = format!("{namespace}/{definition}");
+  let mut diagnostics = vec![];
+  let docs = context_docs(&id, &mut diagnostics);
+
+  let metadata_ready = prepare_program_for_type_query(snapshot).is_ok();
+  let static_methods = if metadata_ready {
+    context_methods(meta.schema.as_ref(), opts.budget / 3)
+  } else {
+    None
+  };
+  let data = DefinitionContextData {
+    id,
+    uri: format!("calcit://definition/{namespace}/{definition}"),
+    source: "core-builtin".to_owned(),
+    kind: "proc".to_owned(),
+    coverage: if intentional_ffi { "intentional-dynamic" } else { "partial" }.to_owned(),
+    doc: Some(doc),
+    doc_truncated,
+    tags: tags.clone(),
+    schema: Some(schema),
+    features: tags,
+    code: ContextCode {
+      root: "code",
+      nodes: 0,
+      cirru: meta.cirru_note.to_owned(),
+      tree: None,
+      truncated: false,
+    },
+    examples,
+    dependencies: ContextCollection::new(0, vec![]),
+    usages,
+    docs,
+    static_methods,
+  };
+  if intentional_ffi {
+    diagnostics.insert(
+      0,
+      ContextDiagnostic {
+        code: "I_DYNAMIC_TYPE_INTENTIONAL".to_owned(),
+        phase: "static-analysis",
+        severity: "info",
+        message: "dynamic values are intentional at this JS FFI boundary".to_owned(),
+        path: Some("schema".to_owned()),
+        intent: Some("intentional-js-ffi".to_owned()),
+      },
+    );
+  }
+
+  Ok(SemanticQueryEnvelope {
+    schema_version: 1,
+    command: "query.context",
+    revision,
+    data,
+    diagnostics,
+    next: vec![
+      format!("cr query def {namespace}/{definition}"),
+      format!("cr query examples {namespace}/{definition}"),
+    ],
+  })
+}
+
+fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>) -> String {
+  let data = &envelope.data;
+  let mut out = String::new();
+  let _ = writeln!(&mut out, "Definition: {}", data.id);
+  let _ = writeln!(&mut out, "Resource: {}", data.uri);
+  let _ = writeln!(&mut out, "Revision: {}", envelope.revision);
+  let _ = writeln!(&mut out, "Source: {}", data.source);
+  let _ = writeln!(&mut out, "Kind: {}", data.kind);
+  let _ = writeln!(&mut out, "Type coverage: {}", data.coverage);
+  let _ = writeln!(
+    &mut out,
+    "Tags: {}",
+    if data.tags.is_empty() {
+      "-".to_owned()
+    } else {
+      data.tags.iter().map(|tag| format!(":{tag}")).collect::<Vec<_>>().join(" ")
+    }
+  );
+  let _ = writeln!(
+    &mut out,
+    "Features: {}",
+    if data.features.is_empty() {
+      "-".to_owned()
+    } else {
+      data
+        .features
+        .iter()
+        .map(|feature| format!(":{feature}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+    }
+  );
+
+  let _ = writeln!(&mut out, "\nDoc:");
+  if let Some(doc) = &data.doc {
+    for line in doc.lines() {
+      let _ = writeln!(&mut out, "  {line}");
+    }
+    if data.doc_truncated {
+      let _ = writeln!(&mut out, "  (truncated)");
+    }
+  } else {
+    let _ = writeln!(&mut out, "  -");
+  }
+
+  let _ = writeln!(&mut out, "\nSchema:");
+  if let Some(schema) = &data.schema {
+    for line in schema.lines() {
+      let _ = writeln!(&mut out, "  {line}");
+    }
+  } else {
+    let _ = writeln!(&mut out, "  :dynamic (no explicit schema)");
+  }
+
+  let _ = writeln!(
+    &mut out,
+    "\nCode preview: {} node(s){}",
+    data.code.nodes,
+    if data.code.truncated { " (truncated)" } else { "" }
+  );
+  for line in data.code.cirru.lines() {
+    let _ = writeln!(&mut out, "  {line}");
+  }
+
+  let _ = writeln!(
+    &mut out,
+    "\nExamples: {}/{}{}",
+    data.examples.returned,
+    data.examples.total,
+    if data.examples.truncated { " (truncated)" } else { "" }
+  );
+  for example in &data.examples.items {
+    let _ = writeln!(
+      &mut out,
+      "  [{}]{}",
+      example.index,
+      if example.truncated { " (truncated)" } else { "" }
+    );
+    for line in example.cirru.lines() {
+      let _ = writeln!(&mut out, "    {line}");
+    }
+  }
+
+  let _ = writeln!(
+    &mut out,
+    "\nDirect dependencies: {}/{}{}",
+    data.dependencies.returned,
+    data.dependencies.total,
+    if data.dependencies.truncated { " (truncated)" } else { "" }
+  );
+  for dependency in &data.dependencies.items {
+    let _ = writeln!(&mut out, "  - {} [{}]", dependency.id, dependency.source);
+  }
+
+  let _ = writeln!(
+    &mut out,
+    "\nUsages: {}/{}{}",
+    data.usages.returned,
+    data.usages.total,
+    if data.usages.truncated { " (truncated)" } else { "" }
+  );
+  for usage in &data.usages.items {
+    let paths = if usage.paths.is_empty() {
+      "-".to_owned()
+    } else {
+      usage.paths.join(", ")
+    };
+    let _ = writeln!(&mut out, "  - {} [{}:{}] @ {}", usage.id, usage.source, usage.area, paths);
+  }
+
+  let _ = writeln!(
+    &mut out,
+    "\nRelated docs: {}/{}{}",
+    data.docs.returned,
+    data.docs.total,
+    if data.docs.truncated { " (truncated)" } else { "" }
+  );
+  for doc in &data.docs.items {
+    let title = doc.title.as_deref().unwrap_or("untitled");
+    let summary = doc.summary.as_deref().map(|summary| format!(" — {summary}")).unwrap_or_default();
+    let _ = writeln!(&mut out, "  - {}: {} ({}){}", doc.id, title, doc.path, summary);
+  }
+
+  let _ = writeln!(&mut out, "\nStatic methods:");
+  match &data.static_methods {
+    Some(methods) => {
+      let _ = writeln!(
+        &mut out,
+        "  {}/{}{}",
+        methods.returned,
+        methods.total,
+        if methods.truncated { " (truncated)" } else { "" }
+      );
+      for method in &methods.items {
+        let _ = writeln!(&mut out, "  - {} ({})", method.name, method.origin);
+      }
+    }
+    None => {
+      let _ = writeln!(&mut out, "  unknown");
+    }
+  }
+
+  let _ = writeln!(&mut out, "\nDiagnostics: {}", envelope.diagnostics.len());
+  for diagnostic in &envelope.diagnostics {
+    let location = diagnostic.path.as_deref().map(|path| format!(" @ {path}")).unwrap_or_default();
+    let intent = diagnostic
+      .intent
+      .as_deref()
+      .map(|intent| format!(" [{intent}]"))
+      .unwrap_or_default();
+    let _ = writeln!(
+      &mut out,
+      "  - {} {}{}{}: {}",
+      diagnostic.severity, diagnostic.code, intent, location, diagnostic.message
+    );
+  }
+
+  if !envelope.next.is_empty() {
+    let _ = writeln!(&mut out, "\nNext:");
+    for command in &envelope.next {
+      let _ = writeln!(&mut out, "  - {command}");
+    }
+  }
+  out
+}
+
+fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), String> {
+  if opts.budget < 512 {
+    return Err("Context budget must be at least 512 characters".to_owned());
+  }
+  let format = parse_query_render_format(&opts.format)?;
+  let (namespace, requested_definition) = parse_target(&opts.target)?;
+  let resolved_input = calcit::resolve_snapshot_path_alias(Path::new(input_path));
+  let snapshot = if resolved_input.exists() {
+    load_snapshot(input_path)?
+  } else if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
+    load_core_snapshot()?
+  } else {
+    return Err(format!("{} does not exist", resolved_input.display()));
+  };
+  let file = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace `{namespace}` not found"))?;
+
+  let envelope = if !file.defs.contains_key(requested_definition) {
+    if let Some(meta) = lookup_special_builtin_query_meta(namespace, requested_definition)? {
+      build_special_builtin_context(&snapshot, namespace, requested_definition, meta, opts)?
+    } else {
+      let lookup = resolve_definition_lookup(namespace, requested_definition, file.defs.keys().map(|name| name.as_str()), true)?;
+      if let Some(warning) = lookup.warning.as_deref() {
+        print_cli_warning_block(warning);
+      }
+      let entry = file.defs.get(&lookup.resolved).expect("resolved definition exists");
+      build_regular_context(&snapshot, namespace, &lookup.resolved, entry, opts)?
+    }
+  } else {
+    let entry = file.defs.get(requested_definition).expect("checked definition exists");
+    build_regular_context(&snapshot, namespace, requested_definition, entry, opts)?
+  };
+
+  match format {
+    QueryRenderFormat::Human => print!("{}", render_context_human(&envelope)),
+    QueryRenderFormat::Json => println!(
+      "{}",
+      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode context query result: {error}"))?
+    ),
+  }
+  Ok(())
 }
 
 /// Load a module silently (without println)
@@ -405,7 +2497,7 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   load_snapshot_with_entry(input_path, None)
 }
 
-fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
+fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   let resolved_input_path = calcit::resolve_snapshot_path_alias(Path::new(input_path));
   let resolved_input_str = resolved_input_path.to_string_lossy().to_string();
   if !resolved_input_path.exists() {
@@ -419,7 +2511,39 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
     eprintln!("{e}");
     format!("Failed to parse file '{}'", resolved_input_path.display())
   })?;
-  let mut snapshot = snapshot::load_snapshot_data(&data, &resolved_input_str)?;
+  snapshot::load_snapshot_data(&data, &resolved_input_str)
+}
+
+/// Prefer the project Snapshot for metadata-only queries. Dependencies and
+/// core are loaded only when the requested namespace is not local.
+fn load_snapshot_for_namespace(input_path: &str, namespace: &str) -> Result<snapshot::Snapshot, String> {
+  let main_snapshot = load_main_snapshot(input_path)?;
+  if main_snapshot.files.contains_key(namespace) {
+    return Ok(main_snapshot);
+  }
+  if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
+    return load_core_snapshot();
+  }
+  load_snapshot(input_path)
+}
+
+fn load_snapshot_for_search(input_path: &str, options: &SearchCommonOpts) -> Result<snapshot::Snapshot, String> {
+  if let Some(entry) = options.entry {
+    return load_snapshot_with_entry(input_path, Some(entry));
+  }
+  if let Some(filter) = options.filter {
+    let namespace = filter.split_once('/').map(|(namespace, _)| namespace).unwrap_or(filter);
+    return load_snapshot_for_namespace(input_path, namespace);
+  }
+  load_snapshot(input_path)
+}
+
+pub(crate) fn load_snapshot_for_static_analysis(input_path: &str) -> Result<snapshot::Snapshot, String> {
+  load_snapshot(input_path)
+}
+
+fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
+  let mut snapshot = load_main_snapshot(input_path)?;
 
   let mut modules_to_load = snapshot.configs.modules.clone();
   if let Some(entry_name) = entry {
@@ -521,7 +2645,7 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
 
 /// Handle `query ns <namespace>` - show ns details
 fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
@@ -593,7 +2717,7 @@ fn handle_host_procs(opts: &QueryHostProcsCommand) -> Result<(), String> {
 
 fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {
   let namespace = &opts.namespace;
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
@@ -657,13 +2781,13 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> 
 }
 
 fn handle_pkg(input_path: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_main_snapshot(input_path)?;
   println!("{}", snapshot.package);
   Ok(())
 }
 
 fn handle_config(input_path: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_main_snapshot(input_path)?;
 
   println!("{}", "Project Configs:".bold());
   println!("  {}: {}", "init_fn".cyan(), snapshot.configs.init_fn);
@@ -838,7 +2962,7 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
 }
 
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
@@ -919,15 +3043,8 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   }
 
   let _ = writeln!(&mut out, "\n{}", "Schema:".bold());
-  if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let schema_str = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
-      Ok(c) => cirru_parser::format(std::slice::from_ref(&c), true.into()).unwrap_or_else(|_| "(failed to format)".to_string()),
-      Err(e) => format!("(schema error: {e})"),
-    };
-    let _ = writeln!(&mut out, "{schema_str}");
-  } else {
-    let _ = writeln!(&mut out, "{}", "(none)".dimmed());
-  }
+  let schema_str = format_query_schema(code_entry.schema.as_ref(), true);
+  let _ = writeln!(&mut out, "{schema_str}");
 
   if !opts.raw {
     let chunk_options = ChunkDisplayOptions {
@@ -970,12 +3087,10 @@ fn cirru_to_json(cirru: &Cirru) -> serde_json::Value {
 }
 
 fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
-  let schema_json = match entry.schema.as_ref() {
-    CalcitTypeAnnotation::Fn(fn_annot) => snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
-      .ok()
-      .map(|c| cirru_to_json(&c)),
-    _ => None,
-  };
+  let schema_json = query_schema_cirru(entry.schema.as_ref(), false)
+    .ok()
+    .flatten()
+    .map(|cirru| cirru_to_json(&cirru));
   let mut tags: Vec<String> = entry.tags.iter().map(|tag| tag.ref_str().to_string()).collect();
   tags.sort();
   serde_json::json!({
@@ -987,12 +3102,21 @@ fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
   })
 }
 
+fn format_example_node(example: &Cirru) -> String {
+  match example {
+    Cirru::Leaf(value) => value.to_string(),
+    Cirru::List(_) => cirru_parser::format(std::slice::from_ref(example), true.into())
+      .map(|text| text.trim().to_owned())
+      .unwrap_or_else(|_| format!("{example:?}")),
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Progressive disclosure commands
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
@@ -1011,7 +3135,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
 
       for (i, example) in meta.examples.iter().enumerate() {
         let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
-        let cirru_str = cirru_parser::format(std::slice::from_ref(example), true.into()).unwrap_or_else(|_| "(failed)".to_string());
+        let cirru_str = format_example_node(example);
         for line in cirru_str.lines().filter(|line| !line.trim().is_empty()) {
           let _ = writeln!(&mut out, "  {line}");
         }
@@ -1051,7 +3175,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     for (i, example) in code_entry.examples.iter().enumerate() {
       let _ = writeln!(&mut out, "{}", format!("[{i}]:").bold());
 
-      let cirru_str = cirru_parser::format(std::slice::from_ref(example), true.into()).unwrap_or_else(|_| "(failed)".to_string());
+      let cirru_str = format_example_node(example);
       for line in cirru_str.lines().filter(|l| !l.trim().is_empty()) {
         let _ = writeln!(&mut out, "  {line}");
       }
@@ -1073,7 +3197,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
 
 /// Peek definition - show signature/params/doc without full body
 fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
@@ -1138,11 +3262,8 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 
   let _ = writeln!(&mut out, "{} {}", "Examples:".bold(), code_entry.examples.len());
 
-  if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let preview = match snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn()) {
-      Ok(c) => c.format_one_liner()?,
-      Err(e) => format!("(schema error: {e})"),
-    };
+  if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
+    let preview = format_query_schema_oneline(&cirru)?;
     let display = if preview.len() > 120 {
       format!("{}...", &preview[..120])
     } else {
@@ -1159,7 +3280,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 
 /// Show definition schema
 fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
@@ -1171,12 +3292,18 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
   {
     let mut out = String::new();
     if json {
-      let schema_edn = meta
-        .schema
-        .as_function()
-        .map(|annot| annot.to_schema_edn())
-        .unwrap_or(cirru_edn::Edn::Nil);
-      let _ = writeln!(&mut out, "{}", cirru_edn::format(&schema_edn, true)?);
+      let id = format!("{namespace}/{definition}");
+      let schema_fingerprint = format_query_schema(meta.schema.as_ref(), true);
+      println!(
+        "{}",
+        format_schema_query_json(
+          &id,
+          "core-builtin",
+          meta.schema.as_ref(),
+          semantic_revision(&[meta.doc, &schema_fingerprint]),
+        )?
+      );
+      return Ok(());
     } else {
       let _ = writeln!(
         &mut out,
@@ -1204,19 +3331,21 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
   let mut out = String::new();
 
   if json {
-    let schema_edn: cirru_edn::Edn = match code_entry.schema.as_ref() {
-      CalcitTypeAnnotation::Dynamic => cirru_edn::Edn::Nil,
-      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
-      _ => cirru_edn::Edn::Nil,
-    };
-    let _ = writeln!(&mut out, "{}", cirru_edn::format(&schema_edn, true)?);
-    emit_cli_output(&out, render_to_stderr);
+    let id = format!("{namespace}/{resolved_definition}");
+    println!(
+      "{}",
+      format_schema_query_json(
+        &id,
+        &namespace_source(&snapshot, namespace),
+        code_entry.schema.as_ref(),
+        snapshot::definition_revision(code_entry)?,
+      )?
+    );
     return Ok(());
   }
 
-  if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref() {
-    let cirru = snapshot::schema_edn_to_cirru(&fn_annot.to_wrapped_schema_edn())?;
-    let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), cirru.format_one_liner()?.dimmed());
+  if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
+    let _ = writeln!(&mut out, "{} {}", "Schema:".bold(), format_query_schema_oneline(&cirru)?.dimmed());
   } else {
     let _ = writeln!(&mut out, "{} -", "Schema:".bold());
   }
@@ -1258,8 +3387,7 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset
         ));
       }
 
-      if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref()
-        && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
+      if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false)
         && find_symbol_in_cirru(&schema, symbol)
       {
         let coords = find_symbol_coords(&schema, symbol);
@@ -1346,6 +3474,53 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset
   Ok(())
 }
 
+fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, target_def: &str, include_deps: bool) -> RefResults {
+  let mut usages: RefResults = vec![]; // (ns, def, context, coords, source)
+
+  for (ns_name, file_data) in &snapshot.files {
+    if !include_deps && (ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.")) {
+      continue;
+    }
+
+    let imports_target = check_ns_imports(&file_data.ns.code, target_ns, target_def);
+
+    for (def_name, code_entry) in &file_data.defs {
+      if ns_name == target_ns && def_name == target_def {
+        continue;
+      }
+
+      let code_symbol = if imports_target || ns_name == target_ns {
+        target_def.to_owned()
+      } else {
+        format!("{target_ns}/{target_def}")
+      };
+
+      if find_symbol_in_cirru(&code_entry.code, &code_symbol) {
+        let context = get_symbol_context_cirru(&code_entry.code, &code_symbol);
+        let coords = find_symbol_coords(&code_entry.code, &code_symbol);
+        usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
+      }
+
+      if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false) {
+        let schema_symbol = if imports_target || ns_name == target_ns {
+          target_def.to_owned()
+        } else {
+          format!("{target_ns}/{target_def}")
+        };
+
+        if find_symbol_in_cirru(&schema, &schema_symbol) {
+          let context = get_symbol_context_cirru(&schema, &schema_symbol);
+          let coords = find_symbol_coords(&schema, &schema_symbol);
+          usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
+        }
+      }
+    }
+  }
+
+  usages.sort_by(|left, right| (&left.0, &left.1, left.4).cmp(&(&right.0, &right.1, right.4)));
+  usages
+}
+
 /// Find usages of a specific definition
 fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_deps: bool, detail_offset: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
@@ -1366,61 +3541,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     .get(resolved_target_def.as_str())
     .expect("resolved definition exists");
 
-  let mut usages: RefResults = vec![]; // (ns, def, context, coords, source)
-
-  for (ns_name, file_data) in &snapshot.files {
-    if !include_deps && (ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.")) {
-      continue;
-    }
-
-    let imports_target = check_ns_imports(&file_data.ns.code, target_ns, &resolved_target_def);
-
-    for (def_name, code_entry) in &file_data.defs {
-      if ns_name == target_ns && def_name == &resolved_target_def {
-        continue;
-      }
-
-      let found_in_code = if imports_target || ns_name == target_ns {
-        find_symbol_in_cirru(&code_entry.code, &resolved_target_def)
-      } else {
-        let qualified = format!("{target_ns}/{resolved_target_def}");
-        find_symbol_in_cirru(&code_entry.code, &qualified)
-      };
-
-      if found_in_code {
-        let context = get_symbol_context_cirru(&code_entry.code, &resolved_target_def);
-        let coords = if imports_target || ns_name == target_ns {
-          find_symbol_coords(&code_entry.code, &resolved_target_def)
-        } else {
-          let qualified = format!("{target_ns}/{resolved_target_def}");
-          find_symbol_coords(&code_entry.code, &qualified)
-        };
-        usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
-      }
-
-      if let CalcitTypeAnnotation::Fn(fn_annot) = code_entry.schema.as_ref()
-        && let Ok(schema) = snapshot::schema_edn_to_cirru(&fn_annot.to_schema_edn())
-      {
-        let found_in_schema = if imports_target || ns_name == target_ns {
-          find_symbol_in_cirru(&schema, &resolved_target_def)
-        } else {
-          let qualified = format!("{target_ns}/{resolved_target_def}");
-          find_symbol_in_cirru(&schema, &qualified)
-        };
-
-        if found_in_schema {
-          let context = get_symbol_context_cirru(&schema, &resolved_target_def);
-          let coords = if imports_target || ns_name == target_ns {
-            find_symbol_coords(&schema, &resolved_target_def)
-          } else {
-            let qualified = format!("{target_ns}/{resolved_target_def}");
-            find_symbol_coords(&schema, &qualified)
-          };
-          usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
-        }
-      }
-    }
-  }
+  let usages = collect_usages_from_snapshot(&snapshot, target_ns, &resolved_target_def, include_deps);
 
   let mut out = String::new();
   let _ = writeln!(&mut out, "{} {}", "Usages:".bold(), usages.len());
@@ -1680,9 +3801,122 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
   true
 }
 
+fn snapshot_code_path(path: &[usize]) -> String {
+  if path.is_empty() {
+    "code".to_owned()
+  } else {
+    format!("code{}", format_path(path))
+  }
+}
+
+fn format_search_results_json(
+  command: &'static str,
+  pattern: &str,
+  pattern_is_json: bool,
+  start_path: Option<&str>,
+  common_opts: &SearchCommonOpts,
+  snapshot: &snapshot::Snapshot,
+  results: &SearchResults,
+) -> Result<String, String> {
+  let total_matches = results.iter().map(|(_, _, matches)| matches.len()).sum::<usize>();
+  let mut cursor_index = 0_usize;
+  let definitions = results
+    .iter()
+    .map(|(namespace, definition, matches)| {
+      serde_json::json!({
+        "id": format!("{namespace}/{definition}"),
+        "namespace": namespace,
+        "name": definition,
+        "match_count": matches.len(),
+        "matches": matches.iter().map(|(path, node)| {
+          let current_cursor_index = cursor_index;
+          cursor_index += 1;
+          let parent_path = common_opts.parent_path.then(|| {
+            if path.is_empty() {
+              None
+            } else {
+              Some(snapshot_code_path(&path[..path.len() - 1]))
+            }
+          }).flatten();
+          serde_json::json!({
+            "cursor_index": current_cursor_index,
+            "path": snapshot_code_path(path),
+            "parent_path": parent_path,
+            "tree": cirru_to_json_value(node),
+          })
+        }).collect::<Vec<_>>(),
+      })
+    })
+    .collect::<Vec<_>>();
+
+  let mut revision_parts = vec![
+    command.to_owned(),
+    pattern.to_owned(),
+    common_opts.filter.unwrap_or_default().to_owned(),
+    start_path.unwrap_or_default().to_owned(),
+  ];
+  for (namespace, definition, _) in results {
+    let entry = snapshot
+      .files
+      .get(namespace)
+      .and_then(|file| file.defs.get(definition))
+      .ok_or_else(|| format!("Definition disappeared while formatting search results: {namespace}/{definition}"))?;
+    revision_parts.push(format!("{namespace}/{definition}:{}", snapshot::definition_revision(entry)?));
+  }
+  let revision_refs = revision_parts.iter().map(String::as_str).collect::<Vec<_>>();
+
+  let envelope = serde_json::json!({
+    "schema_version": 1,
+    "command": command,
+    "revision": semantic_revision(&revision_refs),
+    "data": {
+      "pattern": pattern,
+      "filters": {
+        "definition": common_opts.filter,
+        "exact": !common_opts.loose,
+        "regex": common_opts.regex,
+        "max_depth": common_opts.max_depth,
+        "start_path": start_path,
+        "entry": common_opts.entry,
+        "pattern_is_json": pattern_is_json,
+      },
+      "summary": {
+        "definitions": results.len(),
+        "matches": total_matches,
+      },
+      "definitions": definitions,
+    },
+    "diagnostics": [],
+  });
+  serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode search JSON: {error}"))
+}
+
+fn maybe_set_cursor_from_search_results(
+  input_path: &str,
+  results: &SearchResults,
+  selected_index: Option<usize>,
+) -> Result<(), String> {
+  let Some(selected_index) = selected_index else {
+    return Ok(());
+  };
+  let total_matches = results.iter().map(|(_, _, matches)| matches.len()).sum::<usize>();
+  let mut current_index = 0_usize;
+  for (namespace, definition, matches) in results {
+    for (path, _) in matches {
+      if current_index == selected_index {
+        return set_cursor_from_query_match(input_path, &format!("{namespace}/{definition}"), path.clone(), selected_index);
+      }
+      current_index += 1;
+    }
+  }
+  Err(format!(
+    "Search cursor index {selected_index} is out of range; query returned {total_matches} match(es)."
+  ))
+}
+
 /// Search for leaf nodes (strings) in a definition
 fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>, common_opts: &SearchCommonOpts) -> Result<(), String> {
-  let snapshot = load_snapshot_with_entry(input_path, common_opts.entry)?;
+  let snapshot = load_snapshot_for_search(input_path, common_opts)?;
 
   // Parse start_path if provided
   let parsed_start_path: Option<Vec<usize>> = if let Some(path_str) = start_path {
@@ -1770,12 +4004,22 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
     }
   }
 
+  all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
+
+  maybe_set_cursor_from_search_results(input_path, &all_results, common_opts.set_cursor)?;
+
+  if common_opts.format == QueryRenderFormat::Json {
+    println!(
+      "{}",
+      format_search_results_json("query.search", pattern, false, start_path, common_opts, &snapshot, &all_results)?
+    );
+    return Ok(());
+  }
+
   // Print results grouped by namespace/definition
   if all_results.is_empty() {
     println!("{}", "No matches found.".yellow());
   } else {
-    all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
-
     let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
     println!(
       "{} {} match(es) found in {} definition(s):\n",
@@ -1784,6 +4028,7 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
       all_results.len()
     );
 
+    let mut definition_offset = 0_usize;
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
       print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
@@ -1795,15 +4040,25 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
         let total = results.len();
         let (start, end) = detailed_window(common_opts.detail_offset, total);
         let detailed_count = end.saturating_sub(start);
-        let compressed_count = total.saturating_sub(detailed_count);
 
-        for (path, node) in results.iter().skip(start).take(detailed_count) {
+        for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
+          let cursor_index = definition_offset + local_index;
           if path.is_empty() {
             let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
             if truncated {
-              println!("    {} {} ⟪…⟫", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             } else {
-              println!("    {} {}", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             }
           } else {
             let path_str = format_path(path);
@@ -1814,22 +4069,53 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
               .map(|(text, truncated)| (text.as_str(), *truncated))
               .unwrap_or((expr_preview.as_str(), expr_truncated));
             if display_truncated {
-              println!("    {} {} ⟪…⟫", path_str.cyan(), display_preview);
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                path_str.cyan(),
+                display_preview
+              );
             } else {
-              println!("    {} {}", path_str.cyan(), display_preview);
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                path_str.cyan(),
+                display_preview
+              );
             }
             // Print parent path (stripped last index) when --parent-path is requested
-            if common_opts.parent_path && path.len() > 1 {
-              let parent_path_str = format_path(&path[..path.len() - 1]);
+            if common_opts.parent_path && !path.is_empty() {
+              let parent_path_str = snapshot_code_path(&path[..path.len() - 1]);
               println!("       {} {}", "parent:".dimmed(), parent_path_str.dimmed());
             }
           }
         }
 
-        if compressed_count > 0 {
-          println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
+        if start > 0 {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {start} matches compressed before window",
+              definition_offset,
+              definition_offset + start - 1
+            )
+            .dimmed()
+          );
+        }
+        if end < total {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {} matches compressed after window",
+              definition_offset + end,
+              definition_offset + total - 1,
+              total - end
+            )
+            .dimmed()
+          );
         }
       }
+      definition_offset += results.len();
       println!();
     }
 
@@ -1850,8 +4136,17 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
 }
 
 /// Search for structural expressions across project or in filtered scope
-fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: &SearchCommonOpts) -> Result<(), String> {
-  let snapshot = load_snapshot_with_entry(input_path, common_opts.entry)?;
+fn handle_search_expr(
+  input_path: &str,
+  pattern: &str,
+  json: bool,
+  start_path: Option<&str>,
+  common_opts: &SearchCommonOpts,
+) -> Result<(), String> {
+  let snapshot = load_snapshot_for_search(input_path, common_opts)?;
+  let parsed_start_path = start_path
+    .map(|path| parse_path(path).map_err(|error| format!("Invalid start path '{path}': {error}")))
+    .transpose()?;
 
   let pattern_node = if json {
     let json_val: serde_json::Value = serde_json::from_str(pattern).map_err(|e| format!("Failed to parse JSON pattern: {e}"))?;
@@ -1900,18 +4195,46 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
         continue;
       }
 
-      let results = search_expr_nodes(&code_entry.code, &pattern_node, common_opts.loose, common_opts.max_depth, &[]);
+      let search_root = if let Some(path) = &parsed_start_path {
+        match navigate_to_path(&code_entry.code, path) {
+          Ok(node) => node,
+          Err(error) => {
+            eprintln!(
+              "{} Failed to navigate to start path in {}/{}: {}",
+              "Warning:".yellow(),
+              ns,
+              def_name,
+              error
+            );
+            continue;
+          }
+        }
+      } else {
+        code_entry.code.clone()
+      };
+      let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
+      let results = search_expr_nodes(&search_root, &pattern_node, common_opts.loose, common_opts.max_depth, base_path);
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }
     }
   }
 
+  all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
+
+  maybe_set_cursor_from_search_results(input_path, &all_results, common_opts.set_cursor)?;
+
+  if common_opts.format == QueryRenderFormat::Json {
+    println!(
+      "{}",
+      format_search_results_json("query.search-expr", pattern, json, start_path, common_opts, &snapshot, &all_results,)?
+    );
+    return Ok(());
+  }
+
   if all_results.is_empty() {
     println!("{}", "No matches found.".yellow());
   } else {
-    all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
-
     let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
     println!(
       "{} {} match(es) found in {} definition(s):\n",
@@ -1920,6 +4243,7 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
       all_results.len()
     );
 
+    let mut definition_offset = 0_usize;
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
       print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
@@ -1930,16 +4254,26 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
         let total = results.len();
         let (start, end) = detailed_window(common_opts.detail_offset, total);
         let detailed_count = end.saturating_sub(start);
-        let compressed_count = total.saturating_sub(detailed_count);
 
-        for (path, node) in results.iter().skip(start).take(detailed_count) {
+        for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
+          let cursor_index = definition_offset + local_index;
           let path_str = format_path(path);
           if path.is_empty() {
             let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
             if truncated {
-              println!("    {} {} ⟪…⟫", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             } else {
-              println!("    {} {}", "(root)".cyan(), content.dimmed());
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                "(root)".cyan(),
+                content.dimmed()
+              );
             }
           } else {
             let ((expr_preview, expr_truncated), parent_previews) =
@@ -1949,17 +4283,49 @@ fn handle_search_expr(input_path: &str, pattern: &str, json: bool, common_opts: 
               .map(|(text, truncated)| (text.as_str(), *truncated))
               .unwrap_or((expr_preview.as_str(), expr_truncated));
             if display_truncated {
-              println!("    {} {} ⟪…⟫", format!("[{path_str}]").cyan(), display_preview);
+              println!(
+                "    {} {} {} ⟪…⟫",
+                format!("[#{cursor_index}]").cyan(),
+                format!("[{path_str}]").cyan(),
+                display_preview
+              );
             } else {
-              println!("    {} {}", format!("[{path_str}]").cyan(), display_preview);
+              println!(
+                "    {} {} {}",
+                format!("[#{cursor_index}]").cyan(),
+                format!("[{path_str}]").cyan(),
+                display_preview
+              );
             }
           }
         }
 
-        if compressed_count > 0 {
-          println!("    {}", format!("{compressed_count} matches compressed outside window").dimmed());
+        if start > 0 {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {start} matches compressed before window",
+              definition_offset,
+              definition_offset + start - 1
+            )
+            .dimmed()
+          );
+        }
+        if end < total {
+          println!(
+            "    {}",
+            format!(
+              "[#{}..#{}] {} matches compressed after window",
+              definition_offset + end,
+              definition_offset + total - 1,
+              total - end
+            )
+            .dimmed()
+          );
         }
       }
+
+      definition_offset += results.len();
 
       println!();
     }
@@ -2148,7 +4514,7 @@ fn matches_exact_structure(node: &Cirru, pattern: &Cirru) -> bool {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn handle_query_path(input_path: &str, opts: &QueryPathCommand) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, &opts.namespace)?;
   let file_data = snapshot
     .files
     .get(opts.namespace.as_str())
@@ -2294,7 +4660,7 @@ fn starts_with_pattern(node_children: &[Cirru], pattern: &[Cirru]) -> bool {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn handle_query_anchors(input_path: &str, opts: &QueryAnchorsCommand) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_for_namespace(input_path, &opts.namespace)?;
   let file_data = snapshot
     .files
     .get(opts.namespace.as_str())

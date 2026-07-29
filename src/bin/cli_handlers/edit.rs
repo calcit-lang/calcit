@@ -13,7 +13,7 @@ use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
   EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand,
   EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
-  EditSplitDefCommand, EditSubcommand, EditTagsCommand,
+  EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
 };
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
@@ -23,14 +23,26 @@ use calcit::snapshot::{
 use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 use colored::Colorize;
+use md5::{Digest, Md5};
 use semver::Version;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, format_path, json_value_to_cirru, parse_input_to_cirru, parse_path, print_cli_warning_block,
+  ERR_CODE_INPUT_REQUIRED, format_path, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, print_cli_warning_block,
   read_code_input, resolve_definition_lookup,
+};
+use super::cursor::{
+  TreeCursorMutation, maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete,
+  maintain_cursor_after_definition_move, maintain_cursor_after_definition_replace, maintain_cursor_after_namespace_delete,
+  maintain_cursor_after_node_move, maintain_cursor_after_split_definition, maintain_cursor_after_tree_mutation,
+  resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
 use super::tips::{Tips, command_guidance_enabled};
 
@@ -64,8 +76,11 @@ pub(crate) fn process_node_with_references(
 }
 
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
-  match &cmd.subcommand {
+  let mut resolved = cmd.clone();
+  resolve_edit_cursor_references(&mut resolved, snapshot_file)?;
+  let result = match &resolved.subcommand {
     EditSubcommand::Format(opts) => handle_format(opts, snapshot_file),
+    EditSubcommand::Transaction(opts) => handle_transaction(opts, snapshot_file),
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
     EditSubcommand::MvDef(opts) => handle_mv_def(opts, snapshot_file),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
@@ -86,6 +101,136 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::RmImport(opts) => handle_rm_import(opts, snapshot_file),
     EditSubcommand::NsDoc(opts) => handle_ns_doc(opts, snapshot_file),
     EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
+  };
+  result?;
+  maintain_cursor_after_edit(&resolved, snapshot_file)
+}
+
+fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) -> Result<(), String> {
+  let target = match &mut cmd.subcommand {
+    EditSubcommand::Def(opts) => Some(&mut opts.target),
+    EditSubcommand::MvDef(opts) => Some(&mut opts.source),
+    EditSubcommand::RmDef(opts) => Some(&mut opts.target),
+    EditSubcommand::Doc(opts) => Some(&mut opts.target),
+    EditSubcommand::Schema(opts) => Some(&mut opts.target),
+    EditSubcommand::Examples(opts) => Some(&mut opts.target),
+    EditSubcommand::AddExample(opts) => Some(&mut opts.target),
+    EditSubcommand::RmExample(opts) => Some(&mut opts.target),
+    EditSubcommand::Tags(opts) => Some(&mut opts.target),
+    EditSubcommand::Cp(opts) => Some(&mut opts.target),
+    EditSubcommand::Mv(opts) => Some(&mut opts.target),
+    EditSubcommand::Rename(opts) => Some(&mut opts.source),
+    EditSubcommand::SplitDef(opts) => Some(&mut opts.target),
+    EditSubcommand::Format(_)
+    | EditSubcommand::Transaction(_)
+    | EditSubcommand::AddNs(_)
+    | EditSubcommand::RmNs(_)
+    | EditSubcommand::Imports(_)
+    | EditSubcommand::AddImport(_)
+    | EditSubcommand::RmImport(_)
+    | EditSubcommand::NsDoc(_)
+    | EditSubcommand::Inc(_) => None,
+  };
+  let active_reference = if target.as_deref().is_some_and(|target| target == "@cursor") {
+    Some(resolve_active_cursor_reference(snapshot_file)?)
+  } else {
+    None
+  };
+  if let Some(target) = target {
+    *target = match &active_reference {
+      Some((active_target, _)) => active_target.clone(),
+      None => resolve_cursor_target_argument(snapshot_file, target)?,
+    };
+  }
+
+  let resolve_path = |target: &str, path: &str| -> Result<String, String> {
+    if path == "@cursor"
+      && let Some((active_target, active_path)) = &active_reference
+    {
+      if active_target != target {
+        return Err(format!(
+          "Cursor target mismatch: cursor points to '{active_target}', but command targets '{target}'."
+        ));
+      }
+      Ok(active_path.clone())
+    } else {
+      resolve_cursor_path_argument(snapshot_file, target, path)
+    }
+  };
+
+  match &mut cmd.subcommand {
+    EditSubcommand::Cp(opts) => {
+      opts.from = resolve_path(&opts.target, &opts.from)?;
+      opts.path = resolve_path(&opts.target, &opts.path)?;
+    }
+    EditSubcommand::Mv(opts) => {
+      opts.from = resolve_path(&opts.target, &opts.from)?;
+      opts.path = resolve_path(&opts.target, &opts.path)?;
+    }
+    EditSubcommand::SplitDef(opts) => {
+      opts.path = resolve_path(&opts.target, &opts.path)?;
+    }
+    _ => {}
+  }
+  Ok(())
+}
+
+fn cursor_insertion_mutation(path: Vec<usize>, at: &str) -> Result<TreeCursorMutation, String> {
+  match at {
+    "before" => Ok(TreeCursorMutation::InsertBefore { path }),
+    "after" => Ok(TreeCursorMutation::InsertAfter { path }),
+    "prepend-child" => Ok(TreeCursorMutation::InsertChild { path }),
+    "append-child" => Ok(TreeCursorMutation::NoPathShift),
+    "replace" => Ok(TreeCursorMutation::Replace { path }),
+    other => Err(format!(
+      "Unsupported position '{other}'. Use: before, after, append-child, prepend-child, replace"
+    )),
+  }
+}
+
+fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
+  match &cmd.subcommand {
+    EditSubcommand::Def(opts) => maintain_cursor_after_definition_replace(snapshot_file, &opts.target),
+    EditSubcommand::MvDef(opts) => maintain_cursor_after_definition_move(snapshot_file, &opts.source, &opts.target),
+    EditSubcommand::RmDef(opts) => maintain_cursor_after_definition_delete(snapshot_file, &opts.target),
+    EditSubcommand::RmNs(opts) => maintain_cursor_after_namespace_delete(snapshot_file, &opts.namespace),
+    EditSubcommand::Cp(opts) => maintain_cursor_after_tree_mutation(
+      snapshot_file,
+      &opts.target,
+      &cursor_insertion_mutation(parse_path(&opts.path)?, &opts.at)?,
+    ),
+    EditSubcommand::Mv(_) => Ok(()),
+    EditSubcommand::Rename(opts) => {
+      let (namespace, _) = parse_target(&opts.source)?;
+      maintain_cursor_after_definition_move(snapshot_file, &opts.source, &format!("{namespace}/{}", opts.new_name))
+    }
+    EditSubcommand::SplitDef(opts) => {
+      let (namespace, _) = parse_target(&opts.target)?;
+      maintain_cursor_after_split_definition(
+        snapshot_file,
+        &opts.target,
+        &parse_path(&opts.path)?,
+        &format!("{namespace}/{}", opts.new_name),
+      )
+    }
+    EditSubcommand::Doc(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
+    EditSubcommand::Schema(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
+    EditSubcommand::Examples(opts) => {
+      maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
+    }
+    EditSubcommand::AddExample(opts) => {
+      maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
+    }
+    EditSubcommand::RmExample(opts) => {
+      maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
+    }
+    EditSubcommand::Tags(opts) if opts.tags.is_some() => {
+      maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
+    }
+    EditSubcommand::Transaction(opts) if !opts.dry_run => {
+      maintain_cursor_after_any_mutation(snapshot_file, "validated after edit transaction")
+    }
+    _ => Ok(()),
   }
 }
 
@@ -102,6 +247,351 @@ fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), S
   fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
 
   println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct TransactionOperationReport {
+  index: usize,
+  args: Vec<String>,
+  stdout: String,
+  stderr: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct TransactionReport {
+  schema_version: u8,
+  command: &'static str,
+  dry_run: bool,
+  changed: bool,
+  original_revision: String,
+  new_revision: String,
+  operations: Vec<TransactionOperationReport>,
+}
+
+struct StagedSnapshot {
+  path: PathBuf,
+  remove_on_drop: bool,
+}
+
+impl Drop for StagedSnapshot {
+  fn drop(&mut self) {
+    if self.remove_on_drop {
+      let _ = fs::remove_file(&self.path);
+    }
+  }
+}
+
+fn snapshot_content_revision(content: &str) -> String {
+  let mut hasher = Md5::new();
+  hasher.update(content.as_bytes());
+  format!("md5:{:x}", hasher.finalize())
+}
+
+fn transaction_edn_arg(value: &cirru_edn::Edn) -> Result<String, String> {
+  match value {
+    cirru_edn::Edn::Str(value) | cirru_edn::Edn::Symbol(value) => Ok(value.to_string()),
+    cirru_edn::Edn::Tag(value) => Ok(format!(":{}", value.ref_str())),
+    cirru_edn::Edn::Bool(value) => Ok(value.to_string()),
+    cirru_edn::Edn::Number(value) => Ok(value.to_string()),
+    cirru_edn::Edn::Nil => Ok("nil".to_string()),
+    cirru_edn::Edn::Quote(code) => {
+      let quoted = Cirru::List(vec![Cirru::leaf("quote"), code.clone()]);
+      cirru_parser::format(
+        std::slice::from_ref(&quoted),
+        cirru_parser::CirruWriterOptions { use_inline: false },
+      )
+      .map_err(|error| format!("Failed to format quoted transaction code argument: {error}"))
+    }
+    other => Err(format!("Transaction arguments must be scalar values or quoted code, got: {other}")),
+  }
+}
+
+fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("Transaction input is empty. Provide a Cirru EDN list of command argument lists (JSON is also accepted).".to_string());
+  }
+
+  let operations = if trimmed.starts_with('[') && !trimmed.starts_with("[]") {
+    serde_json::from_str::<Vec<Vec<String>>>(trimmed)
+      .map_err(|error| format!("Failed to parse transaction JSON as a list of argument lists: {error}"))?
+  } else {
+    let value = cirru_edn::parse(trimmed).map_err(|error| format!("Failed to parse transaction Cirru EDN: {error}"))?;
+    let cirru_edn::Edn::List(outer) = value else {
+      return Err("Transaction Cirru EDN must be a list (`[]`) of command argument lists.".to_string());
+    };
+    outer
+      .0
+      .iter()
+      .enumerate()
+      .map(|(index, operation)| {
+        let cirru_edn::Edn::List(args) = operation else {
+          return Err(format!(
+            "Transaction operation {} must be a list (`[]`) of CLI arguments.",
+            index + 1
+          ));
+        };
+        args.0.iter().map(transaction_edn_arg).collect::<Result<Vec<_>, _>>()
+      })
+      .collect::<Result<Vec<_>, _>>()?
+  };
+
+  if operations.is_empty() {
+    return Err("Transaction must contain at least one operation.".to_string());
+  }
+  for (index, operation) in operations.iter().enumerate() {
+    let Some(group) = operation.first().map(String::as_str) else {
+      return Err(format!("Transaction operation {} is empty.", index + 1));
+    };
+    if !matches!(group, "edit" | "tree" | "config") {
+      return Err(format!(
+        "Transaction operation {} starts with unsupported command group '{group}'. Only edit, tree, and config mutations are allowed.",
+        index + 1
+      ));
+    }
+    if group == "edit" && operation.get(1).is_some_and(|subcommand| subcommand == "transaction") {
+      return Err(format!(
+        "Transaction operation {} cannot contain a nested edit transaction.",
+        index + 1
+      ));
+    }
+    let Some(subcommand) = operation.get(1).map(String::as_str) else {
+      return Err(format!(
+        "Transaction operation {} is missing a subcommand after '{group}'.",
+        index + 1
+      ));
+    };
+    let supported = match group {
+      "edit" => matches!(
+        subcommand,
+        "format"
+          | "def"
+          | "mv-def"
+          | "rm-def"
+          | "doc"
+          | "schema"
+          | "examples"
+          | "add-example"
+          | "rm-example"
+          | "tags"
+          | "add-ns"
+          | "rm-ns"
+          | "imports"
+          | "add-import"
+          | "rm-import"
+          | "ns-doc"
+          | "cp"
+          | "mv"
+          | "rename"
+          | "split-def"
+      ),
+      "tree" => matches!(
+        subcommand,
+        "rewrite"
+          | "search-replace"
+          | "batch-delete"
+          | "replace"
+          | "replace-leaf"
+          | "delete"
+          | "insert-before"
+          | "insert-after"
+          | "insert-child"
+          | "append-child"
+          | "swap-next"
+          | "swap-prev"
+          | "unwrap"
+          | "raise"
+          | "wrap"
+      ),
+      "config" => matches!(subcommand, "version" | "set" | "add-module" | "rm-module"),
+      _ => false,
+    };
+    if !supported {
+      return Err(format!(
+        "Transaction operation {} uses unsupported staged mutation '{group} {subcommand}'. Read-only commands and edits with external side effects (such as `edit inc`) must run outside the transaction.",
+        index + 1
+      ));
+    }
+    if group == "config" && subcommand == "version" && operation.len() < 3 {
+      return Err(format!(
+        "Transaction operation {} uses read-only `config version`; provide a version or patch/minor/major value to mutate the staged snapshot.",
+        index + 1
+      ));
+    }
+  }
+  Ok(operations)
+}
+
+fn create_staged_snapshot(snapshot_file: &Path, original_content: &str) -> Result<StagedSnapshot, String> {
+  let parent = snapshot_file.parent().unwrap_or_else(|| Path::new("."));
+  let file_name = snapshot_file.file_name().and_then(|name| name.to_str()).unwrap_or("calcit.cirru");
+  let original_permissions = fs::metadata(snapshot_file)
+    .map_err(|error| format!("Failed to read permissions for snapshot '{}': {error}", snapshot_file.display()))?
+    .permissions();
+  let nonce = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map_err(|error| format!("System clock is before UNIX epoch: {error}"))?
+    .as_nanos();
+
+  for attempt in 0..32_u8 {
+    let path = parent.join(format!(".{file_name}.transaction-{}-{nonce}-{attempt}", std::process::id()));
+    match OpenOptions::new().write(true).create_new(true).open(&path) {
+      Ok(mut file) => {
+        file
+          .write_all(original_content.as_bytes())
+          .map_err(|error| format!("Failed to initialize staged snapshot '{}': {error}", path.display()))?;
+        file
+          .sync_all()
+          .map_err(|error| format!("Failed to flush staged snapshot '{}': {error}", path.display()))?;
+        fs::set_permissions(&path, original_permissions.clone())
+          .map_err(|error| format!("Failed to preserve permissions on staged snapshot '{}': {error}", path.display()))?;
+        return Ok(StagedSnapshot {
+          path,
+          remove_on_drop: true,
+        });
+      }
+      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+      Err(error) => return Err(format!("Failed to create staged snapshot in '{}': {error}", parent.display())),
+    }
+  }
+  Err(format!(
+    "Failed to allocate a unique staged snapshot path in '{}'.",
+    parent.display()
+  ))
+}
+
+fn run_staged_transaction_with<F>(
+  snapshot_file: &Path,
+  operations: &[Vec<String>],
+  expected_revision: Option<&str>,
+  dry_run: bool,
+  mut run_operation: F,
+) -> Result<TransactionReport, String>
+where
+  F: FnMut(&Path, usize, &[String]) -> Result<TransactionOperationReport, String>,
+{
+  let original_content =
+    fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read snapshot '{}': {error}", snapshot_file.display()))?;
+  let original_revision = snapshot_content_revision(&original_content);
+  if let Some(expected) = expected_revision
+    && expected != original_revision
+  {
+    return Err(format!(
+      "Snapshot revision mismatch: expected '{expected}', current revision is '{original_revision}'. Re-run the query and rebuild the transaction."
+    ));
+  }
+
+  let mut staged = create_staged_snapshot(snapshot_file, &original_content)?;
+  let mut operation_reports = Vec::with_capacity(operations.len());
+  for (index, operation) in operations.iter().enumerate() {
+    operation_reports.push(run_operation(&staged.path, index, operation)?);
+  }
+
+  let staged_path = staged.path.to_string_lossy();
+  let staged_snapshot = load_snapshot(&staged_path)?;
+  let staged_content = render_snapshot_content(&staged_snapshot)?;
+  fs::write(&staged.path, &staged_content)
+    .map_err(|error| format!("Failed to finalize staged snapshot '{}': {error}", staged.path.display()))?;
+  OpenOptions::new()
+    .read(true)
+    .open(&staged.path)
+    .and_then(|file| file.sync_all())
+    .map_err(|error| format!("Failed to flush staged snapshot '{}': {error}", staged.path.display()))?;
+
+  let new_revision = snapshot_content_revision(&staged_content);
+  let changed = original_content != staged_content;
+
+  let current_content =
+    fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to re-read snapshot '{}': {error}", snapshot_file.display()))?;
+  let current_revision = snapshot_content_revision(&current_content);
+  if current_revision != original_revision {
+    return Err(format!(
+      "Snapshot changed while transaction was running: started at '{original_revision}', now '{current_revision}'. No transaction changes were written."
+    ));
+  }
+
+  if !dry_run && changed {
+    fs::rename(&staged.path, snapshot_file).map_err(|error| {
+      format!(
+        "Failed to atomically replace snapshot '{}' with staged file '{}': {error}",
+        snapshot_file.display(),
+        staged.path.display()
+      )
+    })?;
+    staged.remove_on_drop = false;
+  }
+
+  Ok(TransactionReport {
+    schema_version: 1,
+    command: "edit.transaction",
+    dry_run,
+    changed,
+    original_revision,
+    new_revision,
+    operations: operation_reports,
+  })
+}
+
+fn run_transaction_child(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
+  let executable = std::env::current_exe().map_err(|error| format!("Failed to locate current cr executable: {error}"))?;
+  let output = Command::new(&executable)
+    .arg("--tips-level")
+    .arg("none")
+    .env("CALCIT_CURSOR_MAINTENANCE", "disabled")
+    .arg(stage_path)
+    .args(args)
+    .output()
+    .map_err(|error| format!("Failed to run transaction operation {} ({args:?}): {error}", index + 1))?;
+  let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+  let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+  if !output.status.success() {
+    return Err(format!(
+      "Transaction operation {} failed: {}\nstdout:\n{}\nstderr:\n{}",
+      index + 1,
+      args.join(" "),
+      stdout.trim_end(),
+      stderr.trim_end()
+    ));
+  }
+  Ok(TransactionOperationReport {
+    index,
+    args: args.to_vec(),
+    stdout,
+    stderr,
+  })
+}
+
+fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Result<(), String> {
+  if !matches!(opts.format.as_str(), "human" | "json") {
+    return Err(format!("Unsupported transaction format '{}'. Expected human or json.", opts.format));
+  }
+  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(
+    "Transaction input required: use --file, --code, or pipe a Cirru EDN list of argument lists via stdin (JSON is also accepted)",
+  )?;
+  let operations = parse_transaction_operations(&raw)?;
+  let report = run_staged_transaction_with(
+    Path::new(snapshot_file),
+    &operations,
+    opts.expect_revision.as_deref(),
+    opts.dry_run,
+    run_transaction_child,
+  )?;
+
+  if opts.format == "json" {
+    println!(
+      "{}",
+      serde_json::to_string(&report).map_err(|error| format!("Failed to serialize transaction result: {error}"))?
+    );
+  } else {
+    let action = if opts.dry_run { "Validated" } else { "Applied" };
+    println!("{} {action} {} transaction operation(s)", "✓".green(), report.operations.len());
+    println!("  revision: {} -> {}", report.original_revision, report.new_revision);
+    println!("  changed: {}", report.changed);
+    for operation in &report.operations {
+      println!("  {}. {}", operation.index + 1, operation.args.join(" "));
+    }
+  }
   Ok(())
 }
 
@@ -282,20 +772,22 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
     }
     CirruEditStrategy::Insert => {
       lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
-      lines.push(format!("Try: cr tree insert-before '{target}' -p '<path>' -e '<node>'"));
+      lines.push(format!("Try: cr tree insert-before '{target}' --path '<path>' --code '<node>'"));
       lines.push(format!(
-        "Or: cr tree insert-after '{target}' -p '<path>' -e '<node>' / cr tree append-child '{target}' -p '<path>' -e '<node>'"
+        "Or: cr tree insert-after '{target}' --path '<path>' --code '<node>' / cr tree append-child '{target}' --path '<path>' --code '<node>'"
       ));
     }
     CirruEditStrategy::Delete => {
       lines.push("Most differences are removals. Prefer deleting or lifting nodes from the existing tree.".to_string());
-      lines.push(format!("Try: cr tree delete '{target}' -p '<path>'"));
-      lines.push(format!("Or: cr tree raise '{target}' -p '<child-path>'"));
+      lines.push(format!("Try: cr tree delete '{target}' --path '<path>'"));
+      lines.push(format!("Or: cr tree raise '{target}' --path '<child-path>'"));
     }
     CirruEditStrategy::Rewrite => {
       lines.push("The trees are still close, but the change mixes insert/remove/replace. Prefer a structural rewrite over a blind full overwrite.".to_string());
-      lines.push(format!("Try: cr tree rewrite '{target}' -p '<path>' --with self=. -e '<code>'"));
-      lines.push(format!("Or: cr tree replace '{target}' -p '<path>' -e '<code>'"));
+      lines.push(format!(
+        "Try: cr tree rewrite '{target}' --path '<path>' --with self=. --code '<code>'"
+      ));
+      lines.push(format!("Or: cr tree replace '{target}' --path '<path>' --code '<code>'"));
     }
   }
 
@@ -435,6 +927,14 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
 
   // Step 1: read source node
   let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
+  let append_index = if operation == "append-child" {
+    match navigate_to_path(&code_entry.code, &to_path)? {
+      Cirru::List(children) => children.len(),
+      Cirru::Leaf(_) => 0,
+    }
+  } else {
+    0
+  };
 
   // Step 2: insert at destination
   let after_insert = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
@@ -448,6 +948,15 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
 
   save_snapshot(&snapshot, snapshot_file)?;
 
+  maintain_cursor_after_node_move(
+    snapshot_file,
+    &format!("{namespace}/{resolved_definition}"),
+    &from_path,
+    &to_path,
+    operation,
+    append_index,
+  )?;
+
   println!(
     "{} Moved node from [{}] to [{}] ({}) in '{}/{}'",
     "✓".green(),
@@ -458,6 +967,34 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
     resolved_definition
   );
   Ok(())
+}
+
+fn rename_definition_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
+  let Cirru::List(items) = code else {
+    return Ok((code.clone(), false));
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return Ok((code.clone(), false));
+  };
+  if !head.starts_with("def") {
+    return Ok((code.clone(), false));
+  }
+
+  let Some(name_node) = items.get(1) else {
+    return Err(format!("Definition form `{head}` has no declaration name"));
+  };
+  let Cirru::Leaf(declared_name) = name_node else {
+    return Err(format!("Definition form `{head}` has a non-leaf declaration name"));
+  };
+  if declared_name.as_ref() != old_name {
+    return Err(format!(
+      "Definition key `{old_name}` does not match declaration name `{declared_name}`. Repair the mismatch before renaming."
+    ));
+  }
+
+  let mut next_items = items.clone();
+  next_items[1] = Cirru::Leaf(Arc::from(new_name));
+  Ok((Cirru::List(next_items), true))
 }
 
 fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), String> {
@@ -480,10 +1017,11 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     ));
   }
 
-  let entry = file_data
+  let mut entry = file_data
     .defs
     .remove(resolved_definition.as_str())
     .expect("resolved definition exists");
+  (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_definition, &opts.new_name)?;
   file_data.defs.insert(opts.new_name.clone(), entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -569,7 +1107,7 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
       resolved_definition
     );
     println!(
-      "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
+      "  • Wrap in defn:     {} '{}/{}' --path '' --code 'quote (defn {} ...)'",
       "cr tree replace".cyan(),
       namespace,
       new_name,
@@ -642,10 +1180,11 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
       return Err(format!("Definition '{target_def}' already exists in namespace '{source_ns}'"));
     }
 
-    let entry = file_data
+    let mut entry = file_data
       .defs
       .remove(resolved_source_def.as_str())
       .expect("resolved definition exists");
+    (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_source_def, target_def)?;
     file_data.defs.insert(target_def.to_string(), entry);
   } else {
     let target_exists = snapshot
@@ -658,7 +1197,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
       return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
     }
 
-    let entry = {
+    let mut entry = {
       let source_file = snapshot
         .files
         .get_mut(source_ns)
@@ -668,6 +1207,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
         .remove(resolved_source_def.as_str())
         .expect("resolved definition exists")
     };
+    (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_source_def, target_def)?;
 
     let target_file = snapshot
       .files
@@ -724,21 +1264,10 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   Ok(())
 }
 
-fn unwrap_schema_quote_input(schema: Cirru) -> Result<Cirru, String> {
-  match schema {
-    Cirru::List(items) => {
-      if let Some(Cirru::Leaf(head)) = items.first()
-        && &**head == "quote"
-      {
-        if items.len() != 2 {
-          return Err("Schema quote expects exactly one payload expression".to_string());
-        }
-        return Ok(items[1].clone());
-      }
-      Ok(Cirru::List(items))
-    }
-    other => Ok(other),
-  }
+fn parse_schema_input(raw: &str) -> Result<Cirru, String> {
+  parse_input_to_cirru(raw).map_err(|error| {
+    format!("Failed to parse schema code input: {error}\nSchema examples: `quote :string` or `quote $ :: :ref :bool`.")
+  })
 }
 
 fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
@@ -827,13 +1356,11 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   }
 
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let schema_node = parse_input_to_cirru(&raw)?;
-  let schema_payload = unwrap_schema_quote_input(schema_node)?;
-  let schema_payload = strip_name_field_from_schema(schema_payload);
+  let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw)?);
 
   validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
 
-  // Primitive type tag leaf (e.g. --code '(quote |:string)') — store directly without going through fn-schema parsing.
+  // Primitive type tag leaf (e.g. --code 'quote :string') — store directly without going through fn-schema parsing.
   if let Cirru::Leaf(tag) = &schema_payload {
     let tag_name = tag.trim_start_matches(':');
     code_entry.schema = Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name));
@@ -851,7 +1378,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   let schema_edn = snapshot::schema_cirru_to_edn(schema_payload);
   code_entry.schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
     .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-    .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+    .unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn));
 
   save_snapshot(&snapshot, snapshot_file)?;
 
@@ -863,6 +1390,14 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   );
 
   Ok(())
+}
+
+fn parse_examples_input(raw: &str) -> Result<Vec<Cirru>, String> {
+  parse_quoted_cirru_nodes(raw).map_err(|error| {
+    format!(
+      "Failed to parse examples: {error}\nEach top-level example needs its own `quote`, so both leaves and expressions remain representable."
+    )
+  })
 }
 
 fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<(), String> {
@@ -907,18 +1442,9 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     .as_deref()
     .ok_or("Examples input required: use --file, --code, or pipe input via stdin")?;
 
-  // Parse examples - auto-detect JSON array vs Cirru text
-  let examples: Vec<Cirru> = if raw.trim().starts_with('[') {
-    // Parse as JSON array
-    let json_value: serde_json::Value = serde_json::from_str(raw.trim()).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    match json_value {
-      serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
-      _ => return Err("Expected JSON array of examples".to_string()),
-    }
-  } else {
-    // Parse as Cirru text - each top-level expression is an example
-    cirru_parser::parse(raw).map_err(|e| format!("Failed to parse Cirru: {e}"))?
-  };
+  // Each top-level quote contributes exactly one example. Requiring a quote
+  // per item preserves the leaf/expression distinction in batch input.
+  let examples = parse_examples_input(raw)?;
 
   let count = examples.len();
   code_entry.examples = examples;
@@ -1982,7 +2508,244 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 
 #[cfg(test)]
 mod tests {
-  use super::bump_semver_value;
+  use super::{
+    TransactionOperationReport, bump_semver_value, load_snapshot, parse_examples_input, parse_input_to_cirru, parse_schema_input,
+    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_snapshot,
+  };
+  use cirru_parser::Cirru;
+  use std::fs;
+  use std::path::{Path, PathBuf};
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  struct TestSnapshot {
+    path: PathBuf,
+  }
+
+  impl TestSnapshot {
+    fn from_fixture() -> Self {
+      let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("test clock should be valid")
+        .as_nanos();
+      let path = std::env::temp_dir().join(format!("calcit-transaction-test-{}-{nonce}.cirru", std::process::id()));
+      fs::copy("calcit/test.cirru", &path).expect("test snapshot fixture should copy");
+      Self { path }
+    }
+  }
+
+  impl Drop for TestSnapshot {
+    fn drop(&mut self) {
+      let _ = fs::remove_file(&self.path);
+    }
+  }
+
+  fn fake_version_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
+    let version = args.get(2).ok_or_else(|| "fake operation needs version at index 2".to_string())?;
+    let mut snapshot = load_snapshot(&stage_path.to_string_lossy())?;
+    snapshot.configs.version = version.to_string();
+    save_snapshot(&snapshot, &stage_path.to_string_lossy())?;
+    Ok(TransactionOperationReport {
+      index,
+      args: args.to_vec(),
+      stdout: String::new(),
+      stderr: String::new(),
+    })
+  }
+
+  fn leaf(value: &str) -> Cirru {
+    Cirru::Leaf(value.into())
+  }
+
+  fn list(items: Vec<Cirru>) -> Cirru {
+    Cirru::List(items)
+  }
+
+  #[test]
+  fn rename_updates_definition_declaration_name() {
+    let code = list(vec![leaf("defatom"), leaf("*old"), list(vec![leaf("{}")])]);
+    let (renamed, changed) = rename_definition_declaration(&code, "*old", "*next").expect("rename should work");
+
+    assert!(changed);
+    assert_eq!(renamed, list(vec![leaf("defatom"), leaf("*next"), list(vec![leaf("{}")])]));
+  }
+
+  #[test]
+  fn transaction_parses_json_and_cirru_argument_lists() {
+    let expected = vec![
+      vec![
+        "edit".to_string(),
+        "doc".to_string(),
+        "app.main/main!".to_string(),
+        "hello".to_string(),
+      ],
+      vec![
+        "tree".to_string(),
+        "delete".to_string(),
+        "app.main/main!".to_string(),
+        "--path".to_string(),
+        "@3".to_string(),
+      ],
+    ];
+    let json = r#"[["edit","doc","app.main/main!","hello"],["tree","delete","app.main/main!","--path","@3"]]"#;
+    let cirru = "[]\n  [] |edit |doc |app.main/main! |hello\n  [] |tree |delete |app.main/main! |--path |@3";
+
+    assert_eq!(parse_transaction_operations(json).expect("JSON transaction should parse"), expected);
+    assert_eq!(
+      parse_transaction_operations(cirru).expect("Cirru transaction should parse"),
+      expected
+    );
+  }
+
+  #[test]
+  fn transaction_cirru_embeds_quoted_code_without_string_escaping() {
+    let cirru = "[]\n  []\n    , |tree\n    , |replace\n    , |app.main/main!\n    , |--path\n    , |@3.2\n    , |--code\n    quote $ println |done";
+    let operations = parse_transaction_operations(cirru).expect("Cirru transaction with quoted code should parse");
+    let code = operations[0].get(6).expect("formatted --code argument should exist");
+
+    assert_eq!(
+      parse_input_to_cirru(code).expect("embedded quoted code should remain valid edit input"),
+      list(vec![leaf("println"), leaf("|done")])
+    );
+  }
+
+  #[test]
+  fn transaction_rejects_unsupported_and_nested_commands() {
+    let unsupported =
+      parse_transaction_operations(r#"[["query","def","app.main/main!"]]"#).expect_err("read-only command should be rejected");
+    assert!(unsupported.contains("Only edit, tree, and config"), "error: {unsupported}");
+
+    let nested = parse_transaction_operations(r#"[["edit","transaction","--file","again.cirru"]]"#)
+      .expect_err("nested transaction should be rejected");
+    assert!(nested.contains("nested edit transaction"), "error: {nested}");
+
+    let external = parse_transaction_operations(r#"[["edit","inc","--changed","app.main/main!"]]"#)
+      .expect_err("external side effect should be rejected");
+    assert!(external.contains("external side effects"), "error: {external}");
+
+    let read_only =
+      parse_transaction_operations(r#"[["tree","show","app.main/main!"]]"#).expect_err("read-only command should be rejected");
+    assert!(read_only.contains("unsupported staged mutation"), "error: {read_only}");
+  }
+
+  #[test]
+  fn transaction_rejects_stale_revision_without_running_operations() {
+    let fixture = TestSnapshot::from_fixture();
+    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let operations = vec![vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()]];
+    let mut called = false;
+
+    let error = run_staged_transaction_with(&fixture.path, &operations, Some("md5:stale"), false, |_, _, _| {
+      called = true;
+      Err("must not run".to_string())
+    })
+    .expect_err("stale transaction should fail");
+
+    assert!(!called);
+    assert!(error.contains("revision mismatch"), "error: {error}");
+    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn transaction_dry_run_validates_but_keeps_original_snapshot() {
+    let fixture = TestSnapshot::from_fixture();
+    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let operations = vec![vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()]];
+
+    let report = run_staged_transaction_with(&fixture.path, &operations, None, true, fake_version_operation)
+      .expect("dry-run transaction should validate");
+
+    assert!(report.dry_run);
+    assert!(report.changed);
+    assert_ne!(report.original_revision, report.new_revision);
+    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn transaction_failure_discards_prior_staged_operations() {
+    let fixture = TestSnapshot::from_fixture();
+    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let operations = vec![
+      vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()],
+      vec!["config".to_string(), "version".to_string(), "9.0.1".to_string()],
+    ];
+
+    let error = run_staged_transaction_with(&fixture.path, &operations, None, false, |path, index, args| {
+      if index == 0 {
+        fake_version_operation(path, index, args)
+      } else {
+        Err("simulated second operation failure".to_string())
+      }
+    })
+    .expect_err("failed operation should abort transaction");
+
+    assert!(error.contains("simulated second operation failure"), "error: {error}");
+    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn successful_transaction_replaces_snapshot_once() {
+    let fixture = TestSnapshot::from_fixture();
+    let operations = vec![vec!["config".to_string(), "version".to_string(), "9.0.0".to_string()]];
+
+    let report =
+      run_staged_transaction_with(&fixture.path, &operations, None, false, fake_version_operation).expect("transaction should commit");
+
+    assert!(!report.dry_run);
+    assert!(report.changed);
+    assert_eq!(
+      load_snapshot(&fixture.path.to_string_lossy())
+        .expect("committed snapshot should load")
+        .configs
+        .version,
+      "9.0.0"
+    );
+  }
+
+  #[test]
+  fn rename_rejects_mismatched_definition_key_and_declaration() {
+    let code = list(vec![leaf("defn"), leaf("actual"), list(vec![]), leaf("nil")]);
+    let error = rename_definition_declaration(&code, "stored-key", "next").expect_err("mismatch should fail");
+
+    assert!(error.contains("does not match declaration name"), "error: {error}");
+  }
+
+  #[test]
+  fn rename_keeps_anonymous_payloads_unchanged() {
+    let code = list(vec![leaf("fn"), list(vec![]), leaf("nil")]);
+    let (renamed, changed) = rename_definition_declaration(&code, "old", "next").expect("anonymous value should be movable");
+
+    assert!(!changed);
+    assert_eq!(renamed, code);
+  }
+
+  #[test]
+  fn examples_require_one_quote_per_ast_node() {
+    let error = parse_examples_input("inc 1").expect_err("bare examples should fail");
+    assert!(error.contains("needs its own `quote`"), "error: {error}");
+  }
+
+  #[test]
+  fn examples_preserve_quoted_expressions_and_leaves() {
+    let examples = parse_examples_input("quote $ inc 1\nquote |literal").expect("examples should parse");
+
+    assert_eq!(examples, vec![list(vec![leaf("inc"), leaf("1")]), leaf("|literal")]);
+  }
+
+  #[test]
+  fn schema_input_requires_quote_for_leaf_and_expression() {
+    let expected = list(vec![leaf("::"), leaf(":ref"), leaf(":bool")]);
+
+    assert_eq!(
+      parse_schema_input("quote $ :: :ref :bool").expect("quoted schema should parse"),
+      expected
+    );
+    assert_eq!(
+      parse_schema_input("quote :string").expect("primitive schema should parse"),
+      leaf(":string")
+    );
+    let error = parse_schema_input(":: :ref :bool").expect_err("bare schema should fail");
+    assert!(error.contains("Schema examples: `quote :string`"), "error: {error}");
+  }
 
   #[test]
   fn bumps_patch_version() {

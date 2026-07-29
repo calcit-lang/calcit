@@ -66,6 +66,8 @@ pub struct CalcitFn {
   pub return_type: Arc<CalcitTypeAnnotation>,
   /// argument types declared by assert-type
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+  /// element type accepted by a `&` rest parameter, when present
+  pub rest_type: Option<Arc<CalcitTypeAnnotation>>,
 }
 
 #[derive(Debug, Clone)]

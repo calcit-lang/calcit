@@ -1,7 +1,7 @@
 use super::{
   GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
-  find_doc_by_query, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata,
-  score_doc_query, score_doc_shape, validate_doc_frontmatter,
+  find_doc_by_query, load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter,
+  parse_doc_knowledge_metadata, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -17,6 +17,16 @@ fn write_file(path: &Path, content: &str) {
     fs::create_dir_all(parent).unwrap();
   }
   fs::write(path, content).unwrap();
+}
+
+#[test]
+fn agents_docs_default_to_the_version_matched_embedded_guide() {
+  let document = load_agents_document(false).expect("embedded Agents guide should load without network");
+
+  assert!(!document.refreshed);
+  assert!(document.display_path.starts_with("embedded:docs/CalcitAgent.md@"));
+  assert!(document.content.contains("`edit schema` 和 `edit examples` 也遵循同一边界"));
+  assert!(document.content.contains("`quote |literal`"));
 }
 
 #[test]

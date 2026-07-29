@@ -55,8 +55,9 @@
             defn test-fn-inference () $ let
                 f $ fn (x) (+ x 1)
               hint-fn f $ {}
-                :args $ [] (:: 'x :number)
+                :args $ [] :number
                 :return :number
+              assert-type (f 1) :number
               &inspect-type f
           :examples $ []
         |test-generics-identity $ %{} :CodeEntry (:doc |) (:schema :dynamic)

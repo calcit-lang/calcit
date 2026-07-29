@@ -110,6 +110,17 @@ impl GitRepo {
     self.run_command(&["pull", "origin", branch])?;
     Ok(())
   }
+
+  /// Return paths changed from HEAD, including untracked files.
+  pub fn status_porcelain(&self) -> Result<Vec<String>, String> {
+    let output = self.run_command(&["status", "--porcelain"])?;
+    Ok(output.lines().map(str::to_owned).collect())
+  }
+
+  /// Discard tracked changes in the working tree and index.
+  pub fn reset_hard(&self) -> Result<(), String> {
+    self.run_command(&["reset", "--hard", "HEAD"]).map(|_| ())
+  }
 }
 
 #[derive(Debug, PartialEq, Eq)]

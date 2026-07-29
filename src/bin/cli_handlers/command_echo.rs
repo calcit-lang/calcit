@@ -54,6 +54,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Libs(_))
       | Some(CalcitCommand::Edit(_))
       | Some(CalcitCommand::Tree(_))
+      | Some(CalcitCommand::Cursor(_))
       | Some(CalcitCommand::Config(_))
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
@@ -86,6 +87,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("cr edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("cr tree {}", tree_name(&cmd.subcommand)),
+    CalcitCommand::Cursor(cmd) => format!("cr cursor {}", cursor_name(&cmd.subcommand)),
     CalcitCommand::Config(cmd) => format!("cr config {}", config_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("cr analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("cr cirru {}", cirru_name(&cmd.subcommand)),
@@ -98,6 +100,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Libs(cmd) => push_libs(&mut tokens, cmd.subcommand.as_ref()?),
     CalcitCommand::Edit(cmd) => push_edit(&mut tokens, cmd),
     CalcitCommand::Tree(cmd) => push_tree(&mut tokens, cmd),
+    CalcitCommand::Cursor(cmd) => push_cursor(&mut tokens, cmd),
     CalcitCommand::Config(cmd) => push_config(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
     CalcitCommand::Cirru(cmd) => push_cirru(&mut tokens, cmd),
@@ -113,6 +116,7 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Query(cmd) => render_query_explanation(cmd),
     CalcitCommand::Edit(cmd) => render_edit_explanation(cmd),
     CalcitCommand::Tree(cmd) => render_tree_explanation(cmd),
+    CalcitCommand::Cursor(cmd) => render_cursor_explanation(cmd),
     CalcitCommand::Docs(cmd) => render_docs_explanation(cmd),
     CalcitCommand::Analyze(cmd) => render_analyze_explanation(cmd),
     CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
@@ -149,6 +153,9 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
       if opts.max_depth > 0 {
         desc.push_str(&format!(", max tree depth={}", opts.max_depth));
       }
+      if let Some(index) = opts.set_cursor {
+        desc.push_str(&format!("; sets the cursor to global match #{index}"));
+      }
       desc
     }
     QuerySubcommand::SearchExpr(opts) => {
@@ -157,7 +164,10 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
         desc.push_str(&format!(", filtered by `{filter}`"));
       }
       if opts.json {
-        desc.push_str(" (JSON output)");
+        desc.push_str(" (pattern decoded from JSON)");
+      }
+      if let Some(index) = opts.set_cursor {
+        desc.push_str(&format!("; sets the cursor to global match #{index}"));
       }
       desc
     }
@@ -184,6 +194,9 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
     QuerySubcommand::Peek(opts) => format!("previews definition `{}`", opts.target),
     QuerySubcommand::Examples(opts) => format!("shows usage examples for `{}`", opts.target),
     QuerySubcommand::Schema(opts) => format!("shows type schema for `{}`", opts.target),
+    QuerySubcommand::Type(opts) => format!("lists statically available methods for type `{}`", opts.target),
+    QuerySubcommand::TypeAt(opts) => format!("inspects static type evidence for `{}` at `{}`", opts.target, opts.path),
+    QuerySubcommand::Context(opts) => format!("gathers bounded semantic context for definition `{}`", opts.target),
     QuerySubcommand::Usages(opts) => {
       let mut desc = format!("finds all usages of `{}` in codebase", opts.target);
       if opts.deps {
@@ -227,6 +240,10 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
 fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
   Some(match &cmd.subcommand {
     EditSubcommand::Format(_) => "rewrites snapshot file in canonical format".to_string(),
+    EditSubcommand::Transaction(opts) => format!(
+      "{} a staged edit transaction with revision checks",
+      if opts.dry_run { "previews" } else { "applies" }
+    ),
     EditSubcommand::Def(opts) => {
       let desc = format!("adds/updates definition `{}`", opts.target);
       format!(
@@ -389,6 +406,40 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
   })
 }
 
+fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
+  Some(match &cmd.subcommand {
+    CursorSubcommand::Set(opts) => format!("sets the virtual tree cursor to `{}` at `{}`", opts.target, opts.path),
+    CursorSubcommand::Show(_) => "validates and displays the virtual tree cursor".to_string(),
+    CursorSubcommand::Clear(_) => "removes the project-local virtual tree cursor".to_string(),
+    CursorSubcommand::Parent(_) => "moves the virtual tree cursor to its parent".to_string(),
+    CursorSubcommand::Child(opts) => {
+      if opts.last {
+        "moves the virtual tree cursor to the last child".to_string()
+      } else {
+        format!("moves the virtual tree cursor to child {}", opts.index.unwrap_or(0))
+      }
+    }
+    CursorSubcommand::Next(opts) => format!("moves the virtual tree cursor forward {} sibling(s)", opts.count),
+    CursorSubcommand::Prev(opts) => format!("moves the virtual tree cursor backward {} sibling(s)", opts.count),
+    CursorSubcommand::Back(opts) => format!("rewinds {} recorded virtual cursor location(s)", opts.count),
+    CursorSubcommand::Push(_) => "pushes the current cursor location onto its stack".to_string(),
+    CursorSubcommand::Pop(_) => "restores the most recently pushed cursor location".to_string(),
+    CursorSubcommand::Copy(_) => "copies the selected expression into the cursor clipboard".to_string(),
+    CursorSubcommand::Cut(_) => "cuts the selected expression into the cursor clipboard".to_string(),
+    CursorSubcommand::Paste(opts) => format!("pastes the cursor clipboard {} the selected expression", opts.at),
+    CursorSubcommand::Clipboard(_) => "displays the cursor clipboard".to_string(),
+    CursorSubcommand::ClearClipboard(_) => "clears the cursor clipboard".to_string(),
+    CursorSubcommand::Apply(opts) => format!("applies `{}` to the active cursor", opts.operation),
+    CursorSubcommand::SlurpNext(_) => "moves the next sibling into the selected list".to_string(),
+    CursorSubcommand::SlurpPrev(_) => "moves the previous sibling into the selected list".to_string(),
+    CursorSubcommand::BarfLast(_) => "moves the selected list's last child out as its next sibling".to_string(),
+    CursorSubcommand::BarfFirst(_) => "moves the selected list's first child out as its previous sibling".to_string(),
+    CursorSubcommand::Duplicate(opts) => format!("duplicates the selected expression {} the cursor", opts.at),
+    CursorSubcommand::Forward(opts) => format!("moves forward {} structural node(s)", opts.count),
+    CursorSubcommand::Backward(opts) => format!("moves backward {} structural node(s)", opts.count),
+  })
+}
+
 fn render_docs_explanation(cmd: &DocsCommand) -> Option<String> {
   Some(match &cmd.subcommand {
     DocsSubcommand::Scopes(_) => "lists available documentation scopes".to_string(),
@@ -431,11 +482,17 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       desc
     }
     AnalyzeSubcommand::ProgramDiff(opts) => format!("compares AST structure since `{}`", opts.git_ref),
-    AnalyzeSubcommand::CheckExamples(_) => "validates all code examples in definitions".to_string(),
+    AnalyzeSubcommand::CheckExamples(opts) => match &opts.definition {
+      Some(definition) => format!("validates code examples for `{}/{definition}`", opts.ns),
+      None => format!("validates all code examples in namespace `{}`", opts.ns),
+    },
     AnalyzeSubcommand::CheckTypes(opts) => {
       let mut desc = "performs type checking".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      if opts.summary_only {
+        desc.push_str(", returning aggregate counts only");
       }
       desc
     }
@@ -443,6 +500,9 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       let mut desc = "analyzes weak/untyped definitions".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      if opts.summary_only {
+        desc.push_str(", returning aggregate counts only");
       }
       desc
     }
@@ -470,6 +530,23 @@ fn render_cirru_explanation(cmd: &CirruCommand) -> Option<String> {
 fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
   match &cmd.subcommand {
     QuerySubcommand::Schema(opts) => echo_items!(tokens, pos "target" => &opts.target, switch "json" => opts.json),
+    QuerySubcommand::Type(opts) => echo_items!(tokens, pos "target" => &opts.target, value "format" => &opts.format; default "human"),
+    QuerySubcommand::TypeAt(opts) => echo_items!(
+      tokens,
+      pos "target" => &opts.target,
+      value "path" => &opts.path,
+      value "format" => &opts.format; default "human"
+    ),
+    QuerySubcommand::Context(opts) => echo_items!(
+      tokens,
+      pos "target" => &opts.target,
+      value "budget" => opts.budget; default "6000",
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      value "dependency-limit" => opts.dependency_limit; default "12",
+      value "usage-limit" => opts.usage_limit; default "8",
+      value "example-limit" => opts.example_limit; default "3"
+    ),
     QuerySubcommand::Ns(opts) => {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
     }
@@ -511,7 +588,10 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       value "max-depth" => opts.max_depth; default "0",
       opt "start-path" => opts.start_path.as_deref(); default "none",
       opt "entry" => opts.entry.as_deref(); default "none",
-      value "detail-offset" => opts.detail_offset; default "0"
+      value "detail-offset" => opts.detail_offset; default "0",
+      switch "parent-path" => opts.parent_path,
+      value "format" => &opts.format; default "human",
+      opt_owned "set-cursor" => opts.set_cursor.map(|value| value.to_string()); default "none"
     ),
     QuerySubcommand::SearchExpr(opts) => echo_items!(
       tokens,
@@ -519,9 +599,12 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       opt "filter" => opts.filter.as_deref(); default "none",
       switch "exact" => opts.exact,
       value "max-depth" => opts.max_depth; default "0",
+      opt "start-path" => opts.start_path.as_deref(); default "none",
       switch "json" => opts.json,
       opt "entry" => opts.entry.as_deref(); default "none",
-      value "detail-offset" => opts.detail_offset; default "0"
+      value "detail-offset" => opts.detail_offset; default "0",
+      value "format" => &opts.format; default "human",
+      opt_owned "set-cursor" => opts.set_cursor.map(|value| value.to_string()); default "none"
     ),
     QuerySubcommand::HostProcs(opts) => {
       echo_items!(tokens, opt "tag" => opts.tag.as_deref(); default "none")
@@ -667,20 +750,29 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
     AnalyzeSubcommand::ProgramDiff(opts) => echo_items!(tokens, pos "git-ref" => &opts.git_ref,
       opt "def" => opts.def.as_deref(); default "none"
     ),
-    AnalyzeSubcommand::CheckExamples(opts) => echo_items!(tokens, value "ns" => &opts.ns),
+    AnalyzeSubcommand::CheckExamples(opts) => echo_items!(
+      tokens,
+      value "ns" => &opts.ns,
+      opt "def" => opts.definition.as_deref(); default "all"
+    ),
     AnalyzeSubcommand::CheckTypes(opts) => echo_items!(
       tokens,
       opt "ns" => opts.ns.as_deref(); default "none",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
-      switch "deps" => opts.deps
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::WeakTypes(opts) => echo_items!(
       tokens,
       opt "ns" => opts.ns.as_deref(); default "none",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
-      switch "deps" => opts.deps
+      opt "intent" => opts.intent.as_deref(); default "all",
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      switch "summary-only" => opts.summary_only
     ),
     AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
       tokens,
@@ -700,6 +792,15 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
 fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
   match &cmd.subcommand {
     EditSubcommand::Format(_) => {}
+    EditSubcommand::Transaction(opts) => {
+      echo_items!(
+        tokens,
+        code_input opts,
+        opt "expect-revision" => opts.expect_revision.as_deref(); default "none",
+        switch "dry-run" => opts.dry_run,
+        value "format" => &opts.format; default "human"
+      );
+    }
     EditSubcommand::Def(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "overwrite" => opts.overwrite)
     }
@@ -815,6 +916,45 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
   }
 }
 
+fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
+  match &cmd.subcommand {
+    CursorSubcommand::Set(opts) => echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path),
+    CursorSubcommand::Show(opts) => {
+      echo_items!(tokens, value "format" => &opts.format; default "human", value "view" => &opts.view; default "focus")
+    }
+    CursorSubcommand::Clear(_)
+    | CursorSubcommand::Parent(_)
+    | CursorSubcommand::Push(_)
+    | CursorSubcommand::Pop(_)
+    | CursorSubcommand::Copy(_)
+    | CursorSubcommand::Cut(_)
+    | CursorSubcommand::ClearClipboard(_)
+    | CursorSubcommand::SlurpNext(_)
+    | CursorSubcommand::SlurpPrev(_)
+    | CursorSubcommand::BarfLast(_)
+    | CursorSubcommand::BarfFirst(_) => {}
+    CursorSubcommand::Child(opts) => {
+      if let Some(index) = opts.index {
+        push_positional(tokens, "index", &index.to_string());
+      } else {
+        tokens.push("index=(first)".to_string());
+      }
+      push_switch(tokens, "last", opts.last);
+    }
+    CursorSubcommand::Next(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
+    CursorSubcommand::Prev(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
+    CursorSubcommand::Back(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
+    CursorSubcommand::Paste(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
+    CursorSubcommand::Clipboard(opts) => echo_items!(tokens, value "format" => &opts.format; default "human"),
+    CursorSubcommand::Apply(opts) => {
+      echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "depth" => opts.depth; default "2")
+    }
+    CursorSubcommand::Duplicate(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
+    CursorSubcommand::Forward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
+    CursorSubcommand::Backward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
+  }
+}
+
 struct CodeInputParts<'a> {
   file: Option<&'a str>,
   code: Option<&'a str>,
@@ -913,6 +1053,9 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Search(_) => "search",
     QuerySubcommand::SearchExpr(_) => "search-expr",
     QuerySubcommand::Schema(_) => "schema",
+    QuerySubcommand::Type(_) => "type",
+    QuerySubcommand::TypeAt(_) => "type-at",
+    QuerySubcommand::Context(_) => "context",
     QuerySubcommand::HostProcs(_) => "host-procs",
     QuerySubcommand::Path(_) => "path",
     QuerySubcommand::Anchors(_) => "anchors",
@@ -969,6 +1112,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
 fn edit_name(subcommand: &EditSubcommand) -> &'static str {
   match subcommand {
     EditSubcommand::Format(_) => "format",
+    EditSubcommand::Transaction(_) => "transaction",
     EditSubcommand::Def(_) => "def",
     EditSubcommand::MvDef(_) => "mv-def",
     EditSubcommand::RmDef(_) => "rm-def",
@@ -1010,6 +1154,34 @@ fn tree_name(subcommand: &TreeSubcommand) -> &'static str {
     TreeSubcommand::SearchReplace(_) => "search-replace",
     TreeSubcommand::Rewrite(_) => "rewrite",
     TreeSubcommand::BatchDelete(_) => "batch-delete",
+  }
+}
+
+fn cursor_name(subcommand: &CursorSubcommand) -> &'static str {
+  match subcommand {
+    CursorSubcommand::Set(_) => "set",
+    CursorSubcommand::Show(_) => "show",
+    CursorSubcommand::Clear(_) => "clear",
+    CursorSubcommand::Parent(_) => "parent",
+    CursorSubcommand::Child(_) => "child",
+    CursorSubcommand::Next(_) => "next",
+    CursorSubcommand::Prev(_) => "prev",
+    CursorSubcommand::Back(_) => "back",
+    CursorSubcommand::Push(_) => "push",
+    CursorSubcommand::Pop(_) => "pop",
+    CursorSubcommand::Copy(_) => "copy",
+    CursorSubcommand::Cut(_) => "cut",
+    CursorSubcommand::Paste(_) => "paste",
+    CursorSubcommand::Clipboard(_) => "clipboard",
+    CursorSubcommand::ClearClipboard(_) => "clear-clipboard",
+    CursorSubcommand::Apply(_) => "apply",
+    CursorSubcommand::SlurpNext(_) => "slurp-next",
+    CursorSubcommand::SlurpPrev(_) => "slurp-prev",
+    CursorSubcommand::BarfLast(_) => "barf-last",
+    CursorSubcommand::BarfFirst(_) => "barf-first",
+    CursorSubcommand::Duplicate(_) => "duplicate",
+    CursorSubcommand::Forward(_) => "forward",
+    CursorSubcommand::Backward(_) => "backward",
   }
 }
 

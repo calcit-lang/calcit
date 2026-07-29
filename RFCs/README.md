@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-06-29
+更新时间：2026-07-26
 
 ## 目录原则
 
@@ -32,6 +32,13 @@
 | `07-06-semantic-tree-navigation-rfc.md`             | Draft         | 语义化树形导航与编辑：路径标注、多候选交互、锚点搜索替换、结构化查询语言。                |
 | `07-19-doc-knowledge-index-rfc.md`                  | Draft         | Markdown/Calcit snapshot 的知识节点、关系索引与用户级增量缓存方案。                       |
 | `07-19-type-introspection-consistency-rfc.md`       | Implemented   | 类型自省一致性改进：`&methods-of` 支持裸类型定义、`Enum` Display 补 variants、`to-pairs`/`keys` 类型签名修正（第 4 项可选新增 proc 延后）。 |
+| `07-26-agent-machine-protocol-rfc.md`               | Draft         | Agent typed result、JSON 协议、definition descriptor 与按需重新解析/可选 daemon 的边界。                                |
+| `07-26-static-semantic-analysis-rfc.md`             | Draft         | 静态类型发现、类型证据、动态边界分类与统一结构化诊断。                                                                  |
+| `07-26-safe-structured-editing-rfc.md`              | Draft         | revision/fingerprint 前置条件、事务编辑、语义 diff 与受影响范围验证。                                                  |
+| `07-26-agent-docs-and-evaluation-rfc.md`            | Draft         | 结构化文档上下文、默认检索范围和 Agent 接口基准。                                                                        |
+| `07-28-git-module-store-rfc.md`                     | Draft         | 保持 `deps.cirru` 与 Git 模块路径，以 tag 为最佳实践并使用 pnpm 式全局目录存储；不引入 registry、lockfile、workspace 或多版本。 |
+| `07-28-project-tooling-contract-rfc.md`             | Draft         | 在既有 `cr` 子命令上补强单项目工具契约，保持 EDN 树形事实来源。                                                        |
+| `07-28-persistent-tree-cursor-rfc.md`               | Draft         | 项目本地虚拟 cursor、Cirru focus 展示、history/stack、结构化 clipboard、edit/tree path 迁移与 stale 防护。             |
 
 ## 已执行的清理
 

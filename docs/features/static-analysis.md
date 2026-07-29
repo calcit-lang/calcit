@@ -8,8 +8,11 @@ aliases:
   - "type warning"
   - "assert-type"
   - "compile-time checks"
+  - "weak types"
 entry_for:
   - "assert-type"
+  - "cr analyze check-types"
+  - "cr analyze weak-types"
 ---
 
 # Static Type Analysis
@@ -20,7 +23,8 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 - **Assert Type**: `assert-type total :number`
 - **Local `fn` Hint**: `hint-fn $ {} (:args ([] :number)) (:return :number)`
-- **Top-level `defn` Schema**: `cr edit schema app.main/add --code 'quote (:: :fn ({} (:args ([] :number :number)) (:return :number)))'`
+- **Top-level `defn` Schema**: `cr edit schema app.main/add --code 'quote $ :: :fn $ {} (:args ([] :number :number)) (:return :number)'`
+- **Top-level value Schema**: `cr edit schema 'app.main/*enabled?' --code 'quote $ :: :ref :bool'`
 - **Return Type**: `hint-fn $ {} (:return :string)`
 - **Compact Hint**: `defn my-fn (x) :string ...`
 - **Check Traits**: `assert-traits x MyTrait`
@@ -35,6 +39,52 @@ The static analysis system provides:
 - **Compile-time warnings** - Catches errors before code execution
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
+## Static Project Reports
+
+Use the CLI reports when you need to understand type quality without running the application:
+
+```bash
+# Coverage by definition; unknown code is reported as none, never as full
+cr analyze check-types --ns app.main
+
+# All weak type locations
+cr analyze weak-types --ns app.main
+
+# Focus only on unresolved type debt
+cr analyze weak-types --ns app.main --intent unresolved
+
+# Inspect explicitly permitted JS FFI dynamic boundaries
+cr analyze weak-types --ns app.main --intent intentional-js-ffi
+
+# Machine-readable definition rows and Snapshot paths
+cr analyze check-types --ns app.main --format json
+cr analyze weak-types --ns app.main --intent unresolved --format json
+
+# Keep aggregate counts but omit definition rows (especially useful for agents)
+cr analyze check-types --ns app.main --summary-only --format json
+cr analyze weak-types --ns app.main --intent unresolved --summary-only --format json
+
+# Validate only one definition's examples
+cr analyze check-examples --ns app.main --def calculate-total
+
+# Explain one expression using inferred and expected types
+cr query type-at app.main/calculate-total --path code@3.2 --format json
+```
+
+`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. `weak-types --format json` reports the exact Snapshot/schema path and a `suggestion` for every occurrence. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
+
+An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. `nil` occurrences remain unresolved because an FFI capability does not imply that every nullable branch is intentional.
+
+For one definition, `cr query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
+
+For one expression, `cr query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
+
+Both analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
+
+Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, and `deftrait` carry type information in their declarations, so they are classified as data declarations instead of receiving a false top-level `schema-dynamic` finding.
+
+`check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, record, or component tree. Output explicitly produced by an example is still shown.
+
 ## Type Annotations
 
 ### Function Parameter Types
@@ -45,6 +95,10 @@ Function parameters should be annotated with function schema:
 - local `fn`: use `hint-fn` with `:args` / `:rest`
 
 For namespace-level definitions, `:schema` is stored on the definition entry and is typically edited with `cr edit schema`, rather than written inline in the function body.
+
+`cr edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote :string` for a primitive leaf or `quote $ :: :ref :bool` for a parameterized type expression. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: :fn $ {} ...` or `:: :macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized tags such as `:ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: :ref :bool`, `:: :list :string`, or `:: :map :tag :number`.
+
+The preprocessor propagates a named function's schema into its parameter bindings. This means field access, method dispatch, generic return inference, and return checks inside the body use the declared types instead of falling back to `:dynamic`. A `:rest` schema is preserved as a variadic element type both for calls and when the function is passed as a higher-order callback.
 
 `assert-type` is still useful, but mainly for local variables, intermediate values, and explicit checks inside the function body.
 
@@ -68,6 +122,21 @@ There are two ways to specify return types:
 #### 1. Local `fn` Hint (`hint-fn`)
 
 Use `hint-fn` with schema map at the start of a local function body:
+
+When a function is already bound, the two-argument form refines that local binding for all later expressions in the same lexical scope:
+
+```cirru
+let
+    add-one $ fn (x) + x 1
+  hint-fn add-one $ {}
+    :args $ [] :number
+    :return :number
+  assert-type (add-one 1) :number
+```
+
+This refinement is static metadata; it does not execute the function. Put it before calls that should use the signature. The one-argument form below remains the preferred form inside the function itself.
+
+A body hint may declare only part of the signature. Omitted `:args` slots are aligned with the function's real parameters and remain `:dynamic`; they are not interpreted as a zero-argument function. This lets a return-only hint improve downstream inference without inventing parameter constraints.
 
 Legacy clause syntax such as `(hint-fn (return-type ...))`, `(generics ...)`, and `(type-vars ...)` is no longer supported and now fails during preprocessing.
 
@@ -140,7 +209,8 @@ The following type tags are supported:
 | `:tuple`            | Tuple (general)     |
 | `:fn`               | Function            |
 | `:ref`              | Atom / Ref          |
-| `:any` / `:dynamic` | Any type (wildcard) |
+| `:any`              | Static top type: explicitly accepts every Calcit value |
+| `:dynamic`          | Unknown/unresolved type: static checks are disabled at this boundary |
 
 ### Complex Types
 
@@ -168,6 +238,12 @@ let
   sum 1 2 3
 ```
 
+A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant; for example, a callback accepting `optional<T>` can be used where the caller only supplies `T`.
+
+Use `:any` when “every Calcit value is accepted” is itself the precise public contract. It is a one-way static top type: a concrete value satisfies an expected `:any`, but a value known only as `:any` does not satisfy a concrete expected type. Unlike `:dynamic`, it does not erase checks in both directions and is not reported as unresolved by type-coverage tools. `cr query type :any --format json` therefore returns an empty `methods` array (no method is guaranteed), while unknown method metadata remains `null`.
+
+Do not strengthen a schema beyond the runtime contract merely to remove `:dynamic`. Recursive heterogeneous operations such as flattening may intentionally accept either a collection or a scalar; use `:any` when all Calcit values are valid, and retain `:dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state boundary. Keep those boundaries explicit and narrow, while strengthening homogeneous lists/maps/sets, refs, named data references, ordinary function parameters, and return values.
+
 #### Record and Enum Types
 
 Use the name defined by `defstruct` or `defenum`:
@@ -176,7 +252,7 @@ Use the name defined by `defstruct` or `defenum`:
 let
     User $ defstruct User (:name :string)
     get-name $ fn (u)
-      hint-fn $ {} (:args ([] (:: :record User))) (:return :string)
+      hint-fn $ {} (:args ([] 'User)) (:return :string)
       get u :name
   get-name $ %{} User (:name |Alice)
 ```

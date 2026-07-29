@@ -18,6 +18,7 @@ use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
 };
+pub use type_inference::infer_static_type_from_expr;
 use type_inference::{infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value};
 use type_rewriting::{
   try_rewrite_local_fn_tuple_args_to_enum_tuples, try_rewrite_loose_record_args_to_struct_records, try_rewrite_map_args_to_records,
@@ -837,7 +838,7 @@ fn preprocess_list_call(
     match first_arg {
       Calcit::Tag(field_tag) if args.len() == 1 => {
         if let Some(type_info) = resolve_type_value(&head_form, scope_types)
-          && let Some(struct_def) = type_info.as_ref().as_struct()
+          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
           && let Some(idx) = struct_def.index_of(field_tag.ref_str())
         {
           // Rewrite to (&record:nth expr idx :field-tag) — same as the existing
@@ -860,7 +861,8 @@ fn preprocess_list_call(
         {
           // Only trigger for struct/record or trait types — NOT for Fn/Proc which
           // also appear to have impls via core-impl lookups (e.g. `::` → tuple).
-          let is_record_or_trait = type_info.as_ref().as_struct().is_some() || trait_list_from_type(type_info.as_ref()).is_some();
+          let is_record_or_trait =
+            type_info.as_ref().resolve_to_struct().is_some() || trait_list_from_type(type_info.as_ref()).is_some();
 
           if is_record_or_trait {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
@@ -1055,7 +1057,7 @@ fn preprocess_list_call(
           let processed_arg = preprocess_expr(&args[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
           // Try to resolve the arg type as a struct record for indexed access optimization
           if let Some(type_info) = resolve_type_value(&processed_arg, scope_types)
-            && let Some(struct_def) = type_info.as_ref().as_struct()
+            && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
             && let Some(idx) = struct_def.index_of(tag.ref_str())
           {
             // Emit (&record:nth processed_arg idx :field-tag)
@@ -1252,7 +1254,7 @@ fn preprocess_list_call(
           && processed_args.len() == 2
           && let (Some(record_arg), Some(Calcit::Tag(field_tag))) = (processed_args.first(), processed_args.get(1))
           && let Some(type_info) = resolve_type_value(record_arg, scope_types)
-          && let Some(struct_def) = type_info.as_ref().as_struct()
+          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
           && let Some(idx) = struct_def.index_of(field_tag.ref_str())
         {
           ys = CalcitList::new_inner_from(&[
@@ -1269,7 +1271,7 @@ fn preprocess_list_call(
           && let (Some(record_arg), Some(Calcit::Tag(field_tag)), Some(value_arg)) =
             (processed_args.first(), processed_args.get(1), processed_args.get(2))
           && let Some(type_info) = resolve_type_value(record_arg, scope_types)
-          && let Some(struct_def) = type_info.as_ref().as_struct()
+          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
           && let Some(idx) = struct_def.index_of(field_tag.ref_str())
         {
           ys = CalcitList::new_inner_from(&[
@@ -1287,7 +1289,7 @@ fn preprocess_list_call(
           && (processed_args.len() - 1) % 2 == 0
           && let Some(record_arg) = processed_args.first()
           && let Some(type_info) = resolve_type_value(record_arg, scope_types)
-          && let Some(struct_def) = type_info.as_ref().as_struct()
+          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
         {
           let pair_count = (processed_args.len() - 1) / 2;
           let mut all_resolved = true;
@@ -1834,7 +1836,7 @@ fn check_field_in_record(
   };
 
   // Only validate record types
-  let Some(struct_def) = type_info.as_ref().as_struct() else {
+  let Some(struct_def) = type_info.as_ref().resolve_to_struct() else {
     return; // Not a record type
   };
 
@@ -2761,7 +2763,7 @@ fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>
 }
 
 fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
-  if let Some(struct_def) = type_value.as_struct() {
+  if let Some(struct_def) = type_value.resolve_to_struct() {
     // Prepend core record impls; user impls come after and win (last_wins=true)
     let mut impls = resolve_core_impl_records("&core-record-impls").unwrap_or_default();
     impls.extend(struct_def.impls.iter().cloned());
@@ -2887,6 +2889,75 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::Optional(inner) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
+  }
+}
+
+/// Read-only method metadata resolved with the same precedence rules as static
+/// method validation and inlining.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaticMethodDescriptor {
+  pub name: String,
+  pub origin: String,
+}
+
+/// List methods available for a statically known type, ordered from higher to
+/// lower dispatch precedence. Returns `None` when method metadata cannot be
+/// resolved (for example for a dynamic or external JS type).
+pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Vec<StaticMethodDescriptor>> {
+  if type_value.is_static_any() {
+    return Some(vec![]);
+  }
+
+  if let Some(traits) = trait_list_from_type(type_value) {
+    let mut seen = HashSet::new();
+    let mut methods = vec![];
+    for trait_def in traits.iter().rev() {
+      for method in trait_def.methods.iter() {
+        let name = format!(".{}", method.ref_str());
+        if seen.insert(name.clone()) {
+          methods.push(StaticMethodDescriptor {
+            name,
+            origin: trait_def.name.ref_str().to_owned(),
+          });
+        }
+      }
+    }
+    return Some(methods);
+  }
+
+  if let Some(impls) = get_impl_records_from_type(type_value) {
+    let last_wins = core_impl_list_symbol_from_type_annotation(type_value).is_none();
+    let ordered_impls: Box<dyn Iterator<Item = &Arc<CalcitImpl>>> = if last_wins {
+      Box::new(impls.iter().rev())
+    } else {
+      Box::new(impls.iter())
+    };
+    let mut seen = HashSet::new();
+    let mut methods = vec![];
+
+    for imp in ordered_impls {
+      let origin = imp.trait_name().unwrap_or_else(|| imp.name()).ref_str().to_owned();
+      for field in imp.fields().iter() {
+        let name = format!(".{}", field.ref_str());
+        if seen.insert(name.clone()) {
+          methods.push(StaticMethodDescriptor {
+            name,
+            origin: origin.clone(),
+          });
+        }
+      }
+    }
+    return Some(methods);
+  }
+
+  match type_value {
+    CalcitTypeAnnotation::Dynamic
+    | CalcitTypeAnnotation::JsObject
+    | CalcitTypeAnnotation::Custom(_)
+    | CalcitTypeAnnotation::TypeRef(_, _)
+    | CalcitTypeAnnotation::TypeSlot(_) => None,
+    CalcitTypeAnnotation::Optional(inner) => static_method_descriptors(inner.as_ref()),
+    _ => Some(vec![]),
   }
 }
 
@@ -3396,8 +3467,6 @@ pub fn preprocess_defn(
           )),
         }
       })?;
-      xs = xs.push_right(Calcit::from(zs.clone()));
-
       let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
       if !schema_issues.is_empty() {
@@ -3415,24 +3484,38 @@ pub fn preprocess_defn(
         ));
       }
 
-      // Inject arg types into body_types for anonymous fn when the calling context
-      // provides an expected function type via EXPECTED_FN_TYPE.
-      // Named defn (where def_schema is Fn) already has call-site checking via check_user_fn_arg_types,
-      // so we skip injection to avoid false positives from internal runtime handling.
+      // Inject declared argument types into the function body. Call-site checks alone are not
+      // enough: without these bindings, local method dispatch and return inference inside a named
+      // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
       let effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = match def_schema.as_ref() {
-        CalcitTypeAnnotation::Dynamic => {
-          // Check if there's an expected fn type from the calling context (anonymous fn case)
-          EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone())
-        }
+        CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
+        CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
         _ => None,
       };
       if let Some(fn_annot) = &effective_fn_schema {
-        for (param_sym, arg_type) in param_symbols.iter().zip(fn_annot.arg_types.iter()) {
+        let parameter_types = fn_annot.arg_types.iter().cloned().chain(
+          fn_annot
+            .rest_type
+            .iter()
+            .map(|rest_type| Arc::new(CalcitTypeAnnotation::Variadic(rest_type.clone()))),
+        );
+        for (param_sym, arg_type) in param_symbols.iter().zip(parameter_types) {
           if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
-            body_types.insert(param_sym.to_owned(), arg_type.to_owned());
+            body_types.insert(param_sym.to_owned(), arg_type);
           }
         }
       }
+
+      // Keep the parameter nodes themselves typed as well, so expression-level inspection at the
+      // declaration path reports the same annotation as references in the body.
+      for param in &mut zs {
+        if let Calcit::Local(local) = param
+          && let Some(type_info) = body_types.get(&local.sym)
+        {
+          local.type_info = type_info.clone();
+        }
+      }
+      xs = xs.push_right(Calcit::from(zs.clone()));
 
       let mut to_skip = 2;
       let mut processed_body: Vec<Calcit> = vec![];
@@ -3743,6 +3826,29 @@ pub fn preprocess_hint_fn(
   let mut ys = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   for a in args {
     ys.push(a.to_owned());
+  }
+
+  // The two-argument form annotates an existing local function value. Keep the annotation in
+  // lexical scope so later calls, callback checks, and `type-at` retain the complete signature.
+  // The one-argument form is metadata injected into a function body and has no target to refine.
+  if args.len() >= 2
+    && let Some(type_entry) = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&Calcit::from(ys.clone()))
+    && let Some(target_raw) = args.first()
+  {
+    let target_form = preprocess_expr(
+      target_raw,
+      ctx.scope_defs,
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.check_warnings,
+      ctx.call_stack,
+    )?;
+    if let Calcit::Local(local) = target_form {
+      ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
+      let mut typed_local = local;
+      typed_local.type_info = type_entry;
+      ys[1] = Calcit::Local(typed_local);
+    }
   }
   Ok(Calcit::from(ys))
 }
@@ -4092,6 +4198,53 @@ mod tests {
   }
 
   #[test]
+  fn static_method_descriptors_follow_user_impl_precedence() {
+    let low_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("LowImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("low"), EdnTag::new("shared")]),
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+    });
+    let high_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("HighImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("high"), EdnTag::new("shared")]),
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+    });
+    let type_value = CalcitTypeAnnotation::Struct(
+      Arc::new(CalcitStruct {
+        name: EdnTag::new("Demo"),
+        fields: Arc::new(vec![]),
+        field_types: Arc::new(vec![]),
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![low_impl, high_impl],
+      }),
+      Arc::new(vec![]),
+    );
+
+    let methods = static_method_descriptors(&type_value).expect("struct method metadata should resolve");
+
+    assert_eq!(
+      methods,
+      vec![
+        StaticMethodDescriptor {
+          name: ".high".to_owned(),
+          origin: "HighImpl".to_owned(),
+        },
+        StaticMethodDescriptor {
+          name: ".shared".to_owned(),
+          origin: "HighImpl".to_owned(),
+        },
+        StaticMethodDescriptor {
+          name: ".low".to_owned(),
+          origin: "LowImpl".to_owned(),
+        },
+      ]
+    );
+  }
+
+  #[test]
   fn passes_assert_type_through_preprocess() {
     let expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf(":fn")]);
     let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
@@ -4410,6 +4563,69 @@ mod tests {
   }
 
   #[test]
+  fn named_function_schema_types_are_visible_inside_the_body() {
+    let _guard = lock_preprocess_test_state();
+
+    let ns = "tests.named-schema-body";
+    let def = "add-one";
+    let source_code = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf(def),
+        Cirru::List(vec![Cirru::leaf("x")]),
+        Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("x"), Cirru::leaf("1")]),
+      ]),
+      ns,
+      def,
+      vec![],
+    )
+    .expect("parse typed function");
+    let number_type = Arc::new(CalcitTypeAnnotation::Number);
+    let schema = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![number_type.clone()], number_type));
+
+    let mut program_code = program::PROGRAM_CODE_DATA.write().expect("open program code");
+    program_code.insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from(def),
+          program::ProgramDefEntry {
+            code: source_code,
+            schema,
+            doc: Arc::from(""),
+            examples: vec![],
+          },
+        )]),
+      },
+    );
+    drop(program_code);
+
+    let warnings = RefCell::new(vec![]);
+    compile_source_def_for_snapshot(ns, def, &warnings, &CallStackList::default()).expect("compile typed source function");
+    let compiled = program::lookup_compiled_def(ns, def).expect("compiled output");
+    let Calcit::List(defn_nodes) = compiled.preprocessed_code else {
+      panic!("expected preprocessed defn");
+    };
+    let Calcit::List(params) = defn_nodes.get(2).expect("parameter list") else {
+      panic!("expected parameter list");
+    };
+    let Some(Calcit::Local(param)) = params.first() else {
+      panic!("expected local parameter");
+    };
+    assert!(matches!(param.type_info.as_ref(), CalcitTypeAnnotation::Number));
+
+    let Calcit::List(body) = defn_nodes.get(defn_nodes.len() - 1).expect("function body") else {
+      panic!("expected call body");
+    };
+    let Some(Calcit::Local(reference)) = body.get(1) else {
+      panic!("expected local reference in body");
+    };
+    assert!(matches!(reference.type_info.as_ref(), CalcitTypeAnnotation::Number));
+    assert!(warnings.borrow().is_empty(), "typed body should not emit warnings");
+  }
+
+  #[test]
   fn infers_imported_generic_return_type_from_compiled_function_without_runtime_ready() {
     let _guard = lock_preprocess_test_state();
 
@@ -4442,6 +4658,7 @@ mod tests {
             where_bounds: Arc::new(vec![]),
             return_type: Arc::new(CalcitTypeAnnotation::TypeVar(generic_name.clone())),
             arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic_name))],
+            rest_type: None,
           }),
         },
         codegen_form: Calcit::Nil,
@@ -4845,6 +5062,89 @@ mod tests {
   }
 
   #[test]
+  fn local_hint_fn_refines_later_function_references() {
+    use crate::data::cirru::code_to_calcit;
+
+    let hint_form = Cirru::List(vec![
+      Cirru::leaf("hint-fn"),
+      Cirru::leaf("f"),
+      Cirru::List(vec![
+        Cirru::leaf("{}"),
+        Cirru::List(vec![
+          Cirru::leaf(":args"),
+          Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf(":number")]),
+        ]),
+        Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":number")]),
+      ]),
+    ]);
+    let hint = code_to_calcit(&hint_form, "tests.hint", "demo", vec![]).expect("parse hint-fn");
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("f"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved_hint =
+      preprocess_expr(&hint, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess local hint-fn");
+    let annotation = scope_types.get("f").expect("hint-fn should refine the lexical binding");
+    let CalcitTypeAnnotation::Fn(fn_annotation) = annotation.as_ref() else {
+      panic!("expected complete function annotation, got {annotation:?}");
+    };
+    assert!(matches!(fn_annotation.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number)));
+    assert!(matches!(fn_annotation.return_type.as_ref(), CalcitTypeAnnotation::Number));
+    assert!(
+      matches!(resolved_hint, Calcit::List(ref xs) if matches!(xs.get(1), Some(Calcit::Local(local)) if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn(_)))),
+      "the annotation target should carry the refined type"
+    );
+
+    let call = code_to_calcit(&Cirru::List(vec![Cirru::leaf("f"), Cirru::leaf("1")]), "tests.hint", "demo", vec![])
+      .expect("parse local function call");
+    let resolved_call =
+      preprocess_expr(&call, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess local function call");
+    let inferred = infer_type_from_expr(&resolved_call, &scope_types).expect("infer hinted local call return");
+    assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn body_hint_fn_fills_omitted_parameter_types() {
+    use crate::data::cirru::code_to_calcit;
+
+    let schema = Cirru::List(vec![
+      Cirru::leaf("{}"),
+      Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":number")]),
+    ]);
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![
+        Cirru::leaf("f"),
+        Cirru::List(vec![
+          Cirru::leaf("defn"),
+          Cirru::leaf("f%"),
+          Cirru::List(vec![Cirru::leaf("x")]),
+          Cirru::List(vec![Cirru::leaf("hint-fn"), schema]),
+          Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("x"), Cirru::leaf("1")]),
+        ]),
+      ]),
+      Cirru::List(vec![Cirru::leaf("f"), Cirru::leaf("1")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.hint", "demo", vec![]).expect("parse local function");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess body hint-fn");
+    let inferred = infer_type_from_expr(&resolved, &scope_types).expect("infer hinted anonymous function call");
+    assert!(
+      matches!(inferred.as_ref(), CalcitTypeAnnotation::Number),
+      "expected number return from body-hinted function, got {inferred:?}; resolved: {resolved}"
+    );
+    assert!(warnings.borrow().is_empty(), "valid body hint should not emit warnings");
+  }
+
+  #[test]
   fn warns_on_invalid_method_field_access() {
     use cirru_edn::EdnTag;
 
@@ -4949,6 +5249,7 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::from_tag_name("string")),
       ],
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      rest_type: None,
     };
 
     // Create arguments: ("|hello" 42) - reversed types
@@ -5037,6 +5338,7 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::from_tag_name("number"))],
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      rest_type: None,
     };
 
     let expr = Cirru::List(vec![Cirru::leaf("plus1"), Cirru::leaf(":tag")]);
@@ -5150,6 +5452,7 @@ mod tests {
       }]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      rest_type: None,
     };
 
     let arg_local = Calcit::Local(CalcitLocal {
@@ -5437,6 +5740,7 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number)],
+      rest_type: None,
     });
 
     // Create a record with the method

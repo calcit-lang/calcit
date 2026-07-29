@@ -6,6 +6,8 @@
 - **质量检查**：执行 `cargo clippy -- -D warnings` 消除潜在风险与性能问题。
 - **构建验证**：执行 `yarn compile` 确保前端 TS 与 Rust 核心构建正常。
 - **运行测试**：执行 `cargo test` 验证单元测试，`yarn check-all` 验证全量集成测试。
+- **Agent CLI 协议检查**：在本仓库执行 `yarn check-agent-interface`，验证查询命令 stdout 可解析为单个 JSON，并记录语义查询耗时与输出字节数。该命令属于 Calcit 仓库开发流程，不适用于普通业务项目。
+- **外部项目回归**：CLI 查询、编辑或类型分析改动完成后，用已全局安装的新 `cr` 在 Respo 等真实项目验证；有写入风险的编辑命令先作用于 Snapshot 临时副本。大项目只需要统计时使用 `--summary-only`，examples 回归优先使用 `check-examples --ns <ns> --def <definition>`。
 
 ### 功能准则
 
@@ -60,7 +62,7 @@ cr docs agents --full
 ### CLI 修改指南与约束
 
 - **优先使用 `search-replace`**：在 `cr tree` 操作中，优先使用 `search-replace` 而非 `replace`。它基于内容定位，且在不唯一时会报错，比手动指定索引更安全。
-- **全量取消 stdin (-s) 支持**：由于 Shell 重定向和多行输入的复杂性，所有的修改类子命令（`edit` 和 `tree` 系列）已**移除 `--stdin` / `-s` 选项**。
+- **全量取消 `--stdin` 支持**：由于 Shell 重定向和多行输入的复杂性，所有的修改类子命令（`edit` 和 `tree` 系列）已移除该选项。
   - ✅ 使用 `--code 'code'` 进行单行输入（自动检测 JSON vs Cirru）。
   - ✅ 使用 `--file file` 进行多行或复杂结构输入（推荐在 `.calcit-snippets/` 下创建临时文件）。
   - ✅ 省略 `--code` `--file` 时自动从 stdin 读取（推荐用于多行代码和避免转义）。

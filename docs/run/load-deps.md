@@ -49,6 +49,29 @@ To update `deps.cirru` directly without confirmation:
 caps upgrade --all
 ```
 
+### Module status and local changes
+
+Installed modules are Git working trees. Check that every installed module is at the
+version declared by `deps.cirru`, and report local working-tree changes, with:
+
+```bash
+caps status
+```
+
+The regular `caps` command performs the same local-change check before syncing
+dependencies. If a module has local modifications, it prints a warning so that the
+changes are not mistaken for the version from the remote repository.
+
+To discard tracked local changes and return each installed dependency to its current
+commit, run:
+
+```bash
+caps reset
+```
+
+This uses `git reset --hard HEAD`; review and back up any work you need before running
+it. Untracked files are reported by `caps status` but are not deleted by `caps reset`.
+
 ### CLI Options
 
 ```
@@ -70,6 +93,8 @@ Options:
 Commands:
   outdated          show outdated versions
   download          download named packages with org/repo@branch
+  status            check installed module versions and local modifications
+  reset             discard tracked local modifications in installed modules
 ```
 
 - "pull branch" to fetch update if only branch name is specified like `main`.

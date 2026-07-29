@@ -1,14 +1,13 @@
 use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnSetView, EdnTag, from_edn};
 use cirru_parser::Cirru;
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{
-  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context,
-};
+use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
@@ -317,8 +316,11 @@ mod schema_serde {
   {
     let edn: Option<Edn> = match schema.as_ref() {
       CalcitTypeAnnotation::Dynamic => None,
+      // Keep the binary snapshot representation of function schemas stable:
+      // build.rs and older runtimes expect the direct map form here. Value
+      // annotations use their ordinary type-expression representation.
       CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.to_schema_edn()),
-      _ => None,
+      annotation => Some(schema_annotation_to_edn(annotation)),
     };
     edn.serialize(s)
   }
@@ -371,25 +373,38 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     ));
   }
 
-  let normalized =
-    normalize_schema_edn(value).map_err(|e| format!("failed to normalize {owner}: {e}; schema={}", format_edn_preview(value)))?;
-  let schema_cirru = parse_schema_cirru_from_edn(&normalized).map_err(|e| {
-    format!(
-      "failed to convert {owner} into Cirru: {e}; schema={}",
-      format_edn_preview(&normalized)
-    )
-  })?;
-  parse_schema_data(&schema_cirru)
-    .map_err(|e| format!("failed to validate {owner}: {e}; schema={}", format_edn_preview(&normalized)))?;
-
-  CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized)
-    .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-    .ok_or_else(|| {
+  if let Ok(normalized) = normalize_schema_edn(value) {
+    let schema_cirru = parse_schema_cirru_from_edn(&normalized).map_err(|e| {
       format!(
-        "failed to parse {owner} as function schema after normalization; schema={}",
+        "failed to convert {owner} into Cirru: {e}; schema={}",
         format_edn_preview(&normalized)
       )
-    })
+    })?;
+    parse_schema_data(&schema_cirru)
+      .map_err(|e| format!("failed to validate {owner}: {e}; schema={}", format_edn_preview(&normalized)))?;
+
+    return CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized)
+      .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
+      .ok_or_else(|| {
+        format!(
+          "failed to parse {owner} as function schema after normalization; schema={}",
+          format_edn_preview(&normalized)
+        )
+      });
+  }
+
+  let schema_cirru = parse_schema_cirru_from_edn(value)
+    .map_err(|e| format!("failed to convert {owner} into Cirru: {e}; schema={}", format_edn_preview(value)))?;
+  parse_schema_data(&schema_cirru).map_err(|e| format!("failed to validate {owner}: {e}; schema={}", format_edn_preview(value)))?;
+
+  let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(value);
+  if matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    return Err(format!(
+      "failed to parse {owner} as a standalone type annotation; schema={}",
+      format_edn_preview(value)
+    ));
+  }
+  Ok(annotation)
 }
 
 fn tags_vec_to_set(tags: Vec<String>) -> HashSet<EdnTag> {
@@ -433,20 +448,19 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
   match schema {
     CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-    // `:struct`/`:enum`/`:trait`/`:impl`/`:record` shorthand tags round-trip through
-    // `Custom(Arc<Calcit>)` when loaded (see `CalcitTypeAnnotation::from_tag_name`).
-    // Coerce the wrapped tag back into its EDN tag on write instead of falling
-    // through to `builtin_tag_name` (which doesn't know about `Custom` and would
-    // silently degrade the schema to `:dynamic`, losing the original kind).
+    // Runtime-resolved nominal types are intentionally persisted as their
+    // broad schema kinds. Their concrete definitions belong to source code,
+    // and serializing only a local name would lose namespace identity.
     CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
-      Calcit::Tag(tag) => Edn::Tag(tag.clone()),
+      crate::calcit::Calcit::Tag(tag) => Edn::Tag(tag.clone()),
       _ => Edn::tag("dynamic"),
     },
     CalcitTypeAnnotation::Record(_) => Edn::tag("record"),
     CalcitTypeAnnotation::Struct(..) => Edn::tag("struct"),
     CalcitTypeAnnotation::Enum(..) => Edn::tag("enum"),
+    CalcitTypeAnnotation::Tuple(_) => Edn::tag("tuple"),
     CalcitTypeAnnotation::Trait(_) => Edn::tag("trait"),
-    other => other.builtin_tag_name().map(Edn::tag).unwrap_or(Edn::tag("dynamic")),
+    other => other.to_type_edn(),
   }
 }
 
@@ -475,6 +489,47 @@ pub struct CodeEntry {
   pub code: Cirru,
   #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
   pub schema: Arc<CalcitTypeAnnotation>,
+}
+
+/// Return an opaque, deterministic revision for one definition.
+///
+/// The revision covers every persisted `CodeEntry` field and deliberately
+/// sorts set-like metadata before hashing. It can therefore be used as a
+/// read-only identity or as a future stale-edit precondition without depending
+/// on map iteration order, file timestamps, or the definition's position in a
+/// snapshot.
+pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
+  fn update_part(hasher: &mut Md5, label: &str, content: &[u8]) {
+    hasher.update(label.as_bytes());
+    hasher.update([0]);
+    hasher.update((content.len() as u64).to_le_bytes());
+    hasher.update(content);
+  }
+
+  let mut hasher = Md5::new();
+  update_part(&mut hasher, "doc", entry.doc.as_bytes());
+
+  let mut tags = entry.tags.iter().map(|tag| tag.ref_str()).collect::<Vec<_>>();
+  tags.sort_unstable();
+  for tag in tags {
+    update_part(&mut hasher, "tag", tag.as_bytes());
+  }
+
+  let schema = cirru_edn::format(&schema_annotation_to_edn(entry.schema.as_ref()), true)
+    .map_err(|error| format!("Failed to format definition schema for revision: {error}"))?;
+  update_part(&mut hasher, "schema", schema.as_bytes());
+
+  let code = cirru_parser::format(std::slice::from_ref(&entry.code), true.into())
+    .map_err(|error| format!("Failed to format definition code for revision: {error}"))?;
+  update_part(&mut hasher, "code", code.as_bytes());
+
+  for example in &entry.examples {
+    let rendered = cirru_parser::format(std::slice::from_ref(example), true.into())
+      .map_err(|error| format!("Failed to format definition example for revision: {error}"))?;
+    update_part(&mut hasher, "example", rendered.as_bytes());
+  }
+
+  Ok(format!("md5:{:x}", hasher.finalize()))
 }
 
 impl TryFrom<Edn> for CodeEntry {
@@ -813,6 +868,16 @@ fn validate_snapshot_schemas_for_write(snapshot: &Snapshot) -> Result<(), String
 }
 
 fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
+  fn validate_serialized_schema(schema: &Cirru) -> Result<(), String> {
+    if let Cirru::Leaf(tag) = schema {
+      let tag_name = tag.trim_start_matches(':');
+      if PRIMITIVE_SCHEMA_TAGS.contains(&tag_name) {
+        return Ok(());
+      }
+    }
+    validate_schema_for_write(schema)
+  }
+
   fn walk(node: &Cirru, path: &mut Vec<usize>) -> Result<(), String> {
     if let Cirru::List(items) = node {
       if let Some(Cirru::Leaf(head)) = items.first()
@@ -822,7 +887,7 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
         if matches!(schema_node, Cirru::Leaf(s) if s.as_ref() == "nil") {
           return Ok(());
         }
-        return validate_schema_for_write(schema_node)
+        return validate_serialized_schema(schema_node)
           .map_err(|e| format!("serialized snapshot has invalid `:schema` at {path:?}: {e}"));
       }
 
@@ -897,16 +962,25 @@ fn check_no_excess_quotes(node: &Cirru) -> Result<(), String> {
 /// A type variable is represented as `(quote Name)` in the Cirru AST,
 /// i.e. the source form `'T` parses to `(quote T)`.
 fn collect_type_vars(node: &Cirru, out: &mut HashSet<String>) {
-  if let Cirru::List(items) = node {
-    if items.len() == 2
-      && let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1))
-      && head.as_ref() == "quote"
-    {
-      out.insert(name.to_string());
-      return;
+  match node {
+    Cirru::Leaf(value) => {
+      if let Some(name) = value.strip_prefix('\'')
+        && !name.is_empty()
+      {
+        out.insert(name.to_owned());
+      }
     }
-    for item in items.iter() {
-      collect_type_vars(item, out);
+    Cirru::List(items) => {
+      if items.len() == 2
+        && let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1))
+        && head.as_ref() == "quote"
+      {
+        out.insert(name.to_string());
+        return;
+      }
+      for item in items.iter() {
+        collect_type_vars(item, out);
+      }
     }
   }
 }
@@ -928,42 +1002,83 @@ fn parse_generics_vars(node: &Cirru) -> HashSet<String> {
   vars
 }
 
+fn looks_like_undeclared_type_var(name: &str) -> bool {
+  name.len() == 1 && name.as_bytes()[0].is_ascii_uppercase()
+}
+
 /// Allowed primitive tag types usable as a bare leaf schema (e.g. `:string`, `:number`).
 pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
-  "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit", "record",
-  "struct", "enum", "trait", "impl",
+  "any", "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit",
+  "record", "struct", "enum", "trait", "impl",
 ];
 
+const PARAMETERIZED_SCHEMA_TAGS: &[&str] = &["list", "map", "set", "fn", "tuple", "ref"];
+
+fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
+  parse_schema_data(schema)?;
+  check_no_nil_type(schema)?;
+  check_no_excess_quotes(schema)?;
+
+  let schema_edn = schema_cirru_to_edn(schema.clone());
+  if matches!(schema_edn, Edn::Nil) {
+    return Err("Failed to convert standalone type schema into EDN".to_owned());
+  }
+  let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn);
+  if matches!(
+    annotation.as_ref(),
+    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::DynTuple
+  ) {
+    return Err(format!(
+      "Unsupported standalone type schema: {}",
+      cirru_parser::format(std::slice::from_ref(schema), true.into()).unwrap_or_else(|_| format!("{schema:?}"))
+    ));
+  }
+  Ok(())
+}
+
 /// Strict validation for schemas submitted via `cr edit schema`.
-/// Ensures the schema is a `{}` map or wrapped `(:: :fn ({} ...))` form, has a recognised `:kind`, and contains
-/// only permitted fields.  Loading (read-only) only requires the weaker
-/// `parse_schema_data` check.
+/// New writes use one canonical form: direct value types or wrapped
+/// `(:: :fn ({} ...))` / `(:: :macro ({} ...))` callable schemas. Loading
+/// existing snapshots remains deliberately more permissive.
 pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
-  let mut wrapped_kind: Option<&str> = None;
   let raw_items = match schema {
     Cirru::List(items) => items,
     Cirru::Leaf(s) => {
-      // Allow known primitive type tags as a bare leaf schema (e.g. :string, :number).
       let tag_name = s.trim_start_matches(':');
+      if PARAMETERIZED_SCHEMA_TAGS.contains(&tag_name) {
+        let example = match tag_name {
+          "map" => ":: :map :tag :bool",
+          "fn" => ":: :fn $ {} (:args $ []) (:return :unit)",
+          "tuple" => ":: :tuple :bool",
+          other => {
+            return Err(format!(
+              "Bare `:{other}` leaves its nested type dynamic. Use an explicit type expression such as `:: :{other} :bool`; write `:dynamic` as the nested type only when the boundary is intentionally dynamic."
+            ));
+          }
+        };
+        return Err(format!(
+          "Bare `:{tag_name}` leaves its nested type dynamic. Use an explicit type expression such as `{example}`; write `:dynamic` as a nested type only when the boundary is intentionally dynamic."
+        ));
+      }
       if PRIMITIVE_SCHEMA_TAGS.contains(&tag_name) {
         return Ok(());
       }
       return Err(format!(
-        "Schema must be a `{{}}` map or `(:: :fn ({{}} ...))` / `(:: :macro ({{}} ...))`, got leaf: `{s}`. \
-         Primitive type tags (e.g. `:string`, `:number`, `:bool`) are accepted."
+        "Unknown value schema `{s}`. Use a direct primitive such as `:string`, a parameterized value type such as `:: :ref :bool`, or a callable schema such as `:: :fn $ {{}} (:args $ []) (:return :unit)`."
       ));
     }
   };
 
   let items: &[Cirru] = if matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::") {
+    let is_function_schema = matches!(raw_items.get(1), Some(Cirru::Leaf(tag)) if tag.as_ref() == ":fn" || tag.as_ref() == ":macro");
+    if !is_function_schema {
+      return validate_standalone_type_schema(schema);
+    }
     if raw_items.len() != 3 {
       return Err("Wrapped schema `(:: :fn schema-map)` or `(:: :macro schema-map)` expects exactly 3 items".to_owned());
     }
     match (&raw_items[1], &raw_items[2]) {
-      (Cirru::Leaf(tag), Cirru::List(inner_items)) if tag.as_ref() == ":fn" || tag.as_ref() == ":macro" => {
-        wrapped_kind = Some(tag);
-        inner_items
-      }
+      (Cirru::Leaf(tag), Cirru::List(inner_items)) if tag.as_ref() == ":fn" || tag.as_ref() == ":macro" => inner_items,
       (Cirru::Leaf(tag), _) => {
         return Err(format!(
           "Wrapped schema tag must be `:fn` or `:macro`, got: `{tag}`. Example: `(:: :fn ({{}} (:args ([] :string)) (:return :bool)))`"
@@ -971,9 +1086,23 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       }
       _ => return Err("Wrapped schema second item must be `:fn` or `:macro` and third item must be a `{}` map".to_owned()),
     }
+  } else if matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "{}") {
+    return Err(
+      "Legacy unwrapped callable schema maps are not accepted by `cr edit schema`. Use the canonical wrapped form `:: :fn $ {} ...` or `:: :macro $ {} ...`."
+        .to_owned(),
+    );
   } else {
-    raw_items
+    return validate_standalone_type_schema(schema);
   };
+
+  for pair in items.iter().skip(1) {
+    if matches!(pair, Cirru::List(xs) if matches!(xs.first(), Some(Cirru::Leaf(key)) if key.as_ref() == ":kind")) {
+      return Err(
+        "Wrapped callable schemas must not repeat `:kind`. Keep the outer `:: :fn` or `:: :macro` tag and remove the inner `(:kind ...)` field."
+          .to_owned(),
+      );
+    }
+  }
 
   let Some(Cirru::Leaf(head)) = items.first() else {
     return Err("Schema must be a non-empty list starting with `{}`".to_owned());
@@ -996,7 +1125,6 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   check_no_excess_quotes(schema)?;
 
   // Field-level validation
-  let mut has_kind = wrapped_kind.is_some();
   for pair in items.iter().skip(1) {
     let Cirru::List(xs) = pair else {
       let text = cirru_parser::format(std::slice::from_ref(pair), true.into()).unwrap_or_else(|_| format!("{pair:?}"));
@@ -1020,29 +1148,6 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         VALID_SCHEMA_FIELDS.join(", ")
       ));
     }
-
-    if key.as_ref() == ":kind" {
-      has_kind = true;
-      match xs.get(1) {
-        Some(Cirru::Leaf(val)) if val.as_ref() == ":fn" || val.as_ref() == ":macro" => {}
-        Some(Cirru::Leaf(val)) => {
-          return Err(format!("Schema `:kind` must be `:fn` or `:macro`, got: `{val}`"));
-        }
-        _ => return Err("Schema `:kind` value must be a leaf tag (`:fn` or `:macro`)".to_owned()),
-      }
-
-      if let (Some(wrapped), Some(Cirru::Leaf(val))) = (wrapped_kind, xs.get(1))
-        && wrapped != val.as_ref()
-      {
-        return Err(format!(
-          "Wrapped schema tag `{wrapped}` conflicts with inner `:kind {val}`; keep only one kind or make them match"
-        ));
-      }
-    }
-  }
-
-  if !has_kind {
-    return Err("Schema must have a `:kind` field (`:fn` or `:macro`), unless the wrapped tag already provides it".to_owned());
   }
 
   // --- Type-variable consistency check ---
@@ -1099,7 +1204,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
     // Every used var must be declared in :generics
     for var in &used {
-      if !declared.contains(var) {
+      if !declared.contains(var) && looks_like_undeclared_type_var(var) {
         return Err(format!(
           "Type variable `'{var}` is used in `:args`/`:rest`/`:return` but not declared in `:generics`."
         ));
@@ -1120,7 +1225,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     if let Some(node) = where_node {
       collect_type_vars(node, &mut used);
     }
-    if let Some(var) = used.iter().next() {
+    if let Some(var) = used.iter().find(|name| looks_like_undeclared_type_var(name)) {
       return Err(format!("Type variable `'{var}` is used but no `:generics` field is declared."));
     }
   }
@@ -1743,6 +1848,48 @@ mod tests {
   use crate::calcit::CalcitFnTypeAnnotation;
   use cirru_edn::EdnListView;
 
+  fn parse_one(source: &str) -> Cirru {
+    cirru_parser::parse(source)
+      .unwrap_or_else(|error| panic!("failed to parse test Cirru `{source}`: {error}"))
+      .into_iter()
+      .next()
+      .expect("test Cirru should contain one expression")
+  }
+
+  fn revision_test_entry(tags: &[&str]) -> CodeEntry {
+    CodeEntry {
+      doc: "revision test".to_owned(),
+      examples: vec![Cirru::List(vec![Cirru::leaf("inc"), Cirru::leaf("1")])],
+      tags: tags.iter().map(|tag| EdnTag::new(*tag)).collect(),
+      code: Cirru::List(vec![Cirru::leaf("def"), Cirru::leaf("answer"), Cirru::leaf("42")]),
+      schema: Arc::new(CalcitTypeAnnotation::Number),
+    }
+  }
+
+  #[test]
+  fn definition_revision_is_stable_and_covers_persisted_fields() {
+    let entry = revision_test_entry(&["public", "demo"]);
+    let reordered_tags = revision_test_entry(&["demo", "public"]);
+    let revision = definition_revision(&entry).expect("revision should render");
+
+    assert_eq!(
+      revision,
+      definition_revision(&reordered_tags).expect("tag order should not affect revision")
+    );
+    assert!(revision.starts_with("md5:"));
+
+    let mut changed = entry.clone();
+    changed.doc.push('!');
+    assert_ne!(revision, definition_revision(&changed).expect("changed revision should render"));
+
+    let mut changed = entry.clone();
+    changed.code = Cirru::List(vec![Cirru::leaf("def"), Cirru::leaf("answer"), Cirru::leaf("43")]);
+    assert_ne!(
+      revision,
+      definition_revision(&changed).expect("changed code revision should render")
+    );
+  }
+
   use std::fs;
 
   #[test]
@@ -1954,23 +2101,10 @@ mod tests {
 
   #[test]
   fn test_validate_schema_for_write() {
-    let valid = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
-      Cirru::List(vec![
-        Cirru::leaf(":args"),
-        Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf(":string")]),
-      ]),
-      Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":bool")]),
-    ]);
+    let valid = parse_one(":: :fn $ {} (:args ([] :string)) (:return :bool)");
     assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
 
-    let valid_with_where =
-      cirru_parser::parse("{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)")
-        .expect("schema should parse")
-        .into_iter()
-        .next()
-        .expect("schema should have one node");
+    let valid_with_where = parse_one(":: :fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)");
     assert!(
       validate_schema_for_write(&valid_with_where).is_ok(),
       "schema with :where should pass"
@@ -1993,7 +2127,18 @@ mod tests {
       "wrapped macro schema should pass"
     );
 
-    // Missing :kind
+    let ref_bool = Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":ref"), Cirru::leaf(":bool")]);
+    assert!(
+      validate_schema_for_write(&ref_bool).is_ok(),
+      "standalone parameterized value schema should pass"
+    );
+
+    // Legacy unwrapped callable maps are rejected even when they carry :kind.
+    let legacy_unwrapped = parse_one("{} (:kind :fn) (:args ([] :string)) (:return :bool)");
+    let error = validate_schema_for_write(&legacy_unwrapped).expect_err("legacy map should fail");
+    assert!(error.contains("Legacy unwrapped callable schema"), "error: {error}");
+
+    // Missing callable wrapper
     let no_kind = Cirru::List(vec![
       Cirru::leaf("{}"),
       Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]")])]),
@@ -2001,27 +2146,29 @@ mod tests {
     assert!(validate_schema_for_write(&no_kind).is_err(), "missing :kind should fail");
 
     // Unknown field
-    let unknown_field = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
-      Cirru::List(vec![Cirru::leaf(":foobar"), Cirru::leaf(":dynamic")]),
-    ]);
+    let unknown_field = parse_one(":: :fn $ {} (:foobar :dynamic)");
     assert!(validate_schema_for_write(&unknown_field).is_err(), "unknown field should fail");
 
-    // Bad :kind value
-    let bad_kind = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":something-else")]),
-    ]);
+    // Bad outer callable kind.
+    let bad_kind = parse_one(":: :something-else $ {}");
     assert!(validate_schema_for_write(&bad_kind).is_err(), "bad :kind value should fail");
+
+    let repeated_kind = parse_one(":: :fn $ {} (:kind :fn) (:return :unit)");
+    let error = validate_schema_for_write(&repeated_kind).expect_err("redundant inner kind should fail");
+    assert!(error.contains("must not repeat `:kind`"), "error: {error}");
 
     // Primitive type tag leaves are now accepted.
     let leaf_string = Cirru::Leaf(Arc::from(":string"));
     assert!(validate_schema_for_write(&leaf_string).is_ok(), ":string leaf should pass");
     let leaf_fn = Cirru::Leaf(Arc::from(":fn"));
-    assert!(validate_schema_for_write(&leaf_fn).is_ok(), ":fn leaf should pass");
+    assert!(validate_schema_for_write(&leaf_fn).is_err(), "bare :fn should require a signature");
+    let leaf_ref = Cirru::Leaf(Arc::from(":ref"));
+    let error = validate_schema_for_write(&leaf_ref).expect_err("bare :ref should require an inner type");
+    assert!(error.contains("leaves its nested type dynamic"), "error: {error}");
     let leaf_number = Cirru::Leaf(Arc::from(":number"));
     assert!(validate_schema_for_write(&leaf_number).is_ok(), ":number leaf should pass");
+    let leaf_any = Cirru::Leaf(Arc::from(":any"));
+    assert!(validate_schema_for_write(&leaf_any).is_ok(), ":any leaf should pass");
     let leaf_trait = Cirru::Leaf(Arc::from(":trait"));
     assert!(validate_schema_for_write(&leaf_trait).is_ok(), ":trait leaf should pass");
     let leaf_enum = Cirru::Leaf(Arc::from(":enum"));
@@ -2049,76 +2196,48 @@ mod tests {
   }
 
   #[test]
-  fn test_typevar_consistency_validation() {
-    // Helper: make a (quote X) node representing 'X type var
-    fn quote(name: &str) -> Cirru {
-      Cirru::List(vec![Cirru::leaf("quote"), Cirru::leaf(name)])
-    }
+  fn standalone_value_schema_round_trips_without_becoming_dynamic() {
+    let schema_edn = Edn::tuple(Edn::tag("ref"), vec![Edn::tag("bool")]);
+    let annotation = parse_loaded_schema_annotation(&schema_edn, "tests/*flag").expect("ref<bool> should load");
 
+    assert!(matches!(
+      annotation.as_ref(),
+      CalcitTypeAnnotation::Ref(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+    ));
+    assert_eq!(schema_annotation_to_edn(annotation.as_ref()), schema_edn);
+
+    let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
+    entry.schema = annotation;
+    let encoded = rmp_serde::to_vec(&entry).expect("value schema should serialize into binary snapshot data");
+    let decoded: CodeEntry = rmp_serde::from_slice(&encoded).expect("value schema should deserialize from binary snapshot data");
+    assert!(matches!(
+      decoded.schema.as_ref(),
+      CalcitTypeAnnotation::Ref(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+    ));
+  }
+
+  #[test]
+  fn test_typevar_consistency_validation() {
     // Valid: 'T declared and used in both args and return
-    let valid_generic = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
-      Cirru::List(vec![Cirru::leaf(":generics"), Cirru::List(vec![Cirru::leaf("[]"), quote("T")])]),
-      Cirru::List(vec![
-        Cirru::leaf(":args"),
-        Cirru::List(vec![
-          Cirru::leaf("[]"),
-          Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":list"), quote("T")]),
-        ]),
-      ]),
-      Cirru::List(vec![Cirru::leaf(":return"), quote("T")]),
-    ]);
+    let valid_generic = parse_one(":: :fn $ {} (:generics ([] 'T)) (:args ([] (:: :list 'T))) (:return 'T)");
     assert!(validate_schema_for_write(&valid_generic).is_ok(), "valid generics should pass");
 
     // Invalid: 'K used in :return but not declared in :generics
-    let undeclared = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
-      Cirru::List(vec![Cirru::leaf(":generics"), Cirru::List(vec![Cirru::leaf("[]"), quote("T")])]),
-      Cirru::List(vec![
-        Cirru::leaf(":args"),
-        Cirru::List(vec![
-          Cirru::leaf("[]"),
-          Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":list"), quote("T")]),
-        ]),
-      ]),
-      Cirru::List(vec![Cirru::leaf(":return"), quote("K")]),
-    ]);
+    let undeclared = parse_one(":: :fn $ {} (:generics ([] 'T)) (:args ([] (:: :list 'T))) (:return 'K)");
     assert!(
       validate_schema_for_write(&undeclared).is_err(),
       "undeclared type var 'K should fail"
     );
 
     // Invalid: 'U declared but never used
-    let unused_declared = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
-      Cirru::List(vec![
-        Cirru::leaf(":generics"),
-        Cirru::List(vec![Cirru::leaf("[]"), quote("T"), quote("U")]),
-      ]),
-      Cirru::List(vec![
-        Cirru::leaf(":args"),
-        Cirru::List(vec![
-          Cirru::leaf("[]"),
-          Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":list"), quote("T")]),
-        ]),
-      ]),
-      Cirru::List(vec![Cirru::leaf(":return"), quote("T")]),
-    ]);
+    let unused_declared = parse_one(":: :fn $ {} (:generics ([] 'T 'U)) (:args ([] (:: :list 'T))) (:return 'T)");
     assert!(
       validate_schema_for_write(&unused_declared).is_err(),
       "unused declared 'U should fail"
     );
 
     // Invalid: type var used without any :generics
-    let typevar_no_generics = Cirru::List(vec![
-      Cirru::leaf("{}"),
-      Cirru::List(vec![Cirru::leaf(":kind"), Cirru::leaf(":fn")]),
-      Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(vec![Cirru::leaf("[]"), quote("T")])]),
-      Cirru::List(vec![Cirru::leaf(":return"), quote("T")]),
-    ]);
+    let typevar_no_generics = parse_one(":: :fn $ {} (:args ([] 'T)) (:return 'T)");
     assert!(
       validate_schema_for_write(&typevar_no_generics).is_err(),
       "type var without :generics should fail"
@@ -2142,7 +2261,7 @@ mod tests {
 
   #[test]
   fn test_schema_generics_round_trip_uses_single_quote_source_syntax() {
-    let schema_text = "{} (:kind :fn) (:args ([] :number)) (:generics ([] 'T)) (:return :number)";
+    let schema_text = "{} (:kind :fn) (:args ([] 'T)) (:generics ([] 'T)) (:return 'T)";
     let schema_cirru = cirru_parser::parse(schema_text)
       .expect("should parse")
       .into_iter()
@@ -2162,7 +2281,7 @@ mod tests {
     };
     assert_eq!(generics.0, vec![Edn::Symbol(Arc::from("T"))]);
 
-    let saved_cirru = schema_edn_to_cirru(&saved_edn).expect("schema edn to cirru");
+    let saved_cirru = schema_edn_to_cirru(&fn_schema.to_wrapped_schema_edn()).expect("schema edn to cirru");
     validate_schema_for_write(&saved_cirru).expect("saved schema should still be writable");
     let saved_text = cirru_parser::format(&[saved_cirru], true.into()).expect("format schema");
     assert!(
@@ -2177,7 +2296,7 @@ mod tests {
 
   #[test]
   fn test_schema_where_round_trip_is_preserved() {
-    let schema_text = "{} (:kind :fn) (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)";
+    let schema_text = ":: :fn $ {} (:generics ([] 'T)) (:args ([] 'T)) (:where {} ('T Show)) (:return :string)";
     let schema_cirru = cirru_parser::parse(schema_text)
       .expect("should parse")
       .into_iter()
@@ -2193,8 +2312,7 @@ mod tests {
     assert_eq!(fn_schema.where_bounds[0].name.as_ref(), "T");
     assert_eq!(fn_schema.where_bounds[0].traits[0].name.ref_str(), "Show");
 
-    let saved_edn = fn_schema.to_schema_edn();
-    let saved_cirru = schema_edn_to_cirru(&saved_edn).expect("schema edn to cirru");
+    let saved_cirru = schema_edn_to_cirru(&fn_schema.to_wrapped_schema_edn()).expect("schema edn to cirru");
     validate_schema_for_write(&saved_cirru).expect("saved where schema should still be writable");
     let saved_text = cirru_parser::format(&[saved_cirru], true.into()).expect("format schema");
     assert!(saved_text.contains(":where"), "saved schema should keep :where: {saved_text}");
@@ -2252,7 +2370,7 @@ mod tests {
 
   #[test]
   fn test_schema_write_rejects_double_quoted_generics() {
-    let schema_text = "{} (:kind :fn) (:args ([] :number)) (:generics ([] ''T)) (:return :number)";
+    let schema_text = ":: :fn $ {} (:args ([] :number)) (:generics ([] ''T)) (:return :number)";
     let schema_cirru = cirru_parser::parse(schema_text)
       .expect("should parse")
       .into_iter()
@@ -2714,7 +2832,8 @@ mod tests {
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote (defn main! (x) x)
           :examples $ []
-          :schema $ {} (:kind :fn) (:args $ [] :dynamic) (:generics $ [] ''T) (:return :dynamic)
+          :schema $ :: :fn
+            {} (:args $ [] :dynamic) (:generics $ [] ''T) (:return :dynamic)
 "#;
 
     let err = validate_serialized_snapshot_content(content).expect_err("serialized snapshot should reject double-quoted generics");

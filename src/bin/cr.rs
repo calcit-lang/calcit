@@ -47,22 +47,32 @@ use calcit::{
 use cirru_parser::Cirru;
 
 fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  print!("{}", type_coverage::format_check_types(options, snapshot)?);
+  match options.format.as_str() {
+    "human" | "text" => print!("{}", type_coverage::format_check_types(options, snapshot)?),
+    "json" => println!("{}", type_coverage::format_check_types_json(options, snapshot)?),
+    other => return Err(format!("Unknown check-types output format `{other}`. Expected `human` or `json`.")),
+  }
   Ok(())
 }
 
 fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  print!("{}", type_coverage::format_weak_types(options, snapshot)?);
+  match options.format.as_str() {
+    "human" | "text" => print!("{}", type_coverage::format_weak_types(options, snapshot)?),
+    "json" => println!("{}", type_coverage::format_weak_types_json(options, snapshot)?),
+    other => return Err(format!("Unknown weak-types output format `{other}`. Expected `human` or `json`.")),
+  }
   Ok(())
 }
 
 fn main() -> Result<(), String> {
-  builtins::effects::init_effects_states();
-
-  #[cfg(not(target_arch = "wasm32"))]
-  injection::inject_platform_apis();
-
   let cli_args: ToplevelCalcit = argh::from_env();
+
+  cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;
+
+  if cli_args.version {
+    println!("{}", cli_args::CALCIT_VERSION);
+    return Ok(());
+  }
 
   if let Some(level) = cli_args.tips_level.as_deref() {
     cli_handlers::set_tips_level(level)?;
@@ -72,11 +82,20 @@ fn main() -> Result<(), String> {
     cli_handlers::set_tips_level("full")?;
   }
 
+  // Query/analyze commands may run preprocessing before the normal program-loading path.
+  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
+  runner::preprocess::set_verbose_preprocess(cli_args.verbose);
+
   if cli_handlers::should_echo_command(&cli_args) {
     cli_handlers::suppress_command_guidance();
     calcit::set_quiet_tool_output(true);
     cli_handlers::print_command_echo(&cli_args);
   }
+
+  builtins::effects::init_effects_states();
+
+  #[cfg(not(target_arch = "wasm32"))]
+  injection::inject_platform_apis();
 
   // Handle standalone commands that don't need full program loading
   match &cli_args.subcommand {
@@ -98,6 +117,9 @@ fn main() -> Result<(), String> {
     Some(CalcitCommand::Tree(tree_cmd)) => {
       return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
     }
+    Some(CalcitCommand::Cursor(cursor_cmd)) => {
+      return cli_handlers::handle_cursor_command(cursor_cmd, &cli_args.input);
+    }
     Some(CalcitCommand::Config(config_cmd)) => {
       return cli_handlers::handle_config_command(config_cmd, &cli_args.input);
     }
@@ -108,6 +130,14 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CallGraphDiff(diff_cmd) => {
         return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
       }
+      AnalyzeSubcommand::CheckTypes(options) => {
+        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
+        return run_check_types(options, &snapshot);
+      }
+      AnalyzeSubcommand::WeakTypes(options) => {
+        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
+        return run_weak_types(options, &snapshot);
+      }
       _ => {}
     },
     _ => {}
@@ -117,12 +147,8 @@ fn main() -> Result<(), String> {
   let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)) | Some(CalcitCommand::Exec(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
-  if !cli_args.version && !calcit::quiet_tool_output() {
+  if !calcit::quiet_tool_output() {
     eprintln!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
-  }
-  if cli_args.version {
-    println!("{}", cli_args::CALCIT_VERSION);
-    return Ok(());
   }
 
   // get dirty functions injected
@@ -263,9 +289,6 @@ fn main() -> Result<(), String> {
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method);
-  runner::preprocess::set_verbose_preprocess(cli_args.verbose);
-
   // make sure builtin classes are touched
   runner::preprocess::ensure_ns_def_compiled(
     calcit::calcit::CORE_NS,
@@ -310,7 +333,9 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
-      AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
+      AnalyzeSubcommand::CheckExamples(check_options) => {
+        run_check_examples(&check_options.ns, check_options.definition.as_deref(), &snapshot)
+      }
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
@@ -726,8 +751,11 @@ fn throw_on_warnings(warnings: &[LocatedWarning]) -> Result<(), String> {
   }
 }
 
-fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  println!("Checking examples in namespace: {target_ns}");
+fn run_check_examples(target_ns: &str, target_def: Option<&str>, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  match target_def {
+    Some(definition) => println!("Checking examples for definition: {target_ns}/{definition}"),
+    None => println!("Checking examples in namespace: {target_ns}"),
+  }
 
   // Find the target namespace
   let file_data = snapshot
@@ -735,12 +763,21 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
     .get(target_ns)
     .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
 
+  if let Some(definition) = target_def
+    && !file_data.defs.contains_key(definition)
+  {
+    return Err(format!("Definition '{target_ns}/{definition}' not found"));
+  }
+
   // Collect all functions with examples
   let mut functions_with_examples = Vec::new();
   let mut functions_without_examples = Vec::new();
   let mut total_examples = 0;
 
   for (def_name, code_entry) in &file_data.defs {
+    if target_def.is_some_and(|target| target != def_name) {
+      continue;
+    }
     if !code_entry.examples.is_empty() {
       functions_with_examples.push((def_name.clone(), code_entry.examples.len()));
       total_examples += code_entry.examples.len();
@@ -758,6 +795,9 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
   let mut example_calls = Vec::new();
 
   for (def_name, code_entry) in &file_data.defs {
+    if target_def.is_some_and(|target| target != def_name) {
+      continue;
+    }
     if !code_entry.examples.is_empty() {
       // Add println before examples: println $ str &newline "|-- run examples for: " def "| --"
       example_calls.push(Cirru::List(vec![
@@ -829,11 +869,15 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
 
   match result {
     Ok(value) => {
-      println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), value);
+      let _ = value;
+      println!("{}", format!("took {}ms: ok", duration.as_micros() as f64 / 1000.0).dimmed());
 
       // Print summary
       println!("\n{}", "=== Examples Check Summary ===".bold());
       println!("Namespace: {}", target_ns.cyan());
+      if let Some(definition) = target_def {
+        println!("Definition: {}", definition.cyan());
+      }
       println!("Functions with examples: {}", functions_with_examples.len().to_string().green());
       println!("Total examples run: {}", total_examples.to_string().green());
       println!(
@@ -1057,6 +1101,172 @@ mod tests {
     list(vec![leaf("defmacro"), leaf("test-macro"), list(params), leaf("nil")])
   }
 
+  fn code_entry(code: Cirru, schema: CalcitTypeAnnotation) -> snapshot::CodeEntry {
+    snapshot::CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code,
+      schema: Arc::new(schema),
+    }
+  }
+
+  #[test]
+  fn type_coverage_uses_schema_for_fn_value_payloads() {
+    let schema = CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::String),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    }));
+    let entry = code_entry(list(vec![leaf("fn"), list(vec![leaf("value")]), leaf("|ok")]), schema);
+
+    let row = type_coverage::analyze_code_entry("app.main", "render", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Fn);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.params, vec!["arg0"]);
+    assert_eq!(row.return_type_hints, vec![":string"]);
+  }
+
+  #[test]
+  fn type_coverage_does_not_mark_unknown_payload_as_full() {
+    let entry = code_entry(leaf("unknown-value"), CalcitTypeAnnotation::Dynamic);
+
+    let row = type_coverage::analyze_code_entry("app.main", "unknown", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Other);
+    assert_eq!(row.level, type_coverage::CoverageLevel::None);
+  }
+
+  #[test]
+  fn type_coverage_does_not_mark_unknown_data_as_full() {
+    let entry = code_entry(
+      list(vec![leaf("def"), leaf("remote-value"), leaf("load-remote-value")]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "remote-value", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::None);
+    assert_eq!(row.data_type, None);
+  }
+
+  #[test]
+  fn type_coverage_recognizes_literal_data() {
+    let entry = code_entry(list(vec![leaf("def"), leaf("answer"), leaf("42")]), CalcitTypeAnnotation::Dynamic);
+
+    let row = type_coverage::analyze_code_entry("app.main", "answer", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.data_type.as_deref(), Some("number"));
+  }
+
+  #[test]
+  fn type_coverage_uses_explicit_data_schema() {
+    let entry = code_entry(
+      list(vec![leaf("def"), leaf("answer"), leaf("load-answer")]),
+      CalcitTypeAnnotation::Number,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "answer", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.data_type.as_deref(), Some("number"));
+  }
+
+  #[test]
+  fn type_coverage_recognizes_embedded_struct_field_types() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defstruct"),
+        leaf("Point"),
+        list(vec![leaf(":x"), leaf(":number")]),
+        list(vec![leaf(":label"), leaf(":string")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "Point", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.data_type.as_deref(), Some("struct"));
+    assert!(
+      type_coverage::analyze_weak_types_entry("app.main", "Point", &entry, &type_coverage::WeakTypeKind::all()).is_none(),
+      "defstruct should not receive a false schema-dynamic hit"
+    );
+  }
+
+  #[test]
+  fn type_coverage_treats_any_as_an_explicit_static_contract() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defstruct"),
+        leaf("Envelope"),
+        list(vec![leaf(":payload"), leaf(":any")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "Envelope", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert!(
+      type_coverage::analyze_weak_types_entry("app.main", "Envelope", &entry, &type_coverage::WeakTypeKind::all()).is_none(),
+      "an explicit :any contract must not be reported as unresolved dynamic"
+    );
+  }
+
+  #[test]
+  fn type_coverage_marks_dynamic_struct_fields_as_partial() {
+    let entry = code_entry(
+      list(vec![leaf("defstruct"), leaf("Boxed"), list(vec![leaf(":value"), leaf(":dynamic")])]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "Boxed", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Partial);
+  }
+
+  #[test]
+  fn type_coverage_recognizes_ref_value_schemas() {
+    let dynamic_ref = code_entry(
+      list(vec![leaf("defatom"), leaf("*cache"), list(vec![leaf("{}")])]),
+      CalcitTypeAnnotation::Ref(calcit::calcit::DYNAMIC_TYPE.clone()),
+    );
+    let typed_ref = code_entry(
+      list(vec![leaf("defatom"), leaf("*enabled?"), leaf("false")]),
+      CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Bool)),
+    );
+
+    let dynamic_row = type_coverage::analyze_code_entry("app.main", "*cache", &dynamic_ref);
+    let typed_row = type_coverage::analyze_code_entry("app.main", "*enabled?", &typed_ref);
+
+    assert_eq!(dynamic_row.kind, type_coverage::DefKind::Data);
+    assert_eq!(dynamic_row.level, type_coverage::CoverageLevel::Partial);
+    assert!(
+      dynamic_row
+        .schema_issues
+        .iter()
+        .any(|issue| issue.contains("[W_SCHEMA_DYNAMIC]") && issue.contains("schema.item") && issue.contains(":: :ref")),
+      "dynamic ref should carry an actionable issue: {:?}",
+      dynamic_row.schema_issues
+    );
+    assert_eq!(typed_row.kind, type_coverage::DefKind::Data);
+    assert_eq!(typed_row.level, type_coverage::CoverageLevel::Full);
+    assert!(typed_row.schema_issues.is_empty(), "typed ref should not carry issues");
+  }
+
   #[test]
   fn validate_runtime_impl_is_skipped() {
     let schema = fn_schema_annotation(SchemaKind::Fn, 2, false);
@@ -1163,6 +1373,140 @@ mod tests {
   fn parse_weak_type_kinds_rejects_unknown_values() {
     let err = type_coverage::parse_weak_type_kinds("schema-dynamic,unknown").expect_err("unknown filters should fail");
     assert!(err.contains("unknown"), "err: {err}");
+  }
+
+  #[test]
+  fn parse_weak_type_intents_rejects_unknown_values() {
+    let err = type_coverage::parse_weak_type_intents("unresolved,guessed").expect_err("unknown intents should fail");
+    assert!(err.contains("guessed"), "err: {err}");
+  }
+
+  #[test]
+  fn analyze_weak_types_marks_dynamic_ffi_boundaries_as_intentional() {
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("ffi-wrapper"),
+        list(vec![leaf("value")]),
+        list(vec![leaf("assert-type"), leaf("value"), leaf(":dynamic")]),
+        leaf("nil"),
+      ]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
+        return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::from([cirru_edn::EdnTag::new("js-ffi")])),
+      }))
+      .into(),
+    };
+
+    let row = type_coverage::analyze_weak_types_entry("app.main", "ffi-wrapper", &entry, &type_coverage::WeakTypeKind::all())
+      .expect("should find weak types");
+
+    for occurrence in row
+      .occurrences
+      .iter()
+      .filter(|occurrence| occurrence.kind != type_coverage::WeakTypeKind::CodeNil)
+    {
+      assert_eq!(
+        occurrence.intent,
+        type_coverage::WeakTypeIntent::IntentionalJsFfi,
+        "occurrence: {occurrence:?}"
+      );
+    }
+    assert!(
+      row
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.kind == type_coverage::WeakTypeKind::CodeNil
+          && occurrence.intent == type_coverage::WeakTypeIntent::Unresolved),
+      "nil should remain unresolved: {:?}",
+      row.occurrences
+    );
+  }
+
+  #[test]
+  fn analysis_json_envelopes_preserve_filters_and_definition_paths() {
+    let entry = snapshot::CodeEntry {
+      doc: "demo".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![leaf("defn"), leaf("demo"), list(vec![leaf("value")]), leaf("nil")]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
+        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))
+      .into(),
+    };
+    let mut snapshot = snapshot::Snapshot {
+      package: "app".to_owned(),
+      ..snapshot::Snapshot::default()
+    };
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      snapshot::FileInSnapShot {
+        ns: snapshot::NsEntry {
+          doc: String::new(),
+          code: list(vec![leaf("ns"), leaf("app.main")]),
+        },
+        defs: std::collections::HashMap::from([("demo".to_owned(), entry)]),
+      },
+    );
+
+    let check_options = CheckTypesCommand {
+      ns: Some("app.main".to_owned()),
+      ns_prefix: None,
+      only: None,
+      format: "json".to_owned(),
+      deps: false,
+      summary_only: false,
+    };
+    let check_json = type_coverage::format_check_types_json(&check_options, &snapshot).expect("coverage JSON should format");
+    let check_value: serde_json::Value = serde_json::from_str(&check_json).expect("coverage JSON should parse");
+    assert_eq!(check_value["command"], "analyze.check-types");
+    assert_eq!(check_value["data"]["definitions"][0]["id"], "app.main/demo");
+
+    let weak_options = WeakTypesCommand {
+      ns: Some("app.main".to_owned()),
+      ns_prefix: None,
+      only: None,
+      intent: Some("unresolved".to_owned()),
+      format: "json".to_owned(),
+      deps: false,
+      summary_only: false,
+    };
+    let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
+    let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
+    assert_eq!(weak_value["command"], "analyze.weak-types");
+    assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
+    assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
+
+    let mut check_summary_options = check_options.clone();
+    check_summary_options.summary_only = true;
+    let check_summary_json =
+      type_coverage::format_check_types_json(&check_summary_options, &snapshot).expect("coverage summary JSON should format");
+    let check_summary: serde_json::Value = serde_json::from_str(&check_summary_json).expect("coverage summary JSON should parse");
+    assert_eq!(check_summary["data"]["summary"]["definitions"], 1);
+    assert_eq!(check_summary["data"]["definitions"], serde_json::json!([]));
+
+    let mut weak_summary_options = weak_options.clone();
+    weak_summary_options.summary_only = true;
+    let weak_summary_json =
+      type_coverage::format_weak_types_json(&weak_summary_options, &snapshot).expect("weak summary JSON should format");
+    let weak_summary: serde_json::Value = serde_json::from_str(&weak_summary_json).expect("weak summary JSON should parse");
+    assert_eq!(weak_summary["data"]["summary"]["definitions"], 1);
+    assert_eq!(weak_summary["data"]["definitions"], serde_json::json!([]));
   }
 
   #[test]

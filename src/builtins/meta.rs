@@ -658,7 +658,11 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       T::Dynamic => true,
       T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Variadic(inner) | T::Optional(inner) => contains_dynamic(inner),
       T::Map(k, v) => contains_dynamic(k) || contains_dynamic(v),
-      T::Fn(info) => info.arg_types.iter().any(|t| contains_dynamic(t)) || contains_dynamic(info.return_type.as_ref()),
+      T::Fn(info) => {
+        info.arg_types.iter().any(|t| contains_dynamic(t))
+          || info.rest_type.as_ref().is_some_and(|t| contains_dynamic(t))
+          || contains_dynamic(info.return_type.as_ref())
+      }
       T::Struct(_, args) | T::Enum(_, args) => args.iter().any(|t| contains_dynamic(t)),
       _ => false,
     }

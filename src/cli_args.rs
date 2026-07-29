@@ -8,7 +8,7 @@ pub struct ToplevelCalcit {
   #[argh(subcommand)]
   pub subcommand: Option<CalcitCommand>,
   /// enable watch mode for direct run mode (default behavior is run once)
-  #[argh(switch)]
+  #[argh(switch, short = 'w')]
   pub watch: bool,
   /// check-only mode: validate without execution or codegen
   #[argh(switch)]
@@ -47,7 +47,7 @@ pub struct ToplevelCalcit {
   #[argh(positional, default = "String::from(crate::DEFAULT_SNAPSHOT_FILE)")]
   pub input: String,
   /// print version only
-  #[argh(switch)]
+  #[argh(switch, short = 'v')]
   pub version: bool,
   /// print progress details and timing while loading and compiling
   #[argh(switch)]
@@ -61,6 +61,9 @@ pub struct ToplevelCalcit {
   /// control tips verbosity: minimal (default), full, none
   #[argh(option)]
   pub tips_level: Option<String>,
+  /// cursor feedback after mutating edit/tree commands: none, summary (default), focus
+  #[argh(option, default = "String::from(\"summary\")")]
+  pub cursor_after: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -88,6 +91,8 @@ pub enum CalcitCommand {
   Edit(EditCommand),
   /// fine-grained tree operations (view and modify AST nodes within definitions)
   Tree(TreeCommand),
+  /// maintain a persistent virtual cursor for tree navigation and editing
+  Cursor(CursorCommand),
   /// manage project configuration (show, set, modules, add-module, rm-module)
   Config(ConfigCommand),
 }
@@ -97,7 +102,7 @@ pub enum CalcitCommand {
 #[argh(subcommand, name = "js")]
 pub struct EmitJsCommand {
   /// enable watch mode (default behavior is run once)
-  #[argh(switch)]
+  #[argh(switch, short = 'w')]
   pub watch: bool,
   /// check-only mode for JS emit
   #[argh(switch)]
@@ -109,7 +114,7 @@ pub struct EmitJsCommand {
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
   /// enable watch mode (default behavior is run once)
-  #[argh(switch)]
+  #[argh(switch, short = 'w')]
   pub watch: bool,
 }
 
@@ -202,9 +207,15 @@ pub struct CheckTypesCommand {
   /// coverage levels to include, comma-separated: none,partial,full
   #[argh(option)]
   pub only: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// include dependency/core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// emit aggregate counts without per-definition details
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
 }
 
 /// locate weakly-typed hotspots in schema and code
@@ -220,9 +231,18 @@ pub struct WeakTypesCommand {
   /// match kinds to include, comma-separated: schema-dynamic,code-dynamic,code-nil
   #[argh(option)]
   pub only: Option<String>,
+  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi
+  #[argh(option)]
+  pub intent: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// include dependency/core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// emit aggregate counts without per-definition details
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
 }
 
 /// check examples in namespace
@@ -232,6 +252,9 @@ pub struct CheckExamplesCommand {
   /// target namespace to check examples
   #[argh(option)]
   pub ns: String,
+  /// check only one definition in the namespace
+  #[argh(option, long = "def")]
+  pub definition: Option<String>,
 }
 
 /// analyze call tree structure from entry point
@@ -387,6 +410,12 @@ pub enum QuerySubcommand {
   SearchExpr(QuerySearchExprCommand),
   /// read a definition's schema (type information)
   Schema(QuerySchemaCommand),
+  /// inspect a type and its statically available methods
+  Type(QueryTypeCommand),
+  /// inspect the inferred and expected type at one Snapshot expression path
+  TypeAt(QueryTypeAtCommand),
+  /// gather bounded semantic context for one definition
+  Context(QueryContextCommand),
   /// list host-injected registered procs and descriptor tags
   HostProcs(QueryHostProcsCommand),
   /// resolve a semantic path expression to numeric indices
@@ -405,6 +434,60 @@ pub struct QuerySchemaCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch)]
   pub json: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "type")]
+/// inspect a type and list methods available through static dispatch metadata
+pub struct QueryTypeCommand {
+  /// builtin type annotation (e.g. :number or ":: :list :number") or namespace/definition
+  #[argh(positional)]
+  pub target: String,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "type-at")]
+/// inspect static type evidence for an expression at a Snapshot path without running the program
+pub struct QueryTypeAtCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// snapshot path, e.g. "code@3.2", "@3.2", or "3.2"
+  #[argh(option)]
+  pub path: String,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "context")]
+/// gather bounded Snapshot metadata, static analysis, dependencies, and usages for one definition
+pub struct QueryContextCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// approximate character budget for variable-size content
+  #[argh(option, default = "6000")]
+  pub budget: usize,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// include references from dependency and core namespaces
+  #[argh(switch)]
+  pub deps: bool,
+  /// maximum number of direct dependencies to include
+  #[argh(option, default = "12")]
+  pub dependency_limit: usize,
+  /// maximum number of usages to include
+  #[argh(option, default = "8")]
+  pub usage_limit: usize,
+  /// maximum number of examples to include
+  #[argh(option, default = "3")]
+  pub example_limit: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -571,6 +654,12 @@ pub struct QuerySearchCommand {
   /// also print parent path for each match (strip trailing index for editable node)
   #[argh(switch, long = "parent-path")]
   pub parent_path: bool,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// set the persistent cursor to this zero-based global match index
+  #[argh(option, long = "set-cursor")]
+  pub set_cursor: Option<usize>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -589,6 +678,9 @@ pub struct QuerySearchExprCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, default = "0")]
   pub max_depth: usize,
+  /// start search from a concrete path or the active cursor
+  #[argh(option, long = "start-path")]
+  pub start_path: Option<String>,
   /// treat pattern as JSON array instead of Cirru expr
   #[argh(switch)]
   pub json: bool,
@@ -598,6 +690,12 @@ pub struct QuerySearchExprCommand {
   /// start index for detailed display window (3 detailed items)
   #[argh(option, long = "detail-offset", default = "0")]
   pub detail_offset: usize,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// set the persistent cursor to this zero-based global match index
+  #[argh(option, long = "set-cursor")]
+  pub set_cursor: Option<usize>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -931,7 +1029,7 @@ pub struct CirruParseCommand {
   #[argh(positional)]
   pub code: String,
   /// parse input as a single-line Cirru expression (one-liner parser, default is multi-line)
-  #[argh(switch, long = "expr-one")]
+  #[argh(switch, short = 'e', long = "expr-one")]
   pub expr_one_liner: bool,
   /// perform basic syntax validation after parsing (checks keywords, strings, numbers)
   #[argh(switch, long = "validate")]
@@ -1043,6 +1141,8 @@ pub struct EditCommand {
 pub enum EditSubcommand {
   /// rewrite snapshot file in canonical format without semantic changes
   Format(EditFormatCommand),
+  /// apply multiple existing edit/tree/config commands against one staged snapshot
+  Transaction(EditTransactionCommand),
   /// add or update a definition
   Def(EditDefCommand),
   /// move a definition to another namespace
@@ -1089,6 +1189,27 @@ pub enum EditSubcommand {
 #[argh(subcommand, name = "format")]
 /// rewrite target snapshot file in canonical format
 pub struct EditFormatCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "transaction")]
+/// apply multiple existing mutating commands atomically (input via --file, --code, or stdin)
+pub struct EditTransactionCommand {
+  /// read transaction operations from a Cirru EDN file (JSON is also accepted)
+  #[argh(option)]
+  pub file: Option<String>,
+  /// transaction operations as inline Cirru EDN (JSON is also accepted)
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// require the snapshot content to match this revision before applying
+  #[argh(option, long = "expect-revision")]
+  pub expect_revision: Option<String>,
+  /// validate and preview the transaction without replacing the snapshot
+  #[argh(switch, long = "dry-run")]
+  pub dry_run: bool,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
 
 // --- Definition operations ---
 
@@ -1150,10 +1271,10 @@ pub struct EditSchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read schema from file (auto-detects JSON vs Cirru)
+  /// read one quoted Cirru type node from file
   #[argh(option)]
   pub file: Option<String>,
-  /// schema as inline text (auto-detects JSON vs Cirru)
+  /// one quoted Cirru type node, for example `quote $ :: :ref :bool`
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// clear schema field
@@ -1168,10 +1289,10 @@ pub struct EditExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// read examples from file (auto-detects JSON vs Cirru)
+  /// read quoted Cirru nodes from file, one top-level quote per example
   #[argh(option)]
   pub file: Option<String>,
-  /// examples as inline text (auto-detects JSON vs Cirru)
+  /// quoted Cirru nodes, one top-level quote per example
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// clear all examples
@@ -1753,6 +1874,227 @@ pub struct TreeWrapCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
+}
+
+// ========================================================================
+// Cursor command - persistent virtual tree selection
+// ========================================================================
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "cursor")]
+/// maintain the project-local virtual tree cursor
+pub struct CursorCommand {
+  #[argh(subcommand)]
+  pub subcommand: CursorSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum CursorSubcommand {
+  Set(CursorSetCommand),
+  Show(CursorShowCommand),
+  Clear(CursorClearCommand),
+  Parent(CursorParentCommand),
+  Child(CursorChildCommand),
+  Next(CursorNextCommand),
+  Prev(CursorPrevCommand),
+  Back(CursorBackCommand),
+  Push(CursorPushCommand),
+  Pop(CursorPopCommand),
+  Copy(CursorCopyCommand),
+  Cut(CursorCutCommand),
+  Paste(CursorPasteCommand),
+  Clipboard(CursorClipboardCommand),
+  ClearClipboard(CursorClearClipboardCommand),
+  Apply(CursorApplyCommand),
+  SlurpNext(CursorSlurpNextCommand),
+  SlurpPrev(CursorSlurpPrevCommand),
+  BarfLast(CursorBarfLastCommand),
+  BarfFirst(CursorBarfFirstCommand),
+  Duplicate(CursorDuplicateCommand),
+  Forward(CursorForwardCommand),
+  Backward(CursorBackwardCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set")]
+/// set the virtual cursor to a definition tree path
+pub struct CursorSetCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the selected node (dot-separated, e.g. "@2.1.0")
+  #[argh(option)]
+  pub path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "show")]
+/// validate and display the current virtual cursor
+pub struct CursorShowCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// preview view: focus (default), node, or full
+  #[argh(option, default = "String::from(\"focus\")")]
+  pub view: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clear")]
+/// remove the current virtual cursor
+pub struct CursorClearCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "parent")]
+/// move the virtual cursor to its parent node
+pub struct CursorParentCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "child")]
+/// move the virtual cursor to a child node
+pub struct CursorChildCommand {
+  /// zero-based child index (defaults to the first child)
+  #[argh(positional)]
+  pub index: Option<usize>,
+  /// enter the last child instead of an explicit index
+  #[argh(switch)]
+  pub last: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "next")]
+/// move the virtual cursor to the next sibling
+pub struct CursorNextCommand {
+  /// number of siblings to skip
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "prev")]
+/// move the virtual cursor to the previous sibling
+pub struct CursorPrevCommand {
+  /// number of siblings to skip
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "back")]
+/// return to the previous cursor location
+pub struct CursorBackCommand {
+  /// number of recorded cursor locations to rewind
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "push")]
+/// push the current cursor location onto the explicit stack
+pub struct CursorPushCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "pop")]
+/// restore and remove the most recently pushed cursor location
+pub struct CursorPopCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "copy")]
+/// copy the selected expression into the cursor clipboard
+pub struct CursorCopyCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "cut")]
+/// cut the selected expression into the cursor clipboard
+pub struct CursorCutCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "paste")]
+/// paste the cursor clipboard relative to the selected expression
+pub struct CursorPasteCommand {
+  /// position relative to the cursor: before, after, prepend-child, append-child, replace
+  #[argh(option, default = "String::from(\"after\")")]
+  pub at: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clipboard")]
+/// display the cursor clipboard
+pub struct CursorClipboardCommand {
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "clear-clipboard")]
+/// clear the cursor clipboard without changing the selection
+pub struct CursorClearClipboardCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "apply")]
+/// apply a structural tree operation to the active cursor without repeating target or path
+pub struct CursorApplyCommand {
+  /// operation: delete, swap-next, swap-prev, unwrap, raise, replace, wrap, insert-before, insert-after, insert-child, append-child
+  #[argh(positional)]
+  pub operation: String,
+  /// read the replacement, wrapper, or inserted expression from a file
+  #[argh(option)]
+  pub file: Option<String>,
+  /// replacement, wrapper, or inserted expression as inline Cirru/JSON
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// max depth for the underlying tree command result preview
+  #[argh(option, default = "2")]
+  pub depth: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "slurp-next")]
+/// move the next sibling into the selected list as its last child
+pub struct CursorSlurpNextCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "slurp-prev")]
+/// move the previous sibling into the selected list as its first child
+pub struct CursorSlurpPrevCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "barf-last")]
+/// move the selected list's last child out as its next sibling
+pub struct CursorBarfLastCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "barf-first")]
+/// move the selected list's first child out as its previous sibling
+pub struct CursorBarfFirstCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "duplicate")]
+/// duplicate the selected expression and select the new copy
+pub struct CursorDuplicateCommand {
+  /// position of the new copy relative to the cursor: before or after
+  #[argh(option, default = "String::from(\"after\")")]
+  pub at: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "forward")]
+/// move forward through the definition in depth-first structural order
+pub struct CursorForwardCommand {
+  /// number of structural nodes to advance
+  #[argh(option, default = "1")]
+  pub count: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "backward")]
+/// move backward through the definition in depth-first structural order
+pub struct CursorBackwardCommand {
+  /// number of structural nodes to rewind
+  #[argh(option, default = "1")]
+  pub count: usize,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
