@@ -25,8 +25,11 @@ fn agents_docs_default_to_the_version_matched_embedded_guide() {
 
   assert!(!document.refreshed);
   assert!(document.display_path.starts_with("embedded:docs/CalcitAgent.md@"));
-  assert!(document.content.contains("`edit schema` 和 `edit examples` 也遵循同一边界"));
-  assert!(document.content.contains("`quote |literal`"));
+  assert!(document.content.contains("是 **Cirru EDN 树形 Snapshot**"));
+  assert!(document.content.contains("x $ (f a)"));
+  assert!(document.content.contains("symbol leaf:    quote new-name"));
+  assert!(document.content.contains("cr cirru parse -e --validate"));
+  assert!(document.content.contains("cr docs search 'cursor'"));
 }
 
 #[test]

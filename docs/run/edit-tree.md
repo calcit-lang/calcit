@@ -252,8 +252,8 @@ cr tree show app.main/main!
 `search-replace` is the safest way to modify a specific node by its content:
 
 ```bash
-# Replace '1' with '10' inside the definition
-cr tree search-replace app.main/main! --pattern '1' --code 'quote |10'
+# Replace numeric leaf '1' with '10' inside the definition
+cr tree search-replace app.main/main! --pattern '1' --code 'quote 10'
 ```
 
 ### Path-based Operations
@@ -262,7 +262,7 @@ You can use numeric paths to locate deep nodes:
 
 ```bash
 # Replace the node at path @1.2.0
-cr tree replace app.main/main! --path '@1.2.0' --code 'quote ((+ 1 2))'
+cr tree replace app.main/main! --path '@1.2.0' --code 'quote $ + 1 2'
 
 # Insert before a node
 cr tree insert-before app.main/main! --path '@1.0' --code 'quote (println |started)'
@@ -293,8 +293,9 @@ Editing commands support several ways to provide new code:
 
 For Cirru input, current CLI expects **Cirru EDN with `quote` prefix**:
 
-- `--code 'quote |leaf'`
-- `--code 'quote (expr ...)'`
+- symbol leaf: `--code 'quote leaf'`
+- string leaf: `--code 'quote |text'`
+- expression: `--code 'quote $ expr ...'` or `--code 'quote (expr ...)'`
 - stdin / `--file` likewise use `quote ...`
 - only JSON array input can be passed without `quote`
 

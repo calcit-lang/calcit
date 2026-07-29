@@ -1,14 +1,17 @@
 ---
 title: "Cirru Syntax Essentials"
-summary: "Cirru 语法基础：缩进嵌套、$ 操作符、, 操作符、字符串字面量、集合语法"
+summary: "Cirru/Calcit 语法基础：AST 嵌套、$ 和 ,、字符串、集合构造、CLI quote 边界与高频语义陷阱"
 scope: "core"
 kind: "reference"
 category: "syntax"
 aliases:
   - "cirru syntax"
+  - "cirru ast"
   - "dollar operator"
   - "comma operator"
   - "string literals"
+  - "quote code data boundary"
+  - "empty collection constructor"
 entry_for:
   - "cr cirru parse"
   - "cr cirru format"
@@ -17,9 +20,9 @@ entry_for:
 
 ## Cirru Syntax Essentials
 
-### 1. Indentation = Nesting
+### 1. Indentation and Parentheses Build the AST
 
-Cirru uses **2-space indentation** to represent nested structures:
+Cirru uses **2-space indentation** to represent nested structures. Do not use tabs. A line is already an expression; parentheses are only for creating an inline child expression:
 
 ```cirru
 defn add (a b)
@@ -32,9 +35,20 @@ Equivalent JSON:
 ["defn", "add", ["a", "b"], ["&+", "a", "b"]]
 ```
 
+Keep these shapes in mind:
+
+```text
+a b c          => ["a", "b", "c"]
+a (b c) d      => ["a", ["b", "c"], "d"]
+range 3        => ["range", "3"]
+(range 3)      => [["range", "3"]]  # extra call layer, usually wrong
+```
+
+Calcit evaluates a non-special list by treating its first child as the operator. Therefore, an extra outer pair of parentheses is not decorative: it can call the result of the inner expression.
+
 ### 2. The `$` Operator (Single-Child Expand)
 
-`$` creates a **single nested expression** on the same line:
+`$` creates a **single nested expression** from everything to its right on the same line. Chained `$` associates from right to left:
 
 ```cirru
 do
@@ -49,6 +63,14 @@ do
 
 **Rule**: `a $ b c` → `["a", ["b", "c"]]`
 
+```text
+a $ b $ c d    => ["a", ["b", ["c", "d"]]]
+x (f a)        => ["x", ["f", "a"]]
+x $ (f a)      => ["x", [["f", "a"]]]  # extra layer, usually wrong
+```
+
+Do not add `$` immediately before an already-parenthesized expression unless the extra list is intentional.
+
 ### 3. The `|` Prefix (String Literals)
 
 `|` marks a **string literal**:
@@ -62,34 +84,49 @@ println "|hello world with spaces"
 - `|hello` → `"hello"` (string, not symbol)
 - Without `|`: `hello` is a symbol/identifier
 - For strings with spaces: `"|hello world"`
+- Double quotes only keep a token together; they do not make it a Calcit string by themselves. `"hello"` is still the symbol `hello`.
+- Keep multiline text in one token with escapes such as `"|line 1\nline 2"`; do not continue a string across source lines.
 
-### 4. The `,` Operator (Expression Terminator)
+### 4. The `,` Operator (Splice Values into the Parent)
 
-`,` forces the **end of current expression**, starting a new sibling:
+An indented line normally becomes a child list. A leading `,` splices the rest of that line into the parent instead. This is how a standalone value remains a leaf rather than becoming a zero-argument call:
 
-```cirru
-; Without comma - ambiguous
-if true 1 2
+```text
+a
+  b c
+  , d
 
-; With comma - clear structure
-if true
-  , 1
-  , 2
+=> ["a", ["b", "c"], "d"]
 ```
 
-Useful in `cond`, `case`, `let` bindings:
+Without the comma, the final line would produce `["d"]`. The same rule matters when a function or `let` body returns a local value:
 
-```cirru
+```cirru.no-check
+fn (x)
+  , x
+```
+
+### 5. Collection Constructors Are Operators
+
+`[]`, `{}`, and `#{}` are Calcit constructor symbols, not Clojure/JSON delimiters around source text. As a same-line argument, bare `[]` is the constructor function, not an empty list value:
+
+```text
+type-of []       => :fn
+type-of $ []     => :list
+```
+
+For an empty collection argument, call the constructor explicitly with `([])`, or bind it first:
+
+```cirru.no-check
 let
-    x (- 0 3)
-  ; cond tests conditions in sequence, returning first matching result
-  cond
-    (&< x 0) |negative
-    (&= x 0) |zero
-    true |positive
+    init $ []
+  foldl xs init $ fn (acc x)
+    , acc
 ```
 
-### 5. Quasiquote, Unquote, Unquote-Splicing
+Calcit collection functions use collection-first order: `map xs f`, `filter xs pred`, and `foldl xs init f`.
+
+### 6. Quasiquote, Unquote, Unquote-Splicing
 
 For macros:
 
@@ -135,13 +172,19 @@ LLMs often forget the `|` prefix. **Always** use `|` for string literals, even s
     + x y
   ```
 
-### 3. Arity Awareness
+### 3. Parse Success Is Not Semantic Success
+
+`cr cirru parse -e --validate '<expr>'` verifies Cirru tokens and shows the AST shape. It does not prove that Calcit will accept the resulting call structure. Forms such as `(range 3)`, `x $ (f a)`, `let (x 1) ...`, or a bare indented return value can parse successfully and still be wrong.
+
+After inspecting the JSON shape, use `cr eval`, `cr --check-only`, or the project's tests to verify semantics.
+
+### 4. Arity Awareness
 
 Calcit uses strict arity checking. Many core functions like `+`, `-`, `*`, `/` have native counterparts `&+`, `&-`, `&*`, `&/` which are binaries (2 arguments). The standard versions are often variadic macros.
 
 - Use `&+`, `&-`, etc. in tight loops or when 2 args are guaranteed.
 
-### 4. No Inline Types in Parameters
+### 5. No Inline Types in Parameters
 
 Calcit **does not** support Clojure-style `(defn name [^Type arg] ...)`.
 
@@ -177,12 +220,12 @@ defn square (n)
 :: :fn $ {} (:args $ [] :number) (:return :number)
 ```
 
-### 5. `$` and `,` Usage
+### 6. `$` and `,` Usage
 
 - Use `$` to avoid parentheses on the same line.
-- Use `,` to separate multiline pairs in `cond` or `case` if indentation alone feels ambiguous.
+- Use `, value` when an indented value must be spliced into its parent instead of becoming a one-child call list. Do not use it to delimit `cond` or `case` pairs; those branches must remain child lists.
 
-### 6. Common Patterns
+### 7. Common Patterns
 
 #### Function Definition
 
@@ -221,6 +264,18 @@ cond
 
 Input is automatically detected as JSON when it starts with `[` (Cirru JSON is always arrays, never objects). No flags needed.
 
+For `cr edit`, `cr tree`, and cursor mutation commands, the primary Cirru EDN form uses `quote` as a code/data boundary. It must wrap exactly one AST node and is removed before writing source:
+
+```text
+symbol leaf:    quote new-name
+string leaf:    quote |hello
+spaced string:  quote "|hello world"
+expression:     quote $ println |hello
+empty list/map: quote $ []    /    quote $ {}
+```
+
+`quote println |hello` is invalid because it supplies two payloads. Use `quote $ println |hello` or `quote (println |hello)`.
+
 When providing JSON:
 
 1. **Everything is arrays or strings**: `["defn", "name", ["args"], ["body"]]`
@@ -230,10 +285,14 @@ When providing JSON:
 
 ## Common Mistakes
 
-| ❌ Wrong                | ✅ Correct         | Reason                                                    |
-| ----------------------- | ------------------ | --------------------------------------------------------- |
-| `println hello`         | `println \|hello`  | Missing `\|` for string                                   |
-| `$ a b c` at line start | `a b c`            | A line is an expression, no need of `$` for extra nesting |
-| `a$b`                   | `a $ b`            | Missing space around `$`                                  |
-| `["&+", 1, 2]`          | `["&+", "1", "2"]` | Numbers in syntax tree must be strings in JSON            |
-| Tabs for indent         | 2 spaces           | Cirru requires spaces                                     |
+- Wrong `println hello` or `println "hello"`; correct `println |hello`. Without the `|`, the argument is a symbol.
+- Wrong top-level `(range 3)`; correct `range 3`. The former has an extra call layer.
+- Wrong `x $ (f a)`; correct `x $ f a` or `x (f a)`. Do not combine `$` with redundant parentheses.
+- Wrong bare indented return `x`; correct `, x`. The bare line is a one-child call list.
+- Wrong `let (x 1) ...`; correct `let ((x 1)) ...`, or use the documented multiline binding indentation.
+- Wrong empty-list argument `foldl xs [] f`; correct `foldl xs ([]) f`, or bind `init $ []` first.
+- Wrong Clojure order `map f xs`; correct Calcit order `map xs f`.
+- Wrong `$ a b c` at the beginning of a line; correct `a b c`. A line is already an expression.
+- Wrong `a$b`; correct `a $ b`. Operators require token-separating spaces.
+- Wrong JSON AST `["&+", 1, 2]`; correct `["&+", "1", "2"]`. AST leaves are strings.
+- Wrong tabs for indentation; use 2 spaces.
