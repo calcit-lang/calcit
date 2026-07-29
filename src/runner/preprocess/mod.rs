@@ -2904,10 +2904,6 @@ pub struct StaticMethodDescriptor {
 /// lower dispatch precedence. Returns `None` when method metadata cannot be
 /// resolved (for example for a dynamic or external JS type).
 pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Vec<StaticMethodDescriptor>> {
-  if type_value.is_static_any() {
-    return Some(vec![]);
-  }
-
   if let Some(traits) = trait_list_from_type(type_value) {
     let mut seen = HashSet::new();
     let mut methods = vec![];

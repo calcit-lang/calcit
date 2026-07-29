@@ -33,9 +33,9 @@ defenum Op (:add :string) (:remove :tag) (:toggle :map) (:clear) ...
 
 没有 type-slot 机制时，`d! (: add ...)` 这类调用无法被类型检查，因为预处理器不知道 dispatch 参数应该是 `Op` 类型。
 
-### 为什么不用泛型
+### 为什么不能只用泛型
 
-Calcit 目前没有完整的泛型（type parameter）系统。引入泛型会大幅增加语言复杂性，而 type-slot 解决的是一个更窄的问题：**跨编译单元的单一类型注入**。它更像 dependency injection 而非 parametric polymorphism。
+Calcit 已支持函数、struct 与 enum 的 type parameters，以及 trait `:where` bounds。泛型表达的是每次调用或每个 applied data type 自己携带的类型关系；type-slot 解决的是另一个更窄的问题：**库先声明一个位置，应用再为整个编译环境选择同一个具体类型**。它更像 dependency injection，而不是 per-call parametric polymorphism，因此不应把未绑定 slot 描述成普通泛型变量。
 
 ## 3. 设计
 
@@ -134,7 +134,7 @@ defenum Op
   :toggle :map
   :update :tag :string
   :clear
-  :states-merge :any :any :any
+  :states-merge :dynamic :dynamic :dynamic
 
 ;; main! 中绑定
 defn main! ()

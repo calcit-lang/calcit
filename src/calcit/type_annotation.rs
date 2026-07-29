@@ -383,16 +383,12 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  /// Whether this annotation is the explicit static top type `:any`.
-  /// Unlike `:dynamic`, it is a known contract and must not be treated as
-  /// missing type metadata.
-  pub fn is_static_any(&self) -> bool {
-    matches!(self, Self::Custom(value) if Self::custom_keyword_matches(value, "any"))
-  }
-
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
-      "any" => Some(Self::Custom(Arc::new(Calcit::tag("any")))),
+      // `:any` is a legacy spelling of `:dynamic`. Keep accepting it at input
+      // boundaries, but canonicalize immediately so downstream analysis cannot
+      // accidentally treat the two spellings as different contracts.
+      "any" => Some(Self::Dynamic),
       "bool" => Some(Self::Bool),
       "number" => Some(Self::Number),
       "string" => Some(Self::String),
@@ -414,7 +410,7 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn builtin_tag_name(&self) -> Option<&'static str> {
     match self {
-      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("any"),
+      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("dynamic"),
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),
       Self::String => Some("string"),
@@ -2164,7 +2160,10 @@ impl CalcitTypeAnnotation {
   pub(crate) fn matches_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
+      // Compatibility for annotations constructed by older embedders before
+      // `:any` was normalized during parsing. Alias semantics are symmetric.
       (_, Self::Custom(expected)) if Self::custom_keyword_matches(expected, "any") => true,
+      (Self::Custom(actual), _) if Self::custom_keyword_matches(actual, "any") => true,
       (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => true,
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == actual => true,
@@ -2646,7 +2645,9 @@ impl CalcitTypeAnnotation {
           Edn::List(EdnListView(items))
         }
       }
-      // Custom Calcit values – do a best-effort Calcit→Edn conversion
+      // Custom Calcit values – do a best-effort Calcit→Edn conversion. Older
+      // in-memory `:any` annotations are always written in canonical form.
+      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Edn::tag("dynamic"),
       Self::Custom(value) => calcit_type_to_edn(value.as_ref()),
       // Enum / Trait variants – use the name as a symbol
       Self::Enum(e, _) => Edn::Tag(e.name().clone()),
@@ -3719,24 +3720,25 @@ mod tests {
   }
 
   #[test]
-  fn any_is_a_static_top_type_not_a_dynamic_alias() {
+  fn any_is_parsed_and_written_as_a_dynamic_alias() {
     let any = CalcitTypeAnnotation::from_tag_name("any");
     assert!(matches!(
       CalcitTypeAnnotation::from_tag_name("dynamic"),
       CalcitTypeAnnotation::Dynamic
     ));
-    assert!(matches!(any, CalcitTypeAnnotation::Custom(ref value) if CalcitTypeAnnotation::custom_keyword_matches(value, "any")));
+    assert!(matches!(any, CalcitTypeAnnotation::Dynamic));
     assert!(matches!(
       CalcitTypeAnnotation::from_calcit(&Calcit::Tag(EdnTag::from("any"))),
-      CalcitTypeAnnotation::Custom(ref value) if CalcitTypeAnnotation::custom_keyword_matches(value, "any")
+      CalcitTypeAnnotation::Dynamic
     ));
     assert!(CalcitTypeAnnotation::Number.matches_annotation(&any));
-    assert!(!any.matches_annotation(&CalcitTypeAnnotation::Number));
+    assert!(any.matches_annotation(&CalcitTypeAnnotation::Number));
+    assert_eq!(any.to_type_edn(), Edn::tag("dynamic"));
 
     let list_of_numbers = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
     let list_of_any = CalcitTypeAnnotation::List(Arc::new(any));
     assert!(list_of_numbers.matches_annotation(&list_of_any));
-    assert!(!list_of_any.matches_annotation(&list_of_numbers));
+    assert!(list_of_any.matches_annotation(&list_of_numbers));
   }
 
   #[test]

@@ -782,11 +782,16 @@ mod type_query_tests {
   }
 
   #[test]
-  fn parses_any_as_a_static_top_type() {
+  fn parses_any_as_the_legacy_dynamic_alias() {
     let annotation = parse_type_annotation_query(":any").expect("any type should parse");
-    assert_eq!(annotation.to_brief_string(), ":any");
+    assert_eq!(annotation.to_brief_string(), "dynamic");
+    assert_eq!(
+      format_type_query_annotation(annotation.as_ref()).expect("alias should format"),
+      ":dynamic"
+    );
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic));
     assert!(CalcitTypeAnnotation::String.matches_annotation(annotation.as_ref()));
-    assert!(!annotation.matches_annotation(&CalcitTypeAnnotation::String));
+    assert!(annotation.matches_annotation(&CalcitTypeAnnotation::String));
   }
 
   #[test]
@@ -1256,6 +1261,23 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
     resolved_from: source,
     methods,
   };
+  let uses_legacy_any = definition_type_query_target(&opts.target).is_none()
+    && opts
+      .target
+      .split(|ch: char| ch.is_whitespace() || matches!(ch, '(' | ')' | '[' | ']' | '{' | '}'))
+      .any(|token| matches!(token, "any" | ":any"));
+  let diagnostics = if uses_legacy_any {
+    vec![ContextDiagnostic {
+      code: "W_LEGACY_ANY_ALIAS".to_owned(),
+      phase: "analysis",
+      severity: "warning",
+      message: "`:any` is a legacy alias for `:dynamic`; the canonical type and generated schema use `:dynamic`. Do not use it to model polymorphism.".to_owned(),
+      path: None,
+      intent: Some("migration".to_owned()),
+    }]
+  } else {
+    vec![]
+  };
 
   if format == QueryRenderFormat::Json {
     let envelope = SemanticQueryEnvelope {
@@ -1263,7 +1285,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
       command: "query.type",
       revision,
       data,
-      diagnostics: vec![],
+      diagnostics,
       next: vec![],
     };
     println!(
@@ -1280,6 +1302,13 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
   }
   println!("{} {}", "Resolved from:".bold(), data.resolved_from);
   println!("{} {revision}", "Revision:".bold());
+  if uses_legacy_any {
+    println!(
+      "{}",
+      "Warning [W_LEGACY_ANY_ALIAS]: `:any` is the legacy spelling of `:dynamic`; use `:generics`/TypeVar or trait `:where` for polymorphism."
+        .yellow()
+    );
+  }
 
   match data.methods {
     Some(methods) if methods.is_empty() => {

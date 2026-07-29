@@ -1206,7 +1206,47 @@ mod tests {
   }
 
   #[test]
-  fn type_coverage_treats_any_as_an_explicit_static_contract() {
+  fn type_coverage_skips_generic_and_where_declarations_as_struct_fields() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defstruct"),
+        leaf("ShownBox"),
+        list(vec![leaf("'T")]),
+        list(vec![list(vec![leaf("{}"), list(vec![leaf("'T"), leaf("Show")])])]),
+        list(vec![list(vec![leaf(":value"), leaf("'T")])]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "ShownBox", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.generics, vec!["'T"]);
+    assert_eq!(row.where_bounds, vec!["('T Show)"]);
+  }
+
+  #[test]
+  fn type_coverage_does_not_treat_defimpl_root_schema_as_dynamic_debt() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defimpl"),
+        leaf("ShowImpl"),
+        leaf("Show"),
+        list(vec![leaf(".show"), leaf("nil")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "ShowImpl", &entry);
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    let selected = std::collections::BTreeSet::from([type_coverage::WeakTypeKind::SchemaDynamic]);
+    assert!(type_coverage::analyze_weak_types_entry("app.main", "ShowImpl", &entry, &selected).is_none());
+  }
+
+  #[test]
+  fn type_coverage_treats_any_as_legacy_dynamic() {
     let entry = code_entry(
       list(vec![
         leaf("defstruct"),
@@ -1219,17 +1259,25 @@ mod tests {
     let row = type_coverage::analyze_code_entry("app.main", "Envelope", &entry);
 
     assert_eq!(row.kind, type_coverage::DefKind::Data);
-    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Partial);
+    let weak = type_coverage::analyze_weak_types_entry("app.main", "Envelope", &entry, &type_coverage::WeakTypeKind::all())
+      .expect("legacy :any must remain visible as dynamic debt");
     assert!(
-      type_coverage::analyze_weak_types_entry("app.main", "Envelope", &entry, &type_coverage::WeakTypeKind::all()).is_none(),
-      "an explicit :any contract must not be reported as unresolved dynamic"
+      weak
+        .occurrences
+        .iter()
+        .any(|occurrence| { occurrence.kind == type_coverage::WeakTypeKind::CodeDynamic && occurrence.detail.contains("legacy-any") })
     );
   }
 
   #[test]
   fn type_coverage_marks_dynamic_struct_fields_as_partial() {
     let entry = code_entry(
-      list(vec![leaf("defstruct"), leaf("Boxed"), list(vec![leaf(":value"), leaf(":dynamic")])]),
+      list(vec![
+        leaf("defstruct"),
+        leaf("Boxed"),
+        list(vec![list(vec![leaf(":value"), leaf(":dynamic")])]),
+      ]),
       CalcitTypeAnnotation::Dynamic,
     );
 
@@ -1492,6 +1540,9 @@ mod tests {
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
+    assert!(weak_value["data"]["definitions"][0]["occurrences"][0]["impact"].is_string());
+    assert_eq!(weak_value["diagnostics"][0]["code"], "W_DYNAMIC_TYPE_DEBT");
+    assert_eq!(check_value["diagnostics"][0]["code"], "W_TYPE_COVERAGE_GAPS");
 
     let mut check_summary_options = check_options.clone();
     check_summary_options.summary_only = true;

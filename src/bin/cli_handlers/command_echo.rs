@@ -496,7 +496,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       None => format!("validates all code examples in namespace `{}`", opts.ns),
     },
     AnalyzeSubcommand::CheckTypes(opts) => {
-      let mut desc = "performs type checking".to_string();
+      let mut desc = "checks type coverage and reports gaps that can erase polymorphic relationships".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }
@@ -506,7 +506,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       desc
     }
     AnalyzeSubcommand::WeakTypes(opts) => {
-      let mut desc = "analyzes weak/untyped definitions".to_string();
+      let mut desc = "analyzes dynamic/untyped slots and explains their impact on inference and specialization".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }

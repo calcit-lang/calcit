@@ -293,11 +293,13 @@ cr cirru show-guide
 按从便宜到昂贵的顺序形成闭环：
 
 1. 结构：`cursor show` 或 `tree show`，确认实际 subtree。
-2. 语义：`query type-at ... --format json`，按需运行 `analyze check-types --summary-only`。
+2. 语义：`query type-at ... --format json`，运行 `analyze check-types --summary-only`；看到 `W_TYPE_COVERAGE_GAPS` 后继续执行 `analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`，再对命中范围去掉 `--summary-only` 查看 path、impact 与 suggestion。
 3. definition：`analyze check-examples --ns <ns> --def <def>`。
 4. 项目：运行仓库规定的 entry 和测试；只有项目目标是 JavaScript 时才运行对应的 `cr js` codegen。
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
+
+不要用多个 `:dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。`:any` 只是 `:dynamic` 的旧拼写，新 schema 和修复结果统一使用 `:dynamic`。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 
 | 现象                   | 恢复动作                                                                 |
 | ---------------------- | ------------------------------------------------------------------------ |

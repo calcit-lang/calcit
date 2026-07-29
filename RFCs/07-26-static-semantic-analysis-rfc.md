@@ -36,6 +36,36 @@ cr query type-at app.main/f --path code@3.2 --format json
 
 同质 collection/ref、命名 struct/enum、函数参数/返回/泛型/where/rest 以及 callback variance 应尽可能保留类型信息；真正的 global state、JS FFI、宏边界和异构值可保持明确的 dynamic。
 
+### 3.1 多态能力的分层
+
+“暂时不知道类型”不是多态。多态必须保存调用位置之间可以验证的关系，不能用多个互不相关的 `:dynamic` 代替：
+
+| 需求 | 类型表达 | 静态收益 |
+|---|---|---|
+| 参数与返回值保持同一类型 | `:generics $ [] 'T`，在 `:args`/`:return` 复用 `'T` | 调用点绑定和返回类型替换 |
+| 只要求值具有某些能力 | `'T` 加 trait `:where` bounds | method 候选校验与静态 specialization |
+| 容器保持同质元素关系 | `:: :list 'T`、`:: :map 'K 'V`、`:: :ref 'T` | element/get/callback 类型继续传播 |
+| 数据结构携带类型参数 | generic `defstruct` / `defenum` 的 applied type args | 构造、字段、variant payload 与 match 保持一致 |
+| 回调的参数/返回关系 | 完整 `:: :fn`，保留 generics、rest 与 variance | 高阶函数调用检查，不把 callback 降为 `:fn`/`:dynamic` |
+| 有限异构分支 | 命名 `defenum`，可空值用 `:: :optional T` | 穷举 variant/payload 检查 |
+| 库声明、应用选择一个全局类型 | `deftype-slot` / `bind-type` | 跨编译单元注入；不是 per-call parametric polymorphism |
+
+当前不引入通用 union/intersection 类型。已知的有限分支优先用 enum，nil 分支用 optional；只有开放世界输入、无法建模的 FFI/global state 或宏边界使用 `:dynamic`。Bare `:list`、`:map`、`:ref` 及 `:fn` 只保留外形，不能表达元素、状态或 callback 之间的多态关系，因此 coverage 最多为 partial。
+
+泛型变量必须显式列在 `:generics`，`where` 只能约束已声明变量；applied struct/enum type args 必须满足 arity 与 where bounds。无法绑定的 TypeVar、dynamic callback slot 或 dynamic receiver 不得伪装成成功 specialization：分析结果必须保留 unresolved evidence，运行时兼容路径可以继续，但 Agent 应看到静态收益已经丢失。
+
+### 3.2 Dynamic debt 的 Agent 引导
+
+分析日志只在显式静态分析和 opt-in method warning 中出现，避免普通运行持续刷屏：
+
+- `analyze check-types` 有 partial/none 时产生 `W_TYPE_COVERAGE_GAPS`，并提示继续运行 scoped `weak-types`；
+- `analyze weak-types` 对 unresolved dynamic 产生 `W_DYNAMIC_TYPE_DEBT`，每个 occurrence 返回 `impact` 与 `suggestion`；
+- `--warn-dyn-method` 保留精确调用点 warning，用于发现 dynamic receiver 阻止 trait/core method specialization 的位置；
+- `intentional-js-ffi` 仍可见但不算 unresolved，提示在进入 typed code 前 validate/convert；
+- `:any` 输入按 dynamic debt 处理，输出和修复建议统一写 `:dynamic`。
+
+建议必须按关系给出修复方向，而不是机械地要求“给 dynamic 随便换一个类型”：同一类型关系用 TypeVar，能力约束用 trait/where，同质容器保留 type arg，有限异构值建模为 enum，真正边界才保留 dynamic。
+
 ## 4. CalcitDiagnostic
 
 所有 parse、snapshot、macroexpand、preprocess、type-check、codegen、runtime 错误与 warning 逐步收敛到同一结构：
@@ -72,4 +102,4 @@ cr analyze check-types --format json
 cr analyze weak-types --intent unresolved --format json
 ```
 
-验收包括：稳定 diagnostic code/phase、expected/actual 为结构数据、`type-at` 不执行程序、故意 FFI dynamic 不被误报，以及正常/未知/显式 schema 分支的回归测试。
+验收包括：稳定 diagnostic code/phase、expected/actual 为结构数据、`type-at` 不执行程序、故意 FFI dynamic 不被误报、`:any` 输入 canonicalize 为 `:dynamic`、泛型/where/callback/container 中的 dynamic 能说明丢失的多态关系，以及正常/未知/显式 schema 分支的回归测试。

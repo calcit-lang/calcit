@@ -71,7 +71,7 @@ cr analyze check-examples --ns app.main --def calculate-total
 cr query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. `weak-types --format json` reports the exact Snapshot/schema path and a `suggestion` for every occurrence. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
+`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt also emits `W_DYNAMIC_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. `nil` occurrences remain unresolved because an FFI capability does not imply that every nullable branch is intentional.
 
@@ -209,7 +209,7 @@ The following type tags are supported:
 | `:tuple`            | Tuple (general)     |
 | `:fn`               | Function            |
 | `:ref`              | Atom / Ref          |
-| `:any`              | Static top type: explicitly accepts every Calcit value |
+| `:any`              | Legacy input alias for `:dynamic`; output is canonicalized |
 | `:dynamic`          | Unknown/unresolved type: static checks are disabled at this boundary |
 
 ### Complex Types
@@ -240,9 +240,41 @@ let
 
 A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant; for example, a callback accepting `optional<T>` can be used where the caller only supplies `T`.
 
-Use `:any` when “every Calcit value is accepted” is itself the precise public contract. It is a one-way static top type: a concrete value satisfies an expected `:any`, but a value known only as `:any` does not satisfy a concrete expected type. Unlike `:dynamic`, it does not erase checks in both directions and is not reported as unresolved by type-coverage tools. `cr query type :any --format json` therefore returns an empty `methods` array (no method is guaranteed), while unknown method metadata remains `null`.
+`:any` is accepted only as a compatibility spelling and is parsed as `:dynamic`. Schema serialization, generated metadata, type queries, and diagnostics use `:dynamic`; new code should not introduce `:any`.
 
-Do not strengthen a schema beyond the runtime contract merely to remove `:dynamic`. Recursive heterogeneous operations such as flattening may intentionally accept either a collection or a scalar; use `:any` when all Calcit values are valid, and retain `:dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state boundary. Keep those boundaries explicit and narrow, while strengthening homogeneous lists/maps/sets, refs, named data references, ordinary function parameters, and return values.
+Do not strengthen a schema beyond the runtime contract merely to silence a report. Instead, preserve the relationship that the code actually promises: use a declared type variable when input and output share a type, a trait plus `:where` when only capabilities matter, a parameterized collection/ref for homogeneous values, and a named enum for finite heterogeneous alternatives. Retain `:dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state or macro boundary, and keep that boundary explicit and narrow.
+
+### Preserving Polymorphism Instead of Repeating Dynamic
+
+This schema loses the fact that the result has the same type as the input:
+
+```cirru.no-run
+:: :fn $ {}
+  :args $ [] :dynamic
+  :return :dynamic
+```
+
+Use a declared type variable:
+
+```cirru.no-run
+:: :fn $ {}
+  :generics $ [] 'T
+  :args $ [] 'T
+  :return 'T
+```
+
+If the body only needs a capability, add a trait bound rather than replacing `'T` with dynamic:
+
+```cirru.no-run
+:: :fn $ {}
+  :generics $ [] 'T
+  :where $ {}
+    'T Show
+  :args $ [] 'T
+  :return :string
+```
+
+The same rule applies inside containers and callbacks: `:: :list 'T` preserves a homogeneous item relationship, while bare `:list` means `list<dynamic>`; a complete `:: :fn` callback schema preserves argument/return checking, while bare `:fn` does not.
 
 #### Record and Enum Types
 
@@ -300,7 +332,7 @@ Validates enum construction and pattern matching:
 
 ```cirru.no-check
 defenum Result
-  :Ok :any
+  :Ok :number
   :Error :string
 
 ; Warning: variant 'Failure' not found in enum Result
