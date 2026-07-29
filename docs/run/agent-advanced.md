@@ -862,4 +862,4 @@ cr query error
 | `W_CLI_OPTION_TYPE_MISMATCH`             | 选项值类型错误                                | `:lines` 用数字；字符串按上文规则；布尔用 `true`/`false` |
 | `cr query error` 无报错但页面仍异常      | sidecar 陈旧，或问题在 CSS/DOM/业务值等外部链路 | 先看 stale 提示与当前 stderr，再到真实运行环境核对     |
 
-> 💡 **错误文件备份**：`.calcit-error.cirru` 保存最近一次被持久化的错误堆栈，不保证每个失败命令都刷新。可用 `cr query error` 格式化读取；看到 stale 提示时，以当前命令 stderr 为准。
+> 💡 **错误文件备份**：`.calcit/error.cirru` 保存最近一次被持久化的错误堆栈，不保证每个失败命令都刷新。可用 `cr query error` 格式化读取；看到 stale 提示时，以当前命令 stderr 为准。

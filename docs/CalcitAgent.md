@@ -168,12 +168,15 @@ cr cursor show
 - `cursor duplicate --at before|after`：复制选中表达式并选中新副本，不覆盖 clipboard。
 - `cursor cut` 后选中 parent；`cursor paste` 后选中新节点，`--at` 支持 `before|after|prepend-child|append-child|replace`。
 - `query search ... --start-path @cursor --set-cursor N`：只在当前 subtree 中继续搜索。
+- `query next/prev`：重新计算上次通过 `--set-cursor` 保存的搜索并跳到相邻结果，不保存完整结果列表；Snapshot 已变化时先重跑原查询显式选中。
+- `cursor anchor` → 移动 → `cursor region`：确认同一 parent 下的连续 sibling 范围；结束后 `clear-anchor`。
+- `cursor mark <name>` / `goto <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
 - `query context @cursor`、`tree show @cursor --path @cursor`：后续命令不再重复 target/path。
 - `cursor back` 只回退 cursor 位置，**不会撤销源码修改**。
 
 cursor 密集操作可把顶层选项写在命令前，如 `cr --cursor-after focus cursor forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `cr cursor show --format json --view node`。
 
-`.calcit-cursor.cirru` 是本地 sidecar，应加入 `.gitignore`。进入复制项目或已有 worktree 时先 `cursor show`；若选择与当前任务无关，执行 `cursor clear`，复制试验项目时也可排除该 sidecar。目前只有一个 active cursor，不负责多个进程的并发写入；并行 Agent 使用独立 worktree/Snapshot。
+`.calcit/` 是项目本地状态目录，应整体加入 `.gitignore`。其中 `cursor.cirru` 保存 active cursor、单一 anchor、最多 16 个 marks、last query、有限 history/stack 与 clipboard，硬上限 64 KiB；`error.cirru` 保存最近一次持久化 runtime/watcher stack，多行输入临时片段可放 `snippets/`。进入复制项目或已有 worktree 时先 `cursor show`；若选择与当前任务无关，执行 `cursor clear`。目前只有一个 active cursor，不负责多个进程的并发写入；并行 Agent 使用独立 worktree/Snapshot。
 
 非法 cursor navigation 会保持 Snapshot 和 cursor 不变，失败后用 `cursor show` 确认。`unwrap` 会把所选 list 的所有 children splice 到 parent；对含额外语法的 wrapper，它不是 `wrap` 的撤销操作。
 

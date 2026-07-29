@@ -183,7 +183,7 @@ yarn check-all
 
 Other tools:
 
-- [Error Viewer](https://github.com/calcit-lang/calcit-error-viewer) for displaying `.calcit-error.cirru`
+- [Error Viewer](https://github.com/calcit-lang/calcit-error-viewer) for displaying `.calcit/error.cirru`
 - [IR Viewer](https://github.com/calcit-lang/calcit-ir-viewer) for rendering `program-ir.cirru`
 
 Some resources:

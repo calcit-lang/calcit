@@ -38,7 +38,7 @@
 | `07-26-agent-docs-and-evaluation-rfc.md`            | Draft         | 结构化文档上下文、默认检索范围和 Agent 接口基准。                                                                        |
 | `07-28-git-module-store-rfc.md`                     | Draft         | 保持 `deps.cirru` 与 Git 模块路径，以 tag 为最佳实践并使用 pnpm 式全局目录存储；不引入 registry、lockfile、workspace 或多版本。 |
 | `07-28-project-tooling-contract-rfc.md`             | Draft         | 在既有 `cr` 子命令上补强单项目工具契约，保持 EDN 树形事实来源。                                                        |
-| `07-28-persistent-tree-cursor-rfc.md`               | Draft         | 项目本地虚拟 cursor、Cirru focus 展示、history/stack、结构化 clipboard、edit/tree path 迁移与 stale 防护。             |
+| `07-28-persistent-tree-cursor-rfc.md`               | Draft         | `.calcit/` 本地状态、虚拟 cursor、region/marks/last-query、结构化 clipboard 与 path 迁移。                            |
 
 ## 已执行的清理
 

@@ -36,14 +36,14 @@ cr docs agents --full
 
 - **用途定位**：`cr eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
 - **可加载外部模块**：`cr eval` 支持重复传入 `--dep`，可加载多个模块目录（路径以 `/` 结尾时会优先读取其中的 `calcit.cirru`，并回退到 `compact.cirru`）。
-  - ✅ `cargo run --bin cr -- calcit.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
+  - ✅ `cargo run --bin cr -- calcit/test.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
 - **首表达式 `ns` 会注入当前 eval 程序**：当 snippet 第一个表达式是 `ns` 时，会把 `ns <NS> ...` 从第 3 个节点开始（通常是 `:require` 等规则）合并到运行用的 `ns app.main`，用于在 eval 中显式导入命名空间。
 - **`docs check-md` 也支持依赖模块**：`cr docs check-md` 可通过多次 `--dep` 传参，内部会透传给 `eval`/`--check-only`。这样 markdown 代码块可配合首行 `ns ... :require ...` 访问模块函数。
-  - ✅ `cargo run --bin cr -- calcit.cirru docs check-md docs/CalcitAgent.md --dep ~/.config/calcit/modules/respo.calcit/`
+  - ✅ `cargo run --bin cr -- calcit/test.cirru docs check-md docs/CalcitAgent.md --dep ~/.config/calcit/modules/respo.calcit/`
 - **顶层无需额外括号**：Cirru 语法本身就不需要"最外层括号"，顶层可以直接是表达式。可用 `cr cirru parse -e` 观察解析结果。
-  - ✅ `cargo run --bin cr -- calcit.cirru eval 'range 3'`
-  - ✅ `cargo run --bin cr -- calcit.cirru eval 'let ((x 1)) (+ x 2)'`
-  - ❌ `cargo run --bin cr -- calcit.cirru eval '(range 3)'`（多一层括号会改变调用语义）
+  - ✅ `cargo run --bin cr -- calcit/test.cirru eval 'range 3'`
+  - ✅ `cargo run --bin cr -- calcit/test.cirru eval 'let ((x 1)) (+ x 2)'`
+  - ❌ `cargo run --bin cr -- calcit/test.cirru eval '(range 3)'`（多一层括号会改变调用语义）
 - **`let` 绑定语法**：必须用成对列表，形如 `((name value))`。
   - ✅ `let ((x 1)) x`
   - ❌ `let (x 1) x`（会触发"expects pairs in list for let"）
@@ -53,19 +53,19 @@ cr docs agents --full
   - ✅ `fn (acc item) if flag (acc) , acc`（`, acc` 表示"按值传递"）
 - **`foldl` 初始空集合语法**：`foldl xs [] $ fn ...` 中，`[]` 会因 `$` 右结合被解析为 `([] (fn ...))` 而非空列表。正确写法是先绑定 `init $ []`，再传 `init`；或对空 map 同理使用 `init $ {}`。
 - **告警会使 eval 失败**：有类型告警时，`cr eval` 会以错误退出（这是预期行为，便于阻断不安全用法）。
-  - 例：`cargo run --bin cr -- calcit.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
+  - 例：`cargo run --bin cr -- calcit/test.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
 - **assert-type 仅做检查**：`assert-type` 在预处理阶段生效，不会改变运行值。
-  - 例：`cargo run --bin cr -- calcit.cirru eval 'let ((x 1)) (assert-type x :list) x'` 依然返回 `1`，并在检查阶段报告类型不匹配。
-- **常用排错方式**：遇到报错先看 `.calcit-error.cirru`，它会提供更完整的栈信息。
+  - 例：`cargo run --bin cr -- calcit/test.cirru eval 'let ((x 1)) (assert-type x :list) x'` 依然返回 `1`，并在检查阶段报告类型不匹配。
+- **常用排错方式**：遇到报错先看 `.calcit/error.cirru`，它会提供更完整的栈信息。
 - **查示例用法**：可用 `cr query examples <namespace/definition>` 查目标定义的示例。
-  - 例：`cargo run --bin cr -- calcit.cirru query examples calcit.core/let`
+  - 例：`cargo run --bin cr -- calcit/test.cirru query examples calcit.core/let`
 
 ### CLI 修改指南与约束
 
 - **优先使用 `search-replace`**：在 `cr tree` 操作中，优先使用 `search-replace` 而非 `replace`。它基于内容定位，且在不唯一时会报错，比手动指定索引更安全。
 - **全量取消 `--stdin` 支持**：由于 Shell 重定向和多行输入的复杂性，所有的修改类子命令（`edit` 和 `tree` 系列）已移除该选项。
   - ✅ 使用 `--code 'code'` 进行单行输入（自动检测 JSON vs Cirru）。
-  - ✅ 使用 `--file file` 进行多行或复杂结构输入（推荐在 `.calcit-snippets/` 下创建临时文件）。
+  - ✅ 使用 `--file file` 进行多行或复杂结构输入（推荐在 `.calcit/snippets/` 下创建临时文件）。
   - ✅ 省略 `--code` `--file` 时自动从 stdin 读取（推荐用于多行代码和避免转义）。
 - **路径索引动态性**：在 `tree` 系列操作中（如 `delete`, `insert`），操作会引起同级后续节点索引变化。建议**从后往前**操作，或每次修改后使用 `query search` 重新定位。
 - **结构引用替换 (`tree rewrite`)**：`tree replace` 仅支持简单替换。涉及引用原始节点及其内容的复杂替换（使用 `--with name=path`）已统一移动至 `cr tree rewrite` 命令。
@@ -118,8 +118,8 @@ npm view calcit version
 
 ### 技术基准
 
-- **启动耗时验证**：使用 `time ./target/release/cr calcit/test.cirru -1`。核心库加载应控制在 **~10ms**。若数值大幅增加，需检查 `build.rs` 的序列化或 `include_bytes!` 是否失效。
-- **构建体积监控**：使用 `ls -lh target/release/cr` 观察产物。目标应控制在 **5MB** 以内。引入新依赖前务必检查其 Transitive Dependencies，优先选择同步轻量库（如 `ureq`）。
+- **启动耗时验证**：使用 `time ./target/release/cr calcit/add.cirru`，与改动前同平台 release 基线比较。若数值大幅增加，需检查 `build.rs` 的序列化或 `include_bytes!` 是否失效；旧 `-1` once 参数已经移除。
+- **构建体积监控**：使用 `stat -c '%s %n' target/release/cr`（macOS 系统 `stat` 可用等价参数）记录精确字节数，并与改动前同平台 release 基线比较；当前 arm64 产物约 8 MiB，不再使用过时的 5 MiB 绝对阈值。引入新依赖前务必检查其 Transitive Dependencies，优先选择同步轻量库（如 `ureq`）。
 - **IO 纯净度检测**：确保 stdout 仅保留程序逻辑输出。版本信息、预热日志、告警均应通过 `eprintln!` 输出至 stderr。验证：`./cr -v > /dev/null` 不应有任何输出。
 
 ### 内存性能检查

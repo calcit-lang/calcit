@@ -97,10 +97,10 @@ cr edit inc \
 **查看 watcher 持久化错误栈：**
 
 ```bash
-cr query error  # 显示 .calcit-error.cirru 最近持久化的错误栈
+cr query error  # 显示 .calcit/error.cirru 最近持久化的错误栈
 ```
 
-当前命令的 stderr 始终是本次 parse、preprocess、query 或 edit 失败的第一证据；这些失败不保证刷新 `.calcit-error.cirru`。`cr query error` 主要用于读取最近持久化的 runtime/watcher stack；如果它提示 stale，后面的内容可能是旧任务留下的无关错误，不要据此修代码。
+当前命令的 stderr 始终是本次 parse、preprocess、query 或 edit 失败的第一证据；这些失败不保证刷新 `.calcit/error.cirru`。`cr query error` 主要用于读取最近持久化的 runtime/watcher stack；如果它提示 stale，后面的内容可能是旧任务留下的无关错误，不要据此修代码。
 
 即便错误 sidecar 是最新的，它也**不能**证明浏览器 CSS、HTML 属性值、业务数据内容或外部系统配置是"合理的"。像 `|max(...)` 被误写成 `"|max(...)` 这类在 Cirru 层面仍合法的字符串，仍可能在浏览器渲染阶段失效。
 

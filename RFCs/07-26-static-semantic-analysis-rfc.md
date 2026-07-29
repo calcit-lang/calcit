@@ -59,7 +59,7 @@ cr query type-at app.main/f --path code@3.2 --format json
 }
 ```
 
-`code` 稳定，`message` 可改善；location 的 path 是临时坐标，selector/fingerprint 才是重定位依据。`.calcit-error.cirru` 与 JSON CLI 从同一诊断模型渲染。fix 只能描述可预览的结构化 edit，不能静默写入。
+`code` 稳定，`message` 可改善；location 的 path 是临时坐标，selector/fingerprint 才是重定位依据。`.calcit/error.cirru` 与 JSON CLI 从同一诊断模型渲染。fix 只能描述可预览的结构化 edit，不能静默写入。
 
 ## 5. 命令与验收
 

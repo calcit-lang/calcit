@@ -8,17 +8,17 @@
 
 Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision 下的瞬时坐标。复杂表达式需要连续执行 show、insert、wrap、replace、delete 等操作时，Agent 即使第一次选对节点，也可能因为前方兄弟节点增删而继续使用已经漂移的 path。
 
-引入项目本地 `.calcit-cursor.cirru` 与 `cr cursor`，保存当前选择的 namespace、definition 和 tree path。Cursor 不是新的源码身份，也不写进 snapshot；它是 CLI 在多次调用之间维护的结构化选择状态。
+引入项目本地 `.calcit/cursor.cirru` 与 `cr cursor`，保存当前选择的 namespace、definition 和 tree path。Cursor 不是新的源码身份，也不写进 snapshot；它是 CLI 在多次调用之间维护的结构化选择状态。`.calcit/` 同时作为 error、snippets 与后续模块链接等小型项目本地工件的统一目录，避免继续增加顶层隐藏文件。
 
 核心要求：一旦 cursor 已存在，任何作用于同一 definition 的 tree mutation 都必须尝试迁移 cursor。能够确定新位置时更新坐标并提示；不能确定时明确标为 stale 或移动到可证明安全的父节点，不允许静默指向另一个节点。
 
 ## 2. 文件格式
 
-当前只有一个 active cursor，但文件保留扩展 named cursor 的结构。schema v2 在 v1 的 selection 上增加历史、显式栈和结构化 clipboard；schema v3 移除每个位置中重复保存的完整 subtree preview，避免大表达式在 history/stack 中成倍放大。读取器继续接受 v1/v2，并在下一次写入时迁移：
+当前只有一个 active cursor；named marks 只是有限位置书签，不是并发 cursor。schema v2 在 v1 的 selection 上增加历史、显式栈和结构化 clipboard；schema v3 移除每个位置中重复保存的完整 subtree preview；schema v4 增加单一 region anchor、最多 16 个 marks 和不保存结果集的 last query。读取器接受 v1-v3，旧 `.calcit-cursor.cirru` 在首次读取时一次性移动到新目录：
 
 ```cirru
 {}
-  :schema-version 3
+  :schema-version 4
   :active :main
   :cursors $ {}
     :main $ {}
@@ -37,6 +37,33 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
       :definition-revision |md5:...
       :fingerprint |md5:...
   :stack $ []
+  :anchor $ {}
+    :snapshot |calcit.cirru
+    :target |app.main/render!
+    :section :code
+    :path $ [] 3 2 0
+    :definition-revision |md5:...
+    :fingerprint |md5:...
+  :marks $ {}
+    :render-start $ {}
+      :snapshot |calcit.cirru
+      :target |app.main/render!
+      :section :code
+      :path $ [] 3 2
+      :definition-revision |md5:...
+      :fingerprint |md5:...
+  :last-query $ {}
+    :command |search
+    :pattern |render-item
+    :filter |app.main/render!
+    :exact true
+    :regex false
+    :max-depth 0
+    :start-path nil
+    :entry nil
+    :pattern-is-json false
+    :selected-index 2
+    :snapshot-revision |md5:...
   :clipboard $ {}
     :mode |cut
     :source-target |app.main/render!
@@ -53,9 +80,12 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
 - `:section` 第一版只接受 `:code`，为 schema、example 与结构化 docs 预留空间。
 - `:history` 由 `set` 和导航命令维护，最多保存 32 个位置，供 `back` 使用；
 - `:stack` 只由 `push` / `pop` 控制，最多保存 16 个位置，不与普通导航历史混用；
+- `:anchor` 与 active cursor 必须是同一 parent 下的 sibling 才形成 region；不保存复制的 subtree；
+- `:marks` 最多 16 个，每个只保存位置、revision 和 fingerprint；
+- `:last-query` 只保存查询参数、当前 index 和 revision，`query next/prev` 每次重新解析并计算结果，不持久化结果列表；
 - `:clipboard` 保存真实 Cirru subtree，不保存经过 formatter 的文本；`copy` 和 `cut` 都可写入，`paste` 后仍保留以支持重复粘贴。
 
-cursor 文件位于 snapshot 同目录，使用同目录临时文件加 rename 更新。它应作为本地临时状态加入 `.gitignore`，不参与模块发布或项目语义。首次 `cursor set` 若未检测到相应 ignore 规则，CLI 在 stderr 给出提示但不自动修改项目文件。
+cursor 文件位于 snapshot 同目录的 `.calcit/`，使用目标文件所在目录的临时文件加 rename 更新。`.calcit/` 应作为本地状态加入 `.gitignore`，不参与模块发布或项目语义。首次 `cursor set` 若未检测到相应 ignore 规则，CLI 在 stderr 给出提示但不自动修改项目文件。文件硬上限为 64 KiB；history、stack、marks 都有固定条目上限，只有 clipboard 允许保存源码 subtree，超过上限时先拒绝写入而不截断数据。
 
 ## 3. CLI 契约
 
@@ -73,6 +103,13 @@ cr cursor backward --count 5
 cr cursor back --count 4
 cr cursor push
 cr cursor pop
+cr cursor anchor
+cr cursor region
+cr cursor clear-anchor
+cr cursor mark render-start
+cr cursor goto render-start
+cr cursor marks
+cr cursor rm-mark render-start
 cr cursor apply swap-next
 cr cursor apply wrap --code 'quote $ when visible? self'
 cr cursor slurp-next
@@ -136,9 +173,11 @@ cr query search render-item --filter app.main/render! --exact --set-cursor 0
 cr query search-expr 'map items' --filter app.main/render! --set-cursor 1
 cr query search state --start-path @cursor --set-cursor 0
 cr query search-expr 'div $ {}' --start-path @cursor
+cr query next
+cr query prev
 ```
 
-`query search` 与 `query search-expr` 在 human 输出为每个 match 显示稳定的全局 `[#N]`，JSON match 增加 `cursor_index`。`--filter @cursor` 限定当前 definition；`--start-path @cursor` 同时推导 definition filter 并把搜索根限制到当前 subtree，冲突 filter 直接报错。显式 `--set-cursor N` 采用同一排序后的结果，在返回查询结果前更新 sidecar；成功提示写 stderr，因此 `--format json` 的 stdout 仍是单个 JSON。越界或 dependency-only match 无法映射到当前可编辑 snapshot 时拒绝设置，不猜测其他位置。
+`query search` 与 `query search-expr` 在 human 输出为每个 match 显示稳定的全局 `[#N]`，JSON match 增加 `cursor_index`。`--filter @cursor` 限定当前 definition；`--start-path @cursor` 同时推导 definition filter 并把搜索根限制到当前 subtree，冲突 filter 直接报错。显式 `--set-cursor N` 采用同一排序后的结果，在返回查询结果前更新 sidecar；成功提示写 stderr，因此 `--format json` 的 stdout 仍是单个 JSON。越界或 dependency-only match 无法映射到当前可编辑 snapshot 时拒绝设置，并提示用 `--filter <project-namespace>` 缩小范围。`query next/prev` 从 last query 计算相邻 index、重新执行搜索并只回显新 cursor；若 snapshot revision 已变化则拒绝复用旧 index，要求重新执行原搜索选中结果，避免结果重排后跳错节点。
 
 ## 3.1 高频开发场景覆盖
 
@@ -146,6 +185,9 @@ cr query search-expr 'div $ {}' --start-path @cursor
 - **组件/分支样板扩展**：`cursor duplicate` 后继续 replace/wrap；clipboard 保留给跨位置搬运。
 - **调整调用或属性层级**：双向 slurp/barf、swap、wrap/unwrap/raise 覆盖 Lisp 编辑器最常见的结构操作。
 - **在大表达式内二次查找**：`search/search-expr --start-path @cursor` 只遍历选中 subtree，并可把结果再次设为 cursor。
+- **连续浏览搜索命中**：首次 `--set-cursor` 后使用 `query next/prev`，不再重复长查询参数或保存完整结果集。
+- **连续 sibling 范围确认**：在起点 `cursor anchor`，移动到终点后用 `cursor region` 验证结构化范围；region 第一版不隐式改变单表达式 copy/cut 语义。
+- **跨 definition 往返**：用最多 16 个 `cursor mark/goto` 保存高频位置，普通短期返回仍用 push/pop。
 - **编辑后语义确认**：`query type-at @cursor --path @cursor`、`query context @cursor` 复用当前 definition/selection。
 - **抽取与跨位置重构**：`edit split-def @cursor --path @cursor`，或 push/cut/search/pop/paste 组合保留起点和结构化代码。
 - **definition 元数据维护**：schema、examples、doc、tags 等 edit target 接受 `@cursor`，definition rename/move 后 cursor 跟随。
@@ -204,11 +246,11 @@ transaction 的 staged 子命令不得直接更新真实 cursor 文件。完整�
 
 snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。若 snapshot 已成功而 cursor 写入失败，后续调用会通过 revision/fingerprint 检出 stale；错误必须明确报告“源码已提交、cursor 未更新”，不能声称整体回滚。
 
-当前 sidecar 只有一个 active cursor。原子 rename 保证文件完整性，但不提供多个进程共享同一 Snapshot 时的语义并发控制；并行 Agent 应使用独立 worktree/Snapshot，或改用带 precondition 的 transaction 与显式路径。named cursor 只能隔离导航位置，不能解决并发源码写入，因此不作为并发安全方案。
+当前状态只有一个 active cursor。原子 rename 保证文件完整性，但不提供多个进程共享同一 Snapshot 时的语义并发控制；并行 Agent 应使用独立 worktree/Snapshot，或改用带 precondition 的 transaction 与显式路径。marks 只能隔离导航位置，不能解决并发源码写入，因此不作为并发安全方案。
 
 ## 7. 第一阶段实现范围
 
-1. Cirru EDN cursor 状态的读取、v1/v2→v3 兼容、校验和原子写入；
+1. Cirru EDN cursor 状态的读取、v1-v3→v4 兼容、旧路径一次性迁移、校验、64 KiB 上限和原子写入；
 2. `cr cursor set/show/clear/parent/child/next/prev/forward/backward/back/push/pop`，含末子节点、同级多步与跨 list 的深度优先导航；
 3. 结构化 `copy/cut/paste/clipboard`，clipboard 不经过文本序列化；
 4. definition-oriented query/tree/edit 接受 `@cursor` target；tree/type-at/edit 的 path 可同时引用 `@cursor`；
@@ -219,8 +261,9 @@ snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。�
 9. `query search` / `query search-expr` 为结果提供全局 cursor index，并可显式设置 active cursor。
 10. `cursor apply` 复用 tree mutation；双向 slurp/barf 与 duplicate 保持 active selection；
 11. leaf/expression search 都支持 `--filter @cursor` 与 `--start-path @cursor`，并继续支持 `--set-cursor`。
+12. 单一 sibling region anchor、最多 16 个 named marks，以及只保存参数的 last query / `query next/prev`。
 
-transaction 内逐 operation 的 cursor preview、named cursor，以及跨 definition 的 clipboard 引用策略在后续阶段接入；未接入的 mutation 必须让 cursor 在下次使用时经过 stale 校验，不能绕过 fingerprint。
+transaction 内逐 operation 的 cursor preview、多 active cursor、region 批量 mutation，以及跨 definition 的 clipboard 引用策略在后续阶段接入；未接入的 mutation 必须让 cursor/anchor/marks 在下次使用时经过 stale 校验，不能绕过 fingerprint。
 
 ## 8. 验收
 
@@ -236,7 +279,9 @@ transaction 内逐 operation 的 cursor preview、named cursor，以及跨 defin
 - 双向 slurp/barf 跨 parent 边界移动表达式后 cursor 仍选择原 list；duplicate 选中新副本且不修改 clipboard；
 - query/tree/edit 的 `@cursor` target、type-at path 与 subtree search scope 解析到同一 active selection，target 冲突时拒绝执行；
 - search human/JSON 中的 cursor index 一致，`--set-cursor N` 不污染 JSON stdout；
+- `query next/prev` 不保存结果列表，每次重新计算；snapshot 改变后拒绝复用旧 index；
+- region 只接受同 parent 的连续 siblings；marks 不超过 16 个，并随可证明的 tree path 变换迁移；
 - `--cursor-after none|summary|focus` 只改变 stderr 反馈，不改变 mutation 结果；
 - snapshot 被外部修改后，重复 subtree 不会被猜测性选中；
-- cursor 文件始终是可由 `cirru_edn::parse` 读取的单个 EDN value。
+- `.calcit/cursor.cirru` 始终是可由 `cirru_edn::parse` 读取、且不超过 64 KiB 的单个 EDN value；
 - cut 的 Snapshot 提交失败时 clipboard 已可恢复；paste 的 cursor 提交失败时必须明确报告 Snapshot 已修改。
