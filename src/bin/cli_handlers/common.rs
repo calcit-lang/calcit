@@ -236,14 +236,16 @@ pub fn read_code_input(file: &Option<String>, code: &Option<String>) -> Result<O
 /// `cirru_edn::parse` already enforces that top-level expressions must be
 /// prefixed with `quote` — bare leafs or unquoted forms produce parse errors.
 ///
-/// `quote |hello` → `Cirru::Leaf("|hello")`
+/// `quote hello` → symbol leaf `Cirru::Leaf("hello")`
+/// `quote |hello` → string leaf `Cirru::Leaf("|hello")`
 /// `quote (store (:store reel))` → expression AST
 fn parse_edn_quote(raw: &str) -> Result<Cirru, String> {
   let trimmed = raw.trim();
 
   if trimmed.is_empty() {
     return Err(
-      "Input is empty. Please provide Cirru code prefixed with `quote` (e.g. `quote |value` or `quote (expr ...)`).".to_string(),
+      "Input is empty. Please provide Cirru code prefixed with `quote` (e.g. `quote value`, `quote |text`, or `quote (expr ...)`)."
+        .to_string(),
     );
   }
 
@@ -252,9 +254,9 @@ fn parse_edn_quote(raw: &str) -> Result<Cirru, String> {
   // must not silently cross the CLI code/data boundary.
   let edn = cirru_edn::parse(trimmed).map_err(|e| {
     let msg = e.to_string();
-    if msg.contains("invalid operator for edn") || msg.contains("invalid nodes for edn") {
+    if msg.contains("invalid operator for edn") || msg.contains("invalid nodes for edn") || msg.contains("missing edn quote value") {
       format!(
-        "{msg}\n\nHint: Cirru EDN input must be prefixed with `quote`.\n  ✅ `quote |my-symbol`  — leaf value\n  ✅ `quote (expr ...)`    — expression\n  ❌ `|my-symbol`          — bare leaf (missing quote)\n  ❌ `(expr ...)`          — bare expression (missing quote)"
+        "{msg}\n\nHint: Cirru EDN input must be prefixed with `quote`, and `quote` must wrap exactly one AST node.\n  ✅ `quote my-symbol`     — symbol leaf\n  ✅ `quote |text`         — string leaf\n  ✅ `quote (expr ...)`    — expression\n  ❌ `my-symbol`           — bare leaf (missing quote)\n  ❌ `(expr ...)`          — bare expression (missing quote)"
       )
     } else {
       format!("Failed to parse Cirru EDN: {msg}")
@@ -264,18 +266,21 @@ fn parse_edn_quote(raw: &str) -> Result<Cirru, String> {
   match edn {
     cirru_edn::Edn::Quote(payload) => Ok(payload),
     _ => Err(
-      "Expected Cirru code prefixed with `quote`. Use `quote |value` for a leaf or `quote $ expr ...` for an expression.".to_string(),
+      "Expected Cirru code prefixed with `quote`. Use `quote value` for a symbol leaf, `quote |text` for a string leaf, or `quote $ expr ...` for an expression."
+        .to_string(),
     ),
   }
 }
 
 /// Parse multiple Cirru code nodes, requiring every top-level form to use its
 /// own `quote` boundary. This keeps batch input unambiguous: both
-/// `quote |leaf` and `quote $ expr ...` represent exactly one AST node.
+/// `quote symbol`, `quote |string`, and `quote $ expr ...` each represent exactly one AST node.
 pub fn parse_quoted_cirru_nodes(raw: &str) -> Result<Vec<Cirru>, String> {
   let trimmed = raw.trim();
   if trimmed.is_empty() {
-    return Err("Input is empty. Provide one or more quoted nodes, for example `quote |value` or `quote $ expr ...`.".to_string());
+    return Err(
+      "Input is empty. Provide one or more quoted nodes, for example `quote value`, `quote |text`, or `quote $ expr ...`.".to_string(),
+    );
   }
   if raw.contains('\t') {
     return Err(
@@ -295,13 +300,13 @@ pub fn parse_quoted_cirru_nodes(raw: &str) -> Result<Vec<Cirru>, String> {
           Ok(items[1].clone())
         } else {
           Err(format!(
-            "Quoted node {} must contain exactly one payload; use `quote |value` for a leaf or `quote $ expr ...` for an expression.",
+            "Quoted node {} must contain exactly one payload; use `quote value` for a symbol leaf, `quote |text` for a string leaf, or `quote $ expr ...` for an expression.",
             index + 1
           ))
         }
       }
       _ => Err(format!(
-        "Node {} is missing the `quote` code/data boundary. Use `quote |value` for a leaf or `quote $ expr ...` for an expression.",
+        "Node {} is missing the `quote` code/data boundary. Use `quote value` for a symbol leaf, `quote |text` for a string leaf, or `quote $ expr ...` for an expression.",
         index + 1
       )),
     })
@@ -310,7 +315,7 @@ pub fn parse_quoted_cirru_nodes(raw: &str) -> Result<Vec<Cirru>, String> {
 
 /// Parse raw input string into a `Cirru` node.
 /// Format auto-detection: if the trimmed input starts with `[`, it is treated as a JSON AST.
-/// Otherwise, it is treated as Cirru EDN with `quote` prefix (e.g. `quote |leaf` or `quote (expr ...)`).
+/// Otherwise, it is treated as Cirru EDN with `quote` prefix (e.g. `quote symbol`, `quote |text`, or `quote (expr ...)`).
 ///
 /// Cirru text input MUST use `quote` prefix — the `cirru_edn` parser enforces this natively.
 /// Use `--code` for inline text, `--file` for file input, or pipe via stdin.
@@ -357,7 +362,8 @@ mod tests {
   }
 
   #[test]
-  fn quoted_input_distinguishes_leaf_from_expression() {
+  fn quoted_input_distinguishes_symbol_string_and_expression() {
+    assert_eq!(parse_input_to_cirru("quote value").unwrap(), leaf("value"));
     assert_eq!(parse_input_to_cirru("quote |value").unwrap(), leaf("|value"));
     assert_eq!(parse_input_to_cirru("quote $ inc 1").unwrap(), list(vec![leaf("inc"), leaf("1")]));
   }
@@ -366,6 +372,12 @@ mod tests {
   fn code_input_rejects_non_quote_edn_values() {
     let error = parse_input_to_cirru("do :string").expect_err("plain EDN must not be accepted as code");
     assert!(error.contains("prefixed with `quote`"), "error: {error}");
+  }
+
+  #[test]
+  fn code_input_rejects_quote_with_multiple_payloads() {
+    let error = parse_input_to_cirru("quote println |hello").expect_err("quote must wrap one node");
+    assert!(error.contains("exactly one AST node"), "error: {error}");
   }
 
   #[test]
