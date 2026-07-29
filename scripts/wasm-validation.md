@@ -1,8 +1,8 @@
-# WASM Codegen（实验性）
+# Internal WASM Codegen Validation
 
 ## 概述
 
-Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集编译为二进制 `.wasm` 文件（通过 `wasm-encoder` crate）。这**不是 Calcit 的主打功能**，定位为实验性的“加速岛”（hot island），适用于计算密集的纯函数。
+这是 Calcit 仓库内部的 codegen 验证后端，用于测试编译器、数据布局和运行时假设。它不是公开的 Calcit 编译目标，也不构成用户 CLI 契约。内部 binary 由 `internal-wasm` feature gate 保护，只通过仓库测试脚本调用。
 
 ## 支持的子集
 
@@ -44,25 +44,13 @@ Calcit 提供了一个最小化的 WASM 编译目标，将纯数值函数子集�
 - Atom / Ref
 - 可变参数 (`&`) 和可选参数 (`?`)
 
-## 使用方式
+## 内部验证方式
 
 ```bash
-# 编译为 .wasm 二进制
-cr-wasm demos/wasm-demo.cirru
-
-# 输出在 js-out/program.wasm
-# 不支持的函数会打印 skip 信息到 stderr
-
-# 用 Node.js 加载和运行
-node -e "
-const fs = require('fs');
-const wasm = fs.readFileSync('js-out/program.wasm');
-const mod = new WebAssembly.Module(wasm);
-const inst = new WebAssembly.Instance(mod);
-console.log(inst.exports.fibo(10));      // 89
-console.log(inst.exports.factorial(10)); // 3628800
-"
+yarn try-wasm
 ```
+
+脚本会通过 `internal-wasm` feature 构建内部 runner，生成 `js-out/program.wasm`，再使用 Node.js 验证导出函数。不支持的函数会把 skip 信息写到 stderr。
 
 ## 字符串内存布局
 
@@ -113,7 +101,7 @@ defn fibo (n)
 - `src/codegen/emit_wasm.rs` — WASM 二进制代码生成（via wasm-encoder）
 - `src/codegen.rs` — 模块注册
 - `src/cli_args.rs` — `EmitWasmCommand` CLI 定义
-- `src/bin/cr.rs` — `run_wasm_codegen` 入口
+- `src/bin/cr_wasm.rs` — feature-gated 内部 runner
 - `calcit/test-wasm.cirru` — 测试用例
 - `scripts/test-wasm.sh` — WASM 验证脚本（生成 + Node.js 验证，集成在 `yarn check-all` 中）
 - `scripts/test-wasm.mjs` — Node.js 测试运行器
@@ -123,7 +111,7 @@ defn fibo (n)
 WASM 验证已集成到 `yarn check-all` 流程中（通过 `yarn try-wasm`）：
 
 ```bash
-# 单独运行 WASM 测试
+# 直接运行内部验证脚本
 bash scripts/test-wasm.sh
 
 # 或通过 yarn
@@ -132,5 +120,5 @@ yarn try-wasm
 
 ## 设计文档
 
-- 设计决策与改进路线见 `rfc/04-16-wasm-data-structures.md`
-- 可行性评估见 `rfc/04-15-wasm-compilation-feasibility.md`
+- 设计决策与改进路线见 `RFCs/04-16-wasm-data-structures.md`
+- 可行性评估见 `RFCs/04-15-wasm-compilation-feasibility.md`

@@ -43,7 +43,7 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 字段职责可以快速记成：
 
 - `:package`：包名边界（影响哪些 namespace 允许被 `cr edit` 修改）。
-- `:configs`：默认运行入口（`cr` / `cr js` / `cr ir` 不指定 `--entry` 时使用）。
+- `:configs`：默认运行入口（`cr` / `cr js` 不指定 `--entry` 时使用）。
 - `:entries`：命名入口集合（`cr --entry <name>` 走这里）。
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `calcit.cirru`，并回退到 `compact.cirru`）。

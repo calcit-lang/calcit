@@ -11,7 +11,6 @@ aliases:
 entry_for:
   - "cr"
   - "cr js"
-  - "cr ir"
 id: core/run
 ---
 # Run Calcit
@@ -38,17 +37,17 @@ Evaluate a snippet:
 cr eval 'println "|Hello world"'
 ```
 
-Emit JavaScript / IR once:
+Emit JavaScript once:
 
 ```bash
 cr js
-cr ir
 ```
 
 ## Run guide map
 
 - [Run in Eval mode](./run/eval.md)
 - [CLI Options](./run/cli-options.md)
+- [Development Debugging](./run/debugging.md)
 - [Querying definitions](./run/query.md)
 - [Documentation & Libraries](./run/docs-libs.md)
 - [CLI Code Editing](./run/edit-tree.md)

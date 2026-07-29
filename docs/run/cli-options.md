@@ -14,7 +14,6 @@ aliases:
 entry_for:
   - "cr -w"
   - "cr js -w"
-  - "cr ir -w"
   - "cr --help"
   - "cr --reload-fn"
 ---
@@ -128,13 +127,6 @@ cr js --emit-path dist/
 # JS watch mode
 cr js -w --emit-path dist/
 
-# IR watch mode
-cr ir -w
-
-# WASM codegen (experimental, numeric subset only)
-cr-wasm
-cr-wasm demos/wasm-demo.cirru
-
 # Testing single run
 cr --init-fn app.test/run-tests!
 
@@ -145,18 +137,7 @@ cr --reload-libs
 cr --disable-stack
 ```
 
-### WASM Codegen
-
-Generate WAT (WebAssembly Text format) for pure numeric functions:
-
-```bash
-cr-wasm                          # compile init namespace to wasm binary
-cr-wasm demos/wasm-demo.cirru    # compile specific file
-```
-
-Output is written to `js-out/program.wat`. Only a subset of Calcit is supported (numbers, `if`, `let`, arithmetic, comparisons, `recur`, function calls). Unsupported functions are skipped with a warning.
-
-See [WASM Codegen](../wasm-codegen.md) for full details and supported features.
+`cr ir` emits an internal representation for compiler debugging. Ordinary application development and CI do not need it; inspect `cr ir --help` only when debugging that layer.
 
 ## Markdown code checking
 

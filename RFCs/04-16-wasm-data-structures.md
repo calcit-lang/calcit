@@ -214,4 +214,4 @@ List 在 Calcit 中是持久化数据结构（`Vector(Vec)` 或 `TernaryTreeList
 
 - 可行性评估: `rfc/04-15-wasm-compilation-feasibility.md`
 - 优化目录: `rfc/04-15-type-directed-optimization-catalog.md`
-- 用法文档: `docs/wasm-codegen.md`
+- 内部验证说明: `scripts/wasm-validation.md`

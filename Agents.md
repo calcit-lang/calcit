@@ -25,11 +25,12 @@ cr docs agents --full
 
 未先阅读最新 Agent 指南时，不要直接开始改 `calcit.cirru`（兼容旧文件名 `compact.cirru`），避免沿用过时心智模型误判命令边界。
 
-### 运行模式更新（cr / js / ir）
+### 运行模式更新（cr / js）
 
-- `cr <entry>`、`cr <entry> js`、`cr <entry> ir`、`cr <entry> wasm` 现在默认都是**单次执行**（once）。
-- 需要监听时，显式传 `-w` 或 `--watch`（如 `cr -w <entry>`、`cr <entry> js -w`、`cr <entry> ir -w`）。
-- `cr <entry> wasm` 为实验性 WASM codegen，生成 WAT 文本格式，仅支持纯数值函数子集。
+- `cr <entry>`、`cr <entry> js` 默认都是**单次执行**（once）。
+- 需要监听时，显式传 `-w` 或 `--watch`（如 `cr -w <entry>`、`cr <entry> js -w`）。
+- `cr <entry> ir` 仅用于编译器与生成结果调试，不作为普通项目的运行或验证方式。
+- WASM codegen 是仓库内部验证后端，不向用户提供命令；维护者统一通过 `yarn try-wasm` 验证。
 
 ### cr eval 基础与常见踩坑
 
