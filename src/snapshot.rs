@@ -112,6 +112,9 @@ pub struct SnapshotEntry {
   pub init_fn: String,
   #[serde(rename = "reload-fn")]
   pub reload_fn: String,
+  /// Human-oriented semantic context for this entry.
+  #[serde(default)]
+  pub description: String,
   #[serde(default)]
   pub modules: Vec<String>,
   #[serde(default, rename = "type-slots")]
@@ -1398,6 +1401,13 @@ fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str)
   Ok(text.to_string())
 }
 
+fn parse_optional_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str) -> Result<String, String> {
+  match data.get(&Edn::tag(key)) {
+    Some(_) => parse_snapshot_config_string_field(data, key, owner),
+    None => Ok(String::new()),
+  }
+}
+
 fn parse_snapshot_run_mode(data: &EdnMapView, owner: &str, require_mode: bool) -> Result<SnapshotRunMode, String> {
   let Some(value) = data.get(&Edn::tag("mode")) else {
     return if require_mode {
@@ -1431,6 +1441,7 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
   let mode = parse_snapshot_run_mode(&data, owner, require_mode)?;
   let init_fn = parse_snapshot_config_string_field(&data, "init-fn", owner)?;
   let reload_fn = parse_snapshot_config_string_field(&data, "reload-fn", owner)?;
+  let description = parse_optional_snapshot_config_string_field(&data, "description", owner)?;
 
   let modules = match data.get(&Edn::tag("modules")) {
     Some(value) => from_edn(value.to_owned()).map_err(|e| format!("{owner}.modules: {e}; got {}", format_edn_preview(value)))?,
@@ -1446,6 +1457,7 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     mode,
     init_fn,
     reload_fn,
+    description,
     modules,
     type_slots,
   })
@@ -1683,6 +1695,7 @@ impl Default for Snapshot {
       mode: SnapshotRunMode::Native,
       init_fn: "app.main/main!".into(),
       reload_fn: "app.main/reload!".into(),
+      description: String::new(),
       modules: vec![],
       type_slots: HashMap::new(),
     };
@@ -1944,6 +1957,7 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
     entry_map.insert_key("mode", Edn::tag(v.mode.as_str()));
     entry_map.insert_key("init-fn", Edn::Str(v.init_fn.as_str().into()));
     entry_map.insert_key("reload-fn", Edn::Str(v.reload_fn.as_str().into()));
+    entry_map.insert_key("description", Edn::Str(v.description.as_str().into()));
     entry_map.insert_key(
       "modules",
       Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
@@ -3033,9 +3047,11 @@ mod tests {
   :version |0.0.0
   :entries $ {}
     :default $ {} (:mode :js) (:init-fn |mini/main!) (:reload-fn |mini/reload!)
+      :description "|Browser client entry"
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
     :server $ {} (:mode :native) (:init-fn |mini/server-main!) (:reload-fn |mini/reload!)
+      :description "|HTTP server entry"
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
   :files $ {}
@@ -3056,7 +3072,9 @@ mod tests {
       Some("mini.schema/ClientOp")
     );
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].mode, SnapshotRunMode::Js);
+    assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].description, "Browser client entry");
     let server = snapshot.entries.get("server").expect("server entry");
+    assert_eq!(server.description, "HTTP server entry");
     assert_eq!(
       server.type_slots.get("dispatch-op").map(String::as_str),
       Some("mini.schema/ServerOp")
@@ -3087,6 +3105,7 @@ mod tests {
     assert_eq!(snapshot.version, "1.2.3");
     assert_eq!(default_entry.mode, SnapshotRunMode::Native);
     assert_eq!(default_entry.modules, vec!["legacy/"]);
+    assert!(default_entry.description.is_empty());
 
     let rendered = render_snapshot_content(&snapshot).expect("legacy snapshot should render canonically");
     assert!(rendered.contains(":version |1.2.3"));

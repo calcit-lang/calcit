@@ -2196,7 +2196,7 @@ pub enum ConfigSubcommand {
   TypeSlots(ConfigTypeSlotsCommand),
   /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
   Version(ConfigVersionCommand),
-  /// set a configuration key to a value (mode, init-fn, reload-fn, version)
+  /// set a configuration key to a value (mode, init-fn, reload-fn, description, version)
   Set(ConfigSetCommand),
   /// add a module path to an entry's modules
   AddModule(ConfigAddModuleCommand),
@@ -2246,12 +2246,12 @@ pub struct ConfigVersionCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "set")]
-/// set a configuration key (mode, init-fn, reload-fn, version)
+/// set a configuration key (mode, init-fn, reload-fn, description, version)
 pub struct ConfigSetCommand {
   /// apply to a named entry (e.g. "test"); defaults to "default" (version is always project-level)
   #[argh(option)]
   pub entry: Option<String>,
-  /// config key: mode, init-fn, reload-fn, version
+  /// config key: mode, init-fn, reload-fn, description, version
   #[argh(positional)]
   pub key: String,
   /// config value; for "version" accepts semver string or patch|minor|major

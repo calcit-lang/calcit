@@ -40,6 +40,8 @@ pub struct SnapshotEntry {
   #[serde(rename = "reload-fn")]
   pub reload_fn: String,
   #[serde(default)]
+  pub description: String,
+  #[serde(default)]
   pub modules: Vec<String>,
   #[serde(default, rename = "type-slots")]
   pub type_slots: HashMap<String, String>,
@@ -474,6 +476,7 @@ fn main() {
         mode: SnapshotRunMode::Native,
         init_fn: configs.init_fn.clone(),
         reload_fn: configs.reload_fn.clone(),
+        description: String::new(),
         modules: configs.modules.clone(),
         type_slots: configs.type_slots.clone(),
       },

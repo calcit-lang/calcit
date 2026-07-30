@@ -384,6 +384,7 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         mode: old_mode,
         init_fn: old_init_fn,
         reload_fn: old_reload_fn,
+        description: old_description,
         modules: old_modules,
         type_slots: old_type_slots,
       } = old;
@@ -391,6 +392,7 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         mode: new_mode,
         init_fn: new_init_fn,
         reload_fn: new_reload_fn,
+        description: new_description,
         modules: new_modules,
         type_slots: new_type_slots,
       } = new;
@@ -399,6 +401,7 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         diff_string("mode", Some(old_mode.as_str()), Some(new_mode.as_str())),
         diff_string("init-fn", Some(old_init_fn.as_str()), Some(new_init_fn.as_str())),
         diff_string("reload-fn", Some(old_reload_fn.as_str()), Some(new_reload_fn.as_str())),
+        diff_string("description", Some(old_description.as_str()), Some(new_description.as_str())),
         diff_string_list("modules", old_modules, new_modules),
         diff_string_map("type-slots", old_type_slots, new_type_slots),
       ];
@@ -605,6 +608,7 @@ fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> D
     mode,
     init_fn,
     reload_fn,
+    description,
     modules,
     type_slots,
   } = value;
@@ -613,6 +617,7 @@ fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> D
     DiffNode::new("mode", status).with_detail(render_text(mode.as_str())),
     DiffNode::new("init-fn", status).with_detail(render_text(init_fn)),
     DiffNode::new("reload-fn", status).with_detail(render_text(reload_fn)),
+    DiffNode::new("description", status).with_detail(render_text(description)),
     build_string_list_tree("modules", modules, status),
     build_string_map_tree("type-slots", type_slots, status),
   ])
@@ -1265,6 +1270,7 @@ mod tests {
       mode: SnapshotRunMode::Native,
       init_fn: "app.main/main!".to_owned(),
       reload_fn: "app.main/reload!".to_owned(),
+      description: String::new(),
       modules: vec![],
       type_slots: slots
         .iter()
@@ -1294,6 +1300,16 @@ mod tests {
     assert_eq!(child(type_slots, ":added-op").status, DiffStatus::Added);
     assert_eq!(child(type_slots, ":dispatch-op").status, DiffStatus::Modified);
     assert_eq!(child(type_slots, ":removed-op").status, DiffStatus::Removed);
+  }
+
+  #[test]
+  fn diffs_entry_description() {
+    let old = entry_with_type_slots(&[]);
+    let mut new = old.clone();
+    new.description = "Runs the HTTP server".to_owned();
+
+    let diff = diff_entry("default", Some(&old), Some(&new));
+    assert_eq!(child(&diff, "description").status, DiffStatus::Modified);
   }
 
   #[test]

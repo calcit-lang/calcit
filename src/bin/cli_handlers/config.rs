@@ -67,6 +67,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
     println!("  {}: {}", "mode".cyan(), entry.mode);
     println!("  {}: {}", "init_fn".cyan(), entry.init_fn);
     println!("  {}: {}", "reload_fn".cyan(), entry.reload_fn);
+    println!("  {}: {}", "description".cyan(), entry.description);
     println!("  {}: {:?}", "modules".cyan(), entry.modules);
     println!("  {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
     return Ok(());
@@ -89,6 +90,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
     println!("    {}: {}", "mode".cyan(), entry.mode);
     println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
     println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
+    println!("    {}: {}", "description".cyan(), entry.description);
     println!("    {}: {:?}", "modules".cyan(), entry.modules);
     println!("    {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
   }
@@ -238,6 +240,10 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       entry.reload_fn = opts.value.clone();
       format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
+    "description" => {
+      entry.description = opts.value.clone();
+      format!("{} Set [{entry_label}] description = '{}'", "✓".green(), opts.value)
+    }
     "version" => {
       if opts.entry.is_some() {
         return Err("Project version is top-level; omit `--entry` when setting it".to_owned());
@@ -260,7 +266,7 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
     }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
+        "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, description, version (accepts semver string or patch|minor|major)",
         opts.key
       ));
     }

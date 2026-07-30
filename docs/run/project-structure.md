@@ -30,6 +30,7 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
       :mode :js
       :init-fn |app.main/main!
       :reload-fn |app.main/reload!
+      :description "|Browser client"
       :modules $ [] |lilac/ |memof/
       :type-slots $ {}
         :dispatch-op |app.schema/Op
@@ -37,6 +38,7 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
       :mode :native
       :init-fn |app.test/main!
       :reload-fn |app.test/reload!
+      :description "|Test runner"
       :modules $ [] |calcit-test/
       :type-slots $ {}
         :dispatch-op |app.test-schema/TestOp
@@ -53,6 +55,7 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 - `:version`：项目版本，独立于各运行入口。
 - `:entries`：全部运行入口；不指定 `--entry` 时使用 `:default`。
 - `:mode`：入口的默认运行后端，只接受 `:native` 或 `:js`。
+- `:description`：entry 用途的简短语义说明；只提供给人和工具阅读，不影响运行。
 - `:type-slots`：当前 entry 的编译期类型绑定（slot 名 → 完整 `namespace/definition` 路径或 `:dynamic`）。各 entry 都保存完整配置，彼此不继承。
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `calcit.cirru`，并回退到 `compact.cirru`）。
@@ -79,6 +82,7 @@ Type slot 优先用配置命令维护，避免直接改 snapshot：
 ```bash
 cr config set-type-slot :dispatch-op app.schema/Op
 cr config set mode js
+cr config set description "Browser client"
 cr config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 cr config rm-type-slot :dispatch-op
 ```
