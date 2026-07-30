@@ -1,7 +1,7 @@
 
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-wasm-suite) (:version |0.0.0)
   :entries $ {}
-    :default $ {} (:init-fn |test-wasm-suite.main/main!) (:mode :native) (:reload-fn |test-wasm-suite.main/reload!)
+    :default $ {} (:description |) (:init-fn |test-wasm-suite.main/main!) (:mode :native) (:reload-fn |test-wasm-suite.main/reload!)
       :modules $ [] |./util.cirru |./test-cond.cirru |./test-math.cirru |./test-set.cirru |./test-tuple.cirru |./test-fn.cirru |./test-lens.cirru |./test-edn.cirru |./test-string.cirru |./test-nil.cirru
       :type-slots $ {}
   :files $ {}

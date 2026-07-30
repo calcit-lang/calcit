@@ -1,7 +1,7 @@
 
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-type-slot-enum-invalid-variant) (:version |0.0.0)
   :entries $ {}
-    :default $ {} (:init-fn |type-fail-type-slot-enum-invalid-variant.main/main!) (:mode :native) (:reload-fn |type-fail-type-slot-enum-invalid-variant.main/reload!)
+    :default $ {} (:description |) (:init-fn |type-fail-type-slot-enum-invalid-variant.main/main!) (:mode :native) (:reload-fn |type-fail-type-slot-enum-invalid-variant.main/reload!)
       :modules $ []
       :type-slots $ {} (:dispatch-op |type-fail-type-slot-enum-invalid-variant.main/Action)
   :files $ {}
