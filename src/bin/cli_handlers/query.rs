@@ -1780,7 +1780,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let dynamic_intent = if inferred
     .as_ref()
     .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
-    && fn_features.iter().any(|feature| feature == ":js-ffi")
+    && fn_features.iter().any(|feature| feature == "js-ffi")
   {
     Some("intentional-js-ffi")
   } else if inferred

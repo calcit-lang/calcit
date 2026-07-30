@@ -2112,7 +2112,7 @@ pub struct CursorClearClipboardCommand {}
 #[argh(subcommand, name = "apply")]
 /// apply a structural tree operation to the active cursor without repeating target or path
 pub struct CursorApplyCommand {
-  /// operation: delete, swap-next, swap-prev, unwrap, raise, replace, wrap, insert-before, insert-after, insert-child, append-child
+  /// operation: delete, swap-next, swap-prev, unwrap (alias splice), raise, replace, wrap, insert-before, insert-after, insert-child, append-child
   #[argh(positional)]
   pub operation: String,
   /// read the replacement, wrapper, or inserted expression from a file

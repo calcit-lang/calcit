@@ -777,7 +777,7 @@ fn render_cursor_human(state: &CursorState, document: &CursorDocument, status: &
 }
 
 fn push_bounded<T>(items: &mut Vec<T>, value: T, limit: usize) {
-  if items.len() == limit {
+  while items.len() >= limit && !items.is_empty() {
     items.remove(0);
   }
   items.push(value);
@@ -2423,9 +2423,9 @@ mod tests {
     barf_last, build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_region_bounds,
     cursor_state_to_edn, duplicate_cursor, legacy_cursor_file_path, load_cursor_document, load_cursor_state,
     maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_depth_first,
-    move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, read_cursor_target, render_cursor_document, restore_cursor,
-    save_cursor_document, save_cursor_mark, save_cursor_state, set_cursor_anchor, set_cursor_selection, slurp_next, slurp_prev,
-    stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
+    move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, push_bounded, read_cursor_target, render_cursor_document,
+    restore_cursor, save_cursor_document, save_cursor_mark, save_cursor_state, set_cursor_anchor, set_cursor_selection, slurp_next,
+    slurp_prev, stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
   use calcit::cli_args::{CursorApplyCommand, CursorDuplicateCommand};
@@ -2438,6 +2438,13 @@ mod tests {
   use std::time::{SystemTime, UNIX_EPOCH};
 
   static TEST_CURSOR_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+  #[test]
+  fn bounded_push_trims_oversized_persisted_state() {
+    let mut items = vec![1, 2, 3, 4];
+    push_bounded(&mut items, 5, 3);
+    assert_eq!(items, vec![3, 4, 5]);
+  }
 
   struct TestCursorSnapshot {
     directory: PathBuf,
