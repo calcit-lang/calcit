@@ -642,7 +642,7 @@ This writes the following entry-level configuration:
 :entries $ {}
   :default $ {}
     :mode :native
-    :init-fn |app.main/main!
+    :init-fn 'app.main/main!
     :type-slots $ {}
       :dispatch-op |app.schema/Op
 ```

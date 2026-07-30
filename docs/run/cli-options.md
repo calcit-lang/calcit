@@ -108,8 +108,8 @@ cr --entry production
 
 ```cirru.no-check
 :entries $ {}
-  :default $ {} (:mode :js) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-  :test $ {} (:mode :native) (:init-fn |app.test/main!) (:reload-fn |app.test/reload!)
+  :default $ {} (:mode :js) (:init-fn 'app.main/main!) (:reload-fn 'app.main/reload!)
+  :test $ {} (:mode :native) (:init-fn 'app.test/main!) (:reload-fn 'app.test/reload!)
 ```
 
 The explicit `js` subcommand remains a compatibility/debug override. Prefer configuring `:mode` so the same entry is invoked consistently by developers and CI.

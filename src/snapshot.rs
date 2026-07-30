@@ -1401,6 +1401,19 @@ fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str)
   Ok(text.to_string())
 }
 
+/// Entry functions identify Calcit definitions, not text values. Both strings
+/// and symbols remain readable for compatibility, while writers use symbols.
+fn parse_snapshot_ns_def_field(data: &EdnMapView, key: &str, owner: &str) -> Result<String, String> {
+  let value = data.get(&Edn::tag(key)).ok_or_else(|| format!("{owner}: missing `:{key}` field"))?;
+  match value {
+    Edn::Str(text) | Edn::Symbol(text) => Ok(text.to_string()),
+    _ => Err(format!(
+      "{owner}.{key}: expected a namespace/definition string or symbol; got {}",
+      format_edn_preview(value)
+    )),
+  }
+}
+
 fn parse_optional_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str) -> Result<String, String> {
   match data.get(&Edn::tag(key)) {
     Some(_) => parse_snapshot_config_string_field(data, key, owner),
@@ -1439,8 +1452,8 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     .map_err(|e| format!("{owner}: failed to parse entry map: {e}; got {}", format_edn_preview(&data)))?;
 
   let mode = parse_snapshot_run_mode(&data, owner, require_mode)?;
-  let init_fn = parse_snapshot_config_string_field(&data, "init-fn", owner)?;
-  let reload_fn = parse_snapshot_config_string_field(&data, "reload-fn", owner)?;
+  let init_fn = parse_snapshot_ns_def_field(&data, "init-fn", owner)?;
+  let reload_fn = parse_snapshot_ns_def_field(&data, "reload-fn", owner)?;
   let description = parse_optional_snapshot_config_string_field(&data, "description", owner)?;
 
   let modules = match data.get(&Edn::tag("modules")) {
@@ -1955,8 +1968,8 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   for (k, v) in &snapshot.entries {
     let mut entry_map = EdnMapView::default();
     entry_map.insert_key("mode", Edn::tag(v.mode.as_str()));
-    entry_map.insert_key("init-fn", Edn::Str(v.init_fn.as_str().into()));
-    entry_map.insert_key("reload-fn", Edn::Str(v.reload_fn.as_str().into()));
+    entry_map.insert_key("init-fn", Edn::Symbol(v.init_fn.as_str().into()));
+    entry_map.insert_key("reload-fn", Edn::Symbol(v.reload_fn.as_str().into()));
     entry_map.insert_key("description", Edn::Str(v.description.as_str().into()));
     entry_map.insert_key(
       "modules",
@@ -3046,11 +3059,11 @@ mod tests {
     let content = r#"{} (:package |mini)
   :version |0.0.0
   :entries $ {}
-    :default $ {} (:mode :js) (:init-fn |mini/main!) (:reload-fn |mini/reload!)
+    :default $ {} (:mode :js) (:init-fn |mini/main!) (:reload-fn 'mini/reload!)
       :description "|Browser client entry"
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
-    :server $ {} (:mode :native) (:init-fn |mini/server-main!) (:reload-fn |mini/reload!)
+    :server $ {} (:mode :native) (:init-fn 'mini/server-main!) (:reload-fn 'mini/reload!)
       :description "|HTTP server entry"
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
@@ -3082,6 +3095,14 @@ mod tests {
     assert_eq!(server.type_slots.get("optional-op").map(String::as_str), Some(":dynamic"));
 
     let rendered = render_snapshot_content(&snapshot).expect("snapshot should render");
+    assert!(
+      rendered.contains(":init-fn 'mini/main!"),
+      "entry function should be stored as a symbol: {rendered}"
+    );
+    assert!(
+      rendered.contains(":reload-fn 'mini/reload!"),
+      "entry function should be stored as a symbol: {rendered}"
+    );
     let rendered_edn = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
     let restored = load_snapshot_data(&rendered_edn, "mini.cirru").expect("rendered snapshot should load");
     assert_eq!(

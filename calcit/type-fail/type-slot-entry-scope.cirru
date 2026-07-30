@@ -1,10 +1,10 @@
 
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-type-slot-entry-scope) (:version |0.0.0)
   :entries $ {}
-    :default $ {} (:description |) (:init-fn |type-fail-type-slot-entry-scope.main/client-main!) (:mode :native) (:reload-fn |type-fail-type-slot-entry-scope.main/reload!)
+    :default $ {} (:description |) (:init-fn 'type-fail-type-slot-entry-scope.main/client-main!) (:mode :native) (:reload-fn 'type-fail-type-slot-entry-scope.main/reload!)
       :modules $ []
       :type-slots $ {} (:dispatch-op |type-fail-type-slot-entry-scope.main/ClientOp)
-    :server $ {} (:description |) (:init-fn |type-fail-type-slot-entry-scope.main/server-main!) (:mode :native) (:reload-fn |type-fail-type-slot-entry-scope.main/reload!)
+    :server $ {} (:description |) (:init-fn 'type-fail-type-slot-entry-scope.main/server-main!) (:mode :native) (:reload-fn 'type-fail-type-slot-entry-scope.main/reload!)
       :modules $ []
       :type-slots $ {} (:dispatch-op |type-fail-type-slot-entry-scope.main/ServerOp)
   :files $ {}

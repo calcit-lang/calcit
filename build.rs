@@ -31,13 +31,25 @@ where
   }
 }
 
+fn deserialize_ns_def<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+  D: serde::Deserializer<'de>,
+{
+  match Edn::deserialize(deserializer)? {
+    Edn::Str(text) | Edn::Symbol(text) => Ok(text.to_string()),
+    other => Err(serde::de::Error::custom(format!(
+      "expected namespace/definition string or symbol, got {other:?}"
+    ))),
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotEntry {
   #[serde(default, deserialize_with = "deserialize_run_mode")]
   pub mode: SnapshotRunMode,
-  #[serde(rename = "init-fn")]
+  #[serde(rename = "init-fn", deserialize_with = "deserialize_ns_def")]
   pub init_fn: String,
-  #[serde(rename = "reload-fn")]
+  #[serde(rename = "reload-fn", deserialize_with = "deserialize_ns_def")]
   pub reload_fn: String,
   #[serde(default)]
   pub description: String,
@@ -49,9 +61,9 @@ pub struct SnapshotEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LegacySnapshotConfigs {
-  #[serde(rename = "init-fn")]
+  #[serde(rename = "init-fn", deserialize_with = "deserialize_ns_def")]
   pub init_fn: String,
-  #[serde(rename = "reload-fn")]
+  #[serde(rename = "reload-fn", deserialize_with = "deserialize_ns_def")]
   pub reload_fn: String,
   #[serde(default)]
   pub modules: Vec<String>,

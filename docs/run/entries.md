@@ -32,11 +32,11 @@ Here's an example, first lines of a `calcit.cirru` file may look like:
 {} (:package |app)
   :version |0.0.1
   :entries $ {}
-    :default $ {} (:mode :js) (:init-fn |app.client/main!) (:reload-fn |app.client/reload!)
+    :default $ {} (:mode :js) (:init-fn 'app.client/main!) (:reload-fn 'app.client/reload!)
       :description "|Interactive browser client"
       :modules $ [] |respo.calcit/ |lilac/ |recollect/ |memof/ |respo-ui.calcit/ |ws-edn.calcit/ |cumulo-util.calcit/ |respo-message.calcit/ |cumulo-reel.calcit/
       :type-slots $ {} (:dispatch-op |app.schema/ClientOp)
-    :server $ {} (:mode :native) (:init-fn |app.server/main!) (:reload-fn |app.server/reload!)
+    :server $ {} (:mode :native) (:init-fn 'app.server/main!) (:reload-fn 'app.server/reload!)
       :description "|HTTP and WebSocket server"
       :modules $ [] |lilac/ |recollect/ |memof/ |ws-edn.calcit/ |cumulo-util.calcit/ |cumulo-reel.calcit/ |calcit-wss/ |calcit.std/
       :type-slots $ {} (:dispatch-op |app.schema/ServerOp)
@@ -46,6 +46,8 @@ Here's an example, first lines of a `calcit.cirru` file may look like:
 Bare `cr calcit.cirru` selects `entries.default` and emits JavaScript because its mode is `:js`. `cr calcit.cirru --entry server` selects the native server entry. An explicit `js` subcommand remains available as a compatibility/debug override, but project scripts should normally rely on the selected entry's mode.
 
 Use `:description` for a concise, human- and agent-readable explanation of the entry's purpose. It has no runtime effect and may be omitted in existing snapshots. Update it with `cr config set description "Interactive browser client"` (or add `--entry server` for a named entry).
+
+`:init-fn` and `:reload-fn` are Calcit definition symbols, written as `'app.main/main!` rather than strings. Existing string-valued entries remain compatible on read and are converted on the next canonical snapshot write.
 
 A named entry is a complete configuration, not a partial override. In particular, it does not inherit the default entry's modules or type slots. Bind a slot for each entry that needs it:
 

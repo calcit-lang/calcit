@@ -28,16 +28,16 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
   :entries $ {}
     :default $ {}
       :mode :js
-      :init-fn |app.main/main!
-      :reload-fn |app.main/reload!
+      :init-fn 'app.main/main!
+      :reload-fn 'app.main/reload!
       :description "|Browser client"
       :modules $ [] |lilac/ |memof/
       :type-slots $ {}
         :dispatch-op |app.schema/Op
     :test $ {}
       :mode :native
-      :init-fn |app.test/main!
-      :reload-fn |app.test/reload!
+      :init-fn 'app.test/main!
+      :reload-fn 'app.test/reload!
       :description "|Test runner"
       :modules $ [] |calcit-test/
       :type-slots $ {}

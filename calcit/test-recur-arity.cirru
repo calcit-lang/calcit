@@ -1,7 +1,7 @@
 
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-recur-arity) (:version |0.0.0)
   :entries $ {}
-    :default $ {} (:description |) (:init-fn |test-recur-arity.main/main!) (:mode :native) (:reload-fn |test-recur-arity.main/reload!)
+    :default $ {} (:description |) (:init-fn 'test-recur-arity.main/main!) (:mode :native) (:reload-fn 'test-recur-arity.main/reload!)
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}

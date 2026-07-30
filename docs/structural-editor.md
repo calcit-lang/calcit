@@ -24,7 +24,7 @@ Example of a `calcit.cirru` file is more readable:
 ```cirru.no-check
 {} (:package |app) (:version |0.0.1)
   :entries $ {}
-    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+    :default $ {} (:mode :native) (:init-fn 'app.main/main!) (:reload-fn 'app.main/reload!)
       :modules $ []
   :files $ {}
     |app.main $ %{} :FileEntry
