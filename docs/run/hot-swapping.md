@@ -21,9 +21,11 @@ Hot swapping is built inside Rust runtime. When you specity `:reload-fn` in `cal
 
 ```cirru
 {}
-  :configs $ {}
-    :init-fn |app.main/main!
-    :reload-fn |app.main/reload!
+  :entries $ {}
+    :default $ {}
+      :mode :native
+      :init-fn |app.main/main!
+      :reload-fn |app.main/reload!
 ```
 
 the interpreter learns that the function `reload!` is to be re-run after hot swapping.

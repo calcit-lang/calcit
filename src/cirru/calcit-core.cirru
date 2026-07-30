@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |calcit)
-  :configs $ {} (:init-fn |calcit.core/println!) (:reload-fn |calcit.core/println!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |calcit) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |calcit.core/println!) (:mode :native) (:reload-fn |calcit.core/println!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |calcit.core $ %{} :FileEntry
       :defs $ {}
@@ -36,36 +37,36 @@
           :examples $ []
           :schema $ :: :fn
             {}
-              :return $ :: 'Result 'T 'E
               :args $ [] 'E
               :generics $ [] 'T 'E
+              :return $ :: 'Result 'T 'E
         |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
           :code $ quote
             defn %none () $ %:: Option :none
           :examples $ []
           :schema $ :: :fn
             {}
-              :return $ :: 'Option 'T
               :args $ []
               :generics $ [] 'T
+              :return $ :: 'Option 'T
         |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
           :code $ quote
             defn %ok (value) (%:: Result :ok value)
           :examples $ []
           :schema $ :: :fn
             {}
-              :return $ :: 'Result 'T 'E
               :args $ [] 'T
               :generics $ [] 'T 'E
+              :return $ :: 'Result 'T 'E
         |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
           :code $ quote
             defn %some (value) (%:: Option :some value)
           :examples $ []
           :schema $ :: :fn
             {}
-              :return $ :: 'Option 'T
               :args $ [] 'T
               :generics $ [] 'T
+              :return $ :: 'Option 'T
         |%{} $ %{} :CodeEntry (:doc "|Macro for constructing struct-based records\nSyntax: (%{} StructName & field-value-pairs)\nParams: StructName (struct from defstruct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
           :code $ quote
             defmacro %{} (R & xs)
@@ -3097,8 +3098,7 @@
                                     &= :method $ type-of k0
                                     let
                                         s $ format-to-lisp k0
-                                      turn-tag $ &str:slice s 1
-                                        count s
+                                      turn-tag $ &str:slice s 1 (count s)
                                     raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
                               quasiquote $ [] ~key ~v0
                     do
@@ -3124,8 +3124,7 @@
                                       &= :method $ type-of k0
                                       let
                                           s $ format-to-lisp k0
-                                        turn-tag $ &str:slice s 1
-                                          count s
+                                        turn-tag $ &str:slice s 1 (count s)
                                       raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
                                 quasiquote $ [] ~key ~v0
           :examples $ []
@@ -3290,8 +3289,7 @@
                                 &= :method $ type-of m0
                                 let
                                     s $ format-to-lisp m0
-                                  turn-tag $ &str:slice s 1
-                                    count s
+                                  turn-tag $ &str:slice s 1 (count s)
                                 raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
                             t1 $ internal/normalize-trait-type t0
                           quasiquote $ [] ~k0 (quote ~t1)
@@ -4077,10 +4075,9 @@
                       rest ys
           :examples $ []
           :schema $ :: :fn
-            {}
+            {} (:return :list)
               :args $ [] (:: :list 'T) (:: :list 'U)
               :generics $ [] 'T 'U
-              :return $ :: :list :dynamic
         |intersection $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn intersection (base & xs)
@@ -4879,13 +4876,6 @@
             {}
               :args $ [] :number (:: :optional :number)
               :return $ :: :list :number
-        |read-file $ %{} :CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: :fn
-            {} (:return :string)
-              :args $ [] :string
-          :tags $ #{} :builtin :file :internal :io
         |read-dir $ %{} :CodeEntry (:doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4894,12 +4884,13 @@
               :args $ [] :string (:: :optional :bool)
               :return $ :: :list :string
           :tags $ #{} :builtin :file :internal :io
-        |unix-time-ms $ %{} :CodeEntry (:doc "|Return the current Unix timestamp in milliseconds.\nSyntax: (unix-time-ms)\nReturns: number")
+        |read-file $ %{} :CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
-            {} (:return :number) (:args $ [])
-          :tags $ #{} :builtin :internal :io :time
+            {} (:return :string)
+              :args $ [] :string
+          :tags $ #{} :builtin :file :internal :io
         |record-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro record-match (value & body)
@@ -5515,6 +5506,13 @@
               :generics $ [] 'T
               :rest $ :: :set 'T
               :return $ :: :set 'T
+        |unix-time-ms $ %{} :CodeEntry (:doc "|Return the current Unix timestamp in milliseconds.\nSyntax: (unix-time-ms)\nReturns: number")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: :fn
+            {} (:return :number)
+              :args $ []
+          :tags $ #{} :builtin :internal :io :time
         |unsafe-coerce $ %{} :CodeEntry (:doc "||Explicitly attach a type annotation without a runtime validation.\\nSyntax: (unsafe-coerce value type-expr)\\nParams: value (any), type-expr (type annotation)\\nReturns: value unchanged\\nUse only at trusted FFI boundaries so downstream code can be statically checked. The declared type is not validated at runtime.") (:schema :dynamic)
           :code $ quote (def unsafe-coerce &runtime-implementation)
           :examples $ []

@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-generics)
-  :configs $ {} (:init-fn |test-generics.main/main!) (:reload-fn |test-generics.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-generics) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-generics.main/main!) (:mode :native) (:reload-fn |test-generics.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-generics.main $ %{} :FileEntry
       :defs $ {}

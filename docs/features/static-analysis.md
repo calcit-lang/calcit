@@ -639,10 +639,12 @@ cr config set-type-slot :dispatch-op app.schema/Op
 This writes the following entry-level configuration:
 
 ```cirru.no-check
-:configs $ {}
-  :init-fn |app.main/main!
-  :type-slots $ {}
-    :dispatch-op |app.schema/Op
+:entries $ {}
+  :default $ {}
+    :mode :native
+    :init-fn |app.main/main!
+    :type-slots $ {}
+      :dispatch-op |app.schema/Op
 ```
 
 No wrapper is needed around `main!`; the binding is installed before any definition is preprocessed and applies to the whole selected entry.
@@ -654,7 +656,7 @@ cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
 cr config type-slots --entry server
 ```
 
-Named entries do not inherit the default `:configs.type-slots`. Bind every slot needed by that entry explicitly.
+Entries do not inherit `entries.default.type-slots`. Bind every slot needed by each entry explicitly.
 
 ### How It Works
 

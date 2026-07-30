@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-types)
-  :configs $ {} (:init-fn |test-types.main/main!) (:reload-fn |test-types.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-types) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-types.main/main!) (:mode :native) (:reload-fn |test-types.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-types.main $ %{} :FileEntry
       :defs $ {}

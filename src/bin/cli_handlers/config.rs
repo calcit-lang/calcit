@@ -63,41 +63,34 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
         snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
       )
     })?;
-    println!("{}", format!("Entry '{name}' Configs:").bold());
+    println!("{}", format!("Entry '{name}':").bold());
+    println!("  {}: {}", "mode".cyan(), entry.mode);
     println!("  {}: {}", "init_fn".cyan(), entry.init_fn);
     println!("  {}: {}", "reload_fn".cyan(), entry.reload_fn);
-    println!("  {}: {}", "version".cyan(), entry.version);
     println!("  {}: {:?}", "modules".cyan(), entry.modules);
     println!("  {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
     return Ok(());
   }
 
-  println!("{}", "Project Configs:".bold());
-  println!("  {}: {}", "init_fn".cyan(), snapshot.configs.init_fn);
-  println!("  {}: {}", "reload_fn".cyan(), snapshot.configs.reload_fn);
-  println!("  {}: {}", "version".cyan(), snapshot.configs.version);
-  println!("  {}: {:?}", "modules".cyan(), snapshot.configs.modules);
-  println!("  {}: {}", "type_slots".cyan(), format_type_slots(&snapshot.configs.type_slots));
+  println!("{}", "Project Config:".bold());
+  println!("  {}: {}", "version".cyan(), snapshot.version);
+  println!("\n{}", "Snapshot Entries:".bold());
 
-  if !snapshot.entries.is_empty() {
-    println!("\n{}", "Snapshot Entries:".bold());
+  let mut names: Vec<&String> = snapshot.entries.keys().collect();
+  names.sort();
 
-    let mut names: Vec<&String> = snapshot.entries.keys().collect();
-    names.sort();
+  for name in names {
+    let entry = snapshot
+      .entries
+      .get(name)
+      .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
 
-    for name in names {
-      let entry = snapshot
-        .entries
-        .get(name)
-        .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
-
-      println!("  {}", name.cyan());
-      println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
-      println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
-      println!("    {}: {}", "version".cyan(), entry.version);
-      println!("    {}: {:?}", "modules".cyan(), entry.modules);
-      println!("    {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
-    }
+    println!("  {}", name.cyan());
+    println!("    {}: {}", "mode".cyan(), entry.mode);
+    println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
+    println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
+    println!("    {}: {:?}", "modules".cyan(), entry.modules);
+    println!("    {}: {}", "type_slots".cyan(), format_type_slots(&entry.type_slots));
   }
 
   Ok(())
@@ -105,7 +98,8 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
 
 fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_display(input_path)?;
-  let (label, type_slots) = if let Some(name) = &opts.entry {
+  let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let (label, type_slots) = {
     let entry = snapshot.entries.get(name).ok_or_else(|| {
       format!(
         "Entry '{name}' not found. Available: {}",
@@ -113,8 +107,6 @@ fn handle_type_slots(opts: &ConfigTypeSlotsCommand, input_path: &str) -> Result<
       )
     })?;
     (format!("Type slots in entry '{name}':"), &entry.type_slots)
-  } else {
-    ("Type slots in project configs:".to_owned(), &snapshot.configs.type_slots)
   };
 
   println!("{}", label.bold());
@@ -138,7 +130,8 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .unwrap_or_else(|| Path::new(".").to_owned());
 
-  let (label, modules) = if let Some(name) = &opts.entry {
+  let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let (label, modules) = {
     let entry = snapshot.entries.get(name).ok_or_else(|| {
       format!(
         "Entry '{name}' not found. Available: {}",
@@ -146,8 +139,6 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
       )
     })?;
     (format!("Modules in entry '{name}':"), entry.modules.clone())
-  } else {
-    ("Modules in project:".to_string(), snapshot.configs.modules.clone())
   };
 
   println!("{}", label.bold());
@@ -201,14 +192,14 @@ fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<()
     None => {
       // Show current version
       let snapshot = load_snapshot_for_display(snapshot_file)?;
-      println!("{}", snapshot.configs.version);
+      println!("{}", snapshot.version);
       Ok(())
     }
     Some(v) if matches!(v.as_str(), "patch" | "minor" | "major") => {
       let mut snapshot = load_snapshot(snapshot_file)?;
-      let previous = snapshot.configs.version.clone();
+      let previous = snapshot.version.clone();
       let next = bump_semver_value(&previous, v)?;
-      snapshot.configs.version = next.clone();
+      snapshot.version = next.clone();
       save_snapshot(&snapshot, snapshot_file)?;
       println!("{} Bumped version: {} → {}", "✓".green(), previous.yellow(), next.green());
       Ok(())
@@ -216,7 +207,7 @@ fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<()
     Some(v) => {
       parse_semver_value(v)?;
       let mut snapshot = load_snapshot(snapshot_file)?;
-      snapshot.configs.version = v.clone();
+      snapshot.version = v.clone();
       save_snapshot(&snapshot, snapshot_file)?;
       println!("{} Set version to {}", "✓".green(), v.green());
       Ok(())
@@ -227,34 +218,34 @@ fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<()
 fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
-  if let Some(name) = &opts.entry
-    && !snapshot.entries.contains_key(name)
-  {
-    let available: Vec<_> = snapshot.entries.keys().cloned().collect();
-    return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
-  }
-
-  let entry_label = opts.entry.as_deref().unwrap_or("configs");
-
-  let configs = match &opts.entry {
-    Some(name) => snapshot.entries.get_mut(name).unwrap(),
-    None => &mut snapshot.configs,
-  };
+  let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let entry = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
   let message = match opts.key.as_str() {
+    "mode" => {
+      entry.mode = match opts.value.trim_start_matches(':') {
+        "native" => snapshot::SnapshotRunMode::Native,
+        "js" => snapshot::SnapshotRunMode::Js,
+        _ => return Err(format!("Unknown run mode '{}'. Valid modes: native, js", opts.value)),
+      };
+      format!("{} Set [{entry_label}] mode = '{}'", "✓".green(), entry.mode)
+    }
     "init-fn" | "init_fn" => {
-      configs.init_fn = opts.value.clone();
+      entry.init_fn = opts.value.clone();
       format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "reload-fn" | "reload_fn" => {
-      configs.reload_fn = opts.value.clone();
+      entry.reload_fn = opts.value.clone();
       format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "version" => {
+      if opts.entry.is_some() {
+        return Err("Project version is top-level; omit `--entry` when setting it".to_owned());
+      }
       if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
-        let previous = configs.version.clone();
+        let previous = snapshot.version.clone();
         let next = bump_semver_value(&previous, &opts.value)?;
-        configs.version = next.clone();
+        snapshot.version = next.clone();
         format!(
           "{} Bumped [{entry_label}] version: {} → {}",
           "✓".green(),
@@ -263,13 +254,13 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
         )
       } else {
         parse_semver_value(&opts.value)?;
-        configs.version = opts.value.clone();
+        snapshot.version = opts.value.clone();
         format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
       }
     }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
+        "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, version (accepts semver string or patch|minor|major)",
         opts.key
       ));
     }
@@ -290,10 +281,7 @@ fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Resu
     return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
   }
 
-  let configs = match &opts.entry {
-    Some(name) => snapshot.entries.get_mut(name).unwrap(),
-    None => &mut snapshot.configs,
-  };
+  let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
   if configs.modules.contains(&opts.module_path) {
     return Err(format!("Module '{}' already exists", opts.module_path));
@@ -302,7 +290,7 @@ fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Resu
   configs.modules.push(opts.module_path.clone());
   save_snapshot(&snapshot, snapshot_file)?;
 
-  let scope = opts.entry.as_deref().unwrap_or("configs");
+  let scope = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   println!("{} Added module '{}' to [{scope}]", "✓".green(), opts.module_path.cyan());
   Ok(())
 }
@@ -317,10 +305,7 @@ fn handle_rm_module(opts: &ConfigRmModuleCommand, snapshot_file: &str) -> Result
     return Err(format!("Entry '{name}' not found. Available: {}", available.join(", ")));
   }
 
-  let configs = match &opts.entry {
-    Some(name) => snapshot.entries.get_mut(name).unwrap(),
-    None => &mut snapshot.configs,
-  };
+  let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
   let original_len = configs.modules.len();
   configs.modules.retain(|m| m != &opts.module_path);
@@ -330,7 +315,7 @@ fn handle_rm_module(opts: &ConfigRmModuleCommand, snapshot_file: &str) -> Result
   }
 
   save_snapshot(&snapshot, snapshot_file)?;
-  let scope = opts.entry.as_deref().unwrap_or("configs");
+  let scope = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   println!("{} Removed module '{}' from [{scope}]", "✓".green(), opts.module_path.cyan());
   Ok(())
 }
@@ -344,20 +329,13 @@ fn normalize_type_slot_name(raw: &str) -> Result<String, String> {
   }
 }
 
-fn select_configs_mut<'a>(
-  snapshot: &'a mut snapshot::Snapshot,
-  entry: Option<&str>,
-) -> Result<&'a mut snapshot::SnapshotConfigs, String> {
-  match entry {
-    Some(name) => {
-      let available = snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ");
-      snapshot
-        .entries
-        .get_mut(name)
-        .ok_or_else(|| format!("Entry '{name}' not found. Available: {available}"))
-    }
-    None => Ok(&mut snapshot.configs),
-  }
+fn select_entry_mut<'a>(snapshot: &'a mut snapshot::Snapshot, entry: Option<&str>) -> Result<&'a mut snapshot::SnapshotEntry, String> {
+  let name = entry.unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let available = snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ");
+  snapshot
+    .entries
+    .get_mut(name)
+    .ok_or_else(|| format!("Entry '{name}' not found. Available: {available}"))
 }
 
 fn find_map_value_mut<'a>(map: &'a mut EdnMapView, key: &str) -> Option<&'a mut Edn> {
@@ -366,6 +344,10 @@ fn find_map_value_mut<'a>(map: &'a mut EdnMapView, key: &str) -> Option<&'a mut 
     return map.0.get_mut(&tag_key);
   }
   map.0.get_mut(&Edn::str(key))
+}
+
+fn find_map_value<'a>(map: &'a EdnMapView, key: &str) -> Option<&'a Edn> {
+  map.get(&Edn::tag(key)).or_else(|| map.get(&Edn::str(key)))
 }
 
 fn type_slots_as_edn(type_slots: &HashMap<String, String>) -> Edn {
@@ -396,6 +378,10 @@ fn save_type_slots_preserving_snapshot(
   let Edn::Map(root) = &mut data else {
     return Err("Snapshot root must be an EDN map".to_owned());
   };
+  let has_default_entry = match find_map_value(root, "entries") {
+    Some(Edn::Map(entries)) => find_map_value(entries, snapshot::DEFAULT_ENTRY_NAME).is_some(),
+    _ => false,
+  };
 
   let configs = if let Some(entry_name) = entry {
     let entries_value = find_map_value_mut(root, "entries").ok_or_else(|| "Snapshot is missing :entries".to_owned())?;
@@ -407,8 +393,19 @@ fn save_type_slots_preserving_snapshot(
       return Err(format!("Entry '{entry_name}' config must be an EDN map"));
     };
     entry_configs
+  } else if has_default_entry {
+    let entries_value = find_map_value_mut(root, "entries").ok_or_else(|| "Snapshot is missing :entries".to_owned())?;
+    let Edn::Map(entries) = entries_value else {
+      return Err("Snapshot :entries must be an EDN map".to_owned());
+    };
+    let entry_value =
+      find_map_value_mut(entries, snapshot::DEFAULT_ENTRY_NAME).ok_or_else(|| "Snapshot is missing :entries.default".to_owned())?;
+    let Edn::Map(entry_configs) = entry_value else {
+      return Err("Entry 'default' config must be an EDN map".to_owned());
+    };
+    entry_configs
   } else {
-    let configs_value = find_map_value_mut(root, "configs").ok_or_else(|| "Snapshot is missing :configs".to_owned())?;
+    let configs_value = find_map_value_mut(root, "configs").ok_or_else(|| "Snapshot is missing :entries or :configs".to_owned())?;
     let Edn::Map(configs) = configs_value else {
       return Err("Snapshot :configs must be an EDN map".to_owned());
     };
@@ -441,8 +438,8 @@ fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) ->
   }
 
   let mut snapshot = load_snapshot(snapshot_file)?;
-  let scope = opts.entry.as_deref().unwrap_or("configs");
-  let configs = select_configs_mut(&mut snapshot, opts.entry.as_deref())?;
+  let scope = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
   let normalized_type = if type_path == "dynamic" { ":dynamic" } else { type_path };
   let previous = configs.type_slots.insert(slot.clone(), normalized_type.to_owned());
   save_type_slots_preserving_snapshot(snapshot_file, opts.entry.as_deref(), &configs.type_slots)?;
@@ -469,8 +466,8 @@ fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) ->
 fn handle_rm_type_slot(opts: &ConfigRmTypeSlotCommand, snapshot_file: &str) -> Result<(), String> {
   let slot = normalize_type_slot_name(&opts.slot)?;
   let mut snapshot = load_snapshot(snapshot_file)?;
-  let scope = opts.entry.as_deref().unwrap_or("configs");
-  let configs = select_configs_mut(&mut snapshot, opts.entry.as_deref())?;
+  let scope = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
+  let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
   let Some(previous) = configs.type_slots.remove(&slot) else {
     return Err(format!("Type slot ':{slot}' is not bound in [{scope}]"));
   };

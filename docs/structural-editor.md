@@ -22,9 +22,10 @@ Calcit Editor uses `calcit.cirru` as the preferred snapshot file, which contains
 Example of a `calcit.cirru` file is more readable:
 
 ```cirru.no-check
-{} (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-    :modules $ []
+{} (:package |app) (:version |0.0.1)
+  :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+      :modules $ []
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}

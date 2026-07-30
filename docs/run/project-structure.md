@@ -1,6 +1,6 @@
 ---
 title: "项目结构：calcit.cirru 与 deps.cirru"
-summary: "calcit.cirru 的 EDN 结构说明（:package、:configs、:entries、:files、:modules）以及 deps.cirru 的版本管理"
+summary: "calcit.cirru 的 EDN 结构说明（:package、:version、:entries、:files、:modules）以及 deps.cirru 的版本管理"
 scope: "core"
 kind: "reference"
 category: "run"
@@ -24,14 +24,17 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 ```cirru.no-check
 {}
   :package |my-app
-  :configs $ {}
-    :init-fn |app.main/main!
-    :reload-fn |app.main/reload!
-    :modules $ [] |lilac/ |memof/
-    :type-slots $ {}
-      :dispatch-op |app.schema/Op
+  :version |0.1.0
   :entries $ {}
+    :default $ {}
+      :mode :js
+      :init-fn |app.main/main!
+      :reload-fn |app.main/reload!
+      :modules $ [] |lilac/ |memof/
+      :type-slots $ {}
+        :dispatch-op |app.schema/Op
     :test $ {}
+      :mode :native
       :init-fn |app.test/main!
       :reload-fn |app.test/reload!
       :modules $ [] |calcit-test/
@@ -47,9 +50,10 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 字段职责可以快速记成：
 
 - `:package`：包名边界（影响哪些 namespace 允许被 `cr edit` 修改）。
-- `:configs`：默认运行入口（`cr` / `cr js` 不指定 `--entry` 时使用）。
-- `:entries`：命名入口集合（`cr --entry <name>` 走这里）。
-- `:type-slots`：当前 entry 的编译期类型绑定（slot 名 → 完整 `namespace/definition` 路径或 `:dynamic`）。命名 entry 使用自己的完整配置，不继承默认 `:configs.type-slots`。
+- `:version`：项目版本，独立于各运行入口。
+- `:entries`：全部运行入口；不指定 `--entry` 时使用 `:default`。
+- `:mode`：入口的默认运行后端，只接受 `:native` 或 `:js`。
+- `:type-slots`：当前 entry 的编译期类型绑定（slot 名 → 完整 `namespace/definition` 路径或 `:dynamic`）。各 entry 都保存完整配置，彼此不继承。
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自 `~/.config/calcit/modules/`，目录结尾 `/` 默认补 `calcit.cirru`，并回退到 `compact.cirru`）。
 
@@ -57,8 +61,8 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 
 启动解析顺序（实操最常用）：
 
-1. `cr`：使用 `:configs` 的 `:init-fn` / `:reload-fn` / `:modules`。
-2. `cr --entry test`：切到 `:entries.test` 的配置运行。
+1. `cr`：使用 `:entries.default`，并按它的 `:mode` 运行。
+2. `cr --entry test`：切到 `:entries.test`，并按它的 `:mode` 运行。
 3. `cr --init-fn xxx`：覆盖入口函数（常用于测试链路临时指定）。
 
 建议每次开工先跑 3 条，建立项目运行心智：
@@ -74,6 +78,7 @@ Type slot 优先用配置命令维护，避免直接改 snapshot：
 
 ```bash
 cr config set-type-slot :dispatch-op app.schema/Op
+cr config set mode js
 cr config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 cr config rm-type-slot :dispatch-op
 ```

@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |sync-calcit)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
-    :modules $ [] |bisection-key/
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |sync-calcit) (:version |0.0.1)
   :entries $ {}
+    :default $ {} (:init-fn |app.main/main!) (:mode :native) (:reload-fn |app.main/reload!)
+      :modules $ [] |bisection-key/
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
@@ -101,7 +102,7 @@
                   assoc
                     assoc
                       assoc detailed :package $ get compact :package
-                      , :configs $ get compact :configs
+                      , :version $ get compact :version
                     , :entries $ get compact :entries
                   , :files all-files
               write-file calcit-path $ format-cirru-edn result

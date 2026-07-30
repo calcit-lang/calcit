@@ -126,7 +126,7 @@ fn attach_modules_and_core(
   module_folder: &Path,
   core_snapshot: &Snapshot,
 ) -> Result<(), String> {
-  let module_paths = snapshot.configs.modules.to_vec();
+  let module_paths = snapshot.active_entry()?.modules.to_vec();
   for module_path in &module_paths {
     let module_data = crate::load_module(module_path, base_dir, module_folder)?;
     for (ns, file) in &module_data.files {
@@ -145,7 +145,7 @@ fn attach_modules_and_core(
 }
 
 fn resolve_entry_point(snapshot: &Snapshot, root: Option<&str>) -> Result<(String, String), String> {
-  let entry = root.unwrap_or(snapshot.configs.init_fn.as_str());
+  let entry = root.unwrap_or(snapshot.active_entry()?.init_fn.as_str());
   let (ns, def) = entry
     .split_once('/')
     .ok_or_else(|| format!("Expected entry definition in format ns/def, got: {entry}"))?;

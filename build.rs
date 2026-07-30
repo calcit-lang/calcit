@@ -6,8 +6,47 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotRunMode {
+  #[default]
+  Native,
+  Js,
+}
+
+fn deserialize_run_mode<'de, D>(deserializer: D) -> Result<SnapshotRunMode, D::Error>
+where
+  D: serde::Deserializer<'de>,
+{
+  let value = Edn::deserialize(deserializer)?;
+  let mode = match value {
+    Edn::Tag(tag) => tag.ref_str().to_owned(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+    other => return Err(serde::de::Error::custom(format!("expected :native or :js, got {other:?}"))),
+  };
+  match mode.as_str() {
+    "native" => Ok(SnapshotRunMode::Native),
+    "js" => Ok(SnapshotRunMode::Js),
+    _ => Err(serde::de::Error::custom(format!("expected :native or :js, got {mode}"))),
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SnapshotConfigs {
+pub struct SnapshotEntry {
+  #[serde(default, deserialize_with = "deserialize_run_mode")]
+  pub mode: SnapshotRunMode,
+  #[serde(rename = "init-fn")]
+  pub init_fn: String,
+  #[serde(rename = "reload-fn")]
+  pub reload_fn: String,
+  #[serde(default)]
+  pub modules: Vec<String>,
+  #[serde(default, rename = "type-slots")]
+  pub type_slots: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LegacySnapshotConfigs {
   #[serde(rename = "init-fn")]
   pub init_fn: String,
   #[serde(rename = "reload-fn")]
@@ -16,6 +55,8 @@ pub struct SnapshotConfigs {
   pub modules: Vec<String>,
   #[serde(default)]
   pub version: String,
+  #[serde(default, rename = "type-slots")]
+  pub type_slots: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,8 +87,9 @@ pub struct FileInSnapShot {
 pub struct Snapshot {
   pub package: String,
   pub about: Option<String>,
-  pub configs: SnapshotConfigs,
-  pub entries: HashMap<String, SnapshotConfigs>,
+  #[serde(default)]
+  pub version: String,
+  pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, FileInSnapShot>,
 }
 
@@ -417,11 +459,36 @@ fn main() {
 
   let files = parse_files(data.get_or_nil("files")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:files`: {e}"));
 
+  let legacy_configs = match data.get_or_nil("configs") {
+    Edn::Nil => None,
+    value => {
+      Some(from_edn::<LegacySnapshotConfigs>(value).unwrap_or_else(|e| panic!("failed to parse calcit-core legacy `:configs`: {e}")))
+    }
+  };
+  let mut entries: HashMap<String, SnapshotEntry> =
+    from_edn(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
+  if let Some(configs) = &legacy_configs {
+    entries.insert(
+      "default".to_owned(),
+      SnapshotEntry {
+        mode: SnapshotRunMode::Native,
+        init_fn: configs.init_fn.clone(),
+        reload_fn: configs.reload_fn.clone(),
+        modules: configs.modules.clone(),
+        type_slots: configs.type_slots.clone(),
+      },
+    );
+  }
+  let version = match data.get_or_nil("version") {
+    Edn::Nil => legacy_configs.map(|configs| configs.version).unwrap_or_default(),
+    value => from_edn(value).unwrap_or_else(|e| panic!("failed to parse calcit-core `:version`: {e}")),
+  };
+
   let snapshot = Snapshot {
     package: pkg,
     about,
-    configs: from_edn(data.get_or_nil("configs")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:configs`: {e}")),
-    entries: from_edn(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}")),
+    version,
+    entries,
     files,
   };
 

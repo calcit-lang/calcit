@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-doc-smoke)
-  :configs $ {} (:init-fn |test-doc-smoke.main/main!) (:reload-fn |test-doc-smoke.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-doc-smoke) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-doc-smoke.main/main!) (:mode :native) (:reload-fn |test-doc-smoke.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-doc-smoke.main $ %{} :FileEntry
       :defs $ {}

@@ -738,7 +738,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
   match &cmd.subcommand {
     AnalyzeSubcommand::CallGraph(opts) => echo_items!(
       tokens,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "0",
@@ -748,14 +748,14 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
     AnalyzeSubcommand::CallGraphDiff(opts) => echo_items!(
       tokens,
       pos "git-ref" => &opts.git_ref,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "0"
     ),
     AnalyzeSubcommand::CountCalls(opts) => echo_items!(
       tokens,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "format" => &opts.format; default "text",
@@ -790,7 +790,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
     ),
     AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
       tokens,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "2",

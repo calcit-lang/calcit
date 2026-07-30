@@ -27,7 +27,7 @@ fn load_and_run_cirru(path: &str) {
   let module_folder = dirs::home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
-  for module_path in &snapshot.configs.modules.clone() {
+  for module_path in &snapshot.active_entry().expect("default entry").modules.clone() {
     let module_data = calcit::load_module(module_path, base_dir, &module_folder)
       .unwrap_or_else(|e| panic!("Failed to load module {module_path} for {path}: {e}"));
     for (k, v) in &module_data.files {
@@ -47,8 +47,9 @@ fn load_and_run_cirru(path: &str) {
     *prgm = program::extract_program_data(&snapshot).expect("extract program data");
   }
 
-  let config_init = snapshot.configs.init_fn.to_string();
-  let config_reload = snapshot.configs.reload_fn.to_string();
+  let selected_entry = snapshot.active_entry().expect("default entry");
+  let config_init = selected_entry.init_fn.to_string();
+  let config_reload = selected_entry.reload_fn.to_string();
   let (init_ns, init_def) = util::string::extract_ns_def(&config_init).expect("extract init ns/def");
   let (reload_ns, _reload_def) = util::string::extract_ns_def(&config_reload).expect("extract reload ns/def");
 

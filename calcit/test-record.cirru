@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-record)
-  :configs $ {} (:init-fn |test-record.main/main!) (:reload-fn |test-record.main/reload!) (:version |0.0.0)
-    :modules $ [] |./util.cirru
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-record) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-record.main/main!) (:mode :native) (:reload-fn |test-record.main/reload!)
+      :modules $ [] |./util.cirru
+      :type-slots $ {}
   :files $ {}
     |test-record.main $ %{} :FileEntry
       :defs $ {}

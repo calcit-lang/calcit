@@ -2551,7 +2551,7 @@ mod tests {
   fn fake_version_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
     let version = args.get(2).ok_or_else(|| "fake operation needs version at index 2".to_string())?;
     let mut snapshot = load_snapshot(&stage_path.to_string_lossy())?;
-    snapshot.configs.version = version.to_string();
+    snapshot.version = version.to_string();
     save_snapshot(&snapshot, &stage_path.to_string_lossy())?;
     Ok(TransactionOperationReport {
       index,
@@ -2704,7 +2704,6 @@ mod tests {
     assert_eq!(
       load_snapshot(&fixture.path.to_string_lossy())
         .expect("committed snapshot should load")
-        .configs
         .version,
       "9.0.0"
     );

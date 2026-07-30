@@ -16,6 +16,12 @@ fn default_version() -> String {
   "0.0.0".to_owned()
 }
 
+pub const DEFAULT_ENTRY_NAME: &str = "default";
+
+fn default_active_entry() -> String {
+  DEFAULT_ENTRY_NAME.to_owned()
+}
+
 fn format_edn_preview(value: &Edn) -> String {
   format_edn_display(value)
 }
@@ -77,16 +83,37 @@ fn normalize_schema_map(map: &EdnMapView) -> EdnMapView {
   normalized
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotRunMode {
+  Native,
+  Js,
+}
+
+impl SnapshotRunMode {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      SnapshotRunMode::Native => "native",
+      SnapshotRunMode::Js => "js",
+    }
+  }
+}
+
+impl std::fmt::Display for SnapshotRunMode {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(self.as_str())
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SnapshotConfigs {
+pub struct SnapshotEntry {
+  pub mode: SnapshotRunMode,
   #[serde(rename = "init-fn")]
   pub init_fn: String,
   #[serde(rename = "reload-fn")]
   pub reload_fn: String,
   #[serde(default)]
   pub modules: Vec<String>,
-  #[serde(default = "default_version")]
-  pub version: String,
   #[serde(default, rename = "type-slots")]
   pub type_slots: HashMap<String, String>,
 }
@@ -125,8 +152,9 @@ struct RawFileInSnapShot {
 struct RawSnapshot {
   pub package: String,
   pub about: Option<String>,
-  pub configs: SnapshotConfigs,
-  pub entries: HashMap<String, SnapshotConfigs>,
+  #[serde(default = "default_version")]
+  pub version: String,
+  pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, RawFileInSnapShot>,
 }
 
@@ -166,9 +194,10 @@ pub fn decode_binary_snapshot(bytes: &[u8]) -> Result<Snapshot, String> {
   Ok(Snapshot {
     package: raw.package,
     about: raw.about,
-    configs: raw.configs,
+    version: raw.version,
     entries: raw.entries,
     files,
+    active_entry: default_active_entry(),
   })
 }
 
@@ -1311,15 +1340,43 @@ fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -
 pub struct Snapshot {
   pub package: String,
   pub about: Option<String>,
-  pub configs: SnapshotConfigs,
-  pub entries: HashMap<String, SnapshotConfigs>,
+  pub version: String,
+  pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, FileInSnapShot>,
+  #[serde(skip, default = "default_active_entry")]
+  #[doc(hidden)]
+  pub active_entry: String,
 }
 
-impl TryFrom<Edn> for SnapshotConfigs {
+impl Snapshot {
+  pub fn active_entry_name(&self) -> &str {
+    &self.active_entry
+  }
+
+  pub fn active_entry(&self) -> Result<&SnapshotEntry, String> {
+    self
+      .entries
+      .get(&self.active_entry)
+      .ok_or_else(|| format!("Snapshot is missing active entry '{}'", self.active_entry))
+  }
+
+  pub fn select_entry(&mut self, entry: Option<&str>) -> Result<(), String> {
+    let name = entry.unwrap_or(DEFAULT_ENTRY_NAME);
+    if self.entries.contains_key(name) {
+      self.active_entry = name.to_owned();
+      Ok(())
+    } else {
+      let mut available = self.entries.keys().cloned().collect::<Vec<_>>();
+      available.sort();
+      Err(format!("Unknown entry `{name}`. Available entries: {}", available.join(", ")))
+    }
+  }
+}
+
+impl TryFrom<Edn> for SnapshotEntry {
   type Error = String;
-  fn try_from(data: Edn) -> Result<SnapshotConfigs, String> {
-    parse_snapshot_configs_with_context(data, "configs")
+  fn try_from(data: Edn) -> Result<SnapshotEntry, String> {
+    parse_snapshot_entry_with_context(data, "entry", true)
   }
 }
 
@@ -1333,7 +1390,7 @@ fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str)
 
   if key == "version" && (text.trim().is_empty() || text.as_ref() == "|") {
     return Err(format!(
-      "{owner}.version cannot be empty; check `:configs (:version ...)`; got {}",
+      "{owner}.version cannot be empty; check the project `:version`; got {}",
       format_edn_preview(value)
     ));
   }
@@ -1341,18 +1398,39 @@ fn parse_snapshot_config_string_field(data: &EdnMapView, key: &str, owner: &str)
   Ok(text.to_string())
 }
 
-fn parse_snapshot_configs_with_context(data: Edn, owner: &str) -> Result<SnapshotConfigs, String> {
+fn parse_snapshot_run_mode(data: &EdnMapView, owner: &str, require_mode: bool) -> Result<SnapshotRunMode, String> {
+  let Some(value) = data.get(&Edn::tag("mode")) else {
+    return if require_mode {
+      Err(format!("{owner}: missing `:mode` field; expected `:native` or `:js`"))
+    } else {
+      Ok(SnapshotRunMode::Native)
+    };
+  };
+  let mode = match value {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+    _ => {
+      return Err(format!(
+        "{owner}.mode: expected `:native` or `:js`, got {}",
+        format_edn_preview(value)
+      ));
+    }
+  };
+  match mode {
+    "native" => Ok(SnapshotRunMode::Native),
+    "js" => Ok(SnapshotRunMode::Js),
+    _ => Err(format!("{owner}.mode: expected `:native` or `:js`, got `{mode}`")),
+  }
+}
+
+fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool) -> Result<SnapshotEntry, String> {
   let data = data
     .view_map()
-    .map_err(|e| format!("{owner}: failed to parse config map: {e}; got {}", format_edn_preview(&data)))?;
+    .map_err(|e| format!("{owner}: failed to parse entry map: {e}; got {}", format_edn_preview(&data)))?;
 
+  let mode = parse_snapshot_run_mode(&data, owner, require_mode)?;
   let init_fn = parse_snapshot_config_string_field(&data, "init-fn", owner)?;
   let reload_fn = parse_snapshot_config_string_field(&data, "reload-fn", owner)?;
-
-  let version = match data.get(&Edn::tag("version")) {
-    Some(_) => parse_snapshot_config_string_field(&data, "version", owner)?,
-    None => default_version(),
-  };
 
   let modules = match data.get(&Edn::tag("modules")) {
     Some(value) => from_edn(value.to_owned()).map_err(|e| format!("{owner}.modules: {e}; got {}", format_edn_preview(value)))?,
@@ -1364,12 +1442,12 @@ fn parse_snapshot_configs_with_context(data: Edn, owner: &str) -> Result<Snapsho
     None => HashMap::new(),
   };
 
-  Ok(SnapshotConfigs {
+  Ok(SnapshotEntry {
+    mode,
     init_fn,
     reload_fn,
     modules,
     type_slots,
-    version,
   })
 }
 
@@ -1412,7 +1490,7 @@ fn parse_snapshot_type_slots(data: &Edn, owner: &str) -> Result<HashMap<String, 
   Ok(result)
 }
 
-fn parse_entries_with_context(data: &Edn) -> Result<HashMap<String, SnapshotConfigs>, String> {
+fn parse_entries_with_context(data: &Edn, require_mode: bool) -> Result<HashMap<String, SnapshotEntry>, String> {
   let entries_map = data
     .view_map()
     .map_err(|e| format!("entries: failed to parse entries map: {e}; got {}", format_edn_preview(data)))?;
@@ -1422,7 +1500,7 @@ fn parse_entries_with_context(data: &Edn) -> Result<HashMap<String, SnapshotConf
     let entry_name: String = from_edn(entry_key.to_owned())
       .map_err(|e| format!("entries: failed to parse entry name: {e}; got {}", format_edn_preview(entry_key)))?;
     let owner = format!("entries.{entry_name}");
-    let entry = parse_snapshot_configs_with_context(entry_value.to_owned(), &owner)?;
+    let entry = parse_snapshot_entry_with_context(entry_value.to_owned(), &owner, require_mode)?;
     entries.insert(entry_name, entry);
   }
 
@@ -1443,12 +1521,43 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   };
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
+  let legacy_configs = data.get(&Edn::tag("configs"));
+  let mut entries = parse_entries_with_context(&data.get_or_nil("entries"), legacy_configs.is_none())?;
+  let version = match data.get(&Edn::tag("version")) {
+    Some(_) => parse_snapshot_config_string_field(&data, "version", "snapshot")?,
+    None => match legacy_configs {
+      Some(configs) => {
+        let configs_map = configs
+          .view_map()
+          .map_err(|e| format!("configs: failed to parse config map: {e}; got {}", format_edn_preview(configs)))?;
+        match configs_map.get(&Edn::tag("version")) {
+          Some(_) => parse_snapshot_config_string_field(&configs_map, "version", "configs")?,
+          None => default_version(),
+        }
+      }
+      None => default_version(),
+    },
+  };
+
+  if let Some(configs) = legacy_configs {
+    if entries.contains_key(DEFAULT_ENTRY_NAME) {
+      return Err("Snapshot cannot contain both legacy `:configs` and `:entries.default`".to_owned());
+    }
+    entries.insert(
+      DEFAULT_ENTRY_NAME.to_owned(),
+      parse_snapshot_entry_with_context(configs.to_owned(), "entries.default", false)?,
+    );
+  } else if !entries.contains_key(DEFAULT_ENTRY_NAME) {
+    return Err("Snapshot `:entries` must contain a `:default` entry".to_owned());
+  }
+
   let s = Snapshot {
     package: pkg.to_string(),
     about,
-    configs: parse_snapshot_configs_with_context(data.get_or_nil("configs"), "configs")?,
-    entries: parse_entries_with_context(&data.get_or_nil("entries"))?,
+    version,
+    entries,
     files,
+    active_entry: default_active_entry(),
   };
   Ok(s)
 }
@@ -1570,18 +1679,20 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
 
 impl Default for Snapshot {
   fn default() -> Snapshot {
+    let default_entry = SnapshotEntry {
+      mode: SnapshotRunMode::Native,
+      init_fn: "app.main/main!".into(),
+      reload_fn: "app.main/reload!".into(),
+      modules: vec![],
+      type_slots: HashMap::new(),
+    };
     Snapshot {
       package: "app".into(),
       about: Some(SNAPSHOT_ABOUT_MESSAGE.to_string()),
-      configs: SnapshotConfigs {
-        init_fn: "app.main/main!".into(),
-        reload_fn: "app.main/reload!".into(),
-        version: "0.0.0".to_string(),
-        modules: vec![],
-        type_slots: HashMap::new(),
-      },
-      entries: HashMap::new(),
+      version: default_version(),
+      entries: HashMap::from([(DEFAULT_ENTRY_NAME.to_owned(), default_entry)]),
       files: HashMap::new(),
+      active_entry: default_active_entry(),
     }
   }
 }
@@ -1824,32 +1935,15 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   // Insert about message (always enforce canonical hint)
   edn_map.insert_key("about", Edn::Str(SNAPSHOT_ABOUT_MESSAGE.into()));
 
-  // Build configs
-  let mut configs_map = EdnMapView::default();
-  configs_map.insert_key("init-fn", Edn::Str(snapshot.configs.init_fn.as_str().into()));
-  configs_map.insert_key("reload-fn", Edn::Str(snapshot.configs.reload_fn.as_str().into()));
-  configs_map.insert_key("version", Edn::Str(snapshot.configs.version.as_str().into()));
-  configs_map.insert_key(
-    "modules",
-    Edn::from(
-      snapshot
-        .configs
-        .modules
-        .iter()
-        .map(|s| Edn::Str(s.as_str().into()))
-        .collect::<Vec<_>>(),
-    ),
-  );
-  configs_map.insert_key("type-slots", type_slots_to_edn(&snapshot.configs.type_slots));
-  edn_map.insert_key("configs", configs_map.into());
+  edn_map.insert_key("version", Edn::Str(snapshot.version.as_str().into()));
 
   // Build entries
   let mut entries_map = EdnMapView::default();
   for (k, v) in &snapshot.entries {
     let mut entry_map = EdnMapView::default();
+    entry_map.insert_key("mode", Edn::tag(v.mode.as_str()));
     entry_map.insert_key("init-fn", Edn::Str(v.init_fn.as_str().into()));
     entry_map.insert_key("reload-fn", Edn::Str(v.reload_fn.as_str().into()));
-    entry_map.insert_key("version", Edn::Str(v.version.as_str().into()));
     entry_map.insert_key(
       "modules",
       Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
@@ -2887,9 +2981,10 @@ mod tests {
   #[test]
   fn test_validate_serialized_snapshot_content_rejects_double_quoted_generics() {
     let content = r#"{} (:package |mini)
-  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version |0.0.0)
-    :modules $ []
+  :version |0.0.0
   :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |mini/main!) (:reload-fn |mini/main!)
+      :modules $ []
   :files $ {}
     |mini $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
@@ -2909,11 +3004,12 @@ mod tests {
   }
 
   #[test]
-  fn test_load_snapshot_reports_empty_configs_version_with_field_context() {
+  fn test_load_snapshot_reports_empty_top_level_version_with_field_context() {
     let content = r#"{} (:package |mini)
-  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version ||)
-    :modules $ []
+  :version ||
   :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |mini/main!) (:reload-fn |mini/main!)
+      :modules $ []
   :files $ {}
     |mini $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
@@ -2925,23 +3021,21 @@ mod tests {
 "#;
 
     let edn_data = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
-    let err = load_snapshot_data(&edn_data, "mini.cirru").expect_err("empty configs.version should fail on load");
+    let err = load_snapshot_data(&edn_data, "mini.cirru").expect_err("empty top-level version should fail on load");
 
-    assert!(err.contains("configs.version cannot be empty"), "unexpected error: {err}");
-    assert!(
-      err.contains(":configs (:version ...)") || err.contains("got ||"),
-      "unexpected error: {err}"
-    );
+    assert!(err.contains("snapshot.version cannot be empty"), "unexpected error: {err}");
+    assert!(err.contains("||"), "unexpected error: {err}");
   }
 
   #[test]
   fn test_entry_type_slots_round_trip_for_default_and_named_entries() {
     let content = r#"{} (:package |mini)
-  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/reload!) (:version |0.0.0)
-    :modules $ []
-    :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
+  :version |0.0.0
   :entries $ {}
-    :server $ {} (:init-fn |mini/server-main!) (:reload-fn |mini/reload!) (:version |0.0.0)
+    :default $ {} (:mode :js) (:init-fn |mini/main!) (:reload-fn |mini/reload!)
+      :modules $ []
+      :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
+    :server $ {} (:mode :native) (:init-fn |mini/server-main!) (:reload-fn |mini/reload!)
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
   :files $ {}
@@ -2955,9 +3049,13 @@ mod tests {
     let edn_data = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
     let snapshot = load_snapshot_data(&edn_data, "mini.cirru").expect("snapshot should load");
     assert_eq!(
-      snapshot.configs.type_slots.get("dispatch-op").map(String::as_str),
+      snapshot.entries[DEFAULT_ENTRY_NAME]
+        .type_slots
+        .get("dispatch-op")
+        .map(String::as_str),
       Some("mini.schema/ClientOp")
     );
+    assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].mode, SnapshotRunMode::Js);
     let server = snapshot.entries.get("server").expect("server entry");
     assert_eq!(
       server.type_slots.get("dispatch-op").map(String::as_str),
@@ -2968,8 +3066,32 @@ mod tests {
     let rendered = render_snapshot_content(&snapshot).expect("snapshot should render");
     let rendered_edn = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
     let restored = load_snapshot_data(&rendered_edn, "mini.cirru").expect("rendered snapshot should load");
-    assert_eq!(restored.configs.type_slots, snapshot.configs.type_slots);
+    assert_eq!(
+      restored.entries[DEFAULT_ENTRY_NAME].type_slots,
+      snapshot.entries[DEFAULT_ENTRY_NAME].type_slots
+    );
     assert_eq!(restored.entries["server"].type_slots, server.type_slots);
+  }
+
+  #[test]
+  fn legacy_configs_migrate_to_default_native_entry() {
+    let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/reload!) (:version |1.2.3)
+    :modules $ [] |legacy/
+  :entries $ {}
+  :files $ {}
+"#;
+    let edn_data = cirru_edn::parse(content).expect("legacy snapshot text should parse");
+    let snapshot = load_snapshot_data(&edn_data, "mini.cirru").expect("legacy snapshot should load");
+    let default_entry = snapshot.entries.get(DEFAULT_ENTRY_NAME).expect("migrated default entry");
+    assert_eq!(snapshot.version, "1.2.3");
+    assert_eq!(default_entry.mode, SnapshotRunMode::Native);
+    assert_eq!(default_entry.modules, vec!["legacy/"]);
+
+    let rendered = render_snapshot_content(&snapshot).expect("legacy snapshot should render canonically");
+    assert!(rendered.contains(":version |1.2.3"));
+    assert!(rendered.contains(":default $ {}") && rendered.contains(":mode :native"));
+    assert!(!rendered.contains(":configs"));
   }
 
   #[test]

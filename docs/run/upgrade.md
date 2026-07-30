@@ -24,8 +24,8 @@ aliases:
 升级前先检查以下文件与配置是否齐全：
 
 - 运行入口：`calcit.cirru`（兼容旧文件名 `compact.cirru`）
-  - `:configs`（默认入口）
-  - `:entries`（额外入口）
+  - `:entries.default`（默认入口及 `:mode`）
+  - `:entries.<name>`（额外入口及各自 `:mode`）
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突

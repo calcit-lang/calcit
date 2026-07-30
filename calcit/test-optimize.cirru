@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-optimize)
-  :configs $ {} (:init-fn |test-optimize.main/main!) (:reload-fn |test-optimize.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-optimize) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-optimize.main/main!) (:mode :native) (:reload-fn |test-optimize.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-optimize.main $ %{} :FileEntry
       :defs $ {}

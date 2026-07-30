@@ -1331,7 +1331,7 @@ fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<Str
   util::string::strip_shebang(&mut content);
   let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{}': {e}", resolved_entry.display()))?;
 
-  // Extract configs.modules directly from the raw EDN to avoid loading the full snapshot.
+  // Extract entries.default.modules (or legacy configs.modules) directly from raw EDN.
   // This is necessary because old-format snapshots (with %{} :Expr code entries) cannot
   // be deserialized via load_snapshot_data, but we only need the module list here.
   // Fail fast on malformed modules to avoid silently dropping dependencies.
@@ -1345,7 +1345,7 @@ fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<Str
   Ok(module_paths)
 }
 
-/// Extract the `configs.modules` list from an EDN snapshot value without fully
+/// Extract the default entry's module list from an EDN snapshot value without fully
 /// deserializing the snapshot. This tolerates old-format entries (e.g. `%{} :Expr`)
 /// that `load_snapshot_data` cannot handle.
 fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String> {
@@ -1360,11 +1360,17 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String
     }
   };
 
-  let configs = match get_field(data, "configs") {
-    Some(configs) => configs,
-    None => return Ok(vec![]),
+  let entry = match get_field(data, "entries") {
+    Some(entries) => match get_field(&entries, snapshot::DEFAULT_ENTRY_NAME) {
+      Some(entry) => entry,
+      None => return Err("Snapshot `:entries` is missing `:default`".to_owned()),
+    },
+    None => match get_field(data, "configs") {
+      Some(configs) => configs,
+      None => return Ok(vec![]),
+    },
   };
-  let modules_edn = match get_field(&configs, "modules") {
+  let modules_edn = match get_field(&entry, "modules") {
     Some(modules) => modules,
     None => return Ok(vec![]),
   };
@@ -1377,7 +1383,7 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String
           Edn::Str(s) => paths.push(s.to_string()),
           _ => {
             return Err(format!(
-              "Failed to parse `configs.modules`: expected list of strings, got item `{}`",
+              "Failed to parse `entries.default.modules`: expected list of strings, got item `{}`",
               format_edn_display(item)
             ));
           }
@@ -1386,7 +1392,7 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String
       Ok(paths)
     }
     _ => Err(format!(
-      "Failed to parse `configs.modules`: expected list, got `{}`",
+      "Failed to parse `entries.default.modules`: expected list, got `{}`",
       format_edn_display(&modules_edn)
     )),
   }
@@ -1430,8 +1436,9 @@ fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMa
 }
 
 fn build_entries_from_snapshot(snapshot: &snapshot::Snapshot) -> Result<ProgramEntries, String> {
-  let config_init = snapshot.configs.init_fn.to_string();
-  let config_reload = snapshot.configs.reload_fn.to_string();
+  let selected_entry = snapshot.active_entry()?;
+  let config_init = selected_entry.init_fn.to_string();
+  let config_reload = selected_entry.reload_fn.to_string();
   let (init_ns, init_def) = util::string::extract_ns_def(&config_init)?;
   let (reload_ns, reload_def) = util::string::extract_ns_def(&config_reload)?;
 

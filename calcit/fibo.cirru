@@ -1,10 +1,12 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app) (:version |0.0.0)
   :entries $ {}
-    :prime $ {} (:init-fn |app.main/try-prime) (:reload-fn |app.main/try-prime) (:version |0.0.0)
+    :default $ {} (:init-fn |app.main/main!) (:mode :native) (:reload-fn |app.main/reload!)
       :modules $ []
+      :type-slots $ {}
+    :prime $ {} (:init-fn |app.main/try-prime) (:mode :native) (:reload-fn |app.main/try-prime)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}

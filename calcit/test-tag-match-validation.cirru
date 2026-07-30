@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tag-match-validation)
-  :configs $ {} (:init-fn |test-tag-match-validation.main/main!) (:reload-fn |test-tag-match-validation.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tag-match-validation) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-tag-match-validation.main/main!) (:mode :native) (:reload-fn |test-tag-match-validation.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-tag-match-validation.main $ %{} :FileEntry
       :defs $ {}

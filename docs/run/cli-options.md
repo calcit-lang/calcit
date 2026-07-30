@@ -99,12 +99,20 @@ cr --reload-libs
 
 ### Config Entry (--entry)
 
-Use specific config entry from `calcit.cirru` (legacy filename: `compact.cirru`):
+Use a specific entry from `calcit.cirru` (legacy filename: `compact.cirru`). Without this option Calcit selects `entries.default`; the selected entry's `:mode` chooses native execution or JS emission:
 
 ```bash
 cr --entry test
 cr --entry production
 ```
+
+```cirru.no-check
+:entries $ {}
+  :default $ {} (:mode :js) (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+  :test $ {} (:mode :native) (:init-fn |app.test/main!) (:reload-fn |app.test/reload!)
+```
+
+The explicit `js` subcommand remains a compatibility/debug override. Prefer configuring `:mode` so the same entry is invoked consistently by developers and CI.
 
 ### Asset Watching (--watch-dir)
 

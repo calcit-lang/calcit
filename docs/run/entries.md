@@ -7,18 +7,20 @@ aliases:
   - "entry points"
   - "init-fn"
   - "reload-fn"
-  - "config entries"
+  - "run modes"
   - "entry type slots"
 ---
 # Entries
 
-By default Calcit reads `:init-fn` and `:reload-fn` inside `calcit.cirru` configs (legacy filename: `compact.cirru`). You may also specify functions,
+Every executable configuration lives under `:entries`. Calcit selects the entry named `default` when `--entry` is omitted. Each entry declares its runtime with `:mode :native` or `:mode :js`, so the normal invocation does not need a separate `js` argument.
+
+You may still override the functions explicitly for diagnostics:
 
 ```bash
 cr calcit.cirru --init-fn='app.main/main!' --reload-fn='app.main/reload!'
 ```
 
-and even configure `:entries` in `calcit.cirru`:
+Select another entry with:
 
 ```bash
 cr calcit.cirru --entry server
@@ -28,23 +30,23 @@ Here's an example, first lines of a `calcit.cirru` file may look like:
 
 ```cirru.no-check
 {} (:package |app)
-  :configs $ {} (:init-fn |app.client/main!) (:reload-fn |app.client/reload!) (:version |0.0.1)
-    :modules $ [] |respo.calcit/ |lilac/ |recollect/ |memof/ |respo-ui.calcit/ |ws-edn.calcit/ |cumulo-util.calcit/ |respo-message.calcit/ |cumulo-reel.calcit/
-    :type-slots $ {} (:dispatch-op |app.schema/ClientOp)
+  :version |0.0.1
   :entries $ {}
-    :server $ {} (:init-fn |app.server/main!) (:reload-fn |app.server/reload!)
+    :default $ {} (:mode :js) (:init-fn |app.client/main!) (:reload-fn |app.client/reload!)
+      :modules $ [] |respo.calcit/ |lilac/ |recollect/ |memof/ |respo-ui.calcit/ |ws-edn.calcit/ |cumulo-util.calcit/ |respo-message.calcit/ |cumulo-reel.calcit/
+      :type-slots $ {} (:dispatch-op |app.schema/ClientOp)
+    :server $ {} (:mode :native) (:init-fn |app.server/main!) (:reload-fn |app.server/reload!)
       :modules $ [] |lilac/ |recollect/ |memof/ |ws-edn.calcit/ |cumulo-util.calcit/ |cumulo-reel.calcit/ |calcit-wss/ |calcit.std/
       :type-slots $ {} (:dispatch-op |app.schema/ServerOp)
   :files $ {}
 ```
 
-There is base configs attached with `:configs`, with `:init-fn` `:reload-fn` defined, which is the inital entry of the program.
-
-Then there is `:entries` with `:server` entry defined, which is another entry of the program. It has its own `:init-fn`, `:reload-fn`, `:modules`, and `:type-slots`. Invoke it with `--entry server`.
+Bare `cr calcit.cirru` selects `entries.default` and emits JavaScript because its mode is `:js`. `cr calcit.cirru --entry server` selects the native server entry. An explicit `js` subcommand remains available as a compatibility/debug override, but project scripts should normally rely on the selected entry's mode.
 
 A named entry is a complete configuration, not a partial override. In particular, it does not inherit the default entry's modules or type slots. Bind a slot for each entry that needs it:
 
 ```bash
+cr config set mode js
 cr config set-type-slot :dispatch-op app.schema/ClientOp
 cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
 cr config type-slots
@@ -52,3 +54,5 @@ cr config type-slots --entry server
 ```
 
 The type-slot environment is selected before preprocessing starts, so the binding applies to the whole reachable call graph. Entry functions do not need a `with-type-slot` wrapper.
+
+Legacy snapshots containing top-level `:configs` still load. Calcit maps that object to `entries.default` with `:mode :native`; the next canonical snapshot write emits only the unified format.

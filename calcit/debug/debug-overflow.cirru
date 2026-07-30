@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |debug-overflow)
-  :configs $ {} (:init-fn |debug-overflow.main/main!) (:reload-fn |debug-overflow.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |debug-overflow) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |debug-overflow.main/main!) (:mode :native) (:reload-fn |debug-overflow.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |debug-overflow.main $ %{} :FileEntry
       :defs $ {}

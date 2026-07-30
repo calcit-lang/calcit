@@ -31,7 +31,7 @@ thread_local! {
   /// Global type-slot registry: maps slot names to their bound type annotations.
   /// A slot is declared via `deftype-slot`; the optional value is retained for legacy snapshots.
   static TYPE_SLOTS: RefCell<HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
-  /// Entry-level type-slot bindings loaded from `configs.type-slots` before preprocessing begins.
+  /// Entry-level type-slot bindings loaded from the selected `entries.<name>.type-slots` before preprocessing begins.
   static ENTRY_TYPE_SLOTS: RefCell<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>> = RefCell::new(HashMap::new());
   /// Scoped type-slot overrides for `with-type-slot` blocks.
   /// Each entry is a stack; the top value shadows the base `TYPE_SLOTS` binding within the scope.

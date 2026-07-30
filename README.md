@@ -139,8 +139,9 @@ Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`.
 To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 
 ```cirru
-:configs $ {}
-  :modules $ [] |memof/calcit.cirru |lilac/
+:entries $ {}
+  :default $ {}
+    :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
 Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`,

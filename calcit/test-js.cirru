@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-js)
-  :configs $ {} (:init-fn |test-js.main/main!) (:reload-fn |test-js.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-js) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:init-fn |test-js.main/main!) (:mode :native) (:reload-fn |test-js.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-js.main $ %{} :FileEntry
       :defs $ {}
@@ -213,7 +214,8 @@
                 to-js-data $ [] 1 2 3
                 js-array 1 2 3
               assert/deepEqual
-                to-js-data ([] 1 2 3) $ {} (:js-array true)
+                to-js-data ([] 1 2 3)
+                  {} $ :js-array true
                 js-array 1 2 3
               assert/deepEqual
                 to-js-data $ :: :a 1 2

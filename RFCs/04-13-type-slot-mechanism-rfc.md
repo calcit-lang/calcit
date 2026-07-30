@@ -281,13 +281,15 @@ evaluate(with-type-slot body) -> 在遇到 dependency 时临时影响编译
 
 ### 8.2 已实现的配置语法
 
-默认 entry 在 `:configs` 中绑定短 slot 名，值必须是完整 definition path 或 `:dynamic`：
+默认 entry 在 `:entries.default` 中绑定短 slot 名，值必须是完整 definition path 或 `:dynamic`：
 
 ```cirru
-:configs $ {}
-  :init-fn |app.main/main!
-  :type-slots $ {}
-    :dispatch-op |app.schema/Op
+:entries $ {}
+  :default $ {}
+    :mode :native
+    :init-fn |app.main/main!
+    :type-slots $ {}
+      :dispatch-op |app.schema/Op
 ```
 
 命名 entry 使用自己的完整配置，可以选择另一类型：
@@ -295,12 +297,13 @@ evaluate(with-type-slot body) -> 在遇到 dependency 时临时影响编译
 ```cirru
 :entries $ {}
   :server $ {}
+    :mode :native
     :init-fn |app.server/main!
     :type-slots $ {}
       :dispatch-op |app.schema/ServerOp
 ```
 
-命名 entry 不继承默认 `:configs.type-slots`。这里使用完整 definition path，而不是在配置解析阶段求值任意 Calcit expression，因此配置可序列化、可查询，也不依赖入口函数的执行顺序。对应命令为：
+命名 entry 不继承 `:entries.default.type-slots`。这里使用完整 definition path，而不是在配置解析阶段求值任意 Calcit expression，因此配置可序列化、可查询，也不依赖入口函数的执行顺序。对应命令为：
 
 ```bash
 cr config set-type-slot :dispatch-op app.schema/Op
@@ -574,7 +577,7 @@ cr config type-slots --entry server
 
 ## 15. 尚待决定的问题
 
-已决定：`:configs` 与每个命名 entry 各自保存完整 `:type-slots`，不做隐式继承；配置值只接受完整 definition path 或 `:dynamic`。
+已决定：所有入口统一存放在 `:entries`，`:default` 是无参数入口；每个 entry 各自保存完整 `:type-slots`，不做隐式继承；配置值只接受完整 definition path 或 `:dynamic`。
 
 仍待决定：
 

@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |bundle-calcit)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |bundle-calcit) (:version |0.0.1)
   :entries $ {}
+    :default $ {} (:init-fn |app.main/main!) (:mode :native) (:reload-fn |app.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
@@ -53,7 +54,8 @@
                       assoc acc ns-name file-entry
                 snapshot $ {}
                   :package $ get package-data :package
-                  :configs package-data
+                  :version $ get package-data :version
+                  :entries $ get package-data :entries
                   :files files
               write-file output-path $ format-cirru-edn snapshot
               println $ str-spaced |wrote output-path |with (count files) |namespaces

@@ -1,4 +1,4 @@
-use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotConfigs, load_snapshot_data};
+use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotEntry, load_snapshot_data};
 use crate::util::string::strip_shebang;
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
@@ -352,22 +352,24 @@ fn diff_snapshot(old: &Snapshot, new: &Snapshot) -> DiffNode {
   let Snapshot {
     package: old_package,
     about: old_about,
-    configs: old_configs,
+    version: old_version,
     entries: old_entries,
     files: old_files,
+    ..
   } = old;
   let Snapshot {
     package: new_package,
     about: new_about,
-    configs: new_configs,
+    version: new_version,
     entries: new_entries,
     files: new_files,
+    ..
   } = new;
 
   let children = vec![
     diff_string("package", Some(old_package.as_str()), Some(new_package.as_str())),
     diff_optional_string("about", old_about.as_deref(), new_about.as_deref()),
-    diff_configs("configs", Some(old_configs), Some(new_configs)),
+    diff_string("version", Some(old_version.as_str()), Some(new_version.as_str())),
     diff_entries("entries", old_entries, new_entries),
     diff_files("files", old_files, new_files),
   ];
@@ -375,47 +377,47 @@ fn diff_snapshot(old: &Snapshot, new: &Snapshot) -> DiffNode {
   DiffNode::new("program", aggregate_status(&children)).with_children(children)
 }
 
-fn diff_configs(label: &str, old: Option<&SnapshotConfigs>, new: Option<&SnapshotConfigs>) -> DiffNode {
+fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEntry>) -> DiffNode {
   match (old, new) {
     (Some(old), Some(new)) => {
-      let SnapshotConfigs {
+      let SnapshotEntry {
+        mode: old_mode,
         init_fn: old_init_fn,
         reload_fn: old_reload_fn,
         modules: old_modules,
-        version: old_version,
         type_slots: old_type_slots,
       } = old;
-      let SnapshotConfigs {
+      let SnapshotEntry {
+        mode: new_mode,
         init_fn: new_init_fn,
         reload_fn: new_reload_fn,
         modules: new_modules,
-        version: new_version,
         type_slots: new_type_slots,
       } = new;
 
       let children = vec![
+        diff_string("mode", Some(old_mode.as_str()), Some(new_mode.as_str())),
         diff_string("init-fn", Some(old_init_fn.as_str()), Some(new_init_fn.as_str())),
         diff_string("reload-fn", Some(old_reload_fn.as_str()), Some(new_reload_fn.as_str())),
-        diff_string("version", Some(old_version.as_str()), Some(new_version.as_str())),
         diff_string_list("modules", old_modules, new_modules),
         diff_string_map("type-slots", old_type_slots, new_type_slots),
       ];
       DiffNode::new(label, aggregate_status(&children)).with_children(children)
     }
-    (None, Some(value)) => build_configs_tree(label, value, DiffStatus::Added),
-    (Some(value), None) => build_configs_tree(label, value, DiffStatus::Removed),
+    (None, Some(value)) => build_entry_tree(label, value, DiffStatus::Added),
+    (Some(value), None) => build_entry_tree(label, value, DiffStatus::Removed),
     (None, None) => DiffNode::new(label, DiffStatus::Unchanged),
   }
 }
 
-fn diff_entries(label: &str, old: &HashMap<String, SnapshotConfigs>, new: &HashMap<String, SnapshotConfigs>) -> DiffNode {
+fn diff_entries(label: &str, old: &HashMap<String, SnapshotEntry>, new: &HashMap<String, SnapshotEntry>) -> DiffNode {
   let mut keys = BTreeSet::new();
   keys.extend(old.keys().cloned());
   keys.extend(new.keys().cloned());
 
   let children = keys
     .into_iter()
-    .map(|key| diff_configs(&key, old.get(&key), new.get(&key)))
+    .map(|key| diff_entry(&key, old.get(&key), new.get(&key)))
     .collect::<Vec<_>>();
 
   DiffNode::new(label, aggregate_status(&children)).with_children(children)
@@ -598,19 +600,19 @@ fn diff_cirru(label: &str, old: Option<&Cirru>, new: Option<&Cirru>, coord: &str
   }
 }
 
-fn build_configs_tree(label: &str, value: &SnapshotConfigs, status: DiffStatus) -> DiffNode {
-  let SnapshotConfigs {
+fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> DiffNode {
+  let SnapshotEntry {
+    mode,
     init_fn,
     reload_fn,
     modules,
-    version,
     type_slots,
   } = value;
 
   DiffNode::new(label, status).with_children(vec![
+    DiffNode::new("mode", status).with_detail(render_text(mode.as_str())),
     DiffNode::new("init-fn", status).with_detail(render_text(init_fn)),
     DiffNode::new("reload-fn", status).with_detail(render_text(reload_fn)),
-    DiffNode::new("version", status).with_detail(render_text(version)),
     build_string_list_tree("modules", modules, status),
     build_string_map_tree("type-slots", type_slots, status),
   ])
@@ -1243,10 +1245,10 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 #[cfg(test)]
 mod tests {
   use super::{
-    CirruEditStrategy, DiffNode, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, build_configs_tree, cirru_similarity,
-    diff_cirru, diff_configs, diff_entries, render_cirru_diff, render_text,
+    CirruEditStrategy, DiffNode, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, build_entry_tree, cirru_similarity,
+    diff_cirru, diff_entries, diff_entry, render_cirru_diff, render_text,
   };
-  use crate::snapshot::SnapshotConfigs;
+  use crate::snapshot::{SnapshotEntry, SnapshotRunMode};
   use cirru_parser::Cirru;
   use std::collections::HashMap;
 
@@ -1258,12 +1260,12 @@ mod tests {
     Cirru::List(items)
   }
 
-  fn configs_with_type_slots(slots: &[(&str, &str)]) -> SnapshotConfigs {
-    SnapshotConfigs {
+  fn entry_with_type_slots(slots: &[(&str, &str)]) -> SnapshotEntry {
+    SnapshotEntry {
+      mode: SnapshotRunMode::Native,
       init_fn: "app.main/main!".to_owned(),
       reload_fn: "app.main/reload!".to_owned(),
       modules: vec![],
-      version: "0.0.1".to_owned(),
       type_slots: slots
         .iter()
         .map(|(slot, type_path)| ((*slot).to_owned(), (*type_path).to_owned()))
@@ -1280,11 +1282,11 @@ mod tests {
   }
 
   #[test]
-  fn diffs_type_slots_in_default_configs() {
-    let old = configs_with_type_slots(&[("dispatch-op", "app.schema/ClientOp"), ("removed-op", "app.schema/RemovedOp")]);
-    let new = configs_with_type_slots(&[("dispatch-op", "app.schema/ServerOp"), ("added-op", "app.schema/AddedOp")]);
+  fn diffs_type_slots_in_default_entry() {
+    let old = entry_with_type_slots(&[("dispatch-op", "app.schema/ClientOp"), ("removed-op", "app.schema/RemovedOp")]);
+    let new = entry_with_type_slots(&[("dispatch-op", "app.schema/ServerOp"), ("added-op", "app.schema/AddedOp")]);
 
-    let diff = diff_configs("configs", Some(&old), Some(&new));
+    let diff = diff_entry("default", Some(&old), Some(&new));
     assert_eq!(diff.status, DiffStatus::Modified);
 
     let type_slots = child(&diff, "type-slots");
@@ -1298,11 +1300,11 @@ mod tests {
   fn diffs_type_slots_in_named_entries() {
     let old = HashMap::from([(
       "server".to_owned(),
-      configs_with_type_slots(&[("dispatch-op", "app.schema/ClientOp")]),
+      entry_with_type_slots(&[("dispatch-op", "app.schema/ClientOp")]),
     )]);
     let new = HashMap::from([(
       "server".to_owned(),
-      configs_with_type_slots(&[("dispatch-op", "app.schema/ServerOp")]),
+      entry_with_type_slots(&[("dispatch-op", "app.schema/ServerOp")]),
     )]);
 
     let diff = diff_entries("entries", &old, &new);
@@ -1316,8 +1318,8 @@ mod tests {
 
   #[test]
   fn includes_type_slots_when_an_entry_is_added() {
-    let configs = configs_with_type_slots(&[("dispatch-op", "app.schema/ServerOp")]);
-    let diff = build_configs_tree("server", &configs, DiffStatus::Added);
+    let entry = entry_with_type_slots(&[("dispatch-op", "app.schema/ServerOp")]);
+    let diff = build_entry_tree("server", &entry, DiffStatus::Added);
 
     let type_slots = child(&diff, "type-slots");
     assert_eq!(type_slots.status, DiffStatus::Added);
