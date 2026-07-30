@@ -15,6 +15,7 @@ use calcit::cli_args::{
   EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
   EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
 };
+use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
@@ -1956,6 +1957,8 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     return Err("Imports must be a Cirru list or JSON array of import rules.".to_string());
   };
 
+  validate_import_rules(&rules)?;
+
   // Extract old imports for comparison
   let old_imports = extract_require_list(&file_data.ns.code);
 
@@ -2100,6 +2103,8 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
 
   let new_rule = parse_input_to_cirru(&raw)?;
 
+  validate_import_rules(std::slice::from_ref(&new_rule))?;
+
   // Validate that the rule has a source namespace
   let new_source_ns =
     get_require_source_ns(&new_rule).ok_or("Invalid require rule: first element must be a namespace name (e.g. 'calcit.core')")?;
@@ -2122,15 +2127,10 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
     .iter()
     .position(|r| get_require_source_ns(r).as_deref() == Some(&new_source_ns));
 
-  if let Some(idx) = existing_idx {
+  let replaced = if let Some(idx) = existing_idx {
     if opts.overwrite {
       rules[idx] = new_rule.clone();
-      println!(
-        "{} Replaced require rule for '{}' in namespace '{}'",
-        "✓".green(),
-        new_source_ns.cyan(),
-        opts.namespace
-      );
+      true
     } else {
       return Err(format!(
         "Require rule for '{}' already exists in namespace '{}'. Use --overwrite to replace.",
@@ -2139,6 +2139,19 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
     }
   } else {
     rules.push(new_rule.clone());
+    false
+  };
+
+  validate_import_rules(&rules)?;
+
+  if replaced {
+    println!(
+      "{} Replaced require rule for '{}' in namespace '{}'",
+      "✓".green(),
+      new_source_ns.cyan(),
+      opts.namespace
+    );
+  } else {
     println!(
       "{} Added require rule for '{}' in namespace '{}'",
       "✓".green(),

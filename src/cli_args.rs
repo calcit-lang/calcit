@@ -273,7 +273,7 @@ pub struct CallGraphCommand {
   /// maximum depth to traverse (0 = unlimited)
   #[argh(option, default = "0")]
   pub max_depth: usize,
-  /// show unused definitions for the selected entry
+  /// show definitions unreachable from the selected entry (may include external entry points)
   #[argh(switch)]
   pub show_unused: bool,
   /// output format: "text" (default, LLM-friendly) or "json"
