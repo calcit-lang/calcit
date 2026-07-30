@@ -630,29 +630,56 @@ Then reference the slot in type annotations with the `*name` syntax:
 
 ### Binding a Type Slot (Application Side)
 
-In the application's entry point (e.g. `main!`), use `with-type-slot` to bind a concrete type locally for the scope of the body:
+Bind the slot in the configuration of the entry being compiled. The concrete type must use a full `namespace/definition` path:
 
-```cirru.no-check
-defenum Op (:add :string) (:remove :tag) (:clear)
-
-defn main! () $ with-type-slot (:dispatch-op Op)
-  ;; all code in this body benefits from full type checking
+```bash
+cr config set-type-slot :dispatch-op app.schema/Op
 ```
 
-`with-type-slot` takes a binding pair `(:slot-name TypeExpr)` as its first argument and a body of expressions. The slot is active only within that scope.
+This writes the following entry-level configuration:
+
+```cirru.no-check
+:configs $ {}
+  :init-fn |app.main/main!
+  :type-slots $ {}
+    :dispatch-op |app.schema/Op
+```
+
+No wrapper is needed around `main!`; the binding is installed before any definition is preprocessed and applies to the whole selected entry.
+
+A named entry has an independent configuration:
+
+```bash
+cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
+cr config type-slots --entry server
+```
+
+Named entries do not inherit the default `:configs.type-slots`. Bind every slot needed by that entry explicitly.
 
 ### How It Works
 
-1. `deftype-slot :name` registers a placeholder (optional, for documentation/library contracts).
-2. `with-type-slot (:name ConcreteType) body...` pushes a scoped override for `*name` during preprocessing of the body, then pops it when the body finishes.
-3. When type annotations encounter `*name`, the override is resolved and standard type matching proceeds.
-4. Multiple entries can each bind the same slot independently without conflict, since each binding is scoped.
+1. `deftype-slot :name` declares the placeholder supplied by a library.
+2. Selecting an entry selects its `:type-slots` map before preprocessing starts.
+3. When a type annotation encounters `*name`, the configured concrete type is resolved and normal type matching proceeds.
+4. Different entries can bind the same slot to different types because each invocation compiles one selected entry configuration.
 
 ### Constraints
 
-- Only enum, struct, and record types can be bound to slots.
-- Unbound slots (no active `with-type-slot` override) are treated as `:dynamic` (no type checking, no error).
-- `with-type-slot` bindings are scoped — they do not persist outside the body.
+- Configuration values must be `:dynamic` or a full `namespace/definition` path that exists after modules are loaded.
+- An unbound slot currently falls back to `:dynamic`; bind it explicitly when static checking is expected.
+- `:dynamic` is an explicit opt-out for an entry that intentionally disables the slot check.
+- The slot name is currently project-wide within one compilation. Libraries should choose stable, specific names to avoid accidental collisions.
+
+Inspect and remove bindings with:
+
+```bash
+cr config type-slots
+cr config rm-type-slot :dispatch-op
+```
+
+### Compatibility Form
+
+`with-type-slot (:name TypeExpr) body...` remains available for older projects and local compatibility. It is a compile-time form and is always erased before runtime/code generation; one body, multiple bodies, and an explicit `do` have the same semantics. New application entry points should prefer `:type-slots`, which makes the build-wide choice visible and independent of lazy compilation order.
 
 ### Example: Detecting Wrong Dispatch Calls
 

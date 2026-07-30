@@ -767,6 +767,23 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
   calcit::clear_type_slots();
 
+  for (slot, type_path) in &s.configs.type_slots {
+    if matches!(type_path.as_str(), ":dynamic" | "dynamic") {
+      continue;
+    }
+    let Some((ns, def)) = type_path.rsplit_once('/') else {
+      return Err(format!(
+        "configs.type-slots.{slot}: expected a full `namespace/definition` type path, got `{type_path}`"
+      ));
+    };
+    if !s.files.get(ns).is_some_and(|file| file.defs.contains_key(def)) {
+      return Err(format!(
+        "configs.type-slots.{slot}: unknown type definition `{type_path}`; load its module and use a full `namespace/definition` path"
+      ));
+    }
+  }
+  calcit::configure_entry_type_slots(&s.configs.type_slots).map_err(|message| format!("configs.type-slots: {message}"))?;
+
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
 
   for (ns, file) in &s.files {

@@ -29,8 +29,10 @@ static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
   /// Global type-slot registry: maps slot names to their bound type annotations.
-  /// A slot is declared via `deftype-slot` (value = None) and bound via `bind-type` (value = Some).
+  /// A slot is declared via `deftype-slot`; the optional value is retained for legacy snapshots.
   static TYPE_SLOTS: RefCell<HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
+  /// Entry-level type-slot bindings loaded from `configs.type-slots` before preprocessing begins.
+  static ENTRY_TYPE_SLOTS: RefCell<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>> = RefCell::new(HashMap::new());
   /// Scoped type-slot overrides for `with-type-slot` blocks.
   /// Each entry is a stack; the top value shadows the base `TYPE_SLOTS` binding within the scope.
   static TYPE_SLOT_OVERRIDES: RefCell<HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
@@ -74,14 +76,50 @@ pub fn register_type_slot(name: Arc<str>) -> Result<(), String> {
   })
 }
 
+/// Replace entry-level type-slot bindings with a validated configuration map.
+/// Values are full `namespace/definition` paths, or `:dynamic` for an explicit opt-out.
+pub fn configure_entry_type_slots(bindings: &HashMap<String, String>) -> Result<(), String> {
+  let mut configured: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::with_capacity(bindings.len());
+  for (raw_name, raw_type_path) in bindings {
+    let name = raw_name.trim().trim_start_matches(':');
+    if name.is_empty() {
+      return Err("type slot name cannot be empty".to_owned());
+    }
+
+    let type_path = raw_type_path.trim();
+    let annotation = if matches!(type_path, ":dynamic" | "dynamic") {
+      crate::calcit::DYNAMIC_TYPE.clone()
+    } else {
+      let Some((ns, def)) = type_path.rsplit_once('/') else {
+        return Err(format!(
+          "type slot `{name}` expected a full `namespace/definition` type path, got `{type_path}`"
+        ));
+      };
+      if ns.is_empty() || def.is_empty() {
+        return Err(format!(
+          "type slot `{name}` expected a full `namespace/definition` type path, got `{type_path}`"
+        ));
+      }
+      Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(type_path), Arc::new(vec![])))
+    };
+    configured.insert(Arc::from(name), annotation);
+  }
+
+  ENTRY_TYPE_SLOTS.with(|slots| *slots.borrow_mut() = configured);
+  Ok(())
+}
+
 /// Look up the type bound to a slot.
-/// Overrides from `with-type-slot` take priority.
-/// Returns `None` if no `with-type-slot` override is active for this slot.
+/// Scoped `with-type-slot` overrides take priority, followed by the selected entry configuration.
 pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   // Check scoped overrides first (innermost wins).
   let override_val = TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow().get(name).and_then(|stack| stack.last().cloned()));
   if override_val.is_some() {
     return override_val;
+  }
+  let entry_value = ENTRY_TYPE_SLOTS.with(|slots| slots.borrow().get(name).cloned());
+  if entry_value.is_some() {
+    return entry_value;
   }
   TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
 }
@@ -110,6 +148,7 @@ pub fn pop_type_slot_override(name: &str) {
 #[allow(dead_code)]
 pub fn clear_type_slots() {
   TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
+  ENTRY_TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
   TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());
 }
 
@@ -3164,6 +3203,39 @@ mod tests {
       }),
       location: None,
     }
+  }
+
+  #[test]
+  fn entry_type_slots_are_global_defaults_but_scoped_overrides_still_win() {
+    clear_type_slots();
+    let bindings = HashMap::from([("dispatch-op".to_owned(), "app.schema/Op".to_owned())]);
+    configure_entry_type_slots(&bindings).expect("configure entry type slots");
+
+    assert_eq!(
+      resolve_type_slot("dispatch-op"),
+      Some(Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("app.schema/Op"),
+        Arc::new(vec![])
+      )))
+    );
+
+    push_type_slot_override(Arc::from("dispatch-op"), Arc::new(CalcitTypeAnnotation::String));
+    assert_eq!(resolve_type_slot("dispatch-op"), Some(Arc::new(CalcitTypeAnnotation::String)));
+    pop_type_slot_override("dispatch-op");
+    assert!(matches!(
+      resolve_type_slot("dispatch-op").as_deref(),
+      Some(CalcitTypeAnnotation::TypeRef(path, _)) if path.as_ref() == "app.schema/Op"
+    ));
+    clear_type_slots();
+  }
+
+  #[test]
+  fn entry_type_slots_require_full_type_paths() {
+    clear_type_slots();
+    let bindings = HashMap::from([("dispatch-op".to_owned(), "Op".to_owned())]);
+    let error = configure_entry_type_slots(&bindings).expect_err("short type path should fail");
+    assert!(error.contains("namespace/definition"), "unexpected error: {error}");
+    assert!(resolve_type_slot("dispatch-op").is_none());
   }
 
   #[test]

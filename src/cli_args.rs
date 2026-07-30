@@ -2192,6 +2192,8 @@ pub enum ConfigSubcommand {
   Show(ConfigShowCommand),
   /// list modules included in the project
   Modules(ConfigModulesCommand),
+  /// list entry-level type-slot bindings
+  TypeSlots(ConfigTypeSlotsCommand),
   /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
   Version(ConfigVersionCommand),
   /// set a configuration key to a value (init-fn, reload-fn, version)
@@ -2200,6 +2202,10 @@ pub enum ConfigSubcommand {
   AddModule(ConfigAddModuleCommand),
   /// remove a module path from configs.modules
   RmModule(ConfigRmModuleCommand),
+  /// bind a type slot to a full namespace/definition path
+  SetTypeSlot(ConfigSetTypeSlotCommand),
+  /// remove an entry-level type-slot binding
+  RmTypeSlot(ConfigRmTypeSlotCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2216,6 +2222,15 @@ pub struct ConfigShowCommand {
 /// list modules included in the project
 pub struct ConfigModulesCommand {
   /// list modules for a named entry (e.g. "test") instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "type-slots")]
+/// list entry-level type-slot bindings
+pub struct ConfigTypeSlotsCommand {
+  /// list bindings for a named entry instead of the default configs
   #[argh(option)]
   pub entry: Option<String>,
 }
@@ -2266,4 +2281,31 @@ pub struct ConfigRmModuleCommand {
   /// module path to remove
   #[argh(positional)]
   pub module_path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set-type-slot")]
+/// bind a type slot to a full namespace/definition path
+pub struct ConfigSetTypeSlotCommand {
+  /// apply to a named entry instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// slot name, with or without a leading colon
+  #[argh(positional)]
+  pub slot: String,
+  /// full namespace/definition type path, or :dynamic
+  #[argh(positional)]
+  pub type_path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rm-type-slot")]
+/// remove an entry-level type-slot binding
+pub struct ConfigRmTypeSlotCommand {
+  /// remove from a named entry instead of the default configs
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// slot name, with or without a leading colon
+  #[argh(positional)]
+  pub slot: String,
 }

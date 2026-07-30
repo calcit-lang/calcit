@@ -1229,10 +1229,13 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
   match subcommand {
     ConfigSubcommand::Show(_) => "show",
     ConfigSubcommand::Modules(_) => "modules",
+    ConfigSubcommand::TypeSlots(_) => "type-slots",
     ConfigSubcommand::Version(_) => "version",
     ConfigSubcommand::Set(_) => "set",
     ConfigSubcommand::AddModule(_) => "add-module",
     ConfigSubcommand::RmModule(_) => "rm-module",
+    ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
+    ConfigSubcommand::RmTypeSlot(_) => "rm-type-slot",
   }
 }
 
@@ -1240,6 +1243,7 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
   match &cmd.subcommand {
     ConfigSubcommand::Show(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
     ConfigSubcommand::Modules(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
+    ConfigSubcommand::TypeSlots(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
     ConfigSubcommand::Version(opts) => echo_items!(tokens, opt "value" => opts.value.as_deref(); default "none"),
     ConfigSubcommand::Set(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
@@ -1252,6 +1256,14 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
     ConfigSubcommand::RmModule(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
       echo_items!(tokens, pos "module_path" => &opts.module_path);
+    }
+    ConfigSubcommand::SetTypeSlot(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "slot" => &opts.slot, pos "type_path" => &opts.type_path);
+    }
+    ConfigSubcommand::RmTypeSlot(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "slot" => &opts.slot);
     }
   }
 }

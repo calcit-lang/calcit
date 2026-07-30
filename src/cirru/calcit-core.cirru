@@ -3303,7 +3303,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
           :tags $ #{} :macro
-        |deftype-slot $ %{} :CodeEntry (:doc "|Declare a named type slot for late binding\nSyntax: (deftype-slot :slot-name)\nParams: slot-name (tag or string)\nReturns: nil\nRegisters a type slot on the current namespace entry; bound later via bind-type or with-type-slot")
+        |deftype-slot $ %{} :CodeEntry (:doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with cr config set-type-slot; an unbound slot falls back to :dynamic.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn
@@ -5755,7 +5755,7 @@
           :schema $ :: :macro
             {} $ :args ([] :dynamic)
           :tags $ #{} :macro
-        |with-type-slot $ %{} :CodeEntry (:doc "|Scoped type-slot override block\nSyntax: (with-type-slot (:slot-name TypeExpr) body...)\nParams: binding pair, body expressions\nReturns: last body value\nApplies a temporary type binding for slot checking within body; handled at preprocess time")
+        |with-type-slot $ %{} :CodeEntry (:doc "|Compatibility form for a local compile-time type-slot override. Syntax: (with-type-slot (:slot-name TypeExpr) body...). The form is always erased during preprocessing; it evaluates bodies in order and returns the last value. New entry points should prefer :type-slots configuration.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: :fn

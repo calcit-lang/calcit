@@ -2,6 +2,7 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-type-slot-enum-invalid-variant)
   :configs $ {} (:init-fn |type-fail-type-slot-enum-invalid-variant.main/main!) (:reload-fn |type-fail-type-slot-enum-invalid-variant.main/reload!) (:version |0.0.0)
     :modules $ []
+    :type-slots $ {} (:dispatch-op |type-fail-type-slot-enum-invalid-variant.main/Action)
   :entries $ {}
   :files $ {}
     |type-fail-type-slot-enum-invalid-variant.main $ %{} :FileEntry
@@ -10,9 +11,13 @@
           :code $ quote
             defenum Action (:add :string) (:remove :string) (:clear)
           :examples $ []
+        |legacy-main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :code $ quote
+            defn legacy-main! () $ with-type-slot (:dispatch-op Action) 1 2
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc "|Entry testing enum auto-rewrite via type-slot with invalid variant")
           :code $ quote
-            defn main! () $ with-type-slot (:dispatch-op Action)
+            defn main! ()
               takes-action $ :: :nonexistent |hello
               , nil
           :examples $ []

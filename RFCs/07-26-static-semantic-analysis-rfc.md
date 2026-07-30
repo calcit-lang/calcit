@@ -48,7 +48,7 @@ cr query type-at app.main/f --path code@3.2 --format json
 | 数据结构携带类型参数 | generic `defstruct` / `defenum` 的 applied type args | 构造、字段、variant payload 与 match 保持一致 |
 | 回调的参数/返回关系 | 完整 `:: :fn`，保留 generics、rest 与 variance | 高阶函数调用检查，不把 callback 降为 `:fn`/`:dynamic` |
 | 有限异构分支 | 命名 `defenum`，可空值用 `:: :optional T` | 穷举 variant/payload 检查 |
-| 库声明、应用选择一个全局类型 | `deftype-slot` / `bind-type` | 跨编译单元注入；不是 per-call parametric polymorphism |
+| 库声明、应用为 entry 选择一个全局类型 | `deftype-slot` / `:type-slots` entry 配置 | 跨编译单元注入；不是 per-call parametric polymorphism |
 
 当前不引入通用 union/intersection 类型。已知的有限分支优先用 enum，nil 分支用 optional；只有开放世界输入、无法建模的 FFI/global state 或宏边界使用 `:dynamic`。Bare `:list`、`:map`、`:ref` 及 `:fn` 只保留外形，不能表达元素、状态或 callback 之间的多态关系，因此 coverage 最多为 partial。
 

@@ -2622,6 +2622,7 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
       format!("Entry '{entry_name}' not found. Available entries: {available}")
     })?;
     modules_to_load.extend(entry_config.modules.clone());
+    snapshot.configs.type_slots = entry_config.type_slots.clone();
   }
 
   let mut seen_modules = HashSet::new();
@@ -2860,6 +2861,7 @@ fn handle_config(input_path: &str) -> Result<(), String> {
   println!("  {}: {}", "reload_fn".cyan(), snapshot.configs.reload_fn);
   println!("  {}: {}", "version".cyan(), snapshot.configs.version);
   println!("  {}: {:?}", "modules".cyan(), snapshot.configs.modules);
+  println!("  {}: {:?}", "type_slots".cyan(), snapshot.configs.type_slots);
 
   if !snapshot.entries.is_empty() {
     println!("\n{}", "Snapshot Entries:".bold());

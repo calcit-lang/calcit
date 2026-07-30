@@ -2,6 +2,7 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-type-slot-record-call-arg)
   :configs $ {} (:init-fn |type-fail-type-slot-record-call-arg.main/main!) (:reload-fn |type-fail-type-slot-record-call-arg.main/reload!) (:version |0.0.0)
     :modules $ []
+    :type-slots $ {} (:payload |type-fail-type-slot-record-call-arg.main/User)
   :entries $ {}
   :files $ {}
     |type-fail-type-slot-record-call-arg.main $ %{} :FileEntry
@@ -12,10 +13,7 @@
           :examples $ []
         |main! $ %{} :CodeEntry (:doc "|Entry for type-slot record bind call-site arg type mismatch")
           :code $ quote
-            defn main! () $ with-type-slot
-              :payload $ %{} User (:name |demo)
-              takes-user 1
-              , nil
+            defn main! () (takes-user 1) nil
           :examples $ []
           :schema $ :: :fn
             {} (:return :dynamic)

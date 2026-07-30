@@ -244,7 +244,7 @@ pub fn ensure_ns_def_compiled(
 /// The first argument must be a two-element list `(:slot-name TypeExpr)`.
 /// The type is resolved and pushed as a scoped override, then all body
 /// expressions are preprocessed under that scope, and finally the override
-/// is popped.  The preprocessed form emits `(with-type-slot <binding-list> body...)`.
+/// is popped. The wrapper is always erased from the preprocessed output.
 fn preprocess_with_type_slot_block(
   head_form: &Calcit,
   args: &CalcitList,
@@ -371,11 +371,20 @@ fn preprocess_with_type_slot_block(
     }
   };
 
+  let body_args = args.drop_left();
+  if body_args.is_empty() {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      "with-type-slot expected at least one body expression",
+      call_stack,
+      head_location,
+    ));
+  }
+
   // Push the scoped override
   push_type_slot_override(slot_name.clone(), type_annotation);
 
   // Preprocess body expressions under the override
-  let body_args = args.drop_left();
   let mut preprocessed_body: Vec<Calcit> = Vec::with_capacity(body_args.len());
   let mut preprocess_err: Option<CalcitErr> = None;
   for expr in body_args.iter() {
@@ -395,13 +404,16 @@ fn preprocess_with_type_slot_block(
     return Err(e);
   }
 
-  // Emit as (with-type-slot body...) — binding pair is stripped since the override was
-  // already applied at preprocess time.  At runtime, with_type_slot_runtime simply
-  // returns the last evaluated body value, so no binding evaluation occurs.
+  // The binding is compile-time-only and must never escape into runtime/codegen.
   if preprocessed_body.len() == 1 {
     return Ok(preprocessed_body.remove(0));
   }
-  let mut result_items = vec![head_form.to_owned()];
+  // `do` expands to `&let () body...`; construct the expanded sequence directly so
+  // already-preprocessed body expressions are not expanded or checked a second time.
+  let mut result_items = vec![
+    Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns)),
+    Calcit::from(CalcitList::default()),
+  ];
   result_items.extend(preprocessed_body);
   Ok(Calcit::from(CalcitList::from(result_items.as_slice())))
 }

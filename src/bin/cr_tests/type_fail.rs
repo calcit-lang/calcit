@@ -1,5 +1,5 @@
 use super::*;
-use calcit::calcit::CalcitTypeAnnotation;
+use calcit::calcit::{Calcit, CalcitProc, CalcitTypeAnnotation};
 use std::cell::RefCell;
 use std::fs;
 
@@ -256,6 +256,38 @@ fn type_fail_type_slot_enum_invalid_variant() {
       "warning should mention enum name, got: {}",
       matched[0].message()
     );
+  });
+}
+
+fn contains_with_type_slot(value: &Calcit) -> bool {
+  match value {
+    Calcit::Proc(CalcitProc::WithTypeSlot) => true,
+    Calcit::List(items) => items.iter().any(contains_with_type_slot),
+    Calcit::Fn { info, .. } => info.body.iter().any(contains_with_type_slot),
+    Calcit::Macro { info, .. } => info.body.iter().any(contains_with_type_slot),
+    _ => false,
+  }
+}
+
+#[test]
+fn with_type_slot_multi_body_is_erased_before_runtime() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let ns = entries.init_ns.as_ref();
+    let def = "legacy-main!";
+
+    runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &CallStackList::default())
+      .expect("legacy with-type-slot fixture should preprocess");
+    let compiled = program::lookup_compiled_def(ns, def).expect("legacy fixture should have compiled output");
+    assert!(
+      !contains_with_type_slot(&compiled.preprocessed_code),
+      "with-type-slot must not escape preprocessing: {}",
+      compiled.preprocessed_code
+    );
+
+    let result = calcit::run_program(Arc::from(ns), Arc::from(def), &[]).expect("legacy fixture should run");
+    assert_eq!(result, Calcit::Number(2.0));
   });
 }
 

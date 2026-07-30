@@ -8,6 +8,7 @@ aliases:
   - "init-fn"
   - "reload-fn"
   - "config entries"
+  - "entry type slots"
 ---
 # Entries
 
@@ -25,16 +26,29 @@ cr calcit.cirru --entry server
 
 Here's an example, first lines of a `calcit.cirru` file may look like:
 
-```cirru
+```cirru.no-check
 {} (:package |app)
   :configs $ {} (:init-fn |app.client/main!) (:reload-fn |app.client/reload!) (:version |0.0.1)
     :modules $ [] |respo.calcit/ |lilac/ |recollect/ |memof/ |respo-ui.calcit/ |ws-edn.calcit/ |cumulo-util.calcit/ |respo-message.calcit/ |cumulo-reel.calcit/
+    :type-slots $ {} (:dispatch-op |app.schema/ClientOp)
   :entries $ {}
-    :server $ {} (:init-fn |app.server/main!) (:port 6001) (:reload-fn |app.server/reload!) (:storage-key |calcit.cirru)
+    :server $ {} (:init-fn |app.server/main!) (:reload-fn |app.server/reload!)
       :modules $ [] |lilac/ |recollect/ |memof/ |ws-edn.calcit/ |cumulo-util.calcit/ |cumulo-reel.calcit/ |calcit-wss/ |calcit.std/
+      :type-slots $ {} (:dispatch-op |app.schema/ServerOp)
   :files $ {}
 ```
 
 There is base configs attached with `:configs`, with `:init-fn` `:reload-fn` defined, which is the inital entry of the program.
 
-Then there is `:entries` with `:server` entry defined, which is another entry of the program. It has its own `:init-fn` `:reload-fn` and `:modules` options. And to invoke it, you may use `--entry server` option.
+Then there is `:entries` with `:server` entry defined, which is another entry of the program. It has its own `:init-fn`, `:reload-fn`, `:modules`, and `:type-slots`. Invoke it with `--entry server`.
+
+A named entry is a complete configuration, not a partial override. In particular, it does not inherit the default entry's modules or type slots. Bind a slot for each entry that needs it:
+
+```bash
+cr config set-type-slot :dispatch-op app.schema/ClientOp
+cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
+cr config type-slots
+cr config type-slots --entry server
+```
+
+The type-slot environment is selected before preprocessing starts, so the binding applies to the whole reachable call graph. Entry functions do not need a `with-type-slot` wrapper.

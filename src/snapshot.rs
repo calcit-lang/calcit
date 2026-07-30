@@ -87,6 +87,8 @@ pub struct SnapshotConfigs {
   pub modules: Vec<String>,
   #[serde(default = "default_version")]
   pub version: String,
+  #[serde(default, rename = "type-slots")]
+  pub type_slots: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1357,12 +1359,57 @@ fn parse_snapshot_configs_with_context(data: Edn, owner: &str) -> Result<Snapsho
     None => Vec::new(),
   };
 
+  let type_slots = match data.get(&Edn::tag("type-slots")) {
+    Some(value) => parse_snapshot_type_slots(value, owner)?,
+    None => HashMap::new(),
+  };
+
   Ok(SnapshotConfigs {
     init_fn,
     reload_fn,
     modules,
+    type_slots,
     version,
   })
+}
+
+fn parse_snapshot_type_slots(data: &Edn, owner: &str) -> Result<HashMap<String, String>, String> {
+  let slots = data
+    .view_map()
+    .map_err(|e| format!("{owner}.type-slots: expected a map: {e}; got {}", format_edn_preview(data)))?;
+  let mut result = HashMap::with_capacity(slots.0.len());
+
+  for (raw_slot, raw_type) in slots.0.iter() {
+    let slot = match raw_slot {
+      Edn::Tag(tag) => tag.ref_str().to_owned(),
+      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+      _ => {
+        return Err(format!(
+          "{owner}.type-slots: slot name must be a tag, string, or symbol; got {}",
+          format_edn_preview(raw_slot)
+        ));
+      }
+    };
+    if slot.is_empty() {
+      return Err(format!("{owner}.type-slots: slot name cannot be empty"));
+    }
+
+    let type_path = match raw_type {
+      Edn::Str(text) | Edn::Symbol(text) => text.to_string(),
+      Edn::Tag(tag) if tag.ref_str() == "dynamic" => ":dynamic".to_owned(),
+      _ => {
+        return Err(format!(
+          "{owner}.type-slots.{slot}: type must be a full `namespace/definition` string or `:dynamic`; got {}",
+          format_edn_preview(raw_type)
+        ));
+      }
+    };
+    if result.insert(slot.clone(), type_path).is_some() {
+      return Err(format!("{owner}.type-slots: duplicate slot name `:{slot}`"));
+    }
+  }
+
+  Ok(result)
 }
 
 fn parse_entries_with_context(data: &Edn) -> Result<HashMap<String, SnapshotConfigs>, String> {
@@ -1531,6 +1578,7 @@ impl Default for Snapshot {
         reload_fn: "app.main/reload!".into(),
         version: "0.0.0".to_string(),
         modules: vec![],
+        type_slots: HashMap::new(),
       },
       entries: HashMap::new(),
       files: HashMap::new(),
@@ -1747,6 +1795,21 @@ impl TryFrom<ChangesDict> for Edn {
   }
 }
 
+fn type_slots_to_edn(type_slots: &HashMap<String, String>) -> Edn {
+  let mut slots_map = EdnMapView::default();
+  let mut slots: Vec<(&String, &String)> = type_slots.iter().collect();
+  slots.sort_by_key(|(slot, _)| *slot);
+  for (slot, type_path) in slots {
+    let value = if type_path == ":dynamic" {
+      Edn::tag("dynamic")
+    } else {
+      Edn::Str(type_path.as_str().into())
+    };
+    slots_map.insert_key(slot.as_str(), value);
+  }
+  slots_map.into()
+}
+
 /// Render snapshot content for runtime snapshot files such as `calcit.cirru`
 /// This is a shared utility function used by CLI edit commands
 pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
@@ -1777,6 +1840,7 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
         .collect::<Vec<_>>(),
     ),
   );
+  configs_map.insert_key("type-slots", type_slots_to_edn(&snapshot.configs.type_slots));
   edn_map.insert_key("configs", configs_map.into());
 
   // Build entries
@@ -1790,6 +1854,7 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
       "modules",
       Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
     );
+    entry_map.insert_key("type-slots", type_slots_to_edn(&v.type_slots));
     entries_map.insert_key(k.as_str(), entry_map.into());
   }
   edn_map.insert_key("entries", entries_map.into());
@@ -2867,6 +2932,54 @@ mod tests {
       err.contains(":configs (:version ...)") || err.contains("got ||"),
       "unexpected error: {err}"
     );
+  }
+
+  #[test]
+  fn test_entry_type_slots_round_trip_for_default_and_named_entries() {
+    let content = r#"{} (:package |mini)
+  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/reload!) (:version |0.0.0)
+    :modules $ []
+    :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
+  :entries $ {}
+    :server $ {} (:init-fn |mini/server-main!) (:reload-fn |mini/reload!) (:version |0.0.0)
+      :modules $ []
+      :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
+  :files $ {}
+    |mini $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |) (:code $ quote (defn main! () nil)) (:examples $ []) (:schema nil)
+        |reload! $ %{} :CodeEntry (:doc |) (:code $ quote (defn reload! () nil)) (:examples $ []) (:schema nil)
+"#;
+
+    let edn_data = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "mini.cirru").expect("snapshot should load");
+    assert_eq!(
+      snapshot.configs.type_slots.get("dispatch-op").map(String::as_str),
+      Some("mini.schema/ClientOp")
+    );
+    let server = snapshot.entries.get("server").expect("server entry");
+    assert_eq!(
+      server.type_slots.get("dispatch-op").map(String::as_str),
+      Some("mini.schema/ServerOp")
+    );
+    assert_eq!(server.type_slots.get("optional-op").map(String::as_str), Some(":dynamic"));
+
+    let rendered = render_snapshot_content(&snapshot).expect("snapshot should render");
+    let rendered_edn = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
+    let restored = load_snapshot_data(&rendered_edn, "mini.cirru").expect("rendered snapshot should load");
+    assert_eq!(restored.configs.type_slots, snapshot.configs.type_slots);
+    assert_eq!(restored.entries["server"].type_slots, server.type_slots);
+  }
+
+  #[test]
+  fn test_entry_type_slots_reject_duplicate_normalized_names() {
+    let slots = Edn::Map(EdnMapView(HashMap::from([
+      (Edn::tag("dispatch-op"), Edn::str("mini.schema/ClientOp")),
+      (Edn::str(":dispatch-op"), Edn::str("mini.schema/ServerOp")),
+    ])));
+    let err = parse_snapshot_type_slots(&slots, "configs").expect_err("duplicate normalized slot names should fail");
+    assert!(err.contains("duplicate slot name `:dispatch-op`"), "unexpected error: {err}");
   }
 
   #[test]

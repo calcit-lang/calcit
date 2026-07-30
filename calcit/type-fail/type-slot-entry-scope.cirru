@@ -2,9 +2,11 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |type-fail-type-slot-entry-scope)
   :configs $ {} (:init-fn |type-fail-type-slot-entry-scope.main/client-main!) (:reload-fn |type-fail-type-slot-entry-scope.main/reload!) (:version |0.0.0)
     :modules $ []
+    :type-slots $ {} (:dispatch-op |type-fail-type-slot-entry-scope.main/ClientOp)
   :entries $ {}
     :server $ {} (:init-fn |type-fail-type-slot-entry-scope.main/server-main!) (:reload-fn |type-fail-type-slot-entry-scope.main/reload!) (:version |0.0.0)
       :modules $ []
+      :type-slots $ {} (:dispatch-op |type-fail-type-slot-entry-scope.main/ServerOp)
   :files $ {}
     |type-fail-type-slot-entry-scope.main $ %{} :FileEntry
       :defs $ {}
@@ -25,7 +27,7 @@
               :args $ [] '*dispatch-op
         |client-main! $ %{} :CodeEntry (:doc "|Client entry binds dispatch-op for client enums")
           :code $ quote
-            defn client-main! () $ with-type-slot (:dispatch-op ClientOp)
+            defn client-main! ()
               accept-op $ :: :client/ping
               , nil
           :examples $ []
@@ -41,7 +43,7 @@
               :args $ []
         |server-main! $ %{} :CodeEntry (:doc "|Server entry binds the same slot name independently")
           :code $ quote
-            defn server-main! () $ with-type-slot (:dispatch-op ServerOp)
+            defn server-main! ()
               accept-op $ :: :server/ping
               , nil
           :examples $ []
