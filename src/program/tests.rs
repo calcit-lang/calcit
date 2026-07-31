@@ -37,27 +37,38 @@ fn import_rule_validation_reports_unknown_rule_kind() {
 }
 
 #[test]
-fn import_rule_validation_rejects_duplicate_local_bindings() {
+fn import_rule_validation_warns_for_duplicate_local_bindings() {
   let rules = [
     import_rule("audit.one", ":as", cirru_leaf("shared")),
     import_rule("audit.two", ":as", cirru_leaf("shared")),
   ];
-  let error = validate_import_rules(&rules).expect_err("duplicate local bindings should be rejected");
+  let warnings = validate_import_rules(&rules).expect("duplicate local bindings should remain executable");
 
-  assert!(error.contains("duplicate import binding `shared`"), "error: {error}");
-  assert!(error.contains("rules 1 and 2"), "error: {error}");
+  assert_eq!(warnings.len(), 1);
+  assert!(
+    warnings[0].contains("duplicate import binding `shared`"),
+    "warning: {}",
+    warnings[0]
+  );
+  assert!(warnings[0].contains("rule 2 takes precedence"), "warning: {}", warnings[0]);
 }
 
 #[test]
-fn import_rule_validation_reports_duplicate_refer_within_one_rule() {
+fn import_rule_validation_warns_for_duplicate_refer_within_one_rule() {
   let rules = [import_rule(
     "audit.math",
     ":refer",
     cirru_list(vec![cirru_leaf("[]"), cirru_leaf("add"), cirru_leaf("add")]),
   )];
-  let error = validate_import_rules(&rules).expect_err("duplicate refer in one rule should be rejected");
+  let warnings = validate_import_rules(&rules).expect("duplicate refer in one rule should remain executable");
 
-  assert!(error.contains("duplicate import binding `add` within rule 1"), "error: {error}");
+  assert_eq!(warnings.len(), 1);
+  assert!(
+    warnings[0].contains("duplicate import binding `add` within rule 1"),
+    "warning: {}",
+    warnings[0]
+  );
+  assert!(warnings[0].contains("takes precedence"), "warning: {}", warnings[0]);
 }
 
 #[test]
@@ -72,7 +83,28 @@ fn import_rule_validation_accepts_supported_rule_kinds() {
     import_rule("|chalk", ":default", cirru_leaf("chalk")),
   ];
 
-  validate_import_rules(&rules).expect("supported import rules should pass validation");
+  assert!(
+    validate_import_rules(&rules)
+      .expect("supported import rules should pass validation")
+      .is_empty()
+  );
+}
+
+#[test]
+fn duplicate_import_binding_uses_the_later_rule() {
+  let first = import_rule("audit.one", ":as", cirru_leaf("shared"));
+  let second = import_rule("audit.two", ":as", cirru_leaf("shared"));
+  let ns_form = cirru_list(vec![
+    cirru_leaf("ns"),
+    cirru_leaf("app.main"),
+    cirru_list(vec![cirru_leaf(":require"), first, second]),
+  ]);
+
+  let imports = extract_import_map(&ns_form, "app.main").expect("duplicate imports should remain executable");
+  assert_eq!(
+    imports.get("shared").map(|rule| rule.as_ref()),
+    Some(&ImportRule::NsAs(Arc::from("audit.two")))
+  );
 }
 
 #[test]

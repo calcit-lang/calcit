@@ -719,27 +719,30 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
 }
 
 /// Validate import rules before they are persisted or loaded into a program.
-/// Returns an error when a rule is malformed or multiple rules define the same local binding.
-pub fn validate_import_rules(rules: &[Cirru]) -> Result<(), String> {
+/// Malformed rules return an error; duplicate local bindings return warnings and keep last-rule-wins semantics.
+pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
   let mut bindings: HashMap<Arc<str>, usize> = HashMap::new();
+  let mut warnings = vec![];
   for (index, rule) in rules.iter().enumerate() {
     for (binding, _) in extract_import_rule(rule).map_err(|error| format!("import rule {}: {error}", index + 1))? {
       if let Some(previous_index) = bindings.insert(binding.clone(), index) {
         if previous_index == index {
-          return Err(format!(
-            "duplicate import binding `{binding}` within rule {}; remove the repeated `:refer` entry",
+          warnings.push(format!(
+            "duplicate import binding `{binding}` within rule {}; the later `:refer` entry takes precedence",
+            index + 1
+          ));
+        } else {
+          warnings.push(format!(
+            "duplicate import binding `{binding}` in rules {} and {}; rule {} takes precedence",
+            previous_index + 1,
+            index + 1,
             index + 1
           ));
         }
-        return Err(format!(
-          "duplicate import binding `{binding}` in rules {} and {}; use a unique alias or remove the duplicate `:refer` entry",
-          previous_index + 1,
-          index + 1
-        ));
       }
     }
   }
-  Ok(())
+  Ok(warnings)
 }
 
 fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
@@ -755,7 +758,10 @@ fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, 
         }
 
         let rules = &require_nodes[1..];
-        validate_import_rules(rules).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
+        let warnings = validate_import_rules(rules).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
+        for warning in warnings {
+          eprintln!("[Warn] in namespace '{ns_name}': {warning}");
+        }
         let mut import_map: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(rules.len());
         for rule_node in rules {
           for (target, rule) in extract_import_rule(rule_node).map_err(|e| format!("in namespace '{ns_name}': {e}"))? {

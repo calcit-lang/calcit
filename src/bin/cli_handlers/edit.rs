@@ -1957,7 +1957,9 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     return Err("Imports must be a Cirru list or JSON array of import rules.".to_string());
   };
 
-  validate_import_rules(&rules)?;
+  for warning in validate_import_rules(&rules)? {
+    eprintln!("{} in namespace '{}': {warning}", "Warning:".yellow(), opts.namespace);
+  }
 
   // Extract old imports for comparison
   let old_imports = extract_require_list(&file_data.ns.code);
@@ -2103,7 +2105,7 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
 
   let new_rule = parse_input_to_cirru(&raw)?;
 
-  validate_import_rules(std::slice::from_ref(&new_rule))?;
+  let _ = validate_import_rules(std::slice::from_ref(&new_rule))?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =
@@ -2142,7 +2144,9 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
     false
   };
 
-  validate_import_rules(&rules)?;
+  for warning in validate_import_rules(&rules)? {
+    eprintln!("{} in namespace '{}': {warning}", "Warning:".yellow(), opts.namespace);
+  }
 
   if replaced {
     println!(

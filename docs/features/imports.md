@@ -113,10 +113,11 @@ Import rules are validated both when a snapshot is loaded and before `cr edit ad
 
 - contain exactly three items;
 - use one of `:as`, `:refer`, or `:default`;
-- use a namespace/module leaf and symbol bindings in the positions required by that rule;
-- avoid defining the same local alias or referred symbol more than once.
+- use a namespace/module leaf and symbol bindings in the positions required by that rule.
 
 Malformed rules report their rule index; errors found while loading also identify the namespace. They no longer fail with an internal panic. Import editing is atomic: validation errors leave the snapshot unchanged.
+
+Duplicate local aliases or referred symbols are recoverable. Calcit writes a warning to stderr and continues with the later rule taking precedence. This preserves existing program execution while making accidental shadowing visible.
 
 To find definitions that are not reachable from the configured entry function, run:
 
