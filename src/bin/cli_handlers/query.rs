@@ -774,6 +774,7 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
 #[allow(clippy::items_after_test_module)]
 mod type_query_tests {
   use super::*;
+  use crate::cli_handlers::test_support::TestProject;
 
   #[test]
   fn parses_simple_type_tag_without_treating_it_as_a_call() {
@@ -852,15 +853,8 @@ mod type_query_tests {
 
   #[test]
   fn search_results_share_cursor_indices_and_can_select_one() {
-    let nonce = std::time::SystemTime::now()
-      .duration_since(std::time::UNIX_EPOCH)
-      .expect("test clock should be valid")
-      .as_nanos();
-    let directory = std::env::temp_dir().join(format!("calcit-query-cursor-test-{}-{nonce}", std::process::id()));
-    std::fs::create_dir(&directory).expect("query cursor test directory should be created");
-    let snapshot_file = directory.join("calcit.cirru");
-    std::fs::copy("calcit/test.cirru", &snapshot_file).expect("query cursor fixture should copy");
-    let snapshot_path = snapshot_file.to_string_lossy().into_owned();
+    let fixture = TestProject::from_fixture();
+    let snapshot_path = fixture.snapshot_string();
 
     let results = vec![(
       "app.main".to_string(),
@@ -945,13 +939,11 @@ mod type_query_tests {
         .selected_index,
       0
     );
-    let mut changed_snapshot = std::fs::read_to_string(&snapshot_file).expect("snapshot should read for revision change");
+    let mut changed_snapshot = std::fs::read_to_string(&fixture.path).expect("snapshot should read for revision change");
     changed_snapshot.push('\n');
-    std::fs::write(&snapshot_file, changed_snapshot).expect("snapshot revision should change");
+    std::fs::write(&fixture.path, changed_snapshot).expect("snapshot revision should change");
     let error = handle_repeat_cursor_search(&snapshot_path, true).expect_err("changed snapshot should reject a stale result index");
     assert!(error.contains("Snapshot changed since the saved cursor search"), "error: {error}");
-
-    std::fs::remove_dir_all(directory).expect("query cursor test directory should be removed");
   }
 
   #[test]
@@ -4057,90 +4049,66 @@ fn handle_repeat_cursor_search(input_path: &str, forward: bool) -> Result<(), St
   }
 }
 
-/// Search for leaf nodes (strings) in a definition
-fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>, common_opts: &SearchCommonOpts) -> Result<(), String> {
-  let snapshot = load_snapshot_for_search(input_path, common_opts)?;
+fn parse_search_start_path(start_path: Option<&str>) -> Result<Option<Vec<usize>>, String> {
+  start_path
+    .map(|path| parse_path(path).map_err(|error| format!("Invalid start path '{path}': {error}")))
+    .transpose()
+}
 
-  // Parse start_path if provided
-  let parsed_start_path: Option<Vec<usize>> = if let Some(path_str) = start_path {
-    if path_str.is_empty() {
-      Some(vec![])
-    } else {
-      Some(parse_path(path_str).map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
-    }
-  } else {
-    None
+fn parse_search_filter(filter: Option<&str>) -> Result<(Option<&str>, Option<&str>), String> {
+  let Some(filter) = filter else {
+    return Ok((None, None));
   };
+  let mut parts = filter.split('/');
+  let namespace = parts.next();
+  let definition = parts.next();
+  if parts.next().is_some() {
+    return Err(format!(
+      "Invalid filter format: '{filter}'. Use 'namespace' or 'namespace/definition'"
+    ));
+  }
+  Ok((namespace, definition))
+}
 
+fn collect_search_results<F>(
+  snapshot: &snapshot::Snapshot,
+  start_path: Option<&[usize]>,
+  filter: Option<&str>,
+  mut search: F,
+) -> Result<SearchResults, String>
+where
+  F: FnMut(&Cirru, &[usize]) -> Vec<(Vec<usize>, Cirru)>,
+{
+  let (filter_ns, filter_def) = parse_search_filter(filter)?;
   let mut all_results: SearchResults = Vec::new();
 
-  // Parse filter to determine scope
-  let (filter_ns, filter_def) = if let Some(f) = common_opts.filter {
-    if f.contains('/') {
-      let parts: Vec<&str> = f.split('/').collect();
-      if parts.len() == 2 {
-        (Some(parts[0]), Some(parts[1]))
-      } else {
-        return Err(format!("Invalid filter format: '{f}'. Use 'namespace' or 'namespace/definition'"));
-      }
-    } else {
-      (Some(f), None)
-    }
-  } else {
-    (None, None)
-  };
-
-  // Search through files
   for (ns, file_data) in &snapshot.files {
-    // Skip if namespace doesn't match filter
-    if let Some(filter_namespace) = filter_ns
-      && ns != filter_namespace
-    {
+    if filter_ns.is_some_and(|filter_namespace| ns != filter_namespace) {
       continue;
     }
-
-    // Search through definitions in this namespace
     for (def_name, code_entry) in &file_data.defs {
-      // Skip if definition doesn't match filter
-      if let Some(filter_definition) = filter_def
-        && def_name != filter_definition
-      {
+      if filter_def.is_some_and(|filter_definition| def_name != filter_definition) {
         continue;
       }
-
-      // Navigate to start path if specified
-      let search_root = if let Some(ref start_p) = parsed_start_path {
-        if start_p.is_empty() {
-          code_entry.code.clone()
-        } else {
-          match navigate_to_path(&code_entry.code, start_p) {
-            Ok(node) => node,
-            Err(e) => {
-              eprintln!(
-                "{} Failed to navigate to start path in {}/{}: {}",
-                "Warning:".yellow(),
-                ns,
-                def_name,
-                e
-              );
-              continue;
-            }
+      let owned_search_root = if let Some(path) = start_path {
+        match navigate_to_path(&code_entry.code, path) {
+          Ok(node) => Some(node),
+          Err(error) => {
+            eprintln!(
+              "{} Failed to navigate to start path in {}/{}: {}",
+              "Warning:".yellow(),
+              ns,
+              def_name,
+              error
+            );
+            continue;
           }
         }
       } else {
-        code_entry.code.clone()
+        None
       };
-
-      let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
-      let results = search_leaf_nodes(
-        &search_root,
-        pattern,
-        common_opts.loose,
-        common_opts.regex,
-        common_opts.max_depth,
-        base_path,
-      );
-
+      let search_root = owned_search_root.as_ref().unwrap_or(&code_entry.code);
+      let results = search(search_root, start_path.unwrap_or(&[]));
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }
@@ -4148,141 +4116,228 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
   }
 
   all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
+  Ok(all_results)
+}
 
+#[derive(Clone, Copy)]
+struct SearchResultDisplay<'a> {
+  highlight_target: Option<&'a str>,
+  bracket_path: bool,
+  show_parent_path: bool,
+}
+
+fn print_search_results_human(
+  snapshot: &snapshot::Snapshot,
+  all_results: &SearchResults,
+  common_opts: &SearchCommonOpts,
+  display: SearchResultDisplay<'_>,
+) {
+  if all_results.is_empty() {
+    println!("{}", "No matches found.".yellow());
+    return;
+  }
+
+  let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
+  println!(
+    "{} {} match(es) found in {} definition(s):\n",
+    "Results:".bold().green(),
+    total_matches,
+    all_results.len()
+  );
+
+  let mut definition_offset = 0_usize;
+  for (ns, def_name, results) in all_results {
+    println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
+    print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
+
+    if let Some(file_data) = snapshot.files.get(ns)
+      && let Some(code_entry) = file_data.defs.get(def_name)
+    {
+      let total = results.len();
+      let (start, end) = detailed_window(common_opts.detail_offset, total);
+      let detailed_count = end.saturating_sub(start);
+
+      for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
+        let cursor_index = definition_offset + local_index;
+        if path.is_empty() {
+          let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
+          if truncated {
+            println!(
+              "    {} {} {} ⟪…⟫",
+              format!("[#{cursor_index}]").cyan(),
+              "(root)".cyan(),
+              content.dimmed()
+            );
+          } else {
+            println!(
+              "    {} {} {}",
+              format!("[#{cursor_index}]").cyan(),
+              "(root)".cyan(),
+              content.dimmed()
+            );
+          }
+        } else {
+          let path_str = format_path(path);
+          let path_label = if display.bracket_path { format!("[{path_str}]") } else { path_str };
+          let ((expr_preview, expr_truncated), parent_previews) =
+            expression_and_parent_preview(&code_entry.code, path, node, display.highlight_target, common_opts.loose);
+          let (display_preview, display_truncated) = parent_previews
+            .first()
+            .map(|(text, truncated)| (text.as_str(), *truncated))
+            .unwrap_or((expr_preview.as_str(), expr_truncated));
+          if display_truncated {
+            println!(
+              "    {} {} {} ⟪…⟫",
+              format!("[#{cursor_index}]").cyan(),
+              path_label.cyan(),
+              display_preview
+            );
+          } else {
+            println!(
+              "    {} {} {}",
+              format!("[#{cursor_index}]").cyan(),
+              path_label.cyan(),
+              display_preview
+            );
+          }
+          if display.show_parent_path && common_opts.parent_path {
+            let parent_path_str = snapshot_code_path(&path[..path.len() - 1]);
+            println!("       {} {}", "parent:".dimmed(), parent_path_str.dimmed());
+          }
+        }
+      }
+
+      if start > 0 {
+        println!(
+          "    {}",
+          format!(
+            "[#{}..#{}] {start} matches compressed before window",
+            definition_offset,
+            definition_offset + start - 1
+          )
+          .dimmed()
+        );
+      }
+      if end < total {
+        println!(
+          "    {}",
+          format!(
+            "[#{}..#{}] {} matches compressed after window",
+            definition_offset + end,
+            definition_offset + total - 1,
+            total - end
+          )
+          .dimmed()
+        );
+      }
+    }
+
+    definition_offset += results.len();
+    println!();
+  }
+
+  let mut tips = Tips::new();
+  if total_matches > 10 && common_opts.loose {
+    tips.add_with_priority(
+      TipPriority::High,
+      format!(
+        "Many matches ({total_matches}); add {} to show exact matches only",
+        "--exact".yellow()
+      ),
+    );
+  }
+  tips.print();
+}
+
+struct SearchCommandInfo<'a> {
+  envelope_command: &'static str,
+  cursor_command: &'static str,
+  pattern: &'a str,
+  pattern_is_json: bool,
+  start_path: Option<&'a str>,
+  display: SearchResultDisplay<'a>,
+}
+
+fn finish_search_results(
+  input_path: &str,
+  snapshot: &snapshot::Snapshot,
+  all_results: &SearchResults,
+  common_opts: &SearchCommonOpts,
+  info: SearchCommandInfo<'_>,
+) -> Result<(), String> {
   if let Some(selected_index) = common_opts.set_cursor {
-    let last_query = cursor_last_query(input_path, "search", pattern, false, start_path, common_opts, selected_index)?;
-    maybe_set_cursor_from_search_results(input_path, &all_results, selected_index, last_query)?;
+    let last_query = cursor_last_query(
+      input_path,
+      info.cursor_command,
+      info.pattern,
+      info.pattern_is_json,
+      info.start_path,
+      common_opts,
+      selected_index,
+    )?;
+    maybe_set_cursor_from_search_results(input_path, all_results, selected_index, last_query)?;
   }
 
   if common_opts.compact_output {
     return Ok(());
   }
-
   if common_opts.format == QueryRenderFormat::Json {
     println!(
       "{}",
-      format_search_results_json("query.search", pattern, false, start_path, common_opts, &snapshot, &all_results)?
+      format_search_results_json(
+        info.envelope_command,
+        info.pattern,
+        info.pattern_is_json,
+        info.start_path,
+        common_opts,
+        snapshot,
+        all_results,
+      )?
     );
     return Ok(());
   }
-
-  // Print results grouped by namespace/definition
-  if all_results.is_empty() {
-    println!("{}", "No matches found.".yellow());
-  } else {
-    let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
-    println!(
-      "{} {} match(es) found in {} definition(s):\n",
-      "Results:".bold().green(),
-      total_matches,
-      all_results.len()
-    );
-
-    let mut definition_offset = 0_usize;
-    for (ns, def_name, results) in &all_results {
-      println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
-      print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
-
-      // Load code_entry to print results
-      if let Some(file_data) = snapshot.files.get(ns)
-        && let Some(code_entry) = file_data.defs.get(def_name)
-      {
-        let total = results.len();
-        let (start, end) = detailed_window(common_opts.detail_offset, total);
-        let detailed_count = end.saturating_sub(start);
-
-        for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
-          let cursor_index = definition_offset + local_index;
-          if path.is_empty() {
-            let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
-            if truncated {
-              println!(
-                "    {} {} {} ⟪…⟫",
-                format!("[#{cursor_index}]").cyan(),
-                "(root)".cyan(),
-                content.dimmed()
-              );
-            } else {
-              println!(
-                "    {} {} {}",
-                format!("[#{cursor_index}]").cyan(),
-                "(root)".cyan(),
-                content.dimmed()
-              );
-            }
-          } else {
-            let path_str = format_path(path);
-            let ((expr_preview, expr_truncated), parent_previews) =
-              expression_and_parent_preview(&code_entry.code, path, node, Some(pattern), common_opts.loose);
-            let (display_preview, display_truncated) = parent_previews
-              .first()
-              .map(|(text, truncated)| (text.as_str(), *truncated))
-              .unwrap_or((expr_preview.as_str(), expr_truncated));
-            if display_truncated {
-              println!(
-                "    {} {} {} ⟪…⟫",
-                format!("[#{cursor_index}]").cyan(),
-                path_str.cyan(),
-                display_preview
-              );
-            } else {
-              println!(
-                "    {} {} {}",
-                format!("[#{cursor_index}]").cyan(),
-                path_str.cyan(),
-                display_preview
-              );
-            }
-            // Print parent path (stripped last index) when --parent-path is requested
-            if common_opts.parent_path && !path.is_empty() {
-              let parent_path_str = snapshot_code_path(&path[..path.len() - 1]);
-              println!("       {} {}", "parent:".dimmed(), parent_path_str.dimmed());
-            }
-          }
-        }
-
-        if start > 0 {
-          println!(
-            "    {}",
-            format!(
-              "[#{}..#{}] {start} matches compressed before window",
-              definition_offset,
-              definition_offset + start - 1
-            )
-            .dimmed()
-          );
-        }
-        if end < total {
-          println!(
-            "    {}",
-            format!(
-              "[#{}..#{}] {} matches compressed after window",
-              definition_offset + end,
-              definition_offset + total - 1,
-              total - end
-            )
-            .dimmed()
-          );
-        }
-      }
-      definition_offset += results.len();
-      println!();
-    }
-
-    let mut tips = Tips::new();
-    if total_matches > 10 && common_opts.loose {
-      tips.add_with_priority(
-        TipPriority::High,
-        format!(
-          "Many matches ({total_matches}); add {} to show exact matches only",
-          "--exact".yellow()
-        ),
-      );
-    }
-    tips.print();
-  }
-
+  print_search_results_human(snapshot, all_results, common_opts, info.display);
   Ok(())
+}
+
+/// Search for leaf nodes (strings) in a definition
+fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>, common_opts: &SearchCommonOpts) -> Result<(), String> {
+  let snapshot = load_snapshot_for_search(input_path, common_opts)?;
+  let parsed_start_path = parse_search_start_path(start_path)?;
+  let all_results = collect_search_results(
+    &snapshot,
+    parsed_start_path.as_deref(),
+    common_opts.filter,
+    |search_root, base_path| {
+      search_leaf_nodes(
+        search_root,
+        pattern,
+        common_opts.loose,
+        common_opts.regex,
+        common_opts.max_depth,
+        base_path,
+      )
+    },
+  )?;
+
+  finish_search_results(
+    input_path,
+    &snapshot,
+    &all_results,
+    common_opts,
+    SearchCommandInfo {
+      envelope_command: "query.search",
+      cursor_command: "search",
+      pattern,
+      pattern_is_json: false,
+      start_path,
+      display: SearchResultDisplay {
+        highlight_target: Some(pattern),
+        bracket_path: false,
+        show_parent_path: true,
+      },
+    },
+  )
 }
 
 /// Search for structural expressions across project or in filtered scope
@@ -4294,9 +4349,7 @@ fn handle_search_expr(
   common_opts: &SearchCommonOpts,
 ) -> Result<(), String> {
   let snapshot = load_snapshot_for_search(input_path, common_opts)?;
-  let parsed_start_path = start_path
-    .map(|path| parse_path(path).map_err(|error| format!("Invalid start path '{path}': {error}")))
-    .transpose()?;
+  let parsed_start_path = parse_search_start_path(start_path)?;
 
   let pattern_node = if json {
     let json_val: serde_json::Value = serde_json::from_str(pattern).map_err(|e| format!("Failed to parse JSON pattern: {e}"))?;
@@ -4314,193 +4367,31 @@ fn handle_search_expr(
     _ => None,
   };
 
-  let mut all_results: SearchResults = Vec::new();
+  let all_results = collect_search_results(
+    &snapshot,
+    parsed_start_path.as_deref(),
+    common_opts.filter,
+    |search_root, base_path| search_expr_nodes(search_root, &pattern_node, common_opts.loose, common_opts.max_depth, base_path),
+  )?;
 
-  let (filter_ns, filter_def) = if let Some(f) = common_opts.filter {
-    if f.contains('/') {
-      let parts: Vec<&str> = f.split('/').collect();
-      if parts.len() == 2 {
-        (Some(parts[0]), Some(parts[1]))
-      } else {
-        return Err(format!("Invalid filter format: '{f}'. Use 'namespace' or 'namespace/definition'"));
-      }
-    } else {
-      (Some(f), None)
-    }
-  } else {
-    (None, None)
-  };
-
-  for (ns, file_data) in &snapshot.files {
-    if let Some(filter_namespace) = filter_ns
-      && ns != filter_namespace
-    {
-      continue;
-    }
-
-    for (def_name, code_entry) in &file_data.defs {
-      if let Some(filter_definition) = filter_def
-        && def_name != filter_definition
-      {
-        continue;
-      }
-
-      let search_root = if let Some(path) = &parsed_start_path {
-        match navigate_to_path(&code_entry.code, path) {
-          Ok(node) => node,
-          Err(error) => {
-            eprintln!(
-              "{} Failed to navigate to start path in {}/{}: {}",
-              "Warning:".yellow(),
-              ns,
-              def_name,
-              error
-            );
-            continue;
-          }
-        }
-      } else {
-        code_entry.code.clone()
-      };
-      let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
-      let results = search_expr_nodes(&search_root, &pattern_node, common_opts.loose, common_opts.max_depth, base_path);
-      if !results.is_empty() {
-        all_results.push((ns.clone(), def_name.clone(), results));
-      }
-    }
-  }
-
-  all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
-
-  if let Some(selected_index) = common_opts.set_cursor {
-    let last_query = cursor_last_query(input_path, "search-expr", pattern, json, start_path, common_opts, selected_index)?;
-    maybe_set_cursor_from_search_results(input_path, &all_results, selected_index, last_query)?;
-  }
-
-  if common_opts.compact_output {
-    return Ok(());
-  }
-
-  if common_opts.format == QueryRenderFormat::Json {
-    println!(
-      "{}",
-      format_search_results_json("query.search-expr", pattern, json, start_path, common_opts, &snapshot, &all_results,)?
-    );
-    return Ok(());
-  }
-
-  if all_results.is_empty() {
-    println!("{}", "No matches found.".yellow());
-  } else {
-    let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
-    println!(
-      "{} {} match(es) found in {} definition(s):\n",
-      "Results:".bold().green(),
-      total_matches,
-      all_results.len()
-    );
-
-    let mut definition_offset = 0_usize;
-    for (ns, def_name, results) in &all_results {
-      println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
-      print_detail_window_hint(results.len(), common_opts.detail_offset, "matches");
-
-      if let Some(file_data) = snapshot.files.get(ns)
-        && let Some(code_entry) = file_data.defs.get(def_name)
-      {
-        let total = results.len();
-        let (start, end) = detailed_window(common_opts.detail_offset, total);
-        let detailed_count = end.saturating_sub(start);
-
-        for (local_index, (path, node)) in results.iter().enumerate().skip(start).take(detailed_count) {
-          let cursor_index = definition_offset + local_index;
-          let path_str = format_path(path);
-          if path.is_empty() {
-            let (content, truncated) = preview_node_oneline(&code_entry.code, 110);
-            if truncated {
-              println!(
-                "    {} {} {} ⟪…⟫",
-                format!("[#{cursor_index}]").cyan(),
-                "(root)".cyan(),
-                content.dimmed()
-              );
-            } else {
-              println!(
-                "    {} {} {}",
-                format!("[#{cursor_index}]").cyan(),
-                "(root)".cyan(),
-                content.dimmed()
-              );
-            }
-          } else {
-            let ((expr_preview, expr_truncated), parent_previews) =
-              expression_and_parent_preview(&code_entry.code, path, node, highlight_target, common_opts.loose);
-            let (display_preview, display_truncated) = parent_previews
-              .first()
-              .map(|(text, truncated)| (text.as_str(), *truncated))
-              .unwrap_or((expr_preview.as_str(), expr_truncated));
-            if display_truncated {
-              println!(
-                "    {} {} {} ⟪…⟫",
-                format!("[#{cursor_index}]").cyan(),
-                format!("[{path_str}]").cyan(),
-                display_preview
-              );
-            } else {
-              println!(
-                "    {} {} {}",
-                format!("[#{cursor_index}]").cyan(),
-                format!("[{path_str}]").cyan(),
-                display_preview
-              );
-            }
-          }
-        }
-
-        if start > 0 {
-          println!(
-            "    {}",
-            format!(
-              "[#{}..#{}] {start} matches compressed before window",
-              definition_offset,
-              definition_offset + start - 1
-            )
-            .dimmed()
-          );
-        }
-        if end < total {
-          println!(
-            "    {}",
-            format!(
-              "[#{}..#{}] {} matches compressed after window",
-              definition_offset + end,
-              definition_offset + total - 1,
-              total - end
-            )
-            .dimmed()
-          );
-        }
-      }
-
-      definition_offset += results.len();
-
-      println!();
-    }
-
-    let mut tips = Tips::new();
-    if total_matches > 10 && common_opts.loose {
-      tips.add_with_priority(
-        TipPriority::High,
-        format!(
-          "Many matches ({total_matches}); add {} to show exact matches only",
-          "--exact".yellow()
-        ),
-      );
-    }
-    tips.print();
-  }
-
-  Ok(())
+  finish_search_results(
+    input_path,
+    &snapshot,
+    &all_results,
+    common_opts,
+    SearchCommandInfo {
+      envelope_command: "query.search-expr",
+      cursor_command: "search-expr",
+      pattern,
+      pattern_is_json: json,
+      start_path,
+      display: SearchResultDisplay {
+        highlight_target,
+        bracket_path: true,
+        show_parent_path: false,
+      },
+    },
+  )
 }
 
 /// Helper function to convert JSON to Cirru

@@ -7,13 +7,6 @@
   :files $ {}
     |test-cond.main $ %{} :FileEntry
       :defs $ {}
-        |log-title $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn log-title (title) (println) (println title) (println)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) (test-field-match) true
@@ -50,11 +43,12 @@
                 assert= (detect-x 1) |one
                 assert= (detect-x 2) |two
                 assert= (detect-x 3) |else
-              inside-eval: $ assert=
-                macroexpand $ quote
-                  case-default x |nothing (1 |one) (2 |two)
-                quote $ &let (v__2 x)
-                  &case v__2 |nothing (1 |one) (2 |two)
+              inside-eval: (&reset-gensym-index!)
+                assert=
+                  macroexpand $ quote
+                    case-default x |nothing (1 |one) (2 |two)
+                  quote $ &let (v__1 x)
+                    &case v__1 |nothing (1 |one) (2 |two)
               &let
                 detect-x $ fn (x)
                   case-default x |nothing (1 |one) (2 |two)
@@ -176,4 +170,4 @@
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-cond.main $ :require
-            [] util.core :refer $ [] inside-eval:
+            util.core :refer $ inside-eval: log-title

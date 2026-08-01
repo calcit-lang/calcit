@@ -8,8 +8,7 @@ use super::common::{
   read_code_input, resolve_definition_lookup,
 };
 use super::cursor::{
-  TreeCursorMutation, maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument,
-  resolve_cursor_target_argument,
+  maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
@@ -24,6 +23,7 @@ use super::edit::{
   save_snapshot,
 };
 use super::query::resolve_path_expression;
+use super::tree_mutation::{TreeCursorMutation, TreeOperation};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helper functions
@@ -708,7 +708,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
     tips.print();
   }
 
-  let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&new_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&new_node))?;
   code_entry.code = new_code.clone();
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -780,7 +780,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
     tips.print();
   }
 
-  let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&processed_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -853,7 +853,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   sorted_matches.sort_by(|a, b| b.0.cmp(&a.0));
 
   for (path, _) in sorted_matches {
-    match apply_operation_at_path(&new_code, &path, "replace", Some(&replacement_node)) {
+    match apply_operation_at_path(&new_code, &path, TreeOperation::Replace, Some(&replacement_node)) {
       Ok(updated_code) => {
         new_code = updated_code;
         replaced_count += 1;
@@ -940,7 +940,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
       let old_node = Cirru::Leaf(old_value.to_string().into());
       println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
 
-      let new_code = apply_operation_at_path(&code_entry.code, &full_path, "replace", Some(&replacement_node))?;
+      let new_code = apply_operation_at_path(&code_entry.code, &full_path, TreeOperation::Replace, Some(&replacement_node))?;
       code_entry.code = new_code;
       save_snapshot(&snapshot, snapshot_file)?;
       println!("{} Replaced occurrence [{}]", "✓".green(), pick_index);
@@ -1018,7 +1018,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   // Show diff preview
   println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
 
-  let new_code = apply_operation_at_path(&code_entry.code, &full_path, "replace", Some(&replacement_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, &full_path, TreeOperation::Replace, Some(&replacement_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -1111,7 +1111,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     tips.print();
   }
 
-  let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
+  let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Delete, None)?;
   code_entry.code = new_code.clone();
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -1182,19 +1182,47 @@ fn handle_batch_delete(opts: &TreeBatchDeleteCommand, snapshot_file: &str) -> Re
 }
 
 fn handle_insert_before(opts: &TreeInsertBeforeCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(&opts.target, &opts.path, "insert-before", opts, snapshot_file, opts.depth)
+  generic_insert_handler(
+    &opts.target,
+    &opts.path,
+    TreeOperation::InsertBefore,
+    opts,
+    snapshot_file,
+    opts.depth,
+  )
 }
 
 fn handle_insert_after(opts: &TreeInsertAfterCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(&opts.target, &opts.path, "insert-after", opts, snapshot_file, opts.depth)
+  generic_insert_handler(
+    &opts.target,
+    &opts.path,
+    TreeOperation::InsertAfter,
+    opts,
+    snapshot_file,
+    opts.depth,
+  )
 }
 
 fn handle_insert_child(opts: &TreeInsertChildCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(&opts.target, &opts.path, "insert-child", opts, snapshot_file, opts.depth)
+  generic_insert_handler(
+    &opts.target,
+    &opts.path,
+    TreeOperation::InsertChild,
+    opts,
+    snapshot_file,
+    opts.depth,
+  )
 }
 
 fn handle_append_child(opts: &TreeAppendChildCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(&opts.target, &opts.path, "append-child", opts, snapshot_file, opts.depth)
+  generic_insert_handler(
+    &opts.target,
+    &opts.path,
+    TreeOperation::AppendChild,
+    opts,
+    snapshot_file,
+    opts.depth,
+  )
 }
 
 // Generic trait for insert-like operations
@@ -1266,7 +1294,7 @@ impl InsertOperation for TreeStructuralCommand {
 fn generic_insert_handler<T: InsertOperation>(
   target: &str,
   path_str: &str,
-  operation: &str,
+  operation: TreeOperation,
   opts: &T,
   snapshot_file: &str,
   _depth: usize,
@@ -1310,7 +1338,7 @@ fn generic_insert_handler<T: InsertOperation>(
   };
 
   // Show diff preview
-  println!("\n{}: {}", "Preview".blue().bold(), operation);
+  println!("\n{}: {}", "Preview".blue().bold(), operation.as_str());
   println!("{}:", "Node to insert".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 8));
   println!();
@@ -1328,7 +1356,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Applied '{}'", "✓".green(), operation);
+  println!("{} Applied '{}'", "✓".green(), operation.as_str());
   println!();
   println!("{}:", "Inserted node".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 10));
@@ -1347,7 +1375,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   // Explain index impact based on operation
   match operation {
-    "insert-before" => {
+    TreeOperation::InsertBefore => {
       if !path.is_empty() {
         let insert_index = path[path.len() - 1];
         println!(
@@ -1364,7 +1392,7 @@ fn generic_insert_handler<T: InsertOperation>(
         );
       }
     }
-    "insert-after" => {
+    TreeOperation::InsertAfter => {
       if !path.is_empty() {
         let ref_index = path[path.len() - 1];
         println!(
@@ -1374,35 +1402,41 @@ fn generic_insert_handler<T: InsertOperation>(
         );
       }
     }
-    "insert-child" => {
+    TreeOperation::InsertChild => {
       println!(
         "{}: Node inserted as first child (index 0), all existing children shifted up by 1",
         "Index impact".yellow().bold()
       );
       println!("   Old child [0] → New child [1], [1] → [2], etc.");
     }
-    "append-child" => {
+    TreeOperation::AppendChild => {
       println!(
         "{}: Node appended as last child, no index changes to existing nodes",
         "Index impact".green().bold()
       );
       println!("   {}:  Use this for multiple insertions to keep paths stable", "Tip".blue().bold());
     }
-    _ => {}
+    _ => unreachable!("generic_insert_handler only accepts insert operations"),
   }
 
   Ok(())
 }
 
 fn handle_swap_next(opts: &TreeSwapNextCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_swap_handler(&opts.target, &opts.path, "swap-next-sibling", snapshot_file, opts.depth)
+  generic_swap_handler(&opts.target, &opts.path, TreeOperation::SwapNextSibling, snapshot_file, opts.depth)
 }
 
 fn handle_swap_prev(opts: &TreeSwapPrevCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_swap_handler(&opts.target, &opts.path, "swap-prev-sibling", snapshot_file, opts.depth)
+  generic_swap_handler(&opts.target, &opts.path, TreeOperation::SwapPrevSibling, snapshot_file, opts.depth)
 }
 
-fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_file: &str, _depth: usize) -> Result<(), String> {
+fn generic_swap_handler(
+  target: &str,
+  path_str: &str,
+  operation: TreeOperation,
+  snapshot_file: &str,
+  _depth: usize,
+) -> Result<(), String> {
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
@@ -1432,7 +1466,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Applied '{}'", "✓".green(), operation);
+  println!("{} Applied '{}'", "✓".green(), operation.as_str());
   println!();
 
   // Explain what was swapped
@@ -1445,7 +1479,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     };
 
     match operation {
-      "swap-next-sibling" => {
+      TreeOperation::SwapNextSibling => {
         println!(
           "{}: Swapped child [{}] with [{}] under parent {}",
           "Index change".yellow().bold(),
@@ -1454,7 +1488,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
           parent_display
         );
       }
-      "swap-prev-sibling" => {
+      TreeOperation::SwapPrevSibling => {
         println!(
           "{}: Swapped child [{}] with [{}] under parent {}",
           "Index change".yellow().bold(),
@@ -1463,7 +1497,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
           parent_display
         );
       }
-      _ => {}
+      _ => unreachable!("generic_swap_handler only accepts swap operations"),
     }
     println!();
   }
@@ -1607,7 +1641,7 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
   println!("{}", format_preview_with_type(&child_node, opts.depth));
   println!();
 
-  let new_code = apply_operation_at_path(&code_entry.code, parent_path, "replace", Some(&child_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, parent_path, TreeOperation::Replace, Some(&child_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -1652,7 +1686,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
   println!("{}", format_preview_with_type(&new_node, opts.depth));
   println!();
 
-  let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&new_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&new_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;

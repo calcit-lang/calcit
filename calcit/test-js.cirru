@@ -2,7 +2,7 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-js) (:version |0.0.0)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-js.main/main!) (:mode :native) (:reload-fn 'test-js.main/reload!)
-      :modules $ []
+      :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
     |test-js.main $ %{} :FileEntry
@@ -13,13 +13,6 @@
               &data-to-code $ parse-cirru-edn s
           :examples $ []
           :schema $ :: 'Dynamic
-        |log-title $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn log-title (title) (println) (println title) (println)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)
@@ -310,3 +303,4 @@
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)
+            util.core :refer $ log-title

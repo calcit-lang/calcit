@@ -10,14 +10,16 @@ use cirru_parser::Cirru;
 use colored::Colorize;
 use md5::{Digest, Md5};
 use std::collections::BTreeMap;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::atomic_write::{StagedFile, stage_atomic_file};
 use super::common::{cirru_to_json_value, format_path, parse_path};
 use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target};
+use super::tree_mutation::{
+  TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, transform_cursor_path, transform_delete,
+};
 
 const LEGACY_CURSOR_FILE: &str = ".calcit-cursor.cirru";
 const ACTIVE_CURSOR: &str = "main";
@@ -73,49 +75,6 @@ struct CursorDocument {
   marks: BTreeMap<String, CursorState>,
   last_query: Option<CursorLastQuery>,
   clipboard: Option<CursorClipboard>,
-}
-
-struct StagedFile {
-  destination: PathBuf,
-  temporary: PathBuf,
-  committed: bool,
-}
-
-impl StagedFile {
-  fn commit(mut self) -> Result<(), String> {
-    fs::rename(&self.temporary, &self.destination).map_err(|error| {
-      format!(
-        "Failed to atomically replace '{}' with '{}': {error}",
-        self.destination.display(),
-        self.temporary.display()
-      )
-    })?;
-    self.committed = true;
-    Ok(())
-  }
-}
-
-impl Drop for StagedFile {
-  fn drop(&mut self) {
-    if !self.committed {
-      let _ = fs::remove_file(&self.temporary);
-    }
-  }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum TreeCursorMutation {
-  NoPathShift,
-  Replace { path: Vec<usize> },
-  InsertBefore { path: Vec<usize> },
-  InsertAfter { path: Vec<usize> },
-  InsertChild { path: Vec<usize> },
-  Delete { path: Vec<usize> },
-  SwapNext { path: Vec<usize> },
-  SwapPrev { path: Vec<usize> },
-  Unwrap { path: Vec<usize>, child_count: usize },
-  Raise { path: Vec<usize> },
-  Wrap { path: Vec<usize> },
 }
 
 pub fn set_cursor_after_mode(mode: &str) -> Result<(), String> {
@@ -456,8 +415,8 @@ fn barf_first(snapshot_file: &str) -> Result<(), String> {
     .get_mut(namespace)
     .and_then(|file| file.defs.get_mut(definition))
     .ok_or_else(|| format!("Definition '{}' not found", state.target))?;
-  let without_first = apply_operation_at_path(&entry.code, &child_path, "delete", None)?;
-  entry.code = apply_operation_at_path(&without_first, &state.path, "insert-before", Some(&first_child))?;
+  let without_first = apply_operation_at_path(&entry.code, &child_path, TreeOperation::Delete, None)?;
+  entry.code = apply_operation_at_path(&without_first, &state.path, TreeOperation::InsertBefore, Some(&first_child))?;
 
   let mut selected_path = state.path.clone();
   *selected_path.last_mut().expect("root was rejected above") += 1;
@@ -498,7 +457,11 @@ fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Resul
   entry.code = apply_operation_at_path(
     &entry.code,
     &state.path,
-    if opts.at == "before" { "insert-before" } else { "insert-after" },
+    if opts.at == "before" {
+      TreeOperation::InsertBefore
+    } else {
+      TreeOperation::InsertAfter
+    },
     Some(&selected),
   )?;
 
@@ -737,7 +700,7 @@ fn build_cursor_preview_from_tree(definition: &Cirru, node: &Cirru, path: &[usiz
     Ok(cirru_parser::focus_cirru_preview_with_options(definition, path, &options))
   } else {
     let marker = Cirru::List(vec![Cirru::leaf("CURSOR"), node.clone()]);
-    apply_operation_at_path(definition, path, "replace", Some(&marker))
+    apply_operation_at_path(definition, path, TreeOperation::Replace, Some(&marker))
   }
 }
 
@@ -1112,7 +1075,7 @@ fn store_cursor_clipboard(snapshot_file: &str, mode: &str, cut: bool) -> Result<
       .get_mut(namespace)
       .and_then(|file| file.defs.get_mut(definition))
       .ok_or_else(|| format!("Definition '{}' not found", state.target))?;
-    entry.code = apply_operation_at_path(&entry.code, &state.path, "delete", None)?;
+    entry.code = apply_operation_at_path(&entry.code, &state.path, TreeOperation::Delete, None)?;
     document.active.path = transform_delete(&state.path, &state.path).0;
     refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
     transform_auxiliary_positions(&mut document, &state.target, snapshot_file, &snapshot, |path| {
@@ -1145,18 +1108,8 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
     .clipboard
     .clone()
     .ok_or("Cursor clipboard is empty. Use `cr cursor copy` or `cr cursor cut` first.")?;
-  let operation = match at {
-    "before" => "insert-before",
-    "after" => "insert-after",
-    "prepend-child" => "insert-child",
-    "append-child" => "append-child",
-    "replace" => "replace",
-    other => {
-      return Err(format!(
-        "Unsupported paste position '{other}'. Use before, after, prepend-child, append-child, or replace."
-      ));
-    }
-  };
+  let operation = TreeOperation::from_insert_position(at)
+    .ok_or_else(|| format!("Unsupported paste position '{at}'. Use before, after, prepend-child, append-child, or replace."))?;
 
   if state.path.is_empty() && matches!(at, "before" | "after") {
     return Err("Cannot paste before or after the definition root; use --at prepend-child, append-child, or replace.".to_string());
@@ -1177,25 +1130,11 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
   };
   entry.code = apply_operation_at_path(&entry.code, &state.path, operation, Some(&clipboard.tree))?;
 
-  let mut pasted_path = state.path.clone();
-  match at {
-    "after" => *pasted_path.last_mut().expect("root was rejected above") += 1,
-    "prepend-child" => pasted_path.push(0),
-    "append-child" => pasted_path.push(append_index),
-    "before" | "replace" => {}
-    _ => unreachable!(),
-  }
+  let pasted_path = operation.inserted_path(&state.path, append_index)?;
   push_bounded(&mut document.history, state.clone(), CURSOR_HISTORY_LIMIT);
   document.active.path = pasted_path;
   refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot)?;
-  let mutation = match at {
-    "before" => TreeCursorMutation::InsertBefore { path: state.path.clone() },
-    "after" => TreeCursorMutation::InsertAfter { path: state.path.clone() },
-    "prepend-child" => TreeCursorMutation::InsertChild { path: state.path.clone() },
-    "append-child" => TreeCursorMutation::NoPathShift,
-    "replace" => TreeCursorMutation::Replace { path: state.path.clone() },
-    _ => unreachable!(),
-  };
+  let mutation = operation.cursor_mutation(state.path.clone());
   transform_auxiliary_positions(&mut document, &state.target, snapshot_file, &snapshot, |path| {
     transform_cursor_path(path, &mutation).0
   })?;
@@ -1471,7 +1410,7 @@ pub(crate) fn maintain_cursor_after_node_move(
   target: &str,
   source_path: &[usize],
   destination_path: &[usize],
-  operation: &str,
+  operation: TreeOperation,
   append_index: usize,
 ) -> Result<(), String> {
   if std::env::var(CURSOR_MAINTENANCE_ENV).is_ok_and(|value| value == "disabled") || !cursor_state_exists(snapshot_file) {
@@ -1482,33 +1421,8 @@ pub(crate) fn maintain_cursor_after_node_move(
     return Ok(());
   }
 
-  let mut inserted_path = destination_path.to_vec();
-  let insertion = match operation {
-    "insert-before" => TreeCursorMutation::InsertBefore {
-      path: destination_path.to_vec(),
-    },
-    "insert-after" => {
-      *inserted_path.last_mut().ok_or("Cannot move after the definition root.")? += 1;
-      TreeCursorMutation::InsertAfter {
-        path: destination_path.to_vec(),
-      }
-    }
-    "insert-child" => {
-      inserted_path.push(0);
-      TreeCursorMutation::InsertChild {
-        path: destination_path.to_vec(),
-      }
-    }
-    "append-child" => {
-      inserted_path.push(append_index);
-      TreeCursorMutation::NoPathShift
-    }
-    "replace" => TreeCursorMutation::Replace {
-      path: destination_path.to_vec(),
-    },
-    other => return Err(format!("Unsupported node move operation '{other}'.")),
-  };
-
+  let inserted_path = operation.inserted_path(destination_path, append_index)?;
+  let insertion = operation.cursor_mutation(destination_path.to_vec());
   let adjusted_source = adjusted_source_path_after_insertion(source_path, destination_path, operation);
   let next_path = if document.active.path.starts_with(source_path) {
     let mut moved = inserted_path;
@@ -1522,26 +1436,6 @@ pub(crate) fn maintain_cursor_after_node_move(
   refresh_cursor_state(&mut document.active, snapshot_file)?;
   save_cursor_document(snapshot_file, &document)?;
   emit_cursor_after(snapshot_file, &document.active, "cursor followed node move")
-}
-
-fn adjusted_source_path_after_insertion(source: &[usize], destination: &[usize], operation: &str) -> Vec<usize> {
-  let mut adjusted = source.to_vec();
-  if !matches!(operation, "insert-before" | "insert-after") || source.len() != destination.len() || source.is_empty() {
-    return adjusted;
-  }
-  let parent_depth = source.len() - 1;
-  if source[..parent_depth] != destination[..parent_depth] {
-    return adjusted;
-  }
-  let insert_position = if operation == "insert-before" {
-    destination[parent_depth]
-  } else {
-    destination[parent_depth] + 1
-  };
-  if insert_position <= source[parent_depth] {
-    adjusted[parent_depth] += 1;
-  }
-  adjusted
 }
 
 pub(crate) fn maintain_cursor_after_any_mutation(snapshot_file: &str, detail: &str) -> Result<(), String> {
@@ -2160,49 +2054,6 @@ fn render_cursor_document(document: &CursorDocument) -> Result<String, String> {
   Ok(content)
 }
 
-fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Result<StagedFile, String> {
-  let parent = destination.parent().unwrap_or(Path::new("."));
-  fs::create_dir_all(parent)
-    .map_err(|error| format!("Failed to create directory '{}' for staged {label}: {error}", parent.display()))?;
-  let nonce = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .map_err(|error| format!("System clock error while staging {label}: {error}"))?
-    .as_nanos();
-  let file_name = destination.file_name().and_then(|value| value.to_str()).unwrap_or("calcit-state");
-  let permissions = fs::metadata(destination).ok().map(|metadata| metadata.permissions());
-
-  for attempt in 0..32_u8 {
-    let temporary = parent.join(format!(".{file_name}.{}.{nonce}.{attempt}.tmp", std::process::id()));
-    let mut file = match OpenOptions::new().write(true).create_new(true).open(&temporary) {
-      Ok(file) => file,
-      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-      Err(error) => return Err(format!("Failed to create staged {label} file '{}': {error}", temporary.display())),
-    };
-    if let Err(error) = file.write_all(content).and_then(|_| file.sync_all()) {
-      let _ = fs::remove_file(&temporary);
-      return Err(format!("Failed to write staged {label} file '{}': {error}", temporary.display()));
-    }
-    if let Some(permissions) = &permissions
-      && let Err(error) = fs::set_permissions(&temporary, permissions.clone())
-    {
-      let _ = fs::remove_file(&temporary);
-      return Err(format!(
-        "Failed to preserve permissions on staged {label} file '{}': {error}",
-        temporary.display()
-      ));
-    }
-    return Ok(StagedFile {
-      destination: destination.to_path_buf(),
-      temporary,
-      committed: false,
-    });
-  }
-  Err(format!(
-    "Failed to allocate a unique staged {label} file in '{}'.",
-    parent.display()
-  ))
-}
-
 fn stage_cursor_document(snapshot_file: &str, document: &CursorDocument) -> Result<StagedFile, String> {
   let destination = cursor_file_path(snapshot_file);
   let content = render_cursor_document(document)?;
@@ -2275,205 +2126,32 @@ fn warn_cursor_gitignore(snapshot_file: &str) {
   }
 }
 
-fn is_prefix(prefix: &[usize], path: &[usize]) -> bool {
-  path.starts_with(prefix)
-}
-
-fn shift_sibling(path: &mut [usize], mutation_path: &[usize], include_equal: bool, delta: isize) {
-  if mutation_path.is_empty() || path.len() < mutation_path.len() {
-    return;
-  }
-  let depth = mutation_path.len() - 1;
-  if path[..depth] != mutation_path[..depth] {
-    return;
-  }
-  let threshold = mutation_path[depth];
-  if path[depth] > threshold || (include_equal && path[depth] == threshold) {
-    path[depth] = path[depth].saturating_add_signed(delta);
-  }
-}
-
-fn transform_delete(cursor: &[usize], deleted: &[usize]) -> (Vec<usize>, &'static str) {
-  if is_prefix(deleted, cursor) {
-    return (
-      deleted.get(..deleted.len().saturating_sub(1)).unwrap_or(&[]).to_vec(),
-      "selected subtree was deleted; moved to parent",
-    );
-  }
-  let mut next = cursor.to_vec();
-  shift_sibling(&mut next, deleted, false, -1);
-  if next == cursor {
-    (next, "deletion did not shift cursor")
-  } else {
-    (next, "sibling deleted before cursor")
-  }
-}
-
-fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutation) -> (Vec<usize>, &'static str) {
-  match mutation {
-    TreeCursorMutation::NoPathShift => (cursor.to_vec(), "tree content changed without shifting cursor path"),
-    TreeCursorMutation::Replace { path } => {
-      if is_prefix(path, cursor) && cursor.len() > path.len() {
-        (path.clone(), "cursor ancestor was replaced; moved to replacement root")
-      } else {
-        (cursor.to_vec(), "selected node was refreshed after replacement")
-      }
-    }
-    TreeCursorMutation::InsertBefore { path } => {
-      let mut next = cursor.to_vec();
-      shift_sibling(&mut next, path, true, 1);
-      if next == cursor {
-        (next, "insertion did not shift cursor")
-      } else {
-        (next, "node inserted before cursor")
-      }
-    }
-    TreeCursorMutation::InsertAfter { path } => {
-      let mut next = cursor.to_vec();
-      shift_sibling(&mut next, path, false, 1);
-      if next == cursor {
-        (next, "insertion did not shift cursor")
-      } else {
-        (next, "node inserted before cursor")
-      }
-    }
-    TreeCursorMutation::InsertChild { path } => {
-      let mut next = cursor.to_vec();
-      if is_prefix(path, cursor) && cursor.len() > path.len() {
-        next[path.len()] += 1;
-      }
-      if next == cursor {
-        (next, "child insertion did not shift cursor")
-      } else {
-        (next, "first child inserted before cursor descendant")
-      }
-    }
-    TreeCursorMutation::Delete { path } => transform_delete(cursor, path),
-    TreeCursorMutation::SwapNext { path } | TreeCursorMutation::SwapPrev { path } => {
-      if path.is_empty() || cursor.len() < path.len() {
-        return (cursor.to_vec(), "sibling swap did not affect cursor");
-      }
-      let depth = path.len() - 1;
-      if cursor[..depth] != path[..depth] {
-        return (cursor.to_vec(), "sibling swap did not affect cursor");
-      }
-      let other = match mutation {
-        TreeCursorMutation::SwapNext { .. } => path[depth] + 1,
-        TreeCursorMutation::SwapPrev { .. } => path[depth].saturating_sub(1),
-        _ => unreachable!(),
-      };
-      let mut next = cursor.to_vec();
-      if cursor[depth] == path[depth] {
-        next[depth] = other;
-      } else if cursor[depth] == other {
-        next[depth] = path[depth];
-      }
-      (next, "cursor followed swapped subtree")
-    }
-    TreeCursorMutation::Unwrap { path, child_count } => {
-      if path.is_empty() {
-        return (cursor.to_vec(), "root unwrap is unsupported");
-      }
-      let parent = &path[..path.len() - 1];
-      let wrapper_index = path[path.len() - 1];
-      if is_prefix(path, cursor) {
-        if cursor.len() == path.len() {
-          return (parent.to_vec(), "selected wrapper was removed; moved to parent");
-        }
-        let mut next = parent.to_vec();
-        next.push(wrapper_index + cursor[path.len()]);
-        next.extend_from_slice(&cursor[path.len() + 1..]);
-        return (next, "cursor followed child out of unwrapped node");
-      }
-      let mut next = cursor.to_vec();
-      if cursor.len() >= path.len() && cursor[..parent.len()] == *parent && cursor[parent.len()] > wrapper_index {
-        next[parent.len()] = next[parent.len()].saturating_add(child_count.saturating_sub(1));
-      }
-      (next, "unwrapped siblings shifted cursor")
-    }
-    TreeCursorMutation::Raise { path } => {
-      if path.is_empty() {
-        return (cursor.to_vec(), "root raise is unsupported");
-      }
-      let parent = &path[..path.len() - 1];
-      if is_prefix(path, cursor) {
-        let mut next = parent.to_vec();
-        next.extend_from_slice(&cursor[path.len()..]);
-        (next, "cursor followed raised subtree")
-      } else if is_prefix(parent, cursor) {
-        (parent.to_vec(), "cursor subtree was discarded by raise; moved to raised root")
-      } else {
-        (cursor.to_vec(), "raise did not affect cursor")
-      }
-    }
-    TreeCursorMutation::Wrap { path } => {
-      if is_prefix(path, cursor) && cursor.len() > path.len() {
-        (path.clone(), "cursor ancestor was wrapped; moved to wrapper root")
-      } else {
-        (cursor.to_vec(), "cursor now selects wrapper")
-      }
-    }
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::{
-    CursorClipboard, CursorDocument, CursorLastQuery, CursorState, RestoreSource, TreeCursorMutation, apply_at_cursor, barf_first,
-    barf_last, build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path, cursor_region_bounds,
-    cursor_state_to_edn, duplicate_cursor, legacy_cursor_file_path, load_cursor_document, load_cursor_state,
+    CursorClipboard, CursorDocument, CursorLastQuery, CursorState, RestoreSource, TreeCursorMutation, TreeOperation, apply_at_cursor,
+    barf_first, barf_last, build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path,
+    cursor_region_bounds, cursor_state_to_edn, duplicate_cursor, legacy_cursor_file_path, load_cursor_document, load_cursor_state,
     maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_depth_first,
     move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, push_bounded, read_cursor_target, render_cursor_document,
     restore_cursor, save_cursor_document, save_cursor_mark, save_cursor_state, set_cursor_anchor, set_cursor_selection, slurp_next,
     slurp_prev, stage_atomic_file, store_cursor_clipboard, transform_cursor_path,
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
+  use crate::cli_handlers::test_support::TestProject;
   use calcit::cli_args::{CursorApplyCommand, CursorDuplicateCommand};
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
   use std::collections::BTreeMap;
   use std::fs;
-  use std::path::PathBuf;
-  use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-  use std::time::{SystemTime, UNIX_EPOCH};
 
-  static TEST_CURSOR_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+  type TestCursorSnapshot = TestProject;
 
   #[test]
   fn bounded_push_trims_oversized_persisted_state() {
     let mut items = vec![1, 2, 3, 4];
     push_bounded(&mut items, 5, 3);
     assert_eq!(items, vec![3, 4, 5]);
-  }
-
-  struct TestCursorSnapshot {
-    directory: PathBuf,
-    snapshot: PathBuf,
-  }
-
-  impl TestCursorSnapshot {
-    fn from_fixture() -> Self {
-      let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("test clock should be valid")
-        .as_nanos();
-      let counter = TEST_CURSOR_DIRECTORY_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
-      let directory = std::env::temp_dir().join(format!("calcit-cursor-test-{}-{nonce}-{counter}", std::process::id()));
-      fs::create_dir(&directory).expect("cursor test directory should be created");
-      let snapshot = directory.join("calcit.cirru");
-      fs::copy("calcit/test.cirru", &snapshot).expect("cursor fixture should copy");
-      Self { directory, snapshot }
-    }
-
-    fn snapshot_string(&self) -> String {
-      self.snapshot.to_string_lossy().into_owned()
-    }
-  }
-
-  impl Drop for TestCursorSnapshot {
-    fn drop(&mut self) {
-      let _ = fs::remove_dir_all(&self.directory);
-    }
   }
 
   #[test]
@@ -2628,8 +2306,13 @@ mod tests {
       .get_mut("app.main")
       .and_then(|file| file.defs.get_mut("main!"))
       .expect("fixture main definition should exist");
-    entry.code = apply_operation_at_path(&entry.code, &[48, 1], "insert-before", Some(&cirru_parser::Cirru::leaf("false")))
-      .expect("fixture insertion should succeed");
+    entry.code = apply_operation_at_path(
+      &entry.code,
+      &[48, 1],
+      TreeOperation::InsertBefore,
+      Some(&cirru_parser::Cirru::leaf("false")),
+    )
+    .expect("fixture insertion should succeed");
     save_snapshot(&snapshot, &snapshot_file).expect("mutated fixture should save");
 
     maintain_cursor_after_tree_mutation(
@@ -2856,13 +2539,14 @@ mod tests {
       .get_mut("app.main")
       .and_then(|file| file.defs.get_mut("main!"))
       .expect("fixture main definition should exist");
-    let duplicated = apply_operation_at_path(&entry.code, &[48, 1], "insert-after", Some(&node)).expect("duplicate should insert");
+    let duplicated =
+      apply_operation_at_path(&entry.code, &[48, 1], TreeOperation::InsertAfter, Some(&node)).expect("duplicate should insert");
     let after_move_insert =
-      apply_operation_at_path(&duplicated, &[48, 0], "insert-after", Some(&node)).expect("move destination should insert");
-    entry.code = apply_operation_at_path(&after_move_insert, &[48, 2], "delete", None).expect("old source should delete");
+      apply_operation_at_path(&duplicated, &[48, 0], TreeOperation::InsertAfter, Some(&node)).expect("move destination should insert");
+    entry.code = apply_operation_at_path(&after_move_insert, &[48, 2], TreeOperation::Delete, None).expect("old source should delete");
     save_snapshot(&snapshot, &snapshot_file).expect("mutated fixture should save");
 
-    maintain_cursor_after_node_move(&snapshot_file, "app.main/main!", &[48, 1], &[48, 0], "insert-after", 0)
+    maintain_cursor_after_node_move(&snapshot_file, "app.main/main!", &[48, 1], &[48, 0], TreeOperation::InsertAfter, 0)
       .expect("cursor should follow the moved duplicate deterministically");
     assert_eq!(load_cursor_state(&snapshot_file).expect("moved cursor should load").path, path);
   }

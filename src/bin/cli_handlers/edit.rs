@@ -28,24 +28,24 @@ use md5::{Digest, Md5};
 use semver::Version;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::atomic_write::stage_atomic_file;
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, format_path, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, print_cli_warning_block,
   read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
-  TreeCursorMutation, maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete,
-  maintain_cursor_after_definition_move, maintain_cursor_after_definition_replace, maintain_cursor_after_namespace_delete,
-  maintain_cursor_after_node_move, maintain_cursor_after_split_definition, maintain_cursor_after_tree_mutation,
-  resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
+  maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete, maintain_cursor_after_definition_move,
+  maintain_cursor_after_definition_replace, maintain_cursor_after_namespace_delete, maintain_cursor_after_node_move,
+  maintain_cursor_after_split_definition, maintain_cursor_after_tree_mutation, resolve_active_cursor_reference,
+  resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
 use super::tips::{Tips, command_guidance_enabled};
+use super::tree_mutation::{TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, path_is_strict_descendant};
 
 /// Parse "namespace/definition" format into (namespace, definition)
 /// Splits at the FIRST '/' so operator definitions like '/' and '/=' are handled correctly.
@@ -177,16 +177,9 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
 }
 
 fn cursor_insertion_mutation(path: Vec<usize>, at: &str) -> Result<TreeCursorMutation, String> {
-  match at {
-    "before" => Ok(TreeCursorMutation::InsertBefore { path }),
-    "after" => Ok(TreeCursorMutation::InsertAfter { path }),
-    "prepend-child" => Ok(TreeCursorMutation::InsertChild { path }),
-    "append-child" => Ok(TreeCursorMutation::NoPathShift),
-    "replace" => Ok(TreeCursorMutation::Replace { path }),
-    other => Err(format!(
-      "Unsupported position '{other}'. Use: before, after, append-child, prepend-child, replace"
-    )),
-  }
+  TreeOperation::from_insert_position(at)
+    .map(|operation| operation.cursor_mutation(path))
+    .ok_or_else(|| format!("Unsupported position '{at}'. Use: before, after, append-child, prepend-child, replace"))
 }
 
 fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
@@ -427,19 +420,6 @@ struct TransactionReport {
   operations: Vec<TransactionOperationReport>,
 }
 
-struct StagedSnapshot {
-  path: PathBuf,
-  remove_on_drop: bool,
-}
-
-impl Drop for StagedSnapshot {
-  fn drop(&mut self) {
-    if self.remove_on_drop {
-      let _ = fs::remove_file(&self.path);
-    }
-  }
-}
-
 fn snapshot_content_revision(content: &str) -> String {
   let mut hasher = Md5::new();
   hasher.update(content.as_bytes());
@@ -584,44 +564,6 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
   Ok(operations)
 }
 
-fn create_staged_snapshot(snapshot_file: &Path, original_content: &str) -> Result<StagedSnapshot, String> {
-  let parent = snapshot_file.parent().unwrap_or_else(|| Path::new("."));
-  let file_name = snapshot_file.file_name().and_then(|name| name.to_str()).unwrap_or("calcit.cirru");
-  let original_permissions = fs::metadata(snapshot_file)
-    .map_err(|error| format!("Failed to read permissions for snapshot '{}': {error}", snapshot_file.display()))?
-    .permissions();
-  let nonce = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .map_err(|error| format!("System clock is before UNIX epoch: {error}"))?
-    .as_nanos();
-
-  for attempt in 0..32_u8 {
-    let path = parent.join(format!(".{file_name}.transaction-{}-{nonce}-{attempt}", std::process::id()));
-    match OpenOptions::new().write(true).create_new(true).open(&path) {
-      Ok(mut file) => {
-        file
-          .write_all(original_content.as_bytes())
-          .map_err(|error| format!("Failed to initialize staged snapshot '{}': {error}", path.display()))?;
-        file
-          .sync_all()
-          .map_err(|error| format!("Failed to flush staged snapshot '{}': {error}", path.display()))?;
-        fs::set_permissions(&path, original_permissions.clone())
-          .map_err(|error| format!("Failed to preserve permissions on staged snapshot '{}': {error}", path.display()))?;
-        return Ok(StagedSnapshot {
-          path,
-          remove_on_drop: true,
-        });
-      }
-      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-      Err(error) => return Err(format!("Failed to create staged snapshot in '{}': {error}", parent.display())),
-    }
-  }
-  Err(format!(
-    "Failed to allocate a unique staged snapshot path in '{}'.",
-    parent.display()
-  ))
-}
-
 fn run_staged_transaction_with<F>(
   snapshot_file: &Path,
   operations: &[Vec<String>],
@@ -643,22 +585,16 @@ where
     ));
   }
 
-  let mut staged = create_staged_snapshot(snapshot_file, &original_content)?;
+  let staged = stage_atomic_file(snapshot_file, original_content.as_bytes(), "transaction snapshot")?;
   let mut operation_reports = Vec::with_capacity(operations.len());
   for (index, operation) in operations.iter().enumerate() {
-    operation_reports.push(run_operation(&staged.path, index, operation)?);
+    operation_reports.push(run_operation(staged.path(), index, operation)?);
   }
 
-  let staged_path = staged.path.to_string_lossy();
+  let staged_path = staged.path().to_string_lossy();
   let staged_snapshot = load_snapshot(&staged_path)?;
   let staged_content = render_snapshot_content(&staged_snapshot)?;
-  fs::write(&staged.path, &staged_content)
-    .map_err(|error| format!("Failed to finalize staged snapshot '{}': {error}", staged.path.display()))?;
-  OpenOptions::new()
-    .read(true)
-    .open(&staged.path)
-    .and_then(|file| file.sync_all())
-    .map_err(|error| format!("Failed to flush staged snapshot '{}': {error}", staged.path.display()))?;
+  staged.write_and_sync(staged_content.as_bytes(), "transaction snapshot")?;
 
   let new_revision = snapshot_content_revision(&staged_content);
   let changed = original_content != staged_content;
@@ -673,14 +609,7 @@ where
   }
 
   if !dry_run && changed {
-    fs::rename(&staged.path, snapshot_file).map_err(|error| {
-      format!(
-        "Failed to atomically replace snapshot '{}' with staged file '{}': {error}",
-        snapshot_file.display(),
-        staged.path.display()
-      )
-    })?;
-    staged.remove_on_drop = false;
+    staged.commit()?;
   }
 
   Ok(TransactionReport {
@@ -965,48 +894,9 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
 // AST node copy / move helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Returns true if `to_path` is inside the subtree rooted at `from_path`
-fn to_path_is_inside_from(from_path: &[usize], to_path: &[usize]) -> bool {
-  to_path.len() > from_path.len() && to_path[..from_path.len()] == *from_path
-}
-
-/// After inserting at `to_path` with `operation`, compute the adjusted source path
-/// (the source index may shift if insertion happened at a sibling position before it).
-fn compute_adjusted_from_path(from_path: &[usize], to_path: &[usize], operation: &str) -> Vec<usize> {
-  let mut adjusted = from_path.to_vec();
-  // Only insert-before and insert-after affect sibling indices
-  if operation != "insert-before" && operation != "insert-after" {
-    return adjusted;
-  }
-  // Must be the same depth and same parent
-  if from_path.len() != to_path.len() {
-    return adjusted;
-  }
-  let parent_depth = from_path.len() - 1;
-  if from_path[..parent_depth] != to_path[..parent_depth] {
-    return adjusted;
-  }
-  let from_idx = from_path[parent_depth];
-  let to_idx = to_path[parent_depth];
-  // Effective insertion position
-  let insert_pos = if operation == "insert-before" { to_idx } else { to_idx + 1 };
-  if insert_pos <= from_idx {
-    adjusted[parent_depth] += 1;
-  }
-  adjusted
-}
-
-fn map_at_to_operation(at: &str) -> Result<&'static str, String> {
-  match at {
-    "before" => Ok("insert-before"),
-    "after" => Ok("insert-after"),
-    "prepend-child" => Ok("insert-child"),
-    "append-child" => Ok("append-child"),
-    "replace" => Ok("replace"),
-    other => Err(format!(
-      "Unsupported position '{other}'. Use: before, after, prepend-child, append-child, replace"
-    )),
-  }
+fn map_at_to_operation(at: &str) -> Result<TreeOperation, String> {
+  TreeOperation::from_insert_position(at)
+    .ok_or_else(|| format!("Unsupported position '{at}'. Use: before, after, prepend-child, append-child, replace"))
 }
 
 fn handle_cp_node(opts: &EditCpCommand, snapshot_file: &str) -> Result<(), String> {
@@ -1061,7 +951,7 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
   if from_path == to_path {
     return Err("Source and destination paths are identical; nothing to move.".to_string());
   }
-  if to_path_is_inside_from(&from_path, &to_path) {
+  if path_is_strict_descendant(&from_path, &to_path) {
     return Err(format!(
       "Cannot move node at [{}] into its own subtree at [{}]",
       opts.from, opts.path
@@ -1088,7 +978,7 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
 
   // Step 1: read source node
   let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
-  let append_index = if operation == "append-child" {
+  let append_index = if operation == TreeOperation::AppendChild {
     match navigate_to_path(&code_entry.code, &to_path)? {
       Cirru::List(children) => children.len(),
       Cirru::Leaf(_) => 0,
@@ -1101,10 +991,10 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
   let after_insert = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
 
   // Step 3: compute adjusted source path (insertion may have shifted sibling indices)
-  let adjusted_from = compute_adjusted_from_path(&from_path, &to_path, operation);
+  let adjusted_from = adjusted_source_path_after_insertion(&from_path, &to_path, operation);
 
   // Step 4: delete source at adjusted path
-  let final_code = apply_operation_at_path(&after_insert, &adjusted_from, "delete", None)?;
+  let final_code = apply_operation_at_path(&after_insert, &adjusted_from, TreeOperation::Delete, None)?;
   code_entry.code = final_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -1234,7 +1124,12 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
 
   // Replace the path in the original definition with the new name (a leaf)
   let new_ref = Cirru::Leaf(Arc::from(new_name));
-  let updated_code = apply_operation_at_path(&file_data.defs[resolved_definition.as_str()].code, &path, "replace", Some(&new_ref))?;
+  let updated_code = apply_operation_at_path(
+    &file_data.defs[resolved_definition.as_str()].code,
+    &path,
+    TreeOperation::Replace,
+    Some(&new_ref),
+  )?;
 
   // Write updated code back to original definition
   file_data
@@ -1838,18 +1733,18 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
 pub(crate) fn apply_operation_at_path(
   code: &Cirru,
   path: &[usize],
-  operation: &str,
+  operation: TreeOperation,
   new_node: Option<&Cirru>,
 ) -> Result<Cirru, String> {
   if path.is_empty() {
     // Operating on root
     return match operation {
-      "replace" => {
+      TreeOperation::Replace => {
         let node = new_node.ok_or("Code input required for replace operation")?;
         Ok(node.clone())
       }
-      "delete" => Err("Cannot delete root node".to_string()),
-      _ => Err(format!("Operation '{operation}' not supported at root level")),
+      TreeOperation::Delete => Err("Cannot delete root node".to_string()),
+      _ => Err(format!("Operation '{}' not supported at root level", operation.as_str())),
     };
   }
 
@@ -1861,7 +1756,7 @@ fn apply_operation_recursive(
   code: &Cirru,
   path: &[usize],
   depth: usize,
-  operation: &str,
+  operation: TreeOperation,
   new_node: Option<&Cirru>,
 ) -> Result<Cirru, String> {
   match code {
@@ -1877,22 +1772,22 @@ fn apply_operation_recursive(
         let mut new_items = items.clone();
 
         match operation {
-          "delete" => {
+          TreeOperation::Delete => {
             new_items.remove(idx);
           }
-          "replace" => {
+          TreeOperation::Replace => {
             let newn = new_node.ok_or("Code input required for replace operation")?;
             new_items[idx] = newn.clone();
           }
-          "insert-before" => {
+          TreeOperation::InsertBefore => {
             let newn = new_node.ok_or("Code input required for insert-before operation")?;
             new_items.insert(idx, newn.clone());
           }
-          "insert-after" => {
+          TreeOperation::InsertAfter => {
             let newn = new_node.ok_or("Code input required for insert-after operation")?;
             new_items.insert(idx + 1, newn.clone());
           }
-          "insert-child" => {
+          TreeOperation::InsertChild => {
             // Insert as first child of the node at idx
             let newn = new_node.ok_or("Code input required for insert-child operation")?;
             match &new_items[idx] {
@@ -1906,7 +1801,7 @@ fn apply_operation_recursive(
               }
             }
           }
-          "append-child" => {
+          TreeOperation::AppendChild => {
             // Insert as last child of the node at idx
             let newn = new_node.ok_or("Code input required for append-child operation")?;
             match &new_items[idx] {
@@ -1920,22 +1815,19 @@ fn apply_operation_recursive(
               }
             }
           }
-          "swap-next-sibling" => {
+          TreeOperation::SwapNextSibling => {
             // Swap current node with next sibling
             if idx + 1 >= new_items.len() {
               return Err(format!("Cannot swap: no next sibling at index {idx}"));
             }
             new_items.swap(idx, idx + 1);
           }
-          "swap-prev-sibling" => {
+          TreeOperation::SwapPrevSibling => {
             // Swap current node with previous sibling
             if idx == 0 {
               return Err("Cannot swap: no previous sibling at index 0".to_string());
             }
             new_items.swap(idx - 1, idx);
-          }
-          _ => {
-            return Err(format!("Unknown operation: {operation}"));
           }
         }
 
@@ -2696,32 +2588,12 @@ mod tests {
     parse_examples_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations, rename_definition_declaration,
     run_staged_transaction_with, save_snapshot,
   };
+  use crate::cli_handlers::test_support::TestProject;
   use cirru_parser::Cirru;
   use std::fs;
-  use std::path::{Path, PathBuf};
-  use std::time::{SystemTime, UNIX_EPOCH};
+  use std::path::Path;
 
-  struct TestSnapshot {
-    path: PathBuf,
-  }
-
-  impl TestSnapshot {
-    fn from_fixture() -> Self {
-      let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("test clock should be valid")
-        .as_nanos();
-      let path = std::env::temp_dir().join(format!("calcit-transaction-test-{}-{nonce}.cirru", std::process::id()));
-      fs::copy("calcit/test.cirru", &path).expect("test snapshot fixture should copy");
-      Self { path }
-    }
-  }
-
-  impl Drop for TestSnapshot {
-    fn drop(&mut self) {
-      let _ = fs::remove_file(&self.path);
-    }
-  }
+  type TestSnapshot = TestProject;
 
   fn fake_version_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
     let version = args.get(2).ok_or_else(|| "fake operation needs version at index 2".to_string())?;

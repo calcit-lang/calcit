@@ -2,6 +2,7 @@
 //!
 //! These handlers implement: query, docs, cirru, libs, edit, tree subcommands
 
+mod atomic_write;
 mod call_graph_diff;
 mod chunk_display;
 mod cirru;
@@ -17,8 +18,11 @@ mod libs;
 mod markdown_read;
 mod program_diff;
 mod query;
+#[cfg(test)]
+mod test_support;
 mod tips;
 mod tree;
+mod tree_mutation;
 
 pub use call_graph_diff::handle_call_graph_diff_command;
 pub use cirru::handle_cirru_command;

@@ -2,7 +2,7 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-edn) (:version |0.0.0)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-edn.main/main!) (:mode :native) (:reload-fn 'test-edn.main/reload!)
-      :modules $ []
+      :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
     |test-edn.main $ %{} :FileEntry
@@ -22,13 +22,6 @@
             defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
           :schema $ :: 'Dynamic
-        |log-title $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn log-title (title) (println) (println title) (println)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)
@@ -160,4 +153,4 @@
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-edn.main $ :require
-            [] util.core :refer $ [] inside-eval:
+            util.core :refer $ inside-eval: log-title
