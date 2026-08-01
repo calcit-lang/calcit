@@ -787,7 +787,7 @@ mod type_query_tests {
     assert_eq!(annotation.to_brief_string(), "dynamic");
     assert_eq!(
       format_type_query_annotation(annotation.as_ref()).expect("alias should format"),
-      ":dynamic"
+      "'Dynamic"
     );
     assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic));
     assert!(CalcitTypeAnnotation::String.matches_annotation(annotation.as_ref()));
@@ -810,14 +810,14 @@ mod type_query_tests {
   fn renders_type_annotations_without_edn_top_level_wrapper() {
     assert_eq!(
       format_type_query_annotation(&CalcitTypeAnnotation::Number).expect("number should format"),
-      ":number"
+      "'Number"
     );
     let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
     assert_eq!(
       format_type_query_annotation(&list_type).expect("list should format"),
-      ":: :list :number"
+      ":: 'List 'Number"
     );
-    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), ":ref");
+    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), "'Ref");
   }
 
   #[test]
@@ -830,15 +830,15 @@ mod type_query_tests {
     assert_eq!(value["schema_version"], 1);
     assert_eq!(value["command"], "query.schema");
     assert_eq!(value["data"]["id"], "app.main/*enabled?");
-    assert_eq!(value["data"]["canonical_schema"], ":: :ref :bool");
-    assert_eq!(value["data"]["tree"], serde_json::json!(["::", ":ref", ":bool"]));
+    assert_eq!(value["data"]["canonical_schema"], ":: 'Ref 'Bool");
+    assert_eq!(value["data"]["tree"], serde_json::json!(["::", "'Ref", "'Bool"]));
 
     let broad_ref = CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone());
     let output =
       format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned()).expect("broad ref JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
-    assert_eq!(value["data"]["canonical_schema"], ":ref");
-    assert_eq!(value["data"]["tree"], ":ref");
+    assert_eq!(value["data"]["canonical_schema"], "'Ref");
+    assert_eq!(value["data"]["tree"], "'Ref");
   }
 
   #[test]
@@ -1780,7 +1780,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let dynamic_intent = if inferred
     .as_ref()
     .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
-    && fn_features.iter().any(|feature| feature == ":js-ffi")
+    && fn_features.iter().any(|feature| feature == "js-ffi")
   {
     Some("intentional-js-ffi")
   } else if inferred
@@ -2610,19 +2610,8 @@ pub(crate) fn load_snapshot_for_static_analysis(input_path: &str) -> Result<snap
 
 fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
   let mut snapshot = load_main_snapshot(input_path)?;
-
-  let mut modules_to_load = snapshot.configs.modules.clone();
-  if let Some(entry_name) = entry {
-    let entry_config = snapshot.entries.get(entry_name).ok_or_else(|| {
-      let available = if snapshot.entries.is_empty() {
-        "(none)".to_owned()
-      } else {
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      };
-      format!("Entry '{entry_name}' not found. Available entries: {available}")
-    })?;
-    modules_to_load.extend(entry_config.modules.clone());
-  }
+  snapshot.select_entry(entry)?;
+  let mut modules_to_load = snapshot.active_entry()?.modules.clone();
 
   let mut seen_modules = HashSet::new();
   modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
@@ -2855,30 +2844,25 @@ fn handle_pkg(input_path: &str) -> Result<(), String> {
 fn handle_config(input_path: &str) -> Result<(), String> {
   let snapshot = load_main_snapshot(input_path)?;
 
-  println!("{}", "Project Configs:".bold());
-  println!("  {}: {}", "init_fn".cyan(), snapshot.configs.init_fn);
-  println!("  {}: {}", "reload_fn".cyan(), snapshot.configs.reload_fn);
-  println!("  {}: {}", "version".cyan(), snapshot.configs.version);
-  println!("  {}: {:?}", "modules".cyan(), snapshot.configs.modules);
+  println!("{}", "Project Config:".bold());
+  println!("  {}: {}", "version".cyan(), snapshot.version);
+  println!("\n{}", "Snapshot Entries:".bold());
 
-  if !snapshot.entries.is_empty() {
-    println!("\n{}", "Snapshot Entries:".bold());
+  let mut names: Vec<&String> = snapshot.entries.keys().collect();
+  names.sort();
 
-    let mut names: Vec<&String> = snapshot.entries.keys().collect();
-    names.sort();
+  for name in names {
+    let entry = snapshot
+      .entries
+      .get(name)
+      .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
 
-    for name in names {
-      let entry = snapshot
-        .entries
-        .get(name)
-        .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
-
-      println!("  {}", name.cyan());
-      println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
-      println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
-      println!("    {}: {}", "version".cyan(), entry.version);
-      println!("    {}: {:?}", "modules".cyan(), entry.modules);
-    }
+    println!("  {}", name.cyan());
+    println!("    {}: {}", "mode".cyan(), entry.mode);
+    println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
+    println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
+    println!("    {}: {:?}", "modules".cyan(), entry.modules);
+    println!("    {}: {:?}", "type_slots".cyan(), entry.type_slots);
   }
 
   Ok(())
@@ -2974,7 +2958,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
 
   println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
 
-  for module_path in &snapshot.configs.modules {
+  for module_path in &snapshot.active_entry()?.modules {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
         println!("  {} {}", module_snapshot.package.cyan(), format!("({module_path})").dimmed());

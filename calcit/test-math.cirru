@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-math)
-  :configs $ {} (:init-fn |test-math.main/main!) (:reload-fn |test-math.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-math) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-math.main/main!) (:mode :native) (:reload-fn 'test-math.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-math.main $ %{} :FileEntry
       :defs $ {}
@@ -10,14 +11,15 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing numbers") (test-numbers) (log-title "|Testing math") (test-math) (log-title "|Testing compare") (test-compare) (test-hex) (test-integer) (test-methods) (test-bit-math) (do true)
           :examples $ []
-        |test-bit-math $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-bit-math $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|testing bit math")
               assert= 0 $ bit-shr 1 1
@@ -27,7 +29,8 @@
               assert= 4 $ bit-shl 2 1
               assert= 16 $ bit-shl 4 2
           :examples $ []
-        |test-compare $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-compare $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-compare ()
               assert= 4 $ max ([] 1 2 3 4)
@@ -52,17 +55,20 @@
                 &compare :k $ :: 0 0
                 , -1
           :examples $ []
-        |test-hex $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-hex $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing hex") (assert= 16 0x10) (assert= 15 0xf)
           :examples $ []
-        |test-integer $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-integer $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing integer")
               assert= true $ round? 1
               assert= false $ round? 1.1
           :examples $ []
-        |test-math $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-math $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-math ()
               println "|sin 1" $ sin 1
@@ -84,7 +90,8 @@
               assert= 4 $ abs 4
               assert= (negate -4) (abs -4)
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing number methods")
               assert= 1 $ .floor 1.1
@@ -100,7 +107,8 @@
               assert= 2 $ .rem 11 3
               ; "has problem in comparing float numbers" $ assert= 0.1 (.fract 1.1)
           :examples $ []
-        |test-numbers $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-numbers ()
               assert= 3 $ + 1 2
@@ -116,6 +124,7 @@
               assert-detect empty? $ []
               do true
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-math.main $ :require

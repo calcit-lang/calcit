@@ -17,24 +17,24 @@ Calcit provides Records as a way to define structured data types with named fiel
 
 ## Quick Recipes
 
-- **Define**: `defstruct Point (:x :number) (:y :number)`
+- **Define**: `defstruct Point (:x 'Number) (:y 'Number)`
 - **Create**: `%{} Point (:x 1) (:y 2)`
 - **Access**: `get p :x` or `(:x p)`
 - **Update**: `assoc p :x 10` or `update p :x inc`
-- **Type Check**: `assert-type p :record`
+- **Type Check**: `assert-type p 'Record`
 
 ## Defining a Struct Type
 
 Use `defstruct` to declare a named type with typed fields:
 
 ```cirru
-defstruct Point (:x :number) (:y :number)
+defstruct Point (:x 'Number) (:y 'Number)
 ```
 
-Each field is a pair of `(:field-name :type)`. Supported types include `:number`, `:string`, `:bool`, `:tag`, `:list`, `:map`, `:fn`, and `:dynamic` (untyped).
+Each field is a pair of `(:field-name type)`. Use quoted-symbol types such as `'Number`, `'String`, `'Bool`, `'Tag`, `'List`, `'Map`, `'Fn`, and `'Dynamic` (untyped). Legacy tag spellings remain compatible and are rewritten by `cr edit format`.
 
 ```cirru
-defstruct Person (:name :string) (:age :number) (:position :tag)
+defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 ```
 
 ## Generic Structs

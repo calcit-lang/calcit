@@ -75,17 +75,9 @@ fn main() -> Result<(), String> {
   })?;
   let mut snapshot = snapshot::load_snapshot_data(&data, &input_path_str)?;
 
-  if let Some(entry) = cli_args.entry.to_owned() {
-    if snapshot.entries.contains_key(entry.as_str()) {
-      println!("running entry: {entry}");
-      snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
-    } else {
-      return Err(format!(
-        "unknown entry `{}` in `{}`",
-        entry,
-        snapshot.entries.keys().map(|x| (*x).to_owned()).collect::<Vec<_>>().join("/")
-      ));
-    }
+  snapshot.select_entry(cli_args.entry.as_deref())?;
+  if cli_args.entry.is_some() {
+    println!("running entry: {}", snapshot.active_entry_name());
   }
 
   let base_dir = input_path.parent().expect("extract parent");
@@ -93,7 +85,8 @@ fn main() -> Result<(), String> {
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
 
-  for module_path in &snapshot.configs.modules {
+  let module_paths = snapshot.active_entry()?.modules.clone();
+  for module_path in &module_paths {
     let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
     for (k, v) in &module_data.files {
       if snapshot.files.contains_key(k) {
@@ -103,8 +96,9 @@ fn main() -> Result<(), String> {
     }
   }
 
-  let config_init = snapshot.configs.init_fn.to_string();
-  let config_reload = snapshot.configs.reload_fn.to_string();
+  let selected_entry = snapshot.active_entry()?;
+  let config_init = selected_entry.init_fn.to_string();
+  let config_reload = selected_entry.reload_fn.to_string();
   let init_fn = cli_args.init_fn.as_deref().unwrap_or(&config_init);
   let reload_fn = cli_args.reload_fn.as_deref().unwrap_or(&config_reload);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;

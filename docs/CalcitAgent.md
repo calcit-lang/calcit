@@ -37,6 +37,25 @@ leads_to:
 3. `calcit.cirru`（旧项目可能是 `compact.cirru`）是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。不要用 line patch、正则脚本或 formatter 直接改它；使用 `cr edit`、`cr tree`、`cr cursor`。
 4. `CURSOR`、`FOLDED:*`、chunk 标题和 path annotation 都是展示信息，绝不能复制回 Snapshot。`cursor show --format json` 中 `tree` 才是真实节点，`preview_tree` 只是展示树。
 
+### 0.1 发现 Calcit 缺陷时：定位归属仓库并提交 Issue
+
+发现 **Calcit 语言、编译器、运行时或 CLI 工具** 的可复现问题时，必须向该工具的维护仓库提交 GitHub Issue；不要把问题只留在当前项目的提交说明、错误 sidecar 或聊天记录里。发现 **类库/模块** 问题时，也必须提交到该类库的维护仓库，而不是误报到使用它的应用项目或 Calcit 核心仓库。
+
+先收集最小复现、实际结果、预期结果、`cr -v`、平台和相关命令。类库问题先从解析后的模块路径确认归属，再创建 Issue：
+
+```bash
+cr query modules
+# 从输出中复制该模块的实际目录；不要猜仓库名。
+git -C '<module-directory>' remote get-url origin
+# 将 origin 规范化为 OWNER/REPO 后，确认目标确实是对应 GitHub 仓库。
+gh repo view OWNER/REPO --json nameWithOwner,url
+gh issue create --repo OWNER/REPO --title '<concise problem title>' --body-file /tmp/calcit-issue.md
+```
+
+`gh issue create --repo OWNER/REPO` 可显式提交到**非当前仓库**；不要依赖 cwd 或当前 Git remote 推断目标。若模块目录没有自己的 GitHub origin，先根据其路径、模块元数据、发布页或维护文档找出权威仓库；仍无法确认归属时，报告这一阻塞并向用户确认，不能把 Issue 猜测性地投到核心仓库。
+
+Issue 正文至少包括：最小 Snapshot/snippet 或步骤、实际与预期行为、完整诊断输出、Calcit/模块版本、操作系统与架构。删除 token、私有路径、业务数据和其他机密；大型 Snapshot 应改为最小可公开复现。提交后记录并回报 Issue URL、`OWNER/REPO` 和所用版本，方便后续追踪。
+
 以下命令默认在项目根目录读取 `calcit.cirru`。只有操作临时副本或非默认 Snapshot 时才显式写文件：
 
 ```bash
@@ -46,7 +65,7 @@ cr /tmp/demo.cirru query config
 
 当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `cr ./calcit.cirru ...`）。`Command:` 回显可能省略或归一化 input，不能用它证明实际文件身份。
 
-`cr [snapshot-file]`、`cr [snapshot-file] js` 默认单次运行；只有明确需要监听时才加 `-w` / `--watch`。`cr ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
+`cr [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`cr ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
 
 ## 1. 30 秒项目盘点
 
@@ -299,7 +318,7 @@ cr cirru show-guide
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 
-不要用多个 `:dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。`:any` 只是 `:dynamic` 的旧拼写，新 schema 和修复结果统一使用 `:dynamic`。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
+不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `cr edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 
 | 现象                   | 恢复动作                                                                 |
 | ---------------------- | ------------------------------------------------------------------------ |
@@ -339,6 +358,7 @@ cr docs read-lines agent-advanced.md --start 1 --lines 80
 | 复杂重构与历史陷阱           | `cr docs read agent-advanced.md --full`                         |
 | Snapshot、deps 与项目结构    | `cr docs read project-structure.md --full`                      |
 | 类型覆盖与 dynamic 审计      | `cr docs read static-analysis.md --full`；`cr analyze --help`   |
+| 类库发布前验收与质量门禁     | `cr docs read library-quality.md --full`                       |
 | run/watch/JS codegen         | `cr docs read cli-options.md 'Common Usage Patterns'`           |
 | 错误排查                     | `cr docs read debugging.md --full`；`cr query error`            |
 | 文档图与 frontmatter         | `cr docs read docs-indexing.md --full`；`cr docs graph --help`  |

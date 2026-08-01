@@ -42,7 +42,7 @@ The `edit` command handles high-level operations on namespaces and definitions.
 cr edit format
 ```
 
-This command also rewrites older namespace records into the canonical `NsEntry` snapshot shape.
+This command also rewrites older namespace records and top-level `:configs` into canonical shapes. It succeeds after recoverable migrations, while stderr identifies `W_LEGACY_CONFIG`, `W_LEGACY_SNAPSHOT_NAME`, `W_LEGACY_ANY`, or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete types; follow dynamic warnings with `cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved`.
 
 ### Persistent Tree Cursor
 
@@ -307,9 +307,9 @@ cr edit mv app.main/target-def --from '@1.0' --path '@2.0' --at after
 
 Editing commands support several ways to provide new code:
 
-- `--code 'code'`: Inline text (auto-detects JSON vs Cirru format).
-- `--file file.cirru`: Multi-line code from a file (recommended for complex structures).
-- **stdin**: Pipe or redirect input directly; auto-detects JSON vs Cirru.
+- `--code 'code'`: Inline JSON or quoted Cirru EDN.
+- `--file file.cirru`: Multi-line JSON or quoted Cirru EDN (recommended for complex structures).
+- **stdin**: Pipe or redirect JSON or quoted Cirru EDN directly.
 
 For Cirru input, current CLI expects **Cirru EDN with `quote` prefix**:
 

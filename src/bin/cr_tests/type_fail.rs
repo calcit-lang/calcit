@@ -1,5 +1,5 @@
 use super::*;
-use calcit::calcit::CalcitTypeAnnotation;
+use calcit::calcit::{Calcit, CalcitProc, CalcitTypeAnnotation};
 use std::cell::RefCell;
 use std::fs;
 
@@ -29,14 +29,9 @@ fn load_fixture_entries_with_entry(path: &str, selected_entry: Option<&str>) -> 
   let content = fs::read_to_string(path).unwrap_or_else(|_| panic!("Failed to read fixture: {path}"));
   let data = cirru_edn::parse(&content).unwrap_or_else(|e| panic!("Failed to parse fixture {path}: {e}"));
   let mut snapshot = snapshot::load_snapshot_data(&data, path).unwrap_or_else(|e| panic!("Failed to load fixture {path}: {e}"));
-  if let Some(entry) = selected_entry {
-    let entry_configs = snapshot
-      .entries
-      .get(entry)
-      .unwrap_or_else(|| panic!("Fixture {path} missing entry {entry}"))
-      .to_owned();
-    entry_configs.clone_into(&mut snapshot.configs);
-  }
+  snapshot
+    .select_entry(selected_entry)
+    .unwrap_or_else(|e| panic!("Failed to select fixture entry for {path}: {e}"));
   let core_snapshot = calcit::load_core_snapshot().expect("load core snapshot");
 
   for (k, v) in core_snapshot.files {
@@ -48,8 +43,9 @@ fn load_fixture_entries_with_entry(path: &str, selected_entry: Option<&str>) -> 
     *prgm = program::extract_program_data(&snapshot).expect("extract program data");
   }
 
-  let config_init = snapshot.configs.init_fn.to_string();
-  let config_reload = snapshot.configs.reload_fn.to_string();
+  let selected_entry = snapshot.active_entry().expect("selected fixture entry");
+  let config_init = selected_entry.init_fn.to_string();
+  let config_reload = selected_entry.reload_fn.to_string();
   let (init_ns, init_def) = util::string::extract_ns_def(&config_init).expect("extract init ns/def");
   let (reload_ns, reload_def) = util::string::extract_ns_def(&config_reload).expect("extract reload ns/def");
 
@@ -256,6 +252,38 @@ fn type_fail_type_slot_enum_invalid_variant() {
       "warning should mention enum name, got: {}",
       matched[0].message()
     );
+  });
+}
+
+fn contains_with_type_slot(value: &Calcit) -> bool {
+  match value {
+    Calcit::Proc(CalcitProc::WithTypeSlot) => true,
+    Calcit::List(items) => items.iter().any(contains_with_type_slot),
+    Calcit::Fn { info, .. } => info.body.iter().any(contains_with_type_slot),
+    Calcit::Macro { info, .. } => info.body.iter().any(contains_with_type_slot),
+    _ => false,
+  }
+}
+
+#[test]
+fn with_type_slot_multi_body_is_erased_before_runtime() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/type-slot-enum-invalid-variant.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let ns = entries.init_ns.as_ref();
+    let def = "legacy-main!";
+
+    runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &CallStackList::default())
+      .expect("legacy with-type-slot fixture should preprocess");
+    let compiled = program::lookup_compiled_def(ns, def).expect("legacy fixture should have compiled output");
+    assert!(
+      !contains_with_type_slot(&compiled.preprocessed_code),
+      "with-type-slot must not escape preprocessing: {}",
+      compiled.preprocessed_code
+    );
+
+    let result = calcit::run_program(Arc::from(ns), Arc::from(def), &[]).expect("legacy fixture should run");
+    assert_eq!(result, Calcit::Number(2.0));
   });
 }
 

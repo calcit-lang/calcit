@@ -43,7 +43,7 @@ pub struct CallTreeResult {
   pub tree: CallTreeNode,
   /// Statistics about the analysis
   pub stats: CallTreeStats,
-  /// Unused definitions (only if requested)
+  /// Definitions unreachable from the selected entry (only if requested)
   #[serde(skip_serializing_if = "Option::is_none")]
   pub unused_definitions: Option<Vec<UnusedDefinition>>,
 }
@@ -84,7 +84,7 @@ pub struct CallTreeConfig {
   pub include_core: bool,
   /// Maximum depth to traverse (0 = unlimited)
   pub max_depth: usize,
-  /// Whether to analyze unused definitions
+  /// Whether to analyze definitions unreachable from the selected entry
   pub show_unused: bool,
   /// Package name to filter project definitions
   pub package_name: Option<String>,
@@ -126,6 +126,20 @@ impl CallTreeAnalyzer {
     // Build the full call tree
     let mut tree = self.build_tree(entry_ns, entry_def, 0)?;
 
+    // A display depth limit must not make deeper reachable definitions look unused.
+    // Traverse without the display limit when entry-relative unused analysis is requested.
+    let full_reachable = if self.config.show_unused && self.config.max_depth > 0 {
+      let mut full_analyzer = Self::new(CallTreeConfig {
+        max_depth: 0,
+        show_unused: false,
+        ..self.config.clone()
+      });
+      let _ = full_analyzer.build_tree(entry_ns, entry_def, 0)?;
+      Some(full_analyzer.reachable)
+    } else {
+      None
+    };
+
     // If ns_prefix specified, prune the tree to only include nodes that match the prefix
     // while keeping the ancestor paths to matching nodes
     if let Some(ref prefix) = self.config.ns_prefix {
@@ -151,9 +165,9 @@ impl CallTreeAnalyzer {
       max_depth,
     };
 
-    // Analyze unused definitions if requested
+    // Analyze definitions unreachable from the selected entry if requested
     let unused_definitions = if self.config.show_unused {
-      Some(self.find_unused_definitions(&program_code))
+      Some(self.find_unused_definitions(&program_code, full_reachable.as_ref().unwrap_or(&self.reachable)))
     } else {
       None
     };
@@ -423,7 +437,7 @@ impl CallTreeAnalyzer {
     (project, core)
   }
 
-  fn find_unused_definitions(&self, program_code: &ProgramCodeData) -> Vec<UnusedDefinition> {
+  fn find_unused_definitions(&self, program_code: &ProgramCodeData, reachable: &HashSet<String>) -> Vec<UnusedDefinition> {
     let mut unused = vec![];
 
     for (ns, file_data) in program_code.iter() {
@@ -449,7 +463,7 @@ impl CallTreeAnalyzer {
 
       for (def, entry) in &file_data.defs {
         let fqn = format!("{ns}/{def}");
-        if !self.reachable.contains(&fqn) {
+        if !reachable.contains(&fqn) {
           unused.push(UnusedDefinition {
             ns: ns.to_string(),
             def: def.to_string(),
@@ -573,11 +587,14 @@ pub fn format_for_llm(result: &CallTreeResult) -> String {
   output.push_str("```\n\n");
 
   if let Some(ref unused) = result.unused_definitions {
-    output.push_str("## Unused Definitions\n\n");
+    output.push_str("## Definitions Unreachable from This Entry\n\n");
     if unused.is_empty() {
-      output.push_str("No unused definitions found.\n");
+      output.push_str("Every analyzed definition is reachable from this entry.\n");
     } else {
-      output.push_str(&format!("Found {} unused definition(s):\n\n", unused.len()));
+      output.push_str(&format!(
+        "Found {} definition(s) unreachable from this entry. They may be dead code, or entry points called externally:\n\n",
+        unused.len()
+      ));
       for def in unused {
         output.push_str(&format!("- `{}`", def.fqn));
         if let Some(ref doc) = def.doc {
@@ -869,4 +886,43 @@ pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String 
 /// Format call count result as JSON
 pub fn format_count_as_json(result: &CallCountResult) -> Result<String, String> {
   serde_json::to_string_pretty(result).map_err(|e| format!("Failed to serialize to JSON: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn unused_report_explains_entry_relative_limit() {
+    let result = CallTreeResult {
+      entry: "app.main/main!".to_string(),
+      tree: CallTreeNode {
+        ns: "app.main".to_string(),
+        def: "main!".to_string(),
+        fqn: "app.main/main!".to_string(),
+        doc: None,
+        calls: vec![],
+        circular: false,
+        seen: false,
+        source: "project".to_string(),
+      },
+      stats: CallTreeStats {
+        reachable_count: 1,
+        circular_count: 0,
+        project_defs: 1,
+        core_defs: 0,
+        max_depth: 0,
+      },
+      unused_definitions: Some(vec![UnusedDefinition {
+        ns: "app.api".to_string(),
+        def: "handler".to_string(),
+        fqn: "app.api/handler".to_string(),
+        doc: None,
+      }]),
+    };
+
+    let output = format_for_llm(&result);
+    assert!(output.contains("Definitions Unreachable from This Entry"));
+    assert!(output.contains("may be dead code, or entry points called externally"));
+  }
 }

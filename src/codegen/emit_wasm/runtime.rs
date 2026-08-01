@@ -85,6 +85,7 @@ pub(super) fn build_wasm_module(
   heap_start: i32,
   string_data: &[u8],
   atom_initial_values: &[f64],
+  string_tag_id: i32,
   runtime_fn_count: u32,
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
@@ -169,12 +170,22 @@ pub(super) fn build_wasm_module(
       &ConstExpr::f64_const(init_val.into()),
     );
   }
+  let string_tag_global = 1 + atom_initial_values.len() as u32;
+  globals.global(
+    GlobalType {
+      val_type: ValType::I32,
+      mutable: false,
+      shared: false,
+    },
+    &ConstExpr::i32_const(string_tag_id),
+  );
   module.section(&globals);
 
   // Export section: memory, heap pointer global, and named functions
   let mut exports = ExportSection::new();
   exports.export("memory", ExportKind::Memory, 0);
   exports.export("__heap_ptr", ExportKind::Global, HEAP_PTR_GLOBAL);
+  exports.export("__string_tag", ExportKind::Global, string_tag_global);
   for (i, f) in fns.iter().enumerate() {
     if let Some(export_name) = &f.export_name {
       exports.export(export_name, ExportKind::Func, num_imports + i as u32);

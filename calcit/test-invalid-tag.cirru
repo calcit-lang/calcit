@@ -1,24 +1,28 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-invalid-tag)
-  :configs $ {} (:init-fn |test-invalid-tag.main/main!) (:reload-fn |test-invalid-tag.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-invalid-tag) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-invalid-tag.main/main!) (:mode :native) (:reload-fn 'test-invalid-tag.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-invalid-tag.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Result (:err :string) (:ok)
+            defenum Result (:err 'String) (:ok)
           :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy nil
           :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait $ .dummy :fn
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing %:: call") (println |Result: Result)
               println |ResultImpl: ResultImpl (; Direct call to %:: to see if function is invoked) (println "|Calling %:: ...")
@@ -26,9 +30,11 @@
                   result $ %:: Result :invalid
                 println "|Should not reach here:" result
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-invalid-tag.main)

@@ -15,12 +15,13 @@ use calcit::cli_args::{
   EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
   EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
 };
+use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
   validate_schema_for_write,
 };
-use cirru_edn::EdnTag;
+use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use md5::{Digest, Md5};
@@ -36,7 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::common::{
   ERR_CODE_INPUT_REQUIRED, format_path, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes, print_cli_warning_block,
-  read_code_input, resolve_definition_lookup,
+  read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   TreeCursorMutation, maintain_cursor_after_any_mutation, maintain_cursor_after_definition_delete,
@@ -236,18 +237,175 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
 
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
   let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
-  let snapshot = load_snapshot(snapshot_file)?;
+  let original_edn = cirru_edn::parse(&original_content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
+  let mut snapshot = snapshot::load_snapshot_data(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
+  let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
+  let canonicalized_type_forms = snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
   let formatted_content = render_snapshot_content(&snapshot)?;
 
   if formatted_content == original_content {
     println!("{} No formatting changes for '{}'", "·".dimmed(), snapshot_file.dimmed());
-    return Ok(());
+  } else {
+    fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
+    println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  }
+  if canonicalized_type_forms > 0 {
+    println!(
+      "{} Canonicalized {canonicalized_type_forms} legacy tag-based type form(s) to quoted symbols",
+      "✓".green()
+    );
   }
 
-  fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
-
-  println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  for advisory in advisories {
+    print_cli_warning_block(&advisory);
+  }
   Ok(())
+}
+
+fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: &Snapshot) -> Vec<String> {
+  let mut advisories = vec![];
+  let snapshot_arg = shell_quote(snapshot_file);
+
+  if original_edn.view_map().is_ok_and(|root| root.contains_key("configs")) {
+    advisories.push(format!(
+      "[W_LEGACY_CONFIG] Migrated top-level `:configs` to `:entries.default`; canonical formatting keeps the project runnable.\n\
+       Next: run `cr {snapshot_arg} config show` and set an explicit `:mode` plus any named entries with `cr {snapshot_arg} config set ...`."
+    ));
+  }
+
+  if Path::new(snapshot_file).file_name().and_then(|name| name.to_str()) == Some("compact.cirru") {
+    advisories.push(
+      "[W_LEGACY_SNAPSHOT_NAME] `compact.cirru` remains compatible but is the legacy snapshot filename.\n\
+       Next: rename it to `calcit.cirru`, then update scripts, CI, and ignore/attribute rules that still name the old file."
+        .to_owned(),
+    );
+  }
+
+  let selected = std::collections::BTreeSet::from([
+    crate::type_coverage::WeakTypeKind::SchemaDynamic,
+    crate::type_coverage::WeakTypeKind::CodeDynamic,
+  ]);
+  let mut legacy_any_count = count_legacy_any_schema_fields(original_edn);
+  let mut unresolved_dynamic_occurrences = 0usize;
+  let mut unresolved_dynamic_definitions = 0usize;
+  for (namespace, file) in &snapshot.files {
+    if namespace.ends_with(".$meta") || !(namespace == &snapshot.package || namespace.starts_with(&format!("{}.", snapshot.package))) {
+      continue;
+    }
+    for (definition, entry) in &file.defs {
+      if let Some(row) = crate::type_coverage::analyze_weak_types_entry(namespace, definition, entry, &selected) {
+        legacy_any_count += row
+          .occurrences
+          .iter()
+          .filter(|occurrence| occurrence.detail.contains("legacy-any"))
+          .count();
+        let hits = row
+          .occurrences
+          .iter()
+          .filter(|occurrence| occurrence.intent == crate::type_coverage::WeakTypeIntent::Unresolved)
+          .count();
+        if hits > 0 {
+          unresolved_dynamic_definitions += 1;
+          unresolved_dynamic_occurrences += hits;
+        }
+      }
+    }
+  }
+  if legacy_any_count > 0 {
+    advisories.push(format!(
+      "[W_LEGACY_ANY] Found {legacy_any_count} schema/code occurrence(s) of legacy `:any`; canonical schema output uses `'Dynamic`.\n\
+       Next: use a concrete type, `:generics` type variable, or trait `:where` bound where the value participates in typed code."
+    ));
+  }
+  if unresolved_dynamic_occurrences > 0 {
+    advisories.push(format!(
+      "[W_DYNAMIC_TYPE_DEBT] Found {unresolved_dynamic_occurrences} unresolved dynamic slot(s) in {unresolved_dynamic_definitions} local definition(s); formatting does not guess or rewrite semantic type contracts.\n\
+       Next: run `cr {snapshot_arg} analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`, then rerun without `--summary-only` for paths and recommendations."
+    ));
+  }
+
+  advisories
+}
+
+fn count_legacy_any_schema_fields(value: &Edn) -> usize {
+  match value {
+    Edn::Map(map) => map
+      .0
+      .iter()
+      .map(|(key, value)| {
+        if edn_key_matches(key, "schema") {
+          count_legacy_any_in_value(value)
+        } else {
+          count_legacy_any_schema_fields(value)
+        }
+      })
+      .sum(),
+    Edn::Record(record) => record
+      .pairs
+      .iter()
+      .map(|(key, value)| {
+        if key.ref_str() == "schema" {
+          count_legacy_any_in_value(value)
+        } else {
+          count_legacy_any_schema_fields(value)
+        }
+      })
+      .sum(),
+    Edn::List(items) => items.0.iter().map(count_legacy_any_schema_fields).sum(),
+    Edn::Set(items) => items.0.iter().map(count_legacy_any_schema_fields).sum(),
+    Edn::Tuple(tuple) => {
+      count_legacy_any_schema_fields(tuple.tag.as_ref())
+        + tuple
+          .enum_tag
+          .as_ref()
+          .map(|tag| count_legacy_any_schema_fields(tag.as_ref()))
+          .unwrap_or(0)
+        + tuple.extra.iter().map(count_legacy_any_schema_fields).sum::<usize>()
+    }
+    Edn::Atom(inner) => count_legacy_any_schema_fields(inner),
+    _ => 0,
+  }
+}
+
+fn count_legacy_any_in_value(value: &Edn) -> usize {
+  match value {
+    Edn::Tag(tag) => usize::from(tag.ref_str() == "any"),
+    Edn::Quote(code) => count_cirru_leaf(code, ":any"),
+    Edn::List(items) => items.0.iter().map(count_legacy_any_in_value).sum(),
+    Edn::Set(items) => items.0.iter().map(count_legacy_any_in_value).sum(),
+    Edn::Map(map) => map
+      .0
+      .iter()
+      .map(|(key, value)| count_legacy_any_in_value(key) + count_legacy_any_in_value(value))
+      .sum(),
+    Edn::Record(record) => record.pairs.iter().map(|(_, value)| count_legacy_any_in_value(value)).sum(),
+    Edn::Tuple(tuple) => {
+      count_legacy_any_in_value(tuple.tag.as_ref())
+        + tuple
+          .enum_tag
+          .as_ref()
+          .map(|tag| count_legacy_any_in_value(tag.as_ref()))
+          .unwrap_or(0)
+        + tuple.extra.iter().map(count_legacy_any_in_value).sum::<usize>()
+    }
+    Edn::Atom(inner) => count_legacy_any_in_value(inner),
+    _ => 0,
+  }
+}
+
+fn count_cirru_leaf(node: &Cirru, expected: &str) -> usize {
+  match node {
+    Cirru::Leaf(value) => usize::from(value.as_ref() == expected),
+    Cirru::List(items) => items.iter().map(|item| count_cirru_leaf(item, expected)).sum(),
+  }
+}
+
+fn edn_key_matches(value: &Edn, expected: &str) -> bool {
+  match value {
+    Edn::Tag(tag) => tag.ref_str() == expected,
+    Edn::Str(text) | Edn::Symbol(text) => text.as_ref() == expected,
+    _ => false,
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -404,7 +562,10 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "raise"
           | "wrap"
       ),
-      "config" => matches!(subcommand, "version" | "set" | "add-module" | "rm-module"),
+      "config" => matches!(
+        subcommand,
+        "version" | "set" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
+      ),
       _ => false,
     };
     if !supported {
@@ -1953,6 +2114,10 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     return Err("Imports must be a Cirru list or JSON array of import rules.".to_string());
   };
 
+  for warning in validate_import_rules(&rules)? {
+    eprintln!("{} in namespace '{}': {warning}", "Warning:".yellow(), opts.namespace);
+  }
+
   // Extract old imports for comparison
   let old_imports = extract_require_list(&file_data.ns.code);
 
@@ -2097,6 +2262,8 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
 
   let new_rule = parse_input_to_cirru(&raw)?;
 
+  let _ = validate_import_rules(std::slice::from_ref(&new_rule))?;
+
   // Validate that the rule has a source namespace
   let new_source_ns =
     get_require_source_ns(&new_rule).ok_or("Invalid require rule: first element must be a namespace name (e.g. 'calcit.core')")?;
@@ -2119,15 +2286,10 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
     .iter()
     .position(|r| get_require_source_ns(r).as_deref() == Some(&new_source_ns));
 
-  if let Some(idx) = existing_idx {
+  let replaced = if let Some(idx) = existing_idx {
     if opts.overwrite {
       rules[idx] = new_rule.clone();
-      println!(
-        "{} Replaced require rule for '{}' in namespace '{}'",
-        "✓".green(),
-        new_source_ns.cyan(),
-        opts.namespace
-      );
+      true
     } else {
       return Err(format!(
         "Require rule for '{}' already exists in namespace '{}'. Use --overwrite to replace.",
@@ -2136,6 +2298,21 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
     }
   } else {
     rules.push(new_rule.clone());
+    false
+  };
+
+  for warning in validate_import_rules(&rules)? {
+    eprintln!("{} in namespace '{}': {warning}", "Warning:".yellow(), opts.namespace);
+  }
+
+  if replaced {
+    println!(
+      "{} Replaced require rule for '{}' in namespace '{}'",
+      "✓".green(),
+      new_source_ns.cyan(),
+      opts.namespace
+    );
+  } else {
     println!(
       "{} Added require rule for '{}' in namespace '{}'",
       "✓".green(),
@@ -2515,8 +2692,9 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 #[cfg(test)]
 mod tests {
   use super::{
-    TransactionOperationReport, bump_semver_value, load_snapshot, parse_examples_input, parse_input_to_cirru, parse_schema_input,
-    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_snapshot,
+    TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields, load_snapshot,
+    parse_examples_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations, rename_definition_declaration,
+    run_staged_transaction_with, save_snapshot,
   };
   use cirru_parser::Cirru;
   use std::fs;
@@ -2548,7 +2726,7 @@ mod tests {
   fn fake_version_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
     let version = args.get(2).ok_or_else(|| "fake operation needs version at index 2".to_string())?;
     let mut snapshot = load_snapshot(&stage_path.to_string_lossy())?;
-    snapshot.configs.version = version.to_string();
+    snapshot.version = version.to_string();
     save_snapshot(&snapshot, &stage_path.to_string_lossy())?;
     Ok(TransactionOperationReport {
       index,
@@ -2564,6 +2742,40 @@ mod tests {
 
   fn list(items: Vec<Cirru>) -> Cirru {
     Cirru::List(items)
+  }
+
+  #[test]
+  fn format_advisories_cover_legacy_structure_filename_and_dynamic_debt() {
+    let snapshot = load_snapshot("calcit/test.cirru").expect("fixture snapshot should load");
+    let original_edn = cirru_edn::parse("{} (:configs $ {}) (:schema :any)").expect("legacy markers should parse");
+    let advisories = collect_format_advisories("compact.cirru", &original_edn, &snapshot).join("\n");
+
+    assert!(advisories.contains("W_LEGACY_CONFIG"), "advisories: {advisories}");
+    assert!(advisories.contains("W_LEGACY_SNAPSHOT_NAME"), "advisories: {advisories}");
+    assert!(advisories.contains("W_LEGACY_ANY"), "advisories: {advisories}");
+    assert!(advisories.contains("W_DYNAMIC_TYPE_DEBT"), "advisories: {advisories}");
+    assert!(advisories.contains("analyze weak-types"), "advisories: {advisories}");
+  }
+
+  #[test]
+  fn canonical_typed_snapshot_has_no_format_advisories() {
+    let original_edn = cirru_edn::parse(
+      "{} (:package |mini) (:version |0.0.1)\n  :entries $ {}\n    :default $ {} (:description |) (:init-fn 'mini/main!) (:mode :native) (:reload-fn 'mini/reload!)\n      :modules $ []\n      :type-slots $ {}\n  :files $ {}",
+    )
+    .expect("canonical fixture should parse");
+    let snapshot = calcit::snapshot::load_snapshot_data(&original_edn, "calcit.cirru").expect("canonical fixture should load");
+
+    assert!(collect_format_advisories("calcit.cirru", &original_edn, &snapshot).is_empty());
+  }
+
+  #[test]
+  fn legacy_any_counter_only_reads_schema_fields() {
+    let data = cirru_edn::parse(
+      "{}\n  :schema :any\n  :nested $ %{} :CodeEntry\n    :schema $ quote $ :: :list :any\n  :code $ quote $ {} (:schema :any)",
+    )
+    .expect("schema fixture should parse");
+
+    assert_eq!(count_legacy_any_schema_fields(&data), 2);
   }
 
   #[test]
@@ -2701,7 +2913,6 @@ mod tests {
     assert_eq!(
       load_snapshot(&fixture.path.to_string_lossy())
         .expect("committed snapshot should load")
-        .configs
         .version,
       "9.0.0"
     );

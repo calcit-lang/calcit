@@ -21,8 +21,8 @@ use type_checking::{
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value};
 use type_rewriting::{
-  try_rewrite_local_fn_tuple_args_to_enum_tuples, try_rewrite_loose_record_args_to_struct_records, try_rewrite_map_args_to_records,
-  try_rewrite_tuple_args_to_enum_tuples,
+  build_enum_ref_node, build_struct_ref_node, try_rewrite_local_fn_tuple_args_to_enum_tuples,
+  try_rewrite_loose_record_args_to_struct_records, try_rewrite_map_args_to_records, try_rewrite_tuple_args_to_enum_tuples,
 };
 
 use std::cell::Cell;
@@ -244,7 +244,7 @@ pub fn ensure_ns_def_compiled(
 /// The first argument must be a two-element list `(:slot-name TypeExpr)`.
 /// The type is resolved and pushed as a scoped override, then all body
 /// expressions are preprocessed under that scope, and finally the override
-/// is popped.  The preprocessed form emits `(with-type-slot <binding-list> body...)`.
+/// is popped. The wrapper is always erased from the preprocessed output.
 fn preprocess_with_type_slot_block(
   head_form: &Calcit,
   args: &CalcitList,
@@ -371,11 +371,20 @@ fn preprocess_with_type_slot_block(
     }
   };
 
+  let body_args = args.drop_left();
+  if body_args.is_empty() {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      "with-type-slot expected at least one body expression",
+      call_stack,
+      head_location,
+    ));
+  }
+
   // Push the scoped override
   push_type_slot_override(slot_name.clone(), type_annotation);
 
   // Preprocess body expressions under the override
-  let body_args = args.drop_left();
   let mut preprocessed_body: Vec<Calcit> = Vec::with_capacity(body_args.len());
   let mut preprocess_err: Option<CalcitErr> = None;
   for expr in body_args.iter() {
@@ -395,13 +404,16 @@ fn preprocess_with_type_slot_block(
     return Err(e);
   }
 
-  // Emit as (with-type-slot body...) — binding pair is stripped since the override was
-  // already applied at preprocess time.  At runtime, with_type_slot_runtime simply
-  // returns the last evaluated body value, so no binding evaluation occurs.
+  // The binding is compile-time-only and must never escape into runtime/codegen.
   if preprocessed_body.len() == 1 {
     return Ok(preprocessed_body.remove(0));
   }
-  let mut result_items = vec![head_form.to_owned()];
+  // `do` expands to `&let () body...`; construct the expanded sequence directly so
+  // already-preprocessed body expressions are not expanded or checked a second time.
+  let mut result_items = vec![
+    Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns)),
+    Calcit::from(CalcitList::default()),
+  ];
   result_items.extend(preprocessed_body);
   Ok(Calcit::from(CalcitList::from(result_items.as_slice())))
 }
@@ -791,9 +803,15 @@ pub fn preprocess_expr(
         preprocess_list_call(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
-      Ok(expr.to_owned())
-    }
+    Calcit::Number(..)
+    | Calcit::Str(..)
+    | Calcit::Nil
+    | Calcit::Bool(..)
+    | Calcit::Tag(..)
+    | Calcit::CirruQuote(..)
+    | Calcit::Struct(..)
+    | Calcit::Enum(..)
+    | Calcit::Record(..) => Ok(expr.to_owned()),
     Calcit::Method(..) => Ok(expr.to_owned()),
     Calcit::Proc(..) => Ok(expr.to_owned()),
     Calcit::Syntax(..) => Ok(expr.to_owned()),
@@ -833,6 +851,12 @@ fn preprocess_list_call(
   // Pattern: (expr :field) where expr has a known record type → rewrite to (.-field expr)
   // Pattern: (expr .method args...) where expr has a known record/trait type → rewrite to (.method expr args...)
   // When type is unknown (Dynamic), silently fall through — :tag / .method may be normal arguments.
+  if let Some(rewritten) =
+    try_rewrite_struct_enum_constructor_head_call(&head_form, &args, scope_types, file_ns, &def_name, check_warnings, call_stack)?
+  {
+    return preprocess_expr(&rewritten, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+  }
+
   if !args.is_empty() {
     let first_arg = &args[0];
     match first_arg {
@@ -1183,7 +1207,9 @@ fn preprocess_list_call(
       | Calcit::Registered { .. }
       | Calcit::List(..)
       | Calcit::RawCode(..)
-      | Calcit::Symbol { .. } => {
+      | Calcit::Symbol { .. }
+      | Calcit::Struct(..)
+      | Calcit::Enum(..) => {
         // Check if the head (the thing being called) is actually callable
         check_callable_type(&head_form, scope_types, file_ns, &def_name, check_warnings);
 
@@ -1483,6 +1509,235 @@ fn preprocess_list_call(
         ))
       }
     },
+  }
+}
+
+fn try_rewrite_struct_enum_constructor_head_call(
+  head_form: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  _call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  // Constructor sugar is only valid when the head is the data definition itself.
+  // A record instance and its struct prototype intentionally share most type
+  // information, so `resolve_type_value` alone cannot distinguish them.
+  let constructor_kind = match head_form {
+    Calcit::Struct(_) => Some("defstruct"),
+    Calcit::Enum(_) => Some("defenum"),
+    Calcit::Import(CalcitImport { ns, def, .. }) => data_definition_kind(ns, def),
+    Calcit::Symbol { sym, info, .. } => data_definition_kind(&info.at_ns, sym),
+    _ => None,
+  };
+
+  let Some(type_info) = resolve_type_value(head_form, scope_types) else {
+    return Ok(None);
+  };
+
+  if constructor_kind == Some("defstruct")
+    && let Some((struct_def, ns_def_path)) = type_info.as_ref().resolve_to_struct_with_ref()
+  {
+    // Only attempt constructor-style rewriting for tag/value-style positional args.
+    // Method-call syntax (expr .method ...) is represented as `Method` in the first arg
+    // and must be handled by the method-branch below.
+    if matches!(args.first(), Some(Calcit::Method(..))) {
+      return Ok(None);
+    }
+
+    if !args.len().is_multiple_of(2) {
+      gen_check_warning(
+        format!(
+          "[Warn] struct constructor rewrite skipped: `{}` has {} positional argument(s), expected key/value pairs, at {}/{}",
+          brief_type_of_value(head_form),
+          args.len(),
+          file_ns,
+          def_name,
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return Ok(None);
+    }
+
+    let mut provided_fields: std::collections::HashMap<EdnTag, &Calcit> = std::collections::HashMap::new();
+    let args_items = args.to_vec();
+    for chunk in args_items.chunks(2) {
+      if let [Calcit::Tag(key), value] = chunk {
+        if !struct_def.fields.iter().any(|f| f == key) {
+          gen_check_warning(
+            format!(
+              "[Warn] struct constructor rewrite skipped for `{}`: key `:{}` is not a field of struct `{}` at {}/{}",
+              brief_type_of_value(head_form),
+              key,
+              struct_def.name,
+              file_ns,
+              def_name,
+            ),
+            file_ns,
+            check_warnings,
+          );
+          return Ok(None);
+        }
+        if provided_fields.insert(key.to_owned(), value).is_some() {
+          gen_check_warning(
+            format!(
+              "[Warn] struct constructor rewrite skipped for `{}`: duplicate field `:{}` at {}/{}",
+              struct_def.name, key, file_ns, def_name,
+            ),
+            file_ns,
+            check_warnings,
+          );
+          return Ok(None);
+        }
+      } else {
+        gen_check_warning(
+          format!(
+            "[Warn] struct constructor rewrite skipped for `{}`: all arguments must be tag/value pairs at {}/{}",
+            brief_type_of_value(head_form),
+            file_ns,
+            def_name,
+          ),
+          file_ns,
+          check_warnings,
+        );
+        return Ok(None);
+      }
+    }
+
+    for (idx, field) in struct_def.fields.iter().enumerate() {
+      if !provided_fields.contains_key(field)
+        && !matches!(
+          struct_def.field_types.get(idx).map(AsRef::as_ref),
+          Some(CalcitTypeAnnotation::Optional(_))
+        )
+      {
+        gen_check_warning(
+          format!(
+            "[Warn] struct constructor rewrite skipped for `{}`: required field `:{}` is missing at {}/{}",
+            struct_def.name, field, file_ns, def_name,
+          ),
+          file_ns,
+          check_warnings,
+        );
+        return Ok(None);
+      }
+    }
+
+    for (field, value) in &provided_fields {
+      let Some(field_idx) = struct_def.fields.iter().position(|candidate| candidate == field) else {
+        continue;
+      };
+      let Some(expected_type) = struct_def.field_types.get(field_idx) else {
+        continue;
+      };
+      if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+        continue;
+      }
+      if let Some(actual_type) = resolve_type_value(value, scope_types)
+        && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+      {
+        gen_check_warning(
+          format!(
+            "[Warn] struct `{}` field `:{}` expects type `{}`, but got `{}` at {}/{}",
+            struct_def.name,
+            field,
+            expected_type.to_brief_string(),
+            actual_type.to_brief_string(),
+            file_ns,
+            def_name,
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+
+    let struct_ref_node = build_struct_ref_node(&struct_def, ns_def_path, file_ns, def_name);
+    let mut record_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
+    record_items.push(Calcit::Proc(CalcitProc::NativeRecord));
+    record_items.push(struct_ref_node);
+    for field in struct_def.fields.iter() {
+      record_items.push(Calcit::Tag(field.to_owned()));
+      if let Some(value) = provided_fields.get(field) {
+        record_items.push((*value).to_owned());
+      } else {
+        record_items.push(Calcit::Nil);
+      }
+    }
+
+    return Ok(Some(Calcit::from(record_items)));
+  }
+
+  if constructor_kind == Some("defenum")
+    && let Some((enum_def, ns_def_path)) = type_info.as_ref().resolve_to_enum_with_ref()
+  {
+    let Some(first_arg) = args.first() else {
+      gen_check_warning(
+        format!(
+          "[Warn] enum constructor rewrite skipped: `{}` is missing variant tag at {}/{}",
+          brief_type_of_value(head_form),
+          file_ns,
+          def_name
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return Ok(None);
+    };
+
+    let Calcit::Tag(tag) = first_arg else {
+      gen_check_warning(
+        format!(
+          "[Warn] enum constructor rewrite skipped for `{}`: first argument should be a variant tag, at {}/{}",
+          brief_type_of_value(head_form),
+          file_ns,
+          def_name,
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return Ok(None);
+    };
+
+    if enum_def.find_variant(tag).is_none() {
+      let variants: Vec<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
+      gen_check_warning(
+        format!(
+          "[Warn] enum `{}` does not have variant `:{}`. Available: [{}], at {}/{}",
+          enum_def.name(),
+          tag.ref_str(),
+          variants.join(", "),
+          file_ns,
+          def_name,
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return Ok(None);
+    }
+
+    let enum_ref_node = build_enum_ref_node(enum_def, ns_def_path, file_ns, def_name);
+    let mut items: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
+    items.push(Calcit::Proc(CalcitProc::NativeEnumTupleNew));
+    items.push(enum_ref_node);
+    items.extend(args.to_vec());
+
+    return Ok(Some(Calcit::from(items)));
+  }
+
+  Ok(None)
+}
+
+fn data_definition_kind(ns: &str, def: &str) -> Option<&'static str> {
+  let Calcit::List(code) = program::lookup_def_code(ns, def)? else {
+    return None;
+  };
+  match code.first() {
+    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defstruct" => Some("defstruct"),
+    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defenum" => Some("defenum"),
+    _ => None,
   }
 }
 
@@ -3917,19 +4172,11 @@ pub fn preprocess_unsafe_coerce(
     ctx.check_warnings,
     ctx.call_stack,
   )?;
-  let target_type = CalcitTypeAnnotation::parse_type_annotation_form(args.get(1).expect("validated unsafe-coerce type"));
-
-  if let Calcit::Local(local) = &target_form {
-    let mut typed_local = local.to_owned();
-    typed_local.type_info = target_type.clone();
-    ctx.scope_types.insert(typed_local.sym.to_owned(), target_type);
-    return Ok(Calcit::Local(typed_local));
-  }
 
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     target_form,
-    args.get(1).expect("validated unsafe-coerce type").to_owned(),
+    args.get(1).expect("declared unsafe-coerce type").to_owned(),
   ]))
 }
 
@@ -4263,7 +4510,7 @@ mod tests {
   }
 
   #[test]
-  fn unsafe_coerce_attaches_declared_type_without_validation() {
+  fn unsafe_coerce_preserves_boundary_node_and_declared_expression_type() {
     let expr = Cirru::List(vec![Cirru::leaf("unsafe-coerce"), Cirru::leaf("x"), Cirru::leaf(":number")]);
     let code = code_to_calcit(&expr, "tests.unsafe-coerce", "main", vec![]).expect("parse cirru");
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -4275,14 +4522,18 @@ mod tests {
     let resolved =
       preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.unsafe-coerce", &warnings, &stack).expect("preprocess coercion");
 
-    let Calcit::Local(local) = resolved else {
-      panic!("unsafe-coerce local should return a typed local");
+    let Calcit::List(nodes) = &resolved else {
+      panic!("unsafe-coerce should remain visible in the preprocessed tree");
     };
-    assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Number));
+    assert!(matches!(nodes.first(), Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _))));
     assert!(matches!(
-      scope_types.get("x").map(AsRef::as_ref),
+      infer_type_from_expr(&resolved, &scope_types).map(|t| t.as_ref().clone()),
       Some(CalcitTypeAnnotation::Number)
     ));
+    assert!(
+      !scope_types.contains_key("x"),
+      "coercing one expression must not retype every later use of the local"
+    );
     assert!(warnings.borrow().is_empty());
   }
 
@@ -4822,6 +5073,576 @@ mod tests {
 
     // Currently no warnings expected for valid field access
     // In future, we'll check warnings.borrow().is_empty()
+  }
+
+  #[test]
+  fn rewrites_struct_head_call_to_record_ctor() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+
+    let expr = Cirru::List(vec![
+      Cirru::leaf("Person"),
+      Cirru::leaf(":name"),
+      Cirru::leaf("|Alice"),
+      Cirru::leaf(":age"),
+      Cirru::leaf("20"),
+    ]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Struct(person_struct.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Person"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Person"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(person_struct.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))));
+    match items.get(1) {
+      Some(Calcit::Struct(struct_def)) => assert_eq!(struct_def.name, person_struct.name),
+      other => panic!("expected struct prototype at position 1, got {other:?}"),
+    }
+    assert_eq!(*items.get(2).expect("name field key"), Calcit::Tag(EdnTag::from("name")));
+    assert_eq!(*items.get(4).expect("age field key"), Calcit::Tag(EdnTag::from("age")));
+    assert_eq!(*items.get(3).expect("name value"), Calcit::Str(Arc::from("Alice")));
+    assert_eq!(*items.get(5).expect("age value"), Calcit::Number(20.0));
+  }
+
+  #[test]
+  fn rewrites_enum_head_call_to_enum_tuple_ctor() {
+    use crate::calcit::CalcitEnum;
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Result"),
+        vec![EdnTag::from("ok"), EdnTag::from("err")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::default())),
+        Calcit::List(Arc::new(CalcitList::default())),
+      ]),
+    };
+    let result_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid result enum");
+
+    let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":ok")]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Enum(result_enum.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Result"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Result"),
+      Arc::new(CalcitTypeAnnotation::Enum(Arc::new(result_enum.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))));
+    match items.get(1) {
+      Some(Calcit::Record(enum_record)) => assert_eq!(enum_record.struct_ref.name, *result_enum.name()),
+      other => panic!("expected enum prototype at position 1, got {other:?}"),
+    }
+    assert_eq!(*items.get(2).expect("tag key"), Calcit::Tag(EdnTag::from("ok")));
+    assert_eq!(items.len(), 3);
+  }
+
+  #[test]
+  fn rejects_struct_head_call_with_odd_args() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+
+    let expr = Cirru::List(vec![Cirru::leaf("Person"), Cirru::leaf(":name")]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Struct(person_struct.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Person"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Person"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(person_struct.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))),
+      "should not rewrite when struct constructor args are odd"
+    );
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on odd key/value arguments");
+    assert!(
+      warnings_vec.iter().any(|w| w.to_string().contains("expected key/value pairs")),
+      "warning should mention expected key/value pairs"
+    );
+  }
+
+  #[test]
+  fn rejects_struct_head_call_with_unknown_field() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+
+    let expr = Cirru::List(vec![
+      Cirru::leaf("Person"),
+      Cirru::leaf(":email"),
+      Cirru::leaf("|alice@example.com"),
+      Cirru::leaf(":age"),
+      Cirru::leaf("20"),
+    ]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Struct(person_struct.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Person"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Person"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(person_struct.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))),
+      "should not rewrite when key not in struct fields"
+    );
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on unknown struct field");
+    assert!(
+      warnings_vec.iter().any(|w| w.to_string().contains(":email")),
+      "warning should mention unknown field"
+    );
+  }
+
+  #[test]
+  fn rejects_struct_head_call_with_duplicate_or_missing_required_field() {
+    use cirru_edn::EdnTag;
+
+    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+    let warnings = RefCell::new(vec![]);
+    let scope_types = ScopeTypes::new();
+    let stack = CallStackList::default();
+
+    let duplicate_args = CalcitList::from(
+      vec![
+        Calcit::Tag(EdnTag::from("name")),
+        Calcit::Str(Arc::from("Alice")),
+        Calcit::Tag(EdnTag::from("name")),
+        Calcit::Str(Arc::from("Bob")),
+      ]
+      .as_slice(),
+    );
+    let duplicate_result = try_rewrite_struct_enum_constructor_head_call(
+      &Calcit::Struct(person_struct.clone()),
+      &duplicate_args,
+      &scope_types,
+      "tests.record",
+      "demo",
+      &warnings,
+      &stack,
+    )
+    .expect("check duplicate fields");
+    assert!(duplicate_result.is_none());
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .any(|warning| warning.to_string().contains("duplicate field"))
+    );
+
+    warnings.borrow_mut().clear();
+    let missing_args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("name")), Calcit::Str(Arc::from("Alice"))].as_slice());
+    let missing_result = try_rewrite_struct_enum_constructor_head_call(
+      &Calcit::Struct(person_struct),
+      &missing_args,
+      &scope_types,
+      "tests.record",
+      "demo",
+      &warnings,
+      &stack,
+    )
+    .expect("check missing fields");
+    assert!(missing_result.is_none());
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .any(|warning| warning.to_string().contains("required field `:age` is missing"))
+    );
+  }
+
+  #[test]
+  fn record_and_enum_instances_are_not_constructor_heads() {
+    use crate::calcit::{CalcitEnum, CalcitTuple};
+    use cirru_edn::EdnTag;
+
+    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name")]);
+    let person = Calcit::Record(CalcitRecord {
+      struct_ref: Arc::new(person_struct),
+      values: Arc::new(vec![Calcit::Str(Arc::from("Alice"))]),
+    });
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Result"), vec![EdnTag::from("ok")])),
+      values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
+    };
+    let result_enum = CalcitEnum::from_record(enum_record).expect("valid enum");
+    let enum_value = Calcit::Tuple(CalcitTuple {
+      tag: Arc::new(Calcit::Tag(EdnTag::from("ok"))),
+      extra: vec![],
+      sum_type: Some(Arc::new(result_enum)),
+    });
+    let args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("name")), Calcit::Str(Arc::from("Bob"))].as_slice());
+    let scope_types = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    assert!(
+      try_rewrite_struct_enum_constructor_head_call(&person, &args, &scope_types, "tests.record", "demo", &warnings, &stack,)
+        .expect("record instance boundary")
+        .is_none()
+    );
+    assert!(
+      try_rewrite_struct_enum_constructor_head_call(&enum_value, &args, &scope_types, "tests.record", "demo", &warnings, &stack,)
+        .expect("enum instance boundary")
+        .is_none()
+    );
+    assert!(warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn warns_on_record_constructor_field_type_mismatch() {
+    use cirru_edn::EdnTag;
+
+    let mut point_struct = CalcitStruct::from_fields(EdnTag::from("Point"), vec![EdnTag::from("x")]);
+    point_struct.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    let args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("x")), Calcit::Str(Arc::from("wrong"))].as_slice());
+    let warnings = RefCell::new(vec![]);
+    let result = try_rewrite_struct_enum_constructor_head_call(
+      &Calcit::Struct(point_struct),
+      &args,
+      &ScopeTypes::new(),
+      "tests.record",
+      "demo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("rewrite typed struct constructor");
+
+    assert!(result.is_some());
+    assert!(warnings.borrow().iter().any(|warning| {
+      let message = warning.to_string();
+      message.contains("field `:x`") && message.contains("expects type")
+    }));
+  }
+
+  #[test]
+  fn preserves_struct_postfix_method_calls() {
+    use crate::calcit::MethodKind;
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let cat_struct = CalcitStruct::from_fields(EdnTag::from("Cat"), vec![EdnTag::from("name"), EdnTag::from("color")]);
+
+    let expr = Cirru::List(vec![Cirru::leaf("kitty"), Cirru::leaf(".rename"), Cirru::leaf("|LagopusB")]);
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct method call");
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("kitty"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(Arc::from("kitty"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(cat_struct))));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct method call");
+
+    let nodes = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      !matches!(nodes.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))),
+      "method-call path should not be rewritten as a struct constructor"
+    );
+    assert!(
+      matches!(nodes.first(), Some(Calcit::Method(_, MethodKind::Invoke(_)))),
+      "method-call should become typed method form"
+    );
+    assert!(warnings.borrow().is_empty(), "should not warn for valid method-call syntax");
+  }
+
+  #[test]
+  fn rejects_enum_head_call_with_missing_tag() {
+    use crate::calcit::{CalcitEnum, CalcitRecord};
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Result"),
+        vec![EdnTag::from("ok"), EdnTag::from("err")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::default())),
+        Calcit::List(Arc::new(CalcitList::default())),
+      ]),
+    };
+    let result_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid result enum");
+
+    let expr = Cirru::List(vec![Cirru::leaf("Result")]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Enum(result_enum.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Result"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Result"),
+      Arc::new(CalcitTypeAnnotation::Enum(Arc::new(result_enum.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))),
+      "should not rewrite when enum constructor lacks variant tag"
+    );
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on missing enum variant tag");
+    assert!(
+      warnings_vec.iter().any(|w| w.to_string().contains("missing variant tag")),
+      "warning should mention missing variant tag"
+    );
+  }
+
+  #[test]
+  fn rejects_enum_head_call_with_invalid_tag() {
+    use crate::calcit::{CalcitEnum, CalcitRecord};
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Result"),
+        vec![EdnTag::from("ok"), EdnTag::from("err")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::default())),
+        Calcit::List(Arc::new(CalcitList::default())),
+      ]),
+    };
+    let result_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid result enum");
+
+    let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":bad")]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Enum(result_enum.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Result"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Result"),
+      Arc::new(CalcitTypeAnnotation::Enum(Arc::new(result_enum.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))),
+      "should not rewrite when enum variant is not valid"
+    );
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on invalid enum variant");
+    assert!(
+      warnings_vec.iter().any(|w| w.to_string().contains("does not have variant")),
+      "warning should mention unknown enum variant"
+    );
+  }
+
+  #[test]
+  fn rejects_enum_head_call_with_non_tag_first_arg() {
+    use crate::calcit::{CalcitEnum, CalcitRecord};
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Mode"),
+        vec![EdnTag::from("dark"), EdnTag::from("light")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::default())),
+        Calcit::List(Arc::new(CalcitList::default())),
+      ]),
+    };
+    let mode_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid mode enum");
+
+    let expr = Cirru::List(vec![Cirru::leaf("Mode"), Cirru::leaf("dark")]);
+
+    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::Enum(mode_enum.clone());
+    let code = Calcit::from(code_items);
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("Mode"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Mode"),
+      Arc::new(CalcitTypeAnnotation::Enum(Arc::new(mode_enum.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+
+    let items = match result {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))),
+      "should not rewrite when enum variant prefix is not a tag"
+    );
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on non-tag first arg");
+    assert!(
+      warnings_vec
+        .iter()
+        .any(|w| w.to_string().contains("first argument should be a variant tag")),
+      "warning should mention non-tag first argument"
+    );
   }
 
   #[test]

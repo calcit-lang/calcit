@@ -243,7 +243,7 @@ fn check_dependency_status(deps: &PackageDeps, options: &TopLevelCaps, warn_only
   let modules_dir = modules_dir(options)?;
   let mut issues = 0;
   for (org_and_folder, version) in &deps.dependencies {
-    let folder = org_and_folder.split_once('/').ok_or("invalid name")?.1;
+    let folder = module_folder(org_and_folder)?;
     let folder_path = modules_dir.join(folder);
     if !folder_path.exists() {
       issues += 1;
@@ -280,7 +280,7 @@ fn check_dependency_status(deps: &PackageDeps, options: &TopLevelCaps, warn_only
 fn reset_dependency_status(deps: &PackageDeps, options: &TopLevelCaps) -> Result<(), String> {
   let modules_dir = modules_dir(options)?;
   for org_and_folder in deps.dependencies.keys() {
-    let folder = org_and_folder.split_once('/').ok_or("invalid name")?.1;
+    let folder = module_folder(org_and_folder)?;
     let folder_path = modules_dir.join(folder);
     if !folder_path.exists() {
       continue;
@@ -288,6 +288,10 @@ fn reset_dependency_status(deps: &PackageDeps, options: &TopLevelCaps) -> Result
     let repo = GitRepo { dir: folder_path.clone() };
     let changes = wrap_module_error(repo.status_porcelain(), org_and_folder, &folder_path, "read working tree status")?;
     if changes.is_empty() {
+      continue;
+    }
+    if !changes.iter().any(|change| !change.starts_with("?? ")) {
+      println!("untracked files remain in {}", org_and_folder.yellow());
       continue;
     }
     wrap_module_error(repo.reset_hard(), org_and_folder, &folder_path, "reset local changes")?;
@@ -302,7 +306,7 @@ fn wrap_module_error<T>(result: Result<T, String>, org_and_folder: &str, folder_
 
 fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, org_and_folder: Arc<str>) -> Result<(), String> {
   // check if exists
-  let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
+  let folder = module_folder(&org_and_folder)?;
   // split with / into (org,folder)
 
   let folder_path = modules_dir.join(folder);
@@ -550,12 +554,54 @@ fn normalize_package_name(raw: &str) -> Result<String, String> {
   }
   s = s.trim_end_matches('/').to_string();
 
-  let segments: Vec<&str> = s.split('/').filter(|x| !x.is_empty()).collect();
-  if segments.len() < 2 {
-    return Err(format!("invalid package '{raw}', expected org/repo or github URL"));
+  let (org, repo) =
+    validated_module_parts(&s).map_err(|_| format!("invalid package '{raw}', expected canonical org/repo or github URL"))?;
+  Ok(format!("{org}/{repo}"))
+}
+
+fn module_folder(name: &str) -> Result<&str, String> {
+  validated_module_parts(name).map(|(_, repo)| repo)
+}
+
+fn validated_module_parts(name: &str) -> Result<(&str, &str), String> {
+  let mut segments = name.split('/');
+  let org = segments.next().ok_or_else(|| format!("invalid module name '{name}'"))?;
+  let repo = segments.next().ok_or_else(|| format!("invalid module name '{name}'"))?;
+  if segments.next().is_some() || !valid_module_component(org) || !valid_module_component(repo) {
+    return Err(format!("invalid module name '{name}', expected canonical org/repo"));
+  }
+  Ok((org, repo))
+}
+
+fn valid_module_component(component: &str) -> bool {
+  !component.is_empty()
+    && component != "."
+    && component != ".."
+    && component
+      .bytes()
+      .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{module_folder, normalize_package_name};
+
+  #[test]
+  fn module_names_are_canonical_before_path_use() {
+    assert_eq!(module_folder("calcit-lang/respo.calcit"), Ok("respo.calcit"));
+    for invalid in ["../outside", "org/../outside", "org//repo", "org/repo/extra", "/tmp/repo"] {
+      assert!(module_folder(invalid).is_err(), "{invalid} should be rejected");
+    }
   }
 
-  Ok(format!("{}/{}", segments[0], segments[1]))
+  #[test]
+  fn normalized_package_names_reject_extra_path_segments() {
+    assert_eq!(
+      normalize_package_name("https://github.com/calcit-lang/respo.calcit.git"),
+      Ok("calcit-lang/respo.calcit".to_owned())
+    );
+    assert!(normalize_package_name("calcit-lang/respo.calcit/extra").is_err());
+  }
 }
 
 fn write_deps_file(deps_file: &str, deps: &PackageDeps) -> Result<(), String> {
@@ -675,7 +721,7 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
 }
 
 fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<Option<String>, String> {
-  let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
+  let folder = module_folder(&org_and_folder)?;
   let folder_path = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules").join(folder);
   let git_repo = GitRepo { dir: folder_path.clone() };
   if folder_path.exists() {

@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-07-26
+更新时间：2026-07-30
 
 ## 目录原则
 
@@ -21,7 +21,7 @@
 | `03-16-runtime-boundary-refactor-plan.md`           | Review-needed | 运行时边界重构方案。                                                                      |
 | `03-18-query-def-tree-show-chunked-display-plan.md` | Review-needed | query/tree show 分块展示方案。                                                            |
 | `04-13-call-arg-literal-rewrite-rfc.md`             | Active        | 调用参数字面量重写优化提案。                                                              |
-| `04-13-type-slot-mechanism-rfc.md`                  | Active        | Type slot 机制提案。                                                                      |
+| `04-13-type-slot-mechanism-rfc.md`                  | Partial       | Revision 3：已落地无条件擦除与 entry `:type-slots`；环境指纹和 namespaced identity 暂缓。 |
 | `04-15-match-syntax-rfc.md`                         | Active        | match 语法改进提案。                                                                      |
 | `04-15-type-directed-optimization-catalog.md`       | Active        | 基于 `&record:nth` 经验，系统梳理 Record/Tuple/Scope 等类型导向优化机会。                 |
 | `04-15-wasm-compilation-feasibility.md`             | Active        | WASM 编译三条路径（解释器→WASM / AOT 子集 / WASM GC）的可行性评估。                       |

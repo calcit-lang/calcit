@@ -17,11 +17,11 @@ Calcit enums are tagged unions — each variant has a tag (keyword) and zero or 
 
 ## Quick Recipes
 
-- **Define**: `defenum Shape (:circle :number) (:rect :number :number)`
+- **Define**: `defenum Shape (:circle 'Number) (:rect 'Number 'Number)`
 - **Create**: `%:: Shape :circle 5`
 - **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Legacy Fallback**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Type Check**: `assert-type shape :enum`
+- **Type Check**: `assert-type shape 'Enum`
 
 ## Defining Enums
 
@@ -37,7 +37,7 @@ Variants with payloads:
 
 ```cirru
 let
-    Shape $ defenum Shape (:circle :number) (:rect :number :number)
+    Shape $ defenum Shape (:circle 'Number) (:rect 'Number 'Number)
     c $ %:: Shape :circle 5
     r $ %:: Shape :rect 3 4
   println c
@@ -55,13 +55,13 @@ let
     ResultX $ defenum ResultX ([] 'T 'E) (:ok 'T) (:err 'E)
     ok $ %:: ResultX :ok 1
     err $ %:: ResultX :err |oops
-  assert-type ok $ :: 'ResultX :number :string
-  assert-type err $ :: 'ResultX :number :string
+  assert-type ok $ :: 'ResultX 'Number 'String
+  assert-type err $ :: 'ResultX 'Number 'String
   assert= 1 $ &tuple:nth ok 1
   assert= |oops $ &tuple:nth err 1
 ```
 
-At the type level, `(:: 'ResultX :number :string)` means the first slot is bound to `T` and the second slot is bound to `E`.
+At the type level, `(:: 'ResultX 'Number 'String)` means the first slot is bound to `T` and the second slot is bound to `E`.
 
 ### Generic Enums with `where` Bounds
 

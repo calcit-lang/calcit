@@ -107,6 +107,26 @@ import { join, dirname } from "path";
 
 Note the `|` prefix on npm package names — this indicates a string literal (the module specifier) vs a Calcit namespace path.
 
+## Validation and Dead-Code Analysis
+
+Import rules are validated both when a snapshot is loaded and before `cr edit add-import` or `cr edit imports` saves it. A rule must:
+
+- contain exactly three items;
+- use one of `:as`, `:refer`, or `:default`;
+- use a namespace/module leaf and symbol bindings in the positions required by that rule.
+
+Malformed rules report their rule index; errors found while loading also identify the namespace. They no longer fail with an internal panic. Import editing is atomic: validation errors leave the snapshot unchanged.
+
+Duplicate local aliases or referred symbols are recoverable. Calcit writes a warning to stderr and continues with the later rule taking precedence. This preserves existing program execution while making accidental shadowing visible.
+
+To find definitions that are not reachable from the configured entry function, run:
+
+```bash
+cr calcit.cirru analyze call-graph --show-unused
+```
+
+This is an entry-relative static analysis, not a proof that every reported definition is dead. Public functions, alternate entry points, and definitions invoked externally can appear in the report. It currently reports unreachable definitions rather than unused import declarations.
+
 ## Avoiding Circular Imports
 
 Circular dependencies (A imports B, B imports A) will cause a compilation error. Structure your code with:

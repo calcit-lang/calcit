@@ -34,7 +34,7 @@ pub struct ToplevelCalcit {
   /// specify `reload_fn` which is called after hot reload
   #[argh(option)]
   pub reload_fn: Option<String>,
-  /// specify with config entry
+  /// select an entry; defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
   #[argh(switch)]
@@ -273,7 +273,7 @@ pub struct CallGraphCommand {
   /// maximum depth to traverse (0 = unlimited)
   #[argh(option, default = "0")]
   pub max_depth: usize,
-  /// show unused definitions for the selected entry
+  /// show definitions unreachable from the selected entry (may include external entry points)
   #[argh(switch)]
   pub show_unused: bool,
   /// output format: "text" (default, LLM-friendly) or "json"
@@ -999,7 +999,7 @@ pub struct DocsCheckMdCommand {
   /// entry .cirru file for eval context (default: calcit.cirru)
   #[argh(option, default = "String::from(\"calcit.cirru\")")]
   pub entry: String,
-  /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entry configs.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
+  /// extra dependency module path for eval context, can be provided multiple times; defaults to modules from entries.default.modules; paths ending with '/' prefer calcit.cirru and fall back to compact.cirru
   #[argh(option)]
   pub dep: Vec<String>,
   /// suppress successful block logs; still prints failures and summary on error
@@ -2112,7 +2112,7 @@ pub struct CursorClearClipboardCommand {}
 #[argh(subcommand, name = "apply")]
 /// apply a structural tree operation to the active cursor without repeating target or path
 pub struct CursorApplyCommand {
-  /// operation: delete, swap-next, swap-prev, unwrap, raise, replace, wrap, insert-before, insert-after, insert-child, append-child
+  /// operation: delete, swap-next, swap-prev, unwrap (alias splice), raise, replace, wrap, insert-before, insert-after, insert-child, append-child
   #[argh(positional)]
   pub operation: String,
   /// read the replacement, wrapper, or inserted expression from a file
@@ -2192,21 +2192,27 @@ pub enum ConfigSubcommand {
   Show(ConfigShowCommand),
   /// list modules included in the project
   Modules(ConfigModulesCommand),
+  /// list entry-level type-slot bindings
+  TypeSlots(ConfigTypeSlotsCommand),
   /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
   Version(ConfigVersionCommand),
-  /// set a configuration key to a value (init-fn, reload-fn, version)
+  /// set a configuration key to a value (mode, init-fn, reload-fn, description, version)
   Set(ConfigSetCommand),
-  /// add a module path to configs.modules
+  /// add a module path to an entry's modules
   AddModule(ConfigAddModuleCommand),
-  /// remove a module path from configs.modules
+  /// remove a module path from an entry's modules
   RmModule(ConfigRmModuleCommand),
+  /// bind a type slot to a full namespace/definition path
+  SetTypeSlot(ConfigSetTypeSlotCommand),
+  /// remove an entry-level type-slot binding
+  RmTypeSlot(ConfigRmTypeSlotCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "show")]
 /// show project configuration values and entries
 pub struct ConfigShowCommand {
-  /// show config for a named entry (e.g. "test") instead of the default configs
+  /// show a named entry (e.g. "test"); defaults to showing all entries
   #[argh(option)]
   pub entry: Option<String>,
 }
@@ -2215,7 +2221,16 @@ pub struct ConfigShowCommand {
 #[argh(subcommand, name = "modules")]
 /// list modules included in the project
 pub struct ConfigModulesCommand {
-  /// list modules for a named entry (e.g. "test") instead of the default configs
+  /// list modules for a named entry (e.g. "test"); defaults to "default"
+  #[argh(option)]
+  pub entry: Option<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "type-slots")]
+/// list entry-level type-slot bindings
+pub struct ConfigTypeSlotsCommand {
+  /// list bindings for a named entry; defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
 }
@@ -2231,12 +2246,12 @@ pub struct ConfigVersionCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "set")]
-/// set a configuration key (init-fn, reload-fn, version)
+/// set a configuration key (mode, init-fn, reload-fn, description, version)
 pub struct ConfigSetCommand {
-  /// apply to a named entry (e.g. "test") instead of the default configs
+  /// apply to a named entry (e.g. "test"); defaults to "default" (version is always project-level)
   #[argh(option)]
   pub entry: Option<String>,
-  /// config key: init-fn, reload-fn, version
+  /// config key: mode, init-fn, reload-fn, description, version
   #[argh(positional)]
   pub key: String,
   /// config value; for "version" accepts semver string or patch|minor|major
@@ -2246,9 +2261,9 @@ pub struct ConfigSetCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-module")]
-/// add a module path to configs.modules
+/// add a module path to an entry
 pub struct ConfigAddModuleCommand {
-  /// add to a named entry (e.g. "test") instead of the default configs
+  /// add to a named entry (e.g. "test"); defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
   /// module path to add (e.g. "calcit-test/")
@@ -2258,12 +2273,39 @@ pub struct ConfigAddModuleCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "rm-module")]
-/// remove a module path from configs.modules
+/// remove a module path from an entry
 pub struct ConfigRmModuleCommand {
-  /// remove from a named entry (e.g. "test") instead of the default configs
+  /// remove from a named entry (e.g. "test"); defaults to "default"
   #[argh(option)]
   pub entry: Option<String>,
   /// module path to remove
   #[argh(positional)]
   pub module_path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set-type-slot")]
+/// bind a type slot to a full namespace/definition path
+pub struct ConfigSetTypeSlotCommand {
+  /// apply to a named entry; defaults to "default"
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// slot name, with or without a leading colon
+  #[argh(positional)]
+  pub slot: String,
+  /// full namespace/definition type path, or :dynamic
+  #[argh(positional)]
+  pub type_path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rm-type-slot")]
+/// remove an entry-level type-slot binding
+pub struct ConfigRmTypeSlotCommand {
+  /// remove from a named entry; defaults to "default"
+  #[argh(option)]
+  pub entry: Option<String>,
+  /// slot name, with or without a leading colon
+  #[argh(positional)]
+  pub slot: String,
 }

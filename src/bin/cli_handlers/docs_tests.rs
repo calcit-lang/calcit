@@ -37,9 +37,10 @@ fn collect_check_md_module_paths_merges_entry_modules_with_cli_deps() {
   let root = unique_temp_dir("check-md-modules");
   let entry = root.join("mini.cirru");
   let content = r#"{} (:package |mini)
-  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version |0.0.0)
-    :modules $ [] |respo.calcit/ |memof/
+  :version |0.0.0
   :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |mini/main!) (:reload-fn |mini/main!)
+      :modules $ [] |respo.calcit/ |memof/
   :files $ {}
     |mini $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)

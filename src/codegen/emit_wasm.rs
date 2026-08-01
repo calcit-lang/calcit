@@ -303,6 +303,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     heap_start,
     &string_data_segment,
     &atom_initial_values,
+    str_tag_id,
     runtime_fn_count,
   )?;
 

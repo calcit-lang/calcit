@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-string)
-  :configs $ {} (:init-fn |test-string.main/main!) (:reload-fn |test-string.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-string) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-string.main/main!) (:mode :native) (:reload-fn 'test-string.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-string.main $ %{} :FileEntry
       :defs $ {}
@@ -10,14 +11,15 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
           :examples $ []
-        |test-bitwise $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-bitwise $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (bit-and 15 7) 7
@@ -32,7 +34,8 @@
               assert= |0o21 $ &number:display-by 17 8
               assert= |0x11 $ &number:display-by 17 16
           :examples $ []
-        |test-char $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-char $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test char")
               assert= 97 $ .get-char-code |a
@@ -45,7 +48,8 @@
               assert= nil $ first |
               assert= nil $ last |
           :examples $ []
-        |test-format $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-format $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing format")
               assert= |1.2346 $ .format 1.23456789 4
@@ -69,7 +73,8 @@
                 assert= (.escape |a) "|\"a\""
               println |hashing: $ &hash 1
           :examples $ []
-        |test-includes $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-includes $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing includes")
               assert= true $ includes? |abc |abc
@@ -92,7 +97,8 @@
               assert= |aba $ strip-suffix |ababc |bc
               assert= |abc0 $ strip-suffix |abc0 |bc
           :examples $ []
-        |test-lisp-style $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-lisp-style $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test lisp style")
               assert=
@@ -127,7 +133,8 @@
                 format-cirru-one-liner $ [] |+ |1 |2
                 , "|+ 1 2"
           :examples $ []
-        |test-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-methods () (log-title "|Testing string methods")
               assert= true $ .blank? |
@@ -174,11 +181,13 @@
               assert= |12312a $ .pad-left |a 6 |123
               assert= |a12312 $ .pad-right |a 6 |123
           :examples $ []
-        |test-parse $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-parse $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () $ assert= 0 (parse-float |0)
           :examples $ []
-        |test-str $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-str $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-str ()
               assert= (&str:concat |a |b) |ab
@@ -209,7 +218,8 @@
               assert= 1 $ &compare |b |a
               assert= 0 $ &compare |a |a
           :examples $ []
-        |test-trim $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-trim $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= | $ trim "|    "
@@ -218,7 +228,8 @@
               assert= | $ trim |______ |_
               assert= |1 $ trim |__1__ |_
           :examples $ []
-        |test-whitespace $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-whitespace $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test blank?")
               assert-detect identity $ blank? |
@@ -231,6 +242,7 @@
               assert-detect not $ blank? "| 1"
               assert-detect not $ blank? "|1 "
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-string.main $ :require

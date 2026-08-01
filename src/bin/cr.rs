@@ -235,24 +235,14 @@ fn main() -> Result<(), String> {
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, &input_path_str)?;
 
-    // config in entry will overwrite default configs
-    if let Some(entry) = cli_args.entry.to_owned() {
-      if snapshot.entries.contains_key(entry.as_str()) {
-        if !calcit::quiet_tool_output() {
-          println!("running entry: {entry}");
-        }
-        snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
-      } else {
-        return Err(format!(
-          "unknown entry `{}` in `{}`",
-          entry,
-          snapshot.entries.keys().map(|x| (*x).to_owned()).collect::<Vec<_>>().join("/")
-        ));
-      }
+    snapshot.select_entry(cli_args.entry.as_deref())?;
+    if cli_args.entry.is_some() && !calcit::quiet_tool_output() {
+      println!("running entry: {}", snapshot.active_entry_name());
     }
 
     // attach modules
-    for module_path in &snapshot.configs.modules {
+    let module_paths = snapshot.active_entry()?.modules.clone();
+    for module_path in &module_paths {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
         if snapshot.files.contains_key(k) {
@@ -262,8 +252,10 @@ fn main() -> Result<(), String> {
       }
     }
   }
-  let config_init = snapshot.configs.init_fn.to_string();
-  let config_reload = snapshot.configs.reload_fn.to_string();
+  let selected_entry = snapshot.active_entry()?.clone();
+  let configured_run_mode = selected_entry.mode;
+  let config_init = selected_entry.init_fn;
+  let config_reload = selected_entry.reload_fn;
   let init_fn = cli_args.init_fn.as_deref().unwrap_or(&config_init);
   let reload_fn = cli_args.reload_fn.as_deref().unwrap_or(&config_reload);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
@@ -310,10 +302,16 @@ fn main() -> Result<(), String> {
     run_check_only(&entries)?;
   }
 
+  let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
+
   let task = if check_only {
     run_check_only(&entries)
-  } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
-    if !js_options.watch {
+  } else if use_configured_js_mode || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(_))) {
+    let watch = match &cli_args.subcommand {
+      Some(CalcitCommand::EmitJs(options)) => options.watch,
+      _ => cli_args.watch,
+    };
+    if !watch {
       // `cr js` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
@@ -375,10 +373,14 @@ fn main() -> Result<(), String> {
   if !eval_once {
     runner::track::track_task_add();
     let args = cli_args.clone();
-    std::thread::spawn(move || watch_files(entries, args, assets_watch));
+    std::thread::spawn(move || watch_files(entries, args, assets_watch, configured_run_mode));
   }
   runner::track::exit_when_cleared();
   Ok(())
+}
+
+fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snapshot::SnapshotRunMode) -> bool {
+  matches!(subcommand, Some(CalcitCommand::EmitJs(_))) || (subcommand.is_none() && configured_run_mode == snapshot::SnapshotRunMode::Js)
 }
 
 fn run_js_escape(symbol: &str) -> Result<(), String> {
@@ -393,7 +395,12 @@ fn run_js_unescape(symbol: &str) -> Result<(), String> {
   Ok(())
 }
 
-pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_watch: Option<String>) {
+pub fn watch_files(
+  entries: ProgramEntries,
+  settings: ToplevelCalcit,
+  assets_watch: Option<String>,
+  configured_run_mode: snapshot::SnapshotRunMode,
+) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
   let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
@@ -434,7 +441,7 @@ pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_wat
           eprintln!("failed re-compiling, got empty inc file");
           continue;
         }
-        if let Err(e) = recall_program(&content, &entries, &settings) {
+        if let Err(e) = recall_program(&content, &entries, &settings, configured_run_mode) {
           eprintln!("error: {e}");
         };
       }
@@ -446,7 +453,12 @@ pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_wat
 
 // overwrite previous state
 
-fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCalcit) -> Result<(), String> {
+fn recall_program(
+  content: &str,
+  entries: &ProgramEntries,
+  settings: &ToplevelCalcit,
+  configured_run_mode: snapshot::SnapshotRunMode,
+) -> Result<(), String> {
   println!("\n-------- file change --------\n");
 
   // Steps:
@@ -508,7 +520,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   // Create a minimal snapshot for documentation lookup during incremental updates
   // In practice, this could be enhanced to maintain documentation state
 
-  let task = if let Some(CalcitCommand::EmitJs(_)) = settings.subcommand {
+  let task = if should_emit_js(&settings.subcommand, configured_run_mode) {
     run_codegen_with_timeout(entries, &settings.emit_path, false, settings.timeout, settings.verbose)
   } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
     run_codegen_with_timeout(entries, &settings.emit_path, true, settings.timeout, settings.verbose)
@@ -1023,6 +1035,19 @@ mod tests {
   use calcit::calcit::{CalcitTypeAnnotation, SchemaKind};
   use std::fs;
 
+  #[test]
+  fn configured_js_entry_controls_bare_invocation() {
+    assert!(should_emit_js(&None, snapshot::SnapshotRunMode::Js));
+    assert!(!should_emit_js(&None, snapshot::SnapshotRunMode::Native));
+    assert!(!should_emit_js(
+      &Some(CalcitCommand::Eval(cli_args::EvalCommand {
+        snippet: Some("1".to_owned()),
+        dep: vec![],
+      })),
+      snapshot::SnapshotRunMode::Js,
+    ));
+  }
+
   fn leaf(text: &str) -> Cirru {
     Cirru::Leaf(Arc::from(text))
   }
@@ -1130,7 +1155,7 @@ mod tests {
     assert_eq!(row.kind, type_coverage::DefKind::Fn);
     assert_eq!(row.level, type_coverage::CoverageLevel::Full);
     assert_eq!(row.params, vec!["arg0"]);
-    assert_eq!(row.return_type_hints, vec![":string"]);
+    assert_eq!(row.return_type_hints, vec!["'String"]);
   }
 
   #[test]
