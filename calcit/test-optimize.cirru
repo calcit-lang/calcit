@@ -7,29 +7,34 @@
   :files $ {}
     |test-optimize.main $ %{} :FileEntry
       :defs $ {}
-        |LocalPerson0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |LocalPerson0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct LocalPerson0 $ :name :string
+            defstruct LocalPerson0 $ :name 'String
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Person $ %{} :CodeEntry (:doc |)
           :code $ quote
             def Person $ impl-traits Person0 ShowImpl
           :examples $ []
-        |Person0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Person0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct Person0 $ :name :string
+            defstruct Person0 $ :name 'String
           :examples $ []
-        |ShowImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ShowImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ShowImpl ShowTrait $ .show
               fn (self)
                 str "|Person: " $ &record:get self :name
           :examples $ []
-        |ShowTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ShowTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ShowTrait $ .show :fn
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ let
                 p $ %{} Person (:name |Jim)
@@ -58,6 +63,7 @@
                 assert-traits lp ShowTrait
                 println $ .show lp
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-optimize.main $ :require

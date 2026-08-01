@@ -16,8 +16,8 @@
                 quasiquote $ do (println "|c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
-          :schema $ :: :macro
-            {} $ :args ([] :dynamic :dynamic)
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic)
         |add-11-safe $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-11-safe (a b)
@@ -26,15 +26,15 @@
                   &let (~c 11)
                     [] (~ a) (~ b) ~c
           :examples $ []
-          :schema $ :: :macro
-            {} $ :args ([] :dynamic :dynamic)
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic)
         |add-2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :number)
-              :args $ [] :number
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (:ns test-hygienic.lib)
     |test-hygienic.main $ %{} :FileEntry
@@ -43,8 +43,8 @@
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :bool)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
               :args $ []
         |try-hygienic $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -55,8 +55,8 @@
                 assert= (add-11-safe 1 2) ([] 1 2 11)
                 , true
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :bool)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote

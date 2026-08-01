@@ -7,23 +7,27 @@
   :files $ {}
     |test-algebra.main $ %{} :FileEntry
       :defs $ {}
-        |AlgebraApply $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |AlgebraApply $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraApply $ .apply :fn
           :examples $ []
-        |AlgebraBind $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBind $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraBind $ .bind :fn
           :examples $ []
-        |AlgebraBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def AlgebraBox $ impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl
           :examples $ []
-        |AlgebraBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct AlgebraBox0 $ :value :dynamic
+            defstruct AlgebraBox0 $ :value 'Dynamic
           :examples $ []
-        |AlgebraBoxApplyImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBoxApplyImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxApplyImpl AlgebraApply $ .apply
               fn (box fs)
@@ -31,45 +35,51 @@
                     f $ :value fs
                   assoc box :value $ f (:value box)
           :examples $ []
-        |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxBindImpl AlgebraBind $ .bind
               fn (box f)
                 f $ :value box
           :examples $ []
-        |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxMapImpl AlgebraMap $ .map
               fn (box f)
                 assoc box :value $ f (:value box)
           :examples $ []
-        |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxMappendImpl AlgebraMappend $ .mappend
               fn (a b)
                 assoc a :value $ + (:value a) (:value b)
           :examples $ []
-        |AlgebraMap $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraMap $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraMap $ .map :fn
           :examples $ []
-        |AlgebraMappend $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AlgebraMappend $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraMappend $ .mappend :fn
           :examples $ []
+          :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing algebra") (; "|Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ :: :unit
+            defn reload! () $ :: 'Unit
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -83,8 +93,8 @@
                   b2 $ .apply b1 bf
                 assert= 12 $ :value b2
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-bind $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -97,8 +107,8 @@
                       %{} AlgebraBox $ :value (+ x 20)
                 assert= 25 $ :value b2
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-map $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -110,8 +120,8 @@
                     fn (x) (+ x 10)
                 assert= 12 $ :value b2
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-mappend $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -124,8 +134,8 @@
                   b3 $ .mappend b1 b2
                 assert= 7 $ :value b3
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote

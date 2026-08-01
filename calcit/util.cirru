@@ -15,9 +15,9 @@
                 quasiquote $ do (println "|env: eval") ~@body
                 quasiquote $ do (println "|env: not eval. tests skipped")
           :examples $ []
-          :schema $ :: :macro
-            {} (:rest :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Macro
+            {} (:rest 'Dynamic)
+              :args $ [] 'Dynamic
         |inside-js: $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro inside-js: (& body)
@@ -26,29 +26,29 @@
                 quasiquote $ do (println "|env: js") ~@body
                 quasiquote $ do (println "|env: not js. tests skipped")
           :examples $ []
-          :schema $ :: :macro
-            {} (:rest :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Macro
+            {} (:rest 'Dynamic)
+              :args $ [] 'Dynamic
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () $ :: :unit
+            defn main! () $ :: 'Unit
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ :: :unit
+            defn reload! () $ :: 'Unit
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote

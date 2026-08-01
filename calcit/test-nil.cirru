@@ -7,7 +7,7 @@
   :files $ {}
     |test-nil.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing nil")
               assert= ([]) (.to-list nil)
@@ -15,6 +15,7 @@
               assert= nil $ .map nil inc
               assert= nil $ .filter nil inc
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-nil.main $ :require

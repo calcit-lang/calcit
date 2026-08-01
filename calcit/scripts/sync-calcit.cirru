@@ -7,14 +7,14 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.") (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.")
           :code $ quote
             defn main! () $ let
-                Leaf $ defstruct Leaf (:at :number) (:by :string) (:text :string)
-                Expr $ defstruct Expr (:at :number) (:by :string) (:data :map)
-                CodeEntry $ defstruct CodeEntry (:code :dynamic) (:doc :string) (:examples :list)
-                NsEntry $ defstruct NsEntry (:code :dynamic) (:doc :string)
-                FileEntry $ defstruct FileEntry (:defs :map) (:ns :dynamic)
+                Leaf $ defstruct Leaf (:at 'Number) (:by 'String) (:text 'String)
+                Expr $ defstruct Expr (:at 'Number) (:by 'String) (:data 'Map)
+                CodeEntry $ defstruct CodeEntry (:code 'Dynamic) (:doc 'String) (:examples 'List)
+                NsEntry $ defstruct NsEntry (:code 'Dynamic) (:doc 'String)
+                FileEntry $ defstruct FileEntry (:defs 'Map) (:ns 'Dynamic)
                 code->detail $ fn (node now recur-fn)
                   let
                       data $ &cirru-quote:to-list node
@@ -108,10 +108,12 @@
               write-file calcit-path $ format-cirru-edn result
               println $ str-spaced |synced compact-path |to calcit-path
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require

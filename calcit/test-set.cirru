@@ -11,15 +11,15 @@
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing set") (test-set) (test-methods) (do true)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -66,8 +66,8 @@
               assert= 4 $ .max (#{} 1 2 3 4)
               assert= 1 $ .min (#{} 1 2 3 4)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-set $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -125,8 +125,8 @@
                 &hash $ #{} 3 4 2 1
                 &hash $ #{} 3 2 1 4
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote

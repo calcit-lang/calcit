@@ -59,6 +59,15 @@ fn canonical_schema_kind_name(text: &str) -> Option<&'static str> {
   }
 }
 
+fn is_callable_schema_wrapper_tag(value: &Edn) -> bool {
+  matches!(value, Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
+    || matches!(value, Edn::Symbol(name) if matches!(name.as_ref(), "Fn" | "Macro"))
+}
+
+fn is_macro_schema_wrapper_tag(value: &Edn) -> bool {
+  matches!(value, Edn::Tag(tag) if tag.ref_str() == "macro") || matches!(value, Edn::Symbol(name) if name.as_ref() == "Macro")
+}
+
 fn normalize_schema_map(map: &EdnMapView) -> EdnMapView {
   let mut normalized = EdnMapView::default();
 
@@ -395,6 +404,22 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     return Ok(DYNAMIC_TYPE.clone());
   }
 
+  // A top-level quoted symbol is rendered by Cirru EDN as `'String` (rather
+  // than as a list context such as `[] 'String`) and parses back as `Quote`.
+  // Treat that one-node quote as the canonical nominal type spelling while
+  // keeping all older tag spellings accepted below.
+  if let Edn::Quote(Cirru::Leaf(symbol)) = value {
+    let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(symbol.clone()));
+    if CalcitTypeAnnotation::canonical_type_symbol_name(symbol).is_some() {
+      return Ok(annotation);
+    }
+  }
+
+  if matches!(value, Edn::Tuple(view) if matches!(view.tag.as_ref(), Edn::Symbol(symbol) if symbol.as_ref() == "Dynamic") && view.extra.is_empty())
+  {
+    return Ok(DYNAMIC_TYPE.clone());
+  }
+
   // Primitive type tag stored as a plain EDN tag (e.g. :string, :number).
   if let Edn::Tag(tag) = value {
     let tag_name = tag.ref_str();
@@ -479,22 +504,31 @@ fn tags_to_edn(tags: &HashSet<EdnTag>) -> Edn {
 
 /// Convert a loaded definition schema annotation into snapshot-style EDN.
 pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
-  match schema {
-    CalcitTypeAnnotation::Dynamic => Edn::tag("dynamic"),
+  let expression = match schema {
+    CalcitTypeAnnotation::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
     // Runtime-resolved nominal types are intentionally persisted as their
     // broad schema kinds. Their concrete definitions belong to source code,
     // and serializing only a local name would lose namespace identity.
     CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
-      crate::calcit::Calcit::Tag(tag) => Edn::Tag(tag.clone()),
-      _ => Edn::tag("dynamic"),
+      crate::calcit::Calcit::Tag(tag) => CalcitTypeAnnotation::canonical_type_symbol_name(tag.ref_str())
+        .map(|name| Edn::Symbol(Arc::from(name)))
+        .unwrap_or_else(|| Edn::Symbol(Arc::from("Dynamic"))),
+      _ => Edn::Symbol(Arc::from("Dynamic")),
     },
-    CalcitTypeAnnotation::Record(_) => Edn::tag("record"),
-    CalcitTypeAnnotation::Struct(..) => Edn::tag("struct"),
-    CalcitTypeAnnotation::Enum(..) => Edn::tag("enum"),
-    CalcitTypeAnnotation::Tuple(_) => Edn::tag("tuple"),
-    CalcitTypeAnnotation::Trait(_) => Edn::tag("trait"),
+    CalcitTypeAnnotation::Record(_) => Edn::Symbol(Arc::from("Record")),
+    CalcitTypeAnnotation::Struct(..) => Edn::Symbol(Arc::from("Struct")),
+    CalcitTypeAnnotation::Enum(..) => Edn::Symbol(Arc::from("Enum")),
+    CalcitTypeAnnotation::Tuple(_) => Edn::Symbol(Arc::from("Tuple")),
+    CalcitTypeAnnotation::Trait(_) => Edn::Symbol(Arc::from("Trait")),
     other => other.to_type_edn(),
+  };
+  // A lone EDN symbol in a record field is parsed as a Cirru quote. Wrap it
+  // as a zero-argument type expression so Snapshot serialization remains
+  // structurally unambiguous while rendering source-level `:: 'String`.
+  match expression {
+    Edn::Symbol(name) => Edn::tuple(Edn::Symbol(name), vec![]),
+    other => other,
   }
 }
 
@@ -649,7 +683,8 @@ impl TryFrom<Edn> for CodeEntry {
 }
 
 /// Normalize a schema Edn value.
-/// Wrapped `(:: :fn ({} ...))` / `(:: :macro ({} ...))` forms are converted to a direct map Edn.
+/// Wrapped `(:: 'Fn ({} ...))` / `(:: 'Macro ({} ...))` forms are converted to a direct map Edn.
+/// Legacy `:fn` / `:macro` tags remain accepted while loading.
 /// Direct map format is returned as-is.
 fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
   if matches!(value, Edn::Map(_)) {
@@ -660,11 +695,11 @@ fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
   }
 
   if let Edn::Tuple(view) = value
-    && matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
+    && is_callable_schema_wrapper_tag(view.tag.as_ref())
     && let Some(Edn::Map(map)) = view.extra.first()
   {
     let mut normalized_map = normalize_schema_map(map);
-    if normalized_map.tag_get("kind").is_none() && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro") {
+    if normalized_map.tag_get("kind").is_none() && is_macro_schema_wrapper_tag(view.tag.as_ref()) {
       normalized_map.insert_key("kind", Edn::tag("macro"));
     }
     let normalized = Edn::Map(normalized_map);
@@ -673,7 +708,7 @@ fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
   }
 
   Err(format!(
-    "invalid schema format: expected wrapped `(:: :fn ({{}} ...))` / `(:: :macro ({{}} ...))` or a normalized schema map, got {}",
+    "invalid schema format: expected wrapped `(:: 'Fn ({{}} ...))` / `(:: 'Macro ({{}} ...))` or a normalized schema map, got {}",
     format_edn_preview(value)
   ))
 }
@@ -1048,6 +1083,13 @@ pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
 
 const PARAMETERIZED_SCHEMA_TAGS: &[&str] = &["list", "map", "set", "fn", "tuple", "ref"];
 
+fn canonical_schema_symbol_from_cirru(node: &Cirru) -> Option<&'static str> {
+  let Cirru::Leaf(value) = node else {
+    return None;
+  };
+  CalcitTypeAnnotation::canonical_type_symbol_name(value.trim_start_matches('\''))
+}
+
 fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
   parse_schema_data(schema)?;
   check_no_nil_type(schema)?;
@@ -1058,6 +1100,11 @@ fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
     return Err("Failed to convert standalone type schema into EDN".to_owned());
   }
   let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn);
+  if matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic)
+    && matches!(schema, Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(marker)) if marker.as_ref() == "::") && items.get(1).and_then(canonical_schema_symbol_from_cirru) == Some("Dynamic"))
+  {
+    return Ok(());
+  }
   if matches!(
     annotation.as_ref(),
     CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::DynTuple
@@ -1079,6 +1126,15 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     Cirru::List(items) => items,
     Cirru::Leaf(s) => {
       let tag_name = s.trim_start_matches(':');
+      if let Some(canonical) = canonical_schema_symbol_from_cirru(schema) {
+        let parameterized = matches!(canonical, "List" | "Map" | "Set" | "Fn" | "Tuple" | "Ref");
+        if !parameterized {
+          return Ok(());
+        }
+        return Err(format!(
+          "Bare `'{canonical}` leaves its nested type dynamic. Use an explicit type expression such as `:: '{canonical} 'Bool`; write `'Dynamic` as a nested type only when the boundary is intentionally dynamic."
+        ));
+      }
       if PARAMETERIZED_SCHEMA_TAGS.contains(&tag_name) {
         let example = match tag_name {
           "map" => ":: :map :tag :bool",
@@ -1098,13 +1154,16 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         return Ok(());
       }
       return Err(format!(
-        "Unknown value schema `{s}`. Use a direct primitive such as `:string`, a parameterized value type such as `:: :ref :bool`, or a callable schema such as `:: :fn $ {{}} (:args $ []) (:return :unit)`."
+        "Unknown value schema `{s}`. Use a direct type such as `'String`, a parameterized value type such as `:: 'Ref 'Bool`, or a callable schema such as `:: 'Fn $ {{}} (:args $ []) (:return 'Unit)`."
       ));
     }
   };
 
   let items: &[Cirru] = if matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::") {
-    let is_function_schema = matches!(raw_items.get(1), Some(Cirru::Leaf(tag)) if tag.as_ref() == ":fn" || tag.as_ref() == ":macro");
+    let is_function_schema = raw_items
+      .get(1)
+      .and_then(canonical_schema_symbol_from_cirru)
+      .is_some_and(|name| matches!(name, "Fn" | "Macro"));
     if !is_function_schema {
       return validate_standalone_type_schema(schema);
     }
@@ -1112,10 +1171,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       return Err("Wrapped schema `(:: :fn schema-map)` or `(:: :macro schema-map)` expects exactly 3 items".to_owned());
     }
     match (&raw_items[1], &raw_items[2]) {
-      (Cirru::Leaf(tag), Cirru::List(inner_items)) if tag.as_ref() == ":fn" || tag.as_ref() == ":macro" => inner_items,
+      (tag, Cirru::List(inner_items)) if canonical_schema_symbol_from_cirru(tag).is_some_and(|name| matches!(name, "Fn" | "Macro")) => {
+        inner_items
+      }
       (Cirru::Leaf(tag), _) => {
         return Err(format!(
-          "Wrapped schema tag must be `:fn` or `:macro`, got: `{tag}`. Example: `(:: :fn ({{}} (:args ([] :string)) (:return :bool)))`"
+          "Wrapped schema type must be `'Fn` or `'Macro`, got: `{tag}`. Example: `(:: 'Fn ({{}} (:args ([] 'String)) (:return 'Bool)))`"
         ));
       }
       _ => return Err("Wrapped schema second item must be `:fn` or `:macro` and third item must be a `{}` map".to_owned()),
@@ -1498,6 +1559,7 @@ fn parse_snapshot_type_slots(data: &Edn, owner: &str) -> Result<HashMap<String, 
     }
 
     let type_path = match raw_type {
+      Edn::Str(text) | Edn::Symbol(text) if text.as_ref() == "Dynamic" => ":dynamic".to_owned(),
       Edn::Str(text) | Edn::Symbol(text) => text.to_string(),
       Edn::Tag(tag) if tag.ref_str() == "dynamic" => ":dynamic".to_owned(),
       _ => {
@@ -1938,13 +2000,167 @@ fn type_slots_to_edn(type_slots: &HashMap<String, String>) -> Edn {
   slots.sort_by_key(|(slot, _)| *slot);
   for (slot, type_path) in slots {
     let value = if type_path == ":dynamic" {
-      Edn::tag("dynamic")
+      Edn::Symbol(Arc::from("Dynamic"))
     } else {
       Edn::Str(type_path.as_str().into())
     };
     slots_map.insert_key(slot.as_str(), value);
   }
   slots_map.into()
+}
+
+fn canonicalize_legacy_type_leaf(node: &Cirru) -> Option<Cirru> {
+  let Cirru::Leaf(value) = node else {
+    return None;
+  };
+  let legacy_name = value.strip_prefix(':')?;
+  let canonical = CalcitTypeAnnotation::canonical_type_symbol_name(legacy_name)?;
+  Some(Cirru::leaf(format!("'{canonical}")))
+}
+
+fn canonicalize_type_expression(node: &Cirru) -> (Cirru, usize) {
+  if let Some(canonical) = canonicalize_legacy_type_leaf(node) {
+    return (canonical, 1);
+  }
+  match node {
+    Cirru::Leaf(_) => (node.clone(), 0),
+    Cirru::List(items) => {
+      let implicit_constructor = items.first().and_then(canonical_schema_symbol_from_cirru).is_some()
+        && !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::");
+      let mut rewritten = Vec::with_capacity(items.len());
+      let mut changed = 0;
+      if implicit_constructor {
+        rewritten.push(Cirru::leaf("::"));
+      }
+      for (index, item) in items.iter().enumerate() {
+        let (next, count) = canonicalize_type_expression(item);
+        rewritten.push(next);
+        changed += count;
+        if implicit_constructor && index == 0 && canonicalize_legacy_type_leaf(item).is_none() {
+          changed += 1;
+        }
+      }
+      (Cirru::List(rewritten), changed)
+    }
+  }
+}
+
+fn canonicalize_schema_map_types(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "{}") {
+    return canonicalize_type_expression(node);
+  }
+
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  rewritten.push(items[0].clone());
+  for pair in items.iter().skip(1) {
+    let (next, count) = match pair {
+      Cirru::List(pair_items)
+        if matches!(pair_items.first(), Some(Cirru::Leaf(key)) if matches!(key.as_ref(), ":args" | ":return" | ":rest" | ":where"))
+          && pair_items.len() >= 2 =>
+      {
+        let mut next_pair = pair_items.clone();
+        let (value, count) = canonicalize_type_expression(&pair_items[1]);
+        next_pair[1] = value;
+        (Cirru::List(next_pair), count)
+      }
+      _ => (pair.clone(), 0),
+    };
+    rewritten.push(next);
+    changed += count;
+  }
+  (Cirru::List(rewritten), changed)
+}
+
+fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = canonicalize_code_type_syntax(item);
+    rewritten.push(next);
+    changed += count;
+  }
+
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    _ => None,
+  });
+  match head {
+    Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => {
+      let (next, count) = canonicalize_type_expression(&items[2]);
+      rewritten[2] = next;
+      changed += count;
+    }
+    Some("defstruct" | "defrecord" | "defenum") if items.len() >= 3 => {
+      for index in 2..items.len() {
+        let Cirru::List(field) = &items[index] else {
+          continue;
+        };
+        if field.len() < 2 {
+          continue;
+        }
+        let mut next_field = field.clone();
+        for type_index in 1..field.len() {
+          let (next, count) = canonicalize_type_expression(&field[type_index]);
+          next_field[type_index] = next;
+          changed += count;
+        }
+        rewritten[index] = Cirru::List(next_field);
+      }
+    }
+    Some("hint-fn") => {
+      for index in 1..items.len() {
+        let (next, count) = canonicalize_schema_map_types(&items[index]);
+        rewritten[index] = next;
+        changed += count;
+      }
+    }
+    Some("fn" | "defn" | "defmacro" | "defcomp" | "defeffect") => {
+      let args_index = if head == Some("fn") { 1 } else { 2 };
+      let type_index = args_index + 1;
+      if let Some(type_form) = items.get(type_index)
+        && (canonicalize_legacy_type_leaf(type_form).is_some()
+          || matches!(type_form, Cirru::List(inner) if matches!(inner.first(), Some(Cirru::Leaf(marker)) if marker.as_ref() == "::")))
+      {
+        let (next, count) = canonicalize_type_expression(type_form);
+        rewritten[type_index] = next;
+        changed += count;
+      }
+    }
+    _ => {}
+  }
+  (Cirru::List(rewritten), changed)
+}
+
+/// Rewrite legacy tag-based type syntax in code type positions. This is intentionally
+/// called by `cr edit format`, not by unrelated structural edits: old snapshots stay
+/// compatible until users explicitly request canonical formatting.
+pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
+  let mut changed = 0;
+  for file in snapshot.files.values_mut() {
+    let (ns_code, count) = canonicalize_code_type_syntax(&file.ns.code);
+    file.ns.code = ns_code;
+    changed += count;
+    for entry in file.defs.values_mut() {
+      let (code, count) = canonicalize_code_type_syntax(&entry.code);
+      entry.code = code;
+      changed += count;
+      let mut rewritten_examples = Vec::with_capacity(entry.examples.len());
+      for example in &entry.examples {
+        let (code, count) = canonicalize_code_type_syntax(example);
+        rewritten_examples.push(code);
+        changed += count;
+      }
+      entry.examples = rewritten_examples;
+    }
+  }
+  changed
 }
 
 /// Render snapshot content for runtime snapshot files such as `calcit.cirru`
@@ -2390,7 +2606,10 @@ mod tests {
       annotation.as_ref(),
       CalcitTypeAnnotation::Ref(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
     ));
-    assert_eq!(schema_annotation_to_edn(annotation.as_ref()), schema_edn);
+    assert_eq!(
+      schema_annotation_to_edn(annotation.as_ref()),
+      Edn::tuple(Edn::Symbol(Arc::from("Ref")), vec![Edn::Symbol(Arc::from("Bool"))])
+    );
 
     let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
     entry.schema = annotation;
@@ -2400,6 +2619,32 @@ mod tests {
       decoded.schema.as_ref(),
       CalcitTypeAnnotation::Ref(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
     ));
+  }
+
+  #[test]
+  fn format_canonicalizes_legacy_type_tags_only_in_type_positions() {
+    let typed = parse_one(
+      "defn example (value) :string\n  hint-fn $ {} (:args $ [] :number) (:return $ :: :list :string)\n  assert-type value :string\n  unsafe-coerce value $ :: :ref :bool",
+    );
+    let enum_decl = parse_one("defenum Result (:ok :string) (:err :tag)");
+    let ordinary_data = parse_one("def config $ {} (:kind :string)");
+
+    let (typed, typed_count) = canonicalize_code_type_syntax(&typed);
+    let (enum_decl, enum_count) = canonicalize_code_type_syntax(&enum_decl);
+    let (ordinary_data, data_count) = canonicalize_code_type_syntax(&ordinary_data);
+
+    let typed_text = cirru_parser::format(&[typed], true.into()).expect("typed code should render");
+    let enum_text = cirru_parser::format(&[enum_decl], true.into()).expect("enum should render");
+    let data_text = cirru_parser::format(&[ordinary_data], true.into()).expect("data should render");
+    assert_eq!(typed_count, 7, "typed text: {typed_text}");
+    assert_eq!(enum_count, 2, "enum text: {enum_text}");
+    assert_eq!(data_count, 0, "data text: {data_text}");
+    assert!(typed_text.contains("'String") && typed_text.contains(":: 'List 'String") && typed_text.contains(":: 'Ref 'Bool"));
+    assert!(enum_text.contains("(:ok 'String)") && enum_text.contains("(:err 'Tag)"));
+    assert!(
+      data_text.contains("(:kind :string)"),
+      "ordinary tag data must not be rewritten: {data_text}"
+    );
   }
 
   #[test]
@@ -2676,11 +2921,11 @@ mod tests {
     // Format to Cirru string and parse back (as save_snapshot + load_snapshot do)
     let cirru_text = cirru_edn::format(&entry_edn, true).expect("format should succeed");
     assert!(
-      cirru_text.contains(":schema $ :: :macro"),
-      "macro schema should use wrapped :macro tag: {cirru_text}"
+      cirru_text.contains(":schema $ :: 'Macro"),
+      "macro schema should use canonical wrapped 'Macro symbol: {cirru_text}"
     );
     assert!(
-      cirru_text.contains(":return :bool"),
+      cirru_text.contains(":return 'Bool"),
       "macro schema should preserve non-dynamic return field during serialization: {cirru_text}"
     );
     let parsed_edn = cirru_edn::parse(&cirru_text).expect("parse should succeed");
@@ -2736,7 +2981,7 @@ mod tests {
     let Edn::Tuple(view) = schema else {
       panic!("top-level schema should serialize as wrapped fn tuple");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "fn"));
+    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Fn"));
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
@@ -2780,7 +3025,7 @@ mod tests {
     let Edn::Tuple(view) = schema else {
       panic!("top-level schema should serialize as wrapped macro tuple");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro"));
+    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Macro"));
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
@@ -2789,7 +3034,7 @@ mod tests {
       "wrapped macro schema should omit redundant inner :kind"
     );
     assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit redundant return");
-    assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
+    assert!(matches!(map.tag_get("rest"), Some(Edn::Symbol(name)) if name.as_ref() == "Dynamic"));
   }
 
   #[test]
@@ -2831,7 +3076,7 @@ mod tests {
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
-    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "record"));
+    assert!(matches!(map.tag_get("return"), Some(Edn::Symbol(name)) if name.as_ref() == "Record"));
   }
 
   #[test]
@@ -2978,11 +3223,11 @@ mod tests {
     let _ = fs::remove_file(&temp_path);
 
     assert!(
-      saved.contains("|&+ $ %{} :CodeEntry") && saved.contains(":schema $ :: :fn"),
+      saved.contains("|&+ $ %{} :CodeEntry") && saved.contains(":schema $ :: 'Fn"),
       "saved snapshot should retain wrapped fn schemas"
     );
     assert!(
-      saved.contains("|%{} $ %{} :CodeEntry") && saved.contains(":schema $ :: :macro"),
+      saved.contains("|%{} $ %{} :CodeEntry") && saved.contains(":schema $ :: 'Macro"),
       "saved snapshot should retain wrapped macro schemas"
     );
   }
@@ -2999,8 +3244,13 @@ mod tests {
       let edn = schema_annotation_to_edn(&schema);
       assert_eq!(
         edn,
-        Edn::tag(kind),
-        "schema kind `:{kind}` must round-trip, not degrade to :dynamic"
+        Edn::tuple(
+          Edn::Symbol(Arc::from(
+            CalcitTypeAnnotation::canonical_type_symbol_name(kind).expect("known kind")
+          )),
+          vec![],
+        ),
+        "schema kind `:{kind}` must round-trip as a canonical symbol, not degrade to dynamic"
       );
     }
   }

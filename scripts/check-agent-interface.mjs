@@ -19,8 +19,8 @@ const scenarios = [
     name: "legacy any alias",
     args: ["calcit/test.cirru", "query", "type", ":any", "--format", "json"],
     check(result) {
-      if (result.command !== "query.type" || result.data.canonical_type !== ":dynamic") {
-        throw new Error("query.type did not canonicalize legacy :any to :dynamic");
+      if (result.command !== "query.type" || result.data.canonical_type !== "'Dynamic") {
+        throw new Error("query.type did not canonicalize legacy :any to 'Dynamic");
       }
       if (result.data.methods !== null || result.diagnostics[0]?.code !== "W_LEGACY_ANY_ALIAS") {
         throw new Error(":any did not preserve dynamic dispatch semantics and migration guidance");
@@ -94,7 +94,7 @@ const scenarios = [
       if (result.schema_version !== 1 || result.command !== "query.type-at") {
         throw new Error("unexpected query.type-at envelope");
       }
-      if (result.data.inferred_type !== ":number" || result.data.expected_type !== ":number") {
+      if (result.data.inferred_type !== "'Number" || result.data.expected_type !== "'Number") {
         throw new Error("type-at lost inferred or expected type evidence");
       }
       if (!result.data.bindings.some((binding) => binding.name === "p")) {
@@ -196,10 +196,10 @@ const scenarios = [
       ) {
         throw new Error("query.schema JSON envelope is incorrect");
       }
-      if (result.data.canonical_schema !== ":: :ref :number") {
+      if (result.data.canonical_schema !== ":: 'Ref 'Number") {
         throw new Error("parameterized value schema was not preserved");
       }
-      if (JSON.stringify(result.data.tree) !== '["::",":ref",":number"]') {
+      if (JSON.stringify(result.data.tree) !== '["::","\'Ref","\'Number"]') {
         throw new Error("parameterized value schema tree is incorrect");
       }
     },

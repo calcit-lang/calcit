@@ -7,11 +7,12 @@
   :files $ {}
     |test-tuple.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Result (:ok :number) (:err :string)
+            defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
               assert= (:: :parts |1 |23)
@@ -74,6 +75,7 @@
                   plain $ :: :plain 1
                 assert= nil $ &tuple:enum plain
           :examples $ []
+          :schema $ :: 'Dynamic
         |try-size $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)
@@ -84,9 +86,9 @@
                 (:dyn x y z) 4
                 _ :many
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-tuple.main $ :require

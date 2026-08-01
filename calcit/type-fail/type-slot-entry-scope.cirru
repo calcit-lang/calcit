@@ -10,19 +10,21 @@
   :files $ {}
     |type-fail-type-slot-entry-scope.main $ %{} :FileEntry
       :defs $ {}
-        |ClientOp $ %{} :CodeEntry (:doc "|Client entry enum") (:schema :dynamic)
+        |ClientOp $ %{} :CodeEntry (:doc "|Client entry enum")
           :code $ quote
             defenum ClientOp $ :client/ping
           :examples $ []
-        |ServerOp $ %{} :CodeEntry (:doc "|Server entry enum") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ServerOp $ %{} :CodeEntry (:doc "|Server entry enum")
           :code $ quote
             defenum ServerOp $ :server/ping
           :examples $ []
+          :schema $ :: 'Dynamic
         |accept-op $ %{} :CodeEntry (:doc "|Schema depends on the entry-bound type slot")
           :code $ quote
             defn accept-op (op) op
           :examples $ []
-          :schema $ :: :fn
+          :schema $ :: 'Fn
             {} (:return '*dispatch-op)
               :args $ [] '*dispatch-op
         |client-main! $ %{} :CodeEntry (:doc "|Client entry binds dispatch-op for client enums")
@@ -31,15 +33,15 @@
               accept-op $ :: :client/ping
               , nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |server-main! $ %{} :CodeEntry (:doc "|Server entry binds the same slot name independently")
           :code $ quote
@@ -47,8 +49,8 @@
               accept-op $ :: :server/ping
               , nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc "|Fixture for entry-scoped with-type-slot preprocessing")
         :code $ quote (ns type-fail-type-slot-entry-scope.main)

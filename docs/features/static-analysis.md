@@ -25,12 +25,12 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 ## Quick Recipes
 
-- **Assert Type**: `assert-type total :number`
-- **Local `fn` Hint**: `hint-fn $ {} (:args ([] :number)) (:return :number)`
-- **Top-level `defn` Schema**: `cr edit schema app.main/add --code 'quote $ :: :fn $ {} (:args ([] :number :number)) (:return :number)'`
-- **Top-level value Schema**: `cr edit schema 'app.main/*enabled?' --code 'quote $ :: :ref :bool'`
-- **Return Type**: `hint-fn $ {} (:return :string)`
-- **Compact Hint**: `defn my-fn (x) :string ...`
+- **Assert Type**: `assert-type total 'Number`
+- **Local `fn` Hint**: `hint-fn $ {} (:args ([] 'Number)) (:return 'Number)`
+- **Top-level `defn` Schema**: `cr edit schema app.main/add --code "quote $ :: 'Fn $ {} (:args ([] 'Number 'Number)) (:return 'Number)"`
+- **Top-level value Schema**: `cr edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"`
+- **Return Type**: `hint-fn $ {} (:return 'String)`
+- **Compact Hint**: `defn my-fn (x) 'String ...`
 - **Check Traits**: `assert-traits x MyTrait`
 - **Ignore Warning**: `&core:ignore-type-warning`
 
@@ -91,6 +91,8 @@ Use `--summary-only` when only aggregate counts are needed. Human output stops a
 
 ## Type Annotations
 
+Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `cr edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, record keys, `:return` schema keys, or `:kind` values.
+
 ### Function Parameter Types
 
 Function parameters should be annotated with function schema:
@@ -100,7 +102,7 @@ Function parameters should be annotated with function schema:
 
 For namespace-level definitions, `:schema` is stored on the definition entry and is typically edited with `cr edit schema`, rather than written inline in the function body.
 
-`cr edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote :string` for a primitive leaf or `quote $ :: :ref :bool` for a parameterized type expression. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: :fn $ {} ...` or `:: :macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized tags such as `:ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: :ref :bool`, `:: :list :string`, or `:: :map :tag :number`.
+`cr edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote 'String` for a primitive leaf or `quote $ :: 'Ref 'Bool` for a parameterized type expression. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: 'Fn $ {} ...` or `:: 'Macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized types such as `'Ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: 'Ref 'Bool`, `:: 'List 'String`, or `:: 'Map 'Tag 'Number`.
 
 The preprocessor propagates a named function's schema into its parameter bindings. This means field access, method dispatch, generic return inference, and return checks inside the body use the declared types instead of falling back to `:dynamic`. A `:rest` schema is preserved as a variadic element type both for calls and when the function is passed as a higher-order callback.
 
@@ -197,30 +199,29 @@ let
 
 ## Supported Types
 
-The following type tags are supported:
+| Canonical syntax | Calcit Type |
+| ---------------- | ----------- |
+| `'Unit` | Nil / unit |
+| `'Bool` | Boolean |
+| `'Number` | Number |
+| `'String` | String |
+| `'Symbol` | Symbol |
+| `'Tag` | Tag (Keyword) |
+| `'List` | List |
+| `'Map` | Hash Map |
+| `'Set` | Set |
+| `'Tuple` | Tuple (general) |
+| `'Fn` | Function |
+| `'Ref` | Atom / Ref |
+| `'Dynamic` | Unknown/unresolved type; static checks are disabled at this boundary |
 
-| Tag                 | Calcit Type         |
-| ------------------- | ------------------- |
-| `:nil`              | Nil                 |
-| `:bool`             | Boolean             |
-| `:number`           | Number              |
-| `:string`           | String              |
-| `:symbol`           | Symbol              |
-| `:tag`              | Tag (Keyword)       |
-| `:list`             | List                |
-| `:map`              | Hash Map            |
-| `:set`              | Set                 |
-| `:tuple`            | Tuple (general)     |
-| `:fn`               | Function            |
-| `:ref`              | Atom / Ref          |
-| `:any`              | Legacy input alias for `:dynamic`; output is canonicalized |
-| `:dynamic`          | Unknown/unresolved type: static checks are disabled at this boundary |
+`:any` is a legacy alias for `:dynamic`; both are accepted as input and formatter output is `'Dynamic`.
 
 ### Complex Types
 
 #### Optional Types
 
-Represent values that can be `nil`. Use the `:: :optional <type>` syntax:
+Represent values that can be `nil`. Use the `:: 'Optional <type>` syntax:
 
 ```cirru
 let

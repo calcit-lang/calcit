@@ -11,22 +11,22 @@
           :code $ quote
             defn bad-rest (x) (do x)
           :examples $ []
-          :schema $ :: :fn
-            {} (:rest :number) (:return :number)
-              :args $ [] :number
+          :schema $ :: 'Fn
+            {} (:rest 'Number) (:return 'Number)
+              :args $ [] 'Number
         |main! $ %{} :CodeEntry (:doc "|Entry for type-fail schema unexpected rest")
           :code $ quote
             defn main! () $ do (; calling to force preprocessing of bad-rest) (bad-rest 1) (println |unreachable)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
       :ns $ %{} :NsEntry (:doc "|Namespace for schema unexpected rest")
         :code $ quote (ns type-fail-schema-rest-unexpected.main)

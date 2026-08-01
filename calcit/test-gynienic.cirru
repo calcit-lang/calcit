@@ -7,7 +7,7 @@
   :files $ {}
     |test-gynienic.lib $ %{} :FileEntry
       :defs $ {}
-        |add-11 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |add-11 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-11 (a b)
               let
@@ -16,22 +16,24 @@
                 quasiquote $ do (println "|c is:" c)
                   [] (~ a) (~ b) c (~ c) (add-2 8)
           :examples $ []
+          :schema $ :: 'Dynamic
         |add-2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (:ns test-gynienic.lib)
     |test-gynienic.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
-        |try-hygienic $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |try-hygienic $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-hygienic () (println "|Testing gynienic")
               let
@@ -39,6 +41,7 @@
                 assert= (add-11 1 2) ([] 1 2 4 11 10)
                 , true
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-gynienic.main $ :require

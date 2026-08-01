@@ -7,10 +7,11 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ + 1 2
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require

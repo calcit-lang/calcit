@@ -787,7 +787,7 @@ mod type_query_tests {
     assert_eq!(annotation.to_brief_string(), "dynamic");
     assert_eq!(
       format_type_query_annotation(annotation.as_ref()).expect("alias should format"),
-      ":dynamic"
+      "'Dynamic"
     );
     assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic));
     assert!(CalcitTypeAnnotation::String.matches_annotation(annotation.as_ref()));
@@ -810,14 +810,14 @@ mod type_query_tests {
   fn renders_type_annotations_without_edn_top_level_wrapper() {
     assert_eq!(
       format_type_query_annotation(&CalcitTypeAnnotation::Number).expect("number should format"),
-      ":number"
+      "'Number"
     );
     let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
     assert_eq!(
       format_type_query_annotation(&list_type).expect("list should format"),
-      ":: :list :number"
+      ":: 'List 'Number"
     );
-    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), ":ref");
+    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), "'Ref");
   }
 
   #[test]
@@ -830,15 +830,15 @@ mod type_query_tests {
     assert_eq!(value["schema_version"], 1);
     assert_eq!(value["command"], "query.schema");
     assert_eq!(value["data"]["id"], "app.main/*enabled?");
-    assert_eq!(value["data"]["canonical_schema"], ":: :ref :bool");
-    assert_eq!(value["data"]["tree"], serde_json::json!(["::", ":ref", ":bool"]));
+    assert_eq!(value["data"]["canonical_schema"], ":: 'Ref 'Bool");
+    assert_eq!(value["data"]["tree"], serde_json::json!(["::", "'Ref", "'Bool"]));
 
     let broad_ref = CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone());
     let output =
       format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned()).expect("broad ref JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
-    assert_eq!(value["data"]["canonical_schema"], ":ref");
-    assert_eq!(value["data"]["tree"], ":ref");
+    assert_eq!(value["data"]["canonical_schema"], "'Ref");
+    assert_eq!(value["data"]["tree"], "'Ref");
   }
 
   #[test]

@@ -238,8 +238,9 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
   let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let original_edn = cirru_edn::parse(&original_content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
-  let snapshot = snapshot::load_snapshot_data(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
+  let mut snapshot = snapshot::load_snapshot_data(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
   let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
+  let canonicalized_type_forms = snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
   let formatted_content = render_snapshot_content(&snapshot)?;
 
   if formatted_content == original_content {
@@ -247,6 +248,12 @@ fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), S
   } else {
     fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
     println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
+  }
+  if canonicalized_type_forms > 0 {
+    println!(
+      "{} Canonicalized {canonicalized_type_forms} legacy tag-based type form(s) to quoted symbols",
+      "✓".green()
+    );
   }
 
   for advisory in advisories {
@@ -306,7 +313,7 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
   }
   if legacy_any_count > 0 {
     advisories.push(format!(
-      "[W_LEGACY_ANY] Found {legacy_any_count} schema/code occurrence(s) of legacy `:any`; canonical schema output uses `:dynamic`.\n\
+      "[W_LEGACY_ANY] Found {legacy_any_count} schema/code occurrence(s) of legacy `:any`; canonical schema output uses `'Dynamic`.\n\
        Next: use a concrete type, `:generics` type variable, or trait `:where` bound where the value participates in typed code."
     ));
   }

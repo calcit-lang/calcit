@@ -7,11 +7,11 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Bundle indentation-based Calcit source files into a runnable snapshot.") (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc "|Bundle indentation-based Calcit source files into a runnable snapshot.")
           :code $ quote
             defn main! () $ let
-                CodeEntry $ defstruct CodeEntry (:doc :string) (:code :dynamic) (:examples :list)
-                FileEntry $ defstruct FileEntry (:ns CodeEntry) (:defs :map)
+                CodeEntry $ defstruct CodeEntry (:doc 'String) (:code 'Dynamic) (:examples 'List)
+                FileEntry $ defstruct FileEntry (:ns CodeEntry) (:defs 'Map)
                 make-code-entry $ fn (form)
                   %{} CodeEntry (:doc |) (:code form)
                     :examples $ []
@@ -60,9 +60,11 @@
               write-file output-path $ format-cirru-edn snapshot
               println $ str-spaced |wrote output-path |with (count files) |namespaces
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)

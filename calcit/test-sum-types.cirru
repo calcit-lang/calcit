@@ -7,7 +7,7 @@
   :files $ {}
     |test-sum-types.main $ %{} :FileEntry
       :defs $ {}
-        |ActionImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |ActionImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             let
                 ActionTrait $ deftrait ActionTrait (.describe :fn)
@@ -17,15 +17,18 @@
                     (:ok value) (str "|Action ok -> " value)
                     (:err message) (str "|Action err -> " message)
           :examples $ []
-        |ActionResult $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ActionResult $ %{} :CodeEntry (:doc |)
           :code $ quote
             def ActionResult $ impl-traits Result ActionImpl
           :examples $ []
-        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Result (:ok :number) (:err :string)
+            defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing sum types...")
               let
@@ -42,24 +45,26 @@
                 println "|All sum type checks passed."
               println |Done!
           :examples $ []
+          :schema $ :: 'Dynamic
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message) (%:: ActionResult :err message)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value) (%:: ActionResult :ok value)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
+          :schema $ :: 'Dynamic
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
@@ -67,8 +72,8 @@
                 (:ok value) (str "|handled ok " value)
                 (:err message) (str "|handled err " message)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-sum-types.main)

@@ -11,21 +11,21 @@
           :code $ quote
             defn bad-kind () 1
           :examples $ []
-          :schema $ :: :macro
+          :schema $ :: 'Macro
             {} $ :args ([])
         |main! $ %{} :CodeEntry (:doc "|Entry for type-fail schema kind mismatch")
           :code $ quote
             defn main! () $ do (; call to force preprocessing of bad-kind) (bad-kind) (do true)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc "|Namespace for schema kind mismatch")
         :code $ quote (ns type-fail-schema-kind-mismatch.main)

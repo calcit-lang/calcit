@@ -7,20 +7,23 @@
   :files $ {}
     |test-method-errors.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Entry for reproducing preprocess failures") (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc "|Entry for reproducing preprocess failures")
           :code $ quote
             defn main! () (; "运行该入口会在" preprocess "阶段报错，验证类型推断是否生效") (trigger-type-error)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
-            defn reload! () $ :: :unit
+            defn reload! () $ :: 'Unit
           :examples $ []
-        |trigger-type-error $ %{} :CodeEntry (:doc "|Pipeline sample that should fail preprocess type checks") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |trigger-type-error $ %{} :CodeEntry (:doc "|Pipeline sample that should fail preprocess type checks")
           :code $ quote
             defn trigger-type-error () $ let
                 src $ {} (:a 1) (:b 2)
                 by-set $ .to-set (vals src)
               .map by-set $ fn (x) false
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc "|Namespace for standalone repro")
         :code $ quote (ns test-method-errors.main)

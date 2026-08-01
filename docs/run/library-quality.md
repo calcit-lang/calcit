@@ -56,7 +56,7 @@ git diff --exit-code -- calcit.cirru
 
 - `W_LEGACY_CONFIG`：顶层 `:configs` 已迁移到 `:entries.default`。
 - `W_LEGACY_SNAPSHOT_NAME`：仍使用兼容文件名 `compact.cirru`。
-- `W_LEGACY_ANY`：schema 中的旧 `:any` 被规范化为 `:dynamic`。
+- `W_LEGACY_ANY`：schema 中的旧 `:any` 被规范化为 `'Dynamic`；其他旧 type tags 也会在已知类型位置改写为 quoted symbol。
 - `W_DYNAMIC_TYPE_DEBT`：本地定义仍有 unresolved dynamic；format 不会猜测类型并自动改写语义。
 
 CI 中运行 `edit format` 后必须检查 diff，否则“命令成功”只说明文件可规范化，不说明提交已经采用规范格式。告警不会让 format 失败；需要严格门禁时，继续执行下文的 JSON 静态分析并按项目策略判断。

@@ -11,24 +11,24 @@
           :code $ quote
             defn main! () (require-mappable 1) nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |require-mappable $ %{} :CodeEntry (:doc "|Requires the argument type to satisfy Mappable")
           :code $ quote
             defn require-mappable (x) x
           :examples $ []
-          :schema $ :: :fn
+          :schema $ :: 'Fn
             {} (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T
-              :where $ {} ('T :Mappable)
+              :where $ {} ('T 'Mappable)
       :ns $ %{} :NsEntry (:doc "|Namespace for generic where-bound mismatch")
         :code $ quote (ns type-fail-generic-where-bound.main)

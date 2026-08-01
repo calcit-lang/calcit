@@ -7,12 +7,13 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ let
                 f1 "|local function"
               println check/f1
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require ([] check-args.main :as check)

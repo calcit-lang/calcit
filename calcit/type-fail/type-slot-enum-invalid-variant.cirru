@@ -7,36 +7,38 @@
   :files $ {}
     |type-fail-type-slot-enum-invalid-variant.main $ %{} :FileEntry
       :defs $ {}
-        |Action $ %{} :CodeEntry (:doc "|Enum used for type-slot binding") (:schema :dynamic)
+        |Action $ %{} :CodeEntry (:doc "|Enum used for type-slot binding")
           :code $ quote
-            defenum Action (:add :string) (:remove :string) (:clear)
+            defenum Action (:add 'String) (:remove 'String) (:clear)
           :examples $ []
-        |legacy-main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |legacy-main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn legacy-main! () $ with-type-slot (:dispatch-op Action) 1 2
           :examples $ []
+          :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc "|Entry testing enum auto-rewrite via type-slot with invalid variant")
           :code $ quote
             defn main! ()
               takes-action $ :: :nonexistent |hello
               , nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |takes-action $ %{} :CodeEntry (:doc "|Function expecting a type-slot-bound enum value")
           :code $ quote
             defn takes-action (x) x
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ [] '*dispatch-op
       :ns $ %{} :NsEntry (:doc "|Namespace for type-slot enum invalid variant detection")
         :code $ quote (ns type-fail-type-slot-enum-invalid-variant.main)

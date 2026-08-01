@@ -7,23 +7,24 @@
   :files $ {}
     |test-fn.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing fn")
               let
                   f1 identity
                   f2 &+
                   _ $ assert-type f1
-                    :: :fn $ {} (:return 'T)
+                    :: 'Fn $ {} (:return 'T)
                       :generics $ [] 'T
                       :args $ [] 'T
                   _ $ assert-type f2
-                    :: :fn $ {} (:return :number)
-                      :args $ [] :number :number
+                    :: 'Fn $ {} (:return 'Number)
+                      :args $ [] 'Number 'Number
                 assert= 1 $ f1 1
                 assert= 3 $ f2 1 2
                 assert= 3 $ apply f2 ([] 1 2)
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-fn.main $ :require

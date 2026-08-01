@@ -7,7 +7,7 @@
   :files $ {}
     |debug-overflow.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (println |TODO) (; rec 1 2 3 4 5 6 7 8 9)
               println $ my-cond
@@ -16,7 +16,8 @@
                 (&> 3 2) 2
                 true 0
           :examples $ []
-        |my-cond $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |my-cond $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro my-cond (pair & else)
               &let
@@ -29,7 +30,8 @@
                         ~ $ nth else 0
                         ~@ $ rest else
           :examples $ []
-        |rec $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |rec $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro rec (x0 & xs)
               quasiquote $ if (&> ~x0 10) "|Too large"
@@ -38,6 +40,7 @@
                   , ~x0 $ &+ ~x0
                     rec $ ~@ xs
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns debug-overflow.main $ :require

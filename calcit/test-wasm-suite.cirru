@@ -7,14 +7,16 @@
   :files $ {}
     |test-wasm-suite.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-cond/main!) (test-math/main!) (test-set/main!) (test-tuple/main!) (test-fn/main!) (test-lens/main!) (test-edn/main!) (test-string/main!) (test-nil/main!)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ main!
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-wasm-suite.main $ :require ([] test-cond.main :as test-cond) ([] test-math.main :as test-math) ([] test-set.main :as test-set) ([] test-tuple.main :as test-tuple) ([] test-fn.main :as test-fn) ([] test-lens.main :as test-lens) ([] test-edn.main :as test-edn) ([] test-string.main :as test-string) (test-nil.main :as test-nil)

@@ -12,9 +12,9 @@
             defn add-until (acc target step)
               if (>= acc target) acc $ recur (+ acc step) target step
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic 'Dynamic
         |bad-recur-too-few $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bad-recur-too-few (x y z)
@@ -22,9 +22,9 @@
                 recur (+ x 1) y
                 + x y z
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic 'Dynamic
         |bad-recur-too-many $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bad-recur-too-many (x y)
@@ -32,9 +32,9 @@
                 recur (+ x 1) y 999
                 + x y
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic
         |bad-recur-wrong-count $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bad-recur-wrong-count (a b c d)
@@ -42,18 +42,18 @@
                 recur $ + a 1
                 + a b c d
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic :dynamic :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic 'Dynamic 'Dynamic
         |factorial $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn factorial (n acc)
               if (<= n 1) acc $ recur (dec n) (* n acc)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing recur arity")
               assert= 10 $ sum-to-n 4
@@ -63,19 +63,21 @@
               assert= 120 $ factorial 5 1
               assert= 24 $ factorial 4 1
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ println "|Code updated"
           :examples $ []
+          :schema $ :: 'Dynamic
         |sum-to-n $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn sum-to-n (n)
               if (<= n 0) 0 $ + n
                 sum-to-n $ dec n
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-recur-arity.main $ :require

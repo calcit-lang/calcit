@@ -107,6 +107,41 @@ pub struct Snapshot {
   pub files: HashMap<String, FileInSnapShot>,
 }
 
+fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
+  let map = data.view_map().map_err(|e| format!("entry must be a map: {e}"))?;
+  let ns_def = |key: &str| match map.get_or_nil(key) {
+    Edn::Str(text) | Edn::Symbol(text) => Ok(text.to_string()),
+    other => Err(format!(
+      "entry `:{key}` must be a namespace/definition string or symbol, got {other:?}"
+    )),
+  };
+  let mode = match map.get_or_nil("mode") {
+    Edn::Tag(tag) if tag.ref_str() == "native" => SnapshotRunMode::Native,
+    Edn::Tag(tag) if tag.ref_str() == "js" => SnapshotRunMode::Js,
+    Edn::Str(text) | Edn::Symbol(text) if text.trim_start_matches(':') == "native" => SnapshotRunMode::Native,
+    Edn::Str(text) | Edn::Symbol(text) if text.trim_start_matches(':') == "js" => SnapshotRunMode::Js,
+    other => return Err(format!("entry `:mode` must be :native or :js, got {other:?}")),
+  };
+  Ok(SnapshotEntry {
+    mode,
+    init_fn: ns_def("init-fn")?,
+    reload_fn: ns_def("reload-fn")?,
+    description: from_edn(map.get_or_nil("description")).map_err(|e| format!("entry `:description`: {e}"))?,
+    modules: from_edn(map.get_or_nil("modules")).map_err(|e| format!("entry `:modules`: {e}"))?,
+    type_slots: from_edn(map.get_or_nil("type-slots")).map_err(|e| format!("entry `:type-slots`: {e}"))?,
+  })
+}
+
+fn parse_entries(data: Edn) -> Result<HashMap<String, SnapshotEntry>, String> {
+  let map = data.view_map().map_err(|e| format!("entries must be a map: {e}"))?;
+  let mut entries = HashMap::with_capacity(map.0.len());
+  for (name, value) in map.0 {
+    let name: String = from_edn(name).map_err(|e| format!("invalid entry name: {e}"))?;
+    entries.insert(name, parse_snapshot_entry(value)?);
+  }
+  Ok(entries)
+}
+
 fn format_edn_preview(value: &Edn) -> String {
   let raw = cirru_edn::format(value, true).unwrap_or_else(|_| format!("{value:?}"));
   const LIMIT: usize = 220;
@@ -479,8 +514,7 @@ fn main() {
       Some(from_edn::<LegacySnapshotConfigs>(value).unwrap_or_else(|e| panic!("failed to parse calcit-core legacy `:configs`: {e}")))
     }
   };
-  let mut entries: HashMap<String, SnapshotEntry> =
-    from_edn(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
+  let mut entries = parse_entries(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
   if let Some(configs) = &legacy_configs {
     entries.insert(
       "default".to_owned(),

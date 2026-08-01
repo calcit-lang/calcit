@@ -24,7 +24,7 @@ entry_for:
 cr --help
 ```
 
-Quick note: `cr edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. It normalizes legacy namespace records and top-level `:configs`, then emits recoverable stderr advisories for legacy filenames, legacy `:any`, and unresolved dynamic type debt. Use `cr analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
+Quick note: `cr edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. It normalizes legacy namespace records and top-level `:configs`, and rewrites legacy schema type tags such as `:string` and `:ref` to quoted symbols such as `'String` and `'Ref` only in known type positions. Ordinary tag data stays unchanged. It then emits recoverable stderr advisories for legacy filenames, legacy `:any`, and unresolved dynamic type debt. Use `cr analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
 
 ## Detailed Option Descriptions
 

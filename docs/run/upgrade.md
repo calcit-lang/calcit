@@ -57,6 +57,19 @@ related:
 
 ## 2）标准升级流程（建议顺序）
 
+### 类型标注语法迁移
+
+新版本把 schema 类型的推荐写法统一为 quoted symbol：`'String`、`'Number`、`'List`、`'Ref`、`'Fn` 和 `'Dynamic`。旧的 `:string`、`:number`、`:list`、`:ref`、`:fn`、`:dynamic` 仍可加载，以便平滑升级；普通 tag 数据（例如 enum variant `:ok`、record key 和 schema 的 `:return`/`:kind` key）不会被改变。
+
+在完成依赖升级后执行：
+
+```bash
+cr calcit.cirru edit format
+cr calcit.cirru --check-only
+```
+
+`edit format` 会只改写 schema、`hint-fn`、`assert-type`、`unsafe-coerce`、`defstruct` 和 `defenum` 等类型位置，并将 entry schema 重新序列化为 canonical symbols；它不会猜测或加强实际类型契约。提交前检查 diff，尤其是具有手写 tag 数据的宏或 DSL。
+
 下面流程按“先确认版本，再对齐工具链，再更新依赖，最后按 CI 链路验证”的顺序执行。
 
 ### 快速命令清单

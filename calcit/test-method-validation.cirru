@@ -7,45 +7,51 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-valid-list-methods) (; test-invalid-list-method ; "会导致" preprocess "错误") (; test-invalid-string-method ; "会导致" preprocess "错误") (test-invalid-map-method ; "测试" map "方法验证") (println |All tests passed)
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |test-invalid-list-method $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-invalid-list-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-list-method () $ let
                 xs $ [] 1 2 3
-              assert-type xs :list
+              assert-type xs 'List
               ; "非法：list" "没有" invalid-method
               .invalid-method xs
           :examples $ []
-        |test-invalid-map-method $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-invalid-map-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-map-method () $ let
                 m $ {} (:a 1)
-              assert-type m :map
+              assert-type m 'Map
               ; "非法：map" "没有" invalid-map-method
               .invalid-map-method m
           :examples $ []
-        |test-invalid-string-method $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-invalid-string-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-string-method () $ let
                 text |hello
-              assert-type text :string
+              assert-type text 'String
               ; "非法：string" "没有" invalid-string-method
               .invalid-string-method text
           :examples $ []
-        |test-valid-list-methods $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-valid-list-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-valid-list-methods () $ let
                 xs $ [] 1 2 3
-              assert-type xs :list
+              assert-type xs 'List
               ; "合法的" list "方法"
               .first xs
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)

@@ -7,32 +7,36 @@
   :files $ {}
     |test-edn.main $ %{} :FileEntry
       :defs $ {}
-        |A $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |A $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct A $ :a :dynamic
+            defstruct A $ :a 'Dynamic
           :examples $ []
-        |DemoEnum $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |DemoEnum $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum DemoEnum (:ok) (:err :string)
+            defenum DemoEnum (:ok) (:err 'String)
           :examples $ []
-        |Person $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Person $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct Person (:name :string) (:age :number)
+            defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
+          :schema $ :: 'Dynamic
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)
               inside-eval: $ test-symbol
               test-atom
           :examples $ []
-        |test-atom $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-atom $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-atom () (log-title "|Testing atom to edn")
               let
@@ -42,7 +46,8 @@
                 assert= 1 $ deref a
                 assert= "|atom 1" $ trim (format-cirru-edn a)
           :examples $ []
-        |test-edn $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn () $ let
                 edn-demo "|%{} :Person (:age 23) (:name |Chen)"
@@ -115,7 +120,8 @@
               assert= "|do \"|a b\"" $ trim (format-cirru-edn "|a b")
               assert= "|do |hello" $ trim (format-cirru-edn |hello)
           :examples $ []
-        |test-edn-comment $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-edn-comment $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn-comment () (log-title "|Testing edn comment")
               assert=
@@ -126,7 +132,8 @@
                 parse-cirru-edn "|{} (:a 1) (:b 2)"
               assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
-        |test-symbol $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-symbol $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-symbol () (log-title "|Testing symbol to edn")
               assert= (&extract-code-into-edn 'aa)
@@ -149,6 +156,7 @@
                   code $ quote (+ 1 2)
                 assert= code $ eval (&data-to-code code)
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-edn.main $ :require

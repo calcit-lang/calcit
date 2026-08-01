@@ -1155,7 +1155,7 @@ mod tests {
     assert_eq!(row.kind, type_coverage::DefKind::Fn);
     assert_eq!(row.level, type_coverage::CoverageLevel::Full);
     assert_eq!(row.params, vec!["arg0"]);
-    assert_eq!(row.return_type_hints, vec![":string"]);
+    assert_eq!(row.return_type_hints, vec!["'String"]);
   }
 
   #[test]

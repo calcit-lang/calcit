@@ -7,7 +7,7 @@
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |%A $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |%A $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl %A :%A $ .deref
               fn (self)
@@ -15,63 +15,76 @@
                   :atom x
                   , x
           :examples $ []
-        |%r $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |%r $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl %r :%demo $ .get
               fn (self) 1
           :examples $ []
+          :schema $ :: 'Dynamic
         |*ref-demo $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
           :examples $ []
-          :schema $ :: :ref :number
-        |AtomBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Ref 'Number
+        |AtomBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def AtomBox $ impl-traits AtomBox0 %A
           :examples $ []
-        |AtomBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |AtomBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum AtomBox $ :atom :dynamic
+            defenum AtomBox $ :atom 'Dynamic
           :examples $ []
-        |Demo $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Demo $ %{} :CodeEntry (:doc |)
           :code $ quote
             def Demo $ impl-traits Demo0 %r
           :examples $ []
-        |Demo0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Demo0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Demo $ :a :dynamic
+            defenum Demo $ :a 'Dynamic
           :examples $ []
-        |Deref $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Deref $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl Deref :Deref $ .deref
               fn (self) 2
           :examples $ []
-        |Num $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl Num NumTrait
               .inc $ fn (x) (update x 1 inc)
               .show $ fn (x)
                 str $ &tuple:nth x 1
           :examples $ []
-        |NumBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |NumBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
           :examples $ []
-        |NumBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |NumBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum NumBox $ :number :number
+            defenum NumBox $ :number 'Number
           :examples $ []
-        |NumTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |NumTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
-        |ValueBox $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ValueBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def ValueBox $ impl-traits ValueBox0 Deref
           :examples $ []
-        |ValueBox0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ValueBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum ValueBox $ :value :dynamic
+            defenum ValueBox $ :value 'Dynamic
           :examples $ []
+          :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (&init-builtin-impls!)
@@ -121,16 +134,16 @@
               inside-js: $ test-js/main!
               do true
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ :: :unit
+            defn reload! () $ :: 'Unit
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -138,15 +151,15 @@
               let
                   f1 $ fn (a ? b c)
                     hint-fn $ {}
-                      :args $ [] :tag (:: :optional :tag) (:: :optional :tag)
-                      :return $ :: :list (:: :optional :tag)
+                      :args $ [] 'Tag (:: 'Optional 'Tag) (:: 'Optional 'Tag)
+                      :return $ :: 'List (:: 'Optional 'Tag)
                     [] a b c
                 assert= (f1 :a) ([] :a nil nil)
                 assert= (f1 :a :b) ([] :a :b nil)
                 assert= (f1 :a :b :c) ([] :a :b :c)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-atom $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -159,16 +172,16 @@
               assert= 1 $ deref (%:: AtomBox :atom 1)
               assert= 2 $ deref (%:: AtomBox :atom 2)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-buffer $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |Buffer)
               println "|buffer value:" $ &buffer 0x11 |11
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-cirru-parser $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -197,8 +210,8 @@
                   :b $ []
                     {} (|c 3) (4 5)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-detects $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -250,15 +263,15 @@
               assert= false $ some-in? ([] 1 2 3) ([] :a)
               assert= 1 $ non-nil! 1
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-display-stack $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-effect $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -267,8 +280,8 @@
               println "|Env mode:" $ get-env |m0 "|default m0"
               eprintln "|stdout message"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-fn $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -281,8 +294,8 @@
                 assert= ([] 1 2 3 4 5)
                   coll-f 1 & ([] 2 3 4) 5
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-fn-eq $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -294,8 +307,8 @@
                 assert= b b
                 assert= false $ &= a b
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-if $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -303,8 +316,8 @@
               assert= (if false 1) (if nil 1)
               assert= (if false 1 2) (if nil 1 2)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-json $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -324,8 +337,8 @@
               assert= "|{\n  \"a\": 1\n}" $ json-pretty
                 {} $ :a 1
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-method $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -335,7 +348,7 @@
                   _ $ do (assert-type a0 NumBox)
                     let
                         a0-tuple a0
-                      assert-type a0-tuple :tuple
+                      assert-type a0-tuple 'Tuple
                       assert= true $ any? (&tuple:impls a0-tuple)
                         fn (impl)
                           = (&impl:origin impl) NumTrait
@@ -350,8 +363,8 @@
                     assert= (%:: NumBox :number 2) a2
                     assert= |1 $ .show a1
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -378,8 +391,8 @@
                 assert= 1 @*b
                 assert= 1 @*c
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -395,8 +408,8 @@
                   [] $ &{} :a 1
                   , :a
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-try $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -412,8 +425,8 @@
                   fn (error) (str :a)
               println "|Finished testing try"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-tuple $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -455,8 +468,8 @@
                 assert= "|(%:: :a 1 (:enum Demo))" $ str b
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
