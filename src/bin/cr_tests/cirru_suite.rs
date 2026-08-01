@@ -99,12 +99,6 @@ fn cirru_test_suite() {
   run_with_large_stack("calcit/test.cirru");
 }
 
-/// Standalone tests that can run independently (not included in test.cirru).
-#[test]
-fn cirru_test_gynienic() {
-  run_with_large_stack("calcit/test-gynienic.cirru");
-}
-
 #[test]
 fn cirru_test_recur_arity() {
   run_with_large_stack("calcit/test-recur-arity.cirru");

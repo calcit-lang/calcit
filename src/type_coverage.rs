@@ -595,13 +595,47 @@ pub fn analyze_weak_types_entry(
   }
 }
 
-pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<WeakTypeRow>, String> {
-  if let Some(ns) = &options.ns
-    && !snapshot.files.contains_key(ns)
+#[derive(Debug, Clone, Copy)]
+struct AnalysisScope<'a> {
+  namespace: Option<&'a str>,
+  namespace_prefix: Option<&'a str>,
+  include_dependencies: bool,
+}
+
+fn visit_scoped_definitions<F>(snapshot: &snapshot::Snapshot, scope: AnalysisScope<'_>, mut visit: F) -> Result<(), String>
+where
+  F: FnMut(&str, &str, &snapshot::CodeEntry),
+{
+  if let Some(namespace) = scope.namespace
+    && !snapshot.files.contains_key(namespace)
   {
-    return Err(format!("Namespace not found: {ns}"));
+    return Err(format!("Namespace not found: {namespace}"));
   }
 
+  let package = snapshot.package.as_str();
+  let package_prefix = format!("{package}.");
+  let explicit_scope = scope.namespace.is_some() || scope.namespace_prefix.is_some();
+  for (namespace, file) in &snapshot.files {
+    if !explicit_scope && namespace.ends_with(".$meta") {
+      continue;
+    }
+    if scope.namespace.is_some_and(|exact| namespace != exact) {
+      continue;
+    }
+    if scope.namespace_prefix.is_some_and(|prefix| !namespace.starts_with(prefix)) {
+      continue;
+    }
+    if !(scope.include_dependencies || explicit_scope || namespace == package || namespace.starts_with(&package_prefix)) {
+      continue;
+    }
+    for (definition, entry) in &file.defs {
+      visit(namespace, definition, entry);
+    }
+  }
+  Ok(())
+}
+
+pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<WeakTypeRow>, String> {
   let selected = options
     .only
     .as_deref()
@@ -615,37 +649,24 @@ pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::S
     .transpose()?
     .unwrap_or_else(WeakTypeIntent::all);
 
-  let pkg = snapshot.package.as_str();
-  let explicit_scope = options.ns.is_some() || options.ns_prefix.is_some();
   let mut rows: Vec<WeakTypeRow> = vec![];
 
-  for (ns, file) in &snapshot.files {
-    if !explicit_scope && ns.ends_with(".$meta") {
-      continue;
-    }
-    if let Some(exact) = &options.ns
-      && ns != exact
-    {
-      continue;
-    }
-    if let Some(prefix) = &options.ns_prefix
-      && !ns.starts_with(prefix)
-    {
-      continue;
-    }
-    if !(options.deps || explicit_scope || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
-      continue;
-    }
-
-    for (def_name, entry) in &file.defs {
-      if let Some(mut row) = analyze_weak_types_entry(ns, def_name, entry, &selected) {
+  visit_scoped_definitions(
+    snapshot,
+    AnalysisScope {
+      namespace: options.ns.as_deref(),
+      namespace_prefix: options.ns_prefix.as_deref(),
+      include_dependencies: options.deps,
+    },
+    |namespace, definition, entry| {
+      if let Some(mut row) = analyze_weak_types_entry(namespace, definition, entry, &selected) {
         row.occurrences.retain(|occurrence| selected_intents.contains(&occurrence.intent));
         if !row.occurrences.is_empty() {
           rows.push(row);
         }
       }
-    }
-  }
+    },
+  )?;
 
   rows.sort_by(|a, b| a.ns.cmp(&b.ns).then(a.def.cmp(&b.def)));
   Ok(rows)
@@ -860,38 +881,16 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
 }
 
 pub fn collect_type_coverage_rows(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<Vec<TypeCoverageRow>, String> {
-  if let Some(ns) = &options.ns
-    && !snapshot.files.contains_key(ns)
-  {
-    return Err(format!("Namespace not found: {ns}"));
-  }
-
   let mut rows: Vec<TypeCoverageRow> = Vec::new();
-  let pkg = snapshot.package.as_str();
-  let explicit_scope = options.ns.is_some() || options.ns_prefix.is_some();
-
-  for (ns, file) in &snapshot.files {
-    if !explicit_scope && ns.ends_with(".$meta") {
-      continue;
-    }
-    if let Some(exact) = &options.ns
-      && ns != exact
-    {
-      continue;
-    }
-    if let Some(prefix) = &options.ns_prefix
-      && !ns.starts_with(prefix)
-    {
-      continue;
-    }
-    if !(options.deps || explicit_scope || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
-      continue;
-    }
-
-    for (def_name, entry) in &file.defs {
-      rows.push(analyze_code_entry(ns, def_name, entry));
-    }
-  }
+  visit_scoped_definitions(
+    snapshot,
+    AnalysisScope {
+      namespace: options.ns.as_deref(),
+      namespace_prefix: options.ns_prefix.as_deref(),
+      include_dependencies: options.deps,
+    },
+    |namespace, definition, entry| rows.push(analyze_code_entry(namespace, definition, entry)),
+  )?;
 
   if let Some(raw) = &options.only {
     let selected = parse_coverage_levels(raw)?;

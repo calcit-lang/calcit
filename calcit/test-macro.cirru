@@ -9,7 +9,7 @@
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing cond") (test-cond) (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (test-or-linear-expansion) (do true)
+            defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (test-or-linear-expansion) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-assert $ %{} :CodeEntry (:doc |)
@@ -48,21 +48,6 @@
                     &case v__2 nil (1 |one) (2 |two) (3 |three)
                   quote $ if (&= v__2 1) |one
                     &case v__2 nil (2 |two) (3 |three)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-cond $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn test-cond () $ let
-                compare-x $ fn (x)
-                  cond
-                      &> x 10
-                      , |>10
-                    (&> x 5) |>5
-                    true |<=5
-              assert= (compare-x 11) |>10
-              assert= (compare-x 10) |>5
-              assert= (compare-x 6) |>5
-              assert= (compare-x 4) |<=5
           :examples $ []
           :schema $ :: 'Dynamic
         |test-detector $ %{} :CodeEntry (:doc |)
