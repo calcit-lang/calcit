@@ -37,6 +37,25 @@ leads_to:
 3. `calcit.cirru`（旧项目可能是 `compact.cirru`）是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。不要用 line patch、正则脚本或 formatter 直接改它；使用 `cr edit`、`cr tree`、`cr cursor`。
 4. `CURSOR`、`FOLDED:*`、chunk 标题和 path annotation 都是展示信息，绝不能复制回 Snapshot。`cursor show --format json` 中 `tree` 才是真实节点，`preview_tree` 只是展示树。
 
+### 0.1 发现 Calcit 缺陷时：定位归属仓库并提交 Issue
+
+发现 **Calcit 语言、编译器、运行时或 CLI 工具** 的可复现问题时，必须向该工具的维护仓库提交 GitHub Issue；不要把问题只留在当前项目的提交说明、错误 sidecar 或聊天记录里。发现 **类库/模块** 问题时，也必须提交到该类库的维护仓库，而不是误报到使用它的应用项目或 Calcit 核心仓库。
+
+先收集最小复现、实际结果、预期结果、`cr -v`、平台和相关命令。类库问题先从解析后的模块路径确认归属，再创建 Issue：
+
+```bash
+cr query modules
+# 从输出中复制该模块的实际目录；不要猜仓库名。
+git -C '<module-directory>' remote get-url origin
+# 将 origin 规范化为 OWNER/REPO 后，确认目标确实是对应 GitHub 仓库。
+gh repo view OWNER/REPO --json nameWithOwner,url
+gh issue create --repo OWNER/REPO --title '<concise problem title>' --body-file /tmp/calcit-issue.md
+```
+
+`gh issue create --repo OWNER/REPO` 可显式提交到**非当前仓库**；不要依赖 cwd 或当前 Git remote 推断目标。若模块目录没有自己的 GitHub origin，先根据其路径、模块元数据、发布页或维护文档找出权威仓库；仍无法确认归属时，报告这一阻塞并向用户确认，不能把 Issue 猜测性地投到核心仓库。
+
+Issue 正文至少包括：最小 Snapshot/snippet 或步骤、实际与预期行为、完整诊断输出、Calcit/模块版本、操作系统与架构。删除 token、私有路径、业务数据和其他机密；大型 Snapshot 应改为最小可公开复现。提交后记录并回报 Issue URL、`OWNER/REPO` 和所用版本，方便后续追踪。
+
 以下命令默认在项目根目录读取 `calcit.cirru`。只有操作临时副本或非默认 Snapshot 时才显式写文件：
 
 ```bash
