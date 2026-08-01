@@ -9,6 +9,10 @@ aliases:
   - "reload-fn"
   - "run modes"
   - "entry type slots"
+id: core/run/entries
+related:
+  - core/run/upgrade
+  - core/run/library-quality
 ---
 # Entries
 

@@ -13,6 +13,10 @@ entry_for:
   - "assert-type"
   - "cr analyze check-types"
   - "cr analyze weak-types"
+id: core/features/static-analysis
+related:
+  - core/run/library-quality
+  - core/run/upgrade
 ---
 
 # Static Type Analysis

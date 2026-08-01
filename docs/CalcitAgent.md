@@ -339,6 +339,7 @@ cr docs read-lines agent-advanced.md --start 1 --lines 80
 | 复杂重构与历史陷阱           | `cr docs read agent-advanced.md --full`                         |
 | Snapshot、deps 与项目结构    | `cr docs read project-structure.md --full`                      |
 | 类型覆盖与 dynamic 审计      | `cr docs read static-analysis.md --full`；`cr analyze --help`   |
+| 类库发布前验收与质量门禁     | `cr docs read library-quality.md --full`                       |
 | run/watch/JS codegen         | `cr docs read cli-options.md 'Common Usage Patterns'`           |
 | 错误排查                     | `cr docs read debugging.md --full`；`cr query error`            |
 | 文档图与 frontmatter         | `cr docs read docs-indexing.md --full`；`cr docs graph --help`  |
