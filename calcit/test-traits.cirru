@@ -87,6 +87,33 @@
             defstruct Person0 $ :name 'String
           :examples $ []
           :schema $ :: 'Struct
+        |compare-with-trait $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn compare-with-trait (a b) (.compare a b)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'T 'T
+              :generics $ [] 'T
+              :where $ {} ('T 'Compare)
+        |contains-with-trait? $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn contains-with-trait? (x k) (.contains? x k)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'T 'K
+              :generics $ [] 'T 'K
+              :where $ {} ('T 'Contains)
+        |count-with-trait $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn count-with-trait (x) (.count x)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'T
+              :generics $ [] 'T
+              :where $ {} ('T 'Countable)
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-show-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-tuple-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
@@ -180,11 +207,12 @@
                 assert= s $ assert-traits s calcit.core/Show
                 assert= s $ assert-traits s calcit.core/Show calcit.core/Eq
                 assert= opt $ assert-traits opt calcit.core/Mappable
-                ; "Option only implements Mappable in current impls"
                 assert= p $ assert-traits p MyFoo
-                ; "MyFooImpl only provides :foo, no Show impl"
+                ; Records satisfy the built-in Show trait through the shared record impls.
+                assert= p $ assert-traits p calcit.core/Show
+                ; Person has no implementation of the unrelated MyBar trait.
                 assert= :true $ try
-                  do (assert-traits p calcit.core/Show) :false
+                  do (assert-traits p MyBar) :false
                   fn (e) (do :true)
               println "|  assert-traits: ✓"
           :examples $ []
@@ -221,6 +249,31 @@
                 , :b
               assert= true $ contains? (#{} 1 2 3) 2
               assert= false $ contains? (#{} 1 2 3) 4
+              let
+                  xs $ [] 1 2 3
+                  m $ {} (:a 1)
+                  s $ #{} 1 2
+                  text |abc
+                  tuple $ :: :demo 1
+                  record $ %{} Person0 (:name |A)
+                assert= 3 $ count-with-trait xs
+                assert= 1 $ count-with-trait m
+                assert= 2 $ count-with-trait s
+                assert= 3 $ count-with-trait text
+                assert= 2 $ count-with-trait tuple
+                assert= 1 $ count-with-trait record
+                assert= true $ contains-with-trait? xs 1
+                assert= true $ contains-with-trait? m :a
+                assert= true $ contains-with-trait? s 2
+                assert= true $ contains-with-trait? text 1
+                assert= true $ contains-with-trait? tuple 1
+                assert= true $ contains-with-trait? record :name
+                assert-traits xs Countable Contains
+                assert-traits m Countable Contains
+                assert-traits s Countable Contains
+                assert-traits text Countable Contains
+                assert-traits tuple Countable Contains
+                assert-traits record Countable Contains
               println "|  Collection traits: ✓"
           :examples $ []
           :schema $ :: 'Fn
@@ -238,6 +291,16 @@
               assert= 1 $ &compare |zebra |apple
               ; List comparison $ not yet implemented in compare form
               ; assert= :lt $ compare ([] 1 2) ([] 1 3)
+              do
+                assert= -1 $ .compare 1 2
+                assert= 0 $ .compare 2 2
+                assert= 1 $ .compare 3 2
+                assert= -1 $ .compare |apple |banana
+                assert= 1 $ .compare |zebra |apple
+                assert= -1 $ compare-with-trait 1 2
+                assert= -1 $ compare-with-trait |a |b
+                assert-traits 1 Compare
+                assert-traits |a Compare
               println "|  Compare trait: ✓"
           :examples $ []
           :schema $ :: 'Fn
@@ -382,6 +445,33 @@
                 assert= (%none) (.map opt-none inc)
                 assert= (%ok 2) (.map res-ok inc)
                 assert= (%err |oops) (.map res-err inc)
+              let
+                  opt-some $ %some 1
+                  opt-none $ %none
+                  res-ok $ %ok 1
+                  res-err $ %err |oops
+                assert= true $ .some? opt-some
+                assert= true $ .none? opt-none
+                assert= 1 $ .unwrap-or opt-some 9
+                assert= 9 $ .unwrap-or opt-none 9
+                assert= (%some 2)
+                  .and-then opt-some $ fn (x)
+                    %some $ inc x
+                assert= (%none)
+                  .and-then opt-none $ fn (x)
+                    %some $ inc x
+                assert= true $ .ok? res-ok
+                assert= true $ .err? res-err
+                assert= 1 $ .unwrap-or res-ok 9
+                assert= 9 $ .unwrap-or res-err 9
+                assert= (%ok 2)
+                  .and-then res-ok $ fn (x)
+                    %ok $ inc x
+                assert= (%err |oops)
+                  .and-then res-err $ fn (x)
+                    %ok $ inc x
+                assert= (%ok 1) (.map-err res-ok turn-tag)
+                assert= (%err :oops) (.map-err res-err turn-tag)
               println "|  Option/Result map: ✓"
           :examples $ []
           :schema $ :: 'Fn

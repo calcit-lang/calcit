@@ -2217,7 +2217,10 @@ impl CalcitTypeAnnotation {
         if let Some((ns, def)) = stripped.rsplit_once('/') {
           resolve_enum_from_program(ns, def).map(|e| (e, Some((Arc::from(ns), Arc::from(def)))))
         } else {
-          None
+          // Core named types are commonly written without a namespace in
+          // schemas because calcit.core is implicitly available. Resolve that
+          // global namespace before treating the reference as unknown.
+          resolve_enum_from_program(CORE_NS, stripped).map(|e| (e, Some((Arc::from(CORE_NS), Arc::from(stripped)))))
         }
       }
       Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
@@ -2354,6 +2357,23 @@ impl CalcitTypeAnnotation {
   fn builtin_type_satisfies_trait(&self, expected_trait: &CalcitTrait) -> bool {
     match expected_trait.name.ref_str() {
       "Mappable" => matches!(self, Self::List(_) | Self::Map(_, _) | Self::Set(_) | Self::Optional(_)),
+      "Countable" | "Contains" => {
+        matches!(
+          self,
+          Self::List(_)
+            | Self::Map(_, _)
+            | Self::Set(_)
+            | Self::String
+            | Self::DynTuple
+            | Self::Tuple(_)
+            | Self::Enum(_, _)
+            | Self::Record(_)
+            | Self::Struct(_, _)
+        ) || matches!(self, Self::Custom(value)
+          if matches!(value.as_ref(), Calcit::Tag(tag)
+            if matches!(tag.ref_str(), "list" | "map" | "set" | "string" | "tuple" | "record")))
+      }
+      "Compare" => matches!(self, Self::Number | Self::String),
       "Show" => {
         matches!(
           self,
@@ -2558,6 +2578,10 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(a), Self::Tuple(b)) => a.name() == b.name(),
       (Self::Tuple(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::Tuple(a)) => a.name() == b.name(),
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) => true,
+      // Enum values use the tuple runtime representation, so a concrete named
+      // enum is safe wherever a builtin proc accepts a dynamic tuple. Keep the
+      // relation directional: a dynamic tuple cannot satisfy a named enum.
+      (Self::Enum(_, _), Self::DynTuple) => true,
       (type_ref @ Self::TypeRef(_, _), Self::DynTuple) | (Self::DynTuple, type_ref @ Self::TypeRef(_, _)) => {
         type_ref.resolve_to_enum().is_some()
       }
@@ -3186,6 +3210,19 @@ fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
     return resolve_type_def_from_code(inner);
   }
   let head = items.first()?;
+  // Data definitions are often stored behind `def` and `impl-traits` wrappers.
+  // Peel those value-preserving forms before looking for defstruct/defenum so
+  // named type references retain their concrete runtime representation.
+  if is_def_head(head)
+    && let Some(value) = items.get(2)
+  {
+    return resolve_type_def_from_code(value);
+  }
+  if is_impl_traits_head(head)
+    && let Some(value) = items.get(1)
+  {
+    return resolve_type_def_from_code(value);
+  }
   if is_defstruct_head(head) || is_struct_new_head(head) {
     return parse_defstruct_code(items.as_ref()).map(Calcit::Struct);
   }
@@ -3193,6 +3230,16 @@ fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
     return parse_defenum_code(items.as_ref()).map(Calcit::Enum);
   }
   None
+}
+
+fn is_def_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "def")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "def")
+}
+
+fn is_impl_traits_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "impl-traits")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "impl-traits")
 }
 
 fn is_defstruct_head(head: &Calcit) -> bool {
@@ -3416,6 +3463,26 @@ mod tests {
       }),
       location: None,
     }
+  }
+
+  fn generic_result_enum() -> Arc<CalcitEnum> {
+    Arc::new(
+      CalcitEnum::from_record(CalcitRecord {
+        struct_ref: Arc::new(CalcitStruct {
+          name: EdnTag::new("Result"),
+          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
+          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
+          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
+          where_bounds: Arc::new(vec![]),
+          impls: vec![],
+        }),
+        values: Arc::new(vec![
+          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
+          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
+        ]),
+      })
+      .expect("valid generic enum"),
+    )
   }
 
   #[test]
@@ -4132,23 +4199,7 @@ mod tests {
 
   #[test]
   fn matching_named_enum_ref_binds_generic_args_from_enum_annotation() {
-    let result = Arc::new(
-      CalcitEnum::from_record(CalcitRecord {
-        struct_ref: Arc::new(CalcitStruct {
-          name: EdnTag::new("Result"),
-          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
-          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
-          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
-          where_bounds: Arc::new(vec![]),
-          impls: vec![],
-        }),
-        values: Arc::new(vec![
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
-        ]),
-      })
-      .expect("valid generic enum"),
-    );
+    let result = generic_result_enum();
     let actual = CalcitTypeAnnotation::Enum(
       result.clone(),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
@@ -4163,23 +4214,7 @@ mod tests {
 
   #[test]
   fn matching_bare_enum_annotation_binds_generic_args_from_named_enum_ref() {
-    let result = Arc::new(
-      CalcitEnum::from_record(CalcitRecord {
-        struct_ref: Arc::new(CalcitStruct {
-          name: EdnTag::new("Result"),
-          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
-          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
-          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
-          where_bounds: Arc::new(vec![]),
-          impls: vec![],
-        }),
-        values: Arc::new(vec![
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
-        ]),
-      })
-      .expect("valid generic enum"),
-    );
+    let result = generic_result_enum();
     let actual = CalcitTypeAnnotation::TypeRef(
       Arc::from("Result"),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
@@ -4190,6 +4225,34 @@ mod tests {
     assert!(actual.matches_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("T"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("E"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
+  }
+
+  #[test]
+  fn named_enum_satisfies_dynamic_tuple_only_in_safe_direction() {
+    let named = CalcitTypeAnnotation::Enum(
+      generic_result_enum(),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    let tuple = CalcitTypeAnnotation::DynTuple;
+
+    assert!(named.matches_annotation(&tuple));
+    assert!(!tuple.matches_annotation(&named));
+  }
+
+  #[test]
+  fn resolves_enum_definition_through_def_and_impl_traits_wrappers() {
+    let enum_form = Calcit::from(vec![
+      symbol("defenum"),
+      symbol("Result"),
+      Calcit::from(vec![Calcit::tag("ok"), symbol("Number")]),
+    ]);
+    let wrapped = Calcit::from(vec![
+      symbol("def"),
+      symbol("Result"),
+      Calcit::from(vec![symbol("impl-traits"), enum_form, symbol("ResultMethods")]),
+    ]);
+
+    assert!(matches!(resolve_type_def_from_code(&wrapped), Some(Calcit::Enum(_))));
   }
 
   #[test]

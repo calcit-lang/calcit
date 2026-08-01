@@ -1408,15 +1408,41 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+fn collect_optional_core_impl_records(name: &str, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+  match runner::evaluate_symbol_from_program(name, calcit::CORE_NS, None, call_stack) {
+    Ok(value) => collect_impl_records_from_value(&value, call_stack),
+    // Unit tests and embedding users can construct a named value before the
+    // core program is loaded. Attached impls must remain usable in that state.
+    Err(err) if err.kind == CalcitErrKind::Var => Ok(vec![]),
+    Err(err) => Err(err),
+  }
+}
+
 fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match value {
-    Calcit::Tuple(tuple) => Ok(tuple.impls().to_owned()),
-    Calcit::Record(record) => Ok(record.struct_ref.impls.to_owned()),
+    Calcit::Tuple(tuple) => {
+      let mut impls = collect_optional_core_impl_records("&core-tuple-impls", call_stack)?;
+      impls.extend(tuple.impls().iter().cloned());
+      Ok(impls)
+    }
+    Calcit::Record(record) => {
+      let mut impls = collect_optional_core_impl_records("&core-record-impls", call_stack)?;
+      impls.extend(record.struct_ref.impls.iter().cloned());
+      Ok(impls)
+    }
     // Bare type definitions (not yet instantiated) carry their own attached impls,
     // so introspection tools like `&methods-of` can answer "what methods will
     // instances of this type have" without needing a concrete instance first.
-    Calcit::Struct(struct_def) => Ok(struct_def.impls.to_owned()),
-    Calcit::Enum(enum_def) => Ok(enum_def.impls().to_owned()),
+    Calcit::Struct(struct_def) => {
+      let mut impls = collect_optional_core_impl_records("&core-record-impls", call_stack)?;
+      impls.extend(struct_def.impls.iter().cloned());
+      Ok(impls)
+    }
+    Calcit::Enum(enum_def) => {
+      let mut impls = collect_optional_core_impl_records("&core-tuple-impls", call_stack)?;
+      impls.extend(enum_def.impls().iter().cloned());
+      Ok(impls)
+    }
     Calcit::List(..) => {
       let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
       collect_impl_records_from_value(&impls_value, call_stack)

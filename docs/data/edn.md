@@ -12,16 +12,47 @@ entry_for:
 ---
 # Cirru Extensible Data Notation
 
-> Data notation based on Cirru. Learnt from [Clojure EDN](https://github.com/edn-format/edn).
+Cirru EDN is Calcit's typed data interchange format, inspired by [Clojure EDN](https://github.com/edn-format/edn). Use it when Calcit-specific identity matters; use JSON only when interoperating with JSON systems.
 
-EDN data is designed to be transferred across networks are strings. 2 functions involved:
+The two runtime APIs are:
 
-- `parse-cirru-edn`
-- `format-cirru-edn`
+- `parse-cirru-edn text [type-options]`
+- `format-cirru-edn value`
 
-although items of a HashSet nad fields of a HashMap has no guarantees, they are being formatted with an given order in order that its returns are reasonably stable.
+Map and Set iteration order is not a semantic guarantee. The formatter applies a stable order for readable, reproducible output; callers must not use that order as application data.
 
-### Liternals
+## Choosing Cirru EDN or JSON
+
+| Calcit value | Cirru EDN | JSON |
+| --- | --- | --- |
+| Nil, Bool, Number, String, List | Preserved | Preserved |
+| Tag, Symbol | Preserved | Encoded as a JSON string; identity is lost |
+| Map | Arbitrary EDN keys preserved | Keys must be Tag or String; parsed object keys become Tag |
+| Set | Preserved | Encoded as an array; Set identity is lost |
+| Buffer | Preserved | Encoded as a `0x...` string; Buffer identity is lost |
+| Tuple / enum value | Tag, fields, and enum name preserved | Encoded as an array; tuple and enum identity is lost |
+| Record | Record name and fields preserved | Encoded as an object; struct identity is lost |
+| Cirru quote | Preserved | Encoded as nested strings and arrays |
+| Ref | Encoded as `atom`; parsing creates a new Ref | Unsupported |
+| AnyRef, function, trait/impl, mutable builder | Not portable; do not use as interchange data | Unsupported |
+
+`json-stringify` rejects unsupported values and Maps with non-Tag/non-String keys instead of silently inventing a representation. It also rejects non-finite numbers. `json-parse` maps JSON arrays to List and JSON objects to Maps whose keys are Tags.
+
+## Restoring declared record and enum identity
+
+Cirru EDN always retains the printed record or enum name. To reconnect parsed values to the exact `defstruct` or `defenum` object (including attached traits), pass an options Map keyed by that name:
+
+```cirru
+let
+    Person $ defstruct Person (:name 'String)
+    encoded $ format-cirru-edn $ %{} Person (:name |Ada)
+  parse-cirru-edn encoded $ {}
+    :Person $ %{} Person (:name |)
+```
+
+Without this options Map, parsing still produces a structurally equivalent Record or Tuple, but it cannot recover declaration-attached trait implementations from text alone.
+
+## Literals
 
 For literals, if written in text syntax, we need to add `do` to make sure it's a line:
 
@@ -41,13 +72,13 @@ for a symbol:
 do 's
 ```
 
-there's also "keyword", which is called "tag" since Calcit `0.7`:
+Tags use a leading colon:
 
 ```cirru
 do :k
 ```
 
-### String escaping
+## String escaping
 
 for a string:
 
@@ -61,15 +92,9 @@ or wrap with double quotes to support special characters like spaces:
 do "|demo string"
 ```
 
-or use a single double quote for mark strings:
-
-```cirru
-do "|demo string"
-```
-
 `\n` `\t` `\"` `\\` are supported.
 
-### Data structures:
+## Data structures
 
 for a list:
 
@@ -107,19 +132,26 @@ also can be nested:
     :d 3
 ```
 
-Also a record (in Calcit code, not EDN data):
+Records retain their type name and fields:
 
 ```cirru
 let
-    A $ defstruct A (:a :dynamic)
+    A $ defstruct A (:a 'Number)
   ; Then create an instance in Calcit
   %{} A
     :a 1
 ```
 
-### Quotes
+Enums use `%::`, while ordinary tagged tuples use `::`:
 
-For quoted data, there's a special semantics for representing them, since that was neccessary for runtime snapshot usage (`calcit.cirru`, legacy `compact.cirru`), where code lives inside a piece of data, marked as:
+```cirru.no-run
+%:: :Result :ok 1
+:: :point 10 20
+```
+
+## Quotes
+
+Quoted Cirru is preserved as syntax data. This is used by runtime snapshots (`calcit.cirru`, legacy `compact.cirru`):
 
 ```cirru
 quote $ def a 1
@@ -148,9 +180,9 @@ $ cr eval 'parse-cirru-edn "|quote $ def a 1"'
 took 0.011ms: (:: 'quote ([] |def |a |1))
 ```
 
-This is not a generic solution, but tuple is a special data structure in Calcit and can be used for marking up different types of data.
+The runtime display may resemble a tuple, but Cirru EDN gives `quote` dedicated parsing and formatting semantics.
 
-### Buffers
+## Buffers
 
 Buffers can be created using the `&buffer` function with hex values:
 
@@ -158,9 +190,9 @@ Buffers can be created using the `&buffer` function with hex values:
 &buffer 0x03 0x55 0x77 0xff 0x00
 ```
 
-### Comments
+## Comments
 
-Comment expressions are started with `;`. They are evaluated into nothing, but not available anywhere, at least not available at head or inside a pair.
+Comment expressions start with `;`. They occupy nodes in the Cirru syntax tree and are ignored while EDN data is decoded.
 
 Some usages:
 
@@ -174,4 +206,4 @@ Some usages:
   :a 1
 ```
 
-Also notice that comments should also obey Cirru syntax. It's comments inside the syntax tree, rather than in parser.
+Comments must still obey Cirru indentation because they are syntax-tree nodes, not lexer comments.

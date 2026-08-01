@@ -342,7 +342,7 @@
           :tags $ #{} :internal
         |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
-            def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl
+            def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl internal/&core-countable-list-impl internal/&core-contains-list-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -354,7 +354,7 @@
           :tags $ #{} :internal
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
-            def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl internal/&core-mappable-map-impl
+            def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl internal/&core-mappable-map-impl internal/&core-countable-map-impl internal/&core-contains-map-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -366,19 +366,19 @@
           :tags $ #{} :internal
         |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote
-            def &core-number-impls $ [] &core-number-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-number-impl internal/&core-multiply-number-impl
+            def &core-number-impls $ [] &core-number-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-number-impl internal/&core-multiply-number-impl internal/&core-compare-number-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         |&core-number-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem)
+            def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         |&core-record-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for record")
           :code $ quote
-            def &core-record-impls $ [] &core-record-methods internal/&core-show-impl internal/&core-eq-impl
+            def &core-record-impls $ [] &core-record-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-countable-record-impl internal/&core-contains-record-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -392,7 +392,7 @@
           :tags $ #{} :internal
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
-            def &core-set-impls $ [] &core-set-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-set-impl internal/&core-mappable-set-impl
+            def &core-set-impls $ [] &core-set-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-set-impl internal/&core-mappable-set-impl internal/&core-countable-set-impl internal/&core-contains-set-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -404,19 +404,19 @@
           :tags $ #{} :internal
         |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
-            def &core-string-impls $ [] &core-string-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-string-impl internal/&core-len-string-impl
+            def &core-string-impls $ [] &core-string-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-string-impl internal/&core-len-string-impl internal/&core-countable-string-impl internal/&core-contains-string-impl internal/&core-compare-string-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         |&core-tuple-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for tuple")
           :code $ quote
-            def &core-tuple-impls $ [] &core-tuple-methods internal/&core-show-impl internal/&core-eq-impl
+            def &core-tuple-impls $ [] &core-tuple-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-countable-tuple-impl internal/&core-contains-tuple-impl
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2178,12 +2178,23 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait
+        |Compare $ %{} :CodeEntry (:doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1.")
+          :code $ quote
+            deftrait Compare $ .compare
+              :: :fn $ {}
+                :args $ [] 'T 'T
+                :generics $ [] 'T
+                :return 'Number
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :trait
         |Contains $ %{} :CodeEntry (:doc "|Core trait: Contains")
           :code $ quote
             deftrait Contains $ .contains?
-              :: :fn $ {} (:return :bool)
-                :generics $ [] 'T
-                :args $ [] 'T :dynamic
+              :: :fn $ {}
+                :args $ [] 'T 'K
+                :generics $ [] 'T 'K
+                :return 'Bool
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait
@@ -2244,8 +2255,8 @@
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote
             def Option $ impl-traits
-              defenum Option (:some 'Dynamic) (:none)
-              , internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
+              defenum Option ([] 'T) (:some 'T) (:none)
+              , internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl OptionMethods
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -2255,11 +2266,17 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait-impl
+        |OptionMethods $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def OptionMethods $ &impl::new :OptionMethods (:: .some? option:some?) (:: .none? option:none?) (:: .unwrap-or option:unwrap-or) (:: .and-then option:and-then)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
         |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
           :code $ quote
             def Result $ impl-traits
-              defenum Result (:ok 'Dynamic) (:err 'Dynamic)
-              , internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
+              defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
+              , internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl ResultMethods
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -2269,6 +2286,12 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait-impl
+        |ResultMethods $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def ResultMethods $ &impl::new :ResultMethods (:: .ok? result:ok?) (:: .err? result:err?) (:: .unwrap-or result:unwrap-or) (:: .and-then result:and-then) (:: .map-err result:map-err)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
         |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote
             deftrait Serialize $ .serialize
@@ -4781,6 +4804,26 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+        |option:and-then $ %{} :CodeEntry (:doc "|Chains an Option-producing function over :some and preserves :none.")
+          :code $ quote
+            defn option:and-then (opt f)
+              tag-match opt
+                (:some value) (f value)
+                (:none)
+                  %:: (&tuple:enum opt) :none
+          :examples $ []
+            quote $ assert= (%some 4)
+              option:and-then (%some 2)
+                fn (x)
+                  %some $ * x 2
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {}
+                  :args $ [] 'T
+                  :return $ :: 'Option 'U
+              :generics $ [] 'T 'U
+              :return $ :: 'Option 'U
         |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
@@ -4791,11 +4834,51 @@
                   %:: (&tuple:enum opt) :none
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
-              :args $ [] 'Tuple
+            {}
+              :args $ [] (:: 'Option 'T)
                 :: 'Fn $ {} (:return 'U)
                   :args $ [] 'T
               :generics $ [] 'T 'U
+              :return $ :: 'Option 'U
+        |option:none? $ %{} :CodeEntry (:doc "|Returns true when an Option is :none.")
+          :code $ quote
+            defn option:none? (opt)
+              tag-match opt
+                (:some _) false
+                (:none) true
+          :examples $ []
+            quote $ assert= true
+              option:none? $ %none
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'Option 'T)
+              :generics $ [] 'T
+        |option:some? $ %{} :CodeEntry (:doc "|Returns true when an Option is :some.")
+          :code $ quote
+            defn option:some? (opt)
+              tag-match opt
+                (:some _) true
+                (:none) false
+          :examples $ []
+            quote $ assert= true
+              option:some? $ %some 1
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'Option 'T)
+              :generics $ [] 'T
+        |option:unwrap-or $ %{} :CodeEntry (:doc "|Returns the :some payload, or the fallback for :none.")
+          :code $ quote
+            defn option:unwrap-or (opt fallback)
+              tag-match opt
+                (:some value) value
+                (:none) fallback
+          :examples $ []
+            quote $ assert= 0
+              option:unwrap-or (%none) 0
+          :schema $ :: 'Fn
+            {} (:return 'T)
+              :args $ [] (:: 'Option 'T) 'T
+              :generics $ [] 'T
         |optionally $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn optionally (s)
@@ -5081,6 +5164,39 @@
               :args $ [] (:: 'Optional 'T)
               :generics $ [] 'T
               :return $ :: 'Optional 'T
+        |result:and-then $ %{} :CodeEntry (:doc "|Chains a Result-producing function over :ok and preserves :err.")
+          :code $ quote
+            defn result:and-then (res f)
+              tag-match res
+                (:ok value) (f value)
+                (:err err)
+                  %:: (&tuple:enum res) :err err
+          :examples $ []
+            quote $ assert= (%ok 4)
+              result:and-then (%ok 2)
+                fn (x)
+                  %ok $ * x 2
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {}
+                  :args $ [] 'T
+                  :return $ :: 'Result 'U 'E
+              :generics $ [] 'T 'U 'E
+              :return $ :: 'Result 'U 'E
+        |result:err? $ %{} :CodeEntry (:doc "|Returns true when a Result is :err.")
+          :code $ quote
+            defn result:err? (res)
+              tag-match res
+                (:ok _) false
+                (:err _) true
+          :examples $ []
+            quote $ assert= true
+              result:err? $ %err |failed
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'Result 'T 'E)
+              :generics $ [] 'T 'E
         |result:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)
@@ -5091,11 +5207,57 @@
                   %:: (&tuple:enum res) :err err
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
-              :args $ [] 'Tuple
+            {}
+              :args $ [] (:: 'Result 'T 'E)
                 :: 'Fn $ {} (:return 'U)
                   :args $ [] 'T
-              :generics $ [] 'T 'U
+              :generics $ [] 'T 'U 'E
+              :return $ :: 'Result 'U 'E
+        |result:map-err $ %{} :CodeEntry (:doc "|Maps the error payload of a Result while preserving :ok.")
+          :code $ quote
+            defn result:map-err (res f)
+              tag-match res
+                (:ok value)
+                  %:: (&tuple:enum res) :ok value
+                (:err err)
+                  %:: (&tuple:enum res) :err $ f err
+          :examples $ []
+            quote $ assert= (%err |failed!)
+              result:map-err (%err |failed)
+                fn (e) (str e |!)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {} (:return 'F)
+                  :args $ [] 'E
+              :generics $ [] 'T 'E 'F
+              :return $ :: 'Result 'T 'F
+        |result:ok? $ %{} :CodeEntry (:doc "|Returns true when a Result is :ok.")
+          :code $ quote
+            defn result:ok? (res)
+              tag-match res
+                (:ok _) true
+                (:err _) false
+          :examples $ []
+            quote $ assert= true
+              result:ok? $ %ok 1
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'Result 'T 'E)
+              :generics $ [] 'T 'E
+        |result:unwrap-or $ %{} :CodeEntry (:doc "|Returns the :ok payload, or the fallback for :err.")
+          :code $ quote
+            defn result:unwrap-or (res fallback)
+              tag-match res
+                (:ok value) value
+                (:err _) fallback
+          :examples $ []
+            quote $ assert= 0
+              result:unwrap-or (%err |failed) 0
+          :schema $ :: 'Fn
+            {} (:return 'T)
+              :args $ [] (:: 'Result 'T 'E) 'T
+              :generics $ [] 'T 'E
         |reverse $ %{} :CodeEntry (:doc "|Reverse the order of elements in a list")
           :code $ quote
             defn reverse (x) (&list:reverse x)
@@ -5933,6 +6095,80 @@
         |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string")
           :code $ quote
             def &core-add-string-impl $ &impl::new :&core-add-string-impl (:: :add &str:concat)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-compare-number-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-compare-number-impl $ &impl::new :&core-compare-number-impl (:: :compare &compare)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-compare-string-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-compare-string-impl $ &impl::new :&core-compare-string-impl (:: :compare &str:compare)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-contains-list-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-list-impl $ &impl::new :&core-contains-list-impl (:: :contains? &list:contains?)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-contains-map-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-map-impl $ &impl::new :&core-contains-map-impl (:: :contains? &map:contains?)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-contains-record-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-record-impl $ &impl::new :&core-contains-record-impl (:: :contains? &record:contains?)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-contains-set-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-set-impl $ &impl::new :&core-contains-set-impl (:: :contains? &set:includes?)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-contains-string-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-string-impl $ &impl::new :&core-contains-string-impl (:: :contains? &str:contains?)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-contains-tuple-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-tuple-impl $ &impl::new :&core-contains-tuple-impl
+              :: :contains? $ fn (x k)
+                if (&>= k 0)
+                  &< k $ &tuple:count x
+                  , false
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-list-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-list-impl $ &impl::new :&core-countable-list-impl (:: :count &list:count)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-map-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-map-impl $ &impl::new :&core-countable-map-impl (:: :count &map:count)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-record-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-record-impl $ &impl::new :&core-countable-record-impl (:: :count &record:count)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-set-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-set-impl $ &impl::new :&core-countable-set-impl (:: :count &set:count)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-string-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-string-impl $ &impl::new :&core-countable-string-impl (:: :count &str:count)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-tuple-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-tuple-impl $ &impl::new :&core-countable-tuple-impl (:: :count &tuple:count)
           :examples $ []
           :schema $ :: 'Dynamic
         |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")

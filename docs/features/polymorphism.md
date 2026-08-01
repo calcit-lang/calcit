@@ -198,7 +198,38 @@ If the summary reports debt, rerun `weak-types` without `--summary-only` and sco
 
 ## Built-in traits
 
-Core types provide built-in trait implementations (e.g. `Show`, `Eq`, `Compare`, `Add`, `Len`, `Mappable`). These are registered by the runtime, so values like numbers, strings, lists, maps, and records already satisfy common traits.
+Core types provide built-in trait implementations registered by every runtime. The capability-focused traits added for generic `:where` bounds include:
+
+| Trait | Method | Built-in value categories |
+| --- | --- | --- |
+| `Compare` | `.compare` | Number, String |
+| `Countable` | `.count` | List, Map, Set, String, Record, Tuple/enum |
+| `Contains` | `.contains?` | List, Map, Set, String, Record, Tuple/enum |
+| `Mappable` | `.map` | List, Map, Set, Option |
+| `Show` | `.show` | General runtime values, including Record and Tuple |
+| `Eq` | `.eq?` | General comparable runtime values |
+
+`Compare` returns a negative number, zero, or a positive number. It intentionally starts with Number and String; cross-category ordering is not defined.
+
+```cirru
+assert= -1 $ .compare 1 2
+assert= 0 $ .compare |same |same
+```
+
+## Option and Result helpers
+
+`Option T` and `Result T E` are generic core enums. Their constructors remain `%some`/`%none` and `%ok`/`%err`; the following helpers make normal pipelines explicit without losing type relationships:
+
+- Option: `option:some?`, `option:none?`, `option:map`, `option:unwrap-or`, `option:and-then`
+- Result: `result:ok?`, `result:err?`, `result:map`, `result:map-err`, `result:unwrap-or`, `result:and-then`
+
+The same operations are available as methods on enum values:
+
+```cirru
+assert= 0 $ .unwrap-or (%none) 0
+assert= (%ok 4) $ .and-then (%ok 2) (fn (x) (%ok (* x 2)))
+assert= (%err |failed!) $ .map-err (%err |failed) (fn (e) (str e |!))
+```
 
 ## Notes
 

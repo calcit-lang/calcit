@@ -202,20 +202,14 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   if (!(traitDef instanceof CalcitTrait)) {
     throw new Error(`&assert-traits expected a trait definition, but received: ${toString(traitDef, true)}`);
   }
-  // For records/tuples, only check instance impls (not builtin fallbacks),
-  // matching the Rust runtime behavior of collect_impl_records_for_value.
-  let impls: CalcitImpl[];
-  if (value instanceof CalcitRecord) {
-    impls = value.structRef.impls ?? [];
-  } else if (value instanceof CalcitTuple) {
-    impls = value.impls ?? [];
-  } else {
-    const pair = lookup_impls(value);
-    if (pair == null) {
-      throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
-    }
-    impls = pair[0];
+  // Use the same merged builtin + attached impl list as method dispatch.
+  // Otherwise records and tuples can call a builtin method while
+  // `assert-traits` incorrectly claims that the corresponding trait is absent.
+  const pair = lookup_impls(value);
+  if (pair == null) {
+    throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
   }
+  const impls = pair[0];
   const missing: string[] = [];
   for (let i = 0; i < traitDef.methods.length; i++) {
     const method = traitDef.methods[i];
@@ -1951,10 +1945,12 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     // impls, so introspection tools like `&methods-of` can answer "what
     // methods will instances of this type have" without a concrete instance.
     tag = obj.name.toString();
-    impls = obj.impls;
+    const builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.record) ?? [];
+    impls = [...builtinRecordImpls, ...(obj.impls ?? [])];
   } else if (obj instanceof CalcitEnum) {
     tag = obj.name();
-    impls = obj.impls;
+    const builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.tuple) ?? [];
+    impls = [...builtinTupleImpls, ...(obj.impls ?? [])];
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.number);
