@@ -4090,9 +4090,9 @@ where
       if filter_def.is_some_and(|filter_definition| def_name != filter_definition) {
         continue;
       }
-      let search_root = if let Some(path) = start_path {
+      let owned_search_root = if let Some(path) = start_path {
         match navigate_to_path(&code_entry.code, path) {
-          Ok(node) => node,
+          Ok(node) => Some(node),
           Err(error) => {
             eprintln!(
               "{} Failed to navigate to start path in {}/{}: {}",
@@ -4105,9 +4105,10 @@ where
           }
         }
       } else {
-        code_entry.code.clone()
+        None
       };
-      let results = search(&search_root, start_path.unwrap_or(&[]));
+      let search_root = owned_search_root.as_ref().unwrap_or(&code_entry.code);
+      let results = search(search_root, start_path.unwrap_or(&[]));
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }

@@ -145,8 +145,10 @@ pub(crate) fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutat
     TreeCursorMutation::Replace { path } => {
       if cursor.starts_with(path) && cursor.len() > path.len() {
         (path.clone(), "cursor ancestor was replaced; moved to replacement root")
-      } else {
+      } else if cursor == path {
         (cursor.to_vec(), "selected node was refreshed after replacement")
+      } else {
+        (cursor.to_vec(), "replacement did not affect cursor")
       }
     }
     TreeCursorMutation::InsertBefore { path } => {
@@ -198,7 +200,11 @@ pub(crate) fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutat
       } else if cursor[depth] == other {
         next[depth] = path[depth];
       }
-      (next, "cursor followed swapped subtree")
+      if next == cursor {
+        (next, "sibling swap did not affect cursor")
+      } else {
+        (next, "cursor followed swapped subtree")
+      }
     }
     TreeCursorMutation::Unwrap { path, child_count } => {
       if path.is_empty() {
@@ -219,7 +225,11 @@ pub(crate) fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutat
       if cursor.len() >= path.len() && cursor[..parent.len()] == *parent && cursor[parent.len()] > wrapper_index {
         next[parent.len()] = next[parent.len()].saturating_add(child_count.saturating_sub(1));
       }
-      (next, "unwrapped siblings shifted cursor")
+      if next == cursor {
+        (next, "unwrap did not affect cursor")
+      } else {
+        (next, "unwrapped siblings shifted cursor")
+      }
     }
     TreeCursorMutation::Raise { path } => {
       if path.is_empty() {
@@ -239,8 +249,10 @@ pub(crate) fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutat
     TreeCursorMutation::Wrap { path } => {
       if cursor.starts_with(path) && cursor.len() > path.len() {
         (path.clone(), "cursor ancestor was wrapped; moved to wrapper root")
-      } else {
+      } else if cursor == path {
         (cursor.to_vec(), "cursor now selects wrapper")
+      } else {
+        (cursor.to_vec(), "wrap did not affect cursor")
       }
     }
   }
@@ -248,7 +260,9 @@ pub(crate) fn transform_cursor_path(cursor: &[usize], mutation: &TreeCursorMutat
 
 #[cfg(test)]
 mod tests {
-  use super::{TreeOperation, adjusted_source_path_after_insertion, path_is_strict_descendant};
+  use super::{
+    TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, path_is_strict_descendant, transform_cursor_path,
+  };
 
   #[test]
   fn insertion_adjusts_source_only_for_earlier_siblings() {
@@ -271,5 +285,26 @@ mod tests {
     assert!(path_is_strict_descendant(&[2, 1], &[2, 1, 0]));
     assert!(!path_is_strict_descendant(&[2, 1], &[2, 1]));
     assert!(!path_is_strict_descendant(&[2, 1], &[2, 2, 0]));
+  }
+
+  #[test]
+  fn cursor_mutation_notes_leave_unrelated_paths_unaffected() {
+    let (_, note) = transform_cursor_path(&[7, 1], &TreeCursorMutation::Replace { path: vec![3, 2] });
+    assert_eq!(note, "replacement did not affect cursor");
+
+    let (_, note) = transform_cursor_path(&[3, 5], &TreeCursorMutation::SwapNext { path: vec![3, 2] });
+    assert_eq!(note, "sibling swap did not affect cursor");
+
+    let (_, note) = transform_cursor_path(
+      &[3, 5],
+      &TreeCursorMutation::Unwrap {
+        path: vec![3, 2],
+        child_count: 1,
+      },
+    );
+    assert_eq!(note, "unwrap did not affect cursor");
+
+    let (_, note) = transform_cursor_path(&[7, 1], &TreeCursorMutation::Wrap { path: vec![3, 2] });
+    assert_eq!(note, "wrap did not affect cursor");
   }
 }
