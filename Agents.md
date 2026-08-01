@@ -90,10 +90,10 @@ cr docs agents --full
 
 ### PR 与发布流程
 
-1. **先提交功能 PR**：先完成功能改动并推送 PR，等待 GitHub Actions 全绿。失败则先修复并重新验证，**PR 不由 agent 合并**。
-2. **验证通过后再做版本升级**：在确认待发布 commit 稳定后，再提交版本升级（如 `chore: release 0.12.28`），并同步更新 `Cargo.toml` 与 `package.json` 的 `version`，随后执行 `cargo update --workspace`。
-3. **发布前再次过 CI**：版本升级提交也必须通过同一套 Actions，避免“功能通过但发布提交未验证”的风险。
-4. **打 tag 并发布**：在版本升级对应 commit 上打 tag、推送、创建 GitHub release——这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm。
+1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后合并到 `main`。`main` 不要求 PR 保护，维护者或 agent 可在验证通过后直接推送合并结果。
+2. **验证通过后再做版本升级**：在确认 `main` 上待发布 commit 稳定后，直接在 `main` 提交版本升级（如 `chore: release 0.12.28`），并同步更新 `Cargo.toml` 与 `package.json` 的 `version`，随后执行 `cargo update --workspace`。
+3. **发布前再次过 CI**：版本升级提交推送到 `main` 后，也必须通过同一套 Actions，避免“功能通过但发布提交未验证”的风险。
+4. **打 tag 并发布**：在通过 CI 的 `main` 版本升级提交上打 tag、推送、创建 GitHub release——这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm。
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。
 
 ```bash
@@ -109,7 +109,7 @@ gh run list --limit 5
 
 # 发布后抽样确认远端版本（示例）
 cargo search calcit --limit 1
-npm view calcit version
+npm view @calcit/procs version
 ```
 
 > ⚠️ **`gh run watch` 是交互式 pager（类似 less），在脚本或 Agent 场景下会卡住**，按 `q` 退出后续命令也不会被执行。验证时统一用 `gh run list --limit 5` 轮询。
