@@ -43,11 +43,11 @@ Since Cirru itself is very generic lispy syntax, it may represent various semant
 Inside `calcit.cirru`, code is like quoted data inside `(quote ...)` blocks:
 
 ```cirru.no-run
-{} (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-
+{} (:package |app) (:version |0.0.1)
   :entries $ {}
-    :prime $ {} (:init-fn |app.main/try-prime) (:reload-fn |app.main/try-prime)
+    :default $ {} (:mode :native) (:init-fn 'app.main/main!) (:reload-fn 'app.main/reload!)
+      :modules $ []
+    :prime $ {} (:mode :native) (:init-fn 'app.main/try-prime) (:reload-fn 'app.main/try-prime)
       :modules $ []
 
   :files $ {}

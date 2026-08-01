@@ -664,15 +664,22 @@ fn register_program_def_ids(program_data: &ProgramCodeData) {
 
 fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
   match nodes {
-    Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
+    Cirru::Leaf(_) => Err(format!(
+      "expected an import rule list, got {nodes}; expected `(namespace :as alias)`, `(namespace :refer (definition ...))`, or `(module :default alias)`"
+    )),
     Cirru::List(rule_nodes) => {
-      let mut xs = rule_nodes.to_owned();
-      match xs.first() {
+      let xs = match rule_nodes.first() {
         // strip leading `[]` symbols
-        Some(Cirru::Leaf(s)) if &**s == "[]" => xs = xs[1..4].to_vec(),
+        Some(Cirru::Leaf(s)) if &**s == "[]" => &rule_nodes[1..],
         // allow using comment
         Some(Cirru::Leaf(s)) if &**s == ";" => return Ok(vec![]),
-        _ => (),
+        _ => rule_nodes.as_slice(),
+      };
+      if xs.len() != 3 {
+        return Err(format!(
+          "expected import rule to contain exactly 3 items, got {} in {nodes}; expected `(namespace :as alias)`, `(namespace :refer (definition ...))`, or `(module :default alias)`",
+          xs.len()
+        ));
       }
       match (&xs[0], &xs[1], &xs[2]) {
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x.eq_leaf(":as") => Ok(vec![(
@@ -697,46 +704,85 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
           }
           Ok(rules)
         }
-        (_, x, _) if x.eq_leaf(":as") => Err(format!("invalid import rule: {nodes}")),
-        (_, x, _) if x.eq_leaf(":default") => Err(format!("invalid default rule: {nodes}")),
-        (_, x, _) if x.eq_leaf(":refer") => Err(format!("invalid import rule: {nodes}")),
-        _ if xs.len() != 3 => Err(format!("expected import rule has length 3: {nodes}")),
-        _ => Err(String::from("unknown rule")),
+        (_, x, _) if x.eq_leaf(":as") => Err(format!("invalid `:as` import rule: {nodes}; namespace and alias must be symbols")),
+        (_, x, _) if x.eq_leaf(":default") => Err(format!("invalid `:default` import rule: {nodes}; module and alias must be symbols")),
+        (_, x, _) if x.eq_leaf(":refer") => Err(format!(
+          "invalid `:refer` import rule: {nodes}; namespace must be a symbol and referred definitions must be a list"
+        )),
+        (_, Cirru::Leaf(kind), _) => Err(format!(
+          "unknown import rule kind `{kind}` in {nodes}; expected `:as`, `:refer`, or `:default`"
+        )),
+        _ => Err(format!("invalid import rule: {nodes}; rule kind must be a symbol")),
       }
     }
   }
 }
 
-fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
-  match nodes {
-    Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
-    Cirru::List(xs) => match (xs.first(), xs.get(1), xs.get(2)) {
-      // Too many clones
-      (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if x.eq_leaf("ns") => {
-        if !xs.is_empty() && xs[0].eq_leaf(":require") {
-          let mut ys: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(xs.len());
-          for x in xs.iter().skip(1) {
-            let rules = extract_import_rule(x).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
-            for (target, rule) in rules {
-              ys.insert(target, rule);
-            }
-          }
-          Ok(ys)
+/// Validate import rules before they are persisted or loaded into a program.
+/// Malformed rules return an error; duplicate local bindings return warnings and keep last-rule-wins semantics.
+pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
+  let mut bindings: HashMap<Arc<str>, usize> = HashMap::new();
+  let mut warnings = vec![];
+  for (index, rule) in rules.iter().enumerate() {
+    for (binding, _) in extract_import_rule(rule).map_err(|error| format!("import rule {}: {error}", index + 1))? {
+      if let Some(previous_index) = bindings.insert(binding.clone(), index) {
+        if previous_index == index {
+          warnings.push(format!(
+            "duplicate import binding `{binding}` within rule {}; the later `:refer` entry takes precedence",
+            index + 1
+          ));
         } else {
-          Ok(HashMap::new())
+          warnings.push(format!(
+            "duplicate import binding `{binding}` in rules {} and {}; rule {} takes precedence",
+            previous_index + 1,
+            index + 1,
+            index + 1
+          ));
         }
       }
-      _ if xs.len() < 3 => Ok(HashMap::new()),
+    }
+  }
+  Ok(warnings)
+}
+
+fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
+  match nodes {
+    Cirru::List(xs) => match xs.as_slice() {
+      [head, Cirru::Leaf(_declared_ns)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => Ok(HashMap::new()),
+      [head, Cirru::Leaf(_declared_ns), Cirru::List(require_nodes)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => {
+        if require_nodes.first().is_none_or(|node| !node.eq_leaf(":require")) {
+          return Err(format!(
+            "invalid ns clause in namespace '{ns_name}': expected `:require`, got {}",
+            Cirru::List(require_nodes.clone())
+          ));
+        }
+
+        let rules = &require_nodes[1..];
+        let warnings = validate_import_rules(rules).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
+        for warning in warnings {
+          eprintln!("[Warn] in namespace '{ns_name}': {warning}");
+        }
+        let mut import_map: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(rules.len());
+        for rule_node in rules {
+          for (target, rule) in extract_import_rule(rule_node).map_err(|e| format!("in namespace '{ns_name}': {e}"))? {
+            import_map.insert(target, rule);
+          }
+        }
+        Ok(import_map)
+      }
       _ => {
         let preview = cirru_parser::format(std::slice::from_ref(nodes), true.into()).unwrap_or_else(|_| format!("{nodes:?}"));
-        let preview_short = if preview.len() > 200 {
-          format!("{}...", &preview[..200])
+        let preview_short = if preview.chars().count() > 200 {
+          format!("{}...", preview.chars().take(200).collect::<String>())
         } else {
           preview
         };
         Err(format!("invalid ns form in '{ns_name}':\n{preview_short}"))
       }
     },
+    Cirru::Leaf(_) => Err(format!(
+      "invalid ns form in '{ns_name}': expected `(ns {ns_name})` (legacy `:ns` is also accepted) with an optional `:require` clause, got {nodes}"
+    )),
   }
 }
 
@@ -766,6 +812,26 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   // imported type definitions without a circular module dependency.
   calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
   calcit::clear_type_slots();
+
+  let entry = s.active_entry()?;
+  let entry_owner = format!("entries.{}", s.active_entry_name());
+
+  for (slot, type_path) in &entry.type_slots {
+    if matches!(type_path.as_str(), ":dynamic" | "dynamic") {
+      continue;
+    }
+    let Some((ns, def)) = type_path.rsplit_once('/') else {
+      return Err(format!(
+        "{entry_owner}.type-slots.{slot}: expected a full `namespace/definition` type path, got `{type_path}`"
+      ));
+    };
+    if !s.files.get(ns).is_some_and(|file| file.defs.contains_key(def)) {
+      return Err(format!(
+        "{entry_owner}.type-slots.{slot}: unknown type definition `{type_path}`; load its module and use a full `namespace/definition` path"
+      ));
+    }
+  }
+  calcit::configure_entry_type_slots(&entry.type_slots).map_err(|message| format!("{entry_owner}.type-slots: {message}"))?;
 
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
 

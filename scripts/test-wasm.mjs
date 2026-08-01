@@ -144,8 +144,22 @@ function checkApprox(label, expected, fn, ...args) {
   }
 }
 
-const STRING_TAG = 34;
 const HEAP_MAGIC = 0xca1c17a9 | 0;
+// Type-tag indices depend on the tags used by the compiled program. New
+// modules export the actual value; for older generators, recover it from the
+// static string pool instead of assuming a stable index.
+const STRING_TAG = inst.exports.__string_tag?.value ?? findStaticStringTag();
+
+function findStaticStringTag() {
+  const mem = new DataView(inst.exports.memory.buffer);
+  const heapTop = inst.exports.__heap_ptr.value;
+  for (let rawPtr = 0; rawPtr <= heapTop - 8; rawPtr += 8) {
+    if (mem.getInt32(rawPtr, true) === HEAP_MAGIC) {
+      return mem.getInt32(rawPtr + 4, true);
+    }
+  }
+  throw new Error("cannot recover string type tag from static WASM data");
+}
 
 // Allocate a new heap string and return its pointer
 // String layout: [heap_ptr][ptr+0][ptr+8]

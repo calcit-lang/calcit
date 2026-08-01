@@ -9,8 +9,11 @@
 //! - `infer_type_from_expr` — synthesize a type for an arbitrary expression
 //! - `resolve_enum_value` / `resolve_record_value` — resolve data definitions
 
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::{
+  cell::RefCell,
+  collections::{HashMap, HashSet},
+};
 
 use crate::{
   calcit::{
@@ -662,7 +665,25 @@ fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_ty
   inferred.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
 }
 
+thread_local! {
+  static INFERRED_DEFINITIONS: RefCell<HashSet<(String, String)>> = RefCell::new(HashSet::new());
+}
+
 fn infer_definition_value_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let key = (ns.to_owned(), def.to_owned());
+  let entered = INFERRED_DEFINITIONS.with(|definitions| definitions.borrow_mut().insert(key.clone()));
+  if !entered {
+    return Some(calcit::DYNAMIC_TYPE.clone());
+  }
+
+  let inferred = infer_definition_value_type_inner(ns, def);
+  INFERRED_DEFINITIONS.with(|definitions| {
+    definitions.borrow_mut().remove(&key);
+  });
+  inferred
+}
+
+fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   let schema = program::lookup_def_schema(ns, def);
   if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
     return Some(schema);

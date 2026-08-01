@@ -1,65 +1,73 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-enum)
-  :configs $ {} (:init-fn |test-enum.main/main!) (:reload-fn |test-enum.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-enum) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-enum.main/main!) (:mode :native) (:reload-fn 'test-enum.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-enum.main $ %{} :FileEntry
       :defs $ {}
-        |Duo $ %{} :CodeEntry (:doc "|Generic enum with 2 type variables") (:schema :dynamic)
+        |Duo $ %{} :CodeEntry (:doc "|Generic enum with 2 type variables")
           :code $ quote
             defenum Duo ('T 'U) (:pair 'T 'U) (:swapped 'U 'T)
           :examples $ []
-        |Maybe1 $ %{} :CodeEntry (:doc "|Generic enum with 1 type variable") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Maybe1 $ %{} :CodeEntry (:doc "|Generic enum with 1 type variable")
           :code $ quote
             defenum Maybe1 ('T) (:some 'T) (:none)
           :examples $ []
-        |Result0 $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |Result0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Result0 (:err :string) (:ok)
+            defenum Result0 (:err 'String) (:ok)
           :examples $ []
-        |ResultImpl $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy nil
           :examples $ []
-        |ResultTrait $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait $ .dummy :fn
           :examples $ []
-        |ShownBox $ %{} :CodeEntry (:doc "|Generic struct with where-bound on payload type") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ShownBox $ %{} :CodeEntry (:doc "|Generic struct with where-bound on payload type")
           :code $ quote
             defstruct ShownBox ('T)
               ({} ('T Show))
               (:value 'T)
           :examples $ []
-        |ShownMaybe $ %{} :CodeEntry (:doc "|Generic enum with where-bound on payload type") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |ShownMaybe $ %{} :CodeEntry (:doc "|Generic enum with where-bound on payload type")
           :code $ quote
             defenum ShownMaybe ('T)
               ({} ('T Show))
               (:some 'T)
               (:none)
           :examples $ []
+          :schema $ :: 'Dynamic
         |check-result-type $ %{} :CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote
             defn check-result-type (r)
               some? $ &tuple:enum r
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :bool)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
               :args $ [] 'test-enum.main/Result0
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-tag-match-validation) (test-tuple-to-enum) (test-match) (println "|All tests passed!")
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ println |Reloaded
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |takes-result $ %{} :CodeEntry (:doc "|Function accepting Result0 enum type")
           :code $ quote
@@ -69,8 +77,8 @@
                 (:err msg) msg
                 _ :unknown
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ [] 'test-enum.main/Result0
         |test-enum-creation $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -99,8 +107,8 @@
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |test-generic-enum-creation $ %{} :CodeEntry (:doc "|Exercise defenum generic variables in runtime creation and matching")
           :code $ quote
@@ -110,10 +118,10 @@
                   none-value $ %:: Maybe1 :none
                   pair-value $ %:: Duo :pair 1 |hi
                   swapped-value $ %:: Duo :swapped |hi 1
-                assert-type some-num $ :: 'Maybe1 :number
-                assert-type none-value $ :: 'Maybe1 :dynamic
-                assert-type pair-value $ :: 'Duo :number :string
-                assert-type swapped-value $ :: 'Duo :number :string
+                assert-type some-num $ :: 'Maybe1 'Number
+                assert-type none-value $ :: 'Maybe1 'Dynamic
+                assert-type pair-value $ :: 'Duo 'Number 'String
+                assert-type swapped-value $ :: 'Duo 'Number 'String
                 assert= 1 $ unwrap-maybe (%:: Maybe1 :some 1)
                 assert= nil $ unwrap-maybe (%:: Maybe1 :none)
                 assert= :pair $ &tuple:nth pair-value 0
@@ -121,8 +129,8 @@
                 assert= |hi $ &tuple:nth pair-value 2
               println "|✓ Generic enum creation passed"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |test-generic-enum-where-bounds $ %{} :CodeEntry (:doc "|Exercise where-bounds with generic enum payloads")
           :code $ quote
@@ -132,7 +140,7 @@
                     :generics $ [] 'T
                     :where $ {} ('T Show)
                     :args $ [] (:: 'Maybe1 'T)
-                    :return :string
+                    :return 'String
                   match v
                     (:none) |none
                     (:some item) (.show item)
@@ -141,7 +149,7 @@
                     :generics $ [] 'T 'U
                     :where $ {} ('T Show) ('U Show)
                     :args $ [] (:: 'Duo 'T 'U)
-                    :return :string
+                    :return 'String
                   match v
                     (:pair left right)
                       str-spaced |pair (.show left) (.show right)
@@ -156,10 +164,10 @@
                 render-duo $ %:: Duo :swapped |hi 1
               println "|✓ Generic enum where-bounds passed"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
-        |test-match $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-match ()
               let
@@ -183,6 +191,7 @@
                 assert= :ok-branch v
               println "|✓ match syntax passed"
           :examples $ []
+          :schema $ :: 'Dynamic
         |test-tag-match-validation $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag-match-validation () $ do (println "|Testing tag-match runtime validation...")
@@ -194,8 +203,8 @@
                 assert= :ok v
               println "|✓ Tag-match validation passed"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |test-tuple-to-enum $ %{} :CodeEntry (:doc "|Test automatic tuple-to-enum rewrite")
           :code $ quote
@@ -207,8 +216,8 @@
               assert= true $ check-result-type (:: :ok)
               println "|✓ Tuple-to-enum rewrite passed"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |test-where-bound-definitions $ %{} :CodeEntry (:doc "|Exercise defstruct/defenum where-map syntax on generic data types")
           :code $ quote
@@ -219,8 +228,8 @@
                     some-value $ %:: ShownMaybe :some 1
                   let
                       none-value $ %:: ShownMaybe :none
-                    assert-type box $ :: 'ShownBox :number
-                    assert-type some-value $ :: 'ShownMaybe :number
+                    assert-type box $ :: 'ShownBox 'Number
+                    assert-type some-value $ :: 'ShownMaybe 'Number
                     assert= |1 $ match some-value
                       (:some item) (.show item)
                       (:none) |none
@@ -229,8 +238,8 @@
                       (:none) |none
               println "|✓ Data definition where-bounds passed"
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :unit)
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
               :args $ []
         |unwrap-maybe $ %{} :CodeEntry (:doc "|Return payload from Maybe1 or nil")
           :code $ quote
@@ -239,10 +248,10 @@
                 (:none) nil
                 (:some item) item
           :examples $ []
-          :schema $ :: :fn
+          :schema $ :: 'Fn
             {}
               :args $ [] (:: 'test-enum.main/Maybe1 'T)
               :generics $ [] 'T
-              :return $ :: :optional 'T
+              :return $ :: 'Optional 'T
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-enum.main)

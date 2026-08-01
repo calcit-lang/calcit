@@ -1,29 +1,33 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |app) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |get-number $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |get-number $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn get-number () :number $ do 123
+            defn get-number () 'Number $ do 123
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ test-type-info
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
-        |test-type-info $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-type-info $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-type-info () $ let
                 x 123
               ; "这里" assert-type "会把类型信息加到" scope_types
-              assert-type x :number
+              assert-type x 'Number
               ; "后续使用" x "时，Local" "节点会读取" scope_types "中的类型信息"
               let
                   y $ &+ x 1
@@ -44,5 +48,6 @@
                 println result
                 println nested
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns app.main)

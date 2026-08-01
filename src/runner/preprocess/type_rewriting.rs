@@ -340,7 +340,7 @@ fn try_rewrite_single_tuple_to_enum_tuple(
 // ---------------------------------------------------------------------------
 
 /// Build a Calcit node referencing a struct definition, using Import when ns/def is known.
-fn build_struct_ref_node(
+pub(crate) fn build_struct_ref_node(
   struct_def: &CalcitStruct,
   ns_def_path: Option<(Arc<str>, Arc<str>)>,
   file_ns: &str,
@@ -369,7 +369,12 @@ fn build_struct_ref_node(
 }
 
 /// Build a Calcit node referencing an enum definition, using Import when ns/def is known.
-fn build_enum_ref_node(enum_def: CalcitEnum, ns_def_path: Option<(Arc<str>, Arc<str>)>, file_ns: &str, def_name: &str) -> Calcit {
+pub(crate) fn build_enum_ref_node(
+  enum_def: CalcitEnum,
+  ns_def_path: Option<(Arc<str>, Arc<str>)>,
+  file_ns: &str,
+  def_name: &str,
+) -> Calcit {
   if let Some((ns, def)) = ns_def_path {
     let import_info = if ns.as_ref() == file_ns {
       ImportInfo::SameFile {
@@ -388,6 +393,6 @@ fn build_enum_ref_node(enum_def: CalcitEnum, ns_def_path: Option<(Arc<str>, Arc<
       def_id: None,
     })
   } else {
-    Calcit::Enum(enum_def)
+    Calcit::Record(enum_def.to_record_prototype())
   }
 }

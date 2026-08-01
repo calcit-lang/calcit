@@ -6,16 +6,71 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotRunMode {
+  #[default]
+  Native,
+  Js,
+}
+
+fn deserialize_run_mode<'de, D>(deserializer: D) -> Result<SnapshotRunMode, D::Error>
+where
+  D: serde::Deserializer<'de>,
+{
+  let value = Edn::deserialize(deserializer)?;
+  let mode = match value {
+    Edn::Tag(tag) => tag.ref_str().to_owned(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+    other => return Err(serde::de::Error::custom(format!("expected :native or :js, got {other:?}"))),
+  };
+  match mode.as_str() {
+    "native" => Ok(SnapshotRunMode::Native),
+    "js" => Ok(SnapshotRunMode::Js),
+    _ => Err(serde::de::Error::custom(format!("expected :native or :js, got {mode}"))),
+  }
+}
+
+fn deserialize_ns_def<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+  D: serde::Deserializer<'de>,
+{
+  match Edn::deserialize(deserializer)? {
+    Edn::Str(text) | Edn::Symbol(text) => Ok(text.to_string()),
+    other => Err(serde::de::Error::custom(format!(
+      "expected namespace/definition string or symbol, got {other:?}"
+    ))),
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SnapshotConfigs {
-  #[serde(rename = "init-fn")]
+pub struct SnapshotEntry {
+  #[serde(default, deserialize_with = "deserialize_run_mode")]
+  pub mode: SnapshotRunMode,
+  #[serde(rename = "init-fn", deserialize_with = "deserialize_ns_def")]
   pub init_fn: String,
-  #[serde(rename = "reload-fn")]
+  #[serde(rename = "reload-fn", deserialize_with = "deserialize_ns_def")]
+  pub reload_fn: String,
+  #[serde(default)]
+  pub description: String,
+  #[serde(default)]
+  pub modules: Vec<String>,
+  #[serde(default, rename = "type-slots")]
+  pub type_slots: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LegacySnapshotConfigs {
+  #[serde(rename = "init-fn", deserialize_with = "deserialize_ns_def")]
+  pub init_fn: String,
+  #[serde(rename = "reload-fn", deserialize_with = "deserialize_ns_def")]
   pub reload_fn: String,
   #[serde(default)]
   pub modules: Vec<String>,
   #[serde(default)]
   pub version: String,
+  #[serde(default, rename = "type-slots")]
+  pub type_slots: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,9 +101,45 @@ pub struct FileInSnapShot {
 pub struct Snapshot {
   pub package: String,
   pub about: Option<String>,
-  pub configs: SnapshotConfigs,
-  pub entries: HashMap<String, SnapshotConfigs>,
+  #[serde(default)]
+  pub version: String,
+  pub entries: HashMap<String, SnapshotEntry>,
   pub files: HashMap<String, FileInSnapShot>,
+}
+
+fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
+  let map = data.view_map().map_err(|e| format!("entry must be a map: {e}"))?;
+  let ns_def = |key: &str| match map.get_or_nil(key) {
+    Edn::Str(text) | Edn::Symbol(text) => Ok(text.to_string()),
+    other => Err(format!(
+      "entry `:{key}` must be a namespace/definition string or symbol, got {other:?}"
+    )),
+  };
+  let mode = match map.get_or_nil("mode") {
+    Edn::Tag(tag) if tag.ref_str() == "native" => SnapshotRunMode::Native,
+    Edn::Tag(tag) if tag.ref_str() == "js" => SnapshotRunMode::Js,
+    Edn::Str(text) | Edn::Symbol(text) if text.trim_start_matches(':') == "native" => SnapshotRunMode::Native,
+    Edn::Str(text) | Edn::Symbol(text) if text.trim_start_matches(':') == "js" => SnapshotRunMode::Js,
+    other => return Err(format!("entry `:mode` must be :native or :js, got {other:?}")),
+  };
+  Ok(SnapshotEntry {
+    mode,
+    init_fn: ns_def("init-fn")?,
+    reload_fn: ns_def("reload-fn")?,
+    description: from_edn(map.get_or_nil("description")).map_err(|e| format!("entry `:description`: {e}"))?,
+    modules: from_edn(map.get_or_nil("modules")).map_err(|e| format!("entry `:modules`: {e}"))?,
+    type_slots: from_edn(map.get_or_nil("type-slots")).map_err(|e| format!("entry `:type-slots`: {e}"))?,
+  })
+}
+
+fn parse_entries(data: Edn) -> Result<HashMap<String, SnapshotEntry>, String> {
+  let map = data.view_map().map_err(|e| format!("entries must be a map: {e}"))?;
+  let mut entries = HashMap::with_capacity(map.0.len());
+  for (name, value) in map.0 {
+    let name: String = from_edn(name).map_err(|e| format!("invalid entry name: {e}"))?;
+    entries.insert(name, parse_snapshot_entry(value)?);
+  }
+  Ok(entries)
 }
 
 fn format_edn_preview(value: &Edn) -> String {
@@ -417,11 +508,36 @@ fn main() {
 
   let files = parse_files(data.get_or_nil("files")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:files`: {e}"));
 
+  let legacy_configs = match data.get_or_nil("configs") {
+    Edn::Nil => None,
+    value => {
+      Some(from_edn::<LegacySnapshotConfigs>(value).unwrap_or_else(|e| panic!("failed to parse calcit-core legacy `:configs`: {e}")))
+    }
+  };
+  let mut entries = parse_entries(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
+  if let Some(configs) = &legacy_configs {
+    entries.insert(
+      "default".to_owned(),
+      SnapshotEntry {
+        mode: SnapshotRunMode::Native,
+        init_fn: configs.init_fn.clone(),
+        reload_fn: configs.reload_fn.clone(),
+        description: String::new(),
+        modules: configs.modules.clone(),
+        type_slots: configs.type_slots.clone(),
+      },
+    );
+  }
+  let version = match data.get_or_nil("version") {
+    Edn::Nil => legacy_configs.map(|configs| configs.version).unwrap_or_default(),
+    value => from_edn(value).unwrap_or_else(|e| panic!("failed to parse calcit-core `:version`: {e}")),
+  };
+
   let snapshot = Snapshot {
     package: pkg,
     about,
-    configs: from_edn(data.get_or_nil("configs")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:configs`: {e}")),
-    entries: from_edn(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}")),
+    version,
+    entries,
     files,
   };
 

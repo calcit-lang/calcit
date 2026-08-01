@@ -1,38 +1,45 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-doc-smoke)
-  :configs $ {} (:init-fn |test-doc-smoke.main/main!) (:reload-fn |test-doc-smoke.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-doc-smoke) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-doc-smoke.main/main!) (:mode :native) (:reload-fn 'test-doc-smoke.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-doc-smoke.main $ %{} :FileEntry
       :defs $ {}
-        |DocEnum0 $ %{} :CodeEntry (:doc "|Doc smoke enum") (:schema :dynamic)
+        |DocEnum0 $ %{} :CodeEntry (:doc "|Doc smoke enum")
           :code $ quote
-            defenum DocEnum $ :ok :string
+            defenum DocEnum $ :ok 'String
           :examples $ []
-        |DocPerson0 $ %{} :CodeEntry (:doc "|Doc smoke struct") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |DocPerson0 $ %{} :CodeEntry (:doc "|Doc smoke struct")
           :code $ quote
-            defstruct DocPerson $ :name :string
+            defstruct DocPerson $ :name 'String
           :examples $ []
-        |DocTrait $ %{} :CodeEntry (:doc "|Doc smoke trait") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |DocTrait $ %{} :CodeEntry (:doc "|Doc smoke trait")
           :code $ quote
             deftrait DocTrait $ .label :fn
           :examples $ []
-        |DocTraitImpl $ %{} :CodeEntry (:doc "|Doc smoke impl") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |DocTraitImpl $ %{} :CodeEntry (:doc "|Doc smoke impl")
           :code $ quote
             defimpl DocTraitImpl DocTrait $ .label
               fn (x)
                 str-spaced |doc $ :name x
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc "|Run docs smoke cases") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc "|Run docs smoke cases")
           :code $ quote
             defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-native-impl-new-dot-method) (test-assert-traits-local) (test-impl-traits-struct-enum-only) (println "|Doc smoke cases passed")
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
           :code $ quote
-            defn reload! () $ :: :unit
+            defn reload! () $ :: 'Unit
           :examples $ []
-        |test-assert-traits-local $ %{} :CodeEntry (:doc "|assert-traits local first arg smoke") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-assert-traits-local $ %{} :CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote
             defn test-assert-traits-local () $ let
                 DocPerson $ impl-traits DocPerson0 DocTraitImpl
@@ -40,11 +47,13 @@
               assert= p $ assert-traits p DocTrait
               assert= "|doc Alice" $ .label p
           :examples $ []
-        |test-defimpl-order $ %{} :CodeEntry (:doc "|defimpl arg order smoke") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-defimpl-order $ %{} :CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote
             defn test-defimpl-order () $ assert= DocTrait (&impl:origin DocTraitImpl)
           :examples $ []
-        |test-impl-traits-struct-enum-only $ %{} :CodeEntry (:doc "|impl-traits only accepts struct/enum definitions") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-impl-traits-struct-enum-only $ %{} :CodeEntry (:doc "|impl-traits only accepts struct/enum definitions")
           :code $ quote
             defn test-impl-traits-struct-enum-only ()
               let
@@ -64,7 +73,8 @@
                   assert= true $ includes? msg |Actual:
                   assert= true $ includes? msg |Fix:
           :examples $ []
-        |test-native-impl-new-dot-method $ %{} :CodeEntry (:doc "|&impl::new accepts .method field keys") (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |test-native-impl-new-dot-method $ %{} :CodeEntry (:doc "|&impl::new accepts .method field keys")
           :code $ quote
             defn test-native-impl-new-dot-method () $ let
                 DotImpl $ &impl::new DocTrait
@@ -75,6 +85,7 @@
               assert= DocTrait $ &impl:origin DotImpl
               assert= "|native-dot Bob" $ .label p
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-doc-smoke.main $ :require

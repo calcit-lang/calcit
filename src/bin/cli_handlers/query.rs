@@ -7,7 +7,8 @@ use super::common::{
   cirru_to_json_value, emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup,
 };
 use super::cursor::{
-  resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument, set_cursor_from_query_match,
+  CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
+  resolve_cursor_target_argument, set_cursor_from_query_match,
 };
 use super::tips::{TipPriority, Tips, command_guidance_enabled};
 use calcit::CalcitTypeAnnotation;
@@ -20,6 +21,7 @@ use calcit::cli_args::{
 };
 use calcit::data::cirru::code_to_calcit;
 use calcit::load_core_snapshot;
+use calcit::project_state::{self, ERROR_STATE_FILE};
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
 use calcit::{program, runner};
@@ -53,6 +55,7 @@ struct SearchCommonOpts<'a> {
   parent_path: bool,
   format: QueryRenderFormat,
   set_cursor: Option<usize>,
+  compact_output: bool,
 }
 
 const DETAILED_RESULTS_WINDOW: usize = 3;
@@ -612,6 +615,8 @@ fn resolve_query_cursor_references(cmd: &mut QueryCommand, input_path: &str) -> 
     | QuerySubcommand::Error(_)
     | QuerySubcommand::Modules(_)
     | QuerySubcommand::Find(_)
+    | QuerySubcommand::Next(_)
+    | QuerySubcommand::Prev(_)
     | QuerySubcommand::HostProcs(_)
     | QuerySubcommand::Path(_)
     | QuerySubcommand::Anchors(_) => {}
@@ -627,7 +632,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
     QuerySubcommand::Config(_) => handle_config(input_path),
-    QuerySubcommand::Error(_) => handle_error(),
+    QuerySubcommand::Error(_) => handle_error(input_path),
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
@@ -663,6 +668,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         parent_path: opts.parent_path,
         format: parse_query_render_format(&opts.format)?,
         set_cursor: opts.set_cursor,
+        compact_output: false,
       };
       handle_search_leaf(input_path, &opts.pattern, opts.start_path.as_deref(), &common_opts)
     }
@@ -677,9 +683,12 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
         parent_path: false,
         format: parse_query_render_format(&opts.format)?,
         set_cursor: opts.set_cursor,
+        compact_output: false,
       };
       handle_search_expr(input_path, &opts.pattern, opts.json, opts.start_path.as_deref(), &common_opts)
     }
+    QuerySubcommand::Next(_) => handle_repeat_cursor_search(input_path, true),
+    QuerySubcommand::Prev(_) => handle_repeat_cursor_search(input_path, false),
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
       handle_schema(input_path, ns, def, opts.json)
@@ -773,11 +782,16 @@ mod type_query_tests {
   }
 
   #[test]
-  fn parses_any_as_a_static_top_type() {
+  fn parses_any_as_the_legacy_dynamic_alias() {
     let annotation = parse_type_annotation_query(":any").expect("any type should parse");
-    assert_eq!(annotation.to_brief_string(), ":any");
+    assert_eq!(annotation.to_brief_string(), "dynamic");
+    assert_eq!(
+      format_type_query_annotation(annotation.as_ref()).expect("alias should format"),
+      "'Dynamic"
+    );
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic));
     assert!(CalcitTypeAnnotation::String.matches_annotation(annotation.as_ref()));
-    assert!(!annotation.matches_annotation(&CalcitTypeAnnotation::String));
+    assert!(annotation.matches_annotation(&CalcitTypeAnnotation::String));
   }
 
   #[test]
@@ -796,14 +810,14 @@ mod type_query_tests {
   fn renders_type_annotations_without_edn_top_level_wrapper() {
     assert_eq!(
       format_type_query_annotation(&CalcitTypeAnnotation::Number).expect("number should format"),
-      ":number"
+      "'Number"
     );
     let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
     assert_eq!(
       format_type_query_annotation(&list_type).expect("list should format"),
-      ":: :list :number"
+      ":: 'List 'Number"
     );
-    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), ":ref");
+    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), "'Ref");
   }
 
   #[test]
@@ -816,15 +830,15 @@ mod type_query_tests {
     assert_eq!(value["schema_version"], 1);
     assert_eq!(value["command"], "query.schema");
     assert_eq!(value["data"]["id"], "app.main/*enabled?");
-    assert_eq!(value["data"]["canonical_schema"], ":: :ref :bool");
-    assert_eq!(value["data"]["tree"], serde_json::json!(["::", ":ref", ":bool"]));
+    assert_eq!(value["data"]["canonical_schema"], ":: 'Ref 'Bool");
+    assert_eq!(value["data"]["tree"], serde_json::json!(["::", "'Ref", "'Bool"]));
 
     let broad_ref = CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone());
     let output =
       format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned()).expect("broad ref JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
-    assert_eq!(value["data"]["canonical_schema"], ":ref");
-    assert_eq!(value["data"]["tree"], ":ref");
+    assert_eq!(value["data"]["canonical_schema"], "'Ref");
+    assert_eq!(value["data"]["tree"], "'Ref");
   }
 
   #[test]
@@ -853,7 +867,21 @@ mod type_query_tests {
       "main!".to_string(),
       vec![(vec![48, 0], Cirru::leaf("do")), (vec![48, 1], Cirru::leaf("true"))],
     )];
-    maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(1)).expect("second search result should become cursor");
+    let saved_query = CursorLastQuery {
+      command: "search".to_string(),
+      pattern: "true".to_string(),
+      filter: Some("app.main/main!".to_string()),
+      exact: true,
+      regex: false,
+      max_depth: 0,
+      start_path: None,
+      entry: None,
+      pattern_is_json: false,
+      selected_index: 1,
+      snapshot_revision: snapshot_content_revision(&snapshot_path).expect("snapshot revision should compute"),
+    };
+    maybe_set_cursor_from_search_results(&snapshot_path, &results, 1, saved_query.clone())
+      .expect("second search result should become cursor");
     assert_eq!(
       crate::cli_handlers::cursor::resolve_cursor_path_argument(&snapshot_path, "app.main/main!", "@cursor")
         .expect("query-selected cursor should resolve"),
@@ -887,7 +915,7 @@ mod type_query_tests {
       .expect_err("cursor search should reject mismatched target");
     assert!(error.contains("Cursor-scoped search targets"), "error: {error}");
 
-    let error = maybe_set_cursor_from_search_results(&snapshot_path, &results, Some(2))
+    let error = maybe_set_cursor_from_search_results(&snapshot_path, &results, 2, saved_query)
       .expect_err("out-of-range search cursor index should fail");
     assert!(error.contains("returned 2 match"), "error: {error}");
 
@@ -902,12 +930,26 @@ mod type_query_tests {
       parent_path: false,
       format: QueryRenderFormat::Json,
       set_cursor: None,
+      compact_output: false,
     };
     let output = format_search_results_json("query.search", "true", false, None, &options, &snapshot, &results)
       .expect("search JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("search output should be valid JSON");
     assert_eq!(value["data"]["definitions"][0]["matches"][0]["cursor_index"], 0);
     assert_eq!(value["data"]["definitions"][0]["matches"][1]["cursor_index"], 1);
+
+    handle_repeat_cursor_search(&snapshot_path, false).expect("saved search should recompute its previous result");
+    assert_eq!(
+      load_cursor_last_query(&snapshot_path)
+        .expect("repeated query should remain saved")
+        .selected_index,
+      0
+    );
+    let mut changed_snapshot = std::fs::read_to_string(&snapshot_file).expect("snapshot should read for revision change");
+    changed_snapshot.push('\n');
+    std::fs::write(&snapshot_file, changed_snapshot).expect("snapshot revision should change");
+    let error = handle_repeat_cursor_search(&snapshot_path, true).expect_err("changed snapshot should reject a stale result index");
+    assert!(error.contains("Snapshot changed since the saved cursor search"), "error: {error}");
 
     std::fs::remove_dir_all(directory).expect("query cursor test directory should be removed");
   }
@@ -1219,6 +1261,23 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
     resolved_from: source,
     methods,
   };
+  let uses_legacy_any = definition_type_query_target(&opts.target).is_none()
+    && opts
+      .target
+      .split(|ch: char| ch.is_whitespace() || matches!(ch, '(' | ')' | '[' | ']' | '{' | '}'))
+      .any(|token| matches!(token, "any" | ":any"));
+  let diagnostics = if uses_legacy_any {
+    vec![ContextDiagnostic {
+      code: "W_LEGACY_ANY_ALIAS".to_owned(),
+      phase: "analysis",
+      severity: "warning",
+      message: "`:any` is a legacy alias for `:dynamic`; the canonical type and generated schema use `:dynamic`. Do not use it to model polymorphism.".to_owned(),
+      path: None,
+      intent: Some("migration".to_owned()),
+    }]
+  } else {
+    vec![]
+  };
 
   if format == QueryRenderFormat::Json {
     let envelope = SemanticQueryEnvelope {
@@ -1226,7 +1285,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
       command: "query.type",
       revision,
       data,
-      diagnostics: vec![],
+      diagnostics,
       next: vec![],
     };
     println!(
@@ -1243,6 +1302,13 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
   }
   println!("{} {}", "Resolved from:".bold(), data.resolved_from);
   println!("{} {revision}", "Revision:".bold());
+  if uses_legacy_any {
+    println!(
+      "{}",
+      "Warning [W_LEGACY_ANY_ALIAS]: `:any` is the legacy spelling of `:dynamic`; use `:generics`/TypeVar or trait `:where` for polymorphism."
+        .yellow()
+    );
+  }
 
   match data.methods {
     Some(methods) if methods.is_empty() => {
@@ -1714,7 +1780,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let dynamic_intent = if inferred
     .as_ref()
     .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
-    && fn_features.iter().any(|feature| feature == ":js-ffi")
+    && fn_features.iter().any(|feature| feature == "js-ffi")
   {
     Some("intentional-js-ffi")
   } else if inferred
@@ -2544,19 +2610,8 @@ pub(crate) fn load_snapshot_for_static_analysis(input_path: &str) -> Result<snap
 
 fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
   let mut snapshot = load_main_snapshot(input_path)?;
-
-  let mut modules_to_load = snapshot.configs.modules.clone();
-  if let Some(entry_name) = entry {
-    let entry_config = snapshot.entries.get(entry_name).ok_or_else(|| {
-      let available = if snapshot.entries.is_empty() {
-        "(none)".to_owned()
-      } else {
-        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
-      };
-      format!("Entry '{entry_name}' not found. Available entries: {available}")
-    })?;
-    modules_to_load.extend(entry_config.modules.clone());
-  }
+  snapshot.select_entry(entry)?;
+  let mut modules_to_load = snapshot.active_entry()?.modules.clone();
 
   let mut seen_modules = HashSet::new();
   modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
@@ -2789,40 +2844,42 @@ fn handle_pkg(input_path: &str) -> Result<(), String> {
 fn handle_config(input_path: &str) -> Result<(), String> {
   let snapshot = load_main_snapshot(input_path)?;
 
-  println!("{}", "Project Configs:".bold());
-  println!("  {}: {}", "init_fn".cyan(), snapshot.configs.init_fn);
-  println!("  {}: {}", "reload_fn".cyan(), snapshot.configs.reload_fn);
-  println!("  {}: {}", "version".cyan(), snapshot.configs.version);
-  println!("  {}: {:?}", "modules".cyan(), snapshot.configs.modules);
+  println!("{}", "Project Config:".bold());
+  println!("  {}: {}", "version".cyan(), snapshot.version);
+  println!("\n{}", "Snapshot Entries:".bold());
 
-  if !snapshot.entries.is_empty() {
-    println!("\n{}", "Snapshot Entries:".bold());
+  let mut names: Vec<&String> = snapshot.entries.keys().collect();
+  names.sort();
 
-    let mut names: Vec<&String> = snapshot.entries.keys().collect();
-    names.sort();
+  for name in names {
+    let entry = snapshot
+      .entries
+      .get(name)
+      .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
 
-    for name in names {
-      let entry = snapshot
-        .entries
-        .get(name)
-        .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
-
-      println!("  {}", name.cyan());
-      println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
-      println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
-      println!("    {}: {}", "version".cyan(), entry.version);
-      println!("    {}: {:?}", "modules".cyan(), entry.modules);
-    }
+    println!("  {}", name.cyan());
+    println!("    {}: {}", "mode".cyan(), entry.mode);
+    println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
+    println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
+    println!("    {}: {:?}", "modules".cyan(), entry.modules);
+    println!("    {}: {:?}", "type_slots".cyan(), entry.type_slots);
   }
 
   Ok(())
 }
 
-fn handle_error() -> Result<(), String> {
-  let error_file = ".calcit-error.cirru";
+fn handle_error(input_path: &str) -> Result<(), String> {
+  let project_directory = project_state::project_directory_for_snapshot(input_path);
+  let error_file = project_state::state_file(project_directory, ERROR_STATE_FILE);
+  let legacy_error_file = project_directory.join(".calcit-error.cirru");
+  if project_state::migrate_legacy_file(&legacy_error_file, &error_file)
+    .map_err(|error| format!("Failed to migrate legacy error file: {error}"))?
+  {
+    eprintln!("Moved legacy error state into '{}'.", error_file.display());
+  }
 
-  if !Path::new(error_file).exists() {
-    println!("{}", "No .calcit-error.cirru file found.".yellow());
+  if !error_file.exists() {
+    println!("{}", "No .calcit/error.cirru file found.".yellow());
     if command_guidance_enabled() {
       println!();
       println!("{}", "Next steps:".blue().bold());
@@ -2832,20 +2889,20 @@ fn handle_error() -> Result<(), String> {
     return Ok(());
   }
 
-  let metadata = fs::metadata(error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
+  let metadata = fs::metadata(&error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
   if let Ok(modified) = metadata.modified()
     && let Ok(elapsed) = modified.elapsed()
     && elapsed.as_secs() > 10
   {
     println!(
       "{}",
-      format!("Warning: .calcit-error.cirru was modified {} seconds ago.", elapsed.as_secs()).yellow()
+      format!("Warning: .calcit/error.cirru was modified {} seconds ago.", elapsed.as_secs()).yellow()
     );
     println!("{}", "It might be outdated, please recompile or check the watcher.".yellow());
     println!();
   }
 
-  let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
+  let content = fs::read_to_string(&error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
 
   if content.trim().is_empty() {
     println!("{}", "✓ Error file is empty (no recent errors).".green());
@@ -2901,7 +2958,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
 
   println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
 
-  for module_path in &snapshot.configs.modules {
+  for module_path in &snapshot.active_entry()?.modules {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
         println!("  {} {}", module_snapshot.package.cyan(), format!("({module_path})").dimmed());
@@ -3894,17 +3951,27 @@ fn format_search_results_json(
 fn maybe_set_cursor_from_search_results(
   input_path: &str,
   results: &SearchResults,
-  selected_index: Option<usize>,
+  selected_index: usize,
+  last_query: CursorLastQuery,
 ) -> Result<(), String> {
-  let Some(selected_index) = selected_index else {
-    return Ok(());
-  };
   let total_matches = results.iter().map(|(_, _, matches)| matches.len()).sum::<usize>();
+  let main_snapshot = load_main_snapshot(input_path)?;
   let mut current_index = 0_usize;
   for (namespace, definition, matches) in results {
     for (path, _) in matches {
       if current_index == selected_index {
-        return set_cursor_from_query_match(input_path, &format!("{namespace}/{definition}"), path.clone(), selected_index);
+        if !main_snapshot.files.contains_key(namespace) {
+          return Err(format!(
+            "Search match #{selected_index} belongs to dependency or builtin namespace '{namespace}', which cannot become a project edit cursor. Narrow the search with `--filter <project-namespace>` and choose its displayed cursor index."
+          ));
+        }
+        return set_cursor_from_query_match(
+          input_path,
+          &format!("{namespace}/{definition}"),
+          path.clone(),
+          selected_index,
+          last_query,
+        );
       }
       current_index += 1;
     }
@@ -3912,6 +3979,82 @@ fn maybe_set_cursor_from_search_results(
   Err(format!(
     "Search cursor index {selected_index} is out of range; query returned {total_matches} match(es)."
   ))
+}
+
+fn snapshot_content_revision(input_path: &str) -> Result<String, String> {
+  let content = fs::read(input_path).map_err(|error| format!("Failed to read snapshot revision from '{input_path}': {error}"))?;
+  let mut hasher = Md5::new();
+  hasher.update(&content);
+  Ok(format!("md5:{:x}", hasher.finalize()))
+}
+
+fn cursor_last_query(
+  input_path: &str,
+  command: &str,
+  pattern: &str,
+  pattern_is_json: bool,
+  start_path: Option<&str>,
+  common_opts: &SearchCommonOpts,
+  selected_index: usize,
+) -> Result<CursorLastQuery, String> {
+  Ok(CursorLastQuery {
+    command: command.to_string(),
+    pattern: pattern.to_string(),
+    filter: common_opts.filter.map(str::to_string),
+    exact: !common_opts.loose,
+    regex: common_opts.regex,
+    max_depth: common_opts.max_depth,
+    start_path: start_path.map(str::to_string),
+    entry: common_opts.entry.map(str::to_string),
+    pattern_is_json,
+    selected_index,
+    snapshot_revision: snapshot_content_revision(input_path)?,
+  })
+}
+
+fn handle_repeat_cursor_search(input_path: &str, forward: bool) -> Result<(), String> {
+  let last_query = load_cursor_last_query(input_path)?;
+  let selected_index = if forward {
+    last_query
+      .selected_index
+      .checked_add(1)
+      .ok_or("Saved query result index overflowed.")?
+  } else {
+    last_query
+      .selected_index
+      .checked_sub(1)
+      .ok_or("The saved query cursor is already at the first result.")?
+  };
+  let current_revision = snapshot_content_revision(input_path)?;
+  if current_revision != last_query.snapshot_revision {
+    return Err(
+      "Snapshot changed since the saved cursor search. Refusing to reuse its result index; rerun the original search with `--set-cursor <index>`."
+        .to_string(),
+    );
+  }
+  let common_opts = SearchCommonOpts {
+    filter: last_query.filter.as_deref(),
+    loose: !last_query.exact,
+    regex: last_query.regex,
+    max_depth: last_query.max_depth,
+    entry: last_query.entry.as_deref(),
+    detail_offset: 0,
+    parent_path: false,
+    format: QueryRenderFormat::Human,
+    set_cursor: Some(selected_index),
+    compact_output: true,
+  };
+  match last_query.command.as_str() {
+    "search" => handle_search_leaf(input_path, &last_query.pattern, last_query.start_path.as_deref(), &common_opts),
+    "search-expr" => handle_search_expr(
+      input_path,
+      &last_query.pattern,
+      last_query.pattern_is_json,
+      last_query.start_path.as_deref(),
+      &common_opts,
+    ),
+    other => Err(format!("Saved cursor query command '{other}' is not repeatable.")),
+  }
 }
 
 /// Search for leaf nodes (strings) in a definition
@@ -4006,7 +4149,14 @@ fn handle_search_leaf(input_path: &str, pattern: &str, start_path: Option<&str>,
 
   all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
 
-  maybe_set_cursor_from_search_results(input_path, &all_results, common_opts.set_cursor)?;
+  if let Some(selected_index) = common_opts.set_cursor {
+    let last_query = cursor_last_query(input_path, "search", pattern, false, start_path, common_opts, selected_index)?;
+    maybe_set_cursor_from_search_results(input_path, &all_results, selected_index, last_query)?;
+  }
+
+  if common_opts.compact_output {
+    return Ok(());
+  }
 
   if common_opts.format == QueryRenderFormat::Json {
     println!(
@@ -4222,7 +4372,14 @@ fn handle_search_expr(
 
   all_results.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.0.cmp(&b.0)).then_with(|| a.1.cmp(&b.1)));
 
-  maybe_set_cursor_from_search_results(input_path, &all_results, common_opts.set_cursor)?;
+  if let Some(selected_index) = common_opts.set_cursor {
+    let last_query = cursor_last_query(input_path, "search-expr", pattern, json, start_path, common_opts, selected_index)?;
+    maybe_set_cursor_from_search_results(input_path, &all_results, selected_index, last_query)?;
+  }
+
+  if common_opts.compact_output {
+    return Ok(());
+  }
 
   if common_opts.format == QueryRenderFormat::Json {
     println!(

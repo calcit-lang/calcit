@@ -13,6 +13,10 @@ entry_for:
   - "assert-type"
   - "cr analyze check-types"
   - "cr analyze weak-types"
+id: core/features/static-analysis
+related:
+  - core/run/library-quality
+  - core/run/upgrade
 ---
 
 # Static Type Analysis
@@ -21,12 +25,12 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 ## Quick Recipes
 
-- **Assert Type**: `assert-type total :number`
-- **Local `fn` Hint**: `hint-fn $ {} (:args ([] :number)) (:return :number)`
-- **Top-level `defn` Schema**: `cr edit schema app.main/add --code 'quote $ :: :fn $ {} (:args ([] :number :number)) (:return :number)'`
-- **Top-level value Schema**: `cr edit schema 'app.main/*enabled?' --code 'quote $ :: :ref :bool'`
-- **Return Type**: `hint-fn $ {} (:return :string)`
-- **Compact Hint**: `defn my-fn (x) :string ...`
+- **Assert Type**: `assert-type total 'Number`
+- **Local `fn` Hint**: `hint-fn $ {} (:args ([] 'Number)) (:return 'Number)`
+- **Top-level `defn` Schema**: `cr edit schema app.main/add --code "quote $ :: 'Fn $ {} (:args ([] 'Number 'Number)) (:return 'Number)"`
+- **Top-level value Schema**: `cr edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"`
+- **Return Type**: `hint-fn $ {} (:return 'String)`
+- **Compact Hint**: `defn my-fn (x) 'String ...`
 - **Check Traits**: `assert-traits x MyTrait`
 - **Ignore Warning**: `&core:ignore-type-warning`
 
@@ -71,7 +75,7 @@ cr analyze check-examples --ns app.main --def calculate-total
 cr query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. `weak-types --format json` reports the exact Snapshot/schema path and a `suggestion` for every occurrence. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
+`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt also emits `W_DYNAMIC_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. `nil` occurrences remain unresolved because an FFI capability does not imply that every nullable branch is intentional.
 
@@ -87,6 +91,8 @@ Use `--summary-only` when only aggregate counts are needed. Human output stops a
 
 ## Type Annotations
 
+Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `cr edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, record keys, `:return` schema keys, or `:kind` values.
+
 ### Function Parameter Types
 
 Function parameters should be annotated with function schema:
@@ -96,7 +102,7 @@ Function parameters should be annotated with function schema:
 
 For namespace-level definitions, `:schema` is stored on the definition entry and is typically edited with `cr edit schema`, rather than written inline in the function body.
 
-`cr edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote :string` for a primitive leaf or `quote $ :: :ref :bool` for a parameterized type expression. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: :fn $ {} ...` or `:: :macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized tags such as `:ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: :ref :bool`, `:: :list :string`, or `:: :map :tag :number`.
+`cr edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote 'String` for a primitive leaf or `quote $ :: 'Ref 'Bool` for a parameterized type expression. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: 'Fn $ {} ...` or `:: 'Macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized types such as `'Ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: 'Ref 'Bool`, `:: 'List 'String`, or `:: 'Map 'Tag 'Number`.
 
 The preprocessor propagates a named function's schema into its parameter bindings. This means field access, method dispatch, generic return inference, and return checks inside the body use the declared types instead of falling back to `:dynamic`. A `:rest` schema is preserved as a variadic element type both for calls and when the function is passed as a higher-order callback.
 
@@ -193,30 +199,29 @@ let
 
 ## Supported Types
 
-The following type tags are supported:
+| Canonical syntax | Calcit Type |
+| ---------------- | ----------- |
+| `'Unit` | Nil / unit |
+| `'Bool` | Boolean |
+| `'Number` | Number |
+| `'String` | String |
+| `'Symbol` | Symbol |
+| `'Tag` | Tag (Keyword) |
+| `'List` | List |
+| `'Map` | Hash Map |
+| `'Set` | Set |
+| `'Tuple` | Tuple (general) |
+| `'Fn` | Function |
+| `'Ref` | Atom / Ref |
+| `'Dynamic` | Unknown/unresolved type; static checks are disabled at this boundary |
 
-| Tag                 | Calcit Type         |
-| ------------------- | ------------------- |
-| `:nil`              | Nil                 |
-| `:bool`             | Boolean             |
-| `:number`           | Number              |
-| `:string`           | String              |
-| `:symbol`           | Symbol              |
-| `:tag`              | Tag (Keyword)       |
-| `:list`             | List                |
-| `:map`              | Hash Map            |
-| `:set`              | Set                 |
-| `:tuple`            | Tuple (general)     |
-| `:fn`               | Function            |
-| `:ref`              | Atom / Ref          |
-| `:any`              | Static top type: explicitly accepts every Calcit value |
-| `:dynamic`          | Unknown/unresolved type: static checks are disabled at this boundary |
+`:any` is a legacy alias for `:dynamic`; both are accepted as input and formatter output is `'Dynamic`.
 
 ### Complex Types
 
 #### Optional Types
 
-Represent values that can be `nil`. Use the `:: :optional <type>` syntax:
+Represent values that can be `nil`. Use the `:: 'Optional <type>` syntax:
 
 ```cirru
 let
@@ -240,9 +245,41 @@ let
 
 A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant; for example, a callback accepting `optional<T>` can be used where the caller only supplies `T`.
 
-Use `:any` when “every Calcit value is accepted” is itself the precise public contract. It is a one-way static top type: a concrete value satisfies an expected `:any`, but a value known only as `:any` does not satisfy a concrete expected type. Unlike `:dynamic`, it does not erase checks in both directions and is not reported as unresolved by type-coverage tools. `cr query type :any --format json` therefore returns an empty `methods` array (no method is guaranteed), while unknown method metadata remains `null`.
+`:any` is accepted only as a compatibility spelling and is parsed as `:dynamic`. Schema serialization, generated metadata, type queries, and diagnostics use `:dynamic`; new code should not introduce `:any`.
 
-Do not strengthen a schema beyond the runtime contract merely to remove `:dynamic`. Recursive heterogeneous operations such as flattening may intentionally accept either a collection or a scalar; use `:any` when all Calcit values are valid, and retain `:dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state boundary. Keep those boundaries explicit and narrow, while strengthening homogeneous lists/maps/sets, refs, named data references, ordinary function parameters, and return values.
+Do not strengthen a schema beyond the runtime contract merely to silence a report. Instead, preserve the relationship that the code actually promises: use a declared type variable when input and output share a type, a trait plus `:where` when only capabilities matter, a parameterized collection/ref for homogeneous values, and a named enum for finite heterogeneous alternatives. Retain `:dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state or macro boundary, and keep that boundary explicit and narrow.
+
+### Preserving Polymorphism Instead of Repeating Dynamic
+
+This schema loses the fact that the result has the same type as the input:
+
+```cirru.no-run
+:: :fn $ {}
+  :args $ [] :dynamic
+  :return :dynamic
+```
+
+Use a declared type variable:
+
+```cirru.no-run
+:: :fn $ {}
+  :generics $ [] 'T
+  :args $ [] 'T
+  :return 'T
+```
+
+If the body only needs a capability, add a trait bound rather than replacing `'T` with dynamic:
+
+```cirru.no-run
+:: :fn $ {}
+  :generics $ [] 'T
+  :where $ {}
+    'T Show
+  :args $ [] 'T
+  :return :string
+```
+
+The same rule applies inside containers and callbacks: `:: :list 'T` preserves a homogeneous item relationship, while bare `:list` means `list<dynamic>`; a complete `:: :fn` callback schema preserves argument/return checking, while bare `:fn` does not.
 
 #### Record and Enum Types
 
@@ -300,7 +337,7 @@ Validates enum construction and pattern matching:
 
 ```cirru.no-check
 defenum Result
-  :Ok :any
+  :Ok :number
   :Error :string
 
 ; Warning: variant 'Failure' not found in enum Result
@@ -598,29 +635,58 @@ Then reference the slot in type annotations with the `*name` syntax:
 
 ### Binding a Type Slot (Application Side)
 
-In the application's entry point (e.g. `main!`), use `with-type-slot` to bind a concrete type locally for the scope of the body:
+Bind the slot in the configuration of the entry being compiled. The concrete type must use a full `namespace/definition` path:
 
-```cirru.no-check
-defenum Op (:add :string) (:remove :tag) (:clear)
-
-defn main! () $ with-type-slot (:dispatch-op Op)
-  ;; all code in this body benefits from full type checking
+```bash
+cr config set-type-slot :dispatch-op app.schema/Op
 ```
 
-`with-type-slot` takes a binding pair `(:slot-name TypeExpr)` as its first argument and a body of expressions. The slot is active only within that scope.
+This writes the following entry-level configuration:
+
+```cirru.no-check
+:entries $ {}
+  :default $ {}
+    :mode :native
+    :init-fn 'app.main/main!
+    :type-slots $ {}
+      :dispatch-op |app.schema/Op
+```
+
+No wrapper is needed around `main!`; the binding is installed before any definition is preprocessed and applies to the whole selected entry.
+
+A named entry has an independent configuration:
+
+```bash
+cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
+cr config type-slots --entry server
+```
+
+Entries do not inherit `entries.default.type-slots`. Bind every slot needed by each entry explicitly.
 
 ### How It Works
 
-1. `deftype-slot :name` registers a placeholder (optional, for documentation/library contracts).
-2. `with-type-slot (:name ConcreteType) body...` pushes a scoped override for `*name` during preprocessing of the body, then pops it when the body finishes.
-3. When type annotations encounter `*name`, the override is resolved and standard type matching proceeds.
-4. Multiple entries can each bind the same slot independently without conflict, since each binding is scoped.
+1. `deftype-slot :name` declares the placeholder supplied by a library.
+2. Selecting an entry selects its `:type-slots` map before preprocessing starts.
+3. When a type annotation encounters `*name`, the configured concrete type is resolved and normal type matching proceeds.
+4. Different entries can bind the same slot to different types because each invocation compiles one selected entry configuration.
 
 ### Constraints
 
-- Only enum, struct, and record types can be bound to slots.
-- Unbound slots (no active `with-type-slot` override) are treated as `:dynamic` (no type checking, no error).
-- `with-type-slot` bindings are scoped — they do not persist outside the body.
+- Configuration values must be `:dynamic` or a full `namespace/definition` path that exists after modules are loaded.
+- An unbound slot currently falls back to `:dynamic`; bind it explicitly when static checking is expected.
+- `:dynamic` is an explicit opt-out for an entry that intentionally disables the slot check.
+- The slot name is currently project-wide within one compilation. Libraries should choose stable, specific names to avoid accidental collisions.
+
+Inspect and remove bindings with:
+
+```bash
+cr config type-slots
+cr config rm-type-slot :dispatch-op
+```
+
+### Compatibility Form
+
+`with-type-slot (:name TypeExpr) body...` remains available for older projects and local compatibility. It is a compile-time form and is always erased before runtime/code generation; one body, multiple bodies, and an explicit `do` have the same semantics. New application entry points should prefer `:type-slots`, which makes the build-wide choice visible and independent of lazy compilation order.
 
 ### Example: Detecting Wrong Dispatch Calls
 

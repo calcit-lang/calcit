@@ -1,16 +1,18 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tuple)
-  :configs $ {} (:init-fn |test-tuple.main/main!) (:reload-fn |test-tuple.main/reload!) (:version |0.0.0)
-    :modules $ []
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tuple) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-tuple.main/main!) (:mode :native) (:reload-fn 'test-tuple.main/reload!)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |test-tuple.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Result (:ok :number) (:err :string)
+            defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-        |main! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
               assert= (:: :parts |1 |23)
@@ -73,6 +75,7 @@
                   plain $ :: :plain 1
                 assert= nil $ &tuple:enum plain
           :examples $ []
+          :schema $ :: 'Dynamic
         |try-size $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)
@@ -83,9 +86,9 @@
                 (:dyn x y z) 4
                 _ :many
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
-              :args $ [] :dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-tuple.main $ :require

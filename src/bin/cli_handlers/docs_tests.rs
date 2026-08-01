@@ -25,8 +25,11 @@ fn agents_docs_default_to_the_version_matched_embedded_guide() {
 
   assert!(!document.refreshed);
   assert!(document.display_path.starts_with("embedded:docs/CalcitAgent.md@"));
-  assert!(document.content.contains("`edit schema` 和 `edit examples` 也遵循同一边界"));
-  assert!(document.content.contains("`quote |literal`"));
+  assert!(document.content.contains("是 **Cirru EDN 树形 Snapshot**"));
+  assert!(document.content.contains("x $ (f a)"));
+  assert!(document.content.contains("symbol leaf:    quote new-name"));
+  assert!(document.content.contains("cr cirru parse -e --validate"));
+  assert!(document.content.contains("cr docs search 'cursor'"));
 }
 
 #[test]
@@ -34,9 +37,10 @@ fn collect_check_md_module_paths_merges_entry_modules_with_cli_deps() {
   let root = unique_temp_dir("check-md-modules");
   let entry = root.join("mini.cirru");
   let content = r#"{} (:package |mini)
-  :configs $ {} (:init-fn |mini/main!) (:reload-fn |mini/main!) (:version |0.0.0)
-    :modules $ [] |respo.calcit/ |memof/
+  :version |0.0.0
   :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |mini/main!) (:reload-fn |mini/main!)
+      :modules $ [] |respo.calcit/ |memof/
   :files $ {}
     |mini $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)

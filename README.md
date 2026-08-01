@@ -31,20 +31,19 @@ Build and install with Rust:
 # get Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# get Calcit
-cargo install calcit
+# get Calcit user-facing tools
+cargo install calcit --bin cr --bin caps
 ```
 
 Installed binaries:
 
-- `calcit`, the runtime and js compiler
-- `cr-wasm`, standalone WASM codegen tool
+- `cr`, the runtime and JS compiler
 - `caps`, for downloading dependencies declared in `deps.cirru`
 
-When installing from source, explicitly include both runners:
+When installing from source, install the same public tools:
 
 ```bash
-cargo install --path . --bin cr --bin cr-wasm --bin caps
+cargo install --path . --bin cr --bin caps
 ```
 
 To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/setup-cr).
@@ -140,8 +139,9 @@ Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`.
 To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 
 ```cirru
-:configs $ {}
-  :modules $ [] |memof/calcit.cirru |lilac/
+:entries $ {}
+  :default $ {}
+    :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
 Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`,
@@ -163,9 +163,9 @@ cargo run --bin cr -- calcit/test.cirru js && yarn try-js
 # run snippet
 cargo run --bin cr -- eval 'range 100'
 
-cr calcit.cirru ir # compiles intermediate representation into program-ir.cirru
-
-cr-wasm calcit/test-wasm.cirru # compile standalone wasm target to js-out/program.wasm
+# internal compiler/WASM validation when working on this repository
+cargo run --bin cr -- calcit/test.cirru ir
+yarn try-wasm
 ```
 
 For repository development, the usual validation flow is:
@@ -184,7 +184,7 @@ yarn check-all
 
 Other tools:
 
-- [Error Viewer](https://github.com/calcit-lang/calcit-error-viewer) for displaying `.calcit-error.cirru`
+- [Error Viewer](https://github.com/calcit-lang/calcit-error-viewer) for displaying `.calcit/error.cirru`
 - [IR Viewer](https://github.com/calcit-lang/calcit-ir-viewer) for rendering `program-ir.cirru`
 
 Some resources:

@@ -1,8 +1,7 @@
 /target
 
 calcit/.compact-inc.cirru
-.calcit-error.cirru
-.calcit-cursor.cirru
+.calcit/
 
 js-out/
 
@@ -28,7 +27,6 @@ demos/
 
 .yarn
 
-.calcit-snippets/
 
 .tmp-profiles/
 

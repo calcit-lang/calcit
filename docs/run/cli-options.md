@@ -14,7 +14,6 @@ aliases:
 entry_for:
   - "cr -w"
   - "cr js -w"
-  - "cr ir -w"
   - "cr --help"
   - "cr --reload-fn"
 ---
@@ -25,7 +24,7 @@ entry_for:
 cr --help
 ```
 
-Quick note: `cr edit format` rewrites the target snapshot using canonical serialization without changing semantics. It also normalizes legacy namespace entries that were previously serialized with `CodeEntry` into the current `NsEntry` shape.
+Quick note: `cr edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. It normalizes legacy namespace records and top-level `:configs`, and rewrites legacy schema type tags such as `:string` and `:ref` to quoted symbols such as `'String` and `'Ref` only in known type positions. Ordinary tag data stays unchanged. It then emits recoverable stderr advisories for legacy filenames, legacy `:any`, and unresolved dynamic type debt. Use `cr analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
 
 ## Detailed Option Descriptions
 
@@ -100,12 +99,20 @@ cr --reload-libs
 
 ### Config Entry (--entry)
 
-Use specific config entry from `calcit.cirru` (legacy filename: `compact.cirru`):
+Use a specific entry from `calcit.cirru` (legacy filename: `compact.cirru`). Without this option Calcit selects `entries.default`; the selected entry's `:mode` chooses native execution or JS emission:
 
 ```bash
 cr --entry test
 cr --entry production
 ```
+
+```cirru.no-check
+:entries $ {}
+  :default $ {} (:mode :js) (:init-fn 'app.main/main!) (:reload-fn 'app.main/reload!)
+  :test $ {} (:mode :native) (:init-fn 'app.test/main!) (:reload-fn 'app.test/reload!)
+```
+
+The explicit `js` subcommand remains a compatibility/debug override. Prefer configuring `:mode` so the same entry is invoked consistently by developers and CI.
 
 ### Asset Watching (--watch-dir)
 
@@ -128,13 +135,6 @@ cr js --emit-path dist/
 # JS watch mode
 cr js -w --emit-path dist/
 
-# IR watch mode
-cr ir -w
-
-# WASM codegen (experimental, numeric subset only)
-cr-wasm
-cr-wasm demos/wasm-demo.cirru
-
 # Testing single run
 cr --init-fn app.test/run-tests!
 
@@ -145,18 +145,7 @@ cr --reload-libs
 cr --disable-stack
 ```
 
-### WASM Codegen
-
-Generate WAT (WebAssembly Text format) for pure numeric functions:
-
-```bash
-cr-wasm                          # compile init namespace to wasm binary
-cr-wasm demos/wasm-demo.cirru    # compile specific file
-```
-
-Output is written to `js-out/program.wat`. Only a subset of Calcit is supported (numbers, `if`, `let`, arithmetic, comparisons, `recur`, function calls). Unsupported functions are skipped with a warning.
-
-See [WASM Codegen](../wasm-codegen.md) for full details and supported features.
+`cr ir` emits an internal representation for compiler debugging. Ordinary application development and CI do not need it; inspect `cr ir --help` only when debugging that layer.
 
 ## Markdown code checking
 

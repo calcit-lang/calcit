@@ -42,11 +42,11 @@ The `edit` command handles high-level operations on namespaces and definitions.
 cr edit format
 ```
 
-This command also rewrites older namespace records into the canonical `NsEntry` snapshot shape.
+This command also rewrites older namespace records and top-level `:configs` into canonical shapes. It succeeds after recoverable migrations, while stderr identifies `W_LEGACY_CONFIG`, `W_LEGACY_SNAPSHOT_NAME`, `W_LEGACY_ANY`, or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete types; follow dynamic warnings with `cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved`.
 
 ### Persistent Tree Cursor
 
-For a sequence of edits in one complex expression, `cr cursor` stores the active tree selection in `.calcit-cursor.cirru` next to the snapshot. The file is Cirru EDN local state and does not become part of the source snapshot:
+For a sequence of edits in one complex expression, `cr cursor` stores the active tree selection in `.calcit/cursor.cirru` next to the snapshot. `.calcit/` is the shared project-local state directory for the cursor, recent error stack, snippets, and other bounded local artifacts; it does not become part of the source snapshot:
 
 ```bash
 cr calcit.cirru cursor set app.main/render! --path @3.2.1
@@ -62,6 +62,13 @@ cr calcit.cirru cursor backward --count 5
 cr calcit.cirru cursor back --count 4
 cr calcit.cirru cursor push
 cr calcit.cirru cursor pop
+cr calcit.cirru cursor anchor
+cr calcit.cirru cursor region
+cr calcit.cirru cursor clear-anchor
+cr calcit.cirru cursor mark render-start
+cr calcit.cirru cursor goto render-start
+cr calcit.cirru cursor marks
+cr calcit.cirru cursor rm-mark render-start
 ```
 
 Definition-oriented `query`, `tree`, and `edit` commands accept `@cursor` as their target. Path-based commands also accept it as the path, so the current definition and selection do not need to be repeated:
@@ -83,7 +90,7 @@ For the most common mutations, `cursor apply` infers both the definition target 
 cr calcit.cirru cursor apply swap-next
 cr calcit.cirru cursor apply replace --code 'quote $ render-list items'
 cr calcit.cirru cursor apply wrap --code 'quote $ when visible? self'
-cr calcit.cirru cursor apply insert-after --file .calcit-snippets/branch.cirru
+cr calcit.cirru cursor apply insert-after --file .calcit/snippets/branch.cirru
 ```
 
 `cursor apply unwrap` splices every child of the selected list into its parent. It is not necessarily the inverse of a wrapper template containing extra syntax such as `quote $ do self`; use `raise` when the intent is to replace a parent with one selected child.
@@ -115,6 +122,17 @@ cr calcit.cirru cursor pop        # restore that explicit location
 
 `cursor back` rewinds only navigation state; it is not source undo. Parallel agents should use separate worktrees or Snapshots because the sidecar has one active cursor and does not coordinate concurrent source writes.
 
+For a temporary contiguous sibling range, set one anchor and move the active cursor to the other endpoint. `cursor region` reparses both saved positions, requires the same definition and parent, normalizes either direction, and displays the selected trees without changing their real paths. The first version deliberately does not make single-expression `copy` or `cut` operate on the region implicitly:
+
+```bash
+cr calcit.cirru cursor anchor
+cr calcit.cirru cursor next --count 3
+cr calcit.cirru cursor region --format json
+cr calcit.cirru cursor clear-anchor
+```
+
+Named marks are bounded location bookmarks, not additional active cursors. At most 16 are stored, and each contains only target/path/revision/fingerprint. Use them for repeated cross-definition movement; use `push/pop` for a short detour.
+
 The first Paredit-style moves operate directly on the active selection:
 
 ```bash
@@ -136,11 +154,13 @@ cr calcit.cirru query search-expr 'map items' \
   --filter app.main/render! --set-cursor 1 --format json
 cr calcit.cirru query search state --start-path @cursor --set-cursor 0
 cr calcit.cirru query search-expr 'div $ {}' --start-path @cursor
+cr calcit.cirru query next
+cr calcit.cirru query prev
 ```
 
-`--filter @cursor` searches the active definition. `--start-path @cursor` further restricts either leaf or expression search to the selected subtree and automatically infers the definition filter; a conflicting explicit filter is rejected. The cursor confirmation is written to stderr, so JSON stdout remains one parseable object. Search results from configured dependencies remain readable, but cannot become the editable project cursor unless that definition also belongs to the current snapshot.
+`--filter @cursor` searches the active definition. `--start-path @cursor` further restricts either leaf or expression search to the selected subtree and automatically infers the definition filter; a conflicting explicit filter is rejected. The cursor confirmation is written to stderr, so JSON stdout remains one parseable object. Search results from configured dependencies remain readable, but cannot become the editable project cursor unless that definition also belongs to the current snapshot. A successful `--set-cursor` saves only the query arguments, selected index, and snapshot revision. `query next/prev` reruns that query and moves to the adjacent result; it never persists the full result list. If the snapshot changed, it rejects the stale index and asks for an explicit search selection instead of risking a reordered match.
 
-Its clipboard stores a quoted Cirru tree directly in `.calcit-cursor.cirru`, so code never round-trips through JSON or escaped text:
+Its clipboard stores a quoted Cirru tree directly in `.calcit/cursor.cirru`, so code never round-trips through JSON or escaped text:
 
 ```bash
 cr calcit.cirru cursor copy
@@ -150,7 +170,7 @@ cr calcit.cirru cursor paste --at before
 cr calcit.cirru cursor clear-clipboard
 ```
 
-`cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Both commands stage Snapshot and sidecar output before committing: cut persists the recoverable clipboard first, while paste reports explicitly if the Snapshot succeeded but cursor state did not, so callers must not retry that partial-success case blindly. Cursor schema v3 keeps full Cirru only in the clipboard, not in every history/stack entry. Add `.calcit-cursor.cirru` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule.
+`cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Both commands stage Snapshot and sidecar output before committing: cut persists the recoverable clipboard first, while paste reports explicitly if the Snapshot succeeded but cursor state did not, so callers must not retry that partial-success case blindly. Cursor schema v4 keeps full Cirru only in the clipboard, not in history, stack, anchor, marks, or last-query. History, stack, and marks are bounded, and the whole file has a 64 KiB hard limit. Add `.calcit/` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule. Existing `.calcit-cursor.cirru` is moved to the new path on first read, without dual writes.
 
 Use `cr calcit.cirru cursor clear` to remove the local selection and clipboard together. Transaction child operations deliberately do not mutate the real cursor file; after a committed transaction, the parent command revalidates or uniquely relocates the cursor against the final snapshot and warns if manual recovery is required.
 
@@ -252,8 +272,8 @@ cr tree show app.main/main!
 `search-replace` is the safest way to modify a specific node by its content:
 
 ```bash
-# Replace '1' with '10' inside the definition
-cr tree search-replace app.main/main! --pattern '1' --code 'quote |10'
+# Replace numeric leaf '1' with '10' inside the definition
+cr tree search-replace app.main/main! --pattern '1' --code 'quote 10'
 ```
 
 ### Path-based Operations
@@ -262,7 +282,7 @@ You can use numeric paths to locate deep nodes:
 
 ```bash
 # Replace the node at path @1.2.0
-cr tree replace app.main/main! --path '@1.2.0' --code 'quote ((+ 1 2))'
+cr tree replace app.main/main! --path '@1.2.0' --code 'quote $ + 1 2'
 
 # Insert before a node
 cr tree insert-before app.main/main! --path '@1.0' --code 'quote (println |started)'
@@ -287,14 +307,15 @@ cr edit mv app.main/target-def --from '@1.0' --path '@2.0' --at after
 
 Editing commands support several ways to provide new code:
 
-- `--code 'code'`: Inline text (auto-detects JSON vs Cirru format).
-- `--file file.cirru`: Multi-line code from a file (recommended for complex structures).
-- **stdin**: Pipe or redirect input directly; auto-detects JSON vs Cirru.
+- `--code 'code'`: Inline JSON or quoted Cirru EDN.
+- `--file file.cirru`: Multi-line JSON or quoted Cirru EDN (recommended for complex structures).
+- **stdin**: Pipe or redirect JSON or quoted Cirru EDN directly.
 
 For Cirru input, current CLI expects **Cirru EDN with `quote` prefix**:
 
-- `--code 'quote |leaf'`
-- `--code 'quote (expr ...)'`
+- symbol leaf: `--code 'quote leaf'`
+- string leaf: `--code 'quote |text'`
+- expression: `--code 'quote $ expr ...'` or `--code 'quote (expr ...)'`
 - stdin / `--file` likewise use `quote ...`
 - only JSON array input can be passed without `quote`
 

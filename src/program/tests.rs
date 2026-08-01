@@ -7,6 +7,133 @@ use std::sync::{LazyLock, Mutex};
 
 static PROGRAM_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+fn cirru_leaf(value: &str) -> Cirru {
+  Cirru::Leaf(value.into())
+}
+
+fn cirru_list(items: Vec<Cirru>) -> Cirru {
+  Cirru::List(items)
+}
+
+fn import_rule(source: &str, kind: &str, target: Cirru) -> Cirru {
+  cirru_list(vec![cirru_leaf(source), cirru_leaf(kind), target])
+}
+
+#[test]
+fn import_rule_validation_rejects_short_rules_without_panicking() {
+  let error =
+    validate_import_rules(&[cirru_list(vec![cirru_leaf("audit.invalid")])]).expect_err("short import rule should be rejected");
+
+  assert!(error.contains("exactly 3 items"), "error: {error}");
+  assert!(error.contains("import rule 1"), "error: {error}");
+}
+
+#[test]
+fn import_rule_validation_reports_unknown_rule_kind() {
+  let error = validate_import_rules(&[import_rule("audit.lib", ":rename", cirru_leaf("lib"))])
+    .expect_err("unknown import rule kind should be rejected");
+
+  assert!(error.contains("unknown import rule kind `:rename`"), "error: {error}");
+}
+
+#[test]
+fn import_rule_validation_warns_for_duplicate_local_bindings() {
+  let rules = [
+    import_rule("audit.one", ":as", cirru_leaf("shared")),
+    import_rule("audit.two", ":as", cirru_leaf("shared")),
+  ];
+  let warnings = validate_import_rules(&rules).expect("duplicate local bindings should remain executable");
+
+  assert_eq!(warnings.len(), 1);
+  assert!(
+    warnings[0].contains("duplicate import binding `shared`"),
+    "warning: {}",
+    warnings[0]
+  );
+  assert!(warnings[0].contains("rule 2 takes precedence"), "warning: {}", warnings[0]);
+}
+
+#[test]
+fn import_rule_validation_warns_for_duplicate_refer_within_one_rule() {
+  let rules = [import_rule(
+    "audit.math",
+    ":refer",
+    cirru_list(vec![cirru_leaf("[]"), cirru_leaf("add"), cirru_leaf("add")]),
+  )];
+  let warnings = validate_import_rules(&rules).expect("duplicate refer in one rule should remain executable");
+
+  assert_eq!(warnings.len(), 1);
+  assert!(
+    warnings[0].contains("duplicate import binding `add` within rule 1"),
+    "warning: {}",
+    warnings[0]
+  );
+  assert!(warnings[0].contains("takes precedence"), "warning: {}", warnings[0]);
+}
+
+#[test]
+fn import_rule_validation_accepts_supported_rule_kinds() {
+  let rules = [
+    import_rule("audit.lib", ":as", cirru_leaf("lib")),
+    import_rule(
+      "audit.math",
+      ":refer",
+      cirru_list(vec![cirru_leaf("[]"), cirru_leaf("add"), cirru_leaf("subtract")]),
+    ),
+    import_rule("|chalk", ":default", cirru_leaf("chalk")),
+  ];
+
+  assert!(
+    validate_import_rules(&rules)
+      .expect("supported import rules should pass validation")
+      .is_empty()
+  );
+}
+
+#[test]
+fn duplicate_import_binding_uses_the_later_rule() {
+  let first = import_rule("audit.one", ":as", cirru_leaf("shared"));
+  let second = import_rule("audit.two", ":as", cirru_leaf("shared"));
+  let ns_form = cirru_list(vec![
+    cirru_leaf("ns"),
+    cirru_leaf("app.main"),
+    cirru_list(vec![cirru_leaf(":require"), first, second]),
+  ]);
+
+  let imports = extract_import_map(&ns_form, "app.main").expect("duplicate imports should remain executable");
+  assert_eq!(
+    imports.get("shared").map(|rule| rule.as_ref()),
+    Some(&ImportRule::NsAs(Arc::from("audit.two")))
+  );
+}
+
+#[test]
+fn namespace_validation_rejects_leaf_without_panicking() {
+  let error = extract_import_map(&cirru_leaf("app.main"), "app.main").expect_err("leaf namespace form should be rejected");
+
+  assert!(error.contains("invalid ns form in 'app.main'"), "error: {error}");
+}
+
+#[test]
+fn namespace_validation_rejects_unknown_clause() {
+  let ns_form = cirru_list(vec![
+    cirru_leaf("ns"),
+    cirru_leaf("app.main"),
+    cirru_list(vec![cirru_leaf(":unknown")]),
+  ]);
+  let error = extract_import_map(&ns_form, "app.main").expect_err("unknown namespace clause should be rejected");
+
+  assert!(error.contains("expected `:require`"), "error: {error}");
+}
+
+#[test]
+fn namespace_validation_accepts_legacy_colon_ns_form() {
+  let ns_form = cirru_list(vec![cirru_leaf(":ns"), cirru_leaf("app.main")]);
+
+  let imports = extract_import_map(&ns_form, "app.main").expect("legacy :ns form should remain compatible");
+  assert!(imports.is_empty());
+}
+
 fn lock_program_test_state() -> std::sync::MutexGuard<'static, ()> {
   PROGRAM_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
 }

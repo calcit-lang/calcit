@@ -168,6 +168,34 @@ For multiple constraints on the same variable, use a list value:
 
 Do not use the old tuple form like `:where $ [] (:: 'Show 'T)`.
 
+## Keep polymorphic relationships visible
+
+`:dynamic` means that static checking has stopped at that slot. Repeating it in an argument and return position does not say that both positions have the same type:
+
+```cirru.no-run
+; loses the input/output relationship
+:: :fn $ {}
+  :args $ [] :dynamic
+  :return :dynamic
+
+; preserves the relationship at every call site
+:: :fn $ {}
+  :generics $ [] 'T
+  :args $ [] 'T
+  :return 'T
+```
+
+Use a type variable for identity-like relationships, add `:where` when that variable only needs a capability, and keep type arguments on containers such as `:: :list 'T` and `:: :map 'K 'V`. Use a named enum for a finite set of alternatives. Reserve `:dynamic` for boundaries whose shape is genuinely open, such as unvalidated FFI input. `:any` is only a legacy spelling of `:dynamic`, not another polymorphism mechanism.
+
+Agents can check how much information survives without running the program:
+
+```bash
+cr analyze check-types --summary-only
+cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only
+```
+
+If the summary reports debt, rerun `weak-types` without `--summary-only` and scope it with `--ns` or `--ns-prefix`. Each occurrence explains whether it affects generic substitution, callback checking, container element propagation, or compile-time method specialization.
+
 ## Built-in traits
 
 Core types provide built-in trait implementations (e.g. `Show`, `Eq`, `Compare`, `Add`, `Len`, `Mappable`). These are registered by the runtime, so values like numbers, strings, lists, maps, and records already satisfy common traits.

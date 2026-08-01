@@ -16,14 +16,14 @@ const scenarios = [
     },
   },
   {
-    name: "static any contract",
+    name: "legacy any alias",
     args: ["calcit/test.cirru", "query", "type", ":any", "--format", "json"],
     check(result) {
-      if (result.command !== "query.type" || result.data.canonical_type !== ":any") {
-        throw new Error("query.type did not preserve the static :any contract");
+      if (result.command !== "query.type" || result.data.canonical_type !== "'Dynamic") {
+        throw new Error("query.type did not canonicalize legacy :any to 'Dynamic");
       }
-      if (!Array.isArray(result.data.methods) || result.data.methods.length !== 0 || result.diagnostics.length !== 0) {
-        throw new Error(":any incorrectly exposed concrete methods or diagnostics");
+      if (result.data.methods !== null || result.diagnostics[0]?.code !== "W_LEGACY_ANY_ALIAS") {
+        throw new Error(":any did not preserve dynamic dispatch semantics and migration guidance");
       }
     },
   },
@@ -94,7 +94,7 @@ const scenarios = [
       if (result.schema_version !== 1 || result.command !== "query.type-at") {
         throw new Error("unexpected query.type-at envelope");
       }
-      if (result.data.inferred_type !== ":number" || result.data.expected_type !== ":number") {
+      if (result.data.inferred_type !== "'Number" || result.data.expected_type !== "'Number") {
         throw new Error("type-at lost inferred or expected type evidence");
       }
       if (!result.data.bindings.some((binding) => binding.name === "p")) {
@@ -196,10 +196,10 @@ const scenarios = [
       ) {
         throw new Error("query.schema JSON envelope is incorrect");
       }
-      if (result.data.canonical_schema !== ":: :ref :number") {
+      if (result.data.canonical_schema !== ":: 'Ref 'Number") {
         throw new Error("parameterized value schema was not preserved");
       }
-      if (JSON.stringify(result.data.tree) !== '["::",":ref",":number"]') {
+      if (JSON.stringify(result.data.tree) !== '["::","\'Ref","\'Number"]') {
         throw new Error("parameterized value schema tree is incorrect");
       }
     },
@@ -224,6 +224,9 @@ const scenarios = [
       if (!result.data.definitions.every((definition) => definition.coverage === "none")) {
         throw new Error("check-types --only filter was not preserved");
       }
+      if (typeof result.data.summary.polymorphism?.generic_definitions !== "number") {
+        throw new Error("check-types lost polymorphism evidence counts");
+      }
     },
   },
   {
@@ -247,8 +250,8 @@ const scenarios = [
       if (!occurrences.every((occurrence) => occurrence.intent === "intentional-js-ffi")) {
         throw new Error("weak-types --intent filter was not preserved");
       }
-      if (!occurrences.every((occurrence) => typeof occurrence.suggestion === "string")) {
-        throw new Error("weak-type occurrences lost actionable suggestions");
+      if (!occurrences.every((occurrence) => typeof occurrence.suggestion === "string" && typeof occurrence.impact === "string")) {
+        throw new Error("weak-type occurrences lost impact or actionable suggestions");
       }
     },
   },

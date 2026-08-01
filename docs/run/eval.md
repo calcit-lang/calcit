@@ -133,7 +133,7 @@ cr eval '-> (range 5) (map inc) (filter (fn (x) (> x 2)))'
 ### Error Diagnostics
 
 - Type warnings cause eval to fail (intentional safety feature)
-- Check `.calcit-error.cirru` for complete stack traces
+- Check `.calcit/error.cirru` for complete stack traces
 - Use `cr cirru parse-oneliner` to debug parse issues
 
 ### Query Examples

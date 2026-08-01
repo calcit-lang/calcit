@@ -225,6 +225,8 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
     QuerySubcommand::Config(_) => "shows project configuration".to_string(),
     QuerySubcommand::Error(_) => "shows recent build errors".to_string(),
     QuerySubcommand::Modules(_) => "lists loaded modules".to_string(),
+    QuerySubcommand::Next(_) => "recomputes the saved search and selects its next match".to_string(),
+    QuerySubcommand::Prev(_) => "recomputes the saved search and selects its previous match".to_string(),
     QuerySubcommand::HostProcs(opts) => {
       let mut desc = "lists host procedures (FFI)".to_string();
       if let Some(tag) = &opts.tag {
@@ -424,6 +426,13 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
     CursorSubcommand::Back(opts) => format!("rewinds {} recorded virtual cursor location(s)", opts.count),
     CursorSubcommand::Push(_) => "pushes the current cursor location onto its stack".to_string(),
     CursorSubcommand::Pop(_) => "restores the most recently pushed cursor location".to_string(),
+    CursorSubcommand::Anchor(_) => "sets the region anchor to the current cursor location".to_string(),
+    CursorSubcommand::ClearAnchor(_) => "clears the cursor region anchor".to_string(),
+    CursorSubcommand::Region(_) => "displays the sibling region between the anchor and cursor".to_string(),
+    CursorSubcommand::Mark(opts) => format!("saves the current cursor location as mark `{}`", opts.name),
+    CursorSubcommand::Goto(opts) => format!("moves the cursor to mark `{}`", opts.name),
+    CursorSubcommand::Marks(_) => "lists saved cursor marks".to_string(),
+    CursorSubcommand::RmMark(opts) => format!("removes cursor mark `{}`", opts.name),
     CursorSubcommand::Copy(_) => "copies the selected expression into the cursor clipboard".to_string(),
     CursorSubcommand::Cut(_) => "cuts the selected expression into the cursor clipboard".to_string(),
     CursorSubcommand::Paste(opts) => format!("pastes the cursor clipboard {} the selected expression", opts.at),
@@ -487,7 +496,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       None => format!("validates all code examples in namespace `{}`", opts.ns),
     },
     AnalyzeSubcommand::CheckTypes(opts) => {
-      let mut desc = "performs type checking".to_string();
+      let mut desc = "checks type coverage and reports gaps that can erase polymorphic relationships".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }
@@ -497,7 +506,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       desc
     }
     AnalyzeSubcommand::WeakTypes(opts) => {
-      let mut desc = "analyzes weak/untyped definitions".to_string();
+      let mut desc = "analyzes dynamic/untyped slots and explains their impact on inference and specialization".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }
@@ -553,7 +562,12 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
     QuerySubcommand::Defs(opts) => {
       echo_items!(tokens, pos "namespace" => &opts.namespace, opt "tag" => opts.tag.as_deref(); default "none")
     }
-    QuerySubcommand::Pkg(_) | QuerySubcommand::Config(_) | QuerySubcommand::Error(_) | QuerySubcommand::Modules(_) => {}
+    QuerySubcommand::Pkg(_)
+    | QuerySubcommand::Config(_)
+    | QuerySubcommand::Error(_)
+    | QuerySubcommand::Modules(_)
+    | QuerySubcommand::Next(_)
+    | QuerySubcommand::Prev(_) => {}
     QuerySubcommand::Def(opts) => echo_items!(
       tokens,
       pos "target" => &opts.target,
@@ -724,7 +738,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
   match &cmd.subcommand {
     AnalyzeSubcommand::CallGraph(opts) => echo_items!(
       tokens,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "0",
@@ -734,14 +748,14 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
     AnalyzeSubcommand::CallGraphDiff(opts) => echo_items!(
       tokens,
       pos "git-ref" => &opts.git_ref,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "0"
     ),
     AnalyzeSubcommand::CountCalls(opts) => echo_items!(
       tokens,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "format" => &opts.format; default "text",
@@ -776,7 +790,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
     ),
     AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
       tokens,
-      opt "root" => opts.root.as_deref(); default "config.init-fn",
+      opt "root" => opts.root.as_deref(); default "entries.default.init-fn",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "2",
@@ -926,6 +940,8 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     | CursorSubcommand::Parent(_)
     | CursorSubcommand::Push(_)
     | CursorSubcommand::Pop(_)
+    | CursorSubcommand::Anchor(_)
+    | CursorSubcommand::ClearAnchor(_)
     | CursorSubcommand::Copy(_)
     | CursorSubcommand::Cut(_)
     | CursorSubcommand::ClearClipboard(_)
@@ -933,6 +949,21 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     | CursorSubcommand::SlurpPrev(_)
     | CursorSubcommand::BarfLast(_)
     | CursorSubcommand::BarfFirst(_) => {}
+    CursorSubcommand::Region(opts) => {
+      echo_items!(tokens, value "format" => &opts.format; default "human")
+    }
+    CursorSubcommand::Marks(opts) => {
+      echo_items!(tokens, value "format" => &opts.format; default "human")
+    }
+    CursorSubcommand::Mark(opts) => {
+      echo_items!(tokens, pos "name" => &opts.name)
+    }
+    CursorSubcommand::Goto(opts) => {
+      echo_items!(tokens, pos "name" => &opts.name)
+    }
+    CursorSubcommand::RmMark(opts) => {
+      echo_items!(tokens, pos "name" => &opts.name)
+    }
     CursorSubcommand::Child(opts) => {
       if let Some(index) = opts.index {
         push_positional(tokens, "index", &index.to_string());
@@ -1052,6 +1083,8 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Usages(_) => "usages",
     QuerySubcommand::Search(_) => "search",
     QuerySubcommand::SearchExpr(_) => "search-expr",
+    QuerySubcommand::Next(_) => "next",
+    QuerySubcommand::Prev(_) => "prev",
     QuerySubcommand::Schema(_) => "schema",
     QuerySubcommand::Type(_) => "type",
     QuerySubcommand::TypeAt(_) => "type-at",
@@ -1169,6 +1202,13 @@ fn cursor_name(subcommand: &CursorSubcommand) -> &'static str {
     CursorSubcommand::Back(_) => "back",
     CursorSubcommand::Push(_) => "push",
     CursorSubcommand::Pop(_) => "pop",
+    CursorSubcommand::Anchor(_) => "anchor",
+    CursorSubcommand::ClearAnchor(_) => "clear-anchor",
+    CursorSubcommand::Region(_) => "region",
+    CursorSubcommand::Mark(_) => "mark",
+    CursorSubcommand::Goto(_) => "goto",
+    CursorSubcommand::Marks(_) => "marks",
+    CursorSubcommand::RmMark(_) => "rm-mark",
     CursorSubcommand::Copy(_) => "copy",
     CursorSubcommand::Cut(_) => "cut",
     CursorSubcommand::Paste(_) => "paste",
@@ -1189,10 +1229,13 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
   match subcommand {
     ConfigSubcommand::Show(_) => "show",
     ConfigSubcommand::Modules(_) => "modules",
+    ConfigSubcommand::TypeSlots(_) => "type-slots",
     ConfigSubcommand::Version(_) => "version",
     ConfigSubcommand::Set(_) => "set",
     ConfigSubcommand::AddModule(_) => "add-module",
     ConfigSubcommand::RmModule(_) => "rm-module",
+    ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
+    ConfigSubcommand::RmTypeSlot(_) => "rm-type-slot",
   }
 }
 
@@ -1200,6 +1243,7 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
   match &cmd.subcommand {
     ConfigSubcommand::Show(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
     ConfigSubcommand::Modules(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
+    ConfigSubcommand::TypeSlots(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
     ConfigSubcommand::Version(opts) => echo_items!(tokens, opt "value" => opts.value.as_deref(); default "none"),
     ConfigSubcommand::Set(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
@@ -1212,6 +1256,14 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
     ConfigSubcommand::RmModule(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
       echo_items!(tokens, pos "module_path" => &opts.module_path);
+    }
+    ConfigSubcommand::SetTypeSlot(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "slot" => &opts.slot, pos "type_path" => &opts.type_path);
+    }
+    ConfigSubcommand::RmTypeSlot(opts) => {
+      echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
+      echo_items!(tokens, pos "slot" => &opts.slot);
     }
   }
 }

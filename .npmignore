@@ -8,7 +8,7 @@ calcit/
 target/
 scripts/
 
-.calcit-error.cirru
+.calcit/
 yarn.lock
 profile_results.txt
 

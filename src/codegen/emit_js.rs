@@ -478,6 +478,7 @@ fn gen_call_code(
     }
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
+    Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),
     // &record:nth: with 3 args (record, idx, :field-tag), use record.get(tag) for JS
     // because JS CalcitRecord fields are sorted by tag.idx (registration order), not alphabetically.
     // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).

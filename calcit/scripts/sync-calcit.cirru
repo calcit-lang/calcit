@@ -1,19 +1,20 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |sync-calcit)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
-    :modules $ [] |bisection-key/
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |sync-calcit) (:version |0.0.1)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+      :modules $ [] |bisection-key/
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.") (:schema :dynamic)
+        |main! $ %{} :CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.")
           :code $ quote
             defn main! () $ let
-                Leaf $ defstruct Leaf (:at :number) (:by :string) (:text :string)
-                Expr $ defstruct Expr (:at :number) (:by :string) (:data :map)
-                CodeEntry $ defstruct CodeEntry (:code :dynamic) (:doc :string) (:examples :list)
-                NsEntry $ defstruct NsEntry (:code :dynamic) (:doc :string)
-                FileEntry $ defstruct FileEntry (:defs :map) (:ns :dynamic)
+                Leaf $ defstruct Leaf (:at 'Number) (:by 'String) (:text 'String)
+                Expr $ defstruct Expr (:at 'Number) (:by 'String) (:data 'Map)
+                CodeEntry $ defstruct CodeEntry (:code 'Dynamic) (:doc 'String) (:examples 'List)
+                NsEntry $ defstruct NsEntry (:code 'Dynamic) (:doc 'String)
+                FileEntry $ defstruct FileEntry (:defs 'Map) (:ns 'Dynamic)
                 code->detail $ fn (node now recur-fn)
                   let
                       data $ &cirru-quote:to-list node
@@ -101,16 +102,18 @@
                   assoc
                     assoc
                       assoc detailed :package $ get compact :package
-                      , :configs $ get compact :configs
+                      , :version $ get compact :version
                     , :entries $ get compact :entries
                   , :files all-files
               write-file calcit-path $ format-cirru-edn result
               println $ str-spaced |synced compact-path |to calcit-path
           :examples $ []
-        |reload! $ %{} :CodeEntry (:doc |) (:schema :dynamic)
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require

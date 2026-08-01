@@ -45,8 +45,8 @@ pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, brief_type_of_value, clear_type_slots,
-  pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot, resolve_type_slot,
-  value_matches_type_annotation, with_type_annotation_warning_context,
+  configure_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot,
+  resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
 };
 
 use compare::{

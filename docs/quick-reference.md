@@ -35,8 +35,6 @@ cr eval "echo |done"
 - `cr` - Run Calcit program (default: `calcit.cirru`, fallback: `compact.cirru`)
 - `cr eval "code"` - Evaluate code snippet
 - `cr js` - Generate JavaScript
-- `cr ir` - Generate IR representation
-- `cr-wasm` - Generate WASM (experimental, numeric subset)
 - `cr query ...` - Query definitions/usages/search
 - `cr docs ...` - Navigate calcit docs and installed module docs with `scopes -> list -> sections -> read`
 - `cr docs remote-libs ...` - Search package registry and read package README files

@@ -523,13 +523,16 @@ mod tests {
     let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String));
     assert_eq!(
       dump_type_annotation(&list_type),
-      Edn::tuple(Edn::tag("list"), vec![Edn::tag("string")])
+      Edn::tuple(Edn::Symbol(Arc::from("List")), vec![Edn::Symbol(Arc::from("String"))])
     );
 
     let map_type = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number));
     assert_eq!(
       dump_type_annotation(&map_type),
-      Edn::tuple(Edn::tag("map"), vec![Edn::tag("string"), Edn::tag("number")])
+      Edn::tuple(
+        Edn::Symbol(Arc::from("Map")),
+        vec![Edn::Symbol(Arc::from("String")), Edn::Symbol(Arc::from("Number"))],
+      )
     );
 
     let fn_type = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
@@ -544,10 +547,13 @@ mod tests {
     assert_eq!(
       dump_type_annotation(&fn_type),
       Edn::tuple(
-        Edn::tag("fn"),
+        Edn::Symbol(Arc::from("Fn")),
         vec![Edn::map_from_iter([
-          (Edn::tag("args"), Edn::List(cirru_edn::EdnListView(vec![Edn::tag("string")]))),
-          (Edn::tag("return"), Edn::tag("bool")),
+          (
+            Edn::tag("args"),
+            Edn::List(cirru_edn::EdnListView(vec![Edn::Symbol(Arc::from("String"))]))
+          ),
+          (Edn::tag("return"), Edn::Symbol(Arc::from("Bool"))),
         ])]
       )
     );

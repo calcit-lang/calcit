@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-07-26
+更新时间：2026-07-30
 
 ## 目录原则
 
@@ -21,7 +21,7 @@
 | `03-16-runtime-boundary-refactor-plan.md`           | Review-needed | 运行时边界重构方案。                                                                      |
 | `03-18-query-def-tree-show-chunked-display-plan.md` | Review-needed | query/tree show 分块展示方案。                                                            |
 | `04-13-call-arg-literal-rewrite-rfc.md`             | Active        | 调用参数字面量重写优化提案。                                                              |
-| `04-13-type-slot-mechanism-rfc.md`                  | Active        | Type slot 机制提案。                                                                      |
+| `04-13-type-slot-mechanism-rfc.md`                  | Partial       | Revision 3：已落地无条件擦除与 entry `:type-slots`；环境指纹和 namespaced identity 暂缓。 |
 | `04-15-match-syntax-rfc.md`                         | Active        | match 语法改进提案。                                                                      |
 | `04-15-type-directed-optimization-catalog.md`       | Active        | 基于 `&record:nth` 经验，系统梳理 Record/Tuple/Scope 等类型导向优化机会。                 |
 | `04-15-wasm-compilation-feasibility.md`             | Active        | WASM 编译三条路径（解释器→WASM / AOT 子集 / WASM GC）的可行性评估。                       |
@@ -38,7 +38,7 @@
 | `07-26-agent-docs-and-evaluation-rfc.md`            | Draft         | 结构化文档上下文、默认检索范围和 Agent 接口基准。                                                                        |
 | `07-28-git-module-store-rfc.md`                     | Draft         | 保持 `deps.cirru` 与 Git 模块路径，以 tag 为最佳实践并使用 pnpm 式全局目录存储；不引入 registry、lockfile、workspace 或多版本。 |
 | `07-28-project-tooling-contract-rfc.md`             | Draft         | 在既有 `cr` 子命令上补强单项目工具契约，保持 EDN 树形事实来源。                                                        |
-| `07-28-persistent-tree-cursor-rfc.md`               | Draft         | 项目本地虚拟 cursor、Cirru focus 展示、history/stack、结构化 clipboard、edit/tree path 迁移与 stale 防护。             |
+| `07-28-persistent-tree-cursor-rfc.md`               | Draft         | `.calcit/` 本地状态、虚拟 cursor、region/marks/last-query、结构化 clipboard 与 path 迁移。                            |
 
 ## 已执行的清理
 

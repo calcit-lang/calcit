@@ -388,7 +388,7 @@ impl TryFrom<Edn> for DetailedFileInSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetailedSnapshot {
   pub package: String,
-  pub configs: Edn,
+  pub version: String,
   pub entries: Edn,
   pub files: HashMap<String, DetailedFileInSnapshot>,
   /// Additional metadata for detailed snapshot
@@ -401,7 +401,7 @@ impl TryFrom<Edn> for DetailedSnapshot {
     match data {
       Edn::Record(record) => {
         let mut package = String::new();
-        let mut configs: Option<Edn> = None;
+        let mut version = String::new();
         let mut entries: Edn = Edn::Nil;
         let mut files = HashMap::new();
         let mut users: Edn = Edn::Nil;
@@ -413,8 +413,10 @@ impl TryFrom<Edn> for DetailedSnapshot {
                 package = pkg_str.to_string();
               }
             }
-            "configs" => {
-              configs = Some(value.to_owned());
+            "version" => {
+              if let Edn::Str(text) = value {
+                version = text.to_string();
+              }
             }
             "entries" => {
               entries = value.to_owned();
@@ -435,10 +437,9 @@ impl TryFrom<Edn> for DetailedSnapshot {
           }
         }
 
-        let configs = configs.ok_or("Missing configs field")?;
         Ok(DetailedSnapshot {
           package,
-          configs,
+          version,
           entries,
           files,
           users,
@@ -463,7 +464,7 @@ impl TryFrom<Edn> for DetailedSnapshot {
 
         Ok(DetailedSnapshot {
           package: data.get_or_nil("package").try_into()?,
-          configs: data.get_or_nil("configs"),
+          version: data.get_or_nil("version").try_into()?,
           entries: data.get_or_nil("entries"),
           files,
           users: data.get_or_nil("users"),
@@ -497,7 +498,7 @@ pub fn load_detailed_snapshot_data(data: &Edn, path: &str) -> Result<DetailedSna
 
   let s = DetailedSnapshot {
     package: pkg.to_string(),
-    configs: data.get_or_nil("configs"),
+    version: data.get_or_nil("version").try_into()?,
     entries: data.get_or_nil("entries"),
     files,
     users: data.get_or_nil("users"),

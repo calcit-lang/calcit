@@ -66,6 +66,7 @@ fn run_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
 
 fn main() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
+  calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
 
   cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;
 
@@ -234,24 +235,14 @@ fn main() -> Result<(), String> {
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, &input_path_str)?;
 
-    // config in entry will overwrite default configs
-    if let Some(entry) = cli_args.entry.to_owned() {
-      if snapshot.entries.contains_key(entry.as_str()) {
-        if !calcit::quiet_tool_output() {
-          println!("running entry: {entry}");
-        }
-        snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
-      } else {
-        return Err(format!(
-          "unknown entry `{}` in `{}`",
-          entry,
-          snapshot.entries.keys().map(|x| (*x).to_owned()).collect::<Vec<_>>().join("/")
-        ));
-      }
+    snapshot.select_entry(cli_args.entry.as_deref())?;
+    if cli_args.entry.is_some() && !calcit::quiet_tool_output() {
+      println!("running entry: {}", snapshot.active_entry_name());
     }
 
     // attach modules
-    for module_path in &snapshot.configs.modules {
+    let module_paths = snapshot.active_entry()?.modules.clone();
+    for module_path in &module_paths {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
         if snapshot.files.contains_key(k) {
@@ -261,8 +252,10 @@ fn main() -> Result<(), String> {
       }
     }
   }
-  let config_init = snapshot.configs.init_fn.to_string();
-  let config_reload = snapshot.configs.reload_fn.to_string();
+  let selected_entry = snapshot.active_entry()?.clone();
+  let configured_run_mode = selected_entry.mode;
+  let config_init = selected_entry.init_fn;
+  let config_reload = selected_entry.reload_fn;
   let init_fn = cli_args.init_fn.as_deref().unwrap_or(&config_init);
   let reload_fn = cli_args.reload_fn.as_deref().unwrap_or(&config_reload);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
@@ -309,10 +302,16 @@ fn main() -> Result<(), String> {
     run_check_only(&entries)?;
   }
 
+  let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
+
   let task = if check_only {
     run_check_only(&entries)
-  } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
-    if !js_options.watch {
+  } else if use_configured_js_mode || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(_))) {
+    let watch = match &cli_args.subcommand {
+      Some(CalcitCommand::EmitJs(options)) => options.watch,
+      _ => cli_args.watch,
+    };
+    if !watch {
       // `cr js` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
@@ -374,10 +373,14 @@ fn main() -> Result<(), String> {
   if !eval_once {
     runner::track::track_task_add();
     let args = cli_args.clone();
-    std::thread::spawn(move || watch_files(entries, args, assets_watch));
+    std::thread::spawn(move || watch_files(entries, args, assets_watch, configured_run_mode));
   }
   runner::track::exit_when_cleared();
   Ok(())
+}
+
+fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snapshot::SnapshotRunMode) -> bool {
+  matches!(subcommand, Some(CalcitCommand::EmitJs(_))) || (subcommand.is_none() && configured_run_mode == snapshot::SnapshotRunMode::Js)
 }
 
 fn run_js_escape(symbol: &str) -> Result<(), String> {
@@ -392,7 +395,12 @@ fn run_js_unescape(symbol: &str) -> Result<(), String> {
   Ok(())
 }
 
-pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_watch: Option<String>) {
+pub fn watch_files(
+  entries: ProgramEntries,
+  settings: ToplevelCalcit,
+  assets_watch: Option<String>,
+  configured_run_mode: snapshot::SnapshotRunMode,
+) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
   let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
@@ -433,7 +441,7 @@ pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_wat
           eprintln!("failed re-compiling, got empty inc file");
           continue;
         }
-        if let Err(e) = recall_program(&content, &entries, &settings) {
+        if let Err(e) = recall_program(&content, &entries, &settings, configured_run_mode) {
           eprintln!("error: {e}");
         };
       }
@@ -445,7 +453,12 @@ pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_wat
 
 // overwrite previous state
 
-fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCalcit) -> Result<(), String> {
+fn recall_program(
+  content: &str,
+  entries: &ProgramEntries,
+  settings: &ToplevelCalcit,
+  configured_run_mode: snapshot::SnapshotRunMode,
+) -> Result<(), String> {
   println!("\n-------- file change --------\n");
 
   // Steps:
@@ -507,7 +520,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   // Create a minimal snapshot for documentation lookup during incremental updates
   // In practice, this could be enhanced to maintain documentation state
 
-  let task = if let Some(CalcitCommand::EmitJs(_)) = settings.subcommand {
+  let task = if should_emit_js(&settings.subcommand, configured_run_mode) {
     run_codegen_with_timeout(entries, &settings.emit_path, false, settings.timeout, settings.verbose)
   } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
     run_codegen_with_timeout(entries, &settings.emit_path, true, settings.timeout, settings.verbose)
@@ -1022,6 +1035,19 @@ mod tests {
   use calcit::calcit::{CalcitTypeAnnotation, SchemaKind};
   use std::fs;
 
+  #[test]
+  fn configured_js_entry_controls_bare_invocation() {
+    assert!(should_emit_js(&None, snapshot::SnapshotRunMode::Js));
+    assert!(!should_emit_js(&None, snapshot::SnapshotRunMode::Native));
+    assert!(!should_emit_js(
+      &Some(CalcitCommand::Eval(cli_args::EvalCommand {
+        snippet: Some("1".to_owned()),
+        dep: vec![],
+      })),
+      snapshot::SnapshotRunMode::Js,
+    ));
+  }
+
   fn leaf(text: &str) -> Cirru {
     Cirru::Leaf(Arc::from(text))
   }
@@ -1129,7 +1155,7 @@ mod tests {
     assert_eq!(row.kind, type_coverage::DefKind::Fn);
     assert_eq!(row.level, type_coverage::CoverageLevel::Full);
     assert_eq!(row.params, vec!["arg0"]);
-    assert_eq!(row.return_type_hints, vec![":string"]);
+    assert_eq!(row.return_type_hints, vec!["'String"]);
   }
 
   #[test]
@@ -1205,7 +1231,47 @@ mod tests {
   }
 
   #[test]
-  fn type_coverage_treats_any_as_an_explicit_static_contract() {
+  fn type_coverage_skips_generic_and_where_declarations_as_struct_fields() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defstruct"),
+        leaf("ShownBox"),
+        list(vec![leaf("'T")]),
+        list(vec![list(vec![leaf("{}"), list(vec![leaf("'T"), leaf("Show")])])]),
+        list(vec![list(vec![leaf(":value"), leaf("'T")])]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "ShownBox", &entry);
+
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.generics, vec!["'T"]);
+    assert_eq!(row.where_bounds, vec!["('T Show)"]);
+  }
+
+  #[test]
+  fn type_coverage_does_not_treat_defimpl_root_schema_as_dynamic_debt() {
+    let entry = code_entry(
+      list(vec![
+        leaf("defimpl"),
+        leaf("ShowImpl"),
+        leaf("Show"),
+        list(vec![leaf(".show"), leaf("nil")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_code_entry("app.main", "ShowImpl", &entry);
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    let selected = std::collections::BTreeSet::from([type_coverage::WeakTypeKind::SchemaDynamic]);
+    assert!(type_coverage::analyze_weak_types_entry("app.main", "ShowImpl", &entry, &selected).is_none());
+  }
+
+  #[test]
+  fn type_coverage_treats_any_as_legacy_dynamic() {
     let entry = code_entry(
       list(vec![
         leaf("defstruct"),
@@ -1218,17 +1284,25 @@ mod tests {
     let row = type_coverage::analyze_code_entry("app.main", "Envelope", &entry);
 
     assert_eq!(row.kind, type_coverage::DefKind::Data);
-    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Partial);
+    let weak = type_coverage::analyze_weak_types_entry("app.main", "Envelope", &entry, &type_coverage::WeakTypeKind::all())
+      .expect("legacy :any must remain visible as dynamic debt");
     assert!(
-      type_coverage::analyze_weak_types_entry("app.main", "Envelope", &entry, &type_coverage::WeakTypeKind::all()).is_none(),
-      "an explicit :any contract must not be reported as unresolved dynamic"
+      weak
+        .occurrences
+        .iter()
+        .any(|occurrence| { occurrence.kind == type_coverage::WeakTypeKind::CodeDynamic && occurrence.detail.contains("legacy-any") })
     );
   }
 
   #[test]
   fn type_coverage_marks_dynamic_struct_fields_as_partial() {
     let entry = code_entry(
-      list(vec![leaf("defstruct"), leaf("Boxed"), list(vec![leaf(":value"), leaf(":dynamic")])]),
+      list(vec![
+        leaf("defstruct"),
+        leaf("Boxed"),
+        list(vec![list(vec![leaf(":value"), leaf(":dynamic")])]),
+      ]),
       CalcitTypeAnnotation::Dynamic,
     );
 
@@ -1491,6 +1565,9 @@ mod tests {
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
+    assert!(weak_value["data"]["definitions"][0]["occurrences"][0]["impact"].is_string());
+    assert_eq!(weak_value["diagnostics"][0]["code"], "W_DYNAMIC_TYPE_DEBT");
+    assert_eq!(check_value["diagnostics"][0]["code"], "W_TYPE_COVERAGE_GAPS");
 
     let mut check_summary_options = check_options.clone();
     check_summary_options.summary_only = true;

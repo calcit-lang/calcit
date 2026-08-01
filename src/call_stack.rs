@@ -270,8 +270,12 @@ pub fn display_stack_with_docs(
 
   let snapshot_edn = Edn::map_from_iter(snapshot_fields);
   let content = cirru_edn::format(&edn::compact_edn_for_display(&snapshot_edn, 0), true)?;
-  let _ = fs::write(ERROR_SNAPSHOT, content);
-  eprintln!("\nrun `cat {ERROR_SNAPSHOT}` to read stack details.");
+  let error_snapshot = crate::project_state::active_state_file(crate::project_state::ERROR_STATE_FILE);
+  if let Some(parent) = error_snapshot.parent() {
+    let _ = fs::create_dir_all(parent);
+  }
+  let _ = fs::write(&error_snapshot, content);
+  eprintln!("\nrun `cat {}` to read stack details.", error_snapshot.display());
   Ok(())
 }
 
@@ -282,8 +286,6 @@ fn root_ns(ns: &str) -> &str {
 fn is_calcit_ns(ns: &str) -> bool {
   ns == crate::calcit::CORE_NS || ns.starts_with("calcit.")
 }
-
-const ERROR_SNAPSHOT: &str = ".calcit-error.cirru";
 
 fn find_location_in_calcit(v: &Calcit) -> Option<NodeLocation> {
   match v {

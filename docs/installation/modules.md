@@ -20,8 +20,9 @@ Packages are managed with `caps` command, which wraps `git clone` and `git pull`
 Configurations inside runtime snapshot files (`calcit.cirru`, legacy `compact.cirru`):
 
 ```cirru
-:configs $ {}
-  :modules $ [] |memof/calcit.cirru |lilac/
+:entries $ {}
+  :default $ {}
+    :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
 Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`, i.e. `~/.config/calcit/modules/memof/calcit.cirru`.

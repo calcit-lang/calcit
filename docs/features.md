@@ -62,7 +62,6 @@ For detailed information about specific features:
 ## Compilation Targets
 
 - [JavaScript Codegen](run/cli-options.md#js-codegen-options) - Generate ES Modules from Calcit
-- [WASM Codegen](wasm-codegen.md) - Experimental compilation of numeric functions to WebAssembly
 
 ## Quick Find by Task
 
@@ -112,6 +111,5 @@ Calcit's static analysis provides:
 - **Lazy sequences** - Efficient processing of large datasets
 - **Optimized compilation** - JavaScript output with tree-shaking support
 - **Type-directed optimizations** - Compile-time rewrites for record field access/update when types are known (e.g., `&record:assoc` → `&record:assoc-at`)
-- **Experimental WASM codegen** - Compile pure numeric functions to [WebAssembly Text format](wasm-codegen.md)
 
 Calcit is designed to be familiar to Clojure developers while providing modern tooling, type safety, and excellent development experience.

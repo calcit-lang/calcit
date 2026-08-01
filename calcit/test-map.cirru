@@ -1,8 +1,9 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-map)
-  :configs $ {} (:init-fn |test-map.main/main!) (:reload-fn |test-map.main/reload!) (:version |0.0.0)
-    :modules $ [] |./util.cirru
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-map) (:version |0.0.0)
   :entries $ {}
+    :default $ {} (:description |) (:init-fn 'test-map.main/main!) (:mode :native) (:reload-fn 'test-map.main/reload!)
+      :modules $ [] |./util.cirru
+      :type-slots $ {}
   :files $ {}
     |test-map.main $ %{} :FileEntry
       :defs $ {}
@@ -10,8 +11,8 @@
           :code $ quote
             defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-diff $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -55,8 +56,8 @@
                   count $ nth triple2 2
                   , 3
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-get $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -78,8 +79,8 @@
                   fn (acc pair)
                     let[] (k v) pair $ &+ acc v
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -91,8 +92,8 @@
                 keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
                 #{} :a :b
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-map-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -104,8 +105,8 @@
               assert= ({,} :a 1 :b 2 :c 3)
                 {} (:a 1) (:b 2) (:c 3)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-maps $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -177,8 +178,8 @@
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -228,7 +229,7 @@
                     fn (entry)
                       [] (first entry)
                         + 10 $ last entry
-                  _ $ assert-type mapped :list
+                  _ $ assert-type mapped 'List
                 assert=
                   [] ([] :a 11) ([] :bbbb 12)
                   .sort-by mapped first
@@ -304,8 +305,8 @@
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-native-map-syntax $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -315,8 +316,8 @@
                   {} $ :a 1
                 quote $ &{} :a 1
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-pairs $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -354,8 +355,8 @@
                   fn (k v) (&> v 2)
                 {} (:c 3) (:d 4)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-select $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -381,8 +382,8 @@
                   [] :c :d
                 {} (:a 1) (:b 2)
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
         |test-shorthand $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -391,8 +392,8 @@
                   dict $ {} (:a 1)
                 assert= 1 dict.:a
           :examples $ []
-          :schema $ :: :fn
-            {} (:return :dynamic)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote

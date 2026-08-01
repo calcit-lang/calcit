@@ -29,8 +29,10 @@ static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
   /// Global type-slot registry: maps slot names to their bound type annotations.
-  /// A slot is declared via `deftype-slot` (value = None) and bound via `bind-type` (value = Some).
+  /// A slot is declared via `deftype-slot`; the optional value is retained for legacy snapshots.
   static TYPE_SLOTS: RefCell<HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
+  /// Entry-level type-slot bindings loaded from the selected `entries.<name>.type-slots` before preprocessing begins.
+  static ENTRY_TYPE_SLOTS: RefCell<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>> = RefCell::new(HashMap::new());
   /// Scoped type-slot overrides for `with-type-slot` blocks.
   /// Each entry is a stack; the top value shadows the base `TYPE_SLOTS` binding within the scope.
   static TYPE_SLOT_OVERRIDES: RefCell<HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
@@ -74,14 +76,50 @@ pub fn register_type_slot(name: Arc<str>) -> Result<(), String> {
   })
 }
 
+/// Replace entry-level type-slot bindings with a validated configuration map.
+/// Values are full `namespace/definition` paths, or `:dynamic` for an explicit opt-out.
+pub fn configure_entry_type_slots(bindings: &HashMap<String, String>) -> Result<(), String> {
+  let mut configured: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::with_capacity(bindings.len());
+  for (raw_name, raw_type_path) in bindings {
+    let name = raw_name.trim().trim_start_matches(':');
+    if name.is_empty() {
+      return Err("type slot name cannot be empty".to_owned());
+    }
+
+    let type_path = raw_type_path.trim();
+    let annotation = if matches!(type_path, ":dynamic" | "dynamic") {
+      crate::calcit::DYNAMIC_TYPE.clone()
+    } else {
+      let Some((ns, def)) = type_path.rsplit_once('/') else {
+        return Err(format!(
+          "type slot `{name}` expected a full `namespace/definition` type path, got `{type_path}`"
+        ));
+      };
+      if ns.is_empty() || def.is_empty() {
+        return Err(format!(
+          "type slot `{name}` expected a full `namespace/definition` type path, got `{type_path}`"
+        ));
+      }
+      Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(type_path), Arc::new(vec![])))
+    };
+    configured.insert(Arc::from(name), annotation);
+  }
+
+  ENTRY_TYPE_SLOTS.with(|slots| *slots.borrow_mut() = configured);
+  Ok(())
+}
+
 /// Look up the type bound to a slot.
-/// Overrides from `with-type-slot` take priority.
-/// Returns `None` if no `with-type-slot` override is active for this slot.
+/// Scoped `with-type-slot` overrides take priority, followed by the selected entry configuration.
 pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   // Check scoped overrides first (innermost wins).
   let override_val = TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow().get(name).and_then(|stack| stack.last().cloned()));
   if override_val.is_some() {
     return override_val;
+  }
+  let entry_value = ENTRY_TYPE_SLOTS.with(|slots| slots.borrow().get(name).cloned());
+  if entry_value.is_some() {
+    return entry_value;
   }
   TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
 }
@@ -110,6 +148,7 @@ pub fn pop_type_slot_override(name: &str) {
 #[allow(dead_code)]
 pub fn clear_type_slots() {
   TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
+  ENTRY_TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
   TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());
 }
 
@@ -383,16 +422,12 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  /// Whether this annotation is the explicit static top type `:any`.
-  /// Unlike `:dynamic`, it is a known contract and must not be treated as
-  /// missing type metadata.
-  pub fn is_static_any(&self) -> bool {
-    matches!(self, Self::Custom(value) if Self::custom_keyword_matches(value, "any"))
-  }
-
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
-      "any" => Some(Self::Custom(Arc::new(Calcit::tag("any")))),
+      // `:any` is a legacy spelling of `:dynamic`. Keep accepting it at input
+      // boundaries, but canonicalize immediately so downstream analysis cannot
+      // accidentally treat the two spellings as different contracts.
+      "any" => Some(Self::Dynamic),
       "bool" => Some(Self::Bool),
       "number" => Some(Self::Number),
       "string" => Some(Self::String),
@@ -414,7 +449,7 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn builtin_tag_name(&self) -> Option<&'static str> {
     match self {
-      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("any"),
+      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("dynamic"),
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),
       Self::String => Some("string"),
@@ -431,6 +466,78 @@ impl CalcitTypeAnnotation {
       Self::Unit => Some("unit"),
       Self::JsObject => Some("js-object"),
       _ => None,
+    }
+  }
+
+  /// Canonical schema spelling for built-in types. Snapshot EDN renders symbols
+  /// as quoted Cirru forms, so `String` becomes source-level `'String`.
+  ///
+  /// Lowercase tags remain accepted at every parsing boundary for compatibility,
+  /// but writers use these nominal-looking symbols to keep type syntax distinct
+  /// from ordinary keyword/tag data.
+  pub fn canonical_type_symbol_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches(':') {
+      "any" | "dynamic" | "Dynamic" => Some("Dynamic"),
+      "unit" | "Unit" => Some("Unit"),
+      "bool" | "Bool" => Some("Bool"),
+      "number" | "Number" => Some("Number"),
+      "string" | "String" => Some("String"),
+      "symbol" | "Symbol" => Some("Symbol"),
+      "tag" | "Tag" => Some("Tag"),
+      "list" | "List" => Some("List"),
+      "map" | "Map" => Some("Map"),
+      "set" | "Set" => Some("Set"),
+      "fn" | "Fn" => Some("Fn"),
+      "macro" | "Macro" => Some("Macro"),
+      "tuple" | "Tuple" => Some("Tuple"),
+      "ref" | "Ref" => Some("Ref"),
+      "buffer" | "Buffer" => Some("Buffer"),
+      "cirru-quote" | "CirruQuote" => Some("CirruQuote"),
+      "js-object" | "JsObject" => Some("JsObject"),
+      "optional" | "Optional" => Some("Optional"),
+      "&" | "variadic" | "Variadic" => Some("Variadic"),
+      "record" | "Record" => Some("Record"),
+      "struct" | "Struct" => Some("Struct"),
+      "enum" | "Enum" => Some("Enum"),
+      "trait" | "Trait" => Some("Trait"),
+      "impl" | "Impl" => Some("Impl"),
+      _ => None,
+    }
+  }
+
+  fn builtin_type_from_symbol_name(name: &str) -> Option<Self> {
+    match Self::canonical_type_symbol_name(name)? {
+      "Dynamic" => Some(Self::Dynamic),
+      "Unit" => Some(Self::Unit),
+      "Bool" => Some(Self::Bool),
+      "Number" => Some(Self::Number),
+      "String" => Some(Self::String),
+      "Symbol" => Some(Self::Symbol),
+      "Tag" => Some(Self::Tag),
+      "List" => Some(Self::List(DYNAMIC_TYPE.clone())),
+      "Map" => Some(Self::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone())),
+      "Set" => Some(Self::Set(DYNAMIC_TYPE.clone())),
+      "Fn" | "Macro" => Some(Self::DynFn),
+      "Tuple" => Some(Self::DynTuple),
+      "Ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
+      "Buffer" => Some(Self::Buffer),
+      "CirruQuote" => Some(Self::CirruQuote),
+      "JsObject" => Some(Self::JsObject),
+      "Record" | "Struct" | "Enum" | "Trait" | "Impl" => {
+        let legacy_name = name.trim_start_matches(':').to_ascii_lowercase();
+        Some(Self::Custom(Arc::new(Calcit::tag(&legacy_name))))
+      }
+      // These forms require a payload and are handled by the type-expression parser.
+      "Optional" | "Variadic" => None,
+      _ => None,
+    }
+  }
+
+  fn canonical_type_form_name(form: &Calcit) -> Option<&'static str> {
+    match form {
+      Calcit::Tag(tag) => Self::canonical_type_symbol_name(tag.ref_str()),
+      Calcit::Symbol { sym, .. } => Self::canonical_type_symbol_name(sym),
+      _ => Self::parse_type_var_form(form).and_then(|name| Self::canonical_type_symbol_name(&name)),
     }
   }
 
@@ -1108,16 +1215,20 @@ impl CalcitTypeAnnotation {
   /// Parse a schema [`Edn`] map value (as stored in [`crate::snapshot::CodeEntry::schema`])
   /// directly into a [`CalcitFnTypeAnnotation`], without going through a Cirru/Calcit roundtrip.
   ///
-  /// Accepts both a plain schema map and the wrapped top-level form `(:: :fn ({} ...))`
-  /// or `(:: :macro ({} ...))`.
+  /// Accepts both a plain schema map and the canonical wrapped form `(:: 'Fn ({} ...))`
+  /// or `(:: 'Macro ({} ...))`, plus legacy `:fn` / `:macro` tags.
   /// Returns `None` only when the input does not look like a function schema at all.
   pub fn parse_fn_schema_from_edn(schema: &Edn) -> Option<CalcitFnTypeAnnotation> {
     let mut wrapped_kind: Option<SchemaKind> = None;
     let map = match schema {
       Edn::Map(map) => map,
-      Edn::Tuple(view) if matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro")) => {
+      Edn::Tuple(view)
+        if matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
+          || matches!(view.tag.as_ref(), Edn::Symbol(name) if matches!(name.as_ref(), "Fn" | "Macro")) =>
+      {
         wrapped_kind = match view.tag.as_ref() {
           Edn::Tag(tag) if tag.ref_str() == "macro" => Some(SchemaKind::Macro),
+          Edn::Symbol(name) if name.as_ref() == "Macro" => Some(SchemaKind::Macro),
           _ => Some(SchemaKind::Fn),
         };
         match view.extra.first() {
@@ -1521,6 +1632,9 @@ impl CalcitTypeAnnotation {
     }
 
     if let Some(name) = Self::parse_type_var_form(form) {
+      if let Some(builtin) = Self::builtin_type_from_symbol_name(&name) {
+        return Arc::new(builtin);
+      }
       return if strict_named_refs && !Self::generics_contains(generics, &name) {
         Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])))
       } else {
@@ -1529,6 +1643,9 @@ impl CalcitTypeAnnotation {
     }
 
     if let Calcit::Symbol { sym, .. } = form {
+      if let Some(builtin) = Self::builtin_type_from_symbol_name(sym) {
+        return Arc::new(builtin);
+      }
       if sym.starts_with('\'') {
         let stripped = sym.trim_start_matches('\'');
         let n_quotes = sym.len() - stripped.len();
@@ -1616,8 +1733,70 @@ impl CalcitTypeAnnotation {
         }
       }
 
+      let base_name = Self::canonical_type_form_name(tuple.tag.as_ref());
       let base = Self::parse_type_annotation_form_inner(tuple.tag.as_ref(), generics, strict_named_refs);
       let args = tuple.extra.iter().map(parse_nested).collect::<Vec<_>>();
+      if let Some(name) = base_name {
+        if args.is_empty()
+          && matches!(
+            name,
+            "Dynamic"
+              | "Unit"
+              | "Bool"
+              | "Number"
+              | "String"
+              | "Symbol"
+              | "Tag"
+              | "List"
+              | "Map"
+              | "Set"
+              | "Fn"
+              | "Tuple"
+              | "Ref"
+              | "Buffer"
+              | "CirruQuote"
+              | "JsObject"
+              | "Record"
+              | "Struct"
+              | "Enum"
+              | "Trait"
+              | "Impl"
+          )
+        {
+          return base;
+        }
+        match name {
+          "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Optional(args[0].clone())),
+          "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
+          "List" => {
+            return Arc::new(CalcitTypeAnnotation::List(
+              args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+            ));
+          }
+          "Map" => {
+            return Arc::new(CalcitTypeAnnotation::Map(
+              args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+              args.get(1).cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+            ));
+          }
+          "Set" => {
+            return Arc::new(CalcitTypeAnnotation::Set(
+              args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+            ));
+          }
+          "Ref" => {
+            return Arc::new(CalcitTypeAnnotation::Ref(
+              args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+            ));
+          }
+          "Fn" if let Some(schema_form) = tuple.extra.first() => {
+            if let Some(parsed) = Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs) {
+              return parsed;
+            }
+          }
+          _ => {}
+        }
+      }
       match base.as_ref() {
         CalcitTypeAnnotation::Struct(struct_def, _) => {
           return Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(args)));
@@ -1771,12 +1950,74 @@ impl CalcitTypeAnnotation {
         }
 
         if let Some(base_form) = xs.get(1) {
+          let base_name = Self::canonical_type_form_name(base_form);
           let base = Self::parse_type_annotation_form_inner(base_form, generics, strict_named_refs);
           let args = xs
             .iter()
             .skip(2)
             .map(|item| Self::parse_type_annotation_form_inner(item, generics, strict_named_refs))
             .collect::<Vec<_>>();
+          if let Some(name) = base_name {
+            if args.is_empty()
+              && matches!(
+                name,
+                "Dynamic"
+                  | "Unit"
+                  | "Bool"
+                  | "Number"
+                  | "String"
+                  | "Symbol"
+                  | "Tag"
+                  | "List"
+                  | "Map"
+                  | "Set"
+                  | "Fn"
+                  | "Tuple"
+                  | "Ref"
+                  | "Buffer"
+                  | "CirruQuote"
+                  | "JsObject"
+                  | "Record"
+                  | "Struct"
+                  | "Enum"
+                  | "Trait"
+                  | "Impl"
+              )
+            {
+              return base;
+            }
+            match name {
+              "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Optional(args[0].clone())),
+              "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
+              "List" => {
+                return Arc::new(CalcitTypeAnnotation::List(
+                  args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+                ));
+              }
+              "Map" => {
+                return Arc::new(CalcitTypeAnnotation::Map(
+                  args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+                  args.get(1).cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+                ));
+              }
+              "Set" => {
+                return Arc::new(CalcitTypeAnnotation::Set(
+                  args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+                ));
+              }
+              "Ref" => {
+                return Arc::new(CalcitTypeAnnotation::Ref(
+                  args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
+                ));
+              }
+              "Fn" if let Some(schema_form) = xs.get(2) => {
+                if let Some(parsed) = Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs) {
+                  return parsed;
+                }
+              }
+              _ => {}
+            }
+          }
           match base.as_ref() {
             CalcitTypeAnnotation::Struct(struct_def, _) => {
               return Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(args)));
@@ -2164,7 +2405,10 @@ impl CalcitTypeAnnotation {
   pub(crate) fn matches_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
+      // Compatibility for annotations constructed by older embedders before
+      // `:any` was normalized during parsing. Alias semantics are symmetric.
       (_, Self::Custom(expected)) if Self::custom_keyword_matches(expected, "any") => true,
+      (Self::Custom(actual), _) if Self::custom_keyword_matches(actual, "any") => true,
       (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => true,
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == actual => true,
@@ -2578,17 +2822,18 @@ impl CalcitTypeAnnotation {
   pub fn to_type_edn(&self) -> Edn {
     match self {
       // Simple builtin scalars
-      Self::Dynamic => Edn::tag("dynamic"),
-      Self::Unit => Edn::tag("unit"),
-      Self::Bool => Edn::tag("bool"),
-      Self::Number => Edn::tag("number"),
-      Self::String => Edn::tag("string"),
-      Self::Symbol => Edn::tag("symbol"),
-      Self::Tag => Edn::tag("tag"),
-      Self::DynFn => Edn::tag("fn"),
-      Self::DynTuple => Edn::tag("tuple"),
-      Self::Buffer => Edn::tag("buffer"),
-      Self::CirruQuote => Edn::tag("cirru-quote"),
+      Self::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
+      Self::Unit => Edn::Symbol(Arc::from("Unit")),
+      Self::Bool => Edn::Symbol(Arc::from("Bool")),
+      Self::Number => Edn::Symbol(Arc::from("Number")),
+      Self::String => Edn::Symbol(Arc::from("String")),
+      Self::Symbol => Edn::Symbol(Arc::from("Symbol")),
+      Self::Tag => Edn::Symbol(Arc::from("Tag")),
+      Self::DynFn => Edn::Symbol(Arc::from("Fn")),
+      Self::DynTuple => Edn::Symbol(Arc::from("Tuple")),
+      Self::Buffer => Edn::Symbol(Arc::from("Buffer")),
+      Self::CirruQuote => Edn::Symbol(Arc::from("CirruQuote")),
+      Self::JsObject => Edn::Symbol(Arc::from("JsObject")),
       // TypeVar: source syntax uses `'T`, while Cirru EDN stores that as `Edn::Symbol("T")`.
       Self::TypeVar(name) => Edn::Symbol(Arc::from(name.trim_start_matches('\''))),
       Self::TypeRef(name, args) => {
@@ -2604,38 +2849,38 @@ impl CalcitTypeAnnotation {
       // Parameterized builtins – keep inner type if non-dynamic
       Self::List(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
-          Edn::tag("list")
+          Edn::Symbol(Arc::from("List"))
         } else {
-          Edn::tuple(Edn::tag("list"), vec![inner.to_type_edn()])
+          Edn::tuple(Edn::Symbol(Arc::from("List")), vec![inner.to_type_edn()])
         }
       }
       Self::Map(k, v) => {
         if matches!(k.as_ref(), Self::Dynamic) && matches!(v.as_ref(), Self::Dynamic) {
-          Edn::tag("map")
+          Edn::Symbol(Arc::from("Map"))
         } else {
-          Edn::tuple(Edn::tag("map"), vec![k.to_type_edn(), v.to_type_edn()])
+          Edn::tuple(Edn::Symbol(Arc::from("Map")), vec![k.to_type_edn(), v.to_type_edn()])
         }
       }
       Self::Set(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
-          Edn::tag("set")
+          Edn::Symbol(Arc::from("Set"))
         } else {
-          Edn::tuple(Edn::tag("set"), vec![inner.to_type_edn()])
+          Edn::tuple(Edn::Symbol(Arc::from("Set")), vec![inner.to_type_edn()])
         }
       }
       Self::Ref(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
-          Edn::tag("ref")
+          Edn::Symbol(Arc::from("Ref"))
         } else {
-          Edn::tuple(Edn::tag("ref"), vec![inner.to_type_edn()])
+          Edn::tuple(Edn::Symbol(Arc::from("Ref")), vec![inner.to_type_edn()])
         }
       }
-      Self::Optional(inner) => Edn::tuple(Edn::tag("optional"), vec![inner.to_type_edn()]),
-      Self::Variadic(inner) => Edn::tuple(Edn::tag("&"), vec![inner.to_type_edn()]),
-      Self::Fn(fn_annot) => Edn::tuple(Edn::tag("fn"), vec![fn_annot.to_inline_type_schema_edn()]),
+      Self::Optional(inner) => Edn::tuple(Edn::Symbol(Arc::from("Optional")), vec![inner.to_type_edn()]),
+      Self::Variadic(inner) => Edn::tuple(Edn::Symbol(Arc::from("Variadic")), vec![inner.to_type_edn()]),
+      Self::Fn(fn_annot) => Edn::tuple(Edn::Symbol(Arc::from("Fn")), vec![fn_annot.to_inline_type_schema_edn()]),
       Self::Struct(s, args) => {
         if args.is_empty() {
-          Edn::Tag(s.name.clone())
+          Edn::Symbol(Arc::from(s.name.ref_str()))
         } else {
           let mut items = vec![Edn::Symbol(Arc::from("::"))];
           let base_name = s.name.ref_str().trim_start_matches(':');
@@ -2646,16 +2891,24 @@ impl CalcitTypeAnnotation {
           Edn::List(EdnListView(items))
         }
       }
-      // Custom Calcit values – do a best-effort Calcit→Edn conversion
+      // Custom Calcit values – do a best-effort Calcit→Edn conversion. Older
+      // in-memory `:any` annotations are always written in canonical form.
+      Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Edn::Symbol(Arc::from("Dynamic")),
+      Self::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if Self::canonical_type_symbol_name(tag.ref_str()).is_some()) => {
+        let Calcit::Tag(tag) = value.as_ref() else { unreachable!() };
+        Edn::Symbol(Arc::from(
+          Self::canonical_type_symbol_name(tag.ref_str()).expect("known canonical type symbol"),
+        ))
+      }
       Self::Custom(value) => calcit_type_to_edn(value.as_ref()),
       // Enum / Trait variants – use the name as a symbol
-      Self::Enum(e, _) => Edn::Tag(e.name().clone()),
-      Self::Record(struct_def) => Edn::Tag(struct_def.name.clone()),
-      Self::Tuple(enum_def) => Edn::Tag(enum_def.name().clone()),
-      Self::Trait(trait_def) => Edn::Tag(trait_def.name.clone()),
+      Self::Enum(e, _) => Edn::Symbol(Arc::from(e.name().ref_str())),
+      Self::Record(struct_def) => Edn::Symbol(Arc::from(struct_def.name.ref_str())),
+      Self::Tuple(enum_def) => Edn::Symbol(Arc::from(enum_def.name().ref_str())),
+      Self::Trait(trait_def) => Edn::Symbol(Arc::from(trait_def.name.ref_str())),
       Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
       // Anything else falls back to dynamic
-      _ => Edn::tag("dynamic"),
+      _ => Edn::Symbol(Arc::from("Dynamic")),
     }
   }
 
@@ -3166,6 +3419,39 @@ mod tests {
   }
 
   #[test]
+  fn entry_type_slots_are_global_defaults_but_scoped_overrides_still_win() {
+    clear_type_slots();
+    let bindings = HashMap::from([("dispatch-op".to_owned(), "app.schema/Op".to_owned())]);
+    configure_entry_type_slots(&bindings).expect("configure entry type slots");
+
+    assert_eq!(
+      resolve_type_slot("dispatch-op"),
+      Some(Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("app.schema/Op"),
+        Arc::new(vec![])
+      )))
+    );
+
+    push_type_slot_override(Arc::from("dispatch-op"), Arc::new(CalcitTypeAnnotation::String));
+    assert_eq!(resolve_type_slot("dispatch-op"), Some(Arc::new(CalcitTypeAnnotation::String)));
+    pop_type_slot_override("dispatch-op");
+    assert!(matches!(
+      resolve_type_slot("dispatch-op").as_deref(),
+      Some(CalcitTypeAnnotation::TypeRef(path, _)) if path.as_ref() == "app.schema/Op"
+    ));
+    clear_type_slots();
+  }
+
+  #[test]
+  fn entry_type_slots_require_full_type_paths() {
+    clear_type_slots();
+    let bindings = HashMap::from([("dispatch-op".to_owned(), "Op".to_owned())]);
+    let error = configure_entry_type_slots(&bindings).expect_err("short type path should fail");
+    assert!(error.contains("namespace/definition"), "unexpected error: {error}");
+    assert!(resolve_type_slot("dispatch-op").is_none());
+  }
+
+  #[test]
   fn generic_map_type_ref_accepts_records_structurally() {
     // Records are field-name -> value, structurally map-like, so a proc typed
     // as accepting a generic "map" (e.g. `to-pairs`/`keys`) should not warn
@@ -3351,7 +3637,7 @@ mod tests {
     let Edn::Tuple(view) = &edn else {
       panic!("fn annotation should serialize as tuple, got {edn:?}");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "fn"));
+    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Fn"));
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("fn payload should be schema map: {edn:?}");
     };
@@ -3453,7 +3739,7 @@ mod tests {
       panic!("fn payload should be schema map: {edn:?}");
     };
     assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "macro"));
-    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "bool"));
+    assert!(matches!(map.tag_get("return"), Some(Edn::Symbol(name)) if name.as_ref() == "Bool"));
   }
 
   #[test]
@@ -3568,7 +3854,7 @@ mod tests {
     let Some(Edn::Map(where_map)) = map.tag_get("where") else {
       panic!("wrapped schema should contain where map");
     };
-    assert!(matches!(where_map.0.get(&Edn::Symbol(Arc::from("T"))), Some(Edn::Tag(tag)) if tag.ref_str() == "Show"));
+    assert!(matches!(where_map.0.get(&Edn::Symbol(Arc::from("T"))), Some(Edn::Symbol(name)) if name.as_ref() == "Show"));
   }
 
   #[test]
@@ -3611,8 +3897,8 @@ mod tests {
       panic!("multi trait where-bound should serialize as list");
     };
     assert_eq!(traits.0.len(), 2);
-    assert!(matches!(traits.0.first(), Some(Edn::Tag(tag)) if tag.ref_str() == "Show"));
-    assert!(matches!(traits.0.get(1), Some(Edn::Tag(tag)) if tag.ref_str() == "Eq"));
+    assert!(matches!(traits.0.first(), Some(Edn::Symbol(name)) if name.as_ref() == "Show"));
+    assert!(matches!(traits.0.get(1), Some(Edn::Symbol(name)) if name.as_ref() == "Eq"));
   }
 
   #[test]
@@ -3665,7 +3951,7 @@ mod tests {
       panic!("wrapped schema payload should be a map");
     };
     assert!(map.tag_get("kind").is_none(), "default fn kind should be omitted");
-    assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "tag"));
+    assert!(matches!(map.tag_get("rest"), Some(Edn::Symbol(name)) if name.as_ref() == "Tag"));
   }
 
   #[test]
@@ -3684,7 +3970,7 @@ mod tests {
     let Edn::Tuple(view) = edn else {
       panic!("wrapped schema should serialize as tuple");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro"));
+    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Macro"));
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
@@ -3693,7 +3979,7 @@ mod tests {
       "wrapped macro schema should omit redundant inner :kind"
     );
     assert!(map.tag_get("return").is_none(), "wrapped macro schema should omit return field");
-    assert!(matches!(map.tag_get("rest"), Some(Edn::Tag(tag)) if tag.ref_str() == "dynamic"));
+    assert!(matches!(map.tag_get("rest"), Some(Edn::Symbol(name)) if name.as_ref() == "Dynamic"));
   }
 
   #[test]
@@ -3715,28 +4001,47 @@ mod tests {
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
-    assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "record"));
+    assert!(matches!(map.tag_get("return"), Some(Edn::Symbol(name)) if name.as_ref() == "Record"));
   }
 
   #[test]
-  fn any_is_a_static_top_type_not_a_dynamic_alias() {
+  fn any_is_parsed_and_written_as_a_dynamic_alias() {
     let any = CalcitTypeAnnotation::from_tag_name("any");
     assert!(matches!(
       CalcitTypeAnnotation::from_tag_name("dynamic"),
       CalcitTypeAnnotation::Dynamic
     ));
-    assert!(matches!(any, CalcitTypeAnnotation::Custom(ref value) if CalcitTypeAnnotation::custom_keyword_matches(value, "any")));
+    assert!(matches!(any, CalcitTypeAnnotation::Dynamic));
     assert!(matches!(
       CalcitTypeAnnotation::from_calcit(&Calcit::Tag(EdnTag::from("any"))),
-      CalcitTypeAnnotation::Custom(ref value) if CalcitTypeAnnotation::custom_keyword_matches(value, "any")
+      CalcitTypeAnnotation::Dynamic
     ));
     assert!(CalcitTypeAnnotation::Number.matches_annotation(&any));
-    assert!(!any.matches_annotation(&CalcitTypeAnnotation::Number));
+    assert!(any.matches_annotation(&CalcitTypeAnnotation::Number));
+    assert_eq!(any.to_type_edn(), Edn::Symbol(Arc::from("Dynamic")));
 
     let list_of_numbers = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
     let list_of_any = CalcitTypeAnnotation::List(Arc::new(any));
     assert!(list_of_numbers.matches_annotation(&list_of_any));
-    assert!(!list_of_any.matches_annotation(&list_of_numbers));
+    assert!(list_of_any.matches_annotation(&list_of_numbers));
+  }
+
+  #[test]
+  fn canonical_symbol_schema_types_parse_like_legacy_tags() {
+    let legacy = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::tuple(Edn::tag("list"), vec![Edn::tag("string")]));
+    let canonical = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::tuple(
+      Edn::Symbol(Arc::from("List")),
+      vec![Edn::Symbol(Arc::from("String"))],
+    ));
+    assert_eq!(canonical, legacy);
+    assert_eq!(
+      canonical.to_type_edn(),
+      Edn::tuple(Edn::Symbol(Arc::from("List")), vec![Edn::Symbol(Arc::from("String"))])
+    );
+    assert!(matches!(
+      CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from("Dynamic"))).as_ref(),
+      CalcitTypeAnnotation::Dynamic
+    ));
   }
 
   #[test]
@@ -4168,10 +4473,14 @@ impl CalcitFnTypeAnnotation {
     let mut map = EdnMapView::default();
     for bound in self.where_bounds.iter() {
       let value = if bound.traits.len() == 1 {
-        Edn::Tag(bound.traits[0].name.clone())
+        Edn::Symbol(Arc::from(bound.traits[0].name.ref_str()))
       } else {
         Edn::List(EdnListView(
-          bound.traits.iter().map(|trait_def| Edn::Tag(trait_def.name.clone())).collect(),
+          bound
+            .traits
+            .iter()
+            .map(|trait_def| Edn::Symbol(Arc::from(trait_def.name.ref_str())))
+            .collect(),
         ))
       };
       map.insert(Edn::Symbol(bound.name.clone()), value);
@@ -4295,8 +4604,8 @@ impl CalcitFnTypeAnnotation {
     }
 
     let wrapped_tag = match self.fn_kind {
-      SchemaKind::Fn => Edn::tag("fn"),
-      SchemaKind::Macro => Edn::tag("macro"),
+      SchemaKind::Fn => Edn::Symbol(Arc::from("Fn")),
+      SchemaKind::Macro => Edn::Symbol(Arc::from("Macro")),
     };
 
     Edn::tuple(wrapped_tag, vec![Edn::Map(map)])
