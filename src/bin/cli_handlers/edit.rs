@@ -8,7 +8,7 @@
 //! - `--code <string>` - inline text (auto-detects JSON vs Cirru)
 //! - stdin - pipe or redirect input (auto-detects JSON vs Cirru)
 
-use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
+use calcit::calcit::DYNAMIC_TYPE;
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
   EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand,
@@ -19,7 +19,6 @@ use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
-  validate_schema_for_write,
 };
 use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
@@ -1437,27 +1436,8 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw)?);
 
-  validate_schema_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
-
-  // Primitive type tag leaf (e.g. --code 'quote :string') — store directly without going through fn-schema parsing.
-  if let Cirru::Leaf(tag) = &schema_payload {
-    let tag_name = tag.trim_start_matches(':');
-    code_entry.schema = Arc::new(CalcitTypeAnnotation::from_tag_name(tag_name));
-    save_snapshot(&snapshot, snapshot_file)?;
-    println!(
-      "{} Updated schema for '{}' in namespace '{}'",
-      "✓".green(),
-      resolved_definition.cyan(),
-      namespace
-    );
-    return Ok(());
-  }
-
-  snapshot::parse_schema_data(&schema_payload)?;
-  let schema_edn = snapshot::schema_cirru_to_edn(schema_payload);
-  code_entry.schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
-    .map(|s| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(s))))
-    .unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn));
+  code_entry.schema =
+    snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
