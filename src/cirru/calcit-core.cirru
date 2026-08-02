@@ -4880,7 +4880,7 @@
                 (:none) fallback
           :examples $ []
             quote $ assert= 0
-              option:unwrap-or (%none) 0
+              (%none) .unwrap-or 0
           :schema $ :: 'Fn
             {} (:return 'T)
               :args $ [] (:: 'Option 'T) 'T
@@ -5259,7 +5259,7 @@
                 (:err _) fallback
           :examples $ []
             quote $ assert= 0
-              result:unwrap-or (%err |failed) 0
+              (%err |failed) .unwrap-or 0
           :schema $ :: 'Fn
             {} (:return 'T)
               :args $ [] (:: 'Result 'T 'E) 'T
