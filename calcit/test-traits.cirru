@@ -196,6 +196,11 @@
                   opt $ %some 1
                   Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
+                  ZapPerson $ impl-traits Person0 MyZapAImpl
+                  zp $ %{} ZapPerson (:name |Bob)
+                  flag true
+                  keyword :demo
+                  nothing nil
                 assert= x $ assert-traits x calcit.core/Show
                 assert= x $ assert-traits x calcit.core/Show calcit.core/Eq
                 assert= xs $ assert-traits xs calcit.core/Mappable
@@ -214,6 +219,14 @@
                 assert= :true $ try
                   do (assert-traits p MyBar) :false
                   fn (e) (do :true)
+                ; A same-named method from MyZapA must not satisfy the distinct MyZapB trait.
+                assert= zp $ assert-traits zp MyZapA
+                assert= :true $ try
+                  do (assert-traits zp MyZapB) :false
+                  fn (e) (do :true)
+                assert= flag $ assert-traits flag calcit.core/Show calcit.core/Eq
+                assert= keyword $ assert-traits keyword calcit.core/Show calcit.core/Eq
+                assert= nothing $ assert-traits nothing calcit.core/Show calcit.core/Eq
               println "|  assert-traits: ✓"
           :examples $ []
           :schema $ :: 'Fn
@@ -375,6 +388,19 @@
                 ; "`&trait-call`" selects by trait, bypassing "`.method`" ambiguity
                 assert= |zapA $ &trait-call MyZapA :zap p
                 assert= |zapB $ &trait-call MyZapB :zap p
+              let
+                  SinglePerson $ impl-traits Person0 MyZapAImpl
+                  p $ %{} SinglePerson (:name |Bob)
+                assert= |zapA $ &trait-call MyZapA :zap p
+                assert= :true $ try
+                  do (&trait-call MyZapB :zap p) :false
+                  fn (e) (do :true)
+              let
+                  xs $ [] 1 2 3
+                  flag true
+                assert= 3 $ &trait-call calcit.core/Countable :count xs
+                assert= |true $ &trait-call calcit.core/Show :show flag
+                assert= true $ &trait-call calcit.core/Eq :eq? flag true
               let
                   t $ %:: DemoZap :demo 1
                 assert-traits t MyZapA MyZapB

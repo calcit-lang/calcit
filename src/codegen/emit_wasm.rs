@@ -1994,10 +1994,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       emit_expr(ctx, &args[0])
     }
 
-    // &struct:impl-traits / &enum:impl-traits — trait registration; not supported in WASM; return nil.
+    // Runtime trait tables are intentionally not implemented in the internal
+    // WASM validation backend. Preprocessing must eliminate these operations.
     CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => {
-      eprintln!("[wasm warning] trait registration via impl-traits is not supported in WASM");
-      ctx.silent_nil()
+      Err("runtime trait registration must be eliminated before WASM codegen".into())
     }
 
     // register-calcit-builtin-impls — builtin impl registration; not meaningful in WASM; return nil.
@@ -2006,17 +2006,13 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.silent_nil()
     }
 
-    // &impl::new — trait impl creation; args may contain unsupported tags; return nil with warning.
-    CalcitProc::NativeImplNew => {
-      eprintln!("[wasm warning] &impl::new is not supported in WASM; trait impls are ignored");
-      ctx.silent_nil()
-    }
+    // &impl::new — only valid as compile-time metadata for WASM.
+    CalcitProc::NativeImplNew => Err("runtime trait impl construction must be eliminated before WASM codegen".into()),
 
-    // &assert-traits — trait assertion; not enforced in WASM; return nil with warning.
-    CalcitProc::NativeAssertTraits => {
-      eprintln!("[wasm warning] &assert-traits is not enforced in WASM (trait checking disabled)");
-      ctx.silent_nil()
-    }
+    // &assert-traits — a residual assertion would require a runtime trait table.
+    CalcitProc::NativeAssertTraits => Err(
+      "runtime trait assertions are not supported by the internal WASM backend; make the receiver type statically resolvable".into(),
+    ),
 
     // &get-os — host OS info; not available in WASM; return nil.
     CalcitProc::NativeGetOs => ctx.stub_proc(args),

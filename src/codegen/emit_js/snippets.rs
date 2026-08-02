@@ -109,14 +109,15 @@ pub fn tmpl_classes_registering() -> String {
   format!(
     "
 $procs.register_calcit_builtin_impls({{
-  list: _$n_core_list_methods,
-  map: _$n_core_map_methods,
-  number: _$n_core_number_methods,
-  set: _$n_core_set_methods,
-  string: _$n_core_string_methods,
-  fn: _$n_core_fn_methods,
+  list: _$n_core_list_impls,
+  map: _$n_core_map_impls,
+  number: _$n_core_number_impls,
+  set: _$n_core_set_impls,
+  string: _$n_core_string_impls,
+  fn: _$n_core_fn_impls,
   tuple: _$n_core_tuple_impls,
   record: _$n_core_record_impls,
+  scalar: _$n_core_scalar_impls,
 }});
 
 let runtimeVersion = $procs.calcit_version;

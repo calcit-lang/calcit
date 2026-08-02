@@ -281,11 +281,15 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
   let mut legacy_any_count = count_legacy_any_schema_fields(original_edn);
   let mut unresolved_dynamic_occurrences = 0usize;
   let mut unresolved_dynamic_definitions = 0usize;
+  let mut legacy_inherent_impl_count = 0usize;
   for (namespace, file) in &snapshot.files {
     if namespace.ends_with(".$meta") || !(namespace == &snapshot.package || namespace.starts_with(&format!("{}.", snapshot.package))) {
       continue;
     }
     for (definition, entry) in &file.defs {
+      if namespace != "calcit.internal" {
+        legacy_inherent_impl_count += count_legacy_inherent_impls(&entry.code);
+      }
       if let Some(row) = crate::type_coverage::analyze_weak_types_entry(namespace, definition, entry, &selected) {
         legacy_any_count += row
           .occurrences
@@ -316,8 +320,25 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
        Next: run `cr {snapshot_arg} analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`, then rerun without `--summary-only` for paths and recommendations."
     ));
   }
+  if legacy_inherent_impl_count > 0 {
+    advisories.push(format!(
+      "[W_LEGACY_INHERENT_IMPL] Found {legacy_inherent_impl_count} `defimpl` occurrence(s) whose trait argument is a tag. These remain compatible as inherent method bags but do not satisfy nominal trait bounds.\n\
+       Next: when the methods represent a capability, define it with `deftrait` and pass the trait symbol to `defimpl`; keep the tag form only for intentionally originless `.method` dispatch."
+    ));
+  }
 
   advisories
+}
+
+fn count_legacy_inherent_impls(node: &Cirru) -> usize {
+  let Cirru::List(items) = node else {
+    return 0;
+  };
+  let current = usize::from(
+    matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defimpl")
+      && matches!(items.get(2), Some(Cirru::Leaf(trait_name)) if trait_name.starts_with(':')),
+  );
+  current + items.iter().map(count_legacy_inherent_impls).sum::<usize>()
 }
 
 fn count_legacy_any_schema_fields(value: &Edn) -> usize {
@@ -2584,9 +2605,9 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 #[cfg(test)]
 mod tests {
   use super::{
-    TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields, load_snapshot,
-    parse_examples_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations, rename_definition_declaration,
-    run_staged_transaction_with, save_snapshot,
+    TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
+    count_legacy_inherent_impls, load_snapshot, parse_examples_input, parse_input_to_cirru, parse_schema_input,
+    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_snapshot,
   };
   use crate::cli_handlers::test_support::TestProject;
   use cirru_parser::Cirru;
@@ -2626,6 +2647,7 @@ mod tests {
     assert!(advisories.contains("W_LEGACY_SNAPSHOT_NAME"), "advisories: {advisories}");
     assert!(advisories.contains("W_LEGACY_ANY"), "advisories: {advisories}");
     assert!(advisories.contains("W_DYNAMIC_TYPE_DEBT"), "advisories: {advisories}");
+    assert!(advisories.contains("W_LEGACY_INHERENT_IMPL"), "advisories: {advisories}");
     assert!(advisories.contains("analyze weak-types"), "advisories: {advisories}");
   }
 
@@ -2648,6 +2670,25 @@ mod tests {
     .expect("schema fixture should parse");
 
     assert_eq!(count_legacy_any_schema_fields(&data), 2);
+  }
+
+  #[test]
+  fn legacy_inherent_impl_counter_only_matches_tag_trait_arguments() {
+    let legacy = list(vec![
+      leaf("defimpl"),
+      leaf("RenderImpl"),
+      leaf(":Render"),
+      list(vec![leaf(".render"), leaf("render")]),
+    ]);
+    let nominal = list(vec![
+      leaf("defimpl"),
+      leaf("RenderImpl"),
+      leaf("Render"),
+      list(vec![leaf(".render"), leaf("render")]),
+    ]);
+
+    assert_eq!(count_legacy_inherent_impls(&legacy), 1);
+    assert_eq!(count_legacy_inherent_impls(&nominal), 0);
   }
 
   #[test]

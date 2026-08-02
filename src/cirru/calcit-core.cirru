@@ -324,7 +324,7 @@
           :tags $ #{} :builtin :internal
         |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn")
           :code $ quote
-            def &core-fn-impls $ [] &core-fn-methods internal/&core-show-impl
+            def &core-fn-impls $ [] &core-fn-methods (&impl::new Show internal/&core-show-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -342,7 +342,7 @@
           :tags $ #{} :internal
         |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
-            def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl internal/&core-countable-list-impl internal/&core-contains-list-impl
+            def &core-list-impls $ [] &core-list-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -354,7 +354,7 @@
           :tags $ #{} :internal
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
-            def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl internal/&core-mappable-map-impl internal/&core-countable-map-impl internal/&core-contains-map-impl
+            def &core-map-impls $ [] &core-map-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl) (&impl::new Contains internal/&core-contains-map-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -366,7 +366,7 @@
           :tags $ #{} :internal
         |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote
-            def &core-number-impls $ [] &core-number-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-number-impl internal/&core-multiply-number-impl internal/&core-compare-number-impl
+            def &core-number-impls $ [] &core-number-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -378,7 +378,7 @@
           :tags $ #{} :internal
         |&core-record-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for record")
           :code $ quote
-            def &core-record-impls $ [] &core-record-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-countable-record-impl internal/&core-contains-record-impl
+            def &core-record-impls $ [] &core-record-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-record-impl) (&impl::new Contains internal/&core-contains-record-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -390,9 +390,15 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
+        |&core-scalar-impls $ %{} :CodeEntry (:doc "|Built-in nominal Show/Eq implementation list for scalar literals")
+          :code $ quote
+            def &core-scalar-impls $ [] (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
-            def &core-set-impls $ [] &core-set-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-set-impl internal/&core-mappable-set-impl internal/&core-countable-set-impl internal/&core-contains-set-impl
+            def &core-set-impls $ [] &core-set-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl) (&impl::new Contains internal/&core-contains-set-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -404,7 +410,7 @@
           :tags $ #{} :internal
         |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
-            def &core-string-impls $ [] &core-string-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-string-impl internal/&core-len-string-impl internal/&core-countable-string-impl internal/&core-contains-string-impl internal/&core-compare-string-impl
+            def &core-string-impls $ [] &core-string-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -416,7 +422,7 @@
           :tags $ #{} :internal
         |&core-tuple-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for tuple")
           :code $ quote
-            def &core-tuple-impls $ [] &core-tuple-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-countable-tuple-impl internal/&core-contains-tuple-impl
+            def &core-tuple-impls $ [] &core-tuple-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-tuple-impl) (&impl::new Contains internal/&core-contains-tuple-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -666,10 +672,10 @@
           :tags $ #{} :builtin :internal
         |&init-builtin-impls! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-tuple-impls) (identity &core-record-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-tuple-impls) (identity &core-record-impls) (identity &core-scalar-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
-                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :tuple &core-tuple-impls :record &core-record-impls
+                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :tuple &core-tuple-impls :record &core-record-impls :scalar &core-scalar-impls
                 ;nil
           :examples $ []
           :schema $ :: 'Fn

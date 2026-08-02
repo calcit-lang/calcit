@@ -7,6 +7,12 @@ use cirru_edn::EdnAnyRef;
 use super::{Calcit, CalcitEnum, CalcitFn, CalcitImpl, CalcitRecord, CalcitStruct, CalcitTrait};
 
 pub(super) fn compare_calcit_trait_values(a: &CalcitTrait, b: &CalcitTrait) -> Ordering {
+  match (a.runtime_id, b.runtime_id) {
+    (Some(left), Some(right)) => return left.cmp(&right),
+    (None, Some(_)) => return Less,
+    (Some(_), None) => return Greater,
+    (None, None) => {}
+  }
   match a.name.cmp(&b.name) {
     Equal => match a.methods.cmp(&b.methods) {
       Equal => match a.method_types.cmp(&b.method_types) {

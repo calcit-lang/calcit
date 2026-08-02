@@ -1,9 +1,12 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use cirru_edn::EdnTag;
 
 use super::{CalcitFn, CalcitTypeAnnotation};
+
+static NEXT_TRAIT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
 fn defaults_eq(left: &Option<Arc<CalcitFn>>, right: &Option<Arc<CalcitFn>>) -> bool {
   match (left, right) {
@@ -61,6 +64,9 @@ fn hash_default_impl<H: Hasher>(default_impl: &Option<Arc<CalcitFn>>, state: &mu
 /// Similar to Rust traits or Haskell type classes
 #[derive(Debug, Clone)]
 pub struct CalcitTrait {
+  /// Nominal identity for an evaluated trait definition. Source/schema
+  /// placeholders keep this empty and are compared structurally.
+  pub runtime_id: Option<u64>,
   /// Name of the trait
   pub name: EdnTag,
   /// Method names defined by this trait
@@ -78,6 +84,19 @@ pub struct CalcitTrait {
 // For defaults, use stable function identity (prefer def_ref, fallback to fn metadata).
 impl PartialEq for CalcitTrait {
   fn eq(&self, other: &Self) -> bool {
+    match (self.runtime_id, other.runtime_id) {
+      (Some(left), Some(right)) => return left == right,
+      (Some(_), None) | (None, Some(_)) => return false,
+      (None, None) => {}
+    }
+    self.structural_eq(other)
+  }
+}
+
+impl Eq for CalcitTrait {}
+
+impl CalcitTrait {
+  fn structural_eq(&self, other: &Self) -> bool {
     self.name == other.name
       && self.methods == other.methods
       && self.method_types == other.method_types
@@ -89,11 +108,7 @@ impl PartialEq for CalcitTrait {
         .zip(other.defaults.iter())
         .all(|(left, right)| defaults_eq(left, right))
   }
-}
 
-impl Eq for CalcitTrait {}
-
-impl CalcitTrait {
   /// Create a new trait with the given name and methods
   pub fn new(name: EdnTag, methods: Vec<EdnTag>, method_types: Vec<Arc<CalcitTypeAnnotation>>) -> Self {
     let defaults = vec![None; methods.len()];
@@ -102,12 +117,33 @@ impl CalcitTrait {
       "CalcitTrait::new expects method_types to match methods length"
     );
     CalcitTrait {
+      runtime_id: None,
       name,
       methods: Arc::new(methods),
       defaults: Arc::new(defaults),
       method_types: Arc::new(method_types),
       requires: Arc::new(vec![]),
     }
+  }
+
+  /// Create an evaluated trait with nominal runtime identity. Cloning the
+  /// result preserves identity; evaluating the definition again creates a new
+  /// one, so stale impls cannot accidentally satisfy a reloaded trait.
+  pub fn new_runtime(name: EdnTag, methods: Vec<EdnTag>, method_types: Vec<Arc<CalcitTypeAnnotation>>) -> Self {
+    let mut trait_def = Self::new(name, methods, method_types);
+    trait_def.runtime_id = Some(NEXT_TRAIT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed));
+    trait_def
+  }
+
+  /// Match a trait reference stored in schema/static metadata. Evaluated
+  /// references use nominal identity; unevaluated references temporarily fall
+  /// back to definition shape, or name when the snapshot only retained a bare
+  /// trait symbol.
+  pub fn matches_reference(&self, expected: &Self) -> bool {
+    if expected.runtime_id.is_some() {
+      return self == expected;
+    }
+    self.structural_eq(expected) || (expected.methods.is_empty() && self.name == expected.name)
   }
 
   /// Get the method names
@@ -135,6 +171,10 @@ impl CalcitTrait {
 
 impl Hash for CalcitTrait {
   fn hash<H: Hasher>(&self, state: &mut H) {
+    self.runtime_id.hash(state);
+    if self.runtime_id.is_some() {
+      return;
+    }
     self.name.hash(state);
     self.methods.hash(state);
     self.method_types.hash(state);
@@ -187,6 +227,7 @@ mod tests {
 
   fn build_trait_with_default(default_impl: Option<Arc<CalcitFn>>) -> CalcitTrait {
     CalcitTrait {
+      runtime_id: None,
       name: EdnTag::new("TraitX"),
       methods: Arc::new(vec![EdnTag::new("foo")]),
       defaults: Arc::new(vec![default_impl]),
@@ -227,5 +268,23 @@ mod tests {
     assert_eq!(left, right);
     assert_eq!(hash_trait(&left), hash_trait(&right));
     assert_ne!(left, different);
+  }
+
+  #[test]
+  fn evaluated_traits_with_same_shape_keep_nominal_identity() {
+    let left = CalcitTrait::new_runtime(EdnTag::new("Visible"), vec![], vec![]);
+    let right = CalcitTrait::new_runtime(EdnTag::new("Visible"), vec![], vec![]);
+
+    assert_ne!(left, right);
+    assert_eq!(left, left.clone());
+  }
+
+  #[test]
+  fn schema_trait_placeholders_remain_structural() {
+    let left = CalcitTrait::new(EdnTag::new("Visible"), vec![], vec![]);
+    let right = CalcitTrait::new(EdnTag::new("Visible"), vec![], vec![]);
+
+    assert_eq!(left, right);
+    assert_eq!(hash_trait(&left), hash_trait(&right));
   }
 }

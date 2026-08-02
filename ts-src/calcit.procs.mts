@@ -210,32 +210,27 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
     throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
   }
   const impls = pair[0];
-  const missing: string[] = [];
-  for (let i = 0; i < traitDef.methods.length; i++) {
-    const method = traitDef.methods[i];
-    let exists = false;
-    for (let j = 0; j < impls.length; j++) {
-      const impl = impls[j];
-      if (impl != null && impl.getOrNil(method) != null) {
-        exists = true;
-        break;
-      }
-    }
-    if (!exists) missing.push(method.toString());
-  }
-  if (missing.length > 0) {
-    const available: string[] = [];
-    for (let j = 0; j < impls.length; j++) {
-      const impl = impls[j];
-      if (impl == null) continue;
-      for (let k = 0; k < impl.fields.length; k++) {
-        available.push(impl.fields[k].toString());
-      }
-    }
+  const reverse =
+    value instanceof CalcitRecord || value instanceof CalcitTuple || value instanceof CalcitStruct || value instanceof CalcitEnum;
+  const ordered = reverse ? [...impls].reverse() : impls;
+  const selected = ordered.find((impl) => impl != null && impl.origin === traitDef);
+  if (selected == null) {
+    const available = impls
+      .filter((impl) => impl?.origin != null)
+      .map((impl) => impl.origin!.name.toString())
+      .join(" ");
     throw new Error(
-      `assert-traits failed: ${toString(value, true)} does not implement ${traitDef.toString()}. Missing: ${missing.join(
+      `assert-traits failed: ${toString(value, true)} does not nominally implement ${traitDef.toString()}. Available trait impls: ${
+        available || "(none)"
+      }`
+    );
+  }
+  const missing = traitDef.methods.filter((method) => selected.getOrNil(method) == null);
+  if (missing.length > 0) {
+    throw new Error(
+      `assert-traits failed: impl ${selected.name.toString()} for trait ${traitDef.name.toString()} is incomplete. Missing: ${missing.join(
         " "
-      )}. Available: ${available.join(" ")}`
+      )}`
     );
   }
   return value;
@@ -300,12 +295,14 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
   if (name === undefined) throw new Error("&impl::new expected arguments");
   const origin = name instanceof CalcitTrait ? name : null;
   const implName = origin ? origin.name : castTag(name);
-  if (pairs.length === 0) {
-    return new CalcitImpl(implName, [], [], origin);
-  }
   const entries: Array<{ tag: CalcitTag; value: CalcitValue }> = [];
-  for (let idx = 0; idx < pairs.length; idx++) {
-    const pairValue = pairs[idx];
+  let sourcePairs = pairs;
+  if (pairs.length === 1 && pairs[0] instanceof CalcitImpl) {
+    const sourceImpl = pairs[0];
+    sourcePairs = sourceImpl.fields.map((field, idx) => new CalcitTuple(field, [sourceImpl.values[idx]], null));
+  }
+  for (let idx = 0; idx < sourcePairs.length; idx++) {
+    const pairValue = sourcePairs[idx];
     let fieldTag: CalcitTag;
     let value: CalcitValue;
     if (pairValue instanceof CalcitTuple) {
@@ -332,6 +329,21 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
   }
   const fields = entries.map((entry) => entry.tag);
   const values = entries.map((entry) => entry.value);
+  if (origin != null) {
+    const missing = origin.methods.filter((method) => !fields.some((field) => field.value === method.value));
+    const unexpected = fields.filter((field) => !origin.methods.some((method) => method.value === field.value));
+    if (missing.length > 0 || unexpected.length > 0) {
+      const details: string[] = [];
+      if (missing.length > 0) details.push(`missing methods: ${missing.join(" ")}`);
+      if (unexpected.length > 0) details.push(`methods not declared by the trait: ${unexpected.join(" ")}`);
+      throw new Error(`&impl::new does not conform to trait ${origin.name.toString()}: ${details.join("; ")}`);
+    }
+    for (const entry of entries) {
+      if (typeof entry.value !== "function") {
+        throw new Error(`&impl::new expects trait method .${entry.tag.value} to be a function, but received: ${toString(entry.value, true)}`);
+      }
+    }
+  }
   return new CalcitImpl(implName, fields, values, origin);
 };
 
@@ -1878,6 +1890,7 @@ let calcit_builtin_impls = {
   fn: null as CalcitImplEntry,
   tuple: null as CalcitImplEntry,
   record: null as CalcitImplEntry,
+  scalar: null as CalcitImplEntry,
 };
 
 // need to register code from outside
@@ -1960,6 +1973,15 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (typeof obj === "function") {
     tag = "&core-fn-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.fn);
+  } else if (
+    obj == null ||
+    typeof obj === "boolean" ||
+    obj instanceof CalcitTag ||
+    obj instanceof CalcitSymbol ||
+    obj instanceof CalcitCirruQuote
+  ) {
+    tag = "&core-scalar-impls";
+    impls = normalize_builtin_impls(calcit_builtin_impls.scalar);
   } else {
     return null;
   }
@@ -2106,7 +2128,7 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     const impl = impls[idx];
-    if (impl != null && impl.origin != null && impl.origin.name.value === traitDef.name.value) {
+    if (impl != null && impl.origin === traitDef) {
       const fn = impl.getOrNil(methodName);
       if (fn != null) {
         if (typeof fn !== "function") {

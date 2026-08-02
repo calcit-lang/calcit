@@ -6194,7 +6194,7 @@ mod tests {
   #[test]
   fn user_function_where_bounds_warn_on_missing_trait_impl() {
     let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
-      EdnTag::new("Show"),
+      EdnTag::new("Renderable"),
       vec![EdnTag::new("show")],
       vec![crate::calcit::DYNAMIC_TYPE.clone()],
     ));
@@ -6335,7 +6335,7 @@ mod tests {
     );
     let message = warnings_vec[0].to_string();
     assert!(
-      message.contains("trait bound") && message.contains("Show"),
+      message.contains("trait bound") && message.contains("Renderable"),
       "warning should mention missing where-bound: {message}"
     );
   }
@@ -6343,7 +6343,7 @@ mod tests {
   #[test]
   fn local_function_where_bounds_warn_on_missing_trait_impl() {
     let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
-      EdnTag::new("Show"),
+      EdnTag::new("Renderable"),
       vec![EdnTag::new("show")],
       vec![crate::calcit::DYNAMIC_TYPE.clone()],
     ));
@@ -6426,7 +6426,7 @@ mod tests {
     );
     let message = warnings_vec[0].to_string();
     assert!(
-      message.contains("trait bound") && message.contains("Show"),
+      message.contains("trait bound") && message.contains("Renderable"),
       "local fn warning should mention missing where-bound: {message}"
     );
   }

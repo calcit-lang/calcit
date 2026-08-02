@@ -748,7 +748,7 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   };
 
-  Ok(Calcit::Trait(CalcitTrait::new(name, methods, method_types)))
+  Ok(Calcit::Trait(CalcitTrait::new_runtime(name, methods, method_types)))
 }
 
 fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
@@ -1467,6 +1467,10 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
       let impls_value = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
       collect_impl_records_from_value(&impls_value, call_stack)
     }
+    Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } | Calcit::CirruQuote(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-scalar-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("&assert-traits cannot resolve impls for: {other}"),
@@ -1571,7 +1575,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
 
   let mut selected_impl: Option<&Arc<CalcitImpl>> = None;
   for imp in iter_impls_in_precedence_order(receiver, &impls) {
-    if imp.origin().is_some_and(|origin| origin.as_ref() == &trait_def) {
+    if imp.implements_trait(&trait_def) {
       selected_impl = Some(imp);
       break;
     }
@@ -1703,27 +1707,41 @@ pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit
   };
 
   let impls = collect_impl_records_for_value(value, call_stack)?;
-  let mut missing: Vec<String> = Vec::new();
-  for method in trait_def.methods.iter() {
-    let method_name = method.ref_str();
-    let exists = impls.iter().any(|imp| imp.get(method_name).is_some());
-    if !exists {
-      missing.push(method.to_string());
-    }
-  }
+  let selected_impl = iter_impls_in_precedence_order(value, &impls).find(|imp| imp.implements_trait(&trait_def));
 
-  if !missing.is_empty() {
-    let mut fields: Vec<String> = vec![];
-    for imp in impls.iter() {
-      for field in imp.fields().iter() {
-        fields.push(field.to_string());
-      }
-    }
-    let available = fields.join(" ");
-    let missing_list = missing.join(" ");
+  let Some(selected_impl) = selected_impl else {
+    let available = impls
+      .iter()
+      .filter_map(|imp| imp.trait_name())
+      .map(ToString::to_string)
+      .collect::<Vec<_>>()
+      .join(" ");
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("assert-traits failed: {value} does not implement {trait_def}. Missing: {missing_list}. Available: {available}"),
+      format!(
+        "assert-traits failed: {value} does not nominally implement {trait_def}. Available trait impls: {}",
+        if available.is_empty() { "(none)" } else { &available }
+      ),
+      call_stack,
+      value.get_location(),
+    ));
+  };
+
+  let missing = trait_def
+    .methods
+    .iter()
+    .filter(|method| selected_impl.get(method.ref_str()).is_none())
+    .map(ToString::to_string)
+    .collect::<Vec<_>>();
+  if !missing.is_empty() {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!(
+        "assert-traits failed: impl {} for trait {} is incomplete. Missing: {}",
+        selected_impl.name(),
+        trait_def.name,
+        missing.join(" ")
+      ),
       call_stack,
       value.get_location(),
     ));
@@ -2091,7 +2109,7 @@ mod tests {
     }
   }
 
-  fn shown_maybe_enum() -> CalcitEnum {
+  fn shown_maybe_enum(show_trait: Arc<CalcitTrait>) -> CalcitEnum {
     CalcitEnum::from_record(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct {
         name: EdnTag::new("ShownMaybe"),
@@ -2100,7 +2118,7 @@ mod tests {
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![CalcitGenericBound {
           name: Arc::from("T"),
-          traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+          traits: Arc::new(vec![show_trait]),
         }]),
         impls: vec![],
       }),
@@ -2112,24 +2130,44 @@ mod tests {
     .expect("valid enum")
   }
 
+  fn value_with_trait(trait_def: Arc<CalcitTrait>) -> Calcit {
+    let mut struct_def = CalcitStruct::from_fields(EdnTag::new("ShownValue"), vec![]);
+    struct_def.impls.push(Arc::new(CalcitImpl {
+      name: trait_def.name.clone(),
+      origin: Some(trait_def),
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    }));
+    Calcit::Record(CalcitRecord {
+      struct_ref: Arc::new(struct_def),
+      values: Arc::new(vec![]),
+    })
+  }
+
   #[test]
-  fn generic_enum_where_bounds_accept_show_values() {
-    let result = new_enum_tuple_no_class(&[Calcit::Enum(shown_maybe_enum()), Calcit::tag("some"), Calcit::Number(1.0)]);
+  fn generic_enum_where_bounds_accept_nominal_trait_values() {
+    let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
+    let result = new_enum_tuple_no_class(&[
+      Calcit::Enum(shown_maybe_enum(show_trait.clone())),
+      Calcit::tag("some"),
+      value_with_trait(show_trait),
+    ]);
 
     assert!(result.is_ok(), "expected shown maybe creation to pass: {result:?}");
   }
 
   #[test]
-  fn generic_enum_where_bounds_reject_non_show_values() {
+  fn generic_enum_where_bounds_reject_missing_nominal_trait() {
+    let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
     let err = new_enum_tuple_no_class(&[
-      Calcit::Enum(shown_maybe_enum()),
+      Calcit::Enum(shown_maybe_enum(show_trait)),
       Calcit::tag("some"),
       Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
     ])
     .expect_err("expected shown maybe creation to fail on non-Show payload");
 
     assert!(
-      err.msg.contains("does not satisfy `trait Show`") || err.msg.contains("does not satisfy `Show`"),
+      err.msg.contains("does not satisfy `trait Renderable`") || err.msg.contains("does not satisfy `Renderable`"),
       "unexpected error: {err:?}"
     );
   }

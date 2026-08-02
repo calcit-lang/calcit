@@ -11,12 +11,12 @@ aliases:
 
 # Traits
 
-Calcit provides a lightweight trait system for attaching method implementations to struct/enum definitions (and using them from constructed instances and built-in types).
+Calcit provides a lightweight nominal trait system for attaching method implementations to struct/enum definitions and for describing capabilities of built-in values. The historical prototype/class terminology is no longer the design model; see [Polymorphism](polymorphism.md) for the unified dispatch rules.
 
-It complements the “class-like” polymorphism described in [Polymorphism](polymorphism.md):
+Keep two concepts separate:
 
-- Struct/enum **classes** are about “this concrete type has these methods”.
-- **Traits** are about “this value supports this capability (set of methods)”.
+- A **trait impl** has a concrete `deftrait` value as its origin. It participates in `.method` dispatch and can satisfy `assert-traits`, generic `:where` bounds, and `&trait-call`.
+- An **inherent method bag** has no trait origin. It remains compatible with legacy dispatch through `.method`, but it does not prove any trait capability.
 
 ## Quick Recipes
 
@@ -31,8 +31,8 @@ It complements the “class-like” polymorphism described in [Polymorphism](pol
 Use `deftrait` to define a trait and its method signatures (including type annotations).
 
 ```cirru
-deftrait MyFoo
-  .foo $ :: :fn $ {}
+deftrait MyFoo $ .foo
+  :: :fn $ {}
     :generics $ [] 'T
     :args $ [] 'T
     :return :string
@@ -45,14 +45,15 @@ Use `defimpl` to create an impl record for a trait.
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn $ {}
-        :generics $ [] 'T
-        :args $ [] 'T
-        :return :string
+      .foo $ :: :fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T
+          :return :string
     Person0 $ defstruct Person (:name :string)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
-        str-spaced |foo (:name p)
+        str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   .foo p
@@ -67,33 +68,25 @@ defimpl ImplName Trait ...
 ```
 
 - First argument is the **impl record name**.
-- Second argument is the **trait value** (symbol) or a **tag**.
+- Second argument is the concrete **trait value** (normally a symbol). A tag is accepted only for the legacy method-bag form described below.
 
 Examples:
 
 ```cirru
-do
-  ; Form 1: symbol names for impl and trait
-  let
-      PersonA0 $ defstruct PersonA (:name :string)
-      MyFooA $ deftrait MyFooA
-        .foo $ :: :fn $ {}
+let
+    PersonA0 $ defstruct PersonA (:name 'String)
+    MyFooA $ deftrait MyFooA
+      .foo $ :: 'Fn
+        {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
-      MyFooImplA $ defimpl MyFooImplA MyFooA
-        .foo $ fn (p) (str-spaced |foo (:name p))
-      PersonA $ impl-traits PersonA0 MyFooImplA
-      p $ %{} PersonA (:name |Alice)
-    .foo p
-  ; Form 2: tag keywords for impl and trait (no deftrait needed)
-  let
-      PersonB0 $ defstruct PersonB (:name :string)
-      MyFooImplB $ defimpl :MyFooImplB :MyFooB
-        .foo $ fn (p) (str-spaced |bar (:name p))
-      PersonB $ impl-traits PersonB0 MyFooImplB
-      p $ %{} PersonB (:name |Bob)
-    .foo p
+          :return 'String
+    MyFooImplA $ defimpl MyFooImplA MyFooA
+      .foo $ fn (p)
+        str-spaced |foo $ :name p
+    PersonA $ impl-traits PersonA0 MyFooImplA
+    p $ %{} PersonA (:name |Alice)
+  .foo p
 ```
 
 **2) Method pair forms**
@@ -101,52 +94,49 @@ do
 Prefer dot-style keys (`.foo`). Legacy tag keys (`:foo`) are still accepted for compatibility.
 
 ```cirru
-; Both forms are accepted and equivalent:
-do
-  let
-      MyFoo $ deftrait MyFoo
-        .foo $ :: :fn $ {}
+let
+    MyFoo $ deftrait MyFoo
+      .foo $ :: :fn
+        {}
           :generics $ [] 'T
           :args $ [] 'T
           :return :string
-      Person0 $ defstruct Person (:name :string)
-      ; Form 1: preferred .method keys
-      ImplA $ defimpl ImplA MyFoo
-        .foo (fn (p) (str |A: (:name p)))
-      PersonA $ impl-traits Person0 ImplA
-      pa $ %{} PersonA (:name |Alice)
-    .foo pa
-  let
-      MyFoo $ deftrait MyFoo
-        .foo $ :: :fn $ {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-      Person0 $ defstruct Person (:name :string)
-      ; Form 2: legacy tag keys (compatible)
-      ImplB $ defimpl ImplB MyFoo
-        :: :foo (fn (p) (str |B: (:name p)))
-      PersonB $ impl-traits Person0 ImplB
-      pb $ %{} PersonB (:name |Bob)
-    .foo pb
+    Person0 $ defstruct Person (:name :string)
+    ImplB $ defimpl ImplB MyFoo
+      :: :foo $ fn (p)
+        str |B: $ :name p
+    PersonB $ impl-traits Person0 ImplB
+    pb $ %{} PersonB (:name |Bob)
+  .foo pb
 ```
 
-**3) Tag-based impl (no concrete trait value)**
+**3) Legacy tag-based method bags (compatibility only)**
 
-If you need a pure marker and don’t want to bind to a real trait value, use tags:
+Passing a tag instead of a concrete trait value creates an originless/inherent method bag:
+
+```cirru.no-check
+defimpl :MyMarkerImpl :MyMarker $ .dummy
+  fn (_x) nil
+```
+
+This form is retained so older `.method` dispatch keeps working. It does **not** implement a nominal trait and therefore cannot satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. `cr edit format` reports the non-blocking `W_LEGACY_INHERENT_IMPL` migration advisory. New code should define a real trait and pass its symbol:
 
 ```cirru
-defimpl :MyMarkerImpl :MyMarker
-  .dummy nil
+let
+    MyMarker $ deftrait MyMarker (.dummy :fn)
+    MyMarkerImpl $ defimpl MyMarkerImpl MyMarker
+      .dummy $ fn (_x) nil
+  , MyMarkerImpl
 ```
 
-This is also a safe replacement for the old self-referential pattern
-`defimpl X X`, which can cause recursion in new builds.
+This also replaces the old self-referential pattern `defimpl X X`, which can recurse while the definition is being initialized.
 
 Implementation notes:
 
-- `defimpl` creates an “impl record” that stores the trait as its origin.
-- This origin is used by `&trait-call` to match the correct implementation when method names overlap.
+- With a concrete trait argument, `defimpl` creates an impl that stores that exact trait value as its origin.
+- The impl must provide exactly the trait's declared method set; method values must be callable, and native preprocessing checks declared signatures when signature metadata is available.
+- Trait identity is nominal at runtime. Two independently evaluated traits do not become equal merely because their printed names and method sets match.
+- This origin is used by `assert-traits` and `&trait-call`; methods from multiple unrelated impls are never merged to satisfy one trait.
 
 ## Attach impls to struct/enum definitions
 
@@ -162,14 +152,18 @@ Syntax:
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn $ {}
-        :generics $ [] 'T
-        :args $ [] 'T
-        :return :string
+      .foo $ :: :fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T
+          :return :string
     ImplA $ defimpl ImplA MyFoo
-      .foo $ fn (p) (str |A: (:name p))
-    ImplB $ defimpl :ImplB :ImplB-trait
-      .bar $ fn (p) (str |B: (:name p))
+      .foo $ fn (p)
+        str |A: $ :name p
+    MyBar $ deftrait MyBar (.bar :fn)
+    ImplB $ defimpl ImplB MyBar
+      .bar $ fn (p)
+        str |B: $ :name p
     StructDef0 $ defstruct StructDef (:name :string)
     StructDef $ impl-traits StructDef0 ImplA ImplB
     x $ %{} StructDef (:name |test)
@@ -182,16 +176,17 @@ let
 - Treat internal `&...` helpers as runtime-level details; they may change more frequently and are not the stable user contract.
 
 ```cirru.no-check
-do
-  ; struct example
+do (; struct example)
   let
       MyFoo $ deftrait MyFoo
-        .foo $ :: :fn $ {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
+        .foo $ :: :fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T
+            :return :string
       MyFooImpl $ defimpl MyFooImpl MyFoo
-        .foo $ fn (p) (str-spaced |foo (:name p))
+        .foo $ fn (p)
+          str-spaced |foo $ :name p
       Person0 $ defstruct Person (:name :string)
       Person $ impl-traits Person0 MyFooImpl
       p $ %{} Person (:name |Alice)
@@ -199,10 +194,11 @@ do
   ; enum example
   let
       ResultTrait $ deftrait ResultTrait
-        .describe $ :: :fn $ {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
+        .describe $ :: :fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T
+            :return :string
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
           match x
@@ -248,15 +244,17 @@ Example with two traits sharing the same method name:
 ```cirru
 let
     MyZapA $ deftrait MyZapA
-      .zap $ :: :fn $ {}
-        :generics $ [] 'T
-        :args $ [] 'T
-        :return :string
+      .zap $ :: :fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T
+          :return :string
     MyZapB $ deftrait MyZapB
-      .zap $ :: :fn $ {}
-        :generics $ [] 'T
-        :args $ [] 'T
-        :return :string
+      .zap $ :: :fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T
+          :return :string
     MyZapAImpl $ defimpl MyZapAImpl MyZapA
       .zap $ fn (_x) |zapA
     MyZapBImpl $ defimpl MyZapBImpl MyZapB
@@ -264,9 +262,9 @@ let
     Person0 $ defstruct Person (:name :string)
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ %{} Person (:name |Alice)
-  ; .zap follows normal dispatch (last-wins for user impls)
+  ; .zap follows normal dispatch $ last-wins for user impls
   .zap p
-  ; explicitly pick a trait’s implementation
+  ; explicitly pick a "trait’s" implementation
   &trait-call MyZapA :zap p
   &trait-call MyZapB :zap p
 ```
@@ -283,7 +281,7 @@ Two helpers are useful when debugging trait + method dispatch:
 let
     xs $ [] 1 2
   &methods-of xs
-  &inspect-methods xs "|list"
+  &inspect-methods xs |list
 ```
 
 You can also inspect impl origins directly when validating trait dispatch:
@@ -291,10 +289,15 @@ You can also inspect impl origins directly when validating trait dispatch:
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn ('T) ('T) :string
-    Shape0 $ defenum Shape (:point :number :number)
+      .foo $ :: 'Fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T
+          :return 'String
+    Shape0 $ defenum Shape (:point 'Number 'Number)
     MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (t) (str |shape: (&tuple:nth t 0))
+      .foo $ fn (t)
+        str |shape: $ &tuple:nth t 0
     Shape $ impl-traits Shape0 MyFooImpl
     some-tuple $ %:: Shape :point 10 20
     impls $ &tuple:impls some-tuple
@@ -304,24 +307,26 @@ let
 
 ## Checking trait requirements
 
-`assert-traits` checks at runtime that a value implements a trait (i.e. it provides all required methods). It returns the value unchanged if the check passes.
+`assert-traits` checks at runtime that a value contains one complete impl whose origin is the requested trait. It returns the value unchanged if the check passes. A same-named method from another trait or an inherent method bag is not sufficient.
 
 Notes:
 
 - `assert-traits` is syntax (expanded to `&assert-traits`) and its first argument must be a **local**.
-- For built-in values (list/map/set/string/number/...), `assert-traits` only validates default implementations. It **does not** extend methods at runtime.
-- Static analysis and runtime checks may diverge for built-ins due to limited compile-time information; this mismatch is currently allowed.
+- Built-in values (list/map/set/string/number/...) expose the same origin-carrying core impls to native and JS. `assert-traits` only validates them; it does **not** extend methods at runtime.
+- Static preprocessing uses the evaluated impl metadata when available and a small core bootstrap map during initialization. Runtime validation remains nominal.
 
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn $ {}
-        :generics $ [] 'T
-        :args $ [] 'T
-        :return :string
+      .foo $ :: :fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T
+          :return :string
     Person0 $ defstruct Person (:name :string)
     MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p) (str-spaced |foo (:name p))
+      .foo $ fn (p)
+        str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo

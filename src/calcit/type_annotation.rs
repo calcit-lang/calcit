@@ -2251,6 +2251,7 @@ impl CalcitTypeAnnotation {
       Self::Set(_) => Some("&core-set-impls"),
       Self::Number => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
+      Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
       Self::Optional(inner) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -2343,72 +2344,41 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn infer_builtin_trait_name(imp: &CalcitImpl) -> Option<String> {
-    let raw = imp.name().ref_str();
-    let body = raw.strip_prefix("&core-")?.strip_suffix("-impl")?;
-    let segment = body.split('-').next()?;
-    let mut chars = segment.chars();
-    let first = chars.next()?;
-    let mut name = first.to_uppercase().collect::<String>();
-    name.push_str(chars.as_str());
-    Some(name)
-  }
-
-  fn builtin_type_satisfies_trait(&self, expected_trait: &CalcitTrait) -> bool {
-    match expected_trait.name.ref_str() {
-      "Mappable" => matches!(self, Self::List(_) | Self::Map(_, _) | Self::Set(_) | Self::Optional(_)),
-      "Countable" | "Contains" => {
-        matches!(
-          self,
-          Self::List(_)
-            | Self::Map(_, _)
-            | Self::Set(_)
-            | Self::String
-            | Self::DynTuple
-            | Self::Tuple(_)
-            | Self::Enum(_, _)
-            | Self::Record(_)
-            | Self::Struct(_, _)
-        ) || matches!(self, Self::Custom(value)
-          if matches!(value.as_ref(), Calcit::Tag(tag)
-            if matches!(tag.ref_str(), "list" | "map" | "set" | "string" | "tuple" | "record")))
-      }
-      "Compare" => matches!(self, Self::Number | Self::String),
-      "Show" => {
-        matches!(
-          self,
-          Self::Bool
-            | Self::Number
-            | Self::String
-            | Self::Symbol
-            | Self::Tag
-            | Self::Unit
-            | Self::Buffer
-            | Self::CirruQuote
-            | Self::DynTuple
-            | Self::List(_)
-            | Self::Map(_, _)
-            | Self::Set(_)
-        ) || matches!(self, Self::Optional(inner) if inner.builtin_type_satisfies_trait(expected_trait))
-      }
-      _ => false,
-    }
-  }
-
   fn impl_matches_trait(imp: &CalcitImpl, expected_trait: &CalcitTrait) -> bool {
-    imp.trait_name().is_some_and(|name| name == &expected_trait.name)
-      || imp.name() == &expected_trait.name
-      || Self::infer_builtin_trait_name(imp).as_deref() == Some(expected_trait.name.ref_str())
+    imp.matches_trait_reference(expected_trait)
+  }
+
+  /// Bootstrap metadata used only before a core impl list has been evaluated.
+  /// Runtime dispatch and evaluated static metadata both use the real impl
+  /// origins from calcit-core; this table prevents preprocessing order from
+  /// changing whether an otherwise identical core call emits a warning.
+  fn builtin_core_trait_names(&self) -> &'static [&'static str] {
+    if matches!(self, Self::Record(_) | Self::Struct(_, _)) {
+      return &["Show", "Eq", "Countable", "Contains"];
+    }
+    if matches!(self, Self::DynTuple | Self::Tuple(_) | Self::Enum(_, _)) {
+      return &["Show", "Eq", "Countable", "Contains"];
+    }
+    match self.core_impl_list_symbol() {
+      Some("&core-list-impls") => &["Show", "Eq", "Add", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-map-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-set-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-string-impls") => &["Show", "Eq", "Add", "Len", "Countable", "Contains", "Compare"],
+      Some("&core-number-impls") => &["Show", "Eq", "Add", "Multiply", "Compare"],
+      Some("&core-fn-impls") => &["Show"],
+      Some("&core-scalar-impls") => &["Show", "Eq"],
+      _ => &[],
+    }
   }
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
-    if self.builtin_type_satisfies_trait(expected_trait) {
-      return true;
-    }
-
-    self
+    if self
       .collect_static_impls()
       .is_some_and(|impls| impls.iter().any(|imp| Self::impl_matches_trait(imp, expected_trait)))
+    {
+      return true;
+    }
+    self.builtin_core_trait_names().contains(&expected_trait.name.ref_str())
   }
 
   fn satisfies_trait_bounds(&self, expected_traits: &[Arc<CalcitTrait>]) -> bool {
@@ -2548,10 +2518,10 @@ impl CalcitTypeAnnotation {
         }
         a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
       }
-      (Self::Trait(a), Self::Trait(b)) => a.name == b.name,
-      (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t.name == expected.name),
-      (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t.name == actual.name),
-      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a.name == t.name)),
+      (Self::Trait(a), Self::Trait(b)) => a == b,
+      (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t == expected),
+      (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t == actual),
+      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a == t)),
       (actual, Self::Trait(expected)) => actual.satisfies_trait_bound(expected.as_ref()),
       (actual, Self::TraitSet(expected)) => actual.satisfies_trait_bounds(expected.as_ref()),
       (Self::Struct(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct") => true,
@@ -4818,13 +4788,21 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       _ => false,
     },
     CalcitTypeAnnotation::Trait(expected_trait) => match value {
-      Calcit::Record(r) => r.struct_ref.impls.iter().any(|imp| imp.name() == &expected_trait.name),
-      Calcit::Tuple(t) => t.impls().iter().any(|imp| imp.name() == &expected_trait.name),
+      Calcit::Record(r) => r
+        .struct_ref
+        .impls
+        .iter()
+        .any(|imp| imp.matches_trait_reference(expected_trait.as_ref())),
+      Calcit::Tuple(t) => t.impls().iter().any(|imp| imp.matches_trait_reference(expected_trait.as_ref())),
       _ => false,
     },
     CalcitTypeAnnotation::TraitSet(traits) => match value {
-      Calcit::Record(r) => traits.iter().all(|t| r.struct_ref.impls.iter().any(|imp| imp.name() == &t.name)),
-      Calcit::Tuple(t) => traits.iter().all(|tr| t.impls().iter().any(|imp| imp.name() == &tr.name)),
+      Calcit::Record(r) => traits
+        .iter()
+        .all(|trait_def| r.struct_ref.impls.iter().any(|imp| imp.matches_trait_reference(trait_def.as_ref()))),
+      Calcit::Tuple(t) => traits
+        .iter()
+        .all(|trait_def| t.impls().iter().any(|imp| imp.matches_trait_reference(trait_def.as_ref()))),
       _ => false,
     },
     CalcitTypeAnnotation::Custom(custom) => match custom.as_ref() {
