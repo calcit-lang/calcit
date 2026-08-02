@@ -20,7 +20,7 @@ Keep two concepts separate:
 
 ## Quick Recipes
 
-- **Define Trait**: `deftrait MyTrait .method (:: :fn $ {} ...)`
+- **Define Trait**: `deftrait MyTrait .method (:: 'Fn $ {} ...)`
 - **Implement Trait**: `defimpl MyImpl MyTrait .method (fn (x) ...)`
 - **Attach to Struct**: `impl-traits MyStruct MyImpl`
 - **Call Method**: `.method instance`
@@ -32,10 +32,10 @@ Use `deftrait` to define a trait and its method signatures (including type annot
 
 ```cirru
 deftrait MyFoo $ .foo
-  :: :fn $ {}
+  :: 'Fn $ {}
     :generics $ [] 'T
     :args $ [] 'T
-    :return :string
+    :return 'String
 ```
 
 ## Implement a trait
@@ -45,12 +45,12 @@ Use `defimpl` to create an impl record for a trait.
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
+      .foo $ :: 'Fn
         {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
-    Person0 $ defstruct Person (:name :string)
+          :return 'String
+    Person0 $ defstruct Person (:name 'String)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
         str-spaced |foo $ :name p
@@ -96,12 +96,12 @@ Prefer dot-style keys (`.foo`). Legacy tag keys (`:foo`) are still accepted for 
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
+      .foo $ :: 'Fn
         {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
-    Person0 $ defstruct Person (:name :string)
+          :return 'String
+    Person0 $ defstruct Person (:name 'String)
     ImplB $ defimpl ImplB MyFoo
       :: :foo $ fn (p)
         str |B: $ :name p
@@ -123,7 +123,7 @@ This form is retained so older `.method` dispatch keeps working. It does **not**
 
 ```cirru
 let
-    MyMarker $ deftrait MyMarker (.dummy :fn)
+    MyMarker $ deftrait MyMarker (.dummy 'Fn)
     MyMarkerImpl $ defimpl MyMarkerImpl MyMarker
       .dummy $ fn (_x) nil
   , MyMarkerImpl
@@ -152,19 +152,19 @@ Syntax:
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
+      .foo $ :: 'Fn
         {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
+          :return 'String
     ImplA $ defimpl ImplA MyFoo
       .foo $ fn (p)
         str |A: $ :name p
-    MyBar $ deftrait MyBar (.bar :fn)
+    MyBar $ deftrait MyBar (.bar 'Fn)
     ImplB $ defimpl ImplB MyBar
       .bar $ fn (p)
         str |B: $ :name p
-    StructDef0 $ defstruct StructDef (:name :string)
+    StructDef0 $ defstruct StructDef (:name 'String)
     StructDef $ impl-traits StructDef0 ImplA ImplB
     x $ %{} StructDef (:name |test)
   .foo x
@@ -179,32 +179,32 @@ let
 do (; struct example)
   let
       MyFoo $ deftrait MyFoo
-        .foo $ :: :fn
+        .foo $ :: 'Fn
           {}
             :generics $ [] 'T
             :args $ [] 'T
-            :return :string
+            :return 'String
       MyFooImpl $ defimpl MyFooImpl MyFoo
         .foo $ fn (p)
           str-spaced |foo $ :name p
-      Person0 $ defstruct Person (:name :string)
+      Person0 $ defstruct Person (:name 'String)
       Person $ impl-traits Person0 MyFooImpl
       p $ %{} Person (:name |Alice)
     .foo p
   ; enum example
   let
       ResultTrait $ deftrait ResultTrait
-        .describe $ :: :fn
+        .describe $ :: 'Fn
           {}
             :generics $ [] 'T
             :args $ [] 'T
-            :return :string
+            :return 'String
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
           match x
             (:ok v) (str |ok: v)
             (:err v) (str |err: v)
-      Result0 $ defenum Result0 (:ok :string) (:err :string)
+      Result0 $ defenum Result0 (:ok 'String) (:err 'String)
       MyResult $ impl-traits Result0 ResultImpl
       r $ %:: MyResult :ok |done
     .describe r
@@ -244,22 +244,22 @@ Example with two traits sharing the same method name:
 ```cirru
 let
     MyZapA $ deftrait MyZapA
-      .zap $ :: :fn
+      .zap $ :: 'Fn
         {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
+          :return 'String
     MyZapB $ deftrait MyZapB
-      .zap $ :: :fn
+      .zap $ :: 'Fn
         {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
+          :return 'String
     MyZapAImpl $ defimpl MyZapAImpl MyZapA
       .zap $ fn (_x) |zapA
     MyZapBImpl $ defimpl MyZapBImpl MyZapB
       .zap $ fn (_x) |zapB
-    Person0 $ defstruct Person (:name :string)
+    Person0 $ defstruct Person (:name 'String)
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ %{} Person (:name |Alice)
   ; .zap follows normal dispatch $ last-wins for user impls
@@ -318,12 +318,12 @@ Notes:
 ```cirru
 let
     MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
+      .foo $ :: 'Fn
         {}
           :generics $ [] 'T
           :args $ [] 'T
-          :return :string
-    Person0 $ defstruct Person (:name :string)
+          :return 'String
+    Person0 $ defstruct Person (:name 'String)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
         str-spaced |foo $ :name p

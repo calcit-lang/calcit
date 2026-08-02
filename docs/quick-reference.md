@@ -85,8 +85,8 @@ cr eval "echo |done"
 - **HashSets**: `#{} :a :b :c`
 - **Tuples**: `:: :tag 1 2` - tagged unions with class support
 - **Records**: `%{} RecordName (:key1 val1) (:key2 val2)`, similar to structs
-- **Structs**: `defstruct Point (:x :number) (:y :number)` - record type definitions
-- **Enums**: `defenum Result (:ok ..) (:err :string)` - sum types
+- **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` - record type definitions
+- **Enums**: `defenum Result (:ok ..) (:err 'String)` - sum types
 - **Refs/Atoms**: `atom 0` - mutable references
 - **Buffers**: `&buffer 0x01 0x02` - binary data
 
@@ -94,18 +94,21 @@ cr eval "echo |done"
 
 ```cirru
 ; Function definition
-defn add (a b)
-  + a b
+
+defn add (a b) (+ a b)
 ```
 
 ```cirru
 ; Conditional
-let ((x 1))
+
+let
+    x 1
   if (> x 0) |positive |negative
 ```
 
 ```cirru
 ; Let binding
+
 let
     a 1
     b 2
@@ -114,6 +117,7 @@ let
 
 ```cirru
 ; Thread macro
+
 -> (range 10)
   filter $ fn (x) (> x 5)
   map inc
@@ -125,47 +129,51 @@ let
 let
     ; Local function with type annotations
     add $ fn (a b)
-      hint-fn $ {} (:args ([] :number :number)) (:return :number)
+      hint-fn $ {}
+        :args $ [] 'Number 'Number
+        :return 'Number
       + a b
     ; Local variadic function
     sum $ fn (& xs)
-      hint-fn $ {} (:rest :number) (:return :number)
+      hint-fn $ {} (:rest 'Number) (:return 'Number)
       apply + xs
     ; Struct definition
-    User $ defstruct User (:name :string) (:age :number) (:email :string)
+    User $ defstruct User (:name 'String) (:age 'Number) (:email 'String)
     x 42
-  ; Type assertion (composable check, returns original value)
-  assert-type x :number
+  ; Type assertion $ composable check, returns original value
+  assert-type x 'Number
   [] (add 3 4) (sum 1 2 3) x
 ```
 
 Namespace-level definitions use `:schema`, for example:
 
 ```cirru
-defn add (a b)
-  + a b
+defn add (a b) (+ a b)
 ```
 
 `schema` can be attached separately:
 
 ```cirru
-:: :fn $ {} (:args $ [] :number :number) (:return :number)
+:: 'Fn $ {}
+  :args $ [] 'Number 'Number
+  :return 'Number
 ```
 
 ### Built-in Types
 
-- `:number`, `:string`, `:bool`, `:nil`, `:dynamic`
-- `:list`, `:map`, `:set`, `:record`, `:fn`, `:tuple`
-- `:dynamic` - wildcard type (default when no annotation)
+- `'Number`, `'String`, `'Bool`, `'Nil`, `'Dynamic`
+- `'List`, `'Map`, `'Set`, `'Record`, `'Fn`, `'Tuple`
+- `'Dynamic` - wildcard type (default when no annotation)
 - Generic types (Cirru style):
 
 ```cirru
 let
-    t1 $ :: :list :number
-    t2 $ :: :map :string
-    t3 $ :: :fn $ {}
-      :args $ [] :number
-      :return :string
+    t1 $ :: 'List 'Number
+    t2 $ :: 'Map 'String
+    t3 $ :: 'Fn
+      {}
+        :args $ [] 'Number
+        :return 'String
   [] t1 t2 t3
 ```
 
