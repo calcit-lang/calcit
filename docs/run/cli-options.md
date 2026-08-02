@@ -167,6 +167,20 @@ Load module dependencies with repeatable `--dep` options:
 cr docs check-md README.md --dep ./ --dep ~/.config/calcit/modules/memof/
 ```
 
+Format the same fenced Cirru blocks with `docs format-md`. It preserves all
+Markdown outside recognized `cirru`, `cirru.no-run`, `cirru.no-check`, and
+`cirru.cli` fences, and writes through an atomic replacement:
+
+```bash
+cr docs format-md README.md
+```
+
+Use `--check` in CI to reject non-canonical snippets without changing files:
+
+```bash
+cr docs format-md README.md --check
+```
+
 Recommended block modes:
 
 - `cirru`: run + preprocess + parse (preferred; executes injected snippet entry `app.main/main!`, not entry file `:init-fn`)
