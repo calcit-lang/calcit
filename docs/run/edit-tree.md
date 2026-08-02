@@ -243,7 +243,10 @@ cr edit imports app.main --file imports.cirru
 
 ```bash
 # Schema accepts exactly one quoted Cirru type node.
-cr edit schema 'app.main/*enabled?' --code 'quote $ :: :ref :bool'
+cr edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"
+
+# Concrete defstruct/defenum value schemas use a fully qualified nominal type.
+cr edit schema app.schema/store --code "quote 'app.schema/Store"
 
 # Each top-level quote becomes one example; leaves remain representable.
 cr edit examples app.main/add << 'END'

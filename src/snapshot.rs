@@ -1090,6 +1090,16 @@ fn canonical_schema_symbol_from_cirru(node: &Cirru) -> Option<&'static str> {
   CalcitTypeAnnotation::canonical_type_symbol_name(value.trim_start_matches('\''))
 }
 
+fn is_qualified_nominal_schema_ref(value: &str) -> bool {
+  let Some(name) = value.strip_prefix('\'') else {
+    return false;
+  };
+  let Some((namespace, definition)) = name.rsplit_once('/') else {
+    return false;
+  };
+  !namespace.is_empty() && !definition.is_empty()
+}
+
 fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
   parse_schema_data(schema)?;
   check_no_nil_type(schema)?;
@@ -1135,6 +1145,19 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
           "Bare `'{canonical}` leaves its nested type dynamic. Use an explicit type expression such as `:: '{canonical} 'Bool`; write `'Dynamic` as a nested type only when the boundary is intentionally dynamic."
         ));
       }
+      if is_qualified_nominal_schema_ref(s) {
+        check_no_excess_quotes(schema)?;
+        let schema_edn = schema_cirru_to_edn(schema.clone());
+        let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn);
+        if matches!(
+          annotation.as_ref(),
+          CalcitTypeAnnotation::TypeRef(name, args)
+            if name.as_ref() == s.trim_start_matches('\'') && args.is_empty()
+        ) {
+          return Ok(());
+        }
+        return Err(format!("Failed to parse fully qualified nominal value schema `{s}`"));
+      }
       if PARAMETERIZED_SCHEMA_TAGS.contains(&tag_name) {
         let example = match tag_name {
           "map" => ":: :map :tag :bool",
@@ -1154,7 +1177,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         return Ok(());
       }
       return Err(format!(
-        "Unknown value schema `{s}`. Use a direct type such as `'String`, a parameterized value type such as `:: 'Ref 'Bool`, or a callable schema such as `:: 'Fn $ {{}} (:args $ []) (:return 'Unit)`."
+        "Unknown value schema `{s}`. Use a direct type such as `'String`, a fully qualified nominal type such as `'app.schema/Store`, a parameterized value type such as `:: 'Ref 'Bool`, or a callable schema such as `:: 'Fn $ {{}} (:args $ []) (:return 'Unit)`."
       ));
     }
   };
@@ -1355,6 +1378,23 @@ impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
     Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(&data))
   }
+}
+
+/// Validate and parse one schema submitted through `cr edit schema`.
+/// Leaf schemas cannot be round-tripped through `parse_schema_data`, whose
+/// Cirru formatter requires a top-level expression, so they are converted
+/// directly into EDN before type parsing.
+pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTypeAnnotation>, String> {
+  validate_schema_for_write(schema)?;
+  if !matches!(schema, Cirru::Leaf(_)) {
+    parse_schema_data(schema)?;
+  }
+  let schema_edn = schema_cirru_to_edn(schema.clone());
+  Ok(
+    CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn)
+      .map(|signature| Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
+      .unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn)),
+  )
 }
 
 impl From<&CodeEntry> for Edn {
@@ -2535,6 +2575,22 @@ mod tests {
       "standalone parameterized value schema should pass"
     );
 
+    let qualified_struct = Cirru::Leaf(Arc::from("'app.schema/Store"));
+    let qualified_result = validate_schema_for_write(&qualified_struct);
+    assert!(
+      qualified_result.is_ok(),
+      "fully qualified nominal value schema should pass: {qualified_result:?}"
+    );
+    let qualified_annotation =
+      parse_schema_annotation_for_write(&qualified_struct).expect("fully qualified nominal value schema should parse");
+    assert!(matches!(
+      qualified_annotation.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
+    ));
+    let unqualified_struct = Cirru::Leaf(Arc::from("'Store"));
+    let error = validate_schema_for_write(&unqualified_struct).expect_err("unqualified nominal value schema should fail");
+    assert!(error.contains("fully qualified nominal type"), "error: {error}");
+
     // Legacy unwrapped callable maps are rejected even when they carry :kind.
     let legacy_unwrapped = parse_one("{} (:kind :fn) (:args ([] :string)) (:return :bool)");
     let error = validate_schema_for_write(&legacy_unwrapped).expect_err("legacy map should fail");
@@ -2562,6 +2618,11 @@ mod tests {
     // Primitive type tag leaves are now accepted.
     let leaf_string = Cirru::Leaf(Arc::from(":string"));
     assert!(validate_schema_for_write(&leaf_string).is_ok(), ":string leaf should pass");
+    let parsed_leaf_string = parse_schema_annotation_for_write(&leaf_string).expect(":string leaf should parse");
+    assert!(matches!(parsed_leaf_string.as_ref(), CalcitTypeAnnotation::String));
+    let quoted_string = Cirru::Leaf(Arc::from("'String"));
+    let parsed_quoted_string = parse_schema_annotation_for_write(&quoted_string).expect("'String leaf should parse");
+    assert!(matches!(parsed_quoted_string.as_ref(), CalcitTypeAnnotation::String));
     let leaf_fn = Cirru::Leaf(Arc::from(":fn"));
     assert!(validate_schema_for_write(&leaf_fn).is_err(), "bare :fn should require a signature");
     let leaf_ref = Cirru::Leaf(Arc::from(":ref"));
@@ -2581,6 +2642,14 @@ mod tests {
     assert!(validate_schema_for_write(&leaf_struct).is_ok(), ":struct leaf should pass");
     let leaf_impl = Cirru::Leaf(Arc::from(":impl"));
     assert!(validate_schema_for_write(&leaf_impl).is_ok(), ":impl leaf should pass");
+    for kind in ["record", "struct", "enum", "trait", "impl"] {
+      let schema = Cirru::Leaf(Arc::from(format!(":{kind}")));
+      let annotation = parse_schema_annotation_for_write(&schema).unwrap_or_else(|error| panic!(":{kind} should parse: {error}"));
+      assert!(
+        matches!(annotation.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), crate::calcit::Calcit::Tag(tag) if tag.ref_str() == kind)),
+        ":{kind} should keep its broad schema kind, got {annotation}"
+      );
+    }
 
     // Unknown leaf (not a known primitive type) must still fail.
     let leaf_unknown = Cirru::Leaf(Arc::from(":not-a-type"));
@@ -2618,6 +2687,20 @@ mod tests {
     assert!(matches!(
       decoded.schema.as_ref(),
       CalcitTypeAnnotation::Ref(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+    ));
+
+    let nominal_edn = Edn::Symbol(Arc::from("app.schema/Store"));
+    let nominal = parse_loaded_schema_annotation(&nominal_edn, "app.schema/store").expect("qualified nominal schema should load");
+    assert!(matches!(
+      nominal.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
+    ));
+    let stored_nominal = schema_annotation_to_edn(nominal.as_ref());
+    assert_eq!(stored_nominal, Edn::tuple(Edn::Symbol(Arc::from("app.schema/Store")), vec![]));
+    let reloaded = parse_loaded_schema_annotation(&stored_nominal, "app.schema/store").expect("stored nominal schema should reload");
+    assert!(matches!(
+      reloaded.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
     ));
   }
 
