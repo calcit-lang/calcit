@@ -596,7 +596,18 @@ impl CalcitTypeAnnotation {
     }
 
     match form {
-      Calcit::Symbol { sym, .. } => Some(Self::normalize_type_ref_name(sym)),
+      Calcit::Symbol { sym, info, .. } => {
+        let normalized = Self::normalize_type_ref_name(sym);
+        if normalized.contains('/') {
+          Some(normalized)
+        } else if lookup_def_code_registered(&info.at_ns, &normalized).is_some() {
+          Some(Arc::from(format!("{}/{}", info.at_ns, normalized)))
+        } else if lookup_def_code_registered(CORE_NS, &normalized).is_some() {
+          Some(Arc::from(format!("{CORE_NS}/{normalized}")))
+        } else {
+          Some(normalized)
+        }
+      }
       Calcit::Import(import) => Some(Arc::from(format!("{}/{}", import.ns, import.def))),
       _ => None,
     }
@@ -893,6 +904,11 @@ impl CalcitTypeAnnotation {
         let parsed = Self::parse_type_annotation_form_inner(item, generics, strict_named_refs);
         match parsed.as_ref() {
           CalcitTypeAnnotation::Trait(trait_def) => traits.push(trait_def.clone()),
+          CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => traits.push(Arc::new(CalcitTrait::new(
+            EdnTag::new(name.trim_start_matches('\'').rsplit('/').next().unwrap_or(name.as_ref())),
+            vec![],
+            vec![],
+          ))),
           _ => return None,
         }
       }
@@ -903,6 +919,11 @@ impl CalcitTypeAnnotation {
 
     match Self::parse_type_annotation_form_inner(form, generics, strict_named_refs).as_ref() {
       CalcitTypeAnnotation::Trait(trait_def) => Some(vec![trait_def.clone()]),
+      CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => Some(vec![Arc::new(CalcitTrait::new(
+        EdnTag::new(name.trim_start_matches('\'').rsplit('/').next().unwrap_or(name.as_ref())),
+        vec![],
+        vec![],
+      ))]),
       _ => None,
     }
   }
@@ -3920,6 +3941,34 @@ mod tests {
     assert_eq!(bounds[0].name.as_ref(), "T");
     assert_eq!(bounds[0].traits.len(), 1);
     assert_eq!(bounds[0].traits[0].name.ref_str(), "Show");
+  }
+
+  #[test]
+  fn extracts_symbol_trait_placeholder_from_strict_where_hint() {
+    let generics = Calcit::List(Arc::new(CalcitList::from(&[symbol("[]"), symbol("T")])));
+    let where_map = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[symbol("T"), symbol("Show")]))),
+    ])));
+    let schema_map = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::tag("generics"), generics]))),
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::tag("where"), where_map]))),
+    ])));
+    let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests.where")),
+      schema_map,
+    ])));
+
+    let bounds = CalcitTypeAnnotation::extract_where_bounds_from_hint_form(&hint_form).expect("symbol trait bound should parse");
+    assert_eq!(bounds.len(), 1);
+    assert_eq!(bounds[0].name.as_ref(), "T");
+    assert_eq!(bounds[0].traits.len(), 1);
+    assert_eq!(bounds[0].traits[0].name.ref_str(), "Show");
+    assert!(
+      bounds[0].traits[0].methods.is_empty(),
+      "source resolution happens during preprocessing"
+    );
   }
 
   #[test]

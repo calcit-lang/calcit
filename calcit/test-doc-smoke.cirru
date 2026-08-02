@@ -45,7 +45,7 @@
                 DocPerson $ impl-traits DocPerson0 DocTraitImpl
                 p $ %{} DocPerson (:name |Alice)
               assert= p $ assert-traits p DocTrait
-              assert= "|doc Alice" $ .label p
+              assert= "|doc Alice" $ p .label
           :examples $ []
           :schema $ :: 'Dynamic
         |test-defimpl-order $ %{} :CodeEntry (:doc "|defimpl arg order smoke")
@@ -83,7 +83,7 @@
                 DotPerson $ impl-traits DocPerson0 DotImpl
                 p $ %{} DotPerson (:name |Bob)
               assert= DocTrait $ &impl:origin DotImpl
-              assert= "|native-dot Bob" $ .label p
+              assert= "|native-dot Bob" $ p .label
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)

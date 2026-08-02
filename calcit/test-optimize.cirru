@@ -39,29 +39,29 @@
             defn main! () $ let
                 p $ %{} Person (:name |Jim)
               println "|--- direct call ---"
-              println $ .show p
+              println $ p .show
               let
                   p2 p
                 assert-traits p2 ShowTrait
                 println "|--- assert-traits ShowTrait ---"
-                println $ .show p2
+                println $ p2 .show
               let
                   p3 p
                 assert-type p3 Person
                 println "|--- assert-type Person ---"
-                println $ .show p3
+                println $ p3 .show
               let
                   p4 p
                 assert-type p4 Person
                 assert-traits p4 ShowTrait
                 println "|--- assert-type Person + assert-traits ShowTrait ---"
-                println $ .show p4
+                println $ p4 .show
               let
                 LocalPerson $ impl-traits LocalPerson0 ShowImpl
                   lp $ %{} LocalPerson (:name |Local)
                 println "|--- local struct (runtime impl) ---"
                 assert-traits lp ShowTrait
-                println $ .show lp
+                println $ lp .show
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)

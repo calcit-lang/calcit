@@ -23,7 +23,7 @@ Keep two concepts separate:
 - **Define Trait**: `deftrait MyTrait .method (:: 'Fn $ {} ...)`
 - **Implement Trait**: `defimpl MyImpl MyTrait .method (fn (x) ...)`
 - **Attach to Struct**: `impl-traits MyStruct MyImpl`
-- **Call Method**: `.method instance`
+- **Call Method**: `instance .method` (receiver-first; `.method instance` remains compatible)
 - **Check Trait**: `assert-traits instance MyTrait`
 
 ## Define a trait
@@ -56,7 +56,7 @@ let
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
-  .foo p
+  p .foo
 ```
 
 ### Impl-related syntax (cheatsheet)
@@ -86,7 +86,7 @@ let
         str-spaced |foo $ :name p
     PersonA $ impl-traits PersonA0 MyFooImplA
     p $ %{} PersonA (:name |Alice)
-  .foo p
+  p .foo
 ```
 
 **2) Method pair forms**
@@ -107,7 +107,7 @@ let
         str |B: $ :name p
     PersonB $ impl-traits Person0 ImplB
     pb $ %{} PersonB (:name |Bob)
-  .foo pb
+  pb .foo
 ```
 
 **3) Legacy tag-based method bags (compatibility only)**
@@ -167,7 +167,7 @@ let
     StructDef0 $ defstruct StructDef (:name 'String)
     StructDef $ impl-traits StructDef0 ImplA ImplB
     x $ %{} StructDef (:name |test)
-  .foo x
+  x .foo
 ```
 
 ### Public vs internal API boundary
@@ -190,7 +190,7 @@ do (; struct example)
       Person0 $ defstruct Person (:name 'String)
       Person $ impl-traits Person0 MyFooImpl
       p $ %{} Person (:name |Alice)
-    .foo p
+    p .foo
   ; enum example
   let
       ResultTrait $ deftrait ResultTrait
@@ -207,7 +207,7 @@ do (; struct example)
       Result0 $ defenum Result0 (:ok 'String) (:err 'String)
       MyResult $ impl-traits Result0 ResultImpl
       r $ %:: MyResult :ok |done
-    .describe r
+    r .describe
 ```
 
 ### Static analysis boundary
@@ -263,7 +263,7 @@ let
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ %{} Person (:name |Alice)
   ; .zap follows normal dispatch $ last-wins for user impls
-  .zap p
+  p .zap
   ; explicitly pick a "trait’s" implementation
   &trait-call MyZapA :zap p
   &trait-call MyZapB :zap p
@@ -330,13 +330,13 @@ let
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo
-  .foo p
+  p .foo
 ```
 
 ### Examples (verified with `cr eval`)
 
 ```bash
-cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (.len xs)'
+cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Len)) (xs .len)'
 ```
 
 Expected output:
@@ -346,7 +346,7 @@ Expected output:
 ```
 
 ```bash
-cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (.map xs inc)'
+cargo run --bin cr -- calcit.cirru eval 'let ((xs ([] 1 2 3))) (assert= xs (assert-traits xs calcit.core/Mappable)) (xs .map inc)'
 ```
 
 Expected output:

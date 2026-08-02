@@ -5,7 +5,7 @@ mod logics;
 mod maps;
 mod math;
 pub mod meta;
-mod records;
+pub(crate) mod records;
 mod refs;
 mod sets;
 mod strings;

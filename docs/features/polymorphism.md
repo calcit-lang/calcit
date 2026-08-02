@@ -25,7 +25,7 @@ Historically, the idea was inspired by JavaScript, and also [borrowed from a tri
 - **Define Trait**: `deftrait Show .show (:: :fn $ {} ...)`
 - **Implement**: `defimpl ShowImpl Show .show (fn (x) ...)`
 - **Attach**: `impl-traits MyStruct ShowImpl`
-- **Call**: `.show instance`
+- **Call**: `instance .show` (receiver-first; `.show instance` remains compatible)
 
 ## Key terms
 
@@ -72,7 +72,7 @@ let
     Person0 $ defstruct Person (:name :string)
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
-  .foo p
+  p .foo
 ```
 
 `impl-traits` returns a new struct/enum definition with trait implementations attached. You can also attach multiple traits at once:
@@ -109,7 +109,7 @@ let
         str |foo: $ :name p
     Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
     p $ %{} Person (:name |Alice)
-  [] (.show p) (.foo p)
+  [] (p .show) (p .foo)
 ```
 
 ## Trait checks and type hints
@@ -131,7 +131,7 @@ let
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo
-  .foo p
+  p .foo
 ```
 
 If the trait is missing or its selected impl is incomplete, `assert-traits` raises an error. Methods are not combined across unrelated impls: implementing `TraitA/.render` never satisfies `TraitB/.render`.
@@ -149,13 +149,13 @@ Top-level definitions use `:schema`:
 ```cirru.no-run
 %{} :CodeEntry
   :code $ quote
-    defn show-it (x) (.show x)
-  :schema $ :: :fn
+    defn show-it (x) (x .show)
+  :schema $ :: 'Fn
     {}
       :generics $ [] 'T
       :where $ {} ('T Show)
       :args $ [] 'T
-      :return :string
+      :return 'String
 ```
 
 Local functions use `hint-fn` with the same shape:
@@ -167,8 +167,8 @@ let
         :generics $ [] 'T
         :where $ {} ('T Show)
         :args $ [] 'T
-        :return :string
-      .show x
+        :return 'String
+      x .show
   show-it 1
 ```
 
@@ -224,8 +224,8 @@ Core types provide origin-carrying built-in trait implementations registered con
 
 ```cirru
 do
-  assert= -1 $ .compare 1 2
-  assert= 0 $ .compare |same |same
+  assert= -1 $ 1 .compare 2
+  assert= 0 $ |same .compare |same
 ```
 
 ## Option and Result helpers

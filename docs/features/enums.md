@@ -30,7 +30,7 @@ let
     Color $ defenum Color (:red) (:green) (:blue)
     c $ %:: Color :red
   println c
-  ; => (%:: :red (:enum Color))
+  ; => $ %:: :red (:enum Color)
 ```
 
 Variants with payloads:
@@ -41,9 +41,9 @@ let
     c $ %:: Shape :circle 5
     r $ %:: Shape :rect 3 4
   println c
-  ; => (%:: :circle 5 (:enum Shape))
+  ; => $ %:: :circle 5 (:enum Shape)
   println r
-  ; => (%:: :rect 3 4 (:enum Shape))
+  ; => $ %:: :rect 3 4 (:enum Shape)
 ```
 
 ## Generic Enums
@@ -70,17 +70,17 @@ After the optional generics list, `defenum` may also take a `where` map to const
 ```cirru
 let
     ShownMaybe $ defenum ShownMaybe ([] 'T)
-      {} ('T Show)
+      {} $ 'T Show
       :some 'T
       :none
     some-val $ %:: ShownMaybe :some 1
     none-val $ %:: ShownMaybe :none
-  assert-type some-val $ :: 'ShownMaybe :number
+  assert-type some-val $ :: 'ShownMaybe 'Number
   assert= |1 $ match some-val
-    (:some item) (.show item)
+    (:some item) (item .show)
     (:none) |none
   assert= |none $ match none-val
-    (:some item) (.show item)
+    (:some item) (item .show)
     (:none) |none
 ```
 
@@ -105,8 +105,11 @@ Applied generic structs also work in enum payloads:
 ```cirru
 let
     Box $ defstruct Box ([] 'T) (:value 'T)
-    Wrapped $ defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
-    value $ %:: Wrapped :box $ %{} Box (:value 1)
+    Wrapped $ defenum Wrapped ([] 'T)
+      :box $ :: 'Box 'T
+      :empty
+    value $ %:: Wrapped :box
+      %{} Box $ :value 1
     boxed $ &tuple:nth value 1
   assert-type value $ :: 'Wrapped :number
   assert= 1 $ :value boxed
@@ -138,10 +141,8 @@ let
     Shape $ defenum Shape (:circle :number) (:rect :number :number)
     c $ %:: Shape :circle 5
     area $ tag-match c
-      (:circle radius)
-        * radius radius 3.14159
-      (:rect w h)
-        * w h
+      (:circle radius) (* radius radius 3.14159)
+      (:rect w h) (* w h)
   println area
   ; => 78.53975
 ```
@@ -154,11 +155,9 @@ let
     ok $ %:: ApiResult :ok |success
     describe $ fn (r)
       tag-match r
-        (:ok msg)
-          str-spaced |OK: msg
-        (:err msg)
-          str-spaced |Error: msg
-  println (describe ok)
+        (:ok msg) (str-spaced |OK: msg)
+        (:err msg) (str-spaced |Error: msg)
+  println $ describe ok
   ; => OK: success
 ```
 
@@ -176,10 +175,9 @@ let
 let
     Shape $ defenum Shape (:circle :number) (:rect :number :number)
     c $ %:: Shape :circle 5
-    area
-      match c
-        (:circle radius) (* radius radius 3.14159)
-        (:rect w h) (* w h)
+    area $ match c
+      (:circle radius) (* radius radius 3.14159)
+      (:rect w h) (* w h)
   println area
   ; => 78.53975
 ```
@@ -192,12 +190,9 @@ When a branch body needs more than one expression, indent subsequent lines under
 let
     ApiResult $ defenum ApiResult (:ok :string) (:err :string)
     r $ %:: ApiResult :err |network-error
-    msg
-      match r
-        (:ok v)
-          str-spaced |OK: v
-        (:err e)
-          str-spaced |Error: e
+    msg $ match r
+      (:ok v) (str-spaced |OK: v)
+      (:err e) (str-spaced |Error: e)
   println msg
   ; => Error: network-error
 ```
@@ -209,7 +204,7 @@ If you omit a variant and don't have a wildcard `_` branch, the compiler warns:
 ```cirru.no-check
 match c
   (:circle radius) (* radius radius 3.14159)
-  ; ⚠ Warning: match on `Shape` is not exhaustive. Missing variant(s): [:rect]
+  ; "⚠" Warning: match on "`Shape`" is not exhaustive. Missing variant (s) : [:rect]
 ```
 
 The check fires only when the compiler can infer the enum type of the matched value — for example, when the value is directly constructed with `%::`, or when the function parameter is annotated with an enum type in its schema. When the type cannot be inferred at preprocess time, the match still works at runtime but no compile-time warning is issued.
@@ -220,10 +215,9 @@ Use `_` as a wildcard to catch remaining variants:
 let
     Shape $ defenum Shape (:circle :number) (:rect :number :number)
     c $ %:: Shape :circle 5
-    label
-      match c
-        (:circle _r) |round
-        _ |other
+    label $ match c
+      (:circle _r) |round
+      _ |other
   println label
   ; => round
 ```
@@ -256,12 +250,14 @@ Both syntaxes share the same branch format: each branch is `(pattern body)`.
 The branch syntax is identical — migration is a single keyword replacement:
 
 ```cirru.no-check
-; Before (tag-match)
+; Before $ tag-match
+
 tag-match r
   (:ok v) (str-spaced |ok: v)
   (:err e) (str-spaced |err: e)
 
-; After (match)
+; After $ match
+
 match r
   (:ok v) (str-spaced |ok: v)
   (:err e) (str-spaced |err: e)
@@ -278,10 +274,9 @@ let
     MaybeInt $ defenum MaybeInt (:some :number) (:none)
     some-val $ %:: MaybeInt :some 42
     none-val $ %:: MaybeInt :none
-    extracted
-      match some-val
-        (:some v) (* v 2)
-        (:none) nil
+    extracted $ match some-val
+      (:some v) (* v 2)
+      (:none) nil
   println extracted
   ; => 84
 ```
@@ -307,14 +302,12 @@ let
     AppResult $ defenum AppResult (:ok :number) (:err :string)
     compute $ fn (x)
       if (> x 0)
-        %:: AppResult :ok (* x 10)
+        %:: AppResult :ok $ * x 10
         %:: AppResult :err |negative-input
     handle $ fn (r)
       match r
-        (:ok v)
-          str-spaced |result: v
-        (:err e)
-          str-spaced |failed: e
+        (:ok v) (str-spaced |result: v)
+        (:err e) (str-spaced |failed: e)
   println $ handle (compute 5)
   ; => result: 50
   println $ handle (compute -1)
@@ -333,9 +326,9 @@ let
         (:done _) true
         (:pending) false
         (:failed _) false
-  println (is-done pending)
+  println $ is-done pending
   ; => false
-  println (is-done done)
+  println $ is-done done
   ; => true
 ```
 
@@ -345,16 +338,23 @@ Field types in `defenum` declarations participate in type checking:
 
 ```cirru.no-run
 ; (:ok :string) means the :ok variant has one :string payload
+
 defenum ApiResult (:ok :string) (:err :string)
 
 ; (:point :number :number) means :point has two :number payloads
+
 defenum Shape (:point :number :number) (:circle :number)
 
 ; generic struct payloads use applied named types
+
 defstruct Box ([] 'T) (:value 'T)
-defenum Wrapped ([] 'T) (:box (:: 'Box 'T)) (:empty)
+
+defenum Wrapped ([] 'T)
+  :box $ :: 'Box 'T
+  :empty
 
 ; (:none) means no payload
+
 defenum MaybeInt (:some :number) (:none)
 ```
 
@@ -362,7 +362,9 @@ Payloads may also reference named struct types (illustrative, cross-file type re
 
 ```cirru.no-check
 ; defstruct and defenum from the same snippet context:
+
 defstruct Point (:x :number) (:y :number)
+
 defenum Shape2 (:point Point) (:circle :number)
 ```
 
@@ -378,11 +380,14 @@ let
     takes-result $ fn (r)
       :: :fn $ {} (:return :dynamic)
         :args $ [] 'app.main/Result0
-      match r ((:ok) :ok) ((:err msg) msg) $ _ :unknown
-  ; Write an untyped tuple — preprocessor rewrites to enum tuple automatically:
-  assert= :ok $ takes-result $ :: :ok
+      match r
+        (:ok) :ok
+        (:err msg) msg
+        _ :unknown
+  ; Write an untyped tuple "—" preprocessor rewrites to enum tuple automatically:
+  assert= :ok $ takes-result (:: :ok)
   ; Equivalent to:
-  assert= :ok $ takes-result $ %:: Result0 :ok
+  assert= :ok $ takes-result (%:: Result0 :ok)
 ```
 
 Requirements for the rewrite to trigger:

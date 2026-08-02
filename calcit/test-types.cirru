@@ -320,7 +320,7 @@
                   Person $ impl-traits Person PersonImpl
                   alice $ %{} Person (:name |Alice) (:age 30)
                 let
-                    greeting $ .greet alice
+                    greeting $ alice .greet
                   println |greeting: greeting
                   assert= "|Hello, I'm Alice" greeting
               , "|Record method checks passed"

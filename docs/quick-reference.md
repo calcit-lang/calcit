@@ -188,7 +188,7 @@ let
 
 ### Method & Access Syntax
 
-- Method call: `.map xs inc` (or shorthand `xs.map inc`)
+- Method call: `xs .map inc` when the receiver type is known; prefix `.map xs inc` remains compatible for dynamic boundaries
 - Tag access (map key): prefer `obj.:name` over legacy `(:name obj)`
 - Trait/impl declarations prefer dot method keys like `.foo`; legacy tag keys like `:foo` remain compatible but emit a default warning in `deftrait`/`defimpl`
 
