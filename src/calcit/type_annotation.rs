@@ -596,7 +596,18 @@ impl CalcitTypeAnnotation {
     }
 
     match form {
-      Calcit::Symbol { sym, .. } => Some(Self::normalize_type_ref_name(sym)),
+      Calcit::Symbol { sym, info, .. } => {
+        let normalized = Self::normalize_type_ref_name(sym);
+        if normalized.contains('/') {
+          Some(normalized)
+        } else if lookup_def_code_registered(&info.at_ns, &normalized).is_some() {
+          Some(Arc::from(format!("{}/{}", info.at_ns, normalized)))
+        } else if lookup_def_code_registered(CORE_NS, &normalized).is_some() {
+          Some(Arc::from(format!("{CORE_NS}/{normalized}")))
+        } else {
+          Some(normalized)
+        }
+      }
       Calcit::Import(import) => Some(Arc::from(format!("{}/{}", import.ns, import.def))),
       _ => None,
     }
@@ -893,6 +904,9 @@ impl CalcitTypeAnnotation {
         let parsed = Self::parse_type_annotation_form_inner(item, generics, strict_named_refs);
         match parsed.as_ref() {
           CalcitTypeAnnotation::Trait(trait_def) => traits.push(trait_def.clone()),
+          CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => {
+            traits.push(Arc::new(CalcitTrait::new_reference(name)))
+          }
           _ => return None,
         }
       }
@@ -903,6 +917,9 @@ impl CalcitTypeAnnotation {
 
     match Self::parse_type_annotation_form_inner(form, generics, strict_named_refs).as_ref() {
       CalcitTypeAnnotation::Trait(trait_def) => Some(vec![trait_def.clone()]),
+      CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => {
+        Some(vec![Arc::new(CalcitTrait::new_reference(name))])
+      }
       _ => None,
     }
   }
@@ -960,11 +977,9 @@ impl CalcitTypeAnnotation {
 
     let parse_trait_from_edn = |value: &Edn| -> Option<Arc<CalcitTrait>> {
       match value {
-        Edn::Symbol(sym) if !Self::generics_contains(generics, sym.as_ref()) => Some(Arc::new(CalcitTrait::new(
-          EdnTag::new(sym.trim_start_matches('\'')),
-          vec![],
-          vec![],
-        ))),
+        Edn::Symbol(sym) if !Self::generics_contains(generics, sym.as_ref()) => {
+          Some(Arc::new(CalcitTrait::new_reference(sym.trim_start_matches('\''))))
+        }
         Edn::Tag(tag) => Some(Arc::new(CalcitTrait::new(EdnTag::new(tag.ref_str()), vec![], vec![]))),
         _ => {
           let parsed = Self::parse_type_annotation_form_inner(&Self::edn_type_to_calcit(value), generics, true);
@@ -2217,7 +2232,10 @@ impl CalcitTypeAnnotation {
         if let Some((ns, def)) = stripped.rsplit_once('/') {
           resolve_enum_from_program(ns, def).map(|e| (e, Some((Arc::from(ns), Arc::from(def)))))
         } else {
-          None
+          // Core named types are commonly written without a namespace in
+          // schemas because calcit.core is implicitly available. Resolve that
+          // global namespace before treating the reference as unknown.
+          resolve_enum_from_program(CORE_NS, stripped).map(|e| (e, Some((Arc::from(CORE_NS), Arc::from(stripped)))))
         }
       }
       Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
@@ -2248,6 +2266,7 @@ impl CalcitTypeAnnotation {
       Self::Set(_) => Some("&core-set-impls"),
       Self::Number => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
+      Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
       Self::Optional(inner) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -2340,55 +2359,70 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn infer_builtin_trait_name(imp: &CalcitImpl) -> Option<String> {
-    let raw = imp.name().ref_str();
-    let body = raw.strip_prefix("&core-")?.strip_suffix("-impl")?;
-    let segment = body.split('-').next()?;
-    let mut chars = segment.chars();
-    let first = chars.next()?;
-    let mut name = first.to_uppercase().collect::<String>();
-    name.push_str(chars.as_str());
-    Some(name)
-  }
-
-  fn builtin_type_satisfies_trait(&self, expected_trait: &CalcitTrait) -> bool {
-    match expected_trait.name.ref_str() {
-      "Mappable" => matches!(self, Self::List(_) | Self::Map(_, _) | Self::Set(_) | Self::Optional(_)),
-      "Show" => {
-        matches!(
-          self,
-          Self::Bool
-            | Self::Number
-            | Self::String
-            | Self::Symbol
-            | Self::Tag
-            | Self::Unit
-            | Self::Buffer
-            | Self::CirruQuote
-            | Self::DynTuple
-            | Self::List(_)
-            | Self::Map(_, _)
-            | Self::Set(_)
-        ) || matches!(self, Self::Optional(inner) if inner.builtin_type_satisfies_trait(expected_trait))
-      }
-      _ => false,
-    }
-  }
-
   fn impl_matches_trait(imp: &CalcitImpl, expected_trait: &CalcitTrait) -> bool {
-    imp.trait_name().is_some_and(|name| name == &expected_trait.name)
-      || imp.name() == &expected_trait.name
-      || Self::infer_builtin_trait_name(imp).as_deref() == Some(expected_trait.name.ref_str())
+    imp.matches_trait_reference(expected_trait)
+  }
+
+  /// Bootstrap metadata used only before a core impl list has been evaluated.
+  /// Runtime dispatch and evaluated static metadata both use the real impl
+  /// origins from calcit-core; this table prevents preprocessing order from
+  /// changing whether an otherwise identical core call emits a warning.
+  fn builtin_core_trait_names(&self) -> &'static [&'static str] {
+    if matches!(self, Self::Record(_) | Self::Struct(_, _)) {
+      return &["Show", "Eq", "Countable", "Contains"];
+    }
+    if matches!(self, Self::DynTuple | Self::Tuple(_) | Self::Enum(_, _)) {
+      return &["Show", "Eq", "Countable", "Contains"];
+    }
+    match self.core_impl_list_symbol() {
+      Some("&core-list-impls") => &["Show", "Eq", "Add", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-map-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-set-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-string-impls") => &["Show", "Eq", "Add", "Len", "Countable", "Contains", "Compare"],
+      Some("&core-number-impls") => &["Show", "Eq", "Add", "Multiply", "Compare"],
+      Some("&core-fn-impls") => &["Show"],
+      Some("&core-scalar-impls") => &["Show", "Eq"],
+      _ => &[],
+    }
   }
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
-    if self.builtin_type_satisfies_trait(expected_trait) {
-      return true;
+    if let Some(impls) = self.collect_static_impls() {
+      if impls.iter().any(|imp| Self::impl_matches_trait(imp, expected_trait)) {
+        return true;
+      }
+      // Primitive values use a real core impl list whenever it has finished
+      // evaluating. Do not let bootstrap names override that authoritative
+      // result; record/tuple categories keep their shared core capabilities in
+      // the fallback because their attached impl list is separate.
+      if self.core_impl_list_symbol().is_some() {
+        return false;
+      }
+    }
+    if !self.builtin_core_trait_names().contains(&expected_trait.name.ref_str()) {
+      return false;
     }
 
-    self
-      .collect_static_impls()
-      .is_some_and(|impls| impls.iter().any(|imp| Self::impl_matches_trait(imp, expected_trait)))
+    let core_reference = format!("{CORE_NS}/{}", expected_trait.name.ref_str());
+    if let Some(definition_ref) = expected_trait.definition_ref.as_deref() {
+      return definition_ref == core_reference;
+    }
+
+    // Evaluated traits are nominal. If the core trait value is not ready yet,
+    // do not let an unrelated runtime trait pass merely because its short name
+    // is the same as a built-in capability.
+    if expected_trait.runtime_id.is_some() {
+      return lookup_runtime_ready_registered(CORE_NS, expected_trait.name.ref_str())
+        .and_then(|value| match value {
+          Calcit::Trait(core_trait) => Some(core_trait == *expected_trait),
+          _ => None,
+        })
+        .unwrap_or(false);
+    }
+
+    // Bare unqualified placeholders are retained only for legacy schemas that
+    // predate namespace-qualified symbol references.
+    expected_trait.methods.is_empty()
   }
 
   fn satisfies_trait_bounds(&self, expected_traits: &[Arc<CalcitTrait>]) -> bool {
@@ -2528,10 +2562,10 @@ impl CalcitTypeAnnotation {
         }
         a_args.len() == b_args.len() && a_args.iter().zip(b_args.iter()).all(|(x, y)| x.matches_with_bindings(y, bindings))
       }
-      (Self::Trait(a), Self::Trait(b)) => a.name == b.name,
-      (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t.name == expected.name),
-      (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t.name == actual.name),
-      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a.name == t.name)),
+      (Self::Trait(a), Self::Trait(b)) => a == b,
+      (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t == expected),
+      (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t == actual),
+      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a == t)),
       (actual, Self::Trait(expected)) => actual.satisfies_trait_bound(expected.as_ref()),
       (actual, Self::TraitSet(expected)) => actual.satisfies_trait_bounds(expected.as_ref()),
       (Self::Struct(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct") => true,
@@ -2558,9 +2592,11 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(a), Self::Tuple(b)) => a.name() == b.name(),
       (Self::Tuple(a), Self::Enum(b, _)) | (Self::Enum(b, _), Self::Tuple(a)) => a.name() == b.name(),
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) => true,
-      (type_ref @ Self::TypeRef(_, _), Self::DynTuple) | (Self::DynTuple, type_ref @ Self::TypeRef(_, _)) => {
-        type_ref.resolve_to_enum().is_some()
-      }
+      // Enum values use the tuple runtime representation, so a concrete named
+      // enum is safe wherever a builtin proc accepts a dynamic tuple. Keep the
+      // relation directional: a dynamic tuple cannot satisfy a named enum.
+      (Self::Enum(_, _), Self::DynTuple) => true,
+      (type_ref @ Self::TypeRef(_, _), Self::DynTuple) => type_ref.resolve_to_enum().is_some(),
       (type_ref @ Self::TypeRef(_, _), Self::Custom(expected)) | (Self::Custom(expected), type_ref @ Self::TypeRef(_, _))
         if Self::custom_keyword_matches(expected, "record") || Self::custom_keyword_matches(expected, "struct") =>
       {
@@ -3186,6 +3222,19 @@ fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
     return resolve_type_def_from_code(inner);
   }
   let head = items.first()?;
+  // Data definitions are often stored behind `def` and `impl-traits` wrappers.
+  // Peel those value-preserving forms before looking for defstruct/defenum so
+  // named type references retain their concrete runtime representation.
+  if is_def_head(head)
+    && let Some(value) = items.get(2)
+  {
+    return resolve_type_def_from_code(value);
+  }
+  if is_impl_traits_head(head)
+    && let Some(value) = items.get(1)
+  {
+    return resolve_type_def_from_code(value);
+  }
   if is_defstruct_head(head) || is_struct_new_head(head) {
     return parse_defstruct_code(items.as_ref()).map(Calcit::Struct);
   }
@@ -3193,6 +3242,16 @@ fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
     return parse_defenum_code(items.as_ref()).map(Calcit::Enum);
   }
   None
+}
+
+fn is_def_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "def")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "def")
+}
+
+fn is_impl_traits_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "impl-traits")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "impl-traits")
 }
 
 fn is_defstruct_head(head: &Calcit) -> bool {
@@ -3406,6 +3465,72 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
 mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
+  use std::collections::BTreeSet;
+
+  fn core_impl_trait_names(definition: &str) -> BTreeSet<String> {
+    fn visit(node: &cirru_parser::Cirru, names: &mut BTreeSet<String>) {
+      let cirru_parser::Cirru::List(items) = node else {
+        return;
+      };
+      if let (Some(cirru_parser::Cirru::Leaf(head)), Some(cirru_parser::Cirru::Leaf(trait_name))) = (items.first(), items.get(1))
+        && head.as_ref() == "&impl::new"
+      {
+        names.insert(trait_name.to_string());
+      }
+      for item in items {
+        visit(item, names);
+      }
+    }
+
+    let core = crate::load_core_snapshot().expect("load embedded core snapshot");
+    let entry = core
+      .files
+      .get(CORE_NS)
+      .and_then(|file| file.defs.get(definition))
+      .unwrap_or_else(|| panic!("missing {definition} in embedded core snapshot"));
+    let mut names = BTreeSet::new();
+    visit(&entry.code, &mut names);
+    names
+  }
+
+  #[test]
+  fn bootstrap_core_trait_names_match_core_impl_definitions() {
+    let dynamic = crate::calcit::DYNAMIC_TYPE.clone();
+    let cases = vec![
+      (CalcitTypeAnnotation::List(dynamic.clone()), "&core-list-impls"),
+      (CalcitTypeAnnotation::Map(dynamic.clone(), dynamic.clone()), "&core-map-impls"),
+      (CalcitTypeAnnotation::Set(dynamic.clone()), "&core-set-impls"),
+      (CalcitTypeAnnotation::String, "&core-string-impls"),
+      (CalcitTypeAnnotation::Number, "&core-number-impls"),
+      (CalcitTypeAnnotation::DynFn, "&core-fn-impls"),
+      (CalcitTypeAnnotation::Bool, "&core-scalar-impls"),
+    ];
+
+    for (annotation, definition) in cases {
+      let expected: BTreeSet<String> = annotation
+        .builtin_core_trait_names()
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+      assert_eq!(
+        core_impl_trait_names(definition),
+        expected,
+        "bootstrap metadata drifted for {definition}"
+      );
+    }
+  }
+
+  #[test]
+  fn bootstrap_core_trait_fallback_rejects_non_core_same_name() {
+    let number = CalcitTypeAnnotation::Number;
+    let core_show = Arc::new(CalcitTrait::new_reference("calcit.core/Show"));
+    let user_show = Arc::new(CalcitTrait::new_reference("app.main/Show"));
+    let runtime_user_show = Arc::new(CalcitTrait::new_runtime(EdnTag::new("Show"), vec![], vec![]));
+
+    assert!(number.matches_annotation(&CalcitTypeAnnotation::Trait(core_show)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(user_show)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_show)));
+  }
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
@@ -3416,6 +3541,26 @@ mod tests {
       }),
       location: None,
     }
+  }
+
+  fn generic_result_enum() -> Arc<CalcitEnum> {
+    Arc::new(
+      CalcitEnum::from_record(CalcitRecord {
+        struct_ref: Arc::new(CalcitStruct {
+          name: EdnTag::new("Result"),
+          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
+          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
+          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
+          where_bounds: Arc::new(vec![]),
+          impls: vec![],
+        }),
+        values: Arc::new(vec![
+          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
+          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
+        ]),
+      })
+      .expect("valid generic enum"),
+    )
   }
 
   #[test]
@@ -3826,6 +3971,34 @@ mod tests {
   }
 
   #[test]
+  fn extracts_symbol_trait_placeholder_from_strict_where_hint() {
+    let generics = Calcit::List(Arc::new(CalcitList::from(&[symbol("[]"), symbol("T")])));
+    let where_map = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[symbol("T"), symbol("Show")]))),
+    ])));
+    let schema_map = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("{}"),
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::tag("generics"), generics]))),
+      Calcit::List(Arc::new(CalcitList::from(&[Calcit::tag("where"), where_map]))),
+    ])));
+    let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests.where")),
+      schema_map,
+    ])));
+
+    let bounds = CalcitTypeAnnotation::extract_where_bounds_from_hint_form(&hint_form).expect("symbol trait bound should parse");
+    assert_eq!(bounds.len(), 1);
+    assert_eq!(bounds[0].name.as_ref(), "T");
+    assert_eq!(bounds[0].traits.len(), 1);
+    assert_eq!(bounds[0].traits[0].name.ref_str(), "Show");
+    assert!(
+      bounds[0].traits[0].methods.is_empty(),
+      "source resolution happens during preprocessing"
+    );
+  }
+
+  #[test]
   fn wrapped_top_level_fn_schema_emits_where_bounds_in_edn_shape() {
     let schema = CalcitFnTypeAnnotation {
       generics: Arc::new(vec![Arc::from("T")]),
@@ -4132,23 +4305,7 @@ mod tests {
 
   #[test]
   fn matching_named_enum_ref_binds_generic_args_from_enum_annotation() {
-    let result = Arc::new(
-      CalcitEnum::from_record(CalcitRecord {
-        struct_ref: Arc::new(CalcitStruct {
-          name: EdnTag::new("Result"),
-          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
-          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
-          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
-          where_bounds: Arc::new(vec![]),
-          impls: vec![],
-        }),
-        values: Arc::new(vec![
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
-        ]),
-      })
-      .expect("valid generic enum"),
-    );
+    let result = generic_result_enum();
     let actual = CalcitTypeAnnotation::Enum(
       result.clone(),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
@@ -4163,23 +4320,7 @@ mod tests {
 
   #[test]
   fn matching_bare_enum_annotation_binds_generic_args_from_named_enum_ref() {
-    let result = Arc::new(
-      CalcitEnum::from_record(CalcitRecord {
-        struct_ref: Arc::new(CalcitStruct {
-          name: EdnTag::new("Result"),
-          fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
-          field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
-          generics: Arc::new(vec![Arc::from("T"), Arc::from("E")]),
-          where_bounds: Arc::new(vec![]),
-          impls: vec![],
-        }),
-        values: Arc::new(vec![
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("E")]))),
-          Calcit::List(Arc::new(CalcitList::Vector(vec![symbol("T")]))),
-        ]),
-      })
-      .expect("valid generic enum"),
-    );
+    let result = generic_result_enum();
     let actual = CalcitTypeAnnotation::TypeRef(
       Arc::from("Result"),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
@@ -4190,6 +4331,40 @@ mod tests {
     assert!(actual.matches_with_bindings(&expected, &mut bindings));
     assert!(matches!(bindings.get("T"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::Number)));
     assert!(matches!(bindings.get("E"), Some(bound) if matches!(bound.as_ref(), CalcitTypeAnnotation::String)));
+  }
+
+  #[test]
+  fn named_enum_satisfies_dynamic_tuple_only_in_safe_direction() {
+    let named = CalcitTypeAnnotation::Enum(
+      generic_result_enum(),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    let tuple = CalcitTypeAnnotation::DynTuple;
+
+    assert!(named.matches_annotation(&tuple));
+    assert!(!tuple.matches_annotation(&named));
+
+    // A named reference must never be accepted in the reverse direction. The
+    // forward, resolvable TypeRef path is covered by the same matcher arm as
+    // the concrete enum assertion above.
+    let named_ref = CalcitTypeAnnotation::TypeRef(Arc::from("tests/Result"), Arc::new(vec![]));
+    assert!(!tuple.matches_annotation(&named_ref));
+  }
+
+  #[test]
+  fn resolves_enum_definition_through_def_and_impl_traits_wrappers() {
+    let enum_form = Calcit::from(vec![
+      symbol("defenum"),
+      symbol("Result"),
+      Calcit::from(vec![Calcit::tag("ok"), symbol("Number")]),
+    ]);
+    let wrapped = Calcit::from(vec![
+      symbol("def"),
+      symbol("Result"),
+      Calcit::from(vec![symbol("impl-traits"), enum_form, symbol("ResultMethods")]),
+    ]);
+
+    assert!(matches!(resolve_type_def_from_code(&wrapped), Some(Calcit::Enum(_))));
   }
 
   #[test]
@@ -4755,13 +4930,21 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       _ => false,
     },
     CalcitTypeAnnotation::Trait(expected_trait) => match value {
-      Calcit::Record(r) => r.struct_ref.impls.iter().any(|imp| imp.name() == &expected_trait.name),
-      Calcit::Tuple(t) => t.impls().iter().any(|imp| imp.name() == &expected_trait.name),
+      Calcit::Record(r) => r
+        .struct_ref
+        .impls
+        .iter()
+        .any(|imp| imp.matches_trait_reference(expected_trait.as_ref())),
+      Calcit::Tuple(t) => t.impls().iter().any(|imp| imp.matches_trait_reference(expected_trait.as_ref())),
       _ => false,
     },
     CalcitTypeAnnotation::TraitSet(traits) => match value {
-      Calcit::Record(r) => traits.iter().all(|t| r.struct_ref.impls.iter().any(|imp| imp.name() == &t.name)),
-      Calcit::Tuple(t) => traits.iter().all(|tr| t.impls().iter().any(|imp| imp.name() == &tr.name)),
+      Calcit::Record(r) => traits
+        .iter()
+        .all(|trait_def| r.struct_ref.impls.iter().any(|imp| imp.matches_trait_reference(trait_def.as_ref()))),
+      Calcit::Tuple(t) => traits
+        .iter()
+        .all(|trait_def| t.impls().iter().any(|imp| imp.matches_trait_reference(trait_def.as_ref()))),
       _ => false,
     },
     CalcitTypeAnnotation::Custom(custom) => match custom.as_ref() {

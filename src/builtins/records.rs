@@ -26,6 +26,87 @@ fn mark_fn_used_in_impl(value: &Calcit) -> Calcit {
   }
 }
 
+fn callable_type(value: &Calcit) -> Option<CalcitTypeAnnotation> {
+  match value {
+    Calcit::Fn { info, .. } => Some(CalcitTypeAnnotation::from_calcit_fn(info)),
+    Calcit::Proc(proc) => proc
+      .get_type_signature()
+      .map(|signature| CalcitTypeAnnotation::from_function_parts(signature.arg_types.clone(), signature.return_type.clone())),
+    _ => None,
+  }
+}
+
+fn validate_trait_impl_entries(trait_def: &crate::calcit::CalcitTrait, entries: &[(EdnTag, Calcit)]) -> Result<(), CalcitErr> {
+  let missing = trait_def
+    .methods
+    .iter()
+    .filter(|method| !entries.iter().any(|(name, _)| name == *method))
+    .map(ToString::to_string)
+    .collect::<Vec<_>>();
+  let unexpected = entries
+    .iter()
+    .filter(|(name, _)| !trait_def.has_method(name.ref_str()))
+    .map(|(name, _)| name.to_string())
+    .collect::<Vec<_>>();
+
+  if !missing.is_empty() || !unexpected.is_empty() {
+    let mut details = vec![];
+    if !missing.is_empty() {
+      details.push(format!("missing methods: {}", missing.join(" ")));
+    }
+    if !unexpected.is_empty() {
+      details.push(format!("methods not declared by the trait: {}", unexpected.join(" ")));
+    }
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("&impl::new does not conform to trait {}: {}", trait_def.name, details.join("; ")),
+    ));
+  }
+
+  for (name, value) in entries {
+    let Some(method_idx) = trait_def.method_index(name.ref_str()) else {
+      continue;
+    };
+    let expected = trait_def
+      .method_types
+      .get(method_idx)
+      .expect("trait method type must align with its name");
+    let Some(actual) = callable_type(value) else {
+      return Err(CalcitErr::use_str(
+        CalcitErrKind::Type,
+        format!(
+          "&impl::new expects trait method .{} to be a function, but received: {value}",
+          name.ref_str()
+        ),
+      ));
+    };
+
+    if matches!(expected.as_ref(), CalcitTypeAnnotation::DynFn) {
+      continue;
+    }
+    // A builtin without registered type metadata is still callable, but there is
+    // no useful signature evidence to compare. User functions always preserve
+    // their arity and available hints through `from_calcit_fn` above.
+    if matches!(value, Calcit::Proc(proc) if proc.get_type_signature().is_none()) {
+      continue;
+    }
+    if !actual.matches_annotation(expected.as_ref()) {
+      return Err(CalcitErr::use_str(
+        CalcitErrKind::Type,
+        format!(
+          "&impl::new method .{} does not match trait {} signature: expected {}, got {}",
+          name.ref_str(),
+          trait_def.name,
+          expected.to_brief_string(),
+          actual.to_brief_string()
+        ),
+      ));
+    }
+  }
+
+  Ok(())
+}
+
 fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
   let Calcit::List(list) = form else {
     return None;
@@ -128,17 +209,18 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   };
 
-  if xs.len() == 1 {
-    return Ok(Calcit::Impl(CalcitImpl {
-      name: name_id,
-      origin,
-      fields: Arc::new(vec![]),
-      values: Arc::new(vec![]),
-    }));
-  }
-
   let mut entries: Vec<(EdnTag, Calcit)> = Vec::with_capacity(xs.len().saturating_sub(1));
-  for item in xs.iter().skip(1) {
+  let items: Vec<Calcit> = if let [_, Calcit::Impl(source)] = xs {
+    source
+      .fields
+      .iter()
+      .zip(source.values.iter())
+      .map(|(field, value)| Calcit::from(vec![Calcit::Tag(field.clone()), value.clone()]))
+      .collect()
+  } else {
+    xs.iter().skip(1).cloned().collect()
+  };
+  for item in &items {
     let (name, value) = match item {
       Calcit::List(pair) => match (pair.first(), pair.get(1), pair.get(2)) {
         (Some(name), Some(value), None) => (name, value),
@@ -185,6 +267,10 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         format!("&impl::new duplicated field: {}", entries[idx].0),
       );
     }
+  }
+
+  if let Some(trait_def) = origin.as_ref() {
+    validate_trait_impl_entries(trait_def, &entries)?;
   }
 
   let fields: Vec<EdnTag> = entries.iter().map(|(tag, _)| tag.to_owned()).collect();
@@ -1353,7 +1439,81 @@ mod tests {
   use super::*;
   use crate::calcit::{CalcitGenericBound, CalcitTrait};
 
-  fn shown_box_struct() -> CalcitStruct {
+  fn dyn_fn_trait(name: &str, methods: &[&str]) -> CalcitTrait {
+    CalcitTrait::new_runtime(
+      EdnTag::new(name),
+      methods.iter().map(|method| EdnTag::new(*method)).collect(),
+      methods.iter().map(|_| Arc::new(CalcitTypeAnnotation::DynFn)).collect(),
+    )
+  }
+
+  fn impl_pair(name: &str, value: Calcit) -> Calcit {
+    Calcit::from(vec![Calcit::tag(name), value])
+  }
+
+  fn callable_proc() -> Calcit {
+    Calcit::Proc(CalcitProc::NativeResetGenSymIndex)
+  }
+
+  #[test]
+  fn nominal_impl_requires_the_exact_trait_method_set() {
+    let trait_def = dyn_fn_trait("Renderable", &["render", "debug"]);
+    let missing =
+      new_impl(&[Calcit::Trait(trait_def.clone()), impl_pair("render", callable_proc())]).expect_err("missing trait method must fail");
+    assert!(missing.msg.contains("missing methods") && missing.msg.contains("debug"));
+
+    let unexpected = new_impl(&[
+      Calcit::Trait(trait_def),
+      impl_pair("render", callable_proc()),
+      impl_pair("debug", callable_proc()),
+      impl_pair("extra", callable_proc()),
+    ])
+    .expect_err("unexpected trait method must fail");
+    assert!(unexpected.msg.contains("not declared") && unexpected.msg.contains("extra"));
+  }
+
+  #[test]
+  fn nominal_impl_rejects_non_callable_method_values() {
+    let err = new_impl(&[
+      Calcit::Trait(dyn_fn_trait("Renderable", &["render"])),
+      impl_pair("render", Calcit::Nil),
+    ])
+    .expect_err("non-callable trait method must fail");
+
+    assert!(err.msg.contains("expects trait method .render to be a function"));
+  }
+
+  #[test]
+  fn nominal_impl_checks_available_method_signatures() {
+    let trait_def = CalcitTrait::new_runtime(
+      EdnTag::new("Renderable"),
+      vec![EdnTag::new("render")],
+      vec![Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![Arc::new(CalcitTypeAnnotation::Number)],
+        crate::calcit::DYNAMIC_TYPE.clone(),
+      ))],
+    );
+    let err =
+      new_impl(&[Calcit::Trait(trait_def), impl_pair("render", callable_proc())]).expect_err("wrong callable signature must fail");
+
+    assert!(err.msg.contains("does not match trait Renderable signature"));
+  }
+
+  #[test]
+  fn inherent_method_bag_can_be_promoted_to_a_nominal_impl() {
+    let method_bag = new_impl(&[Calcit::tag("legacy-methods"), impl_pair("render", callable_proc())]).expect("originless method bag");
+    let trait_def = dyn_fn_trait("Renderable", &["render"]);
+    let promoted = new_impl(&[Calcit::Trait(trait_def.clone()), method_bag]).expect("promoted nominal impl");
+    let Calcit::Impl(promoted) = promoted else {
+      panic!("expected impl value");
+    };
+
+    assert!(promoted.implements_trait(&trait_def));
+    assert!(!promoted.is_inherent());
+    assert!(promoted.get("render").is_some());
+  }
+
+  fn shown_box_struct(show_trait: Arc<CalcitTrait>) -> CalcitStruct {
     CalcitStruct {
       name: EdnTag::new("ShownBox"),
       fields: Arc::new(vec![EdnTag::new("value")]),
@@ -1361,30 +1521,50 @@ mod tests {
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
         name: Arc::from("T"),
-        traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+        traits: Arc::new(vec![show_trait]),
       }]),
       impls: vec![],
     }
   }
 
+  fn value_with_trait(trait_def: Arc<CalcitTrait>) -> Calcit {
+    let mut struct_def = CalcitStruct::from_fields(EdnTag::new("ShownValue"), vec![]);
+    struct_def.impls.push(Arc::new(CalcitImpl {
+      name: trait_def.name.clone(),
+      origin: Some(trait_def),
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    }));
+    Calcit::Record(CalcitRecord {
+      struct_ref: Arc::new(struct_def),
+      values: Arc::new(vec![]),
+    })
+  }
+
   #[test]
-  fn generic_struct_where_bounds_accept_show_values() {
-    let result = call_record(&[Calcit::Struct(shown_box_struct()), Calcit::tag("value"), Calcit::Number(1.0)]);
+  fn generic_struct_where_bounds_accept_nominal_trait_values() {
+    let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
+    let result = call_record(&[
+      Calcit::Struct(shown_box_struct(show_trait.clone())),
+      Calcit::tag("value"),
+      value_with_trait(show_trait),
+    ]);
 
     assert!(result.is_ok(), "expected shown box creation to pass: {result:?}");
   }
 
   #[test]
-  fn generic_struct_where_bounds_reject_non_show_values() {
+  fn generic_struct_where_bounds_reject_missing_nominal_trait() {
+    let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
     let err = call_record(&[
-      Calcit::Struct(shown_box_struct()),
+      Calcit::Struct(shown_box_struct(show_trait)),
       Calcit::tag("value"),
       Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
     ])
     .expect_err("expected shown box creation to fail on non-Show payload");
 
     assert!(
-      err.msg.contains("does not satisfy `trait Show`") || err.msg.contains("does not satisfy `Show`"),
+      err.msg.contains("does not satisfy `trait Renderable`") || err.msg.contains("does not satisfy `Renderable`"),
       "unexpected error: {err:?}"
     );
   }

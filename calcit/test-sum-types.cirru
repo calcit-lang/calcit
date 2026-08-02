@@ -38,8 +38,8 @@
                   fn (impl)
                     = (&impl:origin impl) ActionTrait
                 assert= "|(%:: :ok 42 (:enum Result))" $ str ok-action
-                assert= "|Action ok -> 42" $ .describe ok-action
-                assert= "|Action err -> boom" $ .describe err-action
+                assert= "|Action ok -> 42" $ ok-action .describe
+                assert= "|Action err -> boom" $ err-action .describe
                 assert= "|handled ok 42" $ summarize ok-action
                 assert= "|handled err boom" $ summarize err-action
                 println "|All sum type checks passed."

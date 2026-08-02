@@ -113,11 +113,14 @@ Runnable Example:
 ```cirru
 let
     calculate-total $ fn (items)
-      hint-fn $ {} (:args ([] :list)) (:return :number)
-      reduce items 0
-        fn (acc item)
-          hint-fn $ {} (:args ([] :number :number)) (:return :number)
-          + acc item
+      hint-fn $ {}
+        :args $ [] :list
+        :return :number
+      reduce items 0 $ fn (acc item)
+        hint-fn $ {}
+          :args $ [] :number :number
+          :return :number
+        + acc item
   calculate-total $ [] 1 2 3
 ```
 
@@ -151,7 +154,9 @@ Generic trait bounds use the same schema map. Follow the Rust-style split: decla
 ```cirru
 let
     get-name $ fn (user)
-      hint-fn $ {} (:args ([] :dynamic)) (:return :string)
+      hint-fn $ {}
+        :args $ [] :dynamic
+        :return :string
       , |demo
   get-name nil
 ```
@@ -161,11 +166,10 @@ let
     print-it $ fn (x)
       hint-fn $ {}
         :generics $ [] 'T
-        :where $ {}
-          'T Show
+        :where $ {} ('T Show)
         :args $ [] 'T
-        :return :string
-      .show x
+        :return 'String
+      x .show
   print-it 1
 ```
 
@@ -177,8 +181,7 @@ For `defn` and `fn`, you can place a type label immediately after the parameters
 
 ```cirru
 let
-    add $ fn (a b) :number
-      + a b
+    add $ fn (a b) :number (+ a b)
   add 10 20
 ```
 
@@ -189,7 +192,9 @@ For namespace-level `defn` / `defmacro`, parameter and return metadata should st
 ```cirru
 let
     add $ fn (a b) :number
-      hint-fn $ {} (:args $ [] :number :number) (:return :number)
+      hint-fn $ {}
+        :args $ [] :number :number
+        :return :number
       let
           total $ + a b
         assert-type total :number
@@ -226,8 +231,10 @@ Represent values that can be `nil`. Use the `:: 'Optional <type>` syntax:
 ```cirru
 let
     greet $ fn (name)
-      hint-fn $ {} (:args ([] (:: :optional :string))) (:return :string)
-      str "|Hello " (or name "|Guest")
+      hint-fn $ {}
+        :args $ [] (:: :optional :string)
+        :return :string
+      str "|Hello " $ or name |Guest
   greet nil
 ```
 
@@ -273,8 +280,7 @@ If the body only needs a capability, add a trait bound rather than replacing `'T
 ```cirru.no-run
 :: :fn $ {}
   :generics $ [] 'T
-  :where $ {}
-    'T Show
+  :where $ {} ('T Show)
   :args $ [] 'T
   :return :string
 ```
@@ -289,7 +295,9 @@ Use the name defined by `defstruct` or `defenum`:
 let
     User $ defstruct User (:name :string)
     get-name $ fn (u)
-      hint-fn $ {} (:args ([] 'User)) (:return :string)
+      hint-fn $ {}
+        :args $ [] 'User
+        :return :string
       get u :name
   get-name $ %{} User (:name |Alice)
 ```
@@ -301,10 +309,10 @@ let
 The system validates that function calls have the correct number of arguments:
 
 ```cirru
-defn greet (name age)
-  str "|Hello " name "|, you are " age
+defn greet (name age) (str "|Hello " name "|, you are " age)
 
 ; Error: expects 2 args but got 1
+
 ; greet |Alice
 ```
 
@@ -315,10 +323,7 @@ Validates that record fields exist:
 ```cirru
 defstruct User (:name :string) (:age :number)
 
-defn get-user-email (user)
-  .-email user
-  ; Warning: field 'email' not found in record User
-  ; Available fields: name, age
+defn get-user-email (user) (.-email user) (; Warning: field 'email' not found in record User) (; Available fields: name, age)
 ```
 
 ### Tuple Index Bounds
@@ -327,8 +332,8 @@ Checks tuple index access at compile time:
 
 ```cirru.no-check
 let
-    point (%:: :Point 10 20 30)
-  &tuple:nth point 5  ; Warning: index 5 out of bounds, tuple has 4 elements
+    point $ %:: :Point 10 20 30
+  &tuple:nth point 5 ; Warning: index 5 out of bounds, tuple has 4 elements
 ```
 
 ### Enum Variant Validation
@@ -336,15 +341,16 @@ let
 Validates enum construction and pattern matching:
 
 ```cirru.no-check
-defenum Result
-  :Ok :number
-  :Error :string
+defenum Result (:Ok :number) (:Error :string)
 
 ; Warning: variant 'Failure' not found in enum Result
+
 %:: Result :Failure "|something went wrong"
+
 ; Available variants: Ok, Error
 
 ; Warning: variant 'Ok' expects 1 payload but got 2
+
 %:: Result :Ok 42 |extra
 ```
 
@@ -353,11 +359,7 @@ defenum Result
 Checks that methods exist for the receiver type:
 
 ```cirru
-defn process-list (xs)
-  ; .unknown-method xs
-  println "|demo code"
-  ; "Warning: unknown method .unknown-method for :list"
-  ; Available methods: .map, .filter, .count, ...
+defn process-list (xs) (; .unknown-method xs) (println "|demo code") (; "Warning: unknown method .unknown-method for :list") (; Available methods: .map, .filter, .count, ...)
 ```
 
 ### Recur Arity Checking
@@ -366,8 +368,7 @@ Validates that `recur` calls have the correct number of arguments:
 
 ```cirru
 defn factorial (n acc)
-  if (<= n 1) acc
-    recur (dec n) (* n acc)
+  if (<= n 1) acc $ recur (dec n) (* n acc)
   ; Warning: recur expects 2 args but got 3
   ; recur (dec n) (* n acc) 999
 ```
@@ -415,7 +416,7 @@ let
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 10) (:y 20)
-    x-val (:x p)
+    x-val $ :x p
   ; x-val inferred as :number from field type
   assert= x-val 10
 ```
@@ -428,12 +429,14 @@ Use `assert-type` to explicitly check local values during preprocessing:
 let
     transform-fn $ fn (x) (* x 2)
     process-data $ fn (data)
-      hint-fn $ {} (:args ([] :list)) (:return :list)
+      hint-fn $ {}
+        :args $ [] :list
+        :return :list
       let
           xs data
         assert-type xs :list
         &list:map xs transform-fn
-  process-data ([] 1 2 3)
+  process-data $ [] 1 2 3
 ```
 
 **Note**: `assert-type` is evaluated during preprocessing and removed at runtime, so there's no performance penalty.
@@ -446,17 +449,18 @@ Use `&inspect-type` to debug type inference. Pass a symbol name and the inferred
 let
     x 10
     nums $ [] 1 2 3
-  assert-type nums :list
-  ; Prints: [&inspect-type] x => number type
+  ; A broad assertion checks the shape without erasing the inferred Number element type.
+  assert-type nums 'List
+  ; Prints: [&inspect-type] x => number
   &inspect-type x
-  ; Prints: [&inspect-type] nums => list type
+  ; Prints: [&inspect-type] nums => list<number>
   &inspect-type nums
   let
       item $ &list:nth nums 0
-    ; Prints: [&inspect-type] item => dynamic type
+    ; Prints: [&inspect-type] item => number
     &inspect-type item
-    assert-type item :number
-    ; Prints: [&inspect-type] item => number type
+    assert-type item 'Number
+    ; Prints: [&inspect-type] item => number
     &inspect-type item
 ```
 
@@ -469,15 +473,15 @@ Calcit supports optional type annotations for nullable values:
 Definition:
 
 ```cirru
-defn find-user (id)
-  ; May return nil if user not found
-  println "|demo code"
+defn find-user (id) (; May return nil if user not found) (println "|demo code")
 ```
 
 Schema on the namespace definition:
 
 ```cirru
-:: :fn $ {} (:args $ [] :dynamic) (:return (:: :optional :record))
+:: :fn $ {}
+  :args $ [] :dynamic
+  :return $ :: :optional :record
 ```
 
 ## Variadic Types
@@ -487,8 +491,7 @@ Functions with rest parameters use variadic type annotations:
 Definition:
 
 ```cirru
-defn sum (& numbers)
-  reduce numbers 0 +
+defn sum (& numbers) (reduce numbers 0 +)
 ```
 
 Schema on the namespace definition:
@@ -505,13 +508,15 @@ Definition:
 
 ```cirru
 defn apply-twice (f x)
-  f (f x)
+  f $ f x
 ```
 
 Schema on the namespace definition:
 
 ```cirru
-:: :fn $ {} (:args $ [] :fn :number) (:return :number)
+:: :fn $ {}
+  :args $ [] :fn :number
+  :return :number
 ```
 
 ## Disabling Checks
@@ -563,12 +568,14 @@ These rewrites are automatic. Provide type annotations (`hint-fn`, `:schema`, `a
 let
     process-input $ fn (input) (assoc input :processed true)
     public-api-function $ fn (input)
-      hint-fn $ {} (:args ([] :map)) (:return :string)
+      hint-fn $ {}
+        :args $ [] :map
+        :return :string
       let
           processed $ process-input input
         assert-type processed :map
         str processed
-  public-api-function ({} (:data |hello))
+  public-api-function $ {} (:data |hello)
 ```
 
 ### 2. Leverage Type Inference
@@ -576,24 +583,25 @@ let
 Let the system infer types from literals and function calls:
 
 ```cirru
-defn calculate-area (width height)
-  ; Types inferred from arithmetic operations
-  * width height
+defn calculate-area (width height) (; Types inferred from arithmetic operations) (* width height)
 ```
 
 ### 3. Add Assertions for Critical Code
 
 ```cirru
 let
-    dangerous-operation $ fn (data) (map data (fn (x) (* x 2)))
+    dangerous-operation $ fn (data)
+      map data $ fn (x) (* x 2)
     critical-operation $ fn (data)
-      hint-fn $ {} (:args ([] :list)) (:return :list)
+      hint-fn $ {}
+        :args $ [] :list
+        :return :list
       let
           checked data
         assert-type checked :list
         ; Ensure the local value is still what we expect before processing
         dangerous-operation checked
-  critical-operation ([] 1 2 3)
+  critical-operation $ [] 1 2 3
 ```
 
 ### 4. Document Complex Types
@@ -602,15 +610,15 @@ Definition:
 
 ```cirru
 ; Function that takes a map with specific keys
-defn process-user (user-map)
-  ; Expected keys: :name :email :age
-  println "|demo code"
+
+defn process-user (user-map) (; Expected keys: :name :email :age) (println "|demo code")
 ```
 
 Schema on the namespace definition:
 
 ```cirru
-:: :fn $ {} (:args $ [] :map)
+:: :fn $ {}
+  :args $ [] :map
 ```
 
 ## Type Slots (Cross-Package Type Injection)
@@ -628,7 +636,8 @@ deftype-slot :dispatch-op
 Then reference the slot in type annotations with the `*name` syntax:
 
 ```cirru.no-check
-;; EventHandler schema — dispatch callback accepts the slot type
+;; EventHandler schema "—" dispatch callback accepts the slot type
+
 :: :fn $ {} (:return :unit)
   :args $ [] '*dispatch-op
 ```
@@ -645,11 +654,8 @@ This writes the following entry-level configuration:
 
 ```cirru.no-check
 :entries $ {}
-  :default $ {}
-    :mode :native
-    :init-fn 'app.main/main!
-    :type-slots $ {}
-      :dispatch-op |app.schema/Op
+  :default $ {} (:mode :native) (:init-fn 'app.main/main!)
+    :type-slots $ {} (:dispatch-op |app.schema/Op)
 ```
 
 No wrapper is needed around `main!`; the binding is installed before any definition is preprocessed and applies to the whole selected entry.
@@ -693,15 +699,20 @@ cr config rm-type-slot :dispatch-op
 After binding `*dispatch-op` to `Op`, the preprocessor catches mistakes:
 
 ```cirru.no-check
-;; ✅ Correct — compiles cleanly
+;; "✅" Correct "—" compiles cleanly
+
 d! $ %:: Op :toggle (:id task)
 
-;; ❌ Wrong variant name
+;; "❌" Wrong variant name
+
 ;; Warning: "does not have variant :delete"
+
 d! $ %:: Op :delete (:id task)
 
-;; ❌ Wrong payload count
+;; "❌" Wrong payload count
+
 ;; Warning: "expects 0 payload(s), got 1"
+
 d! $ %:: Op :clear 42
 ```
 

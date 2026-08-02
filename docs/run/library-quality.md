@@ -126,11 +126,13 @@ cr calcit.cirru analyze check-examples --ns package.extra
 验证 README 和 `docs/` 中的 Cirru 代码块：
 
 ```bash
+cr calcit.cirru docs format-md README.md --check
+cr calcit.cirru docs format-md docs/api.md --check
 cr calcit.cirru docs check-md README.md --failures-only
 cr calcit.cirru docs check-md docs/api.md --failures-only
 ```
 
-如果文档示例使用额外 module，可重复传 `--dep <module-dir>`。第一个表达式可以是带 `:require` 的 `ns`，由 `check-md` 注入 eval 上下文。
+`format-md` 只规范 fenced Cirru 的文本格式；`--check` 不会写入文件，适合 CI。需要改写时省略 `--check`。如果文档示例使用额外 module，可重复传 `--dep <module-dir>`。第一个表达式可以是带 `:require` 的 `ns`，由 `check-md` 注入 eval 上下文。
 
 ## 4. 入口、构建和行为
 

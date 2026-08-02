@@ -24,7 +24,8 @@
           :schema $ :: 'Dynamic
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl ResultImpl ResultTrait $ .dummy nil
+            defimpl ResultImpl ResultTrait $ .dummy
+              fn (_x) nil
           :examples $ []
           :schema $ :: 'Dynamic
         |ResultTrait $ %{} :CodeEntry (:doc |)
@@ -143,7 +144,7 @@
                     :return 'String
                   match v
                     (:none) |none
-                    (:some item) (.show item)
+                    (:some item) (item .show)
                 render-duo $ fn (v)
                   hint-fn $ {}
                     :generics $ [] 'T 'U
@@ -152,9 +153,9 @@
                     :return 'String
                   match v
                     (:pair left right)
-                      str-spaced |pair (.show left) (.show right)
+                      str-spaced |pair (left .show) (right .show)
                     (:swapped right left)
-                      str-spaced |swapped (.show right) (.show left)
+                      str-spaced |swapped (right .show) (left .show)
               println "|Testing generic enum where-bounds..."
               assert= |1 $ render-maybe (%:: Maybe1 :some 1)
               assert= |none $ render-maybe (%:: Maybe1 :none)
@@ -231,10 +232,10 @@
                     assert-type box $ :: 'ShownBox 'Number
                     assert-type some-value $ :: 'ShownMaybe 'Number
                     assert= |1 $ match some-value
-                      (:some item) (.show item)
+                      (:some item) (item .show)
                       (:none) |none
                     assert= |none $ match none-value
-                      (:some item) (.show item)
+                      (:some item) (item .show)
                       (:none) |none
               println "|✓ Data definition where-bounds passed"
           :examples $ []

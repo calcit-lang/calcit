@@ -360,15 +360,23 @@ mod tests {
     let mut scope = CalcitScope::default();
     let sym = Arc::from("x");
     let idx = CalcitLocal::track_sym(&sym);
+    let empty_trait_def = Arc::new(CalcitTrait::new(EdnTag::from("Noop"), vec![], vec![]));
+    let mut person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![]);
+    person_struct.impls.push(Arc::new(crate::calcit::CalcitImpl {
+      name: empty_trait_def.name.clone(),
+      origin: Some(empty_trait_def.clone()),
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    }));
     scope.insert_mut(
       idx,
       Calcit::Record(CalcitRecord {
-        struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Person"), vec![])),
+        struct_ref: Arc::new(person_struct),
         values: Arc::new(vec![]),
       }),
     );
 
-    let empty_trait = Calcit::Trait(CalcitTrait::new(EdnTag::from("Noop"), vec![], vec![]));
+    let empty_trait = Calcit::Trait(empty_trait_def.as_ref().clone());
     let expr = CalcitList::Vector(vec![
       Calcit::Local(CalcitLocal {
         idx,

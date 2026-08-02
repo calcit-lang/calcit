@@ -238,6 +238,36 @@ cr calcit.cirru analyze weak-types \
 
 `cr edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types` / `weak-types --format json` 来执行项目自己的质量阈值。
 
+### 3.5 Trait impl 从方法包迁移为 nominal impl
+
+旧代码可能把 tag 作为 `defimpl` 的 trait 参数：
+
+```cirru.no-check
+defimpl :RenderImpl :Render $ .render
+  fn (x) str x
+```
+
+这种写法继续参与普通 `.method` 分派，但现在明确视为**不具名的 inherent method bag**；它不会满足 `assert-traits`、函数/数据结构的 `:where` 约束，也不能被 `&trait-call` 选中。`cr edit format` 会给出不阻断执行的 `W_LEGACY_INHERENT_IMPL` 迁移告警。需要能力约束的新代码应改成：
+
+```cirru
+let
+    Render $ deftrait Render (.render :fn)
+    RenderImpl $ defimpl RenderImpl Render
+      .render $ fn (x) str x
+  , RenderImpl
+```
+
+升级时还要修复以前被宽松实现接受的问题：
+
+- concrete trait impl 必须完整实现声明的方法，且不能夹带 trait 未声明的方法；
+- trait method 的值必须可调用；native 预处理在签名信息可用时还会检查函数签名；
+- 同名方法不会跨 impl 拼接成一个 trait，也不会让两个独立 trait 互相冒充；
+- list/map/set/string/number/record/tuple 等内建能力现在由 native 与 JS 共用的 nominal core impl 表提供。
+
+建议在升级验证中显式覆盖两类负向用例：只有 `TraitA/.method` 时，`assert-traits value TraitB` 和 `&trait-call TraitB :method value` 都必须失败。
+
+WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在预处理阶段消除的 trait 元数据仍可参与编译；残留的 `&impl::new`、`impl-traits` 或 `&assert-traits` 会明确报出“不支持 runtime trait table”，而不是静默返回 `nil`。业务项目以 JS 为主，并用 native 执行宏和预处理。
+
 ---
 
 ## 4）Yarn Berry 升级检查

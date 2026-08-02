@@ -766,6 +766,8 @@ pub enum DocsSubcommand {
   ReadLines(DocsReadLinesCommand),
   /// check ```cirru code blocks in a markdown file via eval
   CheckMd(DocsCheckMdCommand),
+  /// format fenced ```cirru code blocks in a markdown file
+  FormatMd(DocsFormatMdCommand),
   /// build and query the structured documentation relationship graph
   Graph(DocsGraphCommand),
 }
@@ -1008,6 +1010,18 @@ pub struct DocsCheckMdCommand {
   /// only display failed blocks and summary; implies --quiet
   #[argh(switch, long = "failures-only")]
   pub failures_only: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "format-md")]
+/// format fenced ```cirru code blocks in a markdown file
+pub struct DocsFormatMdCommand {
+  /// path to the markdown file to format
+  #[argh(positional)]
+  pub file: String,
+  /// report non-canonical blocks without writing the file
+  #[argh(switch)]
+  pub check: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

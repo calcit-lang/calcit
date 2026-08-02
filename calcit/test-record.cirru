@@ -240,12 +240,12 @@
                   l1t l1
                 assert-traits l1t BirdTrait
                 let
-                    l2 $ .rename l1t |LagopusB
+                    l2 $ l1t .rename |LagopusB
                     l2t l2
                   assert-traits l2t BirdTrait
                   println l1
-                  .show l1t
-                  .show l2t
+                  l1t .show
+                  l2t .show
                   assert= (&record:impls l1) (&record:impls a1r)
           :examples $ []
           :schema $ :: 'Fn

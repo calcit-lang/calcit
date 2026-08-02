@@ -11,32 +11,54 @@ id: core/data
 ---
 # Data Types
 
-Calcit provides several core data types, all immutable by default for functional programming:
+Calcit uses persistent values by default, with a small set of explicit stateful containers. The same logical values are available in the Rust and JavaScript runtimes; WASM supports a growing, documented subset.
 
 ## Primitive Types
 
 - **Bool**: `true`, `false`
+- **Nil**: `nil`, used for absence at untyped boundaries
 - **Number**: `f64` in Rust, Number in JavaScript (`1`, `3.14`, `-42`)
 - **Tag**: Immutable strings starting with `:` (`:keyword`, `:demo`) - similar to Clojure keywords
+- **Symbol**: Quoted identifiers such as `'name`; unlike tags, symbols preserve code/data intent
 - **String**: Text data with special prefix syntax (`|text`, `"|with spaces"`)
+- **Buffer**: Immutable bytes, created with `&buffer`
 
 ## Collection Types
 
-- **Vector**: Ordered collection serving both List and Vector roles (`[] 1 2 3`)
-- **HashMap**: Key-value pairs (`{} (:a 1) (:b 2)`)
-- **HashSet**: Unordered unique elements (`#{} :a :b :c`)
+- **List**: Ordered persistent collection (`[] 1 2 3`)
+- **Map**: Persistent key-value collection (`{} (:a 1) (:b 2)`)
+- **Set**: Persistent unordered collection of unique values (`#{} :a :b :c`)
 
-## Function Types
+## Named Data
+
+- **Record / Struct**: `defstruct` declares a fixed field layout; `%{}` constructs a record value.
+- **Enum / Tuple**: `defenum` declares named alternatives. Enum instances use the tuple runtime representation and retain their enum identity.
+- **Tuple**: `::` creates lightweight tagged positional data when a full enum declaration is unnecessary.
+- **Option**: `Option T` has `%some T` and `%none` variants.
+- **Result**: `Result T E` has `%ok T` and `%err E` variants.
+
+Prefer records and enums at module boundaries: their declarations carry schemas, support trait attachment, and give static analysis more information than ad-hoc maps or tuples.
+
+## Explicitly Stateful Values
+
+- **Ref**: Mutable reference cell used for controlled application state.
+- **BufList**: Mutable builder for allocation-sensitive loops; convert it to a persistent List before exposing the result.
+- **AnyRef**: Opaque host reference for FFI. It is not portable serialized data.
+
+## Executable Values
 
 - **Function**: User-defined functions and built-in procedures
 - **Proc**: Internal procedure type for built-in functions
+- **Trait / Impl**: Runtime capability descriptors used for method dispatch
 
 ## Implementation Details
 
 - **Rust runtime**: Uses [rpds](https://github.com/orium/rpds) for HashMap/HashSet and [ternary-tree](https://github.com/calcit-lang/ternary-tree.rs/) for vectors
 - **JavaScript runtime**: Uses [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts) for all collections
 
-All data structures are persistent and immutable, following functional programming principles. For detailed information about specific types, see:
+Collection method availability is also expressed through built-in traits. `Countable` and `Contains` cover List, Map, Set, String, Record, and Tuple; `Compare` covers Number and String. See [Polymorphism](features/polymorphism.md) for the full matrix.
+
+For serialization fidelity and unsupported runtime values, see:
 
 - [String](data/string.md) - String syntax and Tags
 - [Persistent Data](data/persistent-data.md) - Implementation details

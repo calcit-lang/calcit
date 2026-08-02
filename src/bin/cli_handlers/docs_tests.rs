@@ -1,7 +1,8 @@
 use super::{
   GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
-  find_doc_by_query, load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter,
-  parse_doc_knowledge_metadata, score_doc_query, score_doc_shape, validate_doc_frontmatter,
+  find_doc_by_query, format_markdown_cirru_blocks, handle_format_md, load_agents_document, load_entry_snapshot_for_check_md,
+  load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata, score_doc_query, score_doc_shape,
+  validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -592,6 +593,66 @@ fn load_module_docs_from_dir_rejects_invalid_category() {
 
   let err = load_module_docs_from_dir(&modules_dir, Some("respo.calcit")).unwrap_err();
   assert!(err.contains("Invalid frontmatter category 'api'"));
+
+  fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn format_markdown_cirru_blocks_formats_only_supported_fences() {
+  let input = "# Demo\n\n```cirru\ndeftrait Demo\n  .show $ :: :fn $ {}\n    :args $ [] 'T\n    :return 'String\n```\n\n```rust\nfn main() {}\n```\n\n```cirru.no-check\ndefimpl :Legacy :Marker\n  .show $ fn (x) x\n```\n";
+
+  let formatted = format_markdown_cirru_blocks(input).expect("markdown formatting should succeed");
+
+  assert_eq!(formatted.total_blocks, 2);
+  assert_eq!(formatted.changed_blocks, 2);
+  assert!(formatted.content.contains("```rust\nfn main() {}\n```"));
+  assert!(
+    formatted
+      .content
+      .contains("```cirru.no-check\ndefimpl :Legacy :Marker $ .show\n  fn (x) x\n```"),
+    "formatted markdown:\n{}",
+    formatted.content
+  );
+  assert_eq!(
+    format_markdown_cirru_blocks(&formatted.content)
+      .expect("canonical markdown should format")
+      .changed_blocks,
+    0
+  );
+}
+
+#[test]
+fn format_markdown_cirru_blocks_keeps_multiple_roots_and_reports_parse_lines() {
+  let input = "before\n```cirru\nassert= 1 1\nassert= 2 2\n```\nafter\n";
+  let formatted = format_markdown_cirru_blocks(input).expect("multiple roots should format");
+
+  assert!(
+    formatted.content.contains("assert= 1 1\n\nassert= 2 2"),
+    "formatted markdown:\n{}",
+    formatted.content
+  );
+
+  let invalid = "```cirru\nfoo (\n```\n";
+  let error = format_markdown_cirru_blocks(invalid).expect_err("invalid Cirru should fail");
+  assert!(error.contains("line 2"), "error: {error}");
+}
+
+#[test]
+fn format_md_check_does_not_write_and_format_is_idempotent() {
+  let root = unique_temp_dir("format-md");
+  let path = root.join("guide.md");
+  let original = "```cirru\ndefimpl :Legacy :Marker\n  .show $ fn (x) x\n```\n";
+  write_file(&path, original);
+  let path_text = path.to_str().expect("temporary path should be utf-8");
+
+  let error = handle_format_md(path_text, true).expect_err("check should reject non-canonical block");
+  assert!(error.contains("need formatting"), "error: {error}");
+  assert_eq!(fs::read_to_string(&path).expect("read original markdown"), original);
+
+  handle_format_md(path_text, false).expect("format should write canonical markdown");
+  let canonical = fs::read_to_string(&path).expect("read canonical markdown");
+  assert_ne!(canonical, original);
+  handle_format_md(path_text, true).expect("canonical markdown should pass check");
 
   fs::remove_dir_all(root).unwrap();
 }

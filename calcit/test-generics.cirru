@@ -59,7 +59,7 @@
                     :where $ {} ('T Show)
                     :args $ [] 'T
                     :return 'String
-                  .show x
+                  x .show
                 n $ id2 1
                 s $ id2 |hi
                 shown-n $ show-id 1

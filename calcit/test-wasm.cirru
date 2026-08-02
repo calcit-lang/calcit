@@ -684,9 +684,19 @@
             defn test-not (x) (not x)
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-number-compare-method $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-number-compare-method () $ .compare 1 2
+          :examples $ []
+          :schema $ :: 'Dynamic
         |test-number?-true $ %{} :CodeEntry (:doc "|number? on number returns true (1)")
           :code $ quote
             defn test-number?-true () $ if (number? 42) 1 0
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-option-unwrap-or $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-option-unwrap-or () $ option:unwrap-or (%none) 7
           :examples $ []
           :schema $ :: 'Dynamic
         |test-pow $ %{} :CodeEntry (:doc "|pow via host import")
@@ -787,6 +797,11 @@
         |test-rest-sum $ %{} :CodeEntry (:doc "|rest args: 1+2+3+4+5 = 15")
           :code $ quote
             defn test-rest-sum () $ sum-rest 1 2 3 4 5
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-result-unwrap-or $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-result-unwrap-or () $ result:unwrap-or (%err 3) 7
           :examples $ []
           :schema $ :: 'Dynamic
         |test-round $ %{} :CodeEntry (:doc "|round function")
@@ -1007,6 +1022,11 @@
         |test-str-slice $ %{} :CodeEntry (:doc "|slice bytes 1..4 from abcde = 3 bytes (bcd)")
           :code $ quote
             defn test-str-slice () $ &str:count (&str:slice |abcde 1 4)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-string-compare-method $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-string-compare-method () $ .compare |abc |abd
           :examples $ []
           :schema $ :: 'Dynamic
         |test-tag-eq $ %{} :CodeEntry (:doc "|Tag equality — same tags")

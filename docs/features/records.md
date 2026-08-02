@@ -64,12 +64,12 @@ Use this pattern when the struct definition owns the type variable. Function-lev
 ```cirru
 let
     ShownBox $ defstruct ShownBox ([] 'T)
-      {} ('T Show)
+      {} $ 'T Show
       :value 'T
     box $ %{} ShownBox (:value 1)
     item $ :value box
-  assert-type box $ :: 'ShownBox :number
-  assert= |1 $ .show item
+  assert-type box $ :: 'ShownBox 'Number
+  assert= |1 $ item .show
 ```
 
 Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a record instance, so the constraint lives on the data definition rather than on each individual function schema.
@@ -90,9 +90,7 @@ Fields can also be written on separate lines:
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point
-      :x 1
-      :y 2
+    p $ %{} Point (:x 1) (:y 2)
   , p
 ```
 
@@ -115,7 +113,7 @@ let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
   println $ keys p
-  ; => (#{} :x :y)
+  ; => $ #{} :x :y
   println $ count p
   ; => 2
   println $ contains? p :x
@@ -132,9 +130,9 @@ let
     p $ %{} Point (:x 1) (:y 2)
     p2 $ assoc p :x 10
   println p2
-  ; => (%{} :Point (:x 10) (:y 2))
+  ; => $ %{} :Point (:x 10) (:y 2)
   println p
-  ; p is unchanged: (%{} :Point (:x 1) (:y 2))
+  ; p is unchanged: $ %{} :Point (:x 1) (:y 2)
 ```
 
 ```cirru
@@ -183,7 +181,7 @@ let
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  ; check if a value is a record (struct instance)
+  ; check if a value is a record $ struct instance
   println $ record? p
   ; => true
   ; check if it matches a specific struct
@@ -211,9 +209,11 @@ let
     Square $ defstruct Square (:side :number)
     shape $ %{} Circle (:radius 5)
   record-match shape
-    Circle c $ * 3.14 (* (get c :radius) (get c :radius))
+    Circle c $ * 3.14
+      * (get c :radius) (get c :radius)
     Square s $ * (get s :side) (get s :side)
     _ _ nil
+
 ; => 78.5
 ```
 
@@ -235,7 +235,8 @@ let
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
     p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
-  println $ merge p $ {} (:age 23) (:name |Ye)
+  println $ merge p
+    {} (:age 23) (:name |Ye)
 ```
 
 ## Record Name and Struct Inspection
@@ -260,7 +261,8 @@ let
     Cat $ defstruct Cat (:name :string) (:color :tag)
     Dog $ defstruct Dog (:name :string)
     v1 $ %{} Cat (:name |Mimi) (:color :white)
-  if (= (&record:struct v1) Cat)
+  if
+    = (&record:struct v1) Cat
     println "|Handle Cat branch"
     println "|Not a Cat"
 ```
@@ -272,24 +274,27 @@ Define a trait with `deftrait`, implement it with `defimpl`, and attach it to a 
 ```cirru
 let
     BirdTrait $ deftrait BirdTrait
-      .show $ :: :fn $ {}
-        :args $ [] 'T
-        :return :nil
-      .rename $ :: :fn $ {}
-        :args $ [] 'T :string
-        :return 'T
+      .show $ :: :fn
+        {}
+          :args $ [] 'T
+          :return :nil
+      .rename $ :: :fn
+        {}
+          :generics $ [] 'T
+          :args $ [] 'T :string
+          :return 'T
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdImpl BirdTrait
       .show $ fn (self)
         println $ get self :name
-      .rename $ fn (self name)
-        assoc self :name name
+      .rename $ fn (self name) (assoc self :name name)
     Bird $ impl-traits BirdShape BirdImpl
     b $ %{} Bird (:name |Sparrow)
-  .show b
+  assert-traits b BirdTrait
+  b .show
   let
-      b2 $ .rename b |Eagle
-    .show b2
+      b2 $ b .rename |Eagle
+    println $ :name b2
 ```
 
 ## Common Use Cases
@@ -309,11 +314,7 @@ let
 ```cirru
 let
     Product $ defstruct Product (:id :string) (:name :string) (:price :number) (:discount :number)
-    product $ %{} Product
-      :id |P001
-      :name |Widget
-      :price 100
-      :discount 0.9
+    product $ %{} Product (:id |P001) (:name |Widget) (:price 100) (:discount 0.9)
   println $ * (get product :price) (get product :discount)
   ; => 90
 ```
@@ -324,12 +325,13 @@ let
 let
     User $ defstruct User (:name :string) (:age :number) (:email :string)
     get-user-name $ fn (user)
-      hint-fn $ {} (:args ([] 'User)) (:return :string)
+      hint-fn $ {}
+        :args $ [] 'User
+        :return :string
       get user :name
-  println $ get-user-name $ %{} User
-    :name |John
-    :age 30
-    :email |john@example.com
+  println $ get-user-name
+    %{} User (:name |John) (:age 30) (:email |john@example.com)
+
 ; => John
 ```
 
@@ -344,10 +346,12 @@ let
       :: :fn $ {} (:return :number)
         :args $ [] 'app.main/Point
       &+ (:x p) (:y p)
-  ; Write a hashmap — preprocessor rewrites to record automatically:
-  assert= 30 $ sum-point $ {} (:x 10) (:y 20)
+  ; Write a hashmap "—" preprocessor rewrites to record automatically:
+  assert= 30 $ sum-point
+    {} (:x 10) (:y 20)
   ; Equivalent to:
-  assert= 30 $ sum-point $ %{} Point (:x 10) (:y 20)
+  assert= 30 $ sum-point
+    %{} Point (:x 10) (:y 20)
 ```
 
 Requirements for the rewrite to trigger:
@@ -367,7 +371,8 @@ Loose records are records created without a declared struct definition, using th
 
 ```cirru
 ?{} :name |John :age 30
-; => (?{} (:age 30) (:name |John))
+
+; => $ ?{} (:age 30) (:name |John)
 ```
 
 Fields are automatically sorted alphabetically, matching the behavior of struct-backed records. All keys must be tags, and duplicate keys produce an error.
@@ -397,9 +402,10 @@ let
         :args $ [] 'app.main/Point
       &+ (:x p) (:y p)
   ; Loose record rewritten to struct record at compile time:
-  assert= 30 $ sum-point $ ?{} :x 10 :y 20
+  assert= 30 $ sum-point (?{} :x 10 :y 20)
   ; Equivalent to:
-  assert= 30 $ sum-point $ %{} Point (:x 10) (:y 20)
+  assert= 30 $ sum-point
+    %{} Point (:x 10) (:y 20)
 ```
 
 The rewrite uses the same requirements as map-to-record rewrite. Fields not present in the loose record but defined in the struct are filled with `nil`.

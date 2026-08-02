@@ -525,6 +525,144 @@ fn parse_deftrait_source(items: &CalcitList) -> Option<CalcitTrait> {
   Some(CalcitTrait::new(name, methods, method_types))
 }
 
+fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, file_ns: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let mut traits = Vec::with_capacity(bound.traits.len());
+  for trait_ref in bound.traits.iter() {
+    if !trait_ref.methods.is_empty() {
+      traits.push(trait_ref.clone());
+      continue;
+    }
+
+    let raw_name = trait_ref.name.ref_str();
+    let (trait_ns, trait_name) = if let Some((ns, name)) = raw_name.rsplit_once('/') {
+      (Arc::from(ns), Arc::from(name))
+    } else if program::has_def_code(file_ns, raw_name) {
+      (Arc::from(file_ns), Arc::from(raw_name))
+    } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, raw_name) {
+      (target_ns, Arc::from(raw_name))
+    } else if program::has_def_code(calcit::CORE_NS, raw_name) {
+      (Arc::from(calcit::CORE_NS), Arc::from(raw_name))
+    } else {
+      return None;
+    };
+
+    let resolved = program::lookup_def_code(&trait_ns, &trait_name)
+      .and_then(|code| resolve_trait_def_from_source_code(&code))?
+      .with_definition_ref(&trait_ns, &trait_name);
+    traits.push(Arc::new(resolved));
+  }
+
+  match traits.len() {
+    0 => None,
+    1 => Some(Arc::new(CalcitTypeAnnotation::Trait(traits.remove(0)))),
+    _ => Some(Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(traits)))),
+  }
+}
+
+/// Resolve named types declared in the same lexical scope, such as a `defstruct`
+/// bound by an enclosing `let`. Program-level `TypeRef` resolution cannot see
+/// those definitions, so retaining the symbolic reference would make otherwise
+/// precise function parameters fall back to `Dynamic` inside the body.
+fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::TypeRef(name, args) => {
+      let resolved_args = Arc::new(
+        args
+          .iter()
+          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .collect::<Vec<_>>(),
+      );
+      let short_name = name.rsplit('/').next().unwrap_or(name.as_ref());
+      let local_type = scope_types.get(name).or_else(|| scope_types.get(short_name));
+      match local_type.map(AsRef::as_ref) {
+        Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::Record(struct_def)) => {
+          Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
+        }
+        Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::Tuple(enum_def)) => {
+          Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
+        }
+        Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
+          Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
+        }
+        _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
+      }
+    }
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(resolve_local_type_refs_for_body(
+      inner.clone(),
+      scope_types,
+    ))),
+    CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
+      resolve_local_type_refs_for_body(key.clone(), scope_types),
+      resolve_local_type_refs_for_body(value.clone(), scope_types),
+    )),
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(resolve_local_type_refs_for_body(
+      inner.clone(),
+      scope_types,
+    ))),
+    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(resolve_local_type_refs_for_body(
+      inner.clone(),
+      scope_types,
+    ))),
+    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(resolve_local_type_refs_for_body(
+      inner.clone(),
+      scope_types,
+    ))),
+    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(resolve_local_type_refs_for_body(
+      inner.clone(),
+      scope_types,
+    ))),
+    CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: signature.generics.clone(),
+      where_bounds: signature.where_bounds.clone(),
+      arg_types: signature
+        .arg_types
+        .iter()
+        .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+        .collect(),
+      return_type: resolve_local_type_refs_for_body(signature.return_type.clone(), scope_types),
+      fn_kind: signature.fn_kind,
+      rest_type: signature
+        .rest_type
+        .as_ref()
+        .map(|rest| resolve_local_type_refs_for_body(rest.clone(), scope_types)),
+      features: signature.features.clone(),
+    }))),
+    CalcitTypeAnnotation::Struct(struct_def, args) => Arc::new(CalcitTypeAnnotation::Struct(
+      struct_def.clone(),
+      Arc::new(
+        args
+          .iter()
+          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .collect(),
+      ),
+    )),
+    CalcitTypeAnnotation::Enum(enum_def, args) => Arc::new(CalcitTypeAnnotation::Enum(
+      enum_def.clone(),
+      Arc::new(
+        args
+          .iter()
+          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .collect(),
+      ),
+    )),
+    _ => annotation,
+  }
+}
+
+fn unwrap_named_body_parameter_type(annotation: Arc<CalcitTypeAnnotation>, parameter: Option<&Arc<str>>) -> Arc<CalcitTypeAnnotation> {
+  let Some(parameter) = parameter else {
+    return annotation;
+  };
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::TypeRef(label, args)
+      if args.len() == 1 && label.rsplit('/').next().is_some_and(|name| name == parameter.as_ref()) =>
+    {
+      args.first().expect("checked one named parameter type").clone()
+    }
+    _ => annotation,
+  }
+}
+
 fn lookup_trait_ns_def_for_preprocess(
   raw_ns: &str,
   raw_def: &str,
@@ -536,6 +674,7 @@ fn lookup_trait_ns_def_for_preprocess(
     program::lookup_compiled_def(raw_ns, raw_def)
       .and_then(|compiled| compiled.source_code)
       .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .map(|trait_def| trait_def.with_definition_ref(raw_ns, raw_def))
       .map(Arc::new),
   )
 }
@@ -849,7 +988,7 @@ fn preprocess_list_call(
 
   // === Postfix record field access / method call detection ===
   // Pattern: (expr :field) where expr has a known record type → rewrite to (.-field expr)
-  // Pattern: (expr .method args...) where expr has a known record/trait type → rewrite to (.method expr args...)
+  // Pattern: (expr .method args...) where expr has a known record/enum/trait type → rewrite to (.method expr args...)
   // When type is unknown (Dynamic), silently fall through — :tag / .method may be normal arguments.
   if let Some(rewritten) =
     try_rewrite_struct_enum_constructor_head_call(&head_form, &args, scope_types, file_ns, &def_name, check_warnings, call_stack)?
@@ -883,12 +1022,24 @@ fn preprocess_list_call(
         if matches!(method_kind, calcit::MethodKind::Invoke(_))
           && let Some(type_info) = resolve_type_value(&head_form, scope_types)
         {
-          // Only trigger for struct/record or trait types — NOT for Fn/Proc which
-          // also appear to have impls via core-impl lookups (e.g. `::` → tuple).
-          let is_record_or_trait =
-            type_info.as_ref().resolve_to_struct().is_some() || trait_list_from_type(type_info.as_ref()).is_some();
+          // Nominal and trait receivers always use method syntax, including the
+          // unknown-method error path. Other statically known values participate
+          // only when their actual method table contains the requested method;
+          // this keeps `(f .map)` available as an ordinary function argument while
+          // allowing typed values such as `n .show` and `xs .map callback`.
+          let is_nominal_or_trait = type_info.as_ref().resolve_to_struct().is_some()
+            || type_info.as_ref().resolve_to_enum().is_some()
+            // A quoted named type can remain as a TypeRef while the core value is
+            // bootstrapping. It is still explicit static evidence, and normal
+            // method dispatch/codegen does not require resolving its impl table.
+            || matches!(type_info.as_ref(), CalcitTypeAnnotation::TypeRef(..))
+            || trait_list_from_type(type_info.as_ref()).is_some();
+          let has_known_method = static_method_descriptors(type_info.as_ref()).is_some_and(|methods| {
+            let expected = format!(".{method_name}");
+            methods.iter().any(|method| method.name == expected)
+          });
 
-          if is_record_or_trait {
+          if is_nominal_or_trait || has_known_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_info.clone()));
             let mut ys = CalcitList::new_inner_from(&[typed_method, head_form]);
@@ -3029,14 +3180,7 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
     return Some(struct_def.impls.to_owned());
   }
 
-  if let CalcitTypeAnnotation::Enum(enum_def, _) = type_value {
-    // Prepend core tuple impls; user impls come after and win (last_wins=true)
-    let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
-    impls.extend(enum_def.impls.iter().cloned());
-    return Some(impls);
-  }
-
-  if let CalcitTypeAnnotation::Tuple(enum_def) = type_value {
+  if let Some(enum_def) = type_value.resolve_to_enum() {
     // Prepend core tuple impls; user impls come after and win (last_wins=true)
     let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
     impls.extend(enum_def.impls.iter().cloned());
@@ -3104,6 +3248,31 @@ fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
 fn is_dynamic_annotation(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
     || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
+}
+
+/// Rank annotations by how much static information they erase. Root-level
+/// dynamic callable/value types are weaker than an equally dynamic container,
+/// because the latter still preserves useful shape information.
+fn annotation_dynamic_weight(type_value: &CalcitTypeAnnotation) -> usize {
+  match type_value {
+    CalcitTypeAnnotation::Dynamic => 200,
+    CalcitTypeAnnotation::DynFn => 100,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::Variadic(inner) => annotation_dynamic_weight(inner),
+    CalcitTypeAnnotation::Map(key, value) => annotation_dynamic_weight(key) + annotation_dynamic_weight(value),
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().map(|arg| annotation_dynamic_weight(arg)).sum::<usize>()
+        + signature.rest_type.as_ref().map_or(0, |rest| annotation_dynamic_weight(rest))
+        + annotation_dynamic_weight(signature.return_type.as_ref())
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().map(|arg| annotation_dynamic_weight(arg)).sum()
+    }
+    _ => 0,
+  }
 }
 
 fn find_trait_method_type<'a>(
@@ -3413,6 +3582,36 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   }
 }
 
+fn resolve_enum_type_for_match(type_ref: &CalcitTypeAnnotation, file_ns: &str, scope_types: &ScopeTypes) -> Option<calcit::CalcitEnum> {
+  if let Some(enum_def) = type_ref.resolve_to_enum() {
+    return Some(enum_def);
+  }
+  let CalcitTypeAnnotation::TypeRef(name, _) = type_ref else {
+    return None;
+  };
+  let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+  let short_name = stripped.rsplit('/').next().unwrap_or(stripped);
+  if let Some(local_type) = scope_types.get(stripped).or_else(|| scope_types.get(short_name))
+    && let Some(enum_def) = local_type.resolve_to_enum()
+  {
+    return Some(enum_def);
+  }
+  let (target_ns, target_def) = if let Some((ns, def)) = stripped.rsplit_once('/') {
+    (Arc::from(ns), Arc::from(def))
+  } else if program::has_def_code(file_ns, stripped) {
+    (Arc::from(file_ns), Arc::from(stripped))
+  } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, stripped) {
+    (target_ns, Arc::from(stripped))
+  } else {
+    (Arc::from(calcit::CORE_NS), Arc::from(stripped))
+  };
+  match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
+    Some(Calcit::Enum(enum_def)) => Some(enum_def),
+    Some(Calcit::Record(record)) => calcit::CalcitEnum::from_record(record).ok(),
+    _ => None,
+  }
+}
+
 /// Preprocess `match` syntax and perform exhaustiveness checking.
 /// Input form (pair-based): `(match <value> (<pattern1> <body1>) (<pattern2> <body2>) ...)`
 ///
@@ -3453,14 +3652,38 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
   )?;
 
   // Try to infer enum type from the value expression for exhaustiveness checking
-  let enum_def = infer_type_from_expr(&value_form, ctx.scope_types).and_then(|t| match t.as_ref() {
-    CalcitTypeAnnotation::Tuple(enum_ref) => Some(enum_ref.as_ref().to_owned()),
+  // and payload typing. Applied generic arguments are kept so a matched payload
+  // can be specialized instead of falling back to Dynamic.
+  let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
+  let enum_match = inferred_match_type.and_then(|t| match t.as_ref() {
+    CalcitTypeAnnotation::Tuple(enum_ref) => Some((enum_ref.as_ref().to_owned(), Arc::new(vec![]))),
+    CalcitTypeAnnotation::Enum(enum_ref, args) => Some((enum_ref.as_ref().to_owned(), args.clone())),
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      resolve_enum_type_for_match(t.as_ref(), ctx.file_ns, ctx.scope_types).map(|enum_ref| (enum_ref, args.clone()))
+    }
     CalcitTypeAnnotation::TypeSlot(name) => calcit::resolve_type_slot(name).and_then(|resolved| match resolved.as_ref() {
-      CalcitTypeAnnotation::Enum(e, _) => Some(e.as_ref().to_owned()),
+      CalcitTypeAnnotation::Enum(e, args) => Some((e.as_ref().to_owned(), args.clone())),
+      CalcitTypeAnnotation::Tuple(e) => Some((e.as_ref().to_owned(), Arc::new(vec![]))),
       _ => None,
     }),
     _ => None,
   });
+  let enum_def = enum_match.as_ref().map(|(enum_def, _)| enum_def);
+  let mut enum_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  if let Some((enum_def, applied_args)) = enum_match.as_ref() {
+    for (name, applied) in enum_def.generics().iter().zip(applied_args.iter()) {
+      if !matches!(applied.as_ref(), CalcitTypeAnnotation::Dynamic) {
+        enum_bindings.insert(name.clone(), applied.clone());
+      }
+    }
+    for bound in enum_def.where_bounds() {
+      if !enum_bindings.contains_key(&bound.name)
+        && let Some(trait_type) = resolve_where_bound_type_for_body(bound, ctx.file_ns)
+      {
+        enum_bindings.insert(bound.name.clone(), trait_type);
+      }
+    }
+  }
 
   xs.push(value_form);
 
@@ -3514,7 +3737,7 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
         };
 
         // Validate variant exists in enum and check arity
-        if let Some(ref enum_def) = enum_def {
+        if let Some(enum_def) = enum_def {
           if let Some(variant) = enum_def.find_variant_by_name(pat_tag) {
             let expected_arity = variant.arity();
             let actual_arity = pat_xs.len() - 1;
@@ -3563,9 +3786,9 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
 
               // Infer payload type from enum variant definition
               let payload_type = enum_def
-                .as_ref()
                 .and_then(|e| e.find_variant_by_name(pat_tag))
                 .and_then(|v| v.payload_types().get(bind_idx).cloned())
+                .map(|payload| payload.substitute_type_vars(&enum_bindings))
                 .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
 
               let local = Calcit::Local(CalcitLocal {
@@ -3611,7 +3834,7 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
   }
 
   // Exhaustiveness checking
-  if let Some(ref enum_def) = enum_def
+  if let Some(enum_def) = enum_def
     && !has_wildcard
   {
     let all_variants: BTreeSet<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
@@ -3738,18 +3961,41 @@ pub fn preprocess_defn(
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
-      let effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = match def_schema.as_ref() {
+      let body_fn_hint = args
+        .iter()
+        .skip(2)
+        .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+        .and_then(|annotation| match annotation.as_ref() {
+          CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
+          _ => None,
+        });
+      let effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
         _ => None,
-      };
+      });
       if let Some(fn_annot) = &effective_fn_schema {
-        let parameter_types = fn_annot.arg_types.iter().cloned().chain(
-          fn_annot
-            .rest_type
-            .iter()
-            .map(|rest_type| Arc::new(CalcitTypeAnnotation::Variadic(rest_type.clone()))),
-        );
+        let body_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = fn_annot
+          .where_bounds
+          .iter()
+          .filter_map(|bound| resolve_where_bound_type_for_body(bound, ctx.file_ns).map(|trait_type| (bound.name.clone(), trait_type)))
+          .collect();
+        let parameter_types = fn_annot
+          .arg_types
+          .iter()
+          .enumerate()
+          .map(|(idx, arg_type)| {
+            let substituted = arg_type.substitute_type_vars(&body_type_bindings);
+            let positional = unwrap_named_body_parameter_type(substituted, param_symbols.get(idx));
+            resolve_local_type_refs_for_body(positional, &body_types)
+          })
+          .chain(fn_annot.rest_type.iter().map(|rest_type| {
+            Arc::new(CalcitTypeAnnotation::Variadic(resolve_local_type_refs_for_body(
+              rest_type.substitute_type_vars(&body_type_bindings),
+              &body_types,
+            )))
+          }))
+          .collect::<Vec<_>>();
         for (param_sym, arg_type) in param_symbols.iter().zip(parameter_types) {
           if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
             body_types.insert(param_sym.to_owned(), arg_type);
@@ -4133,7 +4379,15 @@ pub fn preprocess_assert_type(
 
   let asserted_target = target_form;
   if let Calcit::Local(local) = &asserted_target {
-    let type_entry = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
+    let asserted_type = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
+    let current_type = resolve_type_value(&asserted_target, ctx.scope_types).unwrap_or_else(|| local.type_info.clone());
+    let type_entry = if current_type.as_ref().matches_annotation(asserted_type.as_ref())
+      && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
+    {
+      current_type
+    } else {
+      asserted_type
+    };
     ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
     let mut typed_local = local.to_owned();
@@ -4510,6 +4764,29 @@ mod tests {
   }
 
   #[test]
+  fn broad_assert_type_does_not_erase_inferred_element_type() {
+    let expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("xs"), Cirru::leaf(":list")]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("xs"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("xs"),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    );
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    assert!(matches!(
+      resolve_type_value(&resolved, &scope_types).as_deref(),
+      Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
   fn unsafe_coerce_preserves_boundary_node_and_declared_expression_type() {
     let expr = Cirru::List(vec![Cirru::leaf("unsafe-coerce"), Cirru::leaf("x"), Cirru::leaf(":number")]);
     let code = code_to_calcit(&expr, "tests.unsafe-coerce", "main", vec![]).expect("parse cirru");
@@ -4806,6 +5083,7 @@ mod tests {
       .expect("trait should resolve from source-backed compiled data");
 
     assert_eq!(trait_def.name.ref_str(), "MySourceTrait");
+    assert_eq!(trait_def.definition_ref.as_deref(), Some("tests.source-trait/MySourceTrait"));
     assert!(trait_def.has_method("show"));
   }
 
@@ -5962,6 +6240,20 @@ mod tests {
   }
 
   #[test]
+  fn named_body_hint_parameter_keeps_its_declared_type() {
+    let labelled = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("n"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let parameter = Arc::from("n");
+
+    assert!(matches!(
+      unwrap_named_body_parameter_type(labelled, Some(&parameter)).as_ref(),
+      CalcitTypeAnnotation::Number
+    ));
+  }
+
+  #[test]
   fn warns_on_invalid_method_field_access() {
     use cirru_edn::EdnTag;
 
@@ -6194,7 +6486,7 @@ mod tests {
   #[test]
   fn user_function_where_bounds_warn_on_missing_trait_impl() {
     let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
-      EdnTag::new("Show"),
+      EdnTag::new("Renderable"),
       vec![EdnTag::new("show")],
       vec![crate::calcit::DYNAMIC_TYPE.clone()],
     ));
@@ -6335,7 +6627,7 @@ mod tests {
     );
     let message = warnings_vec[0].to_string();
     assert!(
-      message.contains("trait bound") && message.contains("Show"),
+      message.contains("trait bound") && message.contains("Renderable"),
       "warning should mention missing where-bound: {message}"
     );
   }
@@ -6343,7 +6635,7 @@ mod tests {
   #[test]
   fn local_function_where_bounds_warn_on_missing_trait_impl() {
     let show_trait = Arc::new(crate::calcit::CalcitTrait::new(
-      EdnTag::new("Show"),
+      EdnTag::new("Renderable"),
       vec![EdnTag::new("show")],
       vec![crate::calcit::DYNAMIC_TYPE.clone()],
     ));
@@ -6426,7 +6718,7 @@ mod tests {
     );
     let message = warnings_vec[0].to_string();
     assert!(
-      message.contains("trait bound") && message.contains("Show"),
+      message.contains("trait bound") && message.contains("Renderable"),
       "local fn warning should mention missing where-bound: {message}"
     );
   }

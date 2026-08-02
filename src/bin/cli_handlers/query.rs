@@ -962,6 +962,7 @@ mod type_query_tests {
       methods,
       vec![
         ".ceil",
+        ".compare",
         ".display-by",
         ".empty",
         ".floor",

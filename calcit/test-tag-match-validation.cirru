@@ -14,7 +14,8 @@
           :schema $ :: 'Dynamic
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl ResultImpl ResultTrait $ .dummy nil
+            defimpl ResultImpl ResultTrait $ .dummy
+              fn (_x) nil
           :examples $ []
           :schema $ :: 'Dynamic
         |ResultTrait $ %{} :CodeEntry (:doc |)

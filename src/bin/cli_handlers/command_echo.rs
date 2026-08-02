@@ -466,6 +466,7 @@ fn render_docs_explanation(cmd: &DocsCommand) -> Option<String> {
     DocsSubcommand::Agents(_) => "reads agent/developer guide".to_string(),
     DocsSubcommand::ReadLines(opts) => format!("reads specific lines from `{}`", opts.filename),
     DocsSubcommand::CheckMd(opts) => format!("validates code snippets in `{}`", opts.file),
+    DocsSubcommand::FormatMd(opts) => format!("formats Cirru snippets in `{}`", opts.file),
     DocsSubcommand::Graph(_) => "builds or queries the documentation relationship graph".to_string(),
   })
 }
@@ -679,6 +680,7 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
     DocsSubcommand::CheckMd(opts) => {
       echo_items!(tokens, pos "file" => &opts.file, value "entry" => &opts.entry; default "calcit.cirru", list "dep" => &opts.dep, switch "failures-only" => opts.failures_only)
     }
+    DocsSubcommand::FormatMd(opts) => echo_items!(tokens, pos "file" => &opts.file, switch "check" => opts.check),
     DocsSubcommand::Graph(opts) => match &opts.subcommand {
       DocsGraphSubcommand::Build(_) => tokens.push("build".to_string()),
       DocsGraphSubcommand::Check(_) => tokens.push("check".to_string()),
@@ -1106,6 +1108,7 @@ fn docs_name(subcommand: &DocsSubcommand) -> &'static str {
     DocsSubcommand::Agents(_) => "agents",
     DocsSubcommand::ReadLines(_) => "read-lines",
     DocsSubcommand::CheckMd(_) => "check-md",
+    DocsSubcommand::FormatMd(_) => "format-md",
     DocsSubcommand::Graph(_) => "graph",
   }
 }

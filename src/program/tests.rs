@@ -214,6 +214,20 @@ fn write_runtime_ready_normalizes_thunk_into_lazy_cell() {
 }
 
 #[test]
+fn write_runtime_ready_attaches_trait_definition_identity() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let trait_value = crate::calcit::CalcitTrait::new_runtime(cirru_edn::EdnTag::new("Show"), vec![], vec![]);
+  write_runtime_ready("app.traits", "Show", Calcit::Trait(trait_value)).expect("store runtime trait");
+
+  let Calcit::Trait(stored) = lookup_runtime_ready("app.traits", "Show").expect("stored trait") else {
+    panic!("expected stored trait");
+  };
+  assert_eq!(stored.definition_ref.as_deref(), Some("app.traits/Show"));
+}
+
+#[test]
 fn clear_runtime_caches_for_changes_clears_transitive_dependents() {
   let _guard = lock_program_test_state();
   reset_program_test_state();

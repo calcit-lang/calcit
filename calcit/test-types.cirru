@@ -9,9 +9,15 @@
       :defs $ {}
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
-            defimpl EnumImpl :EnumImpl $ .dummy nil
+            defimpl EnumImpl EnumMetadata $ .dummy
+              fn (self) nil
           :examples $ []
           :schema $ :: 'Impl
+        |EnumMetadata $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            deftrait EnumMetadata $ .dummy :fn
+          :examples $ []
+          :schema $ :: 'Trait
         |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote
             defstruct Person (:name 'String) (:age nil)
@@ -38,9 +44,15 @@
           :schema $ :: 'Trait
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
-            defimpl StructImpl :StructImpl $ .dummy nil
+            defimpl StructImpl StructMetadata $ .dummy
+              fn (self) nil
           :examples $ []
           :schema $ :: 'Impl
+        |StructMetadata $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            deftrait StructMetadata $ .dummy :fn
+          :examples $ []
+          :schema $ :: 'Trait
         |add-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn add-numbers (a b) (&+ a b)
@@ -301,13 +313,14 @@
           :code $ quote
             defn test-record-methods () (; "使用" impl-traits "挂载实现" Record methods)
               let
-                  PersonImpl $ defimpl PersonImpl :PersonImpl
+                  PersonGreeting $ deftrait PersonGreeting (.greet :fn)
+                  PersonImpl $ defimpl PersonImpl PersonGreeting
                     .greet $ fn (self)
                       str "|Hello, I'm " $ :name self
                   Person $ impl-traits Person PersonImpl
                   alice $ %{} Person (:name |Alice) (:age 30)
                 let
-                    greeting $ .greet alice
+                    greeting $ alice .greet
                   println |greeting: greeting
                   assert= "|Hello, I'm Alice" greeting
               , "|Record method checks passed"

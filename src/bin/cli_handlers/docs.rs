@@ -22,6 +22,7 @@ use calcit::runner;
 use calcit::snapshot;
 use calcit::util;
 
+use super::atomic_write::stage_atomic_file;
 use super::docs_cache;
 use super::libs::handle_libs_command;
 use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
@@ -170,6 +171,7 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep, opts.quiet, opts.failures_only),
+    DocsSubcommand::FormatMd(opts) => handle_format_md(&opts.file, opts.check),
     DocsSubcommand::Graph(opts) => handle_graph_command(&opts.subcommand),
   }
 }
@@ -1248,6 +1250,16 @@ enum CirruCheckMode {
   NoCheck,
 }
 
+fn cirru_fence_mode(fence: &str) -> Option<CirruCheckMode> {
+  match fence {
+    "```cirru" => Some(CirruCheckMode::Run),
+    "```cirru.no-run" => Some(CirruCheckMode::NoRun),
+    "```cirru.no-check" => Some(CirruCheckMode::NoCheck),
+    "```cirru.cli" => Some(CirruCheckMode::NoCli),
+    _ => None,
+  }
+}
+
 impl std::fmt::Display for CirruCheckMode {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -1308,6 +1320,124 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
   }
 
   blocks
+}
+
+#[derive(Debug)]
+struct FormattedMarkdown {
+  content: String,
+  total_blocks: usize,
+  changed_blocks: usize,
+}
+
+/// Format supported fenced Cirru blocks while retaining all Markdown text and fence labels.
+///
+/// The code inside each fence is parsed and rendered directly as a vector of
+/// Cirru roots. This preserves a block containing multiple top-level forms,
+/// unlike routing it through the JSON-based `cirru format` command.
+fn format_markdown_cirru_blocks(content: &str) -> Result<FormattedMarkdown, String> {
+  let line_ending = if content.contains("\r\n") { "\r\n" } else { "\n" };
+  let mut output = String::with_capacity(content.len());
+  let mut in_cirru_block = false;
+  let mut in_other_block = false;
+  let mut block_start_line = 0;
+  let mut code_lines: Vec<String> = Vec::new();
+  let mut total_blocks = 0;
+  let mut changed_blocks = 0;
+
+  for (line_index, raw_line) in content.split_inclusive('\n').enumerate() {
+    let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    let trimmed = line.trim();
+
+    if !in_cirru_block && !in_other_block && trimmed.starts_with("```") {
+      if cirru_fence_mode(trimmed).is_some() {
+        in_cirru_block = true;
+        block_start_line = line_index + 2;
+        code_lines.clear();
+      } else {
+        in_other_block = true;
+      }
+      output.push_str(raw_line);
+    } else if (in_cirru_block || in_other_block) && trimmed == "```" {
+      if in_cirru_block {
+        total_blocks += 1;
+        let source = code_lines.join("\n");
+        let nodes = cirru_parser::parse(&source)
+          .map_err(|error| format!("Failed to parse Cirru block starting at line {block_start_line}: {error}"))?;
+        let formatted = cirru_parser::format(&nodes, true.into())
+          .map_err(|error| format!("Failed to format Cirru block starting at line {block_start_line}: {error}"))?;
+        let canonical = formatted.trim();
+        if source != canonical {
+          changed_blocks += 1;
+        }
+        if !canonical.is_empty() {
+          for formatted_line in canonical.split('\n') {
+            output.push_str(formatted_line);
+            output.push_str(line_ending);
+          }
+        }
+      }
+      in_cirru_block = false;
+      in_other_block = false;
+      output.push_str(raw_line);
+    } else if in_cirru_block {
+      code_lines.push(line.to_string());
+    } else {
+      output.push_str(raw_line);
+    }
+  }
+
+  if in_cirru_block {
+    return Err(format!("Unclosed Cirru code block starting at line {block_start_line}"));
+  }
+
+  Ok(FormattedMarkdown {
+    content: output,
+    total_blocks,
+    changed_blocks,
+  })
+}
+
+fn handle_format_md(file_path: &str, check: bool) -> Result<(), String> {
+  let content = fs::read_to_string(file_path).map_err(|error| format!("Failed to read file '{file_path}': {error}"))?;
+  let formatted = format_markdown_cirru_blocks(&content)?;
+
+  if check {
+    if formatted.changed_blocks == 0 {
+      println!(
+        "{}  {} Cirru blocks already canonical  {}",
+        file_path.cyan(),
+        formatted.total_blocks,
+        "✓".green()
+      );
+      return Ok(());
+    }
+    return Err(format!(
+      "{} Cirru block(s) in '{file_path}' need formatting. Run `cr docs format-md {file_path}`.",
+      formatted.changed_blocks
+    ));
+  }
+
+  if formatted.changed_blocks == 0 {
+    println!(
+      "{}  {} Cirru blocks already canonical  {}",
+      file_path.cyan(),
+      formatted.total_blocks,
+      "✓".green()
+    );
+    return Ok(());
+  }
+
+  let staged = stage_atomic_file(Path::new(file_path), formatted.content.as_bytes(), "Markdown")?;
+  staged.commit()?;
+  println!(
+    "{}  formatted {} of {} Cirru blocks  {}",
+    file_path.cyan(),
+    formatted.changed_blocks,
+    formatted.total_blocks,
+    "✓".green()
+  );
+  Ok(())
 }
 
 fn ensure_runtime_initialized() {

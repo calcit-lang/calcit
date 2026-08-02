@@ -34,6 +34,18 @@ impl CalcitImpl {
     self.origin.as_ref().map(|trait_def| &trait_def.name)
   }
 
+  pub fn is_inherent(&self) -> bool {
+    self.origin.is_none()
+  }
+
+  pub fn implements_trait(&self, trait_def: &CalcitTrait) -> bool {
+    self.origin.as_ref().is_some_and(|origin| origin.as_ref() == trait_def)
+  }
+
+  pub fn matches_trait_reference(&self, trait_def: &CalcitTrait) -> bool {
+    self.origin.as_ref().is_some_and(|origin| origin.matches_reference(trait_def))
+  }
+
   pub fn fields(&self) -> &Arc<Vec<EdnTag>> {
     &self.fields
   }
