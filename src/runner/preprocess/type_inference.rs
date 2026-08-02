@@ -154,20 +154,55 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
 
-  let compiled = program::lookup_compiled_def(ns, def)?;
-
-  // Avoid evaluating compiled payloads during preprocess type inference.
-  // Evaluating function code here can recurse back into preprocess and overflow stack.
-  match compiled.preprocessed_code {
-    Calcit::Fn { info, .. } => {
-      if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
-        return Some(resolved);
+  // Prefer compiled callable metadata. The four core enum constructors are
+  // also needed while the core is bootstrapping, before their payloads are
+  // compiled; their declared schemas unlock receiver-first method calls.
+  if let Some(compiled) = program::lookup_compiled_def(ns, def) {
+    // Avoid evaluating compiled payloads during preprocess type inference.
+    // Evaluating function code here can recurse back into preprocess and overflow stack.
+    match compiled.preprocessed_code {
+      Calcit::Fn { info, .. } => {
+        if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
+          return Some(resolved);
+        }
+        return Some(info.return_type.clone());
       }
-      Some(info.return_type.clone())
+      Calcit::Proc(proc) => return proc.get_type_signature().map(|type_sig| type_sig.return_type.clone()),
+      _ => {}
     }
-    Calcit::Proc(proc) => proc.get_type_signature().map(|type_sig| type_sig.return_type.clone()),
-    _ => None,
   }
+
+  if ns != calcit::CORE_NS || !matches!(def, "%some" | "%none" | "%ok" | "%err") {
+    return None;
+  }
+
+  let schema = program::lookup_def_schema(ns, def);
+  let CalcitTypeAnnotation::Fn(info) = schema.as_ref() else {
+    return None;
+  };
+  if info.generics.is_empty() || !info.return_type.contains_type_var() {
+    return Some(info.return_type.clone());
+  }
+
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  for (arg, expected_type) in call_expr.iter().skip(1).zip(info.arg_types.iter()) {
+    if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+      && let Some(actual_type) = resolve_type_value(arg, scope_types)
+    {
+      actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+    }
+  }
+  // A constructor such as `%none` has no payload from which to infer one or
+  // more generic arguments. Preserve its nominal enum identity with Dynamic
+  // type arguments, but do not synthesize partial types for ordinary functions.
+  for generic in info.generics.iter() {
+    bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
+  }
+  let resolved = info.return_type.substitute_type_vars(&bindings);
+  if resolved.contains_type_var() {
+    return None;
+  }
+  (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some()).then_some(resolved)
 }
 
 fn infer_core_get_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {

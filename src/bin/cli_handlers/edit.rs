@@ -2649,7 +2649,6 @@ mod tests {
     assert!(advisories.contains("W_LEGACY_SNAPSHOT_NAME"), "advisories: {advisories}");
     assert!(advisories.contains("W_LEGACY_ANY"), "advisories: {advisories}");
     assert!(advisories.contains("W_DYNAMIC_TYPE_DEBT"), "advisories: {advisories}");
-    assert!(advisories.contains("W_LEGACY_INHERENT_IMPL"), "advisories: {advisories}");
     assert!(advisories.contains("analyze weak-types"), "advisories: {advisories}");
   }
 

@@ -239,14 +239,14 @@ The same operations are available as methods on enum values:
 
 ```cirru
 do
-  assert= 0 $ .unwrap-or (%none) 0
+  assert= 0 $
+    %none
+    , .unwrap-or 0
   assert= (%ok 4)
-    .and-then (%ok 2)
-      fn (x)
-        %ok $ * x 2
+    (%ok 2) .and-then $ fn (x)
+      %ok $ * x 2
   assert= (%err |failed!)
-    .map-err (%err |failed)
-      fn (e) (str e |!)
+    (%err |failed) .map-err $ fn (e) (str e |!)
 ```
 
 ## Notes

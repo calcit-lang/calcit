@@ -478,8 +478,8 @@
                   res-err $ %err |oops
                 assert= true $ .some? opt-some
                 assert= true $ .none? opt-none
-                assert= 1 $ .unwrap-or opt-some 9
-                assert= 9 $ .unwrap-or opt-none 9
+                assert= 1 $ opt-some .unwrap-or 9
+                assert= 9 $ opt-none .unwrap-or 9
                 assert= (%some 2)
                   .and-then opt-some $ fn (x)
                     %some $ inc x
@@ -488,8 +488,8 @@
                     %some $ inc x
                 assert= true $ .ok? res-ok
                 assert= true $ .err? res-err
-                assert= 1 $ .unwrap-or res-ok 9
-                assert= 9 $ .unwrap-or res-err 9
+                assert= 1 $ res-ok .unwrap-or 9
+                assert= 9 $ res-err .unwrap-or 9
                 assert= (%ok 2)
                   .and-then res-ok $ fn (x)
                     %ok $ inc x

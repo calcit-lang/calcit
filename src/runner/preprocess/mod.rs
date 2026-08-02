@@ -849,7 +849,7 @@ fn preprocess_list_call(
 
   // === Postfix record field access / method call detection ===
   // Pattern: (expr :field) where expr has a known record type → rewrite to (.-field expr)
-  // Pattern: (expr .method args...) where expr has a known record/trait type → rewrite to (.method expr args...)
+  // Pattern: (expr .method args...) where expr has a known record/enum/trait type → rewrite to (.method expr args...)
   // When type is unknown (Dynamic), silently fall through — :tag / .method may be normal arguments.
   if let Some(rewritten) =
     try_rewrite_struct_enum_constructor_head_call(&head_form, &args, scope_types, file_ns, &def_name, check_warnings, call_stack)?
@@ -883,12 +883,17 @@ fn preprocess_list_call(
         if matches!(method_kind, calcit::MethodKind::Invoke(_))
           && let Some(type_info) = resolve_type_value(&head_form, scope_types)
         {
-          // Only trigger for struct/record or trait types — NOT for Fn/Proc which
+          // Only trigger for struct/record, enum, or trait types — NOT for Fn/Proc which
           // also appear to have impls via core-impl lookups (e.g. `::` → tuple).
-          let is_record_or_trait =
-            type_info.as_ref().resolve_to_struct().is_some() || trait_list_from_type(type_info.as_ref()).is_some();
+          let is_record_enum_or_trait = type_info.as_ref().resolve_to_struct().is_some()
+            || type_info.as_ref().resolve_to_enum().is_some()
+            // A quoted named type can remain as a TypeRef while the core value is
+            // bootstrapping. It is still explicit static evidence, and normal
+            // method dispatch/codegen does not require resolving its impl table.
+            || matches!(type_info.as_ref(), CalcitTypeAnnotation::TypeRef(..))
+            || trait_list_from_type(type_info.as_ref()).is_some();
 
-          if is_record_or_trait {
+          if is_record_enum_or_trait {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_info.clone()));
             let mut ys = CalcitList::new_inner_from(&[typed_method, head_form]);
