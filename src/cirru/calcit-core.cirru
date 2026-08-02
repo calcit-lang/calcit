@@ -3132,15 +3132,15 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
           :tags $ #{} :macro
-        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (.method value) ...), (defimpl ImplName Trait (:: .method value) ...), or legacy (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
+        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (symbol), method pairs\nReturns: impl value\nNotes: new code passes raw symbols; tag arguments remain only as legacy compatibility for originless method bags. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new")
           :code $ quote
             defmacro defimpl (name trait & pairs)
               if
                 not $ or (tag? name) (symbol? name)
-                raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name (symbol/tag). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
+                raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name symbol (legacy tag accepted). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
               if
                 not $ or (tag? trait) (symbol? trait)
-                raise $ str-spaced "|defimpl misuse. Expected: second argument is trait (symbol/tag). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
+                raise $ str-spaced "|defimpl misuse. Expected: second argument is trait symbol (legacy tag accepted). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
               quasiquote $ def ~name
                 &impl::new
                   ~ $ if (tag? trait) (turn-tag trait) trait

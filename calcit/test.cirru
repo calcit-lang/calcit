@@ -9,7 +9,7 @@
       :defs $ {}
         |%A $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl %A :%A $ .deref
+            defimpl %A AtomDerefTrait $ .deref
               fn (self)
                 tag-match self $
                   :atom x
@@ -18,7 +18,7 @@
           :schema $ :: 'Dynamic
         |%r $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl %r :%demo $ .get
+            defimpl %r DemoGetTrait $ .get
               fn (self) 1
           :examples $ []
           :schema $ :: 'Dynamic
@@ -36,6 +36,11 @@
             defenum AtomBox $ :atom 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
+        |AtomDerefTrait $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            deftrait AtomDerefTrait $ .deref :fn
+          :examples $ []
+          :schema $ :: 'Trait
         |Demo $ %{} :CodeEntry (:doc |)
           :code $ quote
             def Demo $ impl-traits Demo0 %r
@@ -46,12 +51,22 @@
             defenum Demo $ :a 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
+        |DemoGetTrait $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            deftrait DemoGetTrait $ .get :fn
+          :examples $ []
+          :schema $ :: 'Trait
         |Deref $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl Deref :Deref $ .deref
+            defimpl Deref DerefTrait $ .deref
               fn (self) 2
           :examples $ []
           :schema $ :: 'Dynamic
+        |DerefTrait $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            deftrait DerefTrait $ .deref :fn
+          :examples $ []
+          :schema $ :: 'Trait
         |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl Num NumTrait
@@ -461,7 +476,7 @@
                   b $ %:: Demo :a 1
                 assert= true $ any? (&tuple:impls b)
                   fn (impl)
-                    includes? (str impl) |%demo
+                    includes? (str impl) |DemoGetTrait
                 assert=
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3
