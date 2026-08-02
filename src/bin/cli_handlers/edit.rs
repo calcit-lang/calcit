@@ -287,6 +287,8 @@ fn collect_format_advisories(snapshot_file: &str, original_edn: &Edn, snapshot: 
       continue;
     }
     for (definition, entry) in &file.defs {
+      // Core bootstrap method bags intentionally use tag-style origins before
+      // the public nominal traits are available, so they are not migration debt.
       if namespace != "calcit.internal" {
         legacy_inherent_impl_count += count_legacy_inherent_impls(&entry.code);
       }

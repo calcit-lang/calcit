@@ -2372,11 +2372,17 @@ impl CalcitTypeAnnotation {
   }
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
-    if self
-      .collect_static_impls()
-      .is_some_and(|impls| impls.iter().any(|imp| Self::impl_matches_trait(imp, expected_trait)))
-    {
-      return true;
+    if let Some(impls) = self.collect_static_impls() {
+      if impls.iter().any(|imp| Self::impl_matches_trait(imp, expected_trait)) {
+        return true;
+      }
+      // Primitive values use a real core impl list whenever it has finished
+      // evaluating. Do not let bootstrap names override that authoritative
+      // result; record/tuple categories keep their shared core capabilities in
+      // the fallback because their attached impl list is separate.
+      if self.core_impl_list_symbol().is_some() {
+        return false;
+      }
     }
     self.builtin_core_trait_names().contains(&expected_trait.name.ref_str())
   }
@@ -3423,6 +3429,60 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
 mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
+  use std::collections::BTreeSet;
+
+  fn core_impl_trait_names(definition: &str) -> BTreeSet<String> {
+    fn visit(node: &cirru_parser::Cirru, names: &mut BTreeSet<String>) {
+      let cirru_parser::Cirru::List(items) = node else {
+        return;
+      };
+      if let (Some(cirru_parser::Cirru::Leaf(head)), Some(cirru_parser::Cirru::Leaf(trait_name))) = (items.first(), items.get(1))
+        && head.as_ref() == "&impl::new"
+      {
+        names.insert(trait_name.to_string());
+      }
+      for item in items {
+        visit(item, names);
+      }
+    }
+
+    let core = crate::load_core_snapshot().expect("load embedded core snapshot");
+    let entry = core
+      .files
+      .get(CORE_NS)
+      .and_then(|file| file.defs.get(definition))
+      .unwrap_or_else(|| panic!("missing {definition} in embedded core snapshot"));
+    let mut names = BTreeSet::new();
+    visit(&entry.code, &mut names);
+    names
+  }
+
+  #[test]
+  fn bootstrap_core_trait_names_match_core_impl_definitions() {
+    let dynamic = crate::calcit::DYNAMIC_TYPE.clone();
+    let cases = vec![
+      (CalcitTypeAnnotation::List(dynamic.clone()), "&core-list-impls"),
+      (CalcitTypeAnnotation::Map(dynamic.clone(), dynamic.clone()), "&core-map-impls"),
+      (CalcitTypeAnnotation::Set(dynamic.clone()), "&core-set-impls"),
+      (CalcitTypeAnnotation::String, "&core-string-impls"),
+      (CalcitTypeAnnotation::Number, "&core-number-impls"),
+      (CalcitTypeAnnotation::DynFn, "&core-fn-impls"),
+      (CalcitTypeAnnotation::Bool, "&core-scalar-impls"),
+    ];
+
+    for (annotation, definition) in cases {
+      let expected: BTreeSet<String> = annotation
+        .builtin_core_trait_names()
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+      assert_eq!(
+        core_impl_trait_names(definition),
+        expected,
+        "bootstrap metadata drifted for {definition}"
+      );
+    }
+  }
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {

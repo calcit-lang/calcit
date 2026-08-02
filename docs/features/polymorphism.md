@@ -216,7 +216,7 @@ Core types provide origin-carrying built-in trait implementations registered con
 | `Compare` | `.compare` | Number, String |
 | `Countable` | `.count` | List, Map, Set, String, Record, Tuple/enum |
 | `Contains` | `.contains?` | List, Map, Set, String, Record, Tuple/enum |
-| `Mappable` | `.map` | List, Map, Set, Option |
+| `Mappable` | `.map` | List, Map, Set, Option, Result |
 | `Show` | `.show` | Number, String, Bool, Tag, Symbol, Nil, CirruQuote, List, Map, Set, Fn, Record, Tuple |
 | `Eq` | `.eq?` | The same scalar/collection/record/tuple categories registered for `Show` |
 

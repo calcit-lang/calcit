@@ -1443,33 +1443,14 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
       impls.extend(enum_def.impls().iter().cloned());
       Ok(impls)
     }
-    Calcit::List(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
-    }
-    Calcit::Map(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
-    }
-    Calcit::Number(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
-    }
-    Calcit::Str(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
-    }
-    Calcit::Set(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
-    }
-    Calcit::Fn { .. } | Calcit::Proc(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
-    }
+    Calcit::List(..) => collect_optional_core_impl_records("&core-list-impls", call_stack),
+    Calcit::Map(..) => collect_optional_core_impl_records("&core-map-impls", call_stack),
+    Calcit::Number(..) => collect_optional_core_impl_records("&core-number-impls", call_stack),
+    Calcit::Str(..) => collect_optional_core_impl_records("&core-string-impls", call_stack),
+    Calcit::Set(..) => collect_optional_core_impl_records("&core-set-impls", call_stack),
+    Calcit::Fn { .. } | Calcit::Proc(..) => collect_optional_core_impl_records("&core-fn-impls", call_stack),
     Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } | Calcit::CirruQuote(..) => {
-      let impls_value = runner::evaluate_symbol_from_program("&core-scalar-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&impls_value, call_stack)
+      collect_optional_core_impl_records("&core-scalar-impls", call_stack)
     }
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -2170,5 +2151,12 @@ mod tests {
       err.msg.contains("does not satisfy `trait Renderable`") || err.msg.contains("does not satisfy `Renderable`"),
       "unexpected error: {err:?}"
     );
+  }
+
+  #[test]
+  fn optional_core_impl_lookup_allows_embedding_without_core_entries() {
+    let impls = collect_optional_core_impl_records("&missing-test-core-impls", &CallStackList::default())
+      .expect("missing core impl list should be treated as unavailable");
+    assert!(impls.is_empty());
   }
 }
