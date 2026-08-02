@@ -491,6 +491,9 @@
                 assert= true $ res-err .err?
                 assert= 1 $ res-ok .unwrap-or 9
                 assert= 9 $ res-err .unwrap-or 9
+                assert= 1 $ (res-ok .unwrap-or 9) .round
+                assert= 9 $ (res-err .unwrap-or 9) .round
+                assert= 9 $ ((%none) .unwrap-or 9) .round
                 assert= (%ok 2) (res-ok .and-then to-ok)
                 assert= (%err |oops) (res-err .and-then to-ok)
                 assert= (%ok 1) (res-ok .map-err turn-tag)

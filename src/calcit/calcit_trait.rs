@@ -65,8 +65,11 @@ fn hash_default_impl<H: Hasher>(default_impl: &Option<Arc<CalcitFn>>, state: &mu
 #[derive(Debug, Clone)]
 pub struct CalcitTrait {
   /// Nominal identity for an evaluated trait definition. Source/schema
-  /// placeholders keep this empty and are compared structurally.
+  /// placeholders keep this empty and use `definition_ref` when available.
   pub runtime_id: Option<u64>,
+  /// Stable source identity for a trait resolved before runtime evaluation.
+  /// This keeps two source traits with the same short name nominally distinct.
+  pub definition_ref: Option<Arc<str>>,
   /// Name of the trait
   pub name: EdnTag,
   /// Method names defined by this trait
@@ -97,7 +100,8 @@ impl Eq for CalcitTrait {}
 
 impl CalcitTrait {
   fn structural_eq(&self, other: &Self) -> bool {
-    self.name == other.name
+    self.definition_ref == other.definition_ref
+      && self.name == other.name
       && self.methods == other.methods
       && self.method_types == other.method_types
       && self.requires == other.requires
@@ -118,6 +122,7 @@ impl CalcitTrait {
     );
     CalcitTrait {
       runtime_id: None,
+      definition_ref: None,
       name,
       methods: Arc::new(methods),
       defaults: Arc::new(defaults),
@@ -135,13 +140,35 @@ impl CalcitTrait {
     trait_def
   }
 
+  /// Attach the namespace-qualified definition identity used while the source
+  /// trait is available but its runtime value has not been evaluated yet.
+  pub fn with_definition_ref(mut self, ns: &str, def: &str) -> Self {
+    self.definition_ref = Some(Arc::from(format!("{ns}/{def}")));
+    self
+  }
+
+  /// Build an unresolved trait reference while retaining a qualified source
+  /// path when one is present in the schema.
+  pub fn new_reference(name: &str) -> Self {
+    let normalized = name.trim_start_matches('\'');
+    match normalized.rsplit_once('/') {
+      Some((ns, def)) => Self::new(EdnTag::new(def), vec![], vec![]).with_definition_ref(ns, def),
+      None => Self::new(EdnTag::new(normalized), vec![], vec![]),
+    }
+  }
+
   /// Match a trait reference stored in schema/static metadata. Evaluated
-  /// references use nominal identity; unevaluated references temporarily fall
-  /// back to definition shape, or name when the snapshot only retained a bare
-  /// trait symbol.
+  /// references use runtime identity, source references use their qualified
+  /// definition, and legacy bare placeholders fall back to shape or name.
   pub fn matches_reference(&self, expected: &Self) -> bool {
     if expected.runtime_id.is_some() {
       return self == expected;
+    }
+    if self.definition_ref.is_some() || expected.definition_ref.is_some() {
+      return self.definition_ref == expected.definition_ref;
+    }
+    if self.runtime_id.is_some() {
+      return false;
     }
     self.structural_eq(expected) || (expected.methods.is_empty() && self.name == expected.name)
   }
@@ -175,6 +202,7 @@ impl Hash for CalcitTrait {
     if self.runtime_id.is_some() {
       return;
     }
+    self.definition_ref.hash(state);
     self.name.hash(state);
     self.methods.hash(state);
     self.method_types.hash(state);
@@ -228,6 +256,7 @@ mod tests {
   fn build_trait_with_default(default_impl: Option<Arc<CalcitFn>>) -> CalcitTrait {
     CalcitTrait {
       runtime_id: None,
+      definition_ref: None,
       name: EdnTag::new("TraitX"),
       methods: Arc::new(vec![EdnTag::new("foo")]),
       defaults: Arc::new(vec![default_impl]),
@@ -257,6 +286,20 @@ mod tests {
 
     assert_eq!(left, right);
     assert_eq!(hash_trait(&left), hash_trait(&right));
+  }
+
+  #[test]
+  fn source_definition_refs_are_nominal() {
+    let core = CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]).with_definition_ref("calcit.core", "Show");
+    let user = CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]).with_definition_ref("app.main", "Show");
+    let same_core = CalcitTrait::new_reference("calcit.core/Show");
+    let runtime_core = CalcitTrait::new_runtime(EdnTag::new("Show"), vec![], vec![]).with_definition_ref("calcit.core", "Show");
+
+    assert_eq!(core, same_core);
+    assert_eq!(hash_trait(&core), hash_trait(&same_core));
+    assert_ne!(core, user);
+    assert!(!core.matches_reference(&user));
+    assert!(runtime_core.matches_reference(&same_core));
   }
 
   #[test]

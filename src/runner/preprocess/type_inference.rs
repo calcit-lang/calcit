@@ -26,7 +26,9 @@ use crate::{
 };
 use cirru_edn::EdnTag;
 
-use super::{ScopeTypes, find_trait_method_type, tag_annotation, trait_list_from_type};
+use super::{
+  ScopeTypes, find_method_entry_for_type, find_trait_method_type, get_impl_records_from_type, tag_annotation, trait_list_from_type,
+};
 
 // ---------------------------------------------------------------------------
 // Core resolution
@@ -168,6 +170,8 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
 
+  let is_core_enum_constructor = ns == calcit::CORE_NS && matches!(def, "%some" | "%none" | "%ok" | "%err");
+
   // Prefer compiled callable metadata. The four core enum constructors are
   // also needed while the core is bootstrapping, before their payloads are
   // compiled; their declared schemas unlock receiver-first method calls.
@@ -179,14 +183,22 @@ pub(crate) fn infer_return_type_from_compiled_callable(
         if let Some(resolved) = resolve_generic_return_type(&info, call_expr.iter().skip(1), scope_types) {
           return Some(resolved);
         }
-        return Some(info.return_type.clone());
+        if !is_core_enum_constructor || !info.return_type.contains_type_var() {
+          return Some(info.return_type.clone());
+        }
       }
-      Calcit::Proc(proc) => return proc.get_type_signature().map(|type_sig| type_sig.return_type.clone()),
+      Calcit::Proc(proc) => {
+        if let Some(type_sig) = proc.get_type_signature()
+          && (!is_core_enum_constructor || !type_sig.return_type.contains_type_var())
+        {
+          return Some(type_sig.return_type.clone());
+        }
+      }
       _ => {}
     }
   }
 
-  if ns != calcit::CORE_NS || !matches!(def, "%some" | "%none" | "%ok" | "%err") {
+  if !is_core_enum_constructor {
     return None;
   }
 
@@ -444,10 +456,18 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         // Typed method invocation: resolve the selected trait signature and
         // substitute receiver/argument types into its generic return type.
-        Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) => {
-          let receiver_type = xs.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))?;
-          let traits = trait_list_from_type(receiver_type.as_ref())?;
-          let (_, method_type) = find_trait_method_type(&traits, method_name)?;
+        Calcit::Method(method_name, calcit::MethodKind::Invoke(receiver_hint)) => {
+          let receiver_type = xs
+            .get(1)
+            .and_then(|receiver| resolve_type_value(receiver, scope_types))
+            .unwrap_or_else(|| receiver_hint.clone());
+          let method_type = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
+            find_trait_method_type(&traits, method_name).map(|(_, method_type)| method_type.clone())?
+          } else {
+            let impls = get_impl_records_from_type(receiver_type.as_ref())?;
+            let method = find_method_entry_for_type(receiver_type.as_ref(), &impls, method_name)?;
+            infer_type_from_expr(method, scope_types)?
+          };
           let CalcitTypeAnnotation::Fn(info) = method_type.as_ref() else {
             return Some(calcit::DYNAMIC_TYPE.clone());
           };

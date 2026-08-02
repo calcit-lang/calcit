@@ -943,6 +943,9 @@ pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), Str
 
   match value {
     Calcit::Thunk(CalcitThunk::Code { code, info }) => write_runtime_lazy(def_id, code, info),
+    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => {
+      write_runtime_value(def_id, Calcit::Trait(trait_def.with_definition_ref(ns, def)))
+    }
     other => write_runtime_value(def_id, other),
   }
 

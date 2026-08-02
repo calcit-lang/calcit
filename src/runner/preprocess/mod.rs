@@ -546,7 +546,9 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
       return None;
     };
 
-    let resolved = program::lookup_def_code(&trait_ns, &trait_name).and_then(|code| resolve_trait_def_from_source_code(&code))?;
+    let resolved = program::lookup_def_code(&trait_ns, &trait_name)
+      .and_then(|code| resolve_trait_def_from_source_code(&code))?
+      .with_definition_ref(&trait_ns, &trait_name);
     traits.push(Arc::new(resolved));
   }
 
@@ -672,6 +674,7 @@ fn lookup_trait_ns_def_for_preprocess(
     program::lookup_compiled_def(raw_ns, raw_def)
       .and_then(|compiled| compiled.source_code)
       .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .map(|trait_def| trait_def.with_definition_ref(raw_ns, raw_def))
       .map(Arc::new),
   )
 }
@@ -3177,14 +3180,7 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
     return Some(struct_def.impls.to_owned());
   }
 
-  if let CalcitTypeAnnotation::Enum(enum_def, _) = type_value {
-    // Prepend core tuple impls; user impls come after and win (last_wins=true)
-    let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
-    impls.extend(enum_def.impls.iter().cloned());
-    return Some(impls);
-  }
-
-  if let CalcitTypeAnnotation::Tuple(enum_def) = type_value {
+  if let Some(enum_def) = type_value.resolve_to_enum() {
     // Prepend core tuple impls; user impls come after and win (last_wins=true)
     let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
     impls.extend(enum_def.impls.iter().cloned());
@@ -5087,6 +5083,7 @@ mod tests {
       .expect("trait should resolve from source-backed compiled data");
 
     assert_eq!(trait_def.name.ref_str(), "MySourceTrait");
+    assert_eq!(trait_def.definition_ref.as_deref(), Some("tests.source-trait/MySourceTrait"));
     assert!(trait_def.has_method("show"));
   }
 
