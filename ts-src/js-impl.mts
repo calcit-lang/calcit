@@ -3,6 +3,8 @@ import { CalcitValue } from "./js-primes.mjs";
 import { CalcitTag, castTag, findInFields, toString } from "./calcit-data.mjs";
 import type { CalcitTrait } from "./js-trait.mjs";
 
+const CALCIT_IMPL_BRAND = Symbol.for("@calcit/procs/CalcitImpl");
+
 export class CalcitImpl {
   name: CalcitTag;
   origin: CalcitTrait | null;
@@ -10,7 +12,15 @@ export class CalcitImpl {
   values: Array<CalcitValue>;
   cachedHash: Hash;
 
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return typeof value === "object" && value !== null && Reflect.get(value, CALCIT_IMPL_BRAND) === true;
+  }
+
   constructor(name: CalcitTag, fields: Array<CalcitTag>, values: Array<CalcitValue>, origin: CalcitTrait | null = null) {
+    // Vite can temporarily retain two copies of @calcit/procs while refreshing
+    // optimized dependencies. A global, non-enumerable brand keeps impl values
+    // recognizable across those otherwise distinct module instances.
+    Object.defineProperty(this, CALCIT_IMPL_BRAND, { value: true });
     this.name = name;
     this.origin = origin;
     this.fields = fields;
