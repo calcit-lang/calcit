@@ -1319,6 +1319,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_unsafe_coerce(name, name_ns, &args, &mut ctx)
         }
+        CalcitSyntax::ParseCirruEdnAs => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_parse_cirru_edn_as(name, name_ns, &args, &mut ctx)
+        }
         CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_traits(name, name_ns, &args, &mut ctx)
@@ -4434,6 +4438,42 @@ pub fn preprocess_unsafe_coerce(
   ]))
 }
 
+pub fn preprocess_parse_cirru_edn_as(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  if args.len() != 2 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!("{head} expected a string and a type expression, got {}", args.len()),
+      ctx.call_stack,
+      args.first().and_then(Calcit::get_location),
+    ));
+  }
+
+  let text_form = preprocess_expr(
+    args.first().expect("validated parse-cirru-edn-as text"),
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  let type_form = args.get(1).expect("validated parse-cirru-edn-as type");
+  let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
+    CalcitErr::use_msg_stack_location(CalcitErrKind::Type, error.to_string(), ctx.call_stack, type_form.get_location())
+  })?;
+
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    text_form,
+    type_form.to_owned(),
+  ]))
+}
+
 pub fn preprocess_assert_traits(
   head: &CalcitSyntax,
   _head_ns: &str,
@@ -4812,6 +4852,24 @@ mod tests {
       "coercing one expression must not retype every later use of the local"
     );
     assert!(warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn strict_edn_decode_rejects_dynamic_during_preprocess() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("parse-cirru-edn-as"),
+      Cirru::leaf("|do 1"),
+      Cirru::leaf(":dynamic"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.edn", "main", vec![]).expect("parse strict decoder");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let error = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.edn", &warnings, &stack)
+      .expect_err("Dynamic decoder must be rejected before runtime");
+    assert!(error.msg.contains("Dynamic is forbidden"), "unexpected error: {error:?}");
   }
 
   #[test]

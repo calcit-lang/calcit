@@ -7,6 +7,7 @@ use crate::{
 
 pub mod cirru;
 pub mod edn;
+pub mod edn_decode;
 
 fn where_bounds_to_calcit_form(bounds: &[crate::calcit::CalcitGenericBound], ns: &str, at_def: &str) -> Option<Calcit> {
   if bounds.is_empty() {

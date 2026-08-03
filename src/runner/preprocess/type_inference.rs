@@ -400,6 +400,10 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs.get(2).map(CalcitTypeAnnotation::parse_type_annotation_form),
 
+        Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _) => xs
+          .get(2)
+          .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
+
         // Local variable as head (function call)
         // If it's a function type, return its return type
         Calcit::Local(local) => {
@@ -1388,6 +1392,25 @@ mod tests {
       infer_static_type_from_expr(&map).as_deref(),
       Some(CalcitTypeAnnotation::Map(key, value))
         if matches!(key.as_ref(), CalcitTypeAnnotation::Tag) && matches!(value.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
+  fn strict_edn_decode_expression_has_declared_closed_type() {
+    let target = Calcit::Tuple(calcit::CalcitTuple {
+      tag: Arc::new(Calcit::tag("list")),
+      extra: vec![Calcit::tag("number")],
+      sum_type: None,
+    });
+    let expression = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, Arc::from(calcit::CORE_NS)),
+      Calcit::Str(Arc::from("[] 1 2")),
+      target,
+    ]);
+
+    assert!(matches!(
+      infer_static_type_from_expr(&expression).as_deref(),
+      Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
     ));
   }
 

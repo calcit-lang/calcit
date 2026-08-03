@@ -348,10 +348,9 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       if (options instanceof CalcitMap || options instanceof CalcitSliceMap) {
         let v = options.get(extractFieldTag(name));
         if (v != null && v instanceof CalcitRecord) {
-          if (!deepEqual(v.fields, fields)) {
-            throw new Error(`Fields mismatch for ${name}, expected ${fields}, got ${v.fields}`);
+          if (deepEqual(v.fields, fields)) {
+            return new CalcitRecord(extractFieldTag(name), fields, values, v.structRef);
           }
-          return new CalcitRecord(extractFieldTag(name), fields, values, v.structRef);
         }
       }
 

@@ -27,6 +27,7 @@ use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList
 use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::codegen::skip_arity_check;
+use crate::data::edn_decode::{EdnDecodeNode, EdnDecoderGraph};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 use args::{gen_args_code, gen_call_args_with_temps};
@@ -445,6 +446,19 @@ fn gen_call_code(
           )),
           None => Err(String::from("unsafe-coerce expected a value")),
         },
+        CalcitSyntax::ParseCirruEdnAs => match (body.first(), body.get(1)) {
+          (Some(text), Some(type_form)) if body.len() == 2 => {
+            let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+            let graph = EdnDecoderGraph::build(target.as_ref(), ns).map_err(|error| error.to_string())?;
+            let graph_code = edn_decoder_graph_to_js(&graph, ns, file_imports)?;
+            let text_code = to_js_code(text, ns, local_defs, file_imports, tags, None)?;
+            Ok(format!(
+              "{return_code}{}parse_cirru_edn_as({text_code}, {graph_code})",
+              get_proc_prefix(ns)
+            ))
+          }
+          _ => Err(format!("parse-cirru-edn-as expected a string and a type expression, got: {body}")),
+        },
         CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
@@ -727,6 +741,82 @@ fn gen_call_code(
       Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
   }
+}
+
+fn edn_decoder_graph_to_js(graph: &EdnDecoderGraph, current_ns: &str, file_imports: &RefCell<ImportsDict>) -> Result<String, String> {
+  let mut nodes = Vec::with_capacity(graph.nodes.len());
+  for node in &graph.nodes {
+    let code = match node {
+      EdnDecodeNode::Unit => String::from("{kind:\"unit\"}"),
+      EdnDecodeNode::Bool => String::from("{kind:\"bool\"}"),
+      EdnDecodeNode::Number => String::from("{kind:\"number\"}"),
+      EdnDecodeNode::String => String::from("{kind:\"string\"}"),
+      EdnDecodeNode::Symbol => String::from("{kind:\"symbol\"}"),
+      EdnDecodeNode::Tag => String::from("{kind:\"tag\"}"),
+      EdnDecodeNode::Buffer => String::from("{kind:\"buffer\"}"),
+      EdnDecodeNode::CirruQuote => String::from("{kind:\"cirru-quote\"}"),
+      EdnDecodeNode::Optional(inner) => format!("{{kind:\"optional\",inner:{inner}}}"),
+      EdnDecodeNode::List(inner) => format!("{{kind:\"list\",inner:{inner}}}"),
+      EdnDecodeNode::Set(inner) => format!("{{kind:\"set\",inner:{inner}}}"),
+      EdnDecodeNode::Map { key, value } => format!("{{kind:\"map\",key:{key},value:{value}}}"),
+      EdnDecodeNode::Ref(inner) => format!("{{kind:\"ref\",inner:{inner}}}"),
+      EdnDecodeNode::Struct { nominal_path, fields, .. } => {
+        let nominal = nominal_ref_to_js(nominal_path.as_ref(), current_ns, file_imports)?;
+        let fields = fields
+          .iter()
+          .map(|(field, node_id)| format!("[{},{}]", escape_cirru_str(field.ref_str()), node_id))
+          .collect::<Vec<_>>()
+          .join(",");
+        format!("{{kind:\"struct\",nominal:{nominal},fields:[{fields}]}}")
+      }
+      EdnDecodeNode::Enum {
+        nominal_path, variants, ..
+      } => {
+        let nominal = nominal_ref_to_js(nominal_path.as_ref(), current_ns, file_imports)?;
+        let variants = variants
+          .iter()
+          .map(|(tag, payloads)| {
+            let payloads = payloads.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+            format!("{{tag:{},payload:[{payloads}]}}", escape_cirru_str(tag.ref_str()))
+          })
+          .collect::<Vec<_>>()
+          .join(",");
+        format!("{{kind:\"enum\",nominal:{nominal},variants:[{variants}]}}")
+      }
+    };
+    nodes.push(code);
+  }
+  Ok(format!("{{root:{},nodes:[{}]}}", graph.root, nodes.join(",")))
+}
+
+fn nominal_ref_to_js(
+  path: Option<&(Arc<str>, Arc<str>)>,
+  current_ns: &str,
+  file_imports: &RefCell<ImportsDict>,
+) -> Result<String, String> {
+  let Some((target_ns, target_def)) = path else {
+    return Err(String::from(
+      "parse-cirru-edn-as cannot emit JS for a nominal type without a namespace/definition path",
+    ));
+  };
+  if target_ns.as_ref() == current_ns {
+    return Ok(escape_var(target_def));
+  }
+  if target_ns.as_ref() == calcit::CORE_NS {
+    return Ok(format!("{}{}", get_proc_prefix(current_ns), escape_var(target_def)));
+  }
+
+  file_imports.borrow_mut().insert(CalcitImport {
+    ns: target_ns.clone(),
+    def: target_def.clone(),
+    info: Arc::new(ImportInfo::NsAs {
+      at_ns: Arc::from(current_ns),
+      at_def: Arc::from("parse-cirru-edn-as"),
+      alias: target_ns.clone(),
+    }),
+    def_id: None,
+  });
+  Ok(format!("{}.{}", escape_ns(target_ns), escape_var(target_def)))
 }
 
 /// a group of arguments related to scopes
