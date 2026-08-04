@@ -635,7 +635,7 @@ pub fn parse_cirru_edn_as(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  if expr.len() != 2 {
+  if expr.len() != 2 && expr.len() != 3 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
       "parse-cirru-edn-as expected a string and a type expression, but received:",
@@ -653,15 +653,29 @@ pub fn parse_cirru_edn_as(
     ));
   };
 
-  let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
-  let decoder = crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), file_ns).map_err(|error| {
-    CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Type,
-      error.to_string(),
-      call_stack,
-      expr.get(1).and_then(Calcit::get_location),
-    )
-  })?;
+  let decoder = match expr.get(2) {
+    Some(handle) => crate::data::edn_decode::EdnDecoderGraph::from_calcit_handle(handle).ok_or_else(|| {
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Unexpected,
+        "parse-cirru-edn-as received an invalid internal decoder graph".to_owned(),
+        call_stack,
+        expr.get(1).and_then(Calcit::get_location),
+      )
+    })?,
+    None => {
+      let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
+      Arc::new(
+        crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), file_ns).map_err(|error| {
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Type,
+            error.to_string(),
+            call_stack,
+            expr.get(1).and_then(Calcit::get_location),
+          )
+        })?,
+      )
+    }
+  };
   let input = cirru_edn::parse(&text).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Syntax,

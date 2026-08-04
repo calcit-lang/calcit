@@ -1781,7 +1781,15 @@ const decode_typed_edn_node = (graph: EdnDecoderGraph, nodeId: number, input: an
       });
       // Native declarations use lexical field order while the JS runtime keeps
       // its interned-tag order. Re-align values to the nominal JS declaration.
-      const values = node.nominal.fields.map((field) => decodedFields.get(field.value)!);
+      if (decodedFields.size !== node.nominal.fields.length) {
+        return typed_edn_error(path, `record :${node.nominal.name.value} decoder fields do not match its nominal declaration`);
+      }
+      const values = node.nominal.fields.map((field) => {
+        if (!decodedFields.has(field.value)) {
+          return typed_edn_error(path, `record :${node.nominal.name.value} is missing declared field :${field.value}`);
+        }
+        return decodedFields.get(field.value)!;
+      });
       return new CalcitRecord(node.nominal.name, node.nominal.fields, values, node.nominal);
     }
     case "enum": {
@@ -1811,6 +1819,8 @@ const decode_typed_edn_node = (graph: EdnDecoderGraph, nodeId: number, input: an
       );
       return new CalcitTuple(newTag(variant.tag), values, node.nominal);
     }
+    default:
+      return typed_edn_error(path, `invalid decoder graph node kind: ${(node as any).kind}`);
   }
 };
 

@@ -453,28 +453,14 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values.push(edn_to_calcit(&v.1, options));
       }
 
-      match find_record_in_options(&name.arc_str(), options) {
-        Some(Calcit::Record(CalcitRecord {
-          struct_ref: pre_struct,
-          values: _pre_values,
-        })) => {
-          if fields == **pre_struct.fields {
-            Calcit::Record(CalcitRecord {
-              struct_ref: pre_struct.to_owned(),
-              values: Arc::new(values),
-            })
-          } else {
-            Calcit::Record(CalcitRecord {
-              struct_ref: Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
-              values: Arc::new(values),
-            })
-          }
-        }
-        _ => Calcit::Record(CalcitRecord {
-          struct_ref: Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
-          values: Arc::new(values),
-        }),
-      }
+      let struct_ref = match find_record_in_options(&name.arc_str(), options) {
+        Some(Calcit::Record(record)) if fields == *record.struct_ref.fields => Arc::clone(&record.struct_ref),
+        _ => Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
+      };
+      Calcit::Record(CalcitRecord {
+        struct_ref,
+        values: Arc::new(values),
+      })
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
     Edn::AnyRef(r) => Calcit::AnyRef(r.to_owned()),

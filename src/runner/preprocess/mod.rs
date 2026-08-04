@@ -4463,7 +4463,7 @@ pub fn preprocess_parse_cirru_edn_as(
   )?;
   let type_form = args.get(1).expect("validated parse-cirru-edn-as type");
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
-  crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
+  let decoder = crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(CalcitErrKind::Type, error.to_string(), ctx.call_stack, type_form.get_location())
   })?;
 
@@ -4471,6 +4471,7 @@ pub fn preprocess_parse_cirru_edn_as(
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     text_form,
     type_form.to_owned(),
+    decoder.into_calcit_handle(),
   ]))
 }
 
@@ -4870,6 +4871,30 @@ mod tests {
     let error = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.edn", &warnings, &stack)
       .expect_err("Dynamic decoder must be rejected before runtime");
     assert!(error.msg.contains("Dynamic is forbidden"), "unexpected error: {error:?}");
+  }
+
+  #[test]
+  fn strict_edn_decode_retains_compiled_decoder_graph() {
+    let expr = Cirru::List(vec![Cirru::leaf("parse-cirru-edn-as"), Cirru::leaf("|1"), Cirru::leaf(":number")]);
+    let code = code_to_calcit(&expr, "tests.edn", "main", vec![]).expect("parse strict decoder");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.edn", &warnings, &stack).expect("preprocess strict decoder");
+    let Calcit::List(nodes) = resolved else {
+      panic!("strict decoder should remain a syntax node");
+    };
+    assert_eq!(nodes.len(), 4);
+    assert!(
+      nodes
+        .get(3)
+        .and_then(crate::data::edn_decode::EdnDecoderGraph::from_calcit_handle)
+        .is_some(),
+      "preprocessing should retain the compiled graph"
+    );
   }
 
   #[test]

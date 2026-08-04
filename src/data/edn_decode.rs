@@ -11,14 +11,14 @@ use crate::program;
 
 const MAX_DECODE_DEPTH: usize = 1024;
 
-#[derive(Debug, Clone)]
-pub struct EdnDecoderGraph {
-  pub root: usize,
-  pub nodes: Vec<EdnDecodeNode>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EdnDecoderGraph {
+  pub(crate) root: usize,
+  pub(crate) nodes: Vec<EdnDecodeNode>,
 }
 
-#[derive(Debug, Clone)]
-pub enum EdnDecodeNode {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum EdnDecodeNode {
   Unit,
   Bool,
   Number,
@@ -48,7 +48,7 @@ pub enum EdnDecodeNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EdnDecodeTypeError {
+pub(crate) struct EdnDecodeTypeError {
   message: String,
 }
 
@@ -65,9 +65,9 @@ impl fmt::Display for EdnDecodeTypeError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EdnDecodeError {
-  pub path: String,
-  pub message: String,
+pub(crate) struct EdnDecodeError {
+  pub(crate) path: String,
+  pub(crate) message: String,
 }
 
 impl EdnDecodeError {
@@ -89,14 +89,16 @@ struct GraphBuilder {
   nodes: Vec<Option<EdnDecodeNode>>,
   nominal_nodes: HashMap<String, usize>,
   resolving_aliases: HashSet<String>,
+  resolving_slots: HashSet<String>,
 }
 
 impl EdnDecoderGraph {
-  pub fn build(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, EdnDecodeTypeError> {
+  pub(crate) fn build(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, EdnDecodeTypeError> {
     let mut builder = GraphBuilder {
       nodes: vec![],
       nominal_nodes: HashMap::new(),
       resolving_aliases: HashSet::new(),
+      resolving_slots: HashSet::new(),
     };
     let root = builder.build_type(target, default_ns)?;
     let nodes = builder
@@ -108,8 +110,36 @@ impl EdnDecoderGraph {
     Ok(Self { root, nodes })
   }
 
-  pub fn decode(&self, input: &Edn) -> Result<Calcit, EdnDecodeError> {
+  pub(crate) fn decode(&self, input: &Edn) -> Result<Calcit, EdnDecodeError> {
     self.decode_node(self.root, input, "$", 0)
+  }
+
+  pub(crate) fn into_calcit_handle(self) -> Calcit {
+    Calcit::AnyRef(cirru_edn::EdnAnyRef::new(Arc::new(self)))
+  }
+
+  pub(crate) fn from_calcit_handle(value: &Calcit) -> Option<Arc<Self>> {
+    let Calcit::AnyRef(reference) = value else {
+      return None;
+    };
+    let guard = reference.0.read().ok()?;
+    guard.as_any().downcast_ref::<Arc<Self>>().cloned()
+  }
+
+  pub(crate) fn nominal_paths(&self) -> Vec<(Arc<str>, Arc<str>)> {
+    let mut paths = Vec::new();
+    for node in &self.nodes {
+      let path = match node {
+        EdnDecodeNode::Struct { nominal_path, .. } | EdnDecodeNode::Enum { nominal_path, .. } => nominal_path,
+        _ => continue,
+      };
+      if let Some(path) = path
+        && !paths.contains(path)
+      {
+        paths.push(path.clone());
+      }
+    }
+    paths
   }
 
   fn decode_node(&self, node_id: usize, input: &Edn, path: &str, depth: usize) -> Result<Calcit, EdnDecodeError> {
@@ -217,6 +247,13 @@ impl EdnDecoderGraph {
 
           let expected_names: HashSet<&str> = fields.iter().map(|(field, _)| field.ref_str()).collect();
           let actual_names: HashSet<&str> = pairs.iter().map(|(field, _)| field.ref_str()).collect();
+          if actual_names.len() != pairs.len() {
+            let duplicates = sorted_duplicate_names(pairs.iter().map(|(field, _)| field.ref_str()));
+            return Err(EdnDecodeError::at(
+              path,
+              format!("record :{} has duplicate fields [{}]", nominal.name, duplicates.join(", ")),
+            ));
+          }
           if expected_names != actual_names {
             let missing = sorted_name_diff(&expected_names, &actual_names);
             let unknown = sorted_name_diff(&actual_names, &expected_names);
@@ -353,7 +390,17 @@ impl GraphBuilder {
       }
       CalcitTypeAnnotation::TypeRef(name, args) => self.build_named(name, args, default_ns),
       CalcitTypeAnnotation::TypeSlot(name) => match calcit::resolve_type_slot(name) {
-        Some(resolved) => self.build_type(&resolved, default_ns),
+        Some(resolved) => {
+          let slot_key = name.to_string();
+          if !self.resolving_slots.insert(slot_key.clone()) {
+            return Err(EdnDecodeTypeError::new(format!(
+              "parse-cirru-edn-as found a recursive type slot at `*{name}`"
+            )));
+          }
+          let result = self.build_type(&resolved, default_ns);
+          self.resolving_slots.remove(&slot_key);
+          result
+        }
         None => Err(EdnDecodeTypeError::new(format!(
           "parse-cirru-edn-as cannot derive a decoder for unbound type slot `*{name}`"
         ))),
@@ -596,6 +643,19 @@ fn sorted_name_diff<'a>(left: &HashSet<&'a str>, right: &HashSet<&'a str>) -> Ve
   values
 }
 
+fn sorted_duplicate_names<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+  let mut seen = HashSet::new();
+  let mut duplicates = HashSet::new();
+  for value in values {
+    if !seen.insert(value) {
+      duplicates.insert(value);
+    }
+  }
+  let mut values: Vec<&str> = duplicates.into_iter().collect();
+  values.sort_unstable();
+  values
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -638,6 +698,17 @@ mod tests {
   }
 
   #[test]
+  fn rejects_duplicate_struct_fields() {
+    let person = person_struct();
+    let graph =
+      EdnDecoderGraph::build(&CalcitTypeAnnotation::Struct(person, Arc::new(vec![])), "tests.edn").expect("derive person decoder");
+    let input = cirru_edn::parse("%{} :Person (:age 23) (:age 24) (:name |Ada)").expect("parse duplicate fields");
+    let error = graph.decode(&input).expect_err("duplicate fields must fail");
+    assert_eq!(error.path, "$");
+    assert!(error.message.contains("duplicate fields [age]"), "unexpected error: {error}");
+  }
+
+  #[test]
   fn rejects_dynamic_and_incomplete_generic_types() {
     let dynamic = EdnDecoderGraph::build(&CalcitTypeAnnotation::Dynamic, "tests.edn").expect_err("dynamic must fail");
     assert!(dynamic.to_string().contains("Dynamic is forbidden"));
@@ -653,6 +724,17 @@ mod tests {
     let incomplete = EdnDecoderGraph::build(&CalcitTypeAnnotation::Struct(generic, Arc::new(vec![])), "tests.edn")
       .expect_err("missing generic argument must fail");
     assert!(incomplete.to_string().contains("expected 1 generic argument"));
+  }
+
+  #[test]
+  fn rejects_recursive_type_slots() {
+    let name: Arc<str> = Arc::from("strict-edn-recursive-slot");
+    calcit::push_type_slot_override(name.clone(), Arc::new(CalcitTypeAnnotation::TypeSlot(name.clone())));
+    let error = EdnDecoderGraph::build(&CalcitTypeAnnotation::TypeSlot(name.clone()), "tests.edn")
+      .expect_err("recursive slot must fail without overflowing the stack");
+    calcit::pop_type_slot_override(&name);
+
+    assert!(error.to_string().contains("recursive type slot"), "unexpected error: {error}");
   }
 
   #[test]

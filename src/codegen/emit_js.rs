@@ -447,15 +447,18 @@ fn gen_call_code(
           None => Err(String::from("unsafe-coerce expected a value")),
         },
         CalcitSyntax::ParseCirruEdnAs => match (body.first(), body.get(1)) {
-          (Some(text), Some(type_form)) if body.len() == 2 => {
-            let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
-            let graph = EdnDecoderGraph::build(target.as_ref(), ns).map_err(|error| error.to_string())?;
-            let graph_code = edn_decoder_graph_to_js(&graph, ns, file_imports)?;
+          (Some(text), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
+            let graph = match body.get(2).and_then(EdnDecoderGraph::from_calcit_handle) {
+              Some(graph) => graph,
+              None => {
+                let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+                Arc::new(EdnDecoderGraph::build(target.as_ref(), ns).map_err(|error| error.to_string())?)
+              }
+            };
+            let graph_code = edn_decoder_graph_to_js(graph.as_ref(), ns, file_imports)?;
             let text_code = to_js_code(text, ns, local_defs, file_imports, tags, None)?;
-            Ok(format!(
-              "{return_code}{}parse_cirru_edn_as({text_code}, {graph_code})",
-              get_proc_prefix(ns)
-            ))
+            let call_code = format!("{}parse_cirru_edn_as({text_code}, {graph_code})", get_proc_prefix(ns));
+            Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
           }
           _ => Err(format!("parse-cirru-edn-as expected a string and a type expression, got: {body}")),
         },

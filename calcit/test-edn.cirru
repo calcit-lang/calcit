@@ -12,6 +12,11 @@
             defstruct A $ :a 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
+        |A-typed-person $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def A-typed-person $ parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person
+          :examples $ []
+          :schema $ :: 'Dynamic
         |Box $ %{} :CodeEntry (:doc |)
           :code $ quote
             defstruct Box ([] 'T) (:value 'T)
@@ -179,7 +184,7 @@
           :code $ quote
             defn test-top-level-typed-edn () $ assert=
               %{} Person (:name |Top) (:age 23)
-              , typed-person
+              , A-typed-person
           :examples $ []
           :schema $ :: 'Dynamic
         |test-typed-edn $ %{} :CodeEntry (:doc |)
@@ -209,11 +214,6 @@
               assert= true $ try
                 do (parse-cirru-edn-as "|%{} :Person (:name |Ada)" Person) false
                 fn (error) true
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |typed-person $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            def typed-person $ parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
