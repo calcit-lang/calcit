@@ -1,8 +1,10 @@
 use super::*;
-use crate::calcit::{CalcitImport, ImportInfo};
+use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
+use crate::calcit::{CalcitImport, CalcitStruct, CalcitSyntax, ImportInfo};
 use crate::call_stack::CallStackList;
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
+use cirru_edn::EdnTag;
 use std::sync::{LazyLock, Mutex};
 
 static PROGRAM_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -17,6 +19,34 @@ fn cirru_list(items: Vec<Cirru>) -> Cirru {
 
 fn import_rule(source: &str, kind: &str, target: Cirru) -> Cirru {
   cirru_list(vec![cirru_leaf(source), cirru_leaf(kind), target])
+}
+
+#[test]
+fn strict_edn_decoder_nominals_are_compiled_dependencies() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let ns: Arc<str> = Arc::from("tests.strict-edn-dependencies");
+  let def: Arc<str> = Arc::from("Person");
+  let dep_id = ensure_def_id(&ns, &def);
+  let graph = DataShapeGraph::from_nodes(
+    0,
+    vec![DataShapeNode::Struct {
+      nominal: Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![])),
+      nominal_path: Some((ns.clone(), def.clone())),
+      type_args: Arc::new(vec![]),
+      fields: vec![],
+    }],
+  )
+  .expect("valid test data shape");
+  let code = Calcit::from(vec![
+    Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, Arc::from(calcit::CORE_NS)),
+    Calcit::Str(Arc::from("%{} :Person")),
+    Calcit::tag("Person"),
+    graph.into_calcit_handle(),
+  ]);
+
+  assert_eq!(collect_compiled_deps(&code), vec![dep_id]);
 }
 
 #[test]

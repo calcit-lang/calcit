@@ -629,6 +629,71 @@ pub fn unsafe_coerce(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
   runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)
 }
 
+pub fn parse_cirru_edn_as(
+  expr: &CalcitList,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 && expr.len() != 3 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "parse-cirru-edn-as expected a string and a type expression, but received:",
+      &expr.to_vec(),
+    );
+  }
+
+  let text = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let Calcit::Str(text) = text else {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("parse-cirru-edn-as expected a string, got :{}", calcit::brief_type_of_value(&text)),
+      call_stack,
+      expr.first().and_then(Calcit::get_location),
+    ));
+  };
+
+  let decoder = match expr.get(2) {
+    Some(handle) => crate::calcit::data_shape::DataShapeGraph::from_calcit_handle(handle).ok_or_else(|| {
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Unexpected,
+        "parse-cirru-edn-as received an invalid internal data shape".to_owned(),
+        call_stack,
+        expr.get(1).and_then(Calcit::get_location),
+      )
+    })?,
+    None => {
+      let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
+      Arc::new(
+        crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), file_ns).map_err(|error| {
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Type,
+            format!("parse-cirru-edn-as cannot derive a decoder: {error}"),
+            call_stack,
+            expr.get(1).and_then(Calcit::get_location),
+          )
+        })?,
+      )
+    }
+  };
+  let input = cirru_edn::parse(&text).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Syntax,
+      format!("parse-cirru-edn-as failed to parse Cirru EDN: {error}"),
+      call_stack,
+      expr.first().and_then(Calcit::get_location),
+    )
+  })?;
+  crate::data::edn_decode::decode(decoder.as_ref(), &input).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      error.to_string(),
+      call_stack,
+      expr.first().and_then(Calcit::get_location),
+    )
+  })
+}
+
 pub fn assert_traits(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes(

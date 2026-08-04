@@ -400,6 +400,10 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs.get(2).map(CalcitTypeAnnotation::parse_type_annotation_form),
 
+        Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _) => xs
+          .get(2)
+          .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
+
         // Local variable as head (function call)
         // If it's a function type, return its return type
         Calcit::Local(local) => {
@@ -947,6 +951,15 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(field_type);
   }
+  if matches!(
+    proc,
+    CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith | CalcitProc::NativeRecordWithAt
+  ) && let Some(record_arg) = xs.get(1)
+    && let Some(record_type) = resolve_type_value(record_arg, scope_types)
+    && record_type.resolve_to_struct().is_some()
+  {
+    return Some(record_type);
+  }
   proc.get_type_signature().map(|type_sig| type_sig.return_type.clone())
 }
 
@@ -1354,6 +1367,7 @@ pub(crate) fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) ->
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::calcit::{CalcitLocal, CalcitSymbolInfo};
 
   fn proc_call(proc: CalcitProc, args: Vec<Calcit>) -> Calcit {
     let mut items = Vec::with_capacity(args.len() + 1);
@@ -1392,6 +1406,25 @@ mod tests {
   }
 
   #[test]
+  fn strict_edn_decode_expression_has_declared_closed_type() {
+    let target = Calcit::Tuple(calcit::CalcitTuple {
+      tag: Arc::new(Calcit::tag("list")),
+      extra: vec![Calcit::tag("number")],
+      sum_type: None,
+    });
+    let expression = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, Arc::from(calcit::CORE_NS)),
+      Calcit::Str(Arc::from("[] 1 2")),
+      target,
+    ]);
+
+    assert!(matches!(
+      infer_static_type_from_expr(&expression).as_deref(),
+      Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
   fn heterogeneous_collection_and_atom_inference_keep_safe_boundaries() {
     let mixed = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Str(Arc::from("x"))]);
     let atom = proc_call(CalcitProc::Atom, vec![Calcit::Number(1.0)]);
@@ -1421,6 +1454,59 @@ mod tests {
       infer_get_return_type_from_type(&CalcitTypeAnnotation::Optional(Arc::new(user_type)), Some(&key)).as_deref(),
       Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
     ));
+  }
+
+  #[test]
+  fn typed_record_updates_preserve_the_receiver_type() {
+    let generic: Arc<str> = Arc::from("T");
+    let mut struct_def = CalcitStruct::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]);
+    struct_def.generics = Arc::new(vec![generic.clone()]);
+    struct_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic))]);
+    let receiver_type = Arc::new(CalcitTypeAnnotation::Struct(
+      Arc::new(struct_def),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("box")),
+      sym: Arc::from("box"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.record"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: receiver_type.clone(),
+    });
+
+    for call in [
+      proc_call(
+        CalcitProc::NativeRecordAssoc,
+        vec![receiver.clone(), Calcit::Tag(EdnTag::from("value")), Calcit::Str(Arc::from("next"))],
+      ),
+      proc_call(
+        CalcitProc::NativeRecordAssocAt,
+        vec![
+          receiver.clone(),
+          Calcit::Number(0.0),
+          Calcit::Tag(EdnTag::from("value")),
+          Calcit::Str(Arc::from("next")),
+        ],
+      ),
+      proc_call(
+        CalcitProc::NativeRecordWith,
+        vec![receiver.clone(), Calcit::Tag(EdnTag::from("value")), Calcit::Str(Arc::from("next"))],
+      ),
+      proc_call(
+        CalcitProc::NativeRecordWithAt,
+        vec![
+          receiver,
+          Calcit::Number(0.0),
+          Calcit::Tag(EdnTag::from("value")),
+          Calcit::Str(Arc::from("next")),
+        ],
+      ),
+    ] {
+      assert_eq!(infer_static_type_from_expr(&call).as_deref(), Some(receiver_type.as_ref()));
+    }
   }
 
   #[test]

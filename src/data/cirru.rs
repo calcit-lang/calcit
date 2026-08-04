@@ -27,6 +27,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
       "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
       "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
+      "parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, ns.into())),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
@@ -309,6 +310,17 @@ mod tests {
     assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))));
     assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
     assert!(matches!(items.get(2), Some(Calcit::Tag(_))));
+  }
+
+  #[test]
+  fn parses_strict_edn_decode_as_syntax() {
+    let expr = Cirru::List(vec![Cirru::leaf("parse-cirru-edn-as"), Cirru::leaf("|do 1"), Cirru::leaf("Number")]);
+
+    let calcit = code_to_calcit(&expr, "tests.ns", "demo", vec![]).expect("parse strict EDN decoder");
+    let Calcit::List(items) = calcit else {
+      panic!("expected list");
+    };
+    assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _))));
   }
 
   #[test]

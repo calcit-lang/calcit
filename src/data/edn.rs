@@ -453,25 +453,14 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values.push(edn_to_calcit(&v.1, options));
       }
 
-      match find_record_in_options(&name.arc_str(), options) {
-        Some(Calcit::Record(CalcitRecord {
-          struct_ref: pre_struct,
-          values: _pre_values,
-        })) => {
-          if fields == **pre_struct.fields {
-            Calcit::Record(CalcitRecord {
-              struct_ref: pre_struct.to_owned(),
-              values: Arc::new(values),
-            })
-          } else {
-            unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_struct.fields)
-          }
-        }
-        _ => Calcit::Record(CalcitRecord {
-          struct_ref: Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
-          values: Arc::new(values),
-        }),
-      }
+      let struct_ref = match find_record_in_options(&name.arc_str(), options) {
+        Some(Calcit::Record(record)) if fields == *record.struct_ref.fields => Arc::clone(&record.struct_ref),
+        _ => Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
+      };
+      Calcit::Record(CalcitRecord {
+        struct_ref,
+        values: Arc::new(values),
+      })
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
     Edn::AnyRef(r) => Calcit::AnyRef(r.to_owned()),
@@ -548,5 +537,28 @@ mod tests {
     let err_msg = format_deserialize_error("Cannot deserialize Edn type: record `Expr`", &Edn::Record(expr));
     assert!(err_msg.contains("ns app.demo"), "err={err_msg}");
     assert!(!err_msg.contains("legacy-expr"), "err={err_msg}");
+  }
+
+  #[test]
+  fn dynamic_record_options_do_not_panic_on_field_mismatch() {
+    let declared = Arc::new(CalcitStruct::from_fields(
+      EdnTag::new("Person"),
+      vec![EdnTag::new("age"), EdnTag::new("name")],
+    ));
+    let prototype = Calcit::Record(CalcitRecord {
+      struct_ref: declared.clone(),
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+    });
+    let mut options = rpds::HashTrieMap::new_sync();
+    options.insert_mut(Calcit::tag("Person"), prototype);
+
+    let mut input = EdnRecordView::new(EdnTag::new("Person"));
+    input.insert(EdnTag::new("name"), Edn::str("Ada"));
+    let decoded = edn_to_calcit(&Edn::Record(input), &Calcit::Map(options));
+    let Calcit::Record(record) = decoded else {
+      panic!("expected record");
+    };
+    assert!(!Arc::ptr_eq(&record.struct_ref, &declared));
+    assert_eq!(record.fields().as_slice(), &[EdnTag::new("name")]);
   }
 }

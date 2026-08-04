@@ -14,10 +14,43 @@ entry_for:
 
 Cirru EDN is Calcit's typed data interchange format, inspired by [Clojure EDN](https://github.com/edn-format/edn). Use it when Calcit-specific identity matters; use JSON only when interoperating with JSON systems.
 
-The two runtime APIs are:
+The runtime APIs are:
 
 - `parse-cirru-edn text [type-options]`
+- `parse-cirru-edn-as text TypeExpr`
 - `format-cirru-edn value`
+
+`parse-cirru-edn` is the dynamic API: its result is `Dynamic`, and its optional type map only restores nominal identity. Use `parse-cirru-edn-as` when persisted or external data must enter typed application code.
+
+## Strict typed decoding
+
+`parse-cirru-edn-as` is a language syntax that derives a closed decoder graph at compile time, then validates and constructs the complete value recursively:
+
+```cirru.no-run
+def Person $ defstruct Person (:name 'String) (:age 'Number)
+
+defn decode-person (raw)
+  parse-cirru-edn-as raw Person
+```
+
+Container and generic targets use the existing type-expression syntax:
+
+```cirru.no-check
+parse-cirru-edn-as "|[] 1 2 3" $ :: 'List 'Number
+parse-cirru-edn-as "|%{} :Box (:value |hi)" $ :: Box 'String
+```
+
+Successful decoding guarantees the recursive container elements, struct fields, enum variant and payloads, generic arguments, and nominal struct/enum identity all match the target type. It does not coerce strings to numbers, maps to structs, or ordinary tuples to enums.
+
+Strict decoder derivation rejects `Dynamic`, bare containers with implicit Dynamic elements, missing generic arguments, unbound type variables/type slots, functions, traits, impls, `JsObject`, and unknown custom types. This is a compile-time error rather than a warning or runtime Dynamic fallback.
+
+Runtime failures include a structural path:
+
+```text
+parse-cirru-edn-as failed at $.friends[2].age: expected number, got string
+```
+
+The failure is raised like `parse-cirru-edn` errors and can be handled with `try`.
 
 Map and Set iteration order is not a semantic guarantee. The formatter applies a stable order for readable, reproducible output; callers must not use that order as application data.
 
@@ -50,7 +83,7 @@ let
     :Person $ %{} Person (:name |)
 ```
 
-Without this options Map, parsing still produces a structurally equivalent Record or Tuple, but it cannot recover declaration-attached trait implementations from text alone.
+Without this options Map, parsing still produces a structurally equivalent Record or Tuple, but it cannot recover declaration-attached trait implementations from text alone. The options Map does not validate field value types, container elements, enum payloads, generics, or constraints. Prefer `parse-cirru-edn-as` when those guarantees are required.
 
 ## Literals
 

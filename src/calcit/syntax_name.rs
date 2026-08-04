@@ -75,6 +75,9 @@ pub enum CalcitSyntax {
   /// Explicitly attach a type annotation without a runtime validation.
   #[strum(serialize = "unsafe-coerce")]
   UnsafeCoerce,
+  /// Parse Cirru EDN and deeply validate/construct the declared closed type.
+  #[strum(serialize = "parse-cirru-edn-as")]
+  ParseCirruEdnAs,
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
@@ -153,6 +156,11 @@ impl CalcitSyntax {
       UnsafeCoerce => Some(SyntaxTypeSignature {
         param_names: vec!["value", "type"],
         param_types: vec![dyn_t.clone(), dyn_t.clone()],
+        return_type: dyn_t.clone(),
+      }),
+      ParseCirruEdnAs => Some(SyntaxTypeSignature {
+        param_names: vec!["text", "type"],
+        param_types: vec![Arc::new(CalcitTypeAnnotation::String), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),
       AssertTraits => Some(SyntaxTypeSignature {

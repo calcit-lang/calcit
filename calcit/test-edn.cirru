@@ -12,6 +12,16 @@
             defstruct A $ :a 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
+        |A-typed-person $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def A-typed-person $ parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |Box $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Box ([] 'T) (:value 'T)
+          :examples $ []
+          :schema $ :: 'Dynamic
         |DemoEnum $ %{} :CodeEntry (:doc |)
           :code $ quote
             defenum DemoEnum (:ok) (:err 'String)
@@ -22,11 +32,24 @@
             defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
           :schema $ :: 'Dynamic
+        |Team $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Team $ :members (:: 'List Person)
+          :examples $ []
+          :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)
               inside-eval: $ test-symbol
               test-atom
+              test-typed-edn
+              test-imported-typed-edn
+              test-top-level-typed-edn
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |reload! $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn reload! () nil
           :examples $ []
           :schema $ :: 'Dynamic
         |test-atom $ %{} :CodeEntry (:doc |)
@@ -126,6 +149,13 @@
               assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-imported-typed-edn $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-imported-typed-edn () $ assert=
+              %{} External $ :label |linked
+              parse-cirru-edn-as "|%{} :External (:label |linked)" External
+          :examples $ []
+          :schema $ :: 'Dynamic
         |test-symbol $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-symbol () (log-title "|Testing symbol to edn")
@@ -150,7 +180,68 @@
                 assert= code $ eval (&data-to-code code)
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-top-level-typed-edn $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-top-level-typed-edn () $ assert=
+              %{} Person (:name |Top) (:age 23)
+              , A-typed-person
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-typed-edn $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-typed-edn () $ let
+                person $ parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Ada)" Person
+                people $ parse-cirru-edn-as "|[] $ %{} :Person (:age 23) (:name |Ada)" (:: 'List Person)
+                team $ parse-cirru-edn-as "|%{} :Team (:members ([] (%{} :Person (:age 23) (:name |Ada))))" Team
+                boxed $ parse-cirru-edn-as "|%{} :Box (:value |hello)" (:: Box 'String)
+                enum-value $ parse-cirru-edn-as "|%:: :DemoEnum :err |oops" DemoEnum
+              assert=
+                %{} Person (:name |Ada) (:age 23)
+                , person
+              assert= ([] person) people
+              assert=
+                %{} Team $ :members ([] person)
+                , team
+              assert=
+                %{} Box $ :value |hello
+                , boxed
+              assert= :err $ &tuple:nth enum-value 0
+              assert= true $ try
+                do
+                  parse-cirru-edn-as "|[] $ %{} :Person (:age |old) (:name |Ada)" $ :: 'List Person
+                  , false
+                fn (error) true
+              assert= true $ try
+                do (parse-cirru-edn-as "|%{} :Person (:name |Ada)" Person) false
+                fn (error) true
+              assert= true $ try
+                do
+                  parse-cirru-edn-as "|#{} (%{} :Person (:age 23) (:name |Ada)) (%{} :Person (:name |Ada) (:age 23))" $ :: 'Set Person
+                  , false
+                fn (error) true
+              assert= true $ try
+                do
+                  parse-cirru-edn-as "|{} ((%{} :Person (:age 23) (:name |Ada)) |first) ((%{} :Person (:name |Ada) (:age 23)) |second)" $ :: 'Map Person 'String
+                  , false
+                fn (error) true
+              assert= (#{} 1)
+                parse-cirru-edn-as "|#{} 1 1" $ :: 'Set 'Number
+              assert=
+                {} $ :a |second
+                parse-cirru-edn-as "|{} (:a |first) (:a |second)" $ :: 'Map 'Tag 'String
+          :examples $ []
+          :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-edn.main $ :require
             util.core :refer $ inside-eval: log-title
+            test-edn.schema :refer $ External
+    |test-edn.schema $ %{} :FileEntry
+      :defs $ {}
+        |External $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct External $ :label 'String
+          :examples $ []
+          :schema $ :: 'Dynamic
+      :ns $ %{} :NsEntry (:doc |)
+        :code $ quote (ns test-edn.schema)
