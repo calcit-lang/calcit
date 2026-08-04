@@ -654,10 +654,10 @@ pub fn parse_cirru_edn_as(
   };
 
   let decoder = match expr.get(2) {
-    Some(handle) => crate::data::edn_decode::EdnDecoderGraph::from_calcit_handle(handle).ok_or_else(|| {
+    Some(handle) => crate::calcit::data_shape::DataShapeGraph::from_calcit_handle(handle).ok_or_else(|| {
       CalcitErr::use_msg_stack_location(
         CalcitErrKind::Unexpected,
-        "parse-cirru-edn-as received an invalid internal decoder graph".to_owned(),
+        "parse-cirru-edn-as received an invalid internal data shape".to_owned(),
         call_stack,
         expr.get(1).and_then(Calcit::get_location),
       )
@@ -665,10 +665,10 @@ pub fn parse_cirru_edn_as(
     None => {
       let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
       Arc::new(
-        crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), file_ns).map_err(|error| {
+        crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), file_ns).map_err(|error| {
           CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
-            error.to_string(),
+            format!("parse-cirru-edn-as cannot derive a decoder: {error}"),
             call_stack,
             expr.get(1).and_then(Calcit::get_location),
           )
@@ -684,7 +684,7 @@ pub fn parse_cirru_edn_as(
       expr.first().and_then(Calcit::get_location),
     )
   })?;
-  decoder.decode(&input).map_err(|error| {
+  crate::data::edn_decode::decode(decoder.as_ref(), &input).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       error.to_string(),

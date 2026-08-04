@@ -19,7 +19,9 @@ use type_checking::{
   check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
 };
 pub use type_inference::infer_static_type_from_expr;
-use type_inference::{infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value};
+use type_inference::{
+  infer_record_field_type, infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value,
+};
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_local_fn_tuple_args_to_enum_tuples,
   try_rewrite_loose_record_args_to_struct_records, try_rewrite_map_args_to_records, try_rewrite_tuple_args_to_enum_tuples,
@@ -1428,6 +1430,7 @@ fn preprocess_list_call(
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
+        check_record_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_record_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
 
         // Optimize &record:get to &record:nth when field index can be resolved at compile time
@@ -2228,6 +2231,68 @@ fn check_record_field_access(
       // Create a tag for the field name to match the check_field_in_record signature
       let field_tag = Calcit::Tag(cirru_edn::EdnTag::from(&**field_name));
       check_field_in_record(record_arg, &field_tag, scope_types, file_ns, check_warnings);
+    }
+  }
+}
+
+/// Validate statically known record updates before they are rewritten to the indexed runtime procs.
+/// This is the checking counterpart to preserving the receiver's nominal return type in inference.
+fn check_record_update_fields(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let pairs: Vec<(&Calcit, &Calcit)> = match head {
+    Calcit::Proc(CalcitProc::NativeRecordAssoc) if args.len() == 3 => match (args.get(1), args.get(2)) {
+      (Some(field), Some(value)) => vec![(field, value)],
+      _ => return,
+    },
+    Calcit::Proc(CalcitProc::NativeRecordAssocAt) if args.len() == 4 => match (args.get(2), args.get(3)) {
+      (Some(field), Some(value)) => vec![(field, value)],
+      _ => return,
+    },
+    Calcit::Proc(CalcitProc::NativeRecordWith) if args.len() >= 3 && (args.len() - 1).is_multiple_of(2) => {
+      let items = args.iter().skip(1).collect::<Vec<_>>();
+      items.chunks_exact(2).map(|pair| (pair[0], pair[1])).collect()
+    }
+    Calcit::Proc(CalcitProc::NativeRecordWithAt) if args.len() >= 4 && (args.len() - 1).is_multiple_of(3) => {
+      let items = args.iter().skip(1).collect::<Vec<_>>();
+      items.chunks_exact(3).map(|triple| (triple[1], triple[2])).collect()
+    }
+    _ => return,
+  };
+
+  let Some(record_arg) = args.first() else { return };
+  for (field_arg, value_arg) in pairs {
+    check_field_in_record(record_arg, field_arg, scope_types, file_ns, check_warnings);
+
+    let field_name = match field_arg {
+      Calcit::Tag(tag) => tag.ref_str(),
+      Calcit::Str(name) => name.as_ref(),
+      Calcit::Symbol { sym, .. } => sym.as_ref(),
+      _ => continue,
+    };
+    let Some(expected_type) = infer_record_field_type(record_arg, field_name, scope_types) else {
+      continue;
+    };
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      continue;
+    }
+    if let Some(actual_type) = resolve_type_value(value_arg, scope_types)
+      && !actual_type.as_ref().matches_annotation(expected_type.as_ref())
+    {
+      gen_check_warning(
+        format!(
+          "[Warn] record update field `:{field_name}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
+          expected_type.to_brief_string(),
+          actual_type.to_brief_string(),
+        ),
+        file_ns,
+        check_warnings,
+      );
     }
   }
 }
@@ -4463,8 +4528,13 @@ pub fn preprocess_parse_cirru_edn_as(
   )?;
   let type_form = args.get(1).expect("validated parse-cirru-edn-as type");
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
-  let decoder = crate::data::edn_decode::EdnDecoderGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
-    CalcitErr::use_msg_stack_location(CalcitErrKind::Type, error.to_string(), ctx.call_stack, type_form.get_location())
+  let decoder = crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("parse-cirru-edn-as cannot derive a decoder: {error}"),
+      ctx.call_stack,
+      type_form.get_location(),
+    )
   })?;
 
   Ok(Calcit::from(vec![
@@ -4874,7 +4944,7 @@ mod tests {
   }
 
   #[test]
-  fn strict_edn_decode_retains_compiled_decoder_graph() {
+  fn strict_edn_decode_retains_compiled_data_shape() {
     let expr = Cirru::List(vec![Cirru::leaf("parse-cirru-edn-as"), Cirru::leaf("|1"), Cirru::leaf(":number")]);
     let code = code_to_calcit(&expr, "tests.edn", "main", vec![]).expect("parse strict decoder");
     let scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -4891,7 +4961,7 @@ mod tests {
     assert!(
       nodes
         .get(3)
-        .and_then(crate::data::edn_decode::EdnDecoderGraph::from_calcit_handle)
+        .and_then(crate::calcit::data_shape::DataShapeGraph::from_calcit_handle)
         .is_some(),
       "preprocessing should retain the compiled graph"
     );
@@ -5775,6 +5845,45 @@ mod tests {
     assert!(warnings.borrow().iter().any(|warning| {
       let message = warning.to_string();
       message.contains("field `:x`") && message.contains("expects type")
+    }));
+  }
+
+  #[test]
+  fn validates_typed_record_update_fields_after_generic_substitution() {
+    use cirru_edn::EdnTag;
+
+    let generic: Arc<str> = Arc::from("T");
+    let mut box_struct = CalcitStruct::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]);
+    box_struct.generics = Arc::new(vec![generic.clone()]);
+    box_struct.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic))]);
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("box")),
+      sym: Arc::from("box"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.record"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Struct(
+        Arc::new(box_struct),
+        Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+      )),
+    });
+    let args = CalcitList::from(vec![receiver, Calcit::Tag(EdnTag::from("value")), Calcit::Str(Arc::from("wrong"))].as_slice());
+    let warnings = RefCell::new(vec![]);
+
+    check_record_update_fields(
+      &Calcit::Proc(CalcitProc::NativeRecordAssoc),
+      &args,
+      &ScopeTypes::new(),
+      "tests.record",
+      "demo",
+      &warnings,
+    );
+
+    assert!(warnings.borrow().iter().any(|warning| {
+      let message = warning.to_string();
+      message.contains("record update field `:value`") && message.contains("expects type `:number`")
     }));
   }
 

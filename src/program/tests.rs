@@ -1,8 +1,8 @@
 use super::*;
+use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{CalcitImport, CalcitStruct, CalcitSyntax, ImportInfo};
 use crate::call_stack::CallStackList;
 use crate::data::cirru::code_to_calcit;
-use crate::data::edn_decode::{EdnDecodeNode, EdnDecoderGraph};
 use crate::run_program_with_docs;
 use cirru_edn::EdnTag;
 use std::sync::{LazyLock, Mutex};
@@ -26,14 +26,16 @@ fn strict_edn_decoder_nominals_are_compiled_dependencies() {
   let ns: Arc<str> = Arc::from("tests.strict-edn-dependencies");
   let def: Arc<str> = Arc::from("Person");
   let dep_id = ensure_def_id(&ns, &def);
-  let graph = EdnDecoderGraph {
-    root: 0,
-    nodes: vec![EdnDecodeNode::Struct {
+  let graph = DataShapeGraph::from_nodes(
+    0,
+    vec![DataShapeNode::Struct {
       nominal: Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![])),
       nominal_path: Some((ns.clone(), def.clone())),
+      type_args: Arc::new(vec![]),
       fields: vec![],
     }],
-  };
+  )
+  .expect("valid test data shape");
   let code = Calcit::from(vec![
     Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, Arc::from(calcit::CORE_NS)),
     Calcit::Str(Arc::from("%{} :Person")),

@@ -1658,16 +1658,18 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
   }
 };
 
-type EdnDecoderNode =
+type DataShapeNode =
   | { kind: "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" }
   | { kind: "optional" | "list" | "set" | "ref"; inner: number }
   | { kind: "map"; key: number; value: number }
   | { kind: "struct"; nominal: CalcitStruct; fields: Array<[string, number]> }
   | { kind: "enum"; nominal: CalcitEnum; variants: Array<{ tag: string; payload: number[] }> };
 
-type EdnDecoderGraph = {
+type DataShapeGraph = {
+  version: number;
   root: number;
-  nodes: EdnDecoderNode[];
+  fingerprint: string;
+  nodes: DataShapeNode[];
 };
 
 const typed_edn_kind = (value: any): string => {
@@ -1696,10 +1698,10 @@ const enum_prototype_name = (value: CalcitEnum | CalcitRecord): string => {
   return value instanceof CalcitEnum ? value.name() : value.name.value;
 };
 
-const decode_typed_edn_node = (graph: EdnDecoderGraph, nodeId: number, input: any, path: string, depth: number): any => {
+const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any, path: string, depth: number): any => {
   if (depth > 1024) typed_edn_error(path, "decode nesting exceeds 1024");
   const node = graph.nodes[nodeId];
-  if (node == null) typed_edn_error(path, `invalid decoder graph node #${nodeId}`);
+  if (node == null) typed_edn_error(path, `invalid data shape node #${nodeId}`);
 
   switch (node.kind) {
     case "unit":
@@ -1820,12 +1822,16 @@ const decode_typed_edn_node = (graph: EdnDecoderGraph, nodeId: number, input: an
       return new CalcitTuple(newTag(variant.tag), values, node.nominal);
     }
     default:
-      return typed_edn_error(path, `invalid decoder graph node kind: ${(node as any).kind}`);
+      return typed_edn_error(path, `invalid data shape node kind: ${(node as any).kind}`);
   }
 };
 
-export let parse_cirru_edn_as = (code: string, graph: EdnDecoderGraph): CalcitValue => {
+export let parse_cirru_edn_as = (code: string, graph: DataShapeGraph): CalcitValue => {
   if (typeof code !== "string") throw new Error(`parse-cirru-edn-as expected a string, got ${typed_edn_kind(code)}`);
+  if (graph.version !== 1) throw new Error(`parse-cirru-edn-as expected data shape ABI version 1, got ${graph.version}`);
+  if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
+    throw new Error("parse-cirru-edn-as expected a non-empty data shape fingerprint");
+  }
   const enumOptions: CalcitValue[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "enum") enumOptions.push(newTag(node.nominal.name()), node.nominal);

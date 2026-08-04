@@ -704,14 +704,30 @@ pub fn record_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
 pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // 4 args: (record, idx, :field-tag, value)
-  // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
+  // Keep the field tag as a runtime consistency check so a stale index cannot
+  // silently update an adjacent field after schema drift.
   if xs.len() != 4 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:assoc-at expected 4 arguments, but received:", xs);
   }
-  match (&xs[0], &xs[1]) {
-    (Calcit::Record(CalcitRecord { struct_ref, values }), Calcit::Number(n)) => {
-      let idx = *n as usize;
+  match (&xs[0], &xs[1], &xs[2]) {
+    (Calcit::Record(CalcitRecord { struct_ref, values }), Calcit::Number(n), Calcit::Tag(field_tag)) => {
+      let idx = checked_record_index(*n, "&record:assoc-at")?;
       if idx < values.len() {
+        let Some(expected_tag) = struct_ref.fields.get(idx) else {
+          return CalcitErr::err_str(
+            CalcitErrKind::Arity,
+            format!(
+              "&record:assoc-at record `{}` is missing field metadata at index {idx}",
+              struct_ref.name
+            ),
+          );
+        };
+        if expected_tag != field_tag {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&record:assoc-at index {idx} expects field `:{expected_tag}`, but received `:{field_tag}`"),
+          );
+        }
         let mut new_values = (**values).to_owned();
         xs[3].clone_into(&mut new_values[idx]);
         Ok(Calcit::Record(CalcitRecord {
@@ -730,12 +746,13 @@ pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         )
       }
     }
-    (a, b) => CalcitErr::err_str(
+    (a, b, field) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!(
-        "&record:assoc-at expected (record, number), but received: {} {}",
+        "&record:assoc-at expected (record, number, tag), but received: {} {} {}",
         a.lisp_str(),
-        b.lisp_str()
+        b.lisp_str(),
+        field.lisp_str()
       ),
     ),
   }
@@ -758,10 +775,25 @@ pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let triple_count = (xs.len() - 1) / 3;
       for i in 0..triple_count {
         let base = 1 + i * 3;
-        match &xs[base] {
-          Calcit::Number(n) => {
-            let idx = *n as usize;
+        match (&xs[base], &xs[base + 1]) {
+          (Calcit::Number(n), Calcit::Tag(field_tag)) => {
+            let idx = checked_record_index(*n, "&record:with-at")?;
             if idx < new_values.len() {
+              let Some(expected_tag) = struct_ref.fields.get(idx) else {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Arity,
+                  format!(
+                    "&record:with-at record `{}` is missing field metadata at index {idx}",
+                    struct_ref.name
+                  ),
+                );
+              };
+              if expected_tag != field_tag {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!("&record:with-at index {idx} expects field `:{expected_tag}`, but received `:{field_tag}`"),
+                );
+              }
               xs[base + 2].clone_into(&mut new_values[idx]);
             } else {
               return CalcitErr::err_str(
@@ -775,10 +807,14 @@ pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               );
             }
           }
-          other => {
+          (index, field) => {
             return CalcitErr::err_str(
               CalcitErrKind::Type,
-              format!("&record:with-at expected number index, but received: {}", other.lisp_str()),
+              format!(
+                "&record:with-at expected number index and tag, but received: {} {}",
+                index.lisp_str(),
+                field.lisp_str()
+              ),
             );
           }
         }
@@ -793,6 +829,16 @@ pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       format!("&record:with-at expected a record, but received: {}", a.lisp_str()),
     ),
   }
+}
+
+fn checked_record_index(value: f64, operation: &str) -> Result<usize, CalcitErr> {
+  if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > usize::MAX as f64 {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("{operation} expected a non-negative integer index, but received: {value}"),
+    ));
+  }
+  Ok(value as usize)
 }
 
 pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -1453,6 +1499,43 @@ mod tests {
 
   fn callable_proc() -> Calcit {
     Calcit::Proc(CalcitProc::NativeResetGenSymIndex)
+  }
+
+  fn indexed_record_fixture() -> Calcit {
+    Calcit::Record(CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::new("Point"),
+        vec![EdnTag::new("x"), EdnTag::new("y")],
+      )),
+      values: Arc::new(vec![Calcit::Number(1.0), Calcit::Number(2.0)]),
+    })
+  }
+
+  #[test]
+  fn indexed_record_updates_reject_stale_field_tags() {
+    let record = indexed_record_fixture();
+    let assoc_error = record_assoc_at(&[record.clone(), Calcit::Number(0.0), Calcit::tag("y"), Calcit::Number(3.0)])
+      .expect_err("stale assoc tag must fail");
+    assert!(assoc_error.msg.contains("expects field `:x`"));
+
+    let with_error =
+      record_with_at(&[record, Calcit::Number(1.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect_err("stale with tag must fail");
+    assert!(with_error.msg.contains("expects field `:y`"));
+  }
+
+  #[test]
+  fn indexed_record_updates_validate_indices_and_apply_matching_tags() {
+    let record = indexed_record_fixture();
+    let invalid_index = record_assoc_at(&[record.clone(), Calcit::Number(-1.0), Calcit::tag("x"), Calcit::Number(3.0)])
+      .expect_err("negative index must fail");
+    assert!(invalid_index.msg.contains("non-negative integer index"));
+
+    let updated =
+      record_assoc_at(&[record, Calcit::Number(0.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect("matching index/tag update");
+    let Calcit::Record(updated) = updated else {
+      panic!("updated value must remain a record");
+    };
+    assert_eq!(updated.values.as_ref(), &[Calcit::Number(3.0), Calcit::Number(2.0)]);
   }
 
   #[test]

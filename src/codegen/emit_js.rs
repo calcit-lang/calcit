@@ -23,11 +23,11 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
+use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::codegen::skip_arity_check;
-use crate::data::edn_decode::{EdnDecodeNode, EdnDecoderGraph};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 use args::{gen_args_code, gen_call_args_with_temps};
@@ -448,14 +448,14 @@ fn gen_call_code(
         },
         CalcitSyntax::ParseCirruEdnAs => match (body.first(), body.get(1)) {
           (Some(text), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
-            let graph = match body.get(2).and_then(EdnDecoderGraph::from_calcit_handle) {
+            let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {
               Some(graph) => graph,
               None => {
                 let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
-                Arc::new(EdnDecoderGraph::build(target.as_ref(), ns).map_err(|error| error.to_string())?)
+                Arc::new(DataShapeGraph::build(target.as_ref(), ns).map_err(|error| error.to_string())?)
               }
             };
-            let graph_code = edn_decoder_graph_to_js(graph.as_ref(), ns, file_imports)?;
+            let graph_code = data_shape_graph_to_js(graph.as_ref(), ns, file_imports)?;
             let text_code = to_js_code(text, ns, local_defs, file_imports, tags, None)?;
             let call_code = format!("{}parse_cirru_edn_as({text_code}, {graph_code})", get_proc_prefix(ns));
             Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
@@ -746,24 +746,24 @@ fn gen_call_code(
   }
 }
 
-fn edn_decoder_graph_to_js(graph: &EdnDecoderGraph, current_ns: &str, file_imports: &RefCell<ImportsDict>) -> Result<String, String> {
+fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports: &RefCell<ImportsDict>) -> Result<String, String> {
   let mut nodes = Vec::with_capacity(graph.nodes.len());
   for node in &graph.nodes {
     let code = match node {
-      EdnDecodeNode::Unit => String::from("{kind:\"unit\"}"),
-      EdnDecodeNode::Bool => String::from("{kind:\"bool\"}"),
-      EdnDecodeNode::Number => String::from("{kind:\"number\"}"),
-      EdnDecodeNode::String => String::from("{kind:\"string\"}"),
-      EdnDecodeNode::Symbol => String::from("{kind:\"symbol\"}"),
-      EdnDecodeNode::Tag => String::from("{kind:\"tag\"}"),
-      EdnDecodeNode::Buffer => String::from("{kind:\"buffer\"}"),
-      EdnDecodeNode::CirruQuote => String::from("{kind:\"cirru-quote\"}"),
-      EdnDecodeNode::Optional(inner) => format!("{{kind:\"optional\",inner:{inner}}}"),
-      EdnDecodeNode::List(inner) => format!("{{kind:\"list\",inner:{inner}}}"),
-      EdnDecodeNode::Set(inner) => format!("{{kind:\"set\",inner:{inner}}}"),
-      EdnDecodeNode::Map { key, value } => format!("{{kind:\"map\",key:{key},value:{value}}}"),
-      EdnDecodeNode::Ref(inner) => format!("{{kind:\"ref\",inner:{inner}}}"),
-      EdnDecodeNode::Struct { nominal_path, fields, .. } => {
+      DataShapeNode::Unit => String::from("{kind:\"unit\"}"),
+      DataShapeNode::Bool => String::from("{kind:\"bool\"}"),
+      DataShapeNode::Number => String::from("{kind:\"number\"}"),
+      DataShapeNode::String => String::from("{kind:\"string\"}"),
+      DataShapeNode::Symbol => String::from("{kind:\"symbol\"}"),
+      DataShapeNode::Tag => String::from("{kind:\"tag\"}"),
+      DataShapeNode::Buffer => String::from("{kind:\"buffer\"}"),
+      DataShapeNode::CirruQuote => String::from("{kind:\"cirru-quote\"}"),
+      DataShapeNode::Optional(inner) => format!("{{kind:\"optional\",inner:{inner}}}"),
+      DataShapeNode::List(inner) => format!("{{kind:\"list\",inner:{inner}}}"),
+      DataShapeNode::Set(inner) => format!("{{kind:\"set\",inner:{inner}}}"),
+      DataShapeNode::Map { key, value } => format!("{{kind:\"map\",key:{key},value:{value}}}"),
+      DataShapeNode::Ref(inner) => format!("{{kind:\"ref\",inner:{inner}}}"),
+      DataShapeNode::Struct { nominal_path, fields, .. } => {
         let nominal = nominal_ref_to_js(nominal_path.as_ref(), current_ns, file_imports)?;
         let fields = fields
           .iter()
@@ -772,7 +772,7 @@ fn edn_decoder_graph_to_js(graph: &EdnDecoderGraph, current_ns: &str, file_impor
           .join(",");
         format!("{{kind:\"struct\",nominal:{nominal},fields:[{fields}]}}")
       }
-      EdnDecodeNode::Enum {
+      DataShapeNode::Enum {
         nominal_path, variants, ..
       } => {
         let nominal = nominal_ref_to_js(nominal_path.as_ref(), current_ns, file_imports)?;
@@ -789,7 +789,13 @@ fn edn_decoder_graph_to_js(graph: &EdnDecoderGraph, current_ns: &str, file_impor
     };
     nodes.push(code);
   }
-  Ok(format!("{{root:{},nodes:[{}]}}", graph.root, nodes.join(",")))
+  Ok(format!(
+    "{{version:{},root:{},fingerprint:{},nodes:[{}]}}",
+    graph.abi_version(),
+    graph.root,
+    escape_cirru_str(graph.fingerprint()),
+    nodes.join(",")
+  ))
 }
 
 fn nominal_ref_to_js(

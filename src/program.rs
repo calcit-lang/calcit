@@ -11,11 +11,12 @@ use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
+use crate::calcit::data_shape::DataShapeGraph;
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitScope, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTypeAnnotation, DYNAMIC_TYPE,
 };
 use crate::call_stack::CallStackList;
-use crate::data::{cirru::code_to_calcit, data_to_calcit, edn_decode::EdnDecoderGraph};
+use crate::data::{cirru::code_to_calcit, data_to_calcit};
 use crate::runner;
 use crate::snapshot;
 use crate::snapshot::Snapshot;
@@ -318,7 +319,7 @@ fn collect_compiled_dep_keys(code: &Calcit, deps: &mut Vec<(Arc<str>, Arc<str>)>
     }
     Calcit::List(xs) => {
       if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _)))
-        && let Some(graph) = xs.get(3).and_then(EdnDecoderGraph::from_calcit_handle)
+        && let Some(graph) = xs.get(3).and_then(DataShapeGraph::from_calcit_handle)
       {
         deps.extend(graph.nominal_paths());
       }

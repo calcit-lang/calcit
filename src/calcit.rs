@@ -2,6 +2,10 @@ mod calcit_impl;
 mod calcit_struct;
 mod calcit_trait;
 mod compare;
+// Phase 3 stages the typed patch executor before exposing language syntax.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod data_patch;
+pub(crate) mod data_shape;
 mod fns;
 mod list;
 mod local;
