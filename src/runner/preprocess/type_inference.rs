@@ -824,6 +824,10 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Ref(initial_type)));
   }
+  // These low-level collection intrinsics retain their legacy unchecked
+  // inference for core macro expansion. Public `first`/`nth`/`get` schemas
+  // still expose Optional<T>; removing this compatibility path needs
+  // non-empty collection evidence rather than broad unsafe coercions.
   if matches!(proc, CalcitProc::NativeListNth | CalcitProc::NativeListFirst)
     && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)

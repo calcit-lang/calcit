@@ -285,11 +285,9 @@ pub fn call_registered_proc(alias: &str, args: Vec<Calcit>, call_stack: &CallSta
 }
 
 fn check_proc_arity(name: CalcitProc, args: &[Calcit]) -> Result<(), CalcitErr> {
-  let Some(signature) = name.get_type_signature() else {
+  let Some(arity) = name.arity() else {
     return Ok(());
   };
-
-  let arity = signature.arity();
   let actual_count = args.len();
   if let Some(max_count) = arity.max {
     if actual_count < arity.min || actual_count > max_count {

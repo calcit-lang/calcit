@@ -489,7 +489,8 @@ use crate::CalcitTypeAnnotation;
 pub struct ProcTypeSignature {
   /// return type declared
   pub return_type: Arc<CalcitTypeAnnotation>,
-  /// argument types in order. Use Variadic to mark variadic args (no checking after this mark)
+  /// Argument value types in order. Parameter omission is CalcitProc arity metadata;
+  /// use Variadic to mark variadic args (no checking after this mark).
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
@@ -500,8 +501,7 @@ pub struct ProcArity {
 }
 
 impl ProcTypeSignature {
-  pub fn arity(&self) -> ProcArity {
-    let mut min = 0;
+  fn arity(&self, optional_parameter_count: usize) -> ProcArity {
     let mut max = 0;
     let mut has_variadic = false;
 
@@ -511,18 +511,16 @@ impl ProcTypeSignature {
           has_variadic = true;
           break;
         }
-        CalcitTypeAnnotation::Optional(_) => {
-          max += 1;
-        }
         _ => {
-          min += 1;
           max += 1;
         }
       }
     }
 
+    debug_assert!(optional_parameter_count <= max);
+
     ProcArity {
-      min,
+      min: max.saturating_sub(optional_parameter_count),
       max: if has_variadic { None } else { Some(max) },
     }
   }
@@ -584,10 +582,6 @@ fn some_fn() -> Arc<CalcitTypeAnnotation> {
   tag_type("fn")
 }
 
-fn optional_fn() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Optional(some_fn()))
-}
-
 impl CalcitProc {
   /// Get the namespace and definition name for this proc.
   /// All built-in procs are defined in calcit.core namespace.
@@ -645,7 +639,7 @@ impl CalcitProc {
       }),
       GenerateId => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![optional_tag("number"), optional_tag("string")],
+        arg_types: vec![some_tag("number"), some_tag("string")],
       }),
       NativeGetCalcitRunningMode => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -665,7 +659,7 @@ impl CalcitProc {
       }),
       NativeInspectMethods => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), optional_tag("string")],
+        arg_types: vec![dynamic_tag(), some_tag("string")],
       }),
       NativeTraitCall => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -685,7 +679,7 @@ impl CalcitProc {
       }),
       NativeInspectType => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), optional_tag("tag")],
+        arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
       NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -803,7 +797,7 @@ impl CalcitProc {
       }),
       Trim => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), optional_tag("string")],
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       TurnString => Some(ProcTypeSignature {
         return_type: some_tag("string"),
@@ -838,7 +832,7 @@ impl CalcitProc {
         arg_types: vec![dynamic_tag()],
       }),
       ParseFloat => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
+        return_type: optional_tag("number"),
         arg_types: vec![some_tag("string")],
       }),
       IsBlank => Some(ProcTypeSignature {
@@ -855,7 +849,7 @@ impl CalcitProc {
       }),
       NativeStrSlice => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("number"), optional_tag("number")],
+        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("number")],
       }),
       NativeStrFindIndex => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -913,11 +907,11 @@ impl CalcitProc {
       }),
       Range | NativeListRange => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("number"), optional_tag("number"), optional_tag("number")],
+        arg_types: vec![some_tag("number"), some_tag("number"), some_tag("number")],
       }),
       Sort | NativeListSort => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), optional_fn()],
+        arg_types: vec![some_tag("list"), some_fn()],
       }),
       NativeListConcat => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
@@ -945,7 +939,7 @@ impl CalcitProc {
       }),
       NativeListSlice => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), some_tag("number"), optional_tag("number")],
+        arg_types: vec![some_tag("list"), some_tag("number"), some_tag("number")],
       }),
       NativeListNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -1253,7 +1247,7 @@ impl CalcitProc {
       }),
       NativeRecordNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![some_tag("record"), some_tag("number"), optional_tag("tag")],
+        arg_types: vec![some_tag("record"), some_tag("number"), some_tag("tag")],
       }),
       NativeRecordFieldTag => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -1321,7 +1315,7 @@ impl CalcitProc {
       }),
       ReadDir => Some(ProcTypeSignature {
         return_type: list_of(some_tag("string")),
-        arg_types: vec![some_tag("string"), optional_tag("bool")],
+        arg_types: vec![some_tag("string"), some_tag("bool")],
       }),
       WriteFile => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
@@ -1336,8 +1330,8 @@ impl CalcitProc {
         arg_types: vec![some_tag("number")],
       }),
       GetEnv => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), optional_dynamic()],
+        return_type: optional_dynamic(),
+        arg_types: vec![some_tag("string"), dynamic_tag()],
       }),
       UnixTimeMs => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -1357,7 +1351,7 @@ impl CalcitProc {
       }),
       ParseCirruEdn => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string"), optional_dynamic()],
+        arg_types: vec![some_tag("string"), dynamic_tag()],
       }),
       JsonParse => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -1369,7 +1363,7 @@ impl CalcitProc {
       }),
       FormatCirru | FormatCirruEdn => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag(), optional_tag("bool")],
+        arg_types: vec![dynamic_tag(), some_tag("bool")],
       }),
       FormatCirruOneLiner => Some(ProcTypeSignature {
         return_type: some_tag("string"),
@@ -1420,6 +1414,23 @@ impl CalcitProc {
   pub fn has_type_signature(&self) -> bool {
     self.get_type_signature().is_some()
   }
+
+  /// Return the runtime call arity without encoding parameter omission as a nullable value type.
+  pub fn arity(&self) -> Option<ProcArity> {
+    self
+      .get_type_signature()
+      .map(|signature| signature.arity(self.optional_parameter_count()))
+  }
+
+  fn optional_parameter_count(&self) -> usize {
+    use CalcitProc::*;
+    match self {
+      GenerateId | Range | NativeListRange => 2,
+      NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeRecordNth
+      | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn => 1,
+      _ => 0,
+    }
+  }
 }
 
 static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = LazyLock::new(|| {
@@ -1427,3 +1438,64 @@ static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = 
     .filter_map(|proc| proc.build_type_signature().map(|signature| (proc, signature)))
     .collect()
 });
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn optional_proc_parameters_do_not_make_values_nullable() {
+    let trim = CalcitProc::Trim.get_type_signature().expect("trim signature");
+    assert_eq!(CalcitProc::Trim.arity(), Some(ProcArity { min: 1, max: Some(2) }));
+    assert!(matches!(trim.arg_types[1].as_ref(), CalcitTypeAnnotation::String));
+
+    let generate_id = CalcitProc::GenerateId.get_type_signature().expect("generate-id signature");
+    assert_eq!(CalcitProc::GenerateId.arity(), Some(ProcArity { min: 0, max: Some(2) }));
+    assert!(matches!(generate_id.arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
+
+    for proc in CalcitProc::iter() {
+      let Some(signature) = proc.get_type_signature() else {
+        continue;
+      };
+      assert!(
+        signature
+          .arg_types
+          .iter()
+          .all(|arg| !matches!(arg.as_ref(), CalcitTypeAnnotation::Optional(_))),
+        "{proc} must not encode parameter omission as Optional<T>"
+      );
+    }
+
+    for (proc, expected) in [
+      (CalcitProc::GenerateId, ProcArity { min: 0, max: Some(2) }),
+      (CalcitProc::Range, ProcArity { min: 1, max: Some(3) }),
+      (CalcitProc::NativeListRange, ProcArity { min: 1, max: Some(3) }),
+      (CalcitProc::NativeInspectMethods, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::NativeInspectType, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::Trim, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::NativeStrSlice, ProcArity { min: 2, max: Some(3) }),
+      (CalcitProc::Sort, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::NativeListSort, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::NativeListSlice, ProcArity { min: 2, max: Some(3) }),
+      (CalcitProc::NativeRecordNth, ProcArity { min: 2, max: Some(3) }),
+      (CalcitProc::ReadDir, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::GetEnv, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::ParseCirruEdn, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::FormatCirru, ProcArity { min: 1, max: Some(2) }),
+      (CalcitProc::FormatCirruEdn, ProcArity { min: 1, max: Some(2) }),
+    ] {
+      assert_eq!(proc.arity(), Some(expected), "{proc} arity");
+    }
+  }
+
+  #[test]
+  fn absence_returning_proc_signatures_are_nullable() {
+    for proc in [CalcitProc::ParseFloat, CalcitProc::GetEnv] {
+      let signature = proc.get_type_signature().expect("proc signature");
+      assert!(
+        matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Optional(_)),
+        "{proc} must expose its nil result"
+      );
+    }
+  }
+}

@@ -235,10 +235,14 @@ do
 - Option: `option:some?`, `option:none?`, `option:map`, `option:unwrap-or`, `option:and-then`
 - Result: `result:ok?`, `result:err?`, `result:map`, `result:map-err`, `result:unwrap-or`, `result:and-then`
 
+Use `optionally` at a legacy nullable boundary to convert `Optional<T>` into nominal `Option<T>`. New application APIs should return `Option<T>` directly rather than converting through nil internally.
+
 The same operations are available as methods on enum values:
 
 ```cirru
 do
+  assert= (%some 1) $ optionally 1
+  assert= (%none) $ optionally nil
   assert= 0 $
     %none
     , .unwrap-or 0

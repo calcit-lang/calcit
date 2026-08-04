@@ -57,6 +57,9 @@ cr analyze weak-types --ns app.main
 # Focus only on unresolved type debt
 cr analyze weak-types --ns app.main --intent unresolved
 
+# Focus on nil migration debt while excluding declared Unit returns
+cr analyze weak-types --ns app.main --only code-nil --intent unresolved,declared-optional
+
 # Inspect explicitly permitted JS FFI dynamic boundaries
 cr analyze weak-types --ns app.main --intent intentional-js-ffi
 
@@ -75,9 +78,11 @@ cr analyze check-examples --ns app.main --def calculate-total
 cr query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt also emits `W_DYNAMIC_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
+`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt.
 
-An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. `nil` occurrences remain unresolved because an FFI capability does not imply that every nullable branch is intentional.
+An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. The feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
+
+For `code-nil`, the report uses the declared return contract only at structurally proven return positions. A final `nil` under a returned `do`, or either returned branch of `if`, is `declared-unit` for a `Unit` return and `declared-optional` for an `Optional<T>` return. Other nil literals stay `unresolved`; in particular, an earlier `do` step does not inherit the enclosing return contract. `declared-unit` records a legitimate no-value result and is excluded from nil migration debt. `declared-optional` remains visible as compatibility debt so application APIs can move toward `Option` or `Result`.
 
 For one definition, `cr query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 

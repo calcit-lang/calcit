@@ -233,7 +233,9 @@ pub(crate) fn check_proc_arg_types(
   }
 
   // Check argument count
-  let arity = signature.arity();
+  let Some(arity) = proc.arity() else {
+    return;
+  };
   let min_count = arity.min;
   let max_count = arity.max.unwrap_or(usize::MAX);
   let has_variadic = arity.max.is_none();
@@ -295,8 +297,8 @@ pub(crate) fn check_proc_arg_types(
     return;
   }
 
-  // Use the unified checker for Proc arg types. Proc's arg_types may have
-  // Optional wrappers and variadic markers handled inside the loop.
+  // Parameter omission is represented by Proc arity metadata. Optional<T>
+  // remains a value type here and must accept either T or nil.
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
@@ -304,19 +306,14 @@ pub(crate) fn check_proc_arg_types(
       break;
     }
 
-    let base_type = match expected_type.as_ref() {
-      CalcitTypeAnnotation::Optional(inner) => inner,
-      _ => expected_type,
-    };
-
-    if matches!(base_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings)
+      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
     {
-      let expected_str = base_type.as_ref().to_brief_string();
+      let expected_str = expected_type.as_ref().to_brief_string();
       let actual_str = actual_type.as_ref().to_brief_string();
       let warning_location = arg.get_location().or_else(|| call_location.clone());
       gen_check_warning_code_at(

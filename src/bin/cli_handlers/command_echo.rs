@@ -507,7 +507,7 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       desc
     }
     AnalyzeSubcommand::WeakTypes(opts) => {
-      let mut desc = "analyzes dynamic/untyped slots and explains their impact on inference and specialization".to_string();
+      let mut desc = "analyzes dynamic and nil contracts, then explains their impact on inference and specialization".to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }

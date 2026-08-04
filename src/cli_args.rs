@@ -231,7 +231,7 @@ pub struct WeakTypesCommand {
   /// match kinds to include, comma-separated: schema-dynamic,code-dynamic,code-nil
   #[argh(option)]
   pub only: Option<String>,
-  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi
+  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,declared-unit,declared-optional
   #[argh(option)]
   pub intent: Option<String>,
   /// output format: human (default) or json

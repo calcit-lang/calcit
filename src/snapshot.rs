@@ -3272,6 +3272,40 @@ mod tests {
   }
 
   #[test]
+  fn optionally_schema_bridges_nullable_values_to_nominal_option() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+    let entry = snapshot
+      .files
+      .get("calcit.core")
+      .and_then(|file| file.defs.get("optionally"))
+      .expect("calcit.core/optionally should exist");
+    let CalcitTypeAnnotation::Fn(schema) = entry.schema.as_ref() else {
+      panic!("optionally should have a function schema");
+    };
+
+    assert!(
+      matches!(
+        schema.arg_types.as_slice(),
+        [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(_)))
+      ),
+      "optionally should accept Optional<T>: {:?}",
+      schema.arg_types
+    );
+    assert!(
+      matches!(
+        schema.return_type.as_ref(),
+        CalcitTypeAnnotation::TypeRef(name, args)
+          if name.as_ref() == "Option"
+            && matches!(args.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(_)))
+      ),
+      "optionally should return Option<T>: {:?}",
+      schema.return_type
+    );
+  }
+
+  #[test]
   fn test_save_snapshot_round_trip_keeps_real_world_schema_markers() {
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");

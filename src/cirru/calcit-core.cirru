@@ -4885,16 +4885,18 @@
             {} (:return 'T)
               :args $ [] (:: 'Option 'T) 'T
               :generics $ [] 'T
-        |optionally $ %{} :CodeEntry (:doc |)
+        |optionally $ %{} :CodeEntry (:doc "|Convert a nullable Optional<T> value into nominal Option<T>.")
           :code $ quote
             defn optionally (s)
               if (nil? s) (:: :none) (:: :some s)
           :examples $ []
+            quote $ assert= (%some 1) (optionally 1)
+            quote $ assert= (%none) (optionally nil)
           :schema $ :: 'Fn
             {}
-              :args $ [] 'T
+              :args $ [] (:: 'Optional 'T)
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'T
         |or $ %{} :CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.")
           :code $ quote
             defmacro or (item & xs)
