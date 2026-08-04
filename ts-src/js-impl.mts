@@ -13,7 +13,30 @@ export class CalcitImpl {
   cachedHash: Hash;
 
   static [Symbol.hasInstance](value: unknown): boolean {
-    return typeof value === "object" && value !== null && Reflect.get(value, CALCIT_IMPL_BRAND) === true;
+    if (typeof value !== "object" || value === null) return false;
+
+    const candidate = value as Record<PropertyKey, unknown>;
+    const brand = Object.getOwnPropertyDescriptor(candidate, CALCIT_IMPL_BRAND);
+    const name = Object.getOwnPropertyDescriptor(candidate, "name");
+    const origin = Object.getOwnPropertyDescriptor(candidate, "origin");
+    const fields = Object.getOwnPropertyDescriptor(candidate, "fields");
+    const values = Object.getOwnPropertyDescriptor(candidate, "values");
+    const cachedHash = Object.getOwnPropertyDescriptor(candidate, "cachedHash");
+
+    return (
+      brand?.value === true &&
+      name !== undefined &&
+      origin !== undefined &&
+      fields !== undefined &&
+      values !== undefined &&
+      cachedHash !== undefined &&
+      typeof name.value === "object" &&
+      name.value !== null &&
+      typeof (name.value as { value?: unknown }).value === "string" &&
+      (origin.value === null || typeof origin.value === "object") &&
+      Array.isArray(fields.value) &&
+      Array.isArray(values.value)
+    );
   }
 
   constructor(name: CalcitTag, fields: Array<CalcitTag>, values: Array<CalcitValue>, origin: CalcitTrait | null = null) {

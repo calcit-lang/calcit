@@ -24,6 +24,17 @@ try {
     "CalcitImpl values from another runtime module instance should remain recognizable"
   );
 
+  const brand = Symbol.for("@calcit/procs/CalcitImpl");
+  const inheritedBrand = Object.create({ [brand]: true });
+  const malformedBrand = {
+    [brand]: true,
+    name: runtimeA.newTag("MalformedImpl"),
+    fields: [],
+    values: [],
+  };
+  assert.ok(!(inheritedBrand instanceof runtimeB.CalcitImpl), "inherited impl brands must not be accepted");
+  assert.ok(!(malformedBrand instanceof runtimeB.CalcitImpl), "branded objects without impl fields must not be accepted");
+
   const clonedImpl = runtimeB._$n_impl_$o__$o_new(runtimeB.newTag("ClonedImpl"), foreignImpl);
   assert.ok(clonedImpl instanceof runtimeB.CalcitImpl);
   assert.ok(clonedImpl.fields[0] instanceof runtimeB.CalcitTag);
