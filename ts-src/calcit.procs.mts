@@ -299,7 +299,9 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
   let sourcePairs = pairs;
   if (pairs.length === 1 && pairs[0] instanceof CalcitImpl) {
     const sourceImpl = pairs[0];
-    sourcePairs = sourceImpl.fields.map((field, idx) => new CalcitTuple(field, [sourceImpl.values[idx]], null));
+    sourcePairs = sourceImpl.fields.map(
+      (field, idx) => new CalcitTuple(newTag(field.value), [sourceImpl.values[idx]], null)
+    );
   }
   for (let idx = 0; idx < sourcePairs.length; idx++) {
     const pairValue = sourcePairs[idx];
