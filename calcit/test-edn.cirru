@@ -214,6 +214,21 @@
               assert= true $ try
                 do (parse-cirru-edn-as "|%{} :Person (:name |Ada)" Person) false
                 fn (error) true
+              assert= true $ try
+                do
+                  parse-cirru-edn-as "|#{} (%{} :Person (:age 23) (:name |Ada)) (%{} :Person (:name |Ada) (:age 23))" $ :: 'Set Person
+                  , false
+                fn (error) true
+              assert= true $ try
+                do
+                  parse-cirru-edn-as "|{} ((%{} :Person (:age 23) (:name |Ada)) |first) ((%{} :Person (:name |Ada) (:age 23)) |second)" $ :: 'Map Person 'String
+                  , false
+                fn (error) true
+              assert= (#{} 1)
+                parse-cirru-edn-as "|#{} 1 1" $ :: 'Set 'Number
+              assert=
+                {} $ :a |second
+                parse-cirru-edn-as "|{} (:a |first) (:a |second)" $ :: 'Map 'Tag 'String
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)

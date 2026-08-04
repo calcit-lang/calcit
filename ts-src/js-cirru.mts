@@ -13,6 +13,7 @@ import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
 import { atom } from "./js-ref.mjs";
+import { TypedEdnSetView } from "./typed-edn.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
@@ -256,7 +257,7 @@ const tag_to_string = (tag: CalcitValue): string => {
   throw new Error(`Unsupported tag for EDN: ${tag}`);
 };
 
-export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): CalcitValue => {
+const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preserveSourceEntries: boolean): any => {
   if (typeof x === "string") {
     if (x === "nil") {
       return null;
@@ -291,6 +292,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
     }
     if (x[0] === "{}") {
       let result: Array<CalcitValue> = [];
+      const sourceKeys: CirruEdnFormat[] = [];
       x.forEach((pair, idx) => {
         if (idx === 0) {
           return; // skip first `{}` symbol
@@ -298,7 +300,15 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         if (pair instanceof Array) {
           if (pair[0] === ";") return;
           if (pair.length === 2) {
-            result.push(extract_cirru_edn(pair[0], options), extract_cirru_edn(pair[1], options));
+            const key = extract_cirru_edn_inner(pair[0], options, preserveSourceEntries);
+            const value = extract_cirru_edn_inner(pair[1], options, preserveSourceEntries);
+            const existingIdx = preserveSourceEntries ? sourceKeys.findIndex((sourceKey) => deepEqual(sourceKey, pair[0])) : -1;
+            if (existingIdx >= 0) {
+              result[(existingIdx << 1) + 1] = value;
+            } else {
+              if (preserveSourceEntries) sourceKeys.push(pair[0]);
+              result.push(key, value);
+            }
           } else {
             throw new Error(`Expected a pair, got: ${pair}`);
           }
@@ -323,7 +333,10 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           if (pair[0] === ";") return;
           if (pair.length === 2) {
             if (typeof pair[0] === "string") {
-              entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1], options)]);
+              entries.push([
+                extractFieldTag(pair[0]),
+                extract_cirru_edn_inner(pair[1], options, preserveSourceEntries),
+              ]);
             } else {
               throw new Error(`Expected string as field, got: ${pair}`);
             }
@@ -367,19 +380,19 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         x
           .slice(1)
           .filter(notComment)
-          .map((x) => extract_cirru_edn(x, options))
+          .map((x) => extract_cirru_edn_inner(x, options, preserveSourceEntries))
       );
     }
     if (x[0] === "#{}") {
-      return new CalcitSet(
-        x
-          .slice(1)
-          .filter(notComment)
-          .map((x) => extract_cirru_edn(x, options))
-      );
+      const sourceItems = x.slice(1).filter(notComment);
+      const uniqueSourceItems = preserveSourceEntries
+        ? sourceItems.filter((item, idx) => !sourceItems.slice(0, idx).some((existing) => deepEqual(existing, item)))
+        : sourceItems;
+      const items = uniqueSourceItems.map((x) => extract_cirru_edn_inner(x, options, preserveSourceEntries));
+      return preserveSourceEntries ? new TypedEdnSetView(items) : new CalcitSet(items);
     }
     if (x[0] === "do" && x.length === 2) {
-      return extract_cirru_edn(x[1], options);
+      return extract_cirru_edn_inner(x[1], options, preserveSourceEntries);
     }
     if (x[0] === "quote") {
       if (x.length !== 2) {
@@ -392,11 +405,11 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         throw new Error(`tuple expects at least 1 value, got: ${x}`);
       }
       return new CalcitTuple(
-        extract_cirru_edn(x[1], options),
+        extract_cirru_edn_inner(x[1], options, preserveSourceEntries),
         x
           .slice(2)
           .filter(notComment)
-          .map((x) => extract_cirru_edn(x, options))
+          .map((x) => extract_cirru_edn_inner(x, options, preserveSourceEntries))
       );
     }
     if (x[0] === "%::") {
@@ -412,11 +425,11 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       const proto = enumPrototype != null ? unwrap_enum_prototype_local(enumPrototype) : null;
       const enumTag = proto != null ? proto.name.toString() : enumName;
       return new CalcitTuple(
-        extract_cirru_edn(x[2], options),
+        extract_cirru_edn_inner(x[2], options, preserveSourceEntries),
         x
           .slice(3)
           .filter(notComment)
-          .map((x) => extract_cirru_edn(x, options)),
+          .map((x) => extract_cirru_edn_inner(x, options, preserveSourceEntries)),
         enumPrototype
       );
     }
@@ -424,11 +437,19 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       if (x.length !== 2) {
         throw new Error(`atom expects 1 argument, got: ${x}`);
       }
-      return atom(extract_cirru_edn(x[1], options));
+      return atom(extract_cirru_edn_inner(x[1], options, preserveSourceEntries));
     }
   }
   console.error(x);
   throw new Error(`Unexpected data from EDN: ${x}`);
+};
+
+export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): CalcitValue => {
+  return extract_cirru_edn_inner(x, options, false) as CalcitValue;
+};
+
+export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValue): CalcitValue | TypedEdnSetView => {
+  return extract_cirru_edn_inner(x, options, true) as CalcitValue | TypedEdnSetView;
 };
 
 export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {

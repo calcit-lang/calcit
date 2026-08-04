@@ -254,7 +254,7 @@ PatchNode =
 应满足：
 
 > `apply(shape<T>, old, diff(shape<T>, old, next, strategy)) = Ok(next)`
-
+>
 > `apply(shape<T>, old, patch) = Ok(value)` 蕴含 `value: T`，且保持 struct/enum 名义身份。
 
 ### 7.1 核心与 Recollect 的职责边界

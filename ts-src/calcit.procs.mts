@@ -50,7 +50,8 @@ import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
-import { to_calcit_data, extract_cirru_edn, CalcitCirruQuote } from "./js-cirru.mjs";
+import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
+import { TypedEdnSetView } from "./typed-edn.mjs";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -1681,7 +1682,7 @@ const typed_edn_kind = (value: any): string => {
   if (value instanceof CalcitTag) return "tag";
   if (value instanceof CalcitList || value instanceof CalcitSliceList) return "list";
   if (value instanceof CalcitMap || value instanceof CalcitSliceMap) return "map";
-  if (value instanceof CalcitSet) return "set";
+  if (value instanceof CalcitSet || value instanceof TypedEdnSetView) return "set";
   if (value instanceof CalcitRecord) return "record";
   if (value instanceof CalcitTuple) return value.enumPrototype == null ? "tuple" : "enum";
   if (value instanceof CalcitRef) return "atom";
@@ -1740,8 +1741,20 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       return new CalcitSliceList(values);
     }
     case "set": {
-      if (!(input instanceof CalcitSet)) return typed_edn_error(path, `expected set, got ${typed_edn_kind(input)}`);
-      return new CalcitSet(input.values().map((value) => decode_typed_edn_node(graph, node.inner, value, `${path}.item`, depth + 1)));
+      if (!(input instanceof CalcitSet || input instanceof TypedEdnSetView)) {
+        return typed_edn_error(path, `expected set, got ${typed_edn_kind(input)}`);
+      }
+      const values: any[] = [];
+      const inputValues = input instanceof TypedEdnSetView ? input.items : input.values();
+      inputValues.forEach((value) => {
+        const itemPath = `${path}.item`;
+        const decoded = decode_typed_edn_node(graph, node.inner, value, itemPath, depth + 1);
+        if (values.some((existing) => _$n__$e_(existing, decoded))) {
+          typed_edn_error(itemPath, "duplicate decoded set value");
+        }
+        values.push(decoded);
+      });
+      return new CalcitSet(values);
     }
     case "map": {
       if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap)) {
@@ -1749,10 +1762,15 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       }
       const entries: any[] = [];
       input.pairs().forEach(([key, value]) => {
-        entries.push(
-          decode_typed_edn_node(graph, node.key, key, `${path}.key`, depth + 1),
-          decode_typed_edn_node(graph, node.value, value, `${path}.value`, depth + 1)
-        );
+        const keyPath = `${path}.key`;
+        const decodedKey = decode_typed_edn_node(graph, node.key, key, keyPath, depth + 1);
+        for (let idx = 0; idx < entries.length; idx += 2) {
+          if (_$n__$e_(entries[idx], decodedKey)) {
+            typed_edn_error(keyPath, "duplicate decoded map key");
+          }
+        }
+        const decodedValue = decode_typed_edn_node(graph, node.value, value, `${path}.value`, depth + 1);
+        entries.push(decodedKey, decodedValue);
       });
       return new CalcitSliceMap(entries);
     }
@@ -1841,7 +1859,7 @@ export let parse_cirru_edn_as = (code: string, graph: DataShapeGraph): CalcitVal
   try {
     const nodes = parse(code);
     if (nodes.length !== 1) throw new Error(`expected EDN in a single node, got ${nodes.length}`);
-    input = extract_cirru_edn(nodes[0], new CalcitSliceMap(enumOptions));
+    input = extract_cirru_edn_for_typed(nodes[0], new CalcitSliceMap(enumOptions));
   } catch (error) {
     const message = error instanceof Error ? error.message : `${error}`;
     throw new Error(`parse-cirru-edn-as failed to parse Cirru EDN: ${message}`);
