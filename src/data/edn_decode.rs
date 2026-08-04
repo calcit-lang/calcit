@@ -115,7 +115,12 @@ impl Decoder<'_> {
         Edn::Set(items) => {
           let mut values = rpds::HashTrieSet::new_sync();
           for item in items.0.iter() {
-            values.insert_mut(self.decode_node(*inner, item, &format!("{path}.item"), depth + 1)?);
+            let item_path = format!("{path}.item");
+            let decoded = self.decode_node(*inner, item, &item_path, depth + 1)?;
+            if values.contains(&decoded) {
+              return Err(EdnDecodeError::at(&item_path, "duplicate decoded set value"));
+            }
+            values.insert_mut(decoded);
           }
           Ok(Calcit::Set(values))
         }
@@ -125,7 +130,11 @@ impl Decoder<'_> {
         Edn::Map(entries) => {
           let mut values = rpds::HashTrieMap::new_sync();
           for (raw_key, raw_value) in entries.0.iter() {
-            let decoded_key = self.decode_node(*key, raw_key, &format!("{path}.key"), depth + 1)?;
+            let key_path = format!("{path}.key");
+            let decoded_key = self.decode_node(*key, raw_key, &key_path, depth + 1)?;
+            if values.contains_key(&decoded_key) {
+              return Err(EdnDecodeError::at(&key_path, "duplicate decoded map key"));
+            }
             let decoded_value = self.decode_node(*value, raw_value, &format!("{path}.value"), depth + 1)?;
             values.insert_mut(decoded_key, decoded_value);
           }
@@ -342,6 +351,53 @@ mod tests {
     let error = decode(&shape, &input).expect_err("duplicate fields must fail");
     assert_eq!(error.path, "$");
     assert!(error.message.contains("duplicate fields [age]"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn rejects_duplicate_decoded_set_values() {
+    let target = CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::Struct(person_struct(), Arc::new(vec![]))));
+    let shape = DataShapeGraph::build(&target, "tests.edn").expect("derive person set shape");
+    let input = cirru_edn::parse("#{} (%{} :Person (:age 23) (:name |Ada)) (%{} :Person (:name |Ada) (:age 23))")
+      .expect("parse colliding set values");
+    let error = decode(&shape, &input).expect_err("decoded set values must remain unique");
+    assert_eq!(error.path, "$.item");
+    assert_eq!(error.message, "duplicate decoded set value");
+  }
+
+  #[test]
+  fn rejects_duplicate_decoded_map_keys() {
+    let key = Arc::new(CalcitTypeAnnotation::Struct(person_struct(), Arc::new(vec![])));
+    let target = CalcitTypeAnnotation::Map(key, Arc::new(CalcitTypeAnnotation::String));
+    let shape = DataShapeGraph::build(&target, "tests.edn").expect("derive person map shape");
+    let input = cirru_edn::parse("{} ((%{} :Person (:age 23) (:name |Ada)) |first) ((%{} :Person (:name |Ada) (:age 23)) |second)")
+      .expect("parse colliding map keys");
+    let error = decode(&shape, &input).expect_err("decoded map keys must remain unique");
+    assert_eq!(error.path, "$.key");
+    assert_eq!(error.message, "duplicate decoded map key");
+  }
+
+  #[test]
+  fn decodes_unique_set_values_and_map_keys() {
+    let person = Arc::new(CalcitTypeAnnotation::Struct(person_struct(), Arc::new(vec![])));
+    let set_shape = DataShapeGraph::build(&CalcitTypeAnnotation::Set(person.clone()), "tests.edn").expect("derive person set shape");
+    let set_input = cirru_edn::parse("#{} (%{} :Person (:age 23) (:name |Ada)) (%{} :Person (:age 24) (:name |Bob))")
+      .expect("parse unique set values");
+    let Calcit::Set(set) = decode(&set_shape, &set_input).expect("decode unique set values") else {
+      panic!("expected set");
+    };
+    assert_eq!(set.size(), 2);
+
+    let map_shape = DataShapeGraph::build(
+      &CalcitTypeAnnotation::Map(person, Arc::new(CalcitTypeAnnotation::String)),
+      "tests.edn",
+    )
+    .expect("derive person map shape");
+    let map_input = cirru_edn::parse("{} ((%{} :Person (:age 23) (:name |Ada)) |first) ((%{} :Person (:age 24) (:name |Bob)) |second)")
+      .expect("parse unique map keys");
+    let Calcit::Map(map) = decode(&map_shape, &map_input).expect("decode unique map keys") else {
+      panic!("expected map");
+    };
+    assert_eq!(map.size(), 2);
   }
 
   #[test]
