@@ -23,6 +23,9 @@ fn import_rule(source: &str, kind: &str, target: Cirru) -> Cirru {
 
 #[test]
 fn strict_edn_decoder_nominals_are_compiled_dependencies() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
   let ns: Arc<str> = Arc::from("tests.strict-edn-dependencies");
   let def: Arc<str> = Arc::from("Person");
   let dep_id = ensure_def_id(&ns, &def);
