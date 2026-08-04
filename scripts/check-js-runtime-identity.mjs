@@ -25,7 +25,13 @@ try {
   );
 
   const brand = Symbol.for("@calcit/procs/CalcitImpl");
-  const inheritedBrand = Object.create({ [brand]: true });
+  const inheritedBrand = Object.assign(Object.create({ [brand]: true }), {
+    name: runtimeA.newTag("InheritedImpl"),
+    origin: null,
+    fields: [],
+    values: [],
+    cachedHash: null,
+  });
   const malformedBrand = {
     [brand]: true,
     name: runtimeA.newTag("MalformedImpl"),
