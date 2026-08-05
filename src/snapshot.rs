@@ -3337,7 +3337,18 @@ mod tests {
         .defs
         .get(def_name)
         .unwrap_or_else(|| panic!("missing saved def: {def_name}"));
-      assert_eq!(saved_entry.schema, source_entry.schema, "schema should round-trip for {def_name}");
+      // Parallel tests may populate the core registry between the two loads,
+      // causing the latter parser to qualify `Option` as `calcit.core/Option`.
+      // Those references are nominally equivalent; the round-trip contract is
+      // semantic type equality, while the assertions below separately protect
+      // the serialized Fn/Macro markers.
+      assert!(
+        saved_entry.schema.matches_annotation(source_entry.schema.as_ref())
+          && source_entry.schema.matches_annotation(saved_entry.schema.as_ref()),
+        "schema should round-trip for {def_name}: source={:?}, saved={:?}",
+        source_entry.schema,
+        saved_entry.schema
+      );
     }
 
     let _ = fs::remove_file(&temp_path);

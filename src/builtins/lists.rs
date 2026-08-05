@@ -159,7 +159,7 @@ pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::List(ys) => {
       if ys.is_empty() {
-        Ok(Calcit::Nil)
+        Ok(Calcit::List(ys.clone()))
       } else {
         Ok(Calcit::List(Arc::new(ys.drop_left())))
       }
@@ -185,7 +185,7 @@ pub fn butlast(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Nil => Ok(Calcit::Nil),
     Calcit::List(ys) => {
       if ys.is_empty() {
-        Ok(Calcit::Nil)
+        Ok(Calcit::List(ys.clone()))
       } else {
         Ok(Calcit::List(Arc::new(ys.butlast()?)))
       }
@@ -929,6 +929,17 @@ mod tests {
     assert_eq!(
       result,
       Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(3.0)])
+    );
+  }
+
+  #[test]
+  fn rest_and_butlast_keep_empty_lists_as_lists() {
+    let empty = Calcit::from(Vec::<Calcit>::new());
+
+    assert_eq!(rest(std::slice::from_ref(&empty)).expect("rest should accept an empty list"), empty);
+    assert_eq!(
+      butlast(std::slice::from_ref(&empty)).expect("butlast should accept an empty list"),
+      empty
     );
   }
 }

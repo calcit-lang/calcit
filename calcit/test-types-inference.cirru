@@ -99,7 +99,7 @@
               let
                   xs $ [] 1 2 3
                   rest-xs $ rest xs
-                assert-type rest-xs $ :: 'Optional (:: 'List 'Number)
+                assert-type rest-xs $ :: 'List 'Number
                 &inspect-type rest-xs
           :examples $ []
           :schema $ :: 'Dynamic
@@ -135,7 +135,7 @@
               let
                   xs $ [] 1 2
                   empty-xs $ empty xs
-                assert-type empty-xs $ :: 'Optional (:: 'List 'Number)
+                assert-type empty-xs $ :: 'List 'Number
                 &inspect-type empty-xs
               let
                   empty-nil $ empty nil
@@ -147,7 +147,7 @@
                 &inspect-type rest-nil
               let
                   tail $ rest |abc
-                assert-type tail $ :: 'Optional 'String
+                assert-type tail 'String
                 &inspect-type tail
               let
                   first-char $ &str:first |abc
@@ -202,12 +202,28 @@
               let
                   parsed-ok $ parse-float |1.5
                   parsed-bad $ parse-float |oops
-                assert= 1.5 parsed-ok
-                assert= nil parsed-bad
-                assert-type parsed-ok $ :: 'Optional 'Number
-                assert-type parsed-bad $ :: 'Optional 'Number
+                assert= (%ok 1.5) parsed-ok
+                assert= (%err |oops) parsed-bad
+                assert-type parsed-ok $ :: 'Result 'Number 'String
+                assert-type parsed-bad $ :: 'Result 'Number 'String
                 &inspect-type parsed-ok
                 &inspect-type parsed-bad
+              let
+                  found $ find ([] 1 2 3)
+                    fn (x) (> x 1)
+                  missing $ find ([] 1 2 3)
+                    fn (x) (> x 9)
+                  found-index $ find-index ([] 1 2 3)
+                    fn (x) (> x 1)
+                  missing-index $ index-of ([] 1 2 3) 9
+                assert-type found $ :: 'Option 'Number
+                assert-type missing $ :: 'Option 'Number
+                assert-type found-index $ :: 'Option 'Number
+                assert-type missing-index $ :: 'Option 'Number
+                &inspect-type found
+                &inspect-type missing
+                &inspect-type found-index
+                &inspect-type missing-index
               let
                   list-hit $ get ([] 1 2 3) 1
                   list-miss $ get ([] 1 2 3) 9

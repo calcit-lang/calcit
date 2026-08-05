@@ -19,7 +19,7 @@ use crate::{
   builtins,
   calcit::{
     self, Calcit, CalcitEnum, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct,
-    CalcitSyntax, CalcitTrait, CalcitTypeAnnotation, SchemaKind, resolve_type_slot,
+    CalcitSyntax, CalcitTrait, CalcitTypeAnnotation, ImportInfo, SchemaKind, resolve_type_slot,
   },
   call_stack::CallStackList,
   program, runner,
@@ -106,7 +106,8 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
 /// Given a function's type info and the actual call arguments, resolve a generic return type.
 /// If the return type contains TypeVars, match actual arg types against declared arg types
 /// to build bindings, then substitute TypeVars in the return type.
-/// Returns `None` if the return type has no TypeVars or resolution fails.
+/// Unbound generic payloads fall back to Dynamic while preserving the return
+/// type's outer structure (for example Option<T> becomes Option<Dynamic>).
 pub(crate) fn resolve_generic_return_type<'a>(
   fn_info: &crate::calcit::CalcitFn,
   call_args: impl Iterator<Item = &'a Calcit>,
@@ -130,12 +131,12 @@ pub(crate) fn resolve_generic_return_type<'a>(
     }
   }
 
-  if bindings.is_empty() {
-    return None;
+  for generic in fn_info.generics.iter() {
+    bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
   }
 
   let resolved = fn_info.return_type.substitute_type_vars(&bindings);
-  // Only return if we actually resolved something (no remaining TypeVars)
+  // Only return if every declared type variable was resolved or defaulted.
   if resolved.contains_type_var() { None } else { Some(resolved) }
 }
 
@@ -145,6 +146,11 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   call_expr: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  if ns == calcit::CORE_NS
+    && let Some(inferred) = infer_core_nominal_absence_return_type(def, call_expr, scope_types)
+  {
+    return Some(inferred);
+  }
   if ns == calcit::CORE_NS
     && def == "get"
     && let Some(inferred) = infer_core_get_return_type(call_expr, scope_types)
@@ -231,6 +237,37 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some()).then_some(resolved)
 }
 
+fn core_type_ref(name: &str, args: Vec<Arc<CalcitTypeAnnotation>>) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::TypeRef(
+    Arc::from(format!("{}/{name}", calcit::CORE_NS)),
+    Arc::new(args),
+  ))
+}
+
+fn infer_core_nominal_absence_return_type(
+  def: &str,
+  call_expr: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  match def {
+    "find" => {
+      let element_type = call_expr
+        .get(1)
+        .and_then(|value| resolve_type_value(value, scope_types))
+        .and_then(|value_type| match value_type.as_ref() {
+          CalcitTypeAnnotation::List(inner) => Some(inner.clone()),
+          _ => None,
+        })
+        .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+      Some(core_type_ref("Option", vec![element_type]))
+    }
+    "find-index" | "index-of" => Some(core_type_ref("Option", vec![tag_annotation("number")])),
+    "parse-float" => Some(core_type_ref("Result", vec![tag_annotation("number"), tag_annotation("string")])),
+    "get-env" => Some(core_type_ref("Option", vec![tag_annotation("string")])),
+    _ => None,
+  }
+}
+
 fn infer_core_get_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let base_arg = call_expr.get(1)?;
   let base_type = resolve_type_value(base_arg, scope_types)?;
@@ -279,6 +316,32 @@ fn wrap_optional_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotat
   match inner.as_ref() {
     CalcitTypeAnnotation::Optional(_) => inner,
     _ => Arc::new(CalcitTypeAnnotation::Optional(inner)),
+  }
+}
+
+fn js_host_value_type() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::JsObject)
+}
+
+fn optional_js_host_value_type() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Optional(js_host_value_type()))
+}
+
+fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  match name {
+    // JavaScript indexed/property reads may yield `undefined` or `null`. Keep
+    // the raw host value opaque as well as nullable so a nil check alone does
+    // not silently prove that it is a Calcit Number/String/etc.
+    "aget" | "js-get" => Some(optional_js_host_value_type()),
+    // Assignment expressions evaluate to the assigned value in JavaScript.
+    "aset" | "js-set" => call_expr
+      .get(3)
+      .and_then(|value| resolve_type_value(value, scope_types))
+      .or_else(|| Some(js_host_value_type())),
+    "js-delete" | "exists?" | "instance?" => Some(tag_annotation("bool")),
+    "&js-object" | "js-array" | "new" => Some(js_host_value_type()),
+    _ if name.starts_with("js/") => Some(optional_js_host_value_type()),
+    _ => None,
   }
 }
 
@@ -368,7 +431,9 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
       })
       .or_else(|| Some(tag_annotation("fn"))),
 
+    Calcit::Import(CalcitImport { info, .. }) if matches!(info.as_ref(), ImportInfo::JsDefault { .. }) => Some(js_host_value_type()),
     Calcit::Import(CalcitImport { ns, def, .. }) => infer_definition_value_type(ns, def),
+    Calcit::Symbol { sym, .. } if sym.starts_with("js/") => Some(optional_js_host_value_type()),
     Calcit::Symbol { sym, info, .. } => infer_definition_value_type(&info.at_ns, sym),
 
     // Local variable: read type_info
@@ -432,6 +497,10 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // Symbol: might be a function reference before preprocessing
         // Try to resolve it and get the return type
         Calcit::Symbol { sym, info, .. } => {
+          if let Some(inferred) = infer_js_ffi_call_return_type(sym, xs, scope_types) {
+            return Some(inferred);
+          }
+
           if let Some(inferred) = infer_return_type_from_compiled_callable(&info.at_ns, sym, xs, scope_types) {
             return Some(inferred);
           }
@@ -450,6 +519,11 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         // Direct Fn call: return the function's return type
         Calcit::Fn { info, .. } => {
+          if info.def_ns.as_ref() == calcit::CORE_NS
+            && let Some(inferred) = infer_core_nominal_absence_return_type(info.name.as_ref(), xs, scope_types)
+          {
+            return Some(inferred);
+          }
           if info.return_type.contains_type_var()
             && let Some(resolved) = resolve_generic_return_type(info, xs.iter().skip(1), scope_types)
           {
@@ -491,7 +565,25 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           {
             return Some(field_type);
           }
-          None
+          match head {
+            Calcit::Method(_, calcit::MethodKind::Access) => Some(optional_js_host_value_type()),
+            _ => None,
+          }
+        }
+
+        // Native JavaScript access/calls remain compatibility Optional values,
+        // not nominal Option values. The opaque JsObject payload prevents an
+        // unchecked host value from matching arbitrary strong Calcit types.
+        Calcit::Method(field_name, calcit::MethodKind::AccessOptional) => {
+          if let Some(receiver) = xs.get(1)
+            && let Some(field_type) = infer_record_field_type(receiver, field_name.as_ref(), scope_types)
+          {
+            return Some(wrap_optional_type(field_type));
+          }
+          Some(optional_js_host_value_type())
+        }
+        Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional) => {
+          Some(optional_js_host_value_type())
         }
 
         // Nested List call: the head is a function call expression
@@ -1371,13 +1463,77 @@ pub(crate) fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) ->
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitLocal, CalcitSymbolInfo};
+  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitLocal, CalcitScope, CalcitSymbolInfo};
 
   fn proc_call(proc: CalcitProc, args: Vec<Calcit>) -> Calcit {
     let mut items = Vec::with_capacity(args.len() + 1);
     items.push(Calcit::Proc(proc));
     items.extend(args);
     Calcit::from(items)
+  }
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.js-ffi"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    }
+  }
+
+  fn local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
+    let sym: Arc<str> = Arc::from(name);
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.js-ffi"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info,
+    })
+  }
+
+  fn assert_optional_js_host_value(value: Option<Arc<CalcitTypeAnnotation>>) {
+    assert!(matches!(
+      value.as_deref(),
+      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+    ));
+  }
+
+  #[test]
+  fn unresolved_generic_payload_keeps_nominal_return_wrapper() {
+    let type_var: Arc<CalcitTypeAnnotation> = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let fn_info = CalcitFn {
+      name: Arc::from("find"),
+      def_ns: Arc::from(calcit::CORE_NS),
+      def_ref: None,
+      usage: CalcitFnUsageMeta::default(),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      body: vec![],
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![type_var.clone()]),
+      )),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::List(type_var))],
+      rest_type: None,
+    };
+    let unknown_list = local("xs", calcit::DYNAMIC_TYPE.clone());
+    let inferred = resolve_generic_return_type(&fn_info, std::iter::once(&unknown_list), &ScopeTypes::new())
+      .expect("outer nominal return type should remain visible");
+
+    assert!(matches!(
+      inferred.as_ref(),
+      CalcitTypeAnnotation::TypeRef(name, args)
+        if name.as_ref() == "calcit.core/Option"
+          && matches!(args.first().map(AsRef::as_ref), Some(CalcitTypeAnnotation::Dynamic))
+    ));
   }
 
   #[test]
@@ -1441,6 +1597,34 @@ mod tests {
       infer_static_type_from_expr(&atom).as_deref(),
       Some(CalcitTypeAnnotation::Ref(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
     ));
+  }
+
+  #[test]
+  fn js_ffi_reads_and_native_calls_keep_nullable_opaque_types() {
+    let receiver = local("host", Arc::new(CalcitTypeAnnotation::JsObject));
+    let access = Calcit::from(vec![
+      Calcit::Method(Arc::from("value"), calcit::MethodKind::Access),
+      receiver.clone(),
+    ]);
+    let optional_access = Calcit::from(vec![
+      Calcit::Method(Arc::from("value"), calcit::MethodKind::AccessOptional),
+      receiver.clone(),
+    ]);
+    let native_call = Calcit::from(vec![
+      Calcit::Method(Arc::from("read"), calcit::MethodKind::InvokeNative),
+      receiver.clone(),
+    ]);
+    let indexed_read = Calcit::from(vec![symbol("aget"), receiver, Calcit::Str(Arc::from("value"))]);
+    let global_call = Calcit::from(vec![symbol("js/Date.now")]);
+
+    for expression in [access, optional_access, native_call, indexed_read, global_call] {
+      assert_optional_js_host_value(infer_static_type_from_expr(&expression));
+    }
+
+    let opaque = CalcitTypeAnnotation::JsObject;
+    assert!(opaque.matches_annotation(&CalcitTypeAnnotation::JsObject));
+    assert!(!opaque.matches_annotation(&CalcitTypeAnnotation::String));
+    assert!(!opaque.matches_annotation(&CalcitTypeAnnotation::Number));
   }
 
   #[test]

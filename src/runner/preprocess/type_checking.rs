@@ -44,6 +44,15 @@ struct CheckContext<'a> {
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
 }
 
+fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
+  if actual_type.contains(":js-object") {
+    message.push_str(
+      "; JS FFI values stay opaque after nil checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary",
+    );
+  }
+  message
+}
+
 fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
   if ctx.where_bounds.is_empty() {
     return;
@@ -147,7 +156,7 @@ impl<'a> CheckContext<'a> {
       .and_then(Calcit::get_location)
       .or_else(|| self.call_location.clone());
     gen_check_warning_code_at(
-      make_warning(arg_idx, expected_str, actual_str, expr_str),
+      append_js_ffi_type_hint(make_warning(arg_idx, expected_str, actual_str, expr_str), actual_str),
       self.warning_code,
       self.file_ns,
       warning_location,
@@ -544,7 +553,10 @@ pub(crate) fn check_function_return_type(
     let expected_str = declared_return_type.as_ref().to_brief_string();
     let actual_str = actual_type.as_ref().to_brief_string();
     gen_check_warning_code(
-      format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
+      append_js_ffi_type_hint(
+        format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
+        &actual_str,
+      ),
       "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
       check_warnings,
@@ -570,6 +582,13 @@ mod tests {
       location: None,
       type_info,
     })
+  }
+
+  #[test]
+  fn js_ffi_mismatches_include_boundary_guidance() {
+    let message = append_js_ffi_type_hint("type mismatch".to_owned(), ":js-object?");
+    assert!(message.contains("stay opaque after nil checks"));
+    assert!(message.contains("unsafe-coerce"));
   }
 
   #[test]

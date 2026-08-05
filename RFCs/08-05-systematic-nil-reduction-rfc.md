@@ -1,6 +1,6 @@
 # 系统性减少 nil：类型驱动迁移 RFC
 
-状态：Partial（Phase 1 已开始）
+状态：Partial（Phase 1/2 已开始）
 日期：2026-08-05
 
 ## 目标
@@ -42,6 +42,8 @@
 
 `Optional<T>` 表示运行时值确实可能是 `T` 或 `nil`。它是兼容层，而不是新 API 的首选返回类型。调用方必须通过 `nil?`、`some?` 或显式兼容函数收窄后才能按 `T` 使用。
 
+JS FFI 是一个重要的兼容边界，但不能因此把宿主值继续当成可匹配任意类型的 `Dynamic`。原生属性读取、方法调用与 `aget`/`js-get` 保持 `Optional<JsObject>`：Optional 表达 `null`/`undefined`，不透明的 `JsObject` payload 则要求调用方在进入强类型 Calcit 代码前显式验证、转换或在可信契约处 `unsafe-coerce`。`some?`/`nil?` 只收窄空值，不会把 `JsObject` 自动证明为 Number/String。该边界不得静默包装成 Option；Option 只能由显式转换 API 构造。
+
 ### Option<T>
 
 新设计的查询、解析和集合查找 API 应返回 `Option<T>`。`%some` / `%none` 是普通名义值，不依赖 truthiness，也不会与 Unit 混淆。
@@ -60,14 +62,15 @@
 
 - 内建过程用独立 arity 元数据表示末尾可省略参数；
 - proc 参数检查不再剥离 `Optional<T>`；
-- 将能在不丢失类型证据的情况下修正的 `parse-float` 和 `get-env` proc 返回标成 Optional；
+- 将底层 `&parse-float` 和 `&get-env` proc 的 nullable 返回标成 Optional，作为公开名义 API 之下的兼容边界；
+- 将 `rest` / `butlast` 对空 List 的结果统一为同类型空 List，并同步 Native、JS、WASM；`rest` 与 `empty` 的公开契约改为 `T -> T`，因此确定存在的集合/String 不再被无条件提升为 Optional，而显式 Optional/nil 输入仍保留其可空类型；
 - 公开 core 的 `first`、`nth`、`get` schema 继续暴露 Optional；内部 `&list:first`、`&list:nth`、`&map:get` 的 Dynamic proc 契约及低层专用推断暂保留兼容行为；
 - `analyze weak-types` 将裸 `nil` 与 `;nil` 都纳入审计，仅在结构上可证明的返回位置读取函数契约，并区分 `declared-unit`、`declared-optional` 与 `unresolved`；JSON 对后两类迁移债务发出 `W_NIL_TYPE_DEBT`；
 - `analyze.weak-types` 的机器协议升级到 schema v2，避免旧消费者在 v1 下错误接受新增的封闭 intent/diagnostic 枚举；
 - 修正既有 `optionally` 桥接函数的契约为 `Optional<T> -> Option<T>`，为遗留 nullable 边界提供不丢失类型关系的显式出口；
 - 为上述规则增加单元测试。
 
-Phase 1 不改变这些过程的运行时返回值，因此只会新增或修正静态提示，不改变无类型代码的执行结果。
+Phase 1 的类型契约修正本身不改变相关过程的运行时返回值；`rest` / `butlast` 的空集合修正与后续名义 API 切换则是单独记录的 breaking change。
 
 低层专用推断不能通过批量 `unsafe-coerce` 清理：core 宏在检查列表形状后读取 AST，当前类型系统尚不能携带“非空列表”及 guard clause 终止证据，强制转换会把泛型元素退化成 Dynamic。该兼容点必须在引入非空集合/控制流证据后移除；公开 `first`、`nth`、`get` 的 schema 仍保持 Optional，不把这一内部例外扩散成新 API。
 
@@ -75,12 +78,15 @@ nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回�
 
 ### Phase 2：建立名义安全 API
 
-- 新增返回 `Option<T>` 的集合查询、字符串解析和环境变量查询 API；
-- 为需要错误原因的解析/IO API 新增 `Result<T, E>` 版本；
-- 继续以 `optionally` 作为从遗留 Optional 值到 Option 的显式桥接函数，并在新 API 中直接返回 Option；
+- 直接将原有 `find`、`find-index`、`index-of` 改为返回 `Option`，让旧调用在结果消费处产生明确的类型迁移提示；
+- 将公开 `parse-float` 改为 `String -> Result<Number,String>`，`:err` 保留原始非法输入；nullable 底层过程改名为内部 `&parse-float`；
+- 将公开 `get-env` 改为 `String -> Option<String>`，删除旧的第二个默认值参数；迁移时使用 `option:unwrap-or`，nullable 底层过程改名为内部 `&get-env`；
+- 继续以 `optionally` 作为内部 Optional 值到 Option 的显式桥接函数；
+- 泛型实参无法确定时，只把未绑定 payload 降为 Dynamic，保留 `Option<Dynamic>` / `Result<...,Dynamic>` 等外层名义类型，避免整个结果退化成 Dynamic；
+- 对 `some?`/`nil?`、位置式 `get`/`nth` 以及底层 `&compare` 消费名义 enum 的旧 nullable 用法报告 `W_NOMINAL_ENUM_LEGACY_USE`，提示改用 Option 方法、unwrap 或 `tag-match`；
 - core schema 成为公开函数契约，Rust proc 签名负责底层过程契约，并增加一致性审计。
 
-遗留 API 暂保留，但文档和类型诊断应推荐名义安全版本。
+`first`、`last`、`nth`、`get` 暂时保留 Optional：它们参与 core 宏展开和编译器自举，直接切换会让 `let` 等宏在加载阶段收到 Option。后续需先把宏实现迁到明确的低层原语，再切换公开契约。JS FFI 仍保持 `Optional<JsObject>`，不会跟随这些 API 自动变为 Option。
 
 ### Phase 3：typed code 严格化
 
@@ -110,6 +116,7 @@ nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回�
 - nil 作为集合：提示在来源处处理缺失，不自动替换成空集合，因为二者业务语义不同；
 - 可省略参数处显式传 nil：提示省略参数，或修改参数值类型为 Optional；
 - 解析返回 Optional：提示改用后续的 Result API，以保留错误信息。
+- 名义 Option 仍用 `some?`/`nil?` 或 tuple 位置读取：提示改用 `option:some?`、`option:none?`、`option:unwrap-or` 或 `tag-match`。
 
 自动修复不得把 nil 无条件替换为空集合、0、空字符串或 false。
 

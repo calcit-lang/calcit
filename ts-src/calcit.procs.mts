@@ -983,10 +983,10 @@ export let timeout_call = (duration: number, f: CalcitFn): null => {
   return null;
 };
 
-export let _$n_list_$o_rest = (xs: CalcitValue): CalcitValue => {
+export let _$n_list_$o_rest = (xs: CalcitValue): CalcitList | CalcitSliceList => {
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     if (xs.len() === 0) {
-      return null;
+      return xs.slice(0, 0);
     }
     return xs.rest();
   }
@@ -1041,10 +1041,10 @@ export let last = (xs: CalcitValue): CalcitValue => {
   throw new Error("Data not ready for last");
 };
 
-export let butlast = (xs: CalcitValue): CalcitValue => {
+export let butlast = (xs: CalcitValue): CalcitList | CalcitSliceList | string => {
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     if (xs.len() === 0) {
-      return null;
+      return xs.slice(0, 0);
     }
     return xs.slice(0, xs.len() - 1);
   }
@@ -1349,7 +1349,7 @@ export let _$n_str_$o_find_index = (x: string, y: string): number => {
   return x.indexOf(y);
 };
 
-export let parse_float = (x: string): number | null => {
+export let _$n_parse_float = (x: string): number | null => {
   const value = parseFloat(x);
   if (Number.isNaN(value)) {
     return null;
@@ -1425,7 +1425,7 @@ export let js_delete = (obj: any, name: string): any => {
   return delete obj[name];
 };
 
-export let get_env = (name: string, v0: string): string => {
+export let _$n_get_env = (name: string, v0: string): string => {
   let v = undefined;
   if (inNodeJs) {
     // only available for Node.js

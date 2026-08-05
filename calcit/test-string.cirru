@@ -139,8 +139,8 @@
               assert= false $ .ends-with? |abc |b
               assert= |a $ .get |abc 0
               assert= |b $ .get |abc 1
-              assert= 1 $ .parse-float |1
-              assert= 1.1 $ .parse-float |1.1
+              assert= (%ok 1) (.parse-float |1)
+              assert= (%ok 1.1) (.parse-float |1.1)
               assert= |Abcd $ .replace |abcd |a |A
               assert= |AbAd $ .replace |abad |a |A
               assert= ([] |a |c) (.split |abc |b)
@@ -177,7 +177,7 @@
           :schema $ :: 'Dynamic
         |test-parse $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () $ assert= 0 (parse-float |0)
+            fn () $ assert= (%ok 0) (parse-float |0)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-str $ %{} :CodeEntry (:doc |)

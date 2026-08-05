@@ -237,12 +237,25 @@ do
 
 Use `optionally` at a legacy nullable boundary to convert `Optional<T>` into nominal `Option<T>`. New application APIs should return `Option<T>` directly rather than converting through nil internally.
 
+Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
+
+- `find`, `find-index`, and `index-of` return `Option`.
+- `get-env` returns `Option<String>`; use `option:unwrap-or` for a default.
+- `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
+
+Raw JavaScript property reads and native calls are different: they remain `Optional<JsObject>`. Convert them only after an explicit host-value check or trusted FFI contract; these core API changes never auto-wrap JS FFI results as `Option`.
+
+When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional tuple access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods, `option:unwrap-or`, or `tag-match`.
+
 The same operations are available as methods on enum values:
 
 ```cirru
 do
   assert= (%some 1) $ optionally 1
   assert= (%none) $ optionally nil
+  assert= (%some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
+  assert= (%ok 1.5) $ parse-float |1.5
+  assert= |fallback $ option:unwrap-or (get-env |__MISSING_ENV__) |fallback
   assert= 0 $
     %none
     , .unwrap-or 0

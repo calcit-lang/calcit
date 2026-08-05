@@ -309,7 +309,7 @@ pub enum CalcitTypeAnnotation {
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
   /// Unit/nil type — for side-effectful functions that explicitly return nil
   Unit,
-  /// JavaScript FFI external object (opaque to Calcit type system)
+  /// JavaScript FFI host value (opaque to the Calcit type system)
   JsObject,
   /// A type slot reference declared via `deftype-slot` and bound via `bind-type`.
   /// At type-checking time, this is resolved by looking up the global TYPE_SLOTS registry.
@@ -2469,6 +2469,7 @@ impl CalcitTypeAnnotation {
       | (Self::DynFn, Self::DynFn)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote)
+      | (Self::JsObject, Self::JsObject)
       | (Self::Unit, Self::Unit) => true,
       (Self::TypeVar(var), expected_type) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == expected_type => true,

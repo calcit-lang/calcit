@@ -617,6 +617,14 @@
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :io :meta
+        |&get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Optional 'String
+          :tags $ #{} :builtin :env :internal :io
         |&get-os $ %{} :CodeEntry (:doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1455,6 +1463,14 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number 'Number
+          :tags $ #{} :builtin :internal
+        |&parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
         |&record-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -2688,11 +2704,15 @@
         |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
           :code $ quote &runtime-implementation
           :examples $ []
+            quote $ assert= ([] 1 2)
+              butlast $ [] 1 2 3
+            quote $ assert= ([])
+              butlast $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T)
               :generics $ [] 'T
-              :return $ :: 'Optional (:: 'List 'T)
+              :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
         |call-w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -3567,11 +3587,14 @@
             defn empty (x)
               if (nil? x) x $ if (list? x) ([]) (.empty x)
           :examples $ []
+            quote $ assert= ([])
+              empty $ [] 1 2 3
+            quote $ assert= | (empty |abc)
+            quote $ assert= nil (empty nil)
           :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Optional 'T)
+            {} (:return 'T)
+              :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
         |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
           :code $ quote
             defn empty? (x)
@@ -3695,42 +3718,50 @@
                   :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
-        |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
+        |find $ %{} :CodeEntry (:doc "|Find the first matching list item as Option<T>.")
           :code $ quote
             defn find (xs f)
-              foldl-shortcut xs 0 (;nil)
+              foldl-shortcut xs 0 (%none)
                 defn %find (_acc x)
-                  if (f x) (:: true x)
-                    :: false $ ;nil
+                  if (f x)
+                    :: true $ %some x
+                    :: false $ %none
           :examples $ []
-            quote $ assert= 4
-              find ([] 1 2 3 4 5)
-                fn (x) (&> x 3)
-            quote $ assert= nil
+            quote $ assert= (%some 2)
               find ([] 1 2 3)
-                fn (x) (&> x 10)
+                fn (x) (> x 1)
+            quote $ assert= (%none)
+              find ([] 1 2 3)
+                fn (x) (> x 9)
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T)
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
-        |find-index $ %{} :CodeEntry (:doc |)
+              :return $ :: 'Option 'T
+        |find-index $ %{} :CodeEntry (:doc "|Find the first matching list index as Option<Number>.")
           :code $ quote
             defn find-index (xs f)
-              foldl-shortcut xs 0 (;nil)
-                defn %find-index (idx x)
-                  if (f x) (:: true idx)
-                    :: false $ &+ 1 idx
+              foldl-shortcut xs 0 (%none)
+                defn %find-index (index x)
+                  if (f x)
+                    :: true $ %some index
+                    :: false $ &+ 1 index
           :examples $ []
+            quote $ assert= (%some 1)
+              find-index ([] 1 2 3)
+                fn (x) (> x 1)
+            quote $ assert= (%none)
+              find-index ([] 1 2 3)
+                fn (x) (> x 9)
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T)
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
         |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
@@ -3939,14 +3970,18 @@
             {} (:return 'Number)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
-        |get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
-          :code $ quote &runtime-implementation
+        |get-env $ %{} :CodeEntry (:doc "|Read an environment variable as Option<String>.")
+          :code $ quote
+            defn get-env (name)
+              optionally $ &get-env name
           :examples $ []
+            quote $ assert= (%none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
-              :return $ :: 'Optional 'String
-          :tags $ #{} :builtin :env :internal :io
+              :features $ #{} :env :io
+              :return $ :: 'Option 'String
+          :tags $ #{} :env :io
         |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
           :code $ quote
             defn get-in (base path)
@@ -4127,23 +4162,24 @@
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'Dynamic 'Dynamic
-        |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
+        |index-of $ %{} :CodeEntry (:doc "|Find the first list item index as Option<Number>.")
           :code $ quote
             defn index-of (xs item)
-              foldl-shortcut xs 0 (;nil)
-                defn %index-of (idx x)
-                  if (&= item x) (:: true idx)
-                    :: false $ &+ 1 idx
+              foldl-shortcut xs 0 (%none)
+                defn %index-of (index x)
+                  if (&= item x)
+                    :: true $ %some index
+                    :: false $ &+ 1 index
           :examples $ []
-            quote $ assert= 1
-              index-of ([] |a |b |c) |b
-            quote $ assert= nil
-              index-of ([] 1 2 3) 5
+            quote $ assert= (%some 1)
+              index-of ([] |a |b) |b
+            quote $ assert= (%none)
+              index-of ([] |a |b) |z
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
         |interleave $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn interleave (xs0 ys0)
@@ -4963,14 +4999,19 @@
             {} (:return 'List)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
-        |parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
-          :code $ quote &runtime-implementation
+        |parse-float $ %{} :CodeEntry (:doc "|Parse a number as Result<Number,String>; err contains the original invalid input.")
+          :code $ quote
+            defn parse-float (source)
+              let
+                  parsed $ &parse-float source
+                if (nil? parsed) (%err source) (%ok parsed)
           :examples $ []
+            quote $ assert= (%ok 1.5) (parse-float |1.5)
+            quote $ assert= (%err |oops) (parse-float |oops)
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
-              :return $ :: 'Optional 'Number
-          :tags $ #{} :builtin :internal
+              :return $ :: 'Result 'Number 'String
         |pow $ %{} :CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5160,7 +5201,7 @@
               :args $ [] (:: 'Ref 'T) 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :syntax
-        |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element\nNil input returns nil; lists delegate to &list:rest.")
+        |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element. Empty lists and strings remain empty; nil input remains nil, so the result keeps the input type.")
           :code $ quote
             defn rest (x)
               if (nil? x) (;nil)
@@ -5168,12 +5209,14 @@
           :examples $ []
             quote $ assert= ([] 2 3)
               rest $ [] 1 2 3
+            quote $ assert= ([])
+              rest $ []
+            quote $ assert= | (rest |)
             quote $ assert= nil (rest nil)
           :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Optional 'T)
+            {} (:return 'T)
+              :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
         |result:and-then $ %{} :CodeEntry (:doc "|Chains a Result-producing function over :ok and preserves :err.")
           :code $ quote
             defn result:and-then (res f)

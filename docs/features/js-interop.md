@@ -25,6 +25,35 @@ Calcit keeps JS interop syntax intentionally small. This page covers the existin
 - array/object construction
 - constructor call with `new`
 
+## Typed FFI boundary
+
+Raw JavaScript values are not ordinary `Dynamic` Calcit values. Property reads,
+native method calls, `aget`/`js-get`, and `js/...` calls are conservatively
+inferred as `Optional<JsObject>`:
+
+- `Optional` preserves the actual `null`/`undefined` compatibility boundary; it
+  is deliberately not converted to nominal `Option` automatically.
+- `JsObject` is an opaque host value. A `some?`/`nil?` check proves only that the
+  value is present; it does not prove that the payload is a Calcit `String`,
+  `Number`, record, or collection.
+- Before passing the value into strongly typed Calcit code, validate/convert it
+  with a boundary decoder. `unsafe-coerce` is available only when an external
+  API contract is trusted and the unchecked conversion is intentional.
+
+Plain `.-name` and `.!name` dereference their receiver. If the receiver is an
+`Optional<JsObject>`, preprocessing reports `W_JS_FFI_NULLABLE_DEREF`. Use
+`.?-name`/`.?!name`, or narrow the receiver before dereferencing it.
+
+Functions containing raw interop should declare `:features $ #{} :js-ffi` in
+their schema. The feature identifies the boundary but does not suppress
+nullable dereference or strong-type mismatch diagnostics.
+
+`some?` and `nil?` are for this nullable `Optional` boundary. A nominal
+`Option<T>` uses `option:some?`/`option:none?` (or `.some?`/`.none?`);
+preprocessing reports `W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are
+applied to an Option, so an API migration cannot silently preserve the wrong
+branch behavior.
+
 ## Access global values
 
 Use `js/...` to read JavaScript globals and nested members:

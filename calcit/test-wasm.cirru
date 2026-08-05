@@ -294,6 +294,12 @@
               butlast $ [] 10 20 30
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-list-butlast-empty $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-butlast-empty () $ &list:count
+              butlast $ []
+          :examples $ []
+          :schema $ :: 'Dynamic
         |test-list-concat $ %{} :CodeEntry (:doc "|concat two lists")
           :code $ quote
             defn test-list-concat () $ &let
@@ -418,6 +424,12 @@
           :code $ quote
             defn test-list-rest-count () $ &list:count
               &list:rest $ [] 10 20 30
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-list-rest-empty $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-rest-empty () $ &list:count
+              &list:rest $ []
           :examples $ []
           :schema $ :: 'Dynamic
         |test-list-rest-first $ %{} :CodeEntry (:doc "|first of rest")

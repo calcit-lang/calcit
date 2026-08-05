@@ -292,7 +292,7 @@
           :code $ quote
             fn () (log-title "|Testing effect")
               println "|Env mode:" $ get-env |mode
-              println "|Env mode:" $ get-env |m0 "|default m0"
+              println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
               eprintln "|stdout message"
           :examples $ []
           :schema $ :: 'Fn

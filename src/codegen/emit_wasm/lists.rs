@@ -76,7 +76,15 @@ pub(super) fn emit_list_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let old_count = emit_load_count_i32(ctx, src);
 
-  let new_count = ctx.i32_offset(old_count, -1);
+  // Clamp at zero so `rest []` remains an empty list instead of underflowing.
+  let new_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(old_count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalGet(old_count));
+  ctx.emit(Instruction::Select);
+  ctx.emit(Instruction::LocalSet(new_count));
 
   // total_slots = 1 + new_count
   let dst = emit_alloc_list(ctx, new_count);
@@ -149,7 +157,15 @@ pub(super) fn emit_list_butlast(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let old_count = emit_load_count_i32(ctx, src);
 
-  let new_count = ctx.i32_offset(old_count, -1);
+  // Clamp at zero so `butlast []` remains an empty list instead of underflowing.
+  let new_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(old_count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalGet(old_count));
+  ctx.emit(Instruction::Select);
+  ctx.emit(Instruction::LocalSet(new_count));
 
   let dst = emit_alloc_list(ctx, new_count);
 

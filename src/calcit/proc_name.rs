@@ -108,7 +108,7 @@ pub enum CalcitProc {
   Raise,
   #[strum(serialize = "quit!")]
   Quit,
-  #[strum(serialize = "get-env")]
+  #[strum(serialize = "&get-env")]
   GetEnv,
   #[strum(serialize = "unix-time-ms")]
   UnixTimeMs,
@@ -252,7 +252,7 @@ pub enum CalcitProc {
   CharFromCode,
   #[strum(serialize = "to-lispy-string")]
   PrStr,
-  #[strum(serialize = "parse-float")]
+  #[strum(serialize = "&parse-float")]
   ParseFloat,
   #[strum(serialize = "blank?")]
   IsBlank,
@@ -1441,6 +1441,8 @@ static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = 
 
 #[cfg(test)]
 mod tests {
+  use std::str::FromStr;
+
   use super::*;
 
   #[test]
@@ -1497,5 +1499,13 @@ mod tests {
         "{proc} must expose its nil result"
       );
     }
+  }
+
+  #[test]
+  fn nullable_primitives_do_not_shadow_their_typed_public_wrappers() {
+    assert_eq!(CalcitProc::from_str("&parse-float"), Ok(CalcitProc::ParseFloat));
+    assert_eq!(CalcitProc::from_str("&get-env"), Ok(CalcitProc::GetEnv));
+    assert!(CalcitProc::from_str("parse-float").is_err());
+    assert!(CalcitProc::from_str("get-env").is_err());
   }
 }

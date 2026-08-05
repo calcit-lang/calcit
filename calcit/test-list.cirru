@@ -180,11 +180,13 @@
               assert-detect nil? $ first ([])
               assert-detect nil? $ last ([])
               assert= (rest a) ([] 2 3)
-              assert-detect nil? $ rest ([])
+              assert= ([])
+                rest $ []
               assert= ([])
                 rest $ [] 1
               assert= (butlast a) ([] 1 2)
-              assert-detect nil? $ butlast ([])
+              assert= ([])
+                butlast $ []
               assert= (range 0) ([])
               assert= (range 1) ([] 0)
               assert= (range 4) ([] 0 1 2 3)
@@ -305,10 +307,12 @@
               assert=
                 update (range 4) 11 $ \ + % 10
                 range 4
-              assert= 6 $ find (range 10)
-                fn (x) (> x 5)
-              assert= 6 $ find-index (range 10)
-                fn (x) (> x 5)
+              assert= (%some 6)
+                find (range 10)
+                  fn (x) (> x 5)
+              assert= (%some 6)
+                find-index (range 10)
+                  fn (x) (> x 5)
               assert= nil $ nth
                 dissoc
                   take ([] 1 2 3 4 5 6) 1
@@ -383,10 +387,12 @@
               assert= ([] 1 2)
                 .filter-not ([] 1 2 3 4)
                   fn (x) (> x 2)
-              assert= 0 $ .find-index ([] :a :b :c)
-                fn (x) (= x :a)
-              assert= nil $ .find-index ([] :a :b :c)
-                fn (x) (= x :d)
+              assert= (%some 0)
+                .find-index ([] :a :b :c)
+                  fn (x) (= x :a)
+              assert= (%none)
+                .find-index ([] :a :b :c)
+                  fn (x) (= x :d)
               assert= 9 $ .find-last ([] 1 3 5 7 9)
                 fn (x) (> x 5)
               assert= nil $ .find-last ([] 1 3 5 7 9)
@@ -415,8 +421,10 @@
                   0 $ [] 3
                 .group-by ([] 1 2 3 4)
                   fn (x) (assert-type x 'Number) (.rem x 3)
-              assert= 0 $ .index-of ([] :a :b :c :d) :a
-              assert= nil $ .index-of ([] :a :b :c :d) :e
+              assert= (%some 0)
+                .index-of ([] :a :b :c :d) :a
+              assert= (%none)
+                .index-of ([] :a :b :c :d) :e
               assert= ([] 1 :sep 2 :sep 3 :sep 4 :sep 5)
                 .join ([] 1 2 3 4 5) :sep
               assert= ([] 4 5 6)
