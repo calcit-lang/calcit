@@ -81,8 +81,8 @@
                     if (some? old)
                       assoc (assoc old :defs next-defs) :ns next-ns
                       %{} FileEntry (:defs next-defs) (:ns next-ns)
-                compact-path $ get-env |SYNC_COMPACT |compact.cirru
-                calcit-path $ get-env |SYNC_CALCIT |calcit.cirru
+                compact-path $ option:unwrap-or (get-env |SYNC_COMPACT) |compact.cirru
+                calcit-path $ option:unwrap-or (get-env |SYNC_CALCIT) |calcit.cirru
                 compact $ parse-cirru-edn (read-file compact-path)
                 detailed $ parse-cirru-edn (read-file calcit-path)
                 now $ unix-time-ms

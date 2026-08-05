@@ -26,8 +26,10 @@
         |test-compare $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-compare ()
-              assert= 4 $ max ([] 1 2 3 4)
-              assert= 1 $ min ([] 1 2 3 4)
+              assert= (%some 4)
+                max $ [] 1 2 3 4
+              assert= (%some 1)
+                min $ [] 1 2 3 4
               assert-detect identity $ /= 1 2
               assert= (&compare 1 |1) -1
               assert= (&compare |1 1) 1
@@ -113,7 +115,6 @@
               assert= (/ 2) 0.5
               assert-detect identity $ < 1 2 3 4 5
               assert-detect identity $ > 10 8 6 4
-              assert-detect empty? nil
               assert-detect empty? $ []
               do true
           :examples $ []

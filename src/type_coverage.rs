@@ -141,6 +141,8 @@ impl WeakTypeKind {
 pub enum WeakTypeIntent {
   Unresolved,
   IntentionalJsFfi,
+  DeclaredUnit,
+  DeclaredOptional,
 }
 
 impl WeakTypeIntent {
@@ -148,11 +150,13 @@ impl WeakTypeIntent {
     match self {
       Self::Unresolved => "unresolved",
       Self::IntentionalJsFfi => "intentional-js-ffi",
+      Self::DeclaredUnit => "declared-unit",
+      Self::DeclaredOptional => "declared-optional",
     }
   }
 
   pub fn all() -> BTreeSet<Self> {
-    BTreeSet::from([Self::Unresolved, Self::IntentionalJsFfi])
+    BTreeSet::from([Self::Unresolved, Self::IntentionalJsFfi, Self::DeclaredUnit, Self::DeclaredOptional])
   }
 }
 
@@ -202,9 +206,11 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
     let intent = match item {
       "unresolved" => WeakTypeIntent::Unresolved,
       "intentional-js-ffi" => WeakTypeIntent::IntentionalJsFfi,
+      "declared-unit" => WeakTypeIntent::DeclaredUnit,
+      "declared-optional" => WeakTypeIntent::DeclaredOptional,
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, declared-unit, declared-optional"
         ));
       }
     };
@@ -212,7 +218,10 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
   }
 
   if selected.is_empty() {
-    return Err("Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi".to_owned());
+    return Err(
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, declared-unit, declared-optional"
+        .to_owned(),
+    );
   }
 
   Ok(selected)
@@ -304,17 +313,25 @@ fn scan_schema_dynamic_annotation(
     | CalcitTypeAnnotation::Set(inner)
     | CalcitTypeAnnotation::Ref(inner)
     | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Optional(inner) => {
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner) => {
       let segment = match annotation {
         CalcitTypeAnnotation::List(_) => "list-item",
         CalcitTypeAnnotation::Set(_) => "set-item",
         CalcitTypeAnnotation::Ref(_) => "ref-item",
         CalcitTypeAnnotation::Variadic(_) => "variadic-item",
         CalcitTypeAnnotation::Optional(_) => "optional-item",
+        CalcitTypeAnnotation::JsNullish(_) => "js-nullish-item",
         _ => unreachable!("composite item annotation should be covered by the match arm"),
       };
       let nested_detail = extend_schema_dynamic_detail(detail, segment);
+      let occurrence_start = occurrences.len();
       scan_schema_dynamic_annotation(inner, &format!("{path}.item"), &nested_detail, occurrences);
+      if matches!(annotation, CalcitTypeAnnotation::JsNullish(_)) {
+        for occurrence in &mut occurrences[occurrence_start..] {
+          occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
+        }
+      }
     }
     CalcitTypeAnnotation::Map(key, value) => {
       let key_detail = extend_schema_dynamic_detail(detail, "map-key");
@@ -350,7 +367,20 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   }
 
   if occurrence.kind == WeakTypeKind::CodeNil {
-    return "Use `:: :optional <type>` when nil is part of the contract; otherwise remove the nil-producing branch.";
+    return match occurrence.intent {
+      WeakTypeIntent::DeclaredUnit if occurrence.detail.contains("unit-macro") => {
+        "Keep the Unit return contract, but remove explicit `;nil` when an empty body or final Unit-returning effect already expresses no result."
+      }
+      WeakTypeIntent::DeclaredUnit => {
+        "Keep the Unit return contract and remove explicit nil when an empty body or final Unit-returning effect already expresses no result."
+      }
+      WeakTypeIntent::DeclaredOptional => {
+        "Keep Optional only at a compatibility/FFI boundary; migrate application-level absence to Option and failures with details to Result."
+      }
+      _ => {
+        "Declare Unit for a no-value result and remove explicit nil/`;nil` when possible; use Option/Result for application absence or failure."
+      }
+    };
   }
   if occurrence.detail.contains("legacy-any") {
     return "Migrate legacy `:any` to canonical `:dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
@@ -378,7 +408,15 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
     return "The value stays dynamic at an explicit boundary; typed callers must validate or convert it before relying on methods or generic relations.";
   }
   if occurrence.kind == WeakTypeKind::CodeNil {
-    return "Implicit nil weakens branch and return inference unless the surrounding contract is explicitly optional.";
+    return match occurrence.intent {
+      WeakTypeIntent::DeclaredUnit => {
+        "The explicit nil form is confined to a declared Unit return, but may still be redundant source-level noise."
+      }
+      WeakTypeIntent::DeclaredOptional => {
+        "The nil is covered by an Optional return contract but remains compatibility debt until callers use a nominal Option/Result API."
+      }
+      _ => "A nil form weakens branch and return inference because no Unit or Optional return contract covers this position.",
+    };
   }
   if occurrence.detail.contains("fn-arg") || occurrence.detail.contains("fn-return") {
     return "The callback contract loses parameter/return checking and prevents reliable variance or generic substitution.";
@@ -464,6 +502,45 @@ fn classify_code_nil(parent: Option<&WeakCodeParent>) -> &'static str {
   }
 }
 
+fn nil_return_intent(annotation: &CalcitTypeAnnotation) -> WeakTypeIntent {
+  let return_type = match annotation {
+    CalcitTypeAnnotation::Fn(fn_annotation) => fn_annotation.return_type.as_ref(),
+    other => other,
+  };
+  match return_type {
+    CalcitTypeAnnotation::Unit => WeakTypeIntent::DeclaredUnit,
+    CalcitTypeAnnotation::Optional(_) => WeakTypeIntent::DeclaredOptional,
+    CalcitTypeAnnotation::JsNullish(_) => WeakTypeIntent::IntentionalJsFfi,
+    _ => WeakTypeIntent::Unresolved,
+  }
+}
+
+fn child_is_return_position(
+  is_code_root: bool,
+  parent_is_return_position: bool,
+  head: Option<&str>,
+  child_index: usize,
+  child_count: usize,
+) -> bool {
+  if !parent_is_return_position {
+    return false;
+  }
+  if is_code_root {
+    return match head {
+      Some("defn" | "defmacro") => child_index >= 3 && child_index + 1 == child_count,
+      Some("fn" | "macro") => child_index >= 2 && child_index + 1 == child_count,
+      Some("def") => child_index == 2,
+      _ => false,
+    };
+  }
+  match head {
+    Some("if") => matches!(child_index, 2 | 3),
+    Some("let" | "&let") => child_index >= 2 && child_index + 1 == child_count,
+    Some("do") => child_index >= 1 && child_index + 1 == child_count,
+    _ => false,
+  }
+}
+
 fn code_declares_embedded_type_schema(code: &Cirru) -> bool {
   matches!(
     code,
@@ -477,6 +554,7 @@ fn scan_cirru_weak_types(
   root: &str,
   path: &mut Vec<usize>,
   parent: Option<&WeakCodeParent>,
+  nil_return_intent: Option<WeakTypeIntent>,
   selected: &BTreeSet<WeakTypeKind>,
   occurrences: &mut Vec<WeakTypeOccurrence>,
 ) {
@@ -510,6 +588,9 @@ fn scan_cirru_weak_types(
           weak_type_detail(WeakTypeKind::CodeNil, classify_code_nil(parent)),
           format_cirru_path(root, path),
         );
+        if let (Some(intent), Some(occurrence)) = (nil_return_intent, occurrences.last_mut()) {
+          occurrence.intent = intent;
+        }
       }
     }
     Cirru::List(items) => {
@@ -517,13 +598,36 @@ fn scan_cirru_weak_types(
         Cirru::Leaf(text) => Some(text.to_string()),
         _ => None,
       });
+      if root == "code" && selected.contains(&WeakTypeKind::CodeNil) && matches!(head.as_deref(), Some(";nil")) {
+        push_weak_type_occurrence(
+          occurrences,
+          WeakTypeKind::CodeNil,
+          weak_type_detail(WeakTypeKind::CodeNil, &format!("unit-macro:{}", classify_code_nil(parent))),
+          format_cirru_path(root, path),
+        );
+        if let Some(occurrence) = occurrences.last_mut() {
+          // `;nil` is the explicit source-level Unit marker. Unlike a raw nil
+          // literal it cannot represent optional application data, including
+          // when it appears inside a macro-generated branch.
+          occurrence.intent = WeakTypeIntent::DeclaredUnit;
+        }
+      }
       for (idx, item) in items.iter().enumerate() {
         path.push(idx);
         let next_parent = WeakCodeParent {
           head: head.clone(),
           child_index: idx,
         };
-        scan_cirru_weak_types(item, root, path, Some(&next_parent), selected, occurrences);
+        let child_return_position = child_is_return_position(
+          root == "code" && path.len() == 1,
+          nil_return_intent.is_some(),
+          head.as_deref(),
+          idx,
+          items.len(),
+        );
+        let child_nil_intent =
+          nil_return_intent.filter(|intent| matches!(intent, WeakTypeIntent::DeclaredUnit) || child_return_position);
+        scan_cirru_weak_types(item, root, path, Some(&next_parent), child_nil_intent, selected, occurrences);
         path.pop();
       }
     }
@@ -565,12 +669,20 @@ pub fn analyze_weak_types_entry(
       && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&entry.schema.to_type_edn())
     {
       let mut path = vec![];
-      scan_cirru_weak_types(&schema_cirru, "schema", &mut path, None, selected, &mut occurrences);
+      scan_cirru_weak_types(&schema_cirru, "schema", &mut path, None, None, selected, &mut occurrences);
     }
   }
 
   let mut code_path = vec![];
-  scan_cirru_weak_types(&entry.code, "code", &mut code_path, None, selected, &mut occurrences);
+  scan_cirru_weak_types(
+    &entry.code,
+    "code",
+    &mut code_path,
+    None,
+    Some(nil_return_intent(entry.schema.as_ref())),
+    selected,
+    &mut occurrences,
+  );
 
   let has_js_ffi_feature = matches!(
     entry.schema.as_ref(),
@@ -765,9 +877,11 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={}",
+    "- intents: unresolved={} intentional-js-ffi={} declared-unit={} declared-optional={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
-    intent_count.get("intentional-js-ffi").copied().unwrap_or(0)
+    intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
+    intent_count.get("declared-unit").copied().unwrap_or(0),
+    intent_count.get("declared-optional").copied().unwrap_or(0)
   );
   let unresolved_dynamic = rows
     .iter()
@@ -785,6 +899,24 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     let _ = writeln!(
       out,
       "- next: rerun without `--summary-only`; prefer concrete types, `:generics` type variables, or trait `:where` bounds before retaining a documented dynamic boundary."
+    );
+  }
+  let nil_debt = rows
+    .iter()
+    .flat_map(|row| row.occurrences.iter())
+    .filter(|occurrence| {
+      occurrence.kind == WeakTypeKind::CodeNil
+        && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredOptional)
+    })
+    .count();
+  if nil_debt > 0 {
+    let _ = writeln!(
+      out,
+      "- agent-note: {nil_debt} nil occurrence(s) are unresolved or covered only by Optional compatibility contracts."
+    );
+    let _ = writeln!(
+      out,
+      "- next: filter `--only code-nil --intent unresolved,declared-optional`; declare Unit and remove redundant nil/`;nil` for no-value returns, then prefer Option/Result for application absence or failure."
     );
   }
   if options.summary_only {
@@ -2031,7 +2163,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
   for kind in ["schema-dynamic", "code-dynamic", "code-nil"] {
     kinds.entry(kind).or_insert(0);
   }
-  for intent in ["unresolved", "intentional-js-ffi"] {
+  for intent in ["unresolved", "intentional-js-ffi", "declared-unit", "declared-optional"] {
     intents.entry(intent).or_insert(0);
   }
 
@@ -2064,19 +2196,35 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         && matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::CodeDynamic)
     })
     .count();
-  let diagnostics = if unresolved_dynamic == 0 {
-    vec![]
-  } else {
-    vec![serde_json::json!({
+  let nil_debt = rows
+    .iter()
+    .flat_map(|row| row.occurrences.iter())
+    .filter(|occurrence| {
+      occurrence.kind == WeakTypeKind::CodeNil
+        && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredOptional)
+    })
+    .count();
+  let mut diagnostics = vec![];
+  if unresolved_dynamic > 0 {
+    diagnostics.push(serde_json::json!({
       "code": "W_DYNAMIC_TYPE_DEBT",
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{unresolved_dynamic} unresolved dynamic slot(s) erase static relationships used by generic binding, callback checking, and method specialization."),
       "suggestion": "Prefer concrete types; use `:generics` when positions share a type and trait `:where` bounds when only capabilities are required. Keep `:dynamic` only at documented boundaries.",
-    })]
-  };
+    }));
+  }
+  if nil_debt > 0 {
+    diagnostics.push(serde_json::json!({
+      "code": "W_NIL_TYPE_DEBT",
+      "phase": "analysis",
+      "severity": "warning",
+      "message": format!("{nil_debt} nil occurrence(s) are unresolved or covered only by Optional compatibility contracts."),
+      "suggestion": "Declare Unit and remove redundant nil/`;nil` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
+    }));
+  }
   let envelope = serde_json::json!({
-    "schema_version": 1,
+    "schema_version": 2,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {

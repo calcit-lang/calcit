@@ -143,6 +143,40 @@ pub(super) fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr
   ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
 }
 
+/// Allocate a nominal `Option` tuple using the same memory layout as `%::`.
+///
+/// `payload_local = None` emits `%none`; `Some(local)` emits `%some local`.
+/// Keeping this helper at the WASM boundary prevents optimized emitters from
+/// leaking their internal nil / numeric sentinel representation.
+pub(super) fn emit_option_tuple(ctx: &mut WasmGenCtx, payload_local: Option<u32>) -> Result<(), String> {
+  let tag_name = if payload_local.is_some() { "some" } else { "none" };
+  let tag_id = *ctx
+    .tag_index
+    .get(tag_name)
+    .ok_or_else(|| format!("Option tag missing from WASM tag index: {tag_name}"))? as f64;
+  let payload_count = usize::from(payload_local.is_some());
+  let ptr_local = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, ((2 + payload_count) * 8) as i32, ptr_local, "tuple");
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(payload_count as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(f64_const(tag_id));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+
+  if let Some(payload) = payload_local {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    ctx.emit(Instruction::LocalGet(payload));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+  }
+
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
 // ===========================================================================
 // Shared data-structure helpers
 // ===========================================================================

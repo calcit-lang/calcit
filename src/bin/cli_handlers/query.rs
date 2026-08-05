@@ -776,6 +776,22 @@ mod type_query_tests {
   use super::*;
   use crate::cli_handlers::test_support::TestProject;
 
+  fn on_cli_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+      .name("calcit-query-test".into())
+      // Core preprocessing and context rendering are recursive; mirror the
+      // CLI worker instead of relying on Rust's smaller test-thread stack.
+      .stack_size(16 * 1024 * 1024)
+      .spawn(f)
+      .expect("query test thread should start")
+      .join()
+      .expect("query test thread should finish")
+  }
+
+  fn prepare_program_for_type_query_on_cli_stack(snapshot: snapshot::Snapshot) {
+    on_cli_stack(move || prepare_program_for_type_query(&snapshot)).expect("static type metadata should prepare");
+  }
+
   #[test]
   fn parses_simple_type_tag_without_treating_it_as_a_call() {
     let annotation = parse_type_annotation_query(":number").expect("number type should parse");
@@ -950,7 +966,7 @@ mod type_query_tests {
   fn number_type_query_uses_static_dispatch_metadata() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
-    prepare_program_for_type_query(&snapshot).expect("static type metadata should prepare");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
 
     let methods = runner::preprocess::static_method_descriptors(&CalcitTypeAnnotation::Number)
       .expect("number method metadata should resolve")
@@ -1008,17 +1024,19 @@ mod type_query_tests {
   fn special_builtin_context_preserves_examples_and_intent() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
-    let meta = lookup_special_builtin_query_meta("calcit.core", "to-js-data")
-      .expect("metadata lookup should work")
-      .expect("to-js-data metadata should exist");
-    let envelope = build_special_builtin_context(
-      &snapshot,
-      "calcit.core",
-      "to-js-data",
-      meta,
-      &context_test_options("calcit.core/to-js-data"),
-    )
-    .expect("context should build");
+    let envelope = on_cli_stack(move || {
+      let meta = lookup_special_builtin_query_meta("calcit.core", "to-js-data")
+        .expect("metadata lookup should work")
+        .expect("to-js-data metadata should exist");
+      build_special_builtin_context(
+        &snapshot,
+        "calcit.core",
+        "to-js-data",
+        meta,
+        &context_test_options("calcit.core/to-js-data"),
+      )
+      .expect("context should build")
+    });
 
     assert_eq!(envelope.command, "query.context");
     assert_eq!(envelope.data.coverage, "intentional-dynamic");
@@ -1043,29 +1061,30 @@ mod type_query_tests {
   fn regular_context_carries_snapshot_revision_and_tree_location() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
-    let entry = snapshot
-      .files
-      .get("calcit.core")
-      .and_then(|file| file.defs.get("map"))
-      .expect("core map should exist");
-    let envelope = build_regular_context(&snapshot, "calcit.core", "map", entry, &context_test_options("calcit.core/map"))
-      .expect("context should build");
+    let (envelope, expected_revision) = on_cli_stack(move || {
+      let entry = snapshot
+        .files
+        .get("calcit.core")
+        .and_then(|file| file.defs.get("map"))
+        .expect("core map should exist");
+      let expected_revision = snapshot::definition_revision(entry).expect("revision should compute");
+      let envelope = build_regular_context(&snapshot, "calcit.core", "map", entry, &context_test_options("calcit.core/map"))
+        .expect("context should build");
+      (envelope, expected_revision)
+    });
 
     assert_eq!(envelope.data.id, "calcit.core/map");
     assert_eq!(envelope.data.source, "core");
     assert_eq!(envelope.data.code.root, "code");
     assert!(envelope.data.code.nodes > 0);
-    assert_eq!(
-      envelope.revision,
-      snapshot::definition_revision(entry).expect("revision should match")
-    );
+    assert_eq!(envelope.revision, expected_revision);
   }
 
   #[test]
   fn project_function_schema_argument_resolves_source_backed_struct() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_snapshot("calcit/test.cirru").expect("test snapshot should load");
-    prepare_program_for_type_query(&snapshot).expect("static metadata should prepare");
+    prepare_program_for_type_query_on_cli_stack(snapshot.clone());
     let schema = program::lookup_def_schema("test-record.main", "sum-point");
     let CalcitTypeAnnotation::Fn(annotation) = schema.as_ref() else {
       panic!("sum-point should have a function schema");

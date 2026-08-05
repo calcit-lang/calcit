@@ -38,9 +38,9 @@
                     [] ns-name $ %{} FileEntry
                       :ns $ make-code-entry ns-form
                       :defs defs
-                source-dir $ get-env |BUNDLE_SRC |src
-                config-path $ get-env |BUNDLE_CONFIG |deps.cirru
-                output-path $ get-env |BUNDLE_OUT |calcit.cirru
+                source-dir $ option:unwrap-or (get-env |BUNDLE_SRC) |src
+                config-path $ option:unwrap-or (get-env |BUNDLE_CONFIG) |deps.cirru
+                output-path $ option:unwrap-or (get-env |BUNDLE_OUT) |calcit.cirru
                 package-data $ parse-cirru-edn (read-file config-path)
                 source-paths $ filter (read-dir source-dir true)
                   fn (path) (ends-with? path |.cirru)

@@ -1033,6 +1033,7 @@ fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Res
 mod tests {
   use super::*;
   use calcit::calcit::{CalcitTypeAnnotation, SchemaKind};
+  use std::collections::BTreeSet;
   use std::fs;
 
   #[test]
@@ -1453,6 +1454,7 @@ mod tests {
   fn parse_weak_type_intents_rejects_unknown_values() {
     let err = type_coverage::parse_weak_type_intents("unresolved,guessed").expect_err("unknown intents should fail");
     assert!(err.contains("guessed"), "err: {err}");
+    assert!(type_coverage::parse_weak_type_intents("declared-unit,declared-optional").is_ok());
   }
 
   #[test]
@@ -1516,7 +1518,7 @@ mod tests {
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
-        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
         features: Arc::new(HashSet::new()),
@@ -1562,11 +1564,20 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
+    assert_eq!(weak_value["schema_version"], 2);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
     assert!(weak_value["data"]["definitions"][0]["occurrences"][0]["impact"].is_string());
     assert_eq!(weak_value["diagnostics"][0]["code"], "W_DYNAMIC_TYPE_DEBT");
+    assert!(
+      weak_value["diagnostics"]
+        .as_array()
+        .expect("diagnostics should be an array")
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "W_NIL_TYPE_DEBT")
+    );
+    assert_eq!(weak_value["data"]["summary"]["intents"]["declared-unit"], 0);
     assert_eq!(check_value["diagnostics"][0]["code"], "W_TYPE_COVERAGE_GAPS");
 
     let mut check_summary_options = check_options.clone();
@@ -1647,6 +1658,134 @@ mod tests {
     assert!(details.contains(&"schema-dynamic:rest"), "details: {details:?}");
     assert!(details.contains(&"code-nil:if-then"), "details: {details:?}");
     assert!(details.contains(&"code-nil:if-else"), "details: {details:?}");
+  }
+
+  #[test]
+  fn analyze_weak_types_classifies_nil_inside_unit_definitions_as_declared_unit() {
+    let unit_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("unit-step"),
+        list(vec![]),
+        list(vec![leaf("do"), leaf("nil"), leaf("nil")]),
+      ]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))
+      .into(),
+    };
+    let unit_row = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "unit-step",
+      &unit_entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+    )
+    .expect("unit nil occurrences");
+    assert_eq!(unit_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredUnit);
+    assert_eq!(
+      unit_row.occurrences[1].intent,
+      type_coverage::WeakTypeIntent::DeclaredUnit,
+      "all nil forms inside a Unit definition inherit its no-value contract"
+    );
+
+    let single_do_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("single-unit-step"),
+        list(vec![]),
+        list(vec![leaf("do"), leaf("nil")]),
+      ]),
+      schema: unit_entry.schema.clone(),
+    };
+    let single_do_row = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "single-unit-step",
+      &single_do_entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+    )
+    .expect("single-expression do nil occurrence");
+    assert_eq!(
+      single_do_row.occurrences[0].intent,
+      type_coverage::WeakTypeIntent::DeclaredUnit,
+      "the sole expression in do is its return position"
+    );
+
+    let unit_macro_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![leaf("defn"), leaf("explicit-unit"), list(vec![]), list(vec![leaf(";nil")])]),
+      schema: unit_entry.schema.clone(),
+    };
+    let unit_macro_row = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "explicit-unit",
+      &unit_macro_entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+    )
+    .expect("explicit ;nil occurrence");
+    assert_eq!(unit_macro_row.occurrences[0].detail, "code-nil:unit-macro:literal");
+    assert_eq!(unit_macro_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredUnit);
+
+    let empty_unit_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![leaf("defn"), leaf("implicit-unit"), list(vec![])]),
+      schema: unit_entry.schema.clone(),
+    };
+    assert!(
+      type_coverage::analyze_weak_types_entry(
+        "app.main",
+        "implicit-unit",
+        &empty_unit_entry,
+        &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+      )
+      .is_none(),
+      "an empty Unit function should not need an explicit nil form"
+    );
+
+    let optional_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("lookup"),
+        list(vec![]),
+        list(vec![leaf("if"), leaf("found?"), leaf("1"), leaf("nil")]),
+      ]),
+      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![],
+        return_type: Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number))),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))
+      .into(),
+    };
+    let optional_row = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "lookup",
+      &optional_entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+    )
+    .expect("optional nil occurrence");
+    assert_eq!(optional_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredOptional);
   }
 
   #[test]

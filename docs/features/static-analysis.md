@@ -57,6 +57,9 @@ cr analyze weak-types --ns app.main
 # Focus only on unresolved type debt
 cr analyze weak-types --ns app.main --intent unresolved
 
+# Focus on nil migration debt while excluding declared Unit returns
+cr analyze weak-types --ns app.main --only code-nil --intent unresolved,declared-optional
+
 # Inspect explicitly permitted JS FFI dynamic boundaries
 cr analyze weak-types --ns app.main --intent intentional-js-ffi
 
@@ -75,15 +78,19 @@ cr analyze check-examples --ns app.main --def calculate-total
 cr query type-at app.main/calculate-total --path code@3.2 --format json
 ```
 
-`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt also emits `W_DYNAMIC_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved debt.
+`check-types` treats nested dynamic slots such as bare `:ref`, `:list`, or `:map` as partial coverage and includes actionable `[W_SCHEMA_DYNAMIC]` entries in `schema_issues`. When partial/none definitions exist, human output adds an `agent-note` and JSON emits `W_TYPE_COVERAGE_GAPS`. `weak-types --format json` reports the exact Snapshot/schema path plus an `impact` and `suggestion` for every occurrence; unresolved dynamic debt emits `W_DYNAMIC_TYPE_DEBT`, while unresolved or compatibility-Optional nil debt emits `W_NIL_TYPE_DEBT`. Definitions marked with the explicit `:js-ffi` feature remain classified as intentional boundaries rather than ordinary unresolved dynamic debt.
 
-An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. `nil` occurrences remain unresolved because an FFI capability does not imply that every nullable branch is intentional.
+An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. The feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
+
+For `code-nil`, the report includes both raw `nil` and the explicit `;nil` Unit marker. Every nil form inside a function declared to return `Unit` is classified as `declared-unit`; `;nil` is also always classified as explicit Unit, including inside generated macro branches. For legacy `Optional<T>`, only structurally proven return positions inherit `declared-optional`; embedded nil values remain unresolved. `declared-unit` is excluded from migration debt, while `declared-optional` remains visible so application APIs move to `Option` or `Result`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-optional` and requires no findings.
 
 For one definition, `cr query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 
 For one expression, `cr query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
 Both analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
+
+`analyze.weak-types` uses protocol `schema_version: 2` because nil intent classes and `W_NIL_TYPE_DEBT` extend previously closed machine-readable enums. Consumers should reject v1 when they require the nil-contract fields rather than accepting the old version and failing on new intent values.
 
 Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, and `deftrait` carry type information in their declarations, so they are classified as data declarations instead of receiving a false top-level `schema-dynamic` finding.
 
@@ -224,11 +231,15 @@ let
 
 ### Complex Types
 
-#### Optional Types
+#### Legacy Optional Types
 
-Represent values that can be `nil`. Use the `:: 'Optional <type>` syntax:
+`Optional<T>` is parsed only for legacy core/internal compatibility. Public
+function schemas reject it; use `Option<T>`, `Result<T,E>`, or `Unit`. JavaScript
+`null`/`undefined` uses the distinct `JsNullish<T>` boundary.
 
-```cirru
+Existing migration tools still understand the old `:: 'Optional <type>` syntax:
+
+```cirru.no-check
 let
     greet $ fn (name)
       hint-fn $ {}
@@ -250,7 +261,7 @@ let
   sum 1 2 3
 ```
 
-A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant; for example, a callback accepting `optional<T>` can be used where the caller only supplies `T`.
+A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant. Optional callback examples describe legacy compatibility and should not be introduced in public schemas.
 
 `:any` is accepted only as a compatibility spelling and is parsed as `:dynamic`. Schema serialization, generated metadata, type queries, and diagnostics use `:dynamic`; new code should not introduce `:any`.
 
@@ -298,7 +309,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      get u :name
+      option:unwrap $ get u :name
   get-name $ %{} User (:name |Alice)
 ```
 
@@ -466,19 +477,22 @@ let
 
 **Note**: This is a development tool - remove it in production code. Returns `nil` at runtime.
 
-## Optional Types
+## Legacy Optional Types
 
-Calcit supports optional type annotations for nullable values:
+Calcit can read old Optional annotations for migration analysis, but new public
+function schemas must not declare them. Model absence with `Option`, failures
+with `Result`, effects with `Unit`, and JavaScript host nullability with
+`JsNullish`.
 
 Definition:
 
-```cirru
+```cirru.no-check
 defn find-user (id) (; May return nil if user not found) (println "|demo code")
 ```
 
 Schema on the namespace definition:
 
-```cirru
+```cirru.no-check
 :: :fn $ {}
   :args $ [] :dynamic
   :return $ :: :optional :record

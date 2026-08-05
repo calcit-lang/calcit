@@ -91,25 +91,27 @@ let
     ; => 4
     &tuple:params t
     ; => ([] 10 20)
-    &tuple:enum t
-    ; => nil (plain tuple, not from enum)
+    tuple-enum t
+    ; => (%none) (plain tuple, not from enum)
 ```
 
-`&tuple:enum` is the source-prototype API for tuples:
+`tuple-enum` is the source-prototype API for tuples:
 
-- If tuple is created from enum (`%::`), it returns that enum value.
-- If tuple is created as plain tuple (`::`), it returns `nil`.
+- If a tuple is created from an enum (`%::`), it returns `%some` with that enum definition.
+- If a tuple is created as a plain tuple (`::`), it returns `%none`.
+
+The nullable `&tuple:enum` primitive remains internal for core bootstrapping.
 
 ```cirru
 do
   let
       plain $ :: :point 10 20
-    nil? $ &tuple:enum plain
+    option:none? $ tuple-enum plain
     ; => true
   let
       ApiResult $ defenum ApiResult (:ok :number) (:err :string)
       ok $ %:: ApiResult :ok 1
-    assert= ApiResult $ &tuple:enum ok
+    assert= (%some ApiResult) $ tuple-enum ok
 ```
 
 ### Accurate Origin Check (Enum Eq)
@@ -118,7 +120,7 @@ do
 let
     ApiResult $ defenum ApiResult (:ok :number) (:err :string)
     x $ %:: ApiResult :ok 1
-  assert= (&tuple:enum x) ApiResult
+  assert= (tuple-enum x) (%some ApiResult)
 ```
 
 ### Complex Branching Example (Safe + Validation)
@@ -133,8 +135,8 @@ do
         %:: Result :ok 1
         %:: Result :err |bad
         :: :plain 42
-    if (nil? (&tuple:enum (&list:nth xs 2)))
-      if (= (&tuple:enum (&list:nth xs 0)) Result)
+    if (option:none? (tuple-enum (&list:nth xs 2)))
+      if (= (tuple-enum (&list:nth xs 0)) (%some Result))
         , |result-and-plain
         , |result-missing
       , |unexpected
@@ -191,6 +193,12 @@ list-match ([] :point 10 20)
   () |Empty
   (h tl) ([] h tl)
 ```
+
+The function forms `destruct-list`, `destruct-map`, `destruct-set`, and
+`destruct-str` return the nominal enums `ListDestruct<T>`,
+`MapDestruct<K,V>`, `SetDestruct<T>`, and `StringDestruct`. Their variants stay
+`:none` and `:some`, so existing `tag-match` branches keep the same shape while
+the schema now checks every payload.
 
 ## Enums as Tuples
 

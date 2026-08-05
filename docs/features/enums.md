@@ -97,7 +97,7 @@ let
     p $ %{} Point (:x 1) (:y 2)
     shape $ %:: Shape :point p
   assert-type shape Shape
-  assert= 1 $ get (&tuple:nth shape 1) :x
+  assert= 1 $ option:unwrap $ get (&tuple:nth shape 1) :x
 ```
 
 Applied generic structs also work in enum payloads:
@@ -112,7 +112,7 @@ let
       %{} Box $ :value 1
     boxed $ &tuple:nth value 1
   assert-type value $ :: 'Wrapped :number
-  assert= 1 $ :value boxed
+  assert= 1 $ option:unwrap $ :value boxed
 ```
 
 When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.
@@ -283,13 +283,13 @@ let
 
 ## Checking Enum Origin
 
-Use `&tuple:enum` to verify a tuple belongs to a specific enum:
+Use the Option-returning `tuple-enum` API to verify a tuple belongs to a specific enum:
 
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :number) (:err :string)
     x $ %:: ApiResult :ok 1
-  println $ = (&tuple:enum x) ApiResult
+  println $ = (tuple-enum x) (%some ApiResult)
   ; => true
 ```
 

@@ -90,7 +90,8 @@
         |test-foldl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-foldl ()
-              assert= 1 $ get ([] 1 2 3) 0
+              assert= (%some 1)
+                get ([] 1 2 3) 0
               assert= 6 $ foldl ([] 1 2 3) 0 &+
               assert=
                 + 1 2 3 4 $ + 5 6 7
@@ -173,18 +174,22 @@
               assert= (append a 4) ([] 1 2 3 4)
               assert= (conj a 4) ([] 1 2 3 4)
               assert= (conj a 4 5 6 7) ([] 1 2 3 4 5 6 7)
-              assert= 1 $ first a
-              assert= 3 $ last a
-              assert= nil $ first nil
-              assert= nil $ last nil
-              assert-detect nil? $ first ([])
-              assert-detect nil? $ last ([])
+              assert= (%some 1) (first a)
+              assert= (%some 3) (last a)
+              assert= (%none)
+                first $ []
+              assert= (%none)
+                last $ []
+              assert-detect option:some? $ first a
+              assert-detect option:none? $ last ([])
               assert= (rest a) ([] 2 3)
-              assert-detect nil? $ rest ([])
+              assert= ([])
+                rest $ []
               assert= ([])
                 rest $ [] 1
               assert= (butlast a) ([] 1 2)
-              assert-detect nil? $ butlast ([])
+              assert= ([])
+                butlast $ []
               assert= (range 0) ([])
               assert= (range 1) ([] 0)
               assert= (range 4) ([] 0 1 2 3)
@@ -305,15 +310,18 @@
               assert=
                 update (range 4) 11 $ \ + % 10
                 range 4
-              assert= 6 $ find (range 10)
-                fn (x) (> x 5)
-              assert= 6 $ find-index (range 10)
-                fn (x) (> x 5)
-              assert= nil $ nth
-                dissoc
-                  take ([] 1 2 3 4 5 6) 1
+              assert= (%some 6)
+                find (range 10)
+                  fn (x) (> x 5)
+              assert= (%some 6)
+                find-index (range 10)
+                  fn (x) (> x 5)
+              assert= (%none)
+                nth
+                  dissoc
+                    take ([] 1 2 3 4 5 6) 1
+                    , 0
                   , 0
-                , 0
           :examples $ []
           :schema $ :: 'Dynamic
         |test-match $ %{} :CodeEntry (:doc |)
@@ -383,31 +391,42 @@
               assert= ([] 1 2)
                 .filter-not ([] 1 2 3 4)
                   fn (x) (> x 2)
-              assert= 0 $ .find-index ([] :a :b :c)
-                fn (x) (= x :a)
-              assert= nil $ .find-index ([] :a :b :c)
-                fn (x) (= x :d)
-              assert= 9 $ .find-last ([] 1 3 5 7 9)
-                fn (x) (> x 5)
-              assert= nil $ .find-last ([] 1 3 5 7 9)
-                fn (x) (> x 10)
-              assert= 4 $ .find-last-index ([] 1 3 5 7 9)
-                fn (x) (> x 5)
-              assert= nil $ .find-last-index ([] 1 3 5 7 9)
-                fn (x) (> x 10)
-              assert= 3 $ .last-index-of ([] 1 1 2 1) 1
-              assert= nil $ .last-index-of ([] 1 1 2 1) 3
+              assert= (%some 0)
+                .find-index ([] :a :b :c)
+                  fn (x) (= x :a)
+              assert= (%none)
+                .find-index ([] :a :b :c)
+                  fn (x) (= x :d)
+              assert= (%some 9)
+                .find-last ([] 1 3 5 7 9)
+                  fn (x) (> x 5)
+              assert= (%none)
+                .find-last ([] 1 3 5 7 9)
+                  fn (x) (> x 10)
+              assert= (%some 4)
+                .find-last-index ([] 1 3 5 7 9)
+                  fn (x) (> x 5)
+              assert= (%none)
+                .find-last-index ([] 1 3 5 7 9)
+                  fn (x) (> x 10)
+              assert= (%some 3)
+                .last-index-of ([] 1 1 2 1) 1
+              assert= (%none)
+                .last-index-of ([] 1 1 2 1) 3
               assert= 10 $ .foldl ([] 1 2 3 4) 0 +
               assert=
                 {} (1 1) (2 2) (3 3)
                 frequencies $ [] 1 2 2 3 3 3
-              assert= :b $ .get ([] :a :b :c :d) 1
-              assert= :c $ .get-in
-                [] :a $ [] :b ([] :c)
-                [] 1 1 0
-              assert= nil $ .get-in
-                [] :a $ [] :b ([] :c)
-                [] 1 1 1
+              assert= (%some :b)
+                .get ([] :a :b :c :d) 1
+              assert= (%some :c)
+                .get-in
+                  [] :a $ [] :b ([] :c)
+                  [] 1 1 0
+              assert= (%none)
+                .get-in
+                  [] :a $ [] :b ([] :c)
+                  [] 1 1 1
               assert=
                 {}
                   1 $ [] 1 4
@@ -415,8 +434,10 @@
                   0 $ [] 3
                 .group-by ([] 1 2 3 4)
                   fn (x) (assert-type x 'Number) (.rem x 3)
-              assert= 0 $ .index-of ([] :a :b :c :d) :a
-              assert= nil $ .index-of ([] :a :b :c :d) :e
+              assert= (%some 0)
+                .index-of ([] :a :b :c :d) :a
+              assert= (%none)
+                .index-of ([] :a :b :c :d) :e
               assert= ([] 1 :sep 2 :sep 3 :sep 4 :sep 5)
                 .join ([] 1 2 3 4 5) :sep
               assert= ([] 4 5 6)
@@ -428,10 +449,18 @@
                 [] ([] 0 :a) ([] 1 :b) ([] 2 :c)
                 .map-indexed ([] :a :b :c)
                   fn (idx x) ([] idx x)
-              assert= 4 $ .max ([] 1 2 3 4)
-              assert= 1 $ .min ([] 1 2 3 4)
-              assert= :b $ .nth ([] :a :b :c :d) 1
-              assert= nil $ .nth ([] :a :b :c :d) 5
+              assert= (%some 4)
+                .max $ [] 1 2 3 4
+              assert= (%none)
+                .max $ []
+              assert= (%some 1)
+                .min $ [] 1 2 3 4
+              assert= (%none)
+                .min $ []
+              assert= (%some :b)
+                .nth ([] :a :b :c :d) 1
+              assert= (%none)
+                .nth ([] :a :b :c :d) 5
               assert= ([] 4 3 2 1)
                 .sort-by ([] 1 2 3 4) negate
               assert=
@@ -467,7 +496,8 @@
                 .take ([] :a :b :c :d) 2
               assert= (&{} :a 1 :b 2 :c 3)
                 zipmap ([] :a :b :c) ([] 1 2 3)
-              assert= 1 $ .first ([] 1 2 3 4)
+              assert= (%some 1)
+                .first $ [] 1 2 3 4
               assert= ([] 2 3 4)
                 .rest $ [] 1 2 3 4
               assert= ([] :a :b)
@@ -480,7 +510,7 @@
           :code $ quote
             fn () $ &let
               xs $ [] 1 2 3 4
-              assert= 1 $ xs.get 0
+              assert= (%some 1) (xs.get 0)
               assert= true $ xs.any?
                 fn (x) (&> x 3)
           :examples $ []

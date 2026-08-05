@@ -878,6 +878,9 @@ fn format_schema_annotation(schema: &std::sync::Arc<CalcitTypeAnnotation>, conte
     }
     CalcitTypeAnnotation::List(inner) => format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("list<{t}>")),
     CalcitTypeAnnotation::Optional(inner) => format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("{t}?")),
+    CalcitTypeAnnotation::JsNullish(inner) => {
+      format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("js-nullish<{t}>"))
+    }
     _ => {
       if let Some(st) = schema.resolve_to_struct() {
         return Some(format_struct_fields(&st, context_ns, depth));

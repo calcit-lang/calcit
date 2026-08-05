@@ -44,6 +44,15 @@ struct CheckContext<'a> {
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
 }
 
+fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
+  if actual_type.contains(":js-object") {
+    message.push_str(
+      "; JS FFI values stay opaque after JsNullish checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary",
+    );
+  }
+  message
+}
+
 fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
   if ctx.where_bounds.is_empty() {
     return;
@@ -147,7 +156,7 @@ impl<'a> CheckContext<'a> {
       .and_then(Calcit::get_location)
       .or_else(|| self.call_location.clone());
     gen_check_warning_code_at(
-      make_warning(arg_idx, expected_str, actual_str, expr_str),
+      append_js_ffi_type_hint(make_warning(arg_idx, expected_str, actual_str, expr_str), actual_str),
       self.warning_code,
       self.file_ns,
       warning_location,
@@ -233,7 +242,9 @@ pub(crate) fn check_proc_arg_types(
   }
 
   // Check argument count
-  let arity = signature.arity();
+  let Some(arity) = proc.arity() else {
+    return;
+  };
   let min_count = arity.min;
   let max_count = arity.max.unwrap_or(usize::MAX);
   let has_variadic = arity.max.is_none();
@@ -295,8 +306,8 @@ pub(crate) fn check_proc_arg_types(
     return;
   }
 
-  // Use the unified checker for Proc arg types. Proc's arg_types may have
-  // Optional wrappers and variadic markers handled inside the loop.
+  // Parameter omission is represented by Proc arity metadata. Optional<T>
+  // remains a value type here and must accept either T or nil.
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
@@ -304,19 +315,14 @@ pub(crate) fn check_proc_arg_types(
       break;
     }
 
-    let base_type = match expected_type.as_ref() {
-      CalcitTypeAnnotation::Optional(inner) => inner,
-      _ => expected_type,
-    };
-
-    if matches!(base_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings)
+      && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
     {
-      let expected_str = base_type.as_ref().to_brief_string();
+      let expected_str = expected_type.as_ref().to_brief_string();
       let actual_str = actual_type.as_ref().to_brief_string();
       let warning_location = arg.get_location().or_else(|| call_location.clone());
       gen_check_warning_code_at(
@@ -547,7 +553,10 @@ pub(crate) fn check_function_return_type(
     let expected_str = declared_return_type.as_ref().to_brief_string();
     let actual_str = actual_type.as_ref().to_brief_string();
     gen_check_warning_code(
-      format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
+      append_js_ffi_type_hint(
+        format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
+        &actual_str,
+      ),
       "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
       check_warnings,
@@ -573,6 +582,13 @@ mod tests {
       location: None,
       type_info,
     })
+  }
+
+  #[test]
+  fn js_ffi_mismatches_include_boundary_guidance() {
+    let message = append_js_ffi_type_hint("type mismatch".to_owned(), "js-nullish<:js-object>");
+    assert!(message.contains("stay opaque after JsNullish checks"));
+    assert!(message.contains("unsafe-coerce"));
   }
 
   #[test]

@@ -15,12 +15,16 @@
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy
-              fn (_x) nil
+              fn $ _x
           :examples $ []
           :schema $ :: 'Dynamic
         |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait ResultTrait $ .dummy :fn
+            deftrait ResultTrait $ .dummy
+              :: :fn $ {}
+                :generics $ [] 'T
+                :args $ [] 'T
+                :return 'Unit
           :examples $ []
           :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
@@ -30,9 +34,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |test-invalid-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-tag () (println "|  Testing invalid tag detection...") (; Create a valid enum tuple then corrupt its tag)

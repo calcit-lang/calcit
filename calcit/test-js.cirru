@@ -84,7 +84,7 @@
               hint-fn $ {} (:async true)
               let
                   a $ {} (:a 1)
-                  b $ :a a
+                  b $ option:unwrap (:a a)
                   ret $ js-await
                     case-default b
                       new js/Promise $ fn (resolve _reject)
@@ -169,14 +169,14 @@
           :code $ quote
             fn ()
               js/console.log $ js/Math.pow 4 4
-              js/console.log $ * js/Math.PI 2
+              js/console.log $ * (unsafe-coerce js/Math.PI Number) 2
               when
                 = |number $ js/typeof 1
                 js/console.log "|is a Number"
-              .!log js/console |demo
-              js/console.log "|Dates in difference syntax" $ .!now js/Date
-              js/console.log $ .-PI js/Math
-              js/console.log $ aget js/Math |PI
+              .!log (unsafe-coerce js/console JsObject) |demo
+              js/console.log "|Dates in difference syntax" $ .!now (unsafe-coerce js/Date JsObject)
+              js/console.log $ .-PI (unsafe-coerce js/Math JsObject)
+              js/console.log $ aget (unsafe-coerce js/Math JsObject) |PI
               let
                   a js/{}
                 aset a |name |demo

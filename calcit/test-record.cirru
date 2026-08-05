@@ -121,7 +121,7 @@
                 println |EDN: data
                 assert= true $ any? (&record:impls data)
                   fn (impl)
-                    = (&impl:origin impl) BirdTrait
+                    = (impl-origin impl) (%some BirdTrait)
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1
@@ -181,10 +181,10 @@
                 kitty $ %{} Cat (:name |kitty) (:color :red)
                 assert= :Cat $ &record:get-name kitty
                 assert= :red $ &record:get kitty :color
-                assert= true $ = (&record:struct kitty) Cat
-                assert= true $ struct? (&record:struct kitty)
+                assert= true $ = (record-struct kitty) Cat
+                assert= true $ struct? (record-struct kitty)
                 assert= true $ &record:matches? kitty
-                  %{} (&record:struct kitty) (:name |kitty) (:color :red)
+                  %{} (record-struct kitty) (:name |kitty) (:color :red)
                 assert= (&record:to-map kitty) (&{} :name |kitty :color :red)
                 assert= 2 $ &record:count kitty
                 assert=
@@ -218,13 +218,13 @@
                   p1 $ %{}? Person (:name |Chen)
                   p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
                   p3 $ %{}? Person (:age 31)
-                assert= |Chen $ get p1 :name
-                assert= nil $ get p1 :age
-                assert= nil $ get p1 :position
-                assert= 20 $ get p2 :age
-                assert= nil $ get p3 :name
-                assert= 31 $ get p3 :age
-                assert= nil $ get p3 :position
+                assert= (%some |Chen) (get p1 :name)
+                assert= (%some nil) (get p1 :age)
+                assert= (%some nil) (get p1 :position)
+                assert= (%some 20) (get p2 :age)
+                assert= (%some nil) (get p3 :name)
+                assert= (%some 31) (get p3 :age)
+                assert= (%some nil) (get p3 :position)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -267,6 +267,7 @@
                 assert= |LagopusA $ :name l1
                 let
                     l2 $ l1 .rename |LagopusB
+                  assert-type l2 Lagopus
                   assert= |LagopusB $ :name l2
           :examples $ []
           :schema $ :: 'Fn
@@ -281,28 +282,29 @@
                   p0 $ &%{} Person :name nil :age nil :position nil
                   p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                   c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
-                assert= true $ = (&record:struct p0) Person
-                assert= nil $ get p0 :age
-                assert= nil $ get p0 :name
-                assert= nil $ get p0 :position
-                assert= 20 $ get p1 :age
-                assert= 20 $ get p2 :age
-                assert= 23 $ get p3 :age
+                assert= true $ = (record-struct p0) Person
+                assert= (%some nil) (get p0 :age)
+                assert= (%some nil) (get p0 :name)
+                assert= (%some nil) (get p0 :position)
+                assert= (%some 20) (get p1 :age)
+                assert= (%some 20) (get p2 :age)
+                assert= (%some 23) (get p3 :age)
                 assert= 23 $ &record:get p3 :age
                 assert= :record $ type-of p1
                 assert= (&record:to-map p1)
                   {} (:name |Chen) (:age 20) (:position :mainland)
-                assert= 21 $ get
-                  &record:from-map Person $ {} (:name |Chen) (:age 21) (:position :mainland)
-                  , :age
+                assert= (%some 21)
+                  get
+                    &record:from-map Person $ {} (:name |Chen) (:age 21) (:position :mainland)
+                    , :age
                 assert= (keys p2) (#{} :age :name :position)
                 assert-detect identity $ &record:matches? p1 p1
                 assert-detect identity $ &record:matches? p1 p2
                 assert-detect not $ &record:matches? p1 c1
                 &let
                   p4 $ assoc p1 :age 30
-                  assert= 20 $ get p1 :age
-                  assert= 30 $ get p4 :age
+                  assert= (%some 20) (get p1 :age)
+                  assert= (%some 30) (get p4 :age)
                 inside-js: $ js/console.log (to-js-data p1)
                 assert-detect identity $ = p1 p1
                 assert-detect identity $ = p1 p2
@@ -317,10 +319,11 @@
                 assert-detect identity $ contains? p1 :name
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1
-                assert= 21 $ get
-                  update p1 :age $ fn (age)
-                    if (nil? age) 1 $ inc age
-                  , :age
+                assert= (%some 21)
+                  get
+                    update p1 :age $ fn (age)
+                      if (nil? age) 1 $ inc age
+                    , :age
                 assert= 20 $ :age p1
           :examples $ []
           :schema $ :: 'Fn
@@ -334,11 +337,11 @@
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
                   p2 $ record-with p1 (:age 21) (:position :shanghai)
                 ; println |P2 p2
-                assert= 20 $ get p1 :age
-                assert= 21 $ get p2 :age
-                assert= :hangzhou $ get p1 :position
-                assert= :shanghai $ get p2 :position
-                assert= |Chen $ get p2 :name
+                assert= (%some 20) (get p1 :age)
+                assert= (%some 21) (get p2 :age)
+                assert= (%some :hangzhou) (get p1 :position)
+                assert= (%some :shanghai) (get p2 :position)
+                assert= (%some |Chen) (get p2 :name)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

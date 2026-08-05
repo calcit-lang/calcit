@@ -19,9 +19,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |test-nested-scope $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-nested-scope () (; "测试：外层定义的变量可以被内层使用，并保留类型信息")

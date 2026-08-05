@@ -14,9 +14,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |test-invalid-list-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-list-method () $ let

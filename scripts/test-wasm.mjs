@@ -327,6 +327,7 @@ check("test-list-nth(3)", 40, e["test-list-nth"], 3);
 check("test-list-first()", 42, e["test-list-first"]);
 check("test-list-rest-generic-first()", 20, e["test-list-rest-generic-first"]);
 check("test-list-rest-count()", 2, e["test-list-rest-count"]);
+check("test-list-rest-empty()", 0, e["test-list-rest-empty"]);
 check("test-list-rest-first()", 20, e["test-list-rest-first"]);
 check("test-list-empty-true()", 1, e["test-list-empty-true"]);
 check("test-list-empty-false()", 0, e["test-list-empty-false"]);
@@ -336,6 +337,7 @@ check("test-list-append()", 33, e["test-list-append"]); // count=3 + nth(2)=30
 check("test-list-prepend()", 5, e["test-list-prepend"]);
 check("test-tuple-assoc()", 29, e["test-tuple-assoc"]);
 check("test-list-butlast()", 2, e["test-list-butlast"]);
+check("test-list-butlast-empty()", 0, e["test-list-butlast-empty"]);
 check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
 check("test-list-reverse()", 40, e["test-list-reverse"]); // first=30 + nth(2)=10
 check("test-list-concat()", 44, e["test-list-concat"]); // count=4 + nth(3)=40
@@ -350,6 +352,11 @@ check("test-list-contains-method()", 1, e["test-list-contains-method"]); // 1+0
 check("test-list-includes-method()", 1, e["test-list-includes-method"]); // 1+0
 check("test-list-max-method()", 30, e["test-list-max-method"]);
 check("test-list-min-method()", 10, e["test-list-min-method"]);
+check("test-list-max-empty()", -1, e["test-list-max-empty"]);
+check("test-find-found()", 2, e["test-find-found"]);
+check("test-find-not-found()", -1, e["test-find-not-found"]);
+check("test-find-index-found()", 1, e["test-find-index-found"]);
+check("test-find-index-not-found()", -1, e["test-find-index-not-found"]);
 
 // --- Map tests ---
 check("test-map-count()", 3, e["test-map-count"]);

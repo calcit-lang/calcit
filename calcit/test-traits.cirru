@@ -138,7 +138,7 @@
         |myfoo:foo $ %{} :CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote
             defn myfoo:foo (p)
-              str "|foo " $ :name p
+              str "|foo " $ &record:get p :name
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -146,7 +146,7 @@
         |myfoo:foo2 $ %{} :CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote
             defn myfoo:foo2 (p)
-              str "|foo2 " $ :name p
+              str "|foo2 " $ &record:get p :name
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -491,9 +491,16 @@
                 assert= true $ res-err .err?
                 assert= 1 $ res-ok .unwrap-or 9
                 assert= 9 $ res-err .unwrap-or 9
-                assert= 1 $ (res-ok .unwrap-or 9) .round
-                assert= 9 $ (res-err .unwrap-or 9) .round
-                assert= 9 $ ((%none) .unwrap-or 9) .round
+                assert= 1 $
+                  res-ok .unwrap-or 9
+                  , .round
+                assert= 9 $
+                  res-err .unwrap-or 9
+                  , .round
+                assert= 9 $
+                    %none
+                    , .unwrap-or 9
+                  , .round
                 assert= (%ok 2) (res-ok .and-then to-ok)
                 assert= (%err |oops) (res-err .and-then to-ok)
                 assert= (%ok 1) (res-ok .map-err turn-tag)

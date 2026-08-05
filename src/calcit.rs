@@ -40,7 +40,7 @@ pub use calcit_trait::CalcitTrait;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
-pub use proc_name::{CalcitProc, ProcTypeSignature};
+pub use proc_name::{CalcitProc, ProcArity, ProcTypeSignature};
 pub use record::CalcitRecord;
 pub use sum_type::{CalcitEnum, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};

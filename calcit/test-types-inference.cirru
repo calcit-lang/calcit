@@ -53,7 +53,6 @@
         |test-count-inference $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-count-inference ()
-              assert-type (count nil) 'Number
               assert-type
                 count $ [] 1 2 3
                 , 'Number
@@ -99,7 +98,7 @@
               let
                   xs $ [] 1 2 3
                   rest-xs $ rest xs
-                assert-type rest-xs $ :: 'Optional (:: 'List 'Number)
+                assert-type rest-xs $ :: 'List 'Number
                 &inspect-type rest-xs
           :examples $ []
           :schema $ :: 'Dynamic
@@ -135,19 +134,11 @@
               let
                   xs $ [] 1 2
                   empty-xs $ empty xs
-                assert-type empty-xs $ :: 'Optional (:: 'List 'Number)
+                assert-type empty-xs $ :: 'List 'Number
                 &inspect-type empty-xs
               let
-                  empty-nil $ empty nil
-                assert-type empty-nil $ :: 'Optional 'String
-                &inspect-type empty-nil
-              let
-                  rest-nil $ rest nil
-                assert-type rest-nil $ :: 'Optional 'String
-                &inspect-type rest-nil
-              let
                   tail $ rest |abc
-                assert-type tail $ :: 'Optional 'String
+                assert-type tail 'String
                 &inspect-type tail
               let
                   first-char $ &str:first |abc
@@ -161,30 +152,21 @@
                   string-first $ first |abc
                   empty-list-first $ first ([])
                   empty-str-first $ first |
-                  nil-first $ first nil
-                  tuple-first $ first (:: :a 1 2)
-                assert-type list-first $ :: 'Optional 'Dynamic
-                assert-type string-first $ :: 'Optional 'Dynamic
-                assert-type empty-list-first $ :: 'Optional 'Dynamic
-                assert-type empty-str-first $ :: 'Optional 'Dynamic
-                assert-type nil-first $ :: 'Optional 'Dynamic
-                assert-type tuple-first $ :: 'Optional 'Dynamic
+                assert-type list-first $ :: 'Option 'Number
+                assert-type string-first $ :: 'Option 'String
+                assert-type empty-list-first $ :: 'Option 'Dynamic
+                assert-type empty-str-first $ :: 'Option 'String
                 &inspect-type list-first
                 &inspect-type string-first
                 &inspect-type empty-list-first
                 &inspect-type empty-str-first
-                &inspect-type nil-first
-                &inspect-type tuple-first
               let
                   list-last $ last ([] 1 2 3)
                   empty-list-last $ last ([])
-                  nil-last $ last nil
-                assert-type list-last $ :: 'Optional 'Dynamic
-                assert-type empty-list-last $ :: 'Optional 'Dynamic
-                assert-type nil-last $ :: 'Optional 'Dynamic
+                assert-type list-last $ :: 'Option 'Number
+                assert-type empty-list-last $ :: 'Option 'Dynamic
                 &inspect-type list-last
                 &inspect-type empty-list-last
-                &inspect-type nil-last
               let
                   nth-char $ &str:nth |abc 1
                   missing-char $ &str:nth |abc 9
@@ -193,21 +175,68 @@
                 &inspect-type nth-char
                 &inspect-type missing-char
               let
-                  hit-index $ &str:find-index |abc |b
-                  miss-index $ &str:find-index |abc |z
-                assert-type hit-index $ :: 'Optional 'Number
-                assert-type miss-index $ :: 'Optional 'Number
+                  raw-hit-index $ &str:find-index |abc |b
+                  raw-miss-index $ &str:find-index |abc |z
+                  hit-index $ str-find-index |abc |b
+                  miss-index $ str-find-index |abc |z
+                assert= 1 raw-hit-index
+                assert= -1 raw-miss-index
+                assert= (%some 1) hit-index
+                assert= (%none) miss-index
+                assert-type raw-hit-index 'Number
+                assert-type raw-miss-index 'Number
+                assert-type hit-index $ :: 'Option 'Number
+                assert-type miss-index $ :: 'Option 'Number
+                &inspect-type raw-hit-index
+                &inspect-type raw-miss-index
                 &inspect-type hit-index
                 &inspect-type miss-index
               let
                   parsed-ok $ parse-float |1.5
                   parsed-bad $ parse-float |oops
-                assert= 1.5 parsed-ok
-                assert= nil parsed-bad
-                assert-type parsed-ok $ :: 'Optional 'Number
-                assert-type parsed-bad $ :: 'Optional 'Number
+                assert= (%ok 1.5) parsed-ok
+                assert= (%err |oops) parsed-bad
+                assert-type parsed-ok $ :: 'Result 'Number 'String
+                assert-type parsed-bad $ :: 'Result 'Number 'String
                 &inspect-type parsed-ok
                 &inspect-type parsed-bad
+              let
+                  found $ find ([] 1 2 3)
+                    fn (x) (> x 1)
+                  missing $ find ([] 1 2 3)
+                    fn (x) (> x 9)
+                  found-index $ find-index ([] 1 2 3)
+                    fn (x) (> x 1)
+                  missing-index $ index-of ([] 1 2 3) 9
+                assert-type found $ :: 'Option 'Number
+                assert-type missing $ :: 'Option 'Number
+                assert-type found-index $ :: 'Option 'Number
+                assert-type missing-index $ :: 'Option 'Number
+                &inspect-type found
+                &inspect-type missing
+                &inspect-type found-index
+                &inspect-type missing-index
+              let
+                  last-hit $ .find-last ([] 1 2 3)
+                    fn (x) (> x 1)
+                  last-index $ .find-last-index ([] 1 2 3)
+                    fn (x) (> x 1)
+                  last-position $ .last-index-of ([] 1 2 1) 1
+                  list-max $ .max ([] 1 2 3)
+                  set-min $ .min (#{} 1 2 3)
+                  string-index $ .find-index |abc |b
+                assert-type last-hit $ :: 'Option 'Number
+                assert-type last-index $ :: 'Option 'Number
+                assert-type last-position $ :: 'Option 'Number
+                assert-type list-max $ :: 'Option 'Number
+                assert-type set-min $ :: 'Option 'Number
+                assert-type string-index $ :: 'Option 'Number
+                &inspect-type last-hit
+                &inspect-type last-index
+                &inspect-type last-position
+                &inspect-type list-max
+                &inspect-type set-min
+                &inspect-type string-index
               let
                   list-hit $ get ([] 1 2 3) 1
                   list-miss $ get ([] 1 2 3) 9
@@ -218,19 +247,16 @@
                   map-miss $ get
                     {} $ :a 1
                     , :b
-                  nil-hit $ get nil :a
-                assert-type list-hit $ :: 'Optional 'Number
-                assert-type list-miss $ :: 'Optional 'Number
-                assert-type string-hit $ :: 'Optional 'String
-                assert-type map-hit $ :: 'Optional 'Number
-                assert-type map-miss $ :: 'Optional 'Number
-                assert-type nil-hit $ :: 'Optional 'Dynamic
+                assert-type list-hit $ :: 'Option 'Number
+                assert-type list-miss $ :: 'Option 'Number
+                assert-type string-hit $ :: 'Option 'String
+                assert-type map-hit $ :: 'Option 'Number
+                assert-type map-miss $ :: 'Option 'Number
                 &inspect-type list-hit
                 &inspect-type list-miss
                 &inspect-type string-hit
                 &inspect-type map-hit
                 &inspect-type map-miss
-                &inspect-type nil-hit
               let
                   nested-hit $ get-in
                     [] $ {} (:a 1)
@@ -240,9 +266,12 @@
                       {} $ :name |n
                     [] :p :age
                   nil-nested $ get-in nil ([] :a)
-                assert-type nested-hit $ :: 'Optional 'Number
-                assert-type nested-miss $ :: 'Optional 'Dynamic
-                assert-type nil-nested $ :: 'Optional 'Dynamic
+                assert= (%some 1) nested-hit
+                assert= (%none) nested-miss
+                assert= (%none) nil-nested
+                assert-type nested-hit $ :: 'Option 'Number
+                assert-type nested-miss $ :: 'Option 'Dynamic
+                assert-type nil-nested $ :: 'Option 'Dynamic
                 &inspect-type nested-hit
                 &inspect-type nested-miss
                 &inspect-type nil-nested
@@ -266,8 +295,8 @@
                   city-miss-v $ get-in p ([] :address :zip)
                 assert-type top-name-v $ :: 'Optional 'String
                 assert-type top-miss-v $ :: 'Optional 'Dynamic
-                assert-type city-v $ :: 'Optional 'String
-                assert-type city-miss-v $ :: 'Optional 'Dynamic
+                assert-type city-v $ :: 'Option 'String
+                assert-type city-miss-v $ :: 'Option 'Dynamic
                 &inspect-type top-name-v
                 &inspect-type top-miss-v
                 &inspect-type city-v

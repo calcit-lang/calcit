@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-04
+更新时间：2026-08-05
 
 ## 目录原则
 
@@ -40,6 +40,7 @@
 | `07-28-project-tooling-contract-rfc.md`             | Draft         | 在既有 `cr` 子命令上补强单项目工具契约，保持 EDN 树形事实来源。                                                        |
 | `07-28-persistent-tree-cursor-rfc.md`               | Draft         | `.calcit/` 本地状态、虚拟 cursor、region/marks/last-query、结构化 clipboard 与 path 迁移。                            |
 | `08-04-strict-cirru-edn-decoding-rfc.md`            | Implemented   | Phase 1：`parse-cirru-edn-as` 严格类型化反序列化、无 Dynamic 的 `EdnDecoderGraph`、名义身份与 Native/JS 一致性。    |
+| `08-05-systematic-nil-reduction-rfc.md`              | Partial       | 类型驱动减少 nil：先拆分可省略参数与 nullable 值，再迁移至 Option/Result 并逐步收紧 typed code。                  |
 
 ## 已执行的清理
 

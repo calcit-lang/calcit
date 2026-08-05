@@ -49,9 +49,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |test-atom $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-atom () (log-title "|Testing atom to edn")

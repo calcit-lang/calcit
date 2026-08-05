@@ -25,6 +25,51 @@ Calcit keeps JS interop syntax intentionally small. This page covers the existin
 - array/object construction
 - constructor call with `new`
 
+## Typed FFI boundary
+
+Raw JavaScript values are not ordinary `Dynamic` Calcit values. Property reads,
+native method calls, `aget`/`js-get`, and `js/...` calls are conservatively
+inferred as `JsNullish<JsObject>`:
+
+- `JsNullish` is reserved for the actual JavaScript `null`/`undefined` boundary;
+  it is deliberately distinct from legacy `Optional` and nominal `Option`.
+- `JsObject` is an opaque host value. A `js-present?`/`js-nullish?` check proves only that the
+  value is present; it does not prove that the payload is a Calcit `String`,
+  `Number`, record, or collection.
+- Before passing the value into strongly typed Calcit code, validate/convert it
+  with a boundary decoder. `unsafe-coerce` is available only when an external
+  API contract is trusted and the unchecked conversion is intentional.
+
+Plain `.-name` and `.!name` dereference their receiver. If the receiver is an
+`JsNullish<JsObject>`, preprocessing reports `W_JS_FFI_NULLABLE_DEREF`. Use
+`.?-name`/`.?!name`, or narrow the receiver before dereferencing it.
+
+Functions containing raw interop should declare `:features $ #{} :js-ffi` in
+their schema. The feature identifies the boundary but does not suppress
+nullable dereference or strong-type mismatch diagnostics.
+
+Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
+legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
+with `js-nullish->option` only after accepting the opaque payload contract;
+generic `optionally` does not accept `JsNullish<T>`.
+
+A nominal `Option<T>` uses `option:some?`/`option:none?` (or `.some?`/`.none?`);
+preprocessing reports `W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are
+applied to an Option, so an API migration cannot silently preserve the wrong
+branch behavior.
+
+```cirru.no-run
+let
+    node $ .?!querySelector js/document |.app
+  if (js-present? node)
+    do
+      ; node is narrowed to opaque JsObject here
+      .-textContent node
+      ; host absence becomes ordinary Calcit data only by explicit conversion
+      js-nullish->option node
+    %none
+```
+
 ## Access global values
 
 Use `js/...` to read JavaScript globals and nested members:
@@ -52,7 +97,7 @@ Optional access is also supported with `.?-name`, which maps to optional chainin
 Use `.!name` for native JS method calls (object first, then args):
 
 ```cirru.no-run
-.!setItem js/localStorage |key |value
+.?!setItem js/localStorage |key |value
 ```
 
 Optional method call is supported with `.?!name`.

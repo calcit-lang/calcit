@@ -2397,7 +2397,7 @@ mod tests {
       ("map", 2),
       ("filter", 2),
       ("first", 3),
-      ("count", 3),
+      ("count", 2),
       ("concat", 1),
       ("inc", 2),
       ("reduce", 1), // 原本就有的，只有1个example
@@ -3272,6 +3272,43 @@ mod tests {
   }
 
   #[test]
+  fn optionally_schema_bridges_nullable_values_to_nominal_option() {
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+    let snapshot = load_snapshot_data(&edn_data, "src/cirru/calcit-core.cirru").expect("Failed to parse snapshot");
+    let entry = snapshot
+      .files
+      .get("calcit.core")
+      .and_then(|file| file.defs.get("optionally"))
+      .expect("calcit.core/optionally should exist");
+    let CalcitTypeAnnotation::Fn(schema) = entry.schema.as_ref() else {
+      panic!("optionally should have a function schema");
+    };
+
+    let input_var = match schema.arg_types.as_slice() {
+      [arg] => match arg.as_ref() {
+        CalcitTypeAnnotation::Optional(inner) => match inner.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => name,
+          other => panic!("optionally Optional input should contain a type variable, got {other:?}"),
+        },
+        other => panic!("optionally should accept Optional<T>, got {other:?}"),
+      },
+      args => panic!("optionally should accept exactly one argument, got {args:?}"),
+    };
+    let output_var = match schema.return_type.as_ref() {
+      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Option" => match args.as_slice() {
+        [arg] => match arg.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => name,
+          other => panic!("optionally Option output should contain a type variable, got {other:?}"),
+        },
+        args => panic!("optionally Option output should have one type argument, got {args:?}"),
+      },
+      other => panic!("optionally should return Option<T>, got {other:?}"),
+    };
+    assert_eq!(input_var, output_var, "optionally must preserve its input type variable");
+  }
+
+  #[test]
   fn test_save_snapshot_round_trip_keeps_real_world_schema_markers() {
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -3300,7 +3337,18 @@ mod tests {
         .defs
         .get(def_name)
         .unwrap_or_else(|| panic!("missing saved def: {def_name}"));
-      assert_eq!(saved_entry.schema, source_entry.schema, "schema should round-trip for {def_name}");
+      // Parallel tests may populate the core registry between the two loads,
+      // causing the latter parser to qualify `Option` as `calcit.core/Option`.
+      // Those references are nominally equivalent; the round-trip contract is
+      // semantic type equality, while the assertions below separately protect
+      // the serialized Fn/Macro markers.
+      assert!(
+        saved_entry.schema.matches_annotation(source_entry.schema.as_ref())
+          && source_entry.schema.matches_annotation(saved_entry.schema.as_ref()),
+        "schema should round-trip for {def_name}: source={:?}, saved={:?}",
+        source_entry.schema,
+        saved_entry.schema
+      );
     }
 
     let _ = fs::remove_file(&temp_path);

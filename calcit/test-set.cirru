@@ -47,17 +47,30 @@
                 .to-list $ #{} 1 2 3
               assert= (#{} 1 2 3)
                 .union (#{} 1 2) (#{} 2 3)
-              &let
-                pair $ &set:destruct (#{} 1 2 3)
-                assert= true $ some? (nth pair 0)
-                assert= 2 $ count (nth pair 1)
+              tag-match
+                .destruct $ #{} 1 2 3
+                (:none) (raise |expected-set-item)
+                (:some item remaining)
+                  do (assert-detect number? item)
+                    assert= 2 $ count remaining
+              assert= (:: :empty)
+                tag-match
+                  .destruct $ #{}
+                  (:none) (:: :empty)
+                  (:some item remaining) (:: :unexpected item remaining)
               assert= (#{} 1 3 5)
                 .to-set $ #{} 1 3 5
               assert= (#{} 7 9)
                 .filter (#{} 1 3 5 7 9)
                   fn (x) (&> x 5)
-              assert= 4 $ .max (#{} 1 2 3 4)
-              assert= 1 $ .min (#{} 1 2 3 4)
+              assert= (%some 4)
+                .max $ #{} 1 2 3 4
+              assert= (%none)
+                .max $ #{}
+              assert= (%some 1)
+                .min $ #{} 1 2 3 4
+              assert= (%none)
+                .min $ #{}
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

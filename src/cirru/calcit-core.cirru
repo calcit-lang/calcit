@@ -286,7 +286,7 @@
                 raise $ str-spaced "|`case` expects pattern in a pair, got:" pattern
               let
                   x $ &list:first pattern
-                  branch $ last pattern
+                  branch $ &list:last pattern
                 quasiquote $ if (&= ~item ~x) ~branch
                   ~ $ if (&list:empty? others) default
                     quasiquote $ &case ~item ~default ~@others
@@ -348,7 +348,7 @@
           :tags $ #{} :internal
         |&core-list-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get &list:nth) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth &list:nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first &list:first) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -360,7 +360,7 @@
           :tags $ #{} :internal
         |&core-map-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct &map:destruct) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get &map:get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
+            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -384,7 +384,7 @@
           :tags $ #{} :internal
         |&core-record-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-record-methods $ &impl::new :&core-record-methods (:: :count &record:count) (:: :contains? &record:contains?) (:: :get &record:get) (:: :nth &record:nth) (:: :assoc &record:assoc) (:: :to-map &record:to-map)
+            def &core-record-methods $ &impl::new :&core-record-methods (:: :count &record:count) (:: :contains? &record:contains?) (:: :get get) (:: :assoc &record:assoc) (:: :to-map &record:to-map)
               :: :empty? $ defn &record:empty?-impl (x)
                 &= 0 $ &record:count x
           :examples $ []
@@ -404,7 +404,7 @@
           :tags $ #{} :internal
         |&core-set-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-set-methods $ &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct &set:destruct) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
+            def &core-set-methods $ &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -416,7 +416,7 @@
           :tags $ #{} :internal
         |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -428,8 +428,7 @@
           :tags $ #{} :internal
         |&core-tuple-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-tuple-methods $ &impl::new :&core-tuple-methods (:: :count &tuple:count) (:: :nth &tuple:nth) (:: :get &tuple:nth) (:: :assoc &tuple:assoc)
-              :: :first $ defn &tuple:first-impl (x) (&tuple:nth x 0)
+            def &core-tuple-methods $ &impl::new :&core-tuple-methods (:: :count &tuple:count) (:: :nth nth) (:: :get get) (:: :assoc &tuple:assoc) (:: :first first)
               :: :empty? $ defn &tuple:empty?-impl (x)
                 &= 0 $ &tuple:count x
               :: :contains? $ defn &tuple:contains?-impl (x k)
@@ -460,7 +459,7 @@
             {} (:return 'String)
               :args $ []
           :tags $ #{} :builtin :internal :io :log
-        |&doseq $ %{} :CodeEntry (:doc "|Side-effect traversal macro. Iterates over a binding pair, executing the body for each element and returning nil.")
+        |&doseq $ %{} :CodeEntry (:doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit.")
           :code $ quote
             defmacro &doseq (pair & body)
               if
@@ -469,8 +468,8 @@
                 raise $ str-spaced "|doseq expects a pair, got:" pair
               let
                   name $ &list:first pair
-                  xs0 $ last pair
-                quasiquote $ foldl ~xs0 nil
+                  xs0 $ &list:last pair
+                quasiquote $ foldl ~xs0 (;nil)
                   defn doseq-fn% (_acc ~name) ~@body
           :examples $ []
             quote $ do
@@ -480,7 +479,8 @@
                 reset! *seen $ append (deref *seen) n
               assert= ([] 1 2) (deref *seen)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic
           :tags $ #{} :effect :internal :macro
         |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations")
           :code $ quote &runtime-implementation
@@ -617,6 +617,31 @@
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :io :meta
+        |&get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Optional 'String
+          :tags $ #{} :builtin :env :internal :io
+        |&get-in $ %{} :CodeEntry (:doc "|Internal nullable traversal primitive used by the public Option-returning get-in API.")
+          :code $ quote
+            defn &get-in (base path)
+              if
+                not $ list? path
+                raise $ str-spaced "|expects path in a list, got:" path
+              if (nil? base) base $ list-match path
+                () base
+                (y0 ys)
+                  recur (get base y0) ys
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Dynamic (:: 'List 'K)
+              :generics $ [] 'K
+              :return $ :: 'Optional 'Dynamic
+          :tags $ #{} :internal
         |&get-os $ %{} :CodeEntry (:doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -624,6 +649,22 @@
             {} (:return 'Tag)
               :args $ []
           :tags $ #{} :builtin :internal :io
+        |&get-raw $ %{} :CodeEntry (:doc "|Internal raw lookup dispatcher. Public callers must use get, which returns Option.")
+          :code $ quote
+            defn &get-raw (base k)
+              cond
+                  list? base
+                  &list:nth base k
+                (map? base) (&map:get base k)
+                (string? base) (&str:nth base k)
+                (tuple? base) (&tuple:nth base k)
+                (record? base) (&record:get base k)
+                true $ raise (str-spaced |&get-raw |expected |a |collection |or |record, |got: base)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic
+          :tags $ #{} :internal
         |&hash $ %{} :CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -661,6 +702,14 @@
             {} (:return 'Dynamic)
               :args $ [] 'Impl 'Number
           :tags $ #{} :builtin :internal
+        |&impl:origin $ %{} :CodeEntry (:doc "|Internal nullable primitive for reading the trait origin stored on an impl.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Impl
+              :return $ :: 'Optional 'Trait
+          :tags $ #{} :builtin :internal
         |&include $ %{} :CodeEntry (:doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -676,7 +725,6 @@
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :tuple &core-tuple-impls :record &core-record-impls :scalar &core-scalar-impls
-                ;nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
@@ -699,7 +747,7 @@
               quasiquote $ if (&list:empty? ~v)
                 &let () ~@branch1
                 &let
-                    ~ $ first pair
+                    ~ $ &list:first pair
                     &list:nth ~v 0
                   &let
                       ~ $ &list:nth pair 1
@@ -853,7 +901,7 @@
                 &list:filter xs $ defn %filter-pair (pair)
                   assert "|expected a pair" $ and (list? pair)
                     = 2 $ count pair
-                  f (nth pair 0) (nth pair 1)
+                  f (&list:nth pair 0) (&list:nth pair 1)
                 raise $ str-spaced "|expected list or map from `filter-pair`, got:" xs
           :examples $ []
           :schema $ :: 'Fn
@@ -865,10 +913,11 @@
         |&list:find-last $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last (xs f)
-              foldr-shortcut xs (;nil) (;nil)
+              foldr-shortcut xs (%none) (%none)
                 fn (_acc x)
-                  if (f x) (:: true x)
-                    :: false $ ;nil
+                  if (f x)
+                    :: true $ %some x
+                    :: false $ %none
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -876,16 +925,17 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'T
           :tags $ #{} :internal
         |&list:find-last-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last-index (xs f)
               foldr-shortcut xs
                 dec $ count xs
-                ;nil
+                %none
                 fn (idx x)
-                  if (f x) (:: true idx)
+                  if (f x)
+                    :: true $ %some idx
                     :: false $ &- 1 idx
           :examples $ []
           :schema $ :: 'Fn
@@ -894,7 +944,7 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:first $ %{} :CodeEntry (:doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty")
           :code $ quote &runtime-implementation
@@ -953,16 +1003,17 @@
             defn &list:last-index-of (xs item)
               foldr-shortcut xs
                 dec $ count xs
-                ;nil
+                %none
                 fn (idx x)
-                  if (&= item x) (:: true idx)
+                  if (&= item x)
+                    :: true $ %some idx
                     :: false $ &- 1 idx
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:map $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -986,7 +1037,7 @@
                 map xs $ defn %map-pair (pair)
                   assert "|expected a pair" $ and (list? pair)
                     = 2 $ count pair
-                  f (nth pair 0) (nth pair 1)
+                  f (&list:nth pair 0) (&list:nth pair 1)
                 raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
           :examples $ []
           :schema $ :: 'Fn
@@ -1008,13 +1059,13 @@
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:max (xs)
-              if (&list:empty? xs) (&list:first xs)
-                &list:max-loop (&list:rest xs) (&list:first xs)
+              if (&list:empty? xs) (%none)
+                %some $ &list:max-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'Number)
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:max-loop $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1031,13 +1082,13 @@
         |&list:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:min (xs)
-              if (&list:empty? xs) (&list:first xs)
-                &list:min-loop (&list:rest xs) (&list:first xs)
+              if (&list:empty? xs) (%none)
+                %some $ &list:min-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'Number)
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:min-loop $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1073,7 +1124,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] 'Number 'Number
+              :args $ [] 'Number 'Number 'Number
               :return $ :: 'List 'Number
           :tags $ #{} :builtin :internal
         |&list:rest $ %{} :CodeEntry (:doc "|internal function for getting rest of list\nSyntax: (&list:rest list)\nParams: list (list)\nReturns: list\nReturns list without first element")
@@ -1108,7 +1159,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'List 'T) (:: 'Optional 'Fn)
+              :args $ [] (:: 'List 'T) 'Fn
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
@@ -1117,7 +1168,7 @@
             defn &list:sort-by (xs f)
               if (tag? f)
                 sort xs $ defn %&list:sort-by (a b)
-                  &compare (get a f) (get b f)
+                  &compare (&get-raw a f) (&get-raw b f)
                 sort xs $ defn %&list:sort-by (a b)
                   &compare (f a) (f b)
           :examples $ []
@@ -1141,7 +1192,7 @@
             defn &map:add-entry (xs pair)
               assert "|&map:add-entry expected value in a pair" $ and (list? pair)
                 &= 2 $ count pair
-              &map:assoc xs (nth pair 0) (nth pair 1)
+              &map:assoc xs (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -1264,7 +1315,7 @@
                     :args $ [] (:: 'Map 'K 'V) ('P)
                     :return $ :: 'Map 'K 'V
                   if (f x)
-                    &map:assoc acc (nth x 0) (nth x 1)
+                    &map:assoc acc (&list:nth x 0) (&list:nth x 1)
                     , acc
           :examples $ []
           :schema $ :: 'Fn
@@ -1284,8 +1335,8 @@
                     :args $ [] (:: 'Map 'K 'V) ('P)
                     :return $ :: 'Map 'K 'V
                   if
-                    f (nth x 0) (nth x 1)
-                    &map:assoc acc (nth x 0) (nth x 1)
+                    f (&list:nth x 0) (&list:nth x 1)
+                    &map:assoc acc (&list:nth x 0) (&list:nth x 1)
                     , acc
           :examples $ []
           :schema $ :: 'Fn
@@ -1334,7 +1385,7 @@
                     result $ f pair
                     assert "|expected pair returned when mapping hashmap" $ and (list? result)
                       &= 2 $ &list:count result
-                    &map:assoc acc (nth result 0) (nth result 1)
+                    &map:assoc acc (&list:nth result 0) (&list:nth result 1)
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -1457,6 +1508,14 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+        |&parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String
+              :return $ :: 'Optional 'Number
+          :tags $ #{} :builtin :internal
         |&record-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &record-match-internal (value & body)
@@ -1559,9 +1618,8 @@
                 u $ %{} User (:name |Alice)
               assert= User $ &record:struct u
           :schema $ :: 'Fn
-            {}
+            {} (:return 'Struct)
               :args $ [] 'Record
-              :return $ :: 'Optional 'Struct
           :tags $ #{} :builtin :internal
         |&record:to-map $ %{} :CodeEntry (:doc "|internal function for converting record to map\nSyntax: (&record:to-map record)\nParams: record (record)\nReturns: map\nConverts record to map")
           :code $ quote &runtime-implementation
@@ -1678,9 +1736,8 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :args $ [] (:: 'Set 'Number)
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&set:min $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1689,9 +1746,8 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :args $ [] (:: 'Set 'Number)
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&set:to-list $ %{} :CodeEntry (:doc "|internal function for converting set to list\nSyntax: (&set:to-list set)\nParams: set (set)\nReturns: list\nConverts set to list of elements")
           :code $ quote &runtime-implementation
@@ -1774,13 +1830,12 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
-        |&str:find-index $ %{} :CodeEntry (:doc "|internal function for finding string index\nSyntax: (&str:find-index s pattern)\nParams: s (string), pattern (string)\nReturns: number or nil\nFinds first index of pattern in string, returns nil if not found")
+        |&str:find-index $ %{} :CodeEntry (:doc "|Internal string search primitive. Returns a numeric index or -1 when absent; public callers should use str-find-index or .find-index.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {}
+            {} (:return 'Number)
               :args $ [] 'String 'String
-              :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
         |&str:first $ %{} :CodeEntry (:doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty")
           :code $ quote &runtime-implementation
@@ -2016,7 +2071,7 @@
           :code $ quote
             defmacro ->% (base & xs)
               if (&list:empty? xs) base $ let
-                  tail $ last xs
+                  tail $ &list:last xs
                   pairs $ &list:concat
                     [] $ [] '% base
                     map (butlast xs)
@@ -2086,8 +2141,9 @@
           :tags $ #{} :builtin :internal
         |;nil $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defmacro ;nil (& _body) nil
+            defmacro ;nil $ & _body
           :examples $ []
+            quote $ assert-type (;nil) (quote Unit)
           :schema $ :: 'Macro
             {} (:return 'Unit)
               :args $ []
@@ -2240,6 +2296,22 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait
+        |ListDestruct $ %{} :CodeEntry (:doc "|Nominal result of destruct-list: none, or a head element with the remaining list.")
+          :code $ quote
+            defenum ListDestruct ([] 'T)
+              :some 'T $ :: 'List 'T
+              :none
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
+        |MapDestruct $ %{} :CodeEntry (:doc "|Nominal result of destruct-map: none, or a key, value, and remaining map.")
+          :code $ quote
+            defenum MapDestruct ([] 'K 'V)
+              :some 'K 'V $ :: 'Map 'K 'V
+              :none
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
         |Mappable $ %{} :CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote
             deftrait Mappable $ .map
@@ -2307,6 +2379,14 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait
+        |SetDestruct $ %{} :CodeEntry (:doc "|Nominal result of destruct-set: none, or an element with the remaining set.")
+          :code $ quote
+            defenum SetDestruct ([] 'T)
+              :some 'T $ :: 'Set 'T
+              :none
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
         |Show $ %{} :CodeEntry (:doc "|Core trait: Show")
           :code $ quote
             deftrait Show $ .show
@@ -2316,6 +2396,12 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :trait
+        |StringDestruct $ %{} :CodeEntry (:doc "|Nominal result of destruct-str: none, or the first character with the remaining string.")
+          :code $ quote
+            defenum StringDestruct (:some 'String 'String) (:none)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
         |[,] $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro [,] (& body)
@@ -2379,7 +2465,7 @@
                     fn (body ys)
                       if (&list:empty? ys) (quasiquote ~body)
                         &let
-                          a0 $ last ys
+                          a0 $ &list:last ys
                           &let
                             code $ [] (quasiquote defn)
                               turn-symbol $ &str:concat |f_ (turn-string a0)
@@ -2494,7 +2580,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
           :tags $ #{} :macro
-        |assert $ %{} :CodeEntry (:doc "|asserts that an expression is truthy, raises an error with message if not")
+        |assert $ %{} :CodeEntry (:doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success.")
           :code $ quote
             defmacro assert (message xs)
               if
@@ -2506,37 +2592,41 @@
                   if
                     not $ string? ~message
                     raise $ str-spaced "|expects 1st argument to be string, got:" ~message
-                  if ~xs nil $ &let ()
-                    eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
-                    raise $ ~
-                      &str:concat (&str:concat message "| ") (format-to-lisp xs)
+                  if ~xs (;nil)
+                    &let ()
+                      eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
+                      raise $ ~
+                        &str:concat (&str:concat message "| ") (format-to-lisp xs)
           :examples $ []
             quote $ assert "|x should be positive" (> 1 0)
             quote $ assert "|list should not be empty"
               not $ empty? ([] 1)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :control :log :macro
-        |assert-detect $ %{} :CodeEntry (:doc "|asserts that a value satisfies a predicate function, raises error with details if not")
+        |assert-detect $ %{} :CodeEntry (:doc "|Assert that a value satisfies a predicate, raise with details when false, and return Unit on success.")
           :code $ quote
             defmacro assert-detect (f code)
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~code)
-                  if (~f ~v) nil $ &let () (eprintln)
-                    eprintln
-                      format-to-lisp $ quote ~code
-                      , "|does not satisfy:"
-                        format-to-lisp $ quote ~f
-                        , "| <--------"
-                    eprintln "|  value is:" ~v
-                    raise "|Not satisfied in assertion!"
+                  if (~f ~v) (;nil)
+                    &let () (eprintln)
+                      eprintln
+                        format-to-lisp $ quote ~code
+                        , "|does not satisfy:"
+                          format-to-lisp $ quote ~f
+                          , "| <--------"
+                      eprintln "|  value is:" ~v
+                      raise "|Not satisfied in assertion!"
           :examples $ []
             quote $ assert-detect number? (+ 1 2)
             quote $ assert-detect list? ([] 1 2 3)
             quote $ assert-detect even? (* 2 5)
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic 'Dynamic)
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :control :log :macro
         |assert-type $ %{} :CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis")
           :code $ quote &runtime-implementation
@@ -2591,7 +2681,7 @@
                   &let
                     d $ either data (&{})
                     assoc d p0 $ assoc-in
-                      if (contains? d p0) (get d p0) (&{})
+                      if (contains? d p0) (&get-raw d p0) (&{})
                       , ps v
           :examples $ []
             quote $ assert=
@@ -2688,11 +2778,15 @@
         |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
           :code $ quote &runtime-implementation
           :examples $ []
+            quote $ assert= ([] 1 2)
+              butlast $ [] 1 2 3
+            quote $ assert= ([])
+              butlast $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T)
               :generics $ [] 'T
-              :return $ :: 'Optional (:: 'List 'T)
+              :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
         |call-w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -2730,7 +2824,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
           :tags $ #{} :macro
-        |case $ %{} :CodeEntry (:doc |)
+        |case $ %{} :CodeEntry (:doc "|Match a value against pattern/result pairs. Raises when no pattern matches instead of returning nil.")
           :code $ quote
             defmacro case (item & patterns)
               if (&list:empty? patterns) (raise "|case expects at least 1 pattern")
@@ -2744,7 +2838,10 @@
                 raise $ str-spaced "|case expects each pattern as pair, got:" patterns
               &let
                 v $ gensym |v
-                quasiquote $ &let (~v ~item) (&case ~v nil ~@patterns)
+                quasiquote $ &let (~v ~item)
+                  &case ~v
+                    raise $ str-spaced |case |found |no |matching |pattern |for: ~v
+                    , ~@patterns
           :examples $ []
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
@@ -2813,7 +2910,7 @@
               :generics $ [] 'T
               :rest $ :: 'List 'T
               :return $ :: 'List 'T
-        |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.")
+        |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Requires a final true branch so unmatched control flow cannot return nil.")
           :code $ quote
             defmacro cond (& pairs)
               if (&list:empty? pairs) (raise "|cond expects at least 1 (condition branch) pair")
@@ -2833,7 +2930,7 @@
                         if (empty? else) (= true expr) false
                         , branch $ quasiquote
                           if ~expr ~branch $ ~
-                            if (&list:empty? else) (;nil)
+                            if (&list:empty? else) (raise |cond-requires-a-final-true-branch)
                               quasiquote $ cond ~@else
           :examples $ []
             quote $ assert= :small
@@ -2871,7 +2968,7 @@
                       list? xs
                       if
                         and (number? p0) (&list:contains? xs p0)
-                        recur (nth xs p0) ps
+                        recur (&list:nth xs p0) ps
                         , false
                     (map? xs)
                       if (&map:contains? xs p0)
@@ -2919,10 +3016,10 @@
             {} (:return 'Bool)
               :args $ [] 'T 'Symbol
               :generics $ [] 'T
-        |contains? $ %{} :CodeEntry (:doc "|Checks whether a collection contains a key or index at the current level. Supports lists, tuples, maps, and records while treating nil as false.")
+        |contains? $ %{} :CodeEntry (:doc "|Check whether a collection contains a key or index. Nil is not a collection.")
           :code $ quote
             defn contains? (x k)
-              if (nil? x) false $ if (list? x) (&list:contains? x k) (.contains? x k)
+              if (list? x) (&list:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -2930,7 +3027,6 @@
               contains?
                 {} $ :a 1
                 , :a
-            quote $ assert= false (contains? nil :missing)
             quote $ assert= true
               contains? (#{} 1 2 3) 2
           :schema $ :: 'Fn
@@ -2944,18 +3040,17 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
-        |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
+        |count $ %{} :CodeEntry (:doc "|Count items in a collection or string. Nil is rejected instead of being treated as empty.")
           :code $ quote
             defn count (x)
-              if (nil? x) 0 $ if (list? x) (&list:count x) (.count x)
+              if (list? x) (&list:count x) (.count x)
           :examples $ []
             quote $ assert= 4
               count $ [] 1 2 3 4
             quote $ assert= 5 (count |hello)
-            quote $ assert= 0 (count nil)
           :schema $ :: 'Fn
             {} (:return 'Number)
-              :args $ [] (:: 'Optional 'T)
+              :args $ [] 'T
               :generics $ [] 'T
         |cpu-time $ %{} :CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement")
           :code $ quote &runtime-implementation
@@ -3058,18 +3153,17 @@
               assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
               assert "|defenum expects variants in list" $ and (list? variants) (every? variants list?)
               &let
-                first-variant $ if (empty? variants) (;nil) (&list:first variants)
+                first-variant $ if (empty? variants) ([]) (&list:first variants)
                 &let
-                  generics $ if (list? first-variant)
+                  generics $ if
+                    and (list? first-variant)
+                      not $ empty? first-variant
+                      not $ tag? (&list:first first-variant)
                     if
-                      and
-                        not $ empty? first-variant
-                        not $ tag? (&list:first first-variant)
-                      if
-                        &= [] $ &list:first first-variant
-                        &list:rest first-variant
-                        , first-variant
-                    , []
+                      &= [] $ &list:first first-variant
+                      &list:rest first-variant
+                      , first-variant
+                    []
                   &let
                     tail-forms $ if (empty? generics) variants (&list:rest variants)
                     &let
@@ -3271,18 +3365,17 @@
               assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
               assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
               &let
-                first-pair $ if (empty? pairs) (;nil) (&list:first pairs)
+                first-pair $ if (empty? pairs) ([]) (&list:first pairs)
                 &let
-                  generics $ if (list? first-pair)
+                  generics $ if
+                    and (list? first-pair)
+                      not $ empty? first-pair
+                      not $ tag? (&list:first first-pair)
                     if
-                      and
-                        not $ empty? first-pair
-                        not $ tag? (&list:first first-pair)
-                      if
-                        &= [] $ &list:first first-pair
-                        &list:rest first-pair
-                        , first-pair
-                    , []
+                      &= [] $ &list:first first-pair
+                      &list:rest first-pair
+                      , first-pair
+                    []
                   &let
                     tail-forms $ if (empty? generics) pairs (&list:rest pairs)
                     &let
@@ -3304,7 +3397,7 @@
                             fn (pair)
                               &let
                                 items $ data-definition-form pair
-                                not $ data-definition-malformed-nesting? (last items)
+                                not $ data-definition-malformed-nesting? (&list:last items)
                           &let
                             normalized $ map field-pairs
                               fn (pair)
@@ -3313,7 +3406,7 @@
                                   &let
                                     field-name $ &list:first items
                                     &let
-                                      type-form $ last items
+                                      type-form $ &list:last items
                                       if (list? type-form)
                                         if
                                           and
@@ -3405,47 +3498,71 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        |destruct-list $ %{} :CodeEntry (:doc |)
+        |destruct-list $ %{} :CodeEntry (:doc "|Split a list into the nominal ListDestruct<T> enum.")
           :code $ quote
             defn destruct-list (xs)
-              if (empty? xs) (:: :none)
-                :: :some (nth xs 0) (&list:slice xs 1)
+              if (empty? xs) (%:: ListDestruct :none)
+                %:: ListDestruct :some (&list:first xs) (&list:rest xs)
           :examples $ []
+            quote $ assert=
+              %:: ListDestruct :some 1 $ [] 2
+              destruct-list $ [] 1 2
+            quote $ assert= (%:: ListDestruct :none)
+              destruct-list $ []
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
+            {}
               :args $ [] (:: 'List 'T)
               :generics $ [] 'T
-        |destruct-map $ %{} :CodeEntry (:doc |)
+              :return $ :: 'ListDestruct 'T
+        |destruct-map $ %{} :CodeEntry (:doc "|Split a map into the nominal MapDestruct<K,V> enum.")
           :code $ quote
             defn destruct-map (xs)
               &let
                 pair $ &map:destruct xs
-                if (nil? pair) (:: :none) (:: :some & pair)
+                if (nil? pair) (%:: MapDestruct :none) (%:: MapDestruct :some & pair)
           :examples $ []
+            quote $ assert= (%:: MapDestruct :none)
+              destruct-map $ &{}
+            quote $ assert= 1
+              tag-match
+                destruct-map $ &{} :a 1
+                (:some _key value _rest) value
+                (:none) 0
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
+            {}
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
-        |destruct-set $ %{} :CodeEntry (:doc |)
+              :return $ :: 'MapDestruct 'K 'V
+        |destruct-set $ %{} :CodeEntry (:doc "|Split a set into the nominal SetDestruct<T> enum.")
           :code $ quote
             defn destruct-set (xs)
               &let
                 pair $ &set:destruct xs
-                if (nil? pair) (:: :none)
-                  :: :some (nth pair 0) (nth pair 1)
+                if (nil? pair) (%:: SetDestruct :none)
+                  %:: SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
+            quote $ assert= (%:: SetDestruct :none)
+              destruct-set $ #{}
+            quote $ assert= 2
+              tag-match
+                destruct-set $ #{} 2
+                (:some item _rest) item
+                (:none) 0
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
+            {}
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
-        |destruct-str $ %{} :CodeEntry (:doc |)
+              :return $ :: 'SetDestruct 'T
+        |destruct-str $ %{} :CodeEntry (:doc "|Split a string into the nominal StringDestruct enum.")
           :code $ quote
             defn destruct-str (s)
-              if (&= s |) (:: :none)
-                :: :some (nth s 0) (&str:slice s 1)
+              if (&= s |) (%:: StringDestruct :none)
+                %:: StringDestruct :some (&str:slice s 0 1) (&str:rest s)
           :examples $ []
+            quote $ assert= (%:: StringDestruct :some |1 |23) (destruct-str |123)
+            quote $ assert= (%:: StringDestruct :none) (destruct-str |)
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
+            {} (:return 'StringDestruct)
               :args $ [] 'String
         |difference $ %{} :CodeEntry (:doc "|Returns the set difference of base and all other sets")
           :code $ quote
@@ -3465,28 +3582,28 @@
         |dissoc $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dissoc (x & args)
-              if (nil? x) x $ if (list? x) (&list:dissoc x & args)
+              if (list? x) (&list:dissoc x & args)
                 if (map? x) (&map:dissoc x & args) (.dissoc x & args)
           :examples $ []
           :schema $ :: 'Fn
             {} (:rest 'K) (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T 'K
-        |dissoc-in $ %{} :CodeEntry (:doc |)
+        |dissoc-in $ %{} :CodeEntry (:doc "|Remove a nested key or index. An empty path leaves the input unchanged.")
           :code $ quote
             defn dissoc-in (data path)
               list-match path
-                () $ ;nil
+                () data
                 (p0 ps)
                   if
                     &= 1 $ &list:count path
                     dissoc data p0
-                    assoc data p0 $ dissoc-in (get data p0) ps
+                    assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic (:: 'List 'K)
-              :generics $ [] 'K
+            {} (:return 'D)
+              :args $ [] 'D (:: 'List 'K)
+              :generics $ [] 'D 'K
         |distinct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn distinct (x) (&list:distinct x)
@@ -3519,7 +3636,7 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
               :return $ :: 'List 'T
-        |each $ %{} :CodeEntry (:doc "|Iterate over a collection and apply function f for side effects, returns nil")
+        |each $ %{} :CodeEntry (:doc "|Iterate over a collection, apply a function for side effects, and return Unit.")
           :code $ quote
             defn each (xs f)
               foldl xs (;nil)
@@ -3565,17 +3682,19 @@
         |empty $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn empty (x)
-              if (nil? x) x $ if (list? x) ([]) (.empty x)
+              if (list? x) ([]) (.empty x)
           :examples $ []
+            quote $ assert= ([])
+              empty $ [] 1 2 3
+            quote $ assert= | (empty |abc)
           :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Optional 'T)
+            {} (:return 'T)
+              :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
-        |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
+        |empty? $ %{} :CodeEntry (:doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty.")
           :code $ quote
             defn empty? (x)
-              if (nil? x) true $ if (list? x) (&list:empty? x) (.empty? x)
+              if (list? x) (&list:empty? x) (.empty? x)
           :examples $ []
             quote $ assert= true
               empty? $ []
@@ -3669,7 +3788,7 @@
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f)
-              if (nil? xs) xs $ if (list? xs) (&list:filter xs f) (.filter xs f)
+              if (list? xs) (&list:filter xs f) (.filter xs f)
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -3695,56 +3814,76 @@
                   :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
-        |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
+        |find $ %{} :CodeEntry (:doc "|Find the first matching list item as Option<T>.")
           :code $ quote
             defn find (xs f)
-              foldl-shortcut xs 0 (;nil)
+              foldl-shortcut xs 0 (%none)
                 defn %find (_acc x)
-                  if (f x) (:: true x)
-                    :: false $ ;nil
+                  if (f x)
+                    :: true $ %some x
+                    :: false $ %none
           :examples $ []
-            quote $ assert= 4
-              find ([] 1 2 3 4 5)
-                fn (x) (&> x 3)
-            quote $ assert= nil
+            quote $ assert= (%some 2)
               find ([] 1 2 3)
-                fn (x) (&> x 10)
+                fn (x) (> x 1)
+            quote $ assert= (%none)
+              find ([] 1 2 3)
+                fn (x) (> x 9)
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T)
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
-        |find-index $ %{} :CodeEntry (:doc |)
+              :return $ :: 'Option 'T
+        |find-index $ %{} :CodeEntry (:doc "|Find the first matching list index as Option<Number>.")
           :code $ quote
             defn find-index (xs f)
-              foldl-shortcut xs 0 (;nil)
-                defn %find-index (idx x)
-                  if (f x) (:: true idx)
-                    :: false $ &+ 1 idx
+              foldl-shortcut xs 0 (%none)
+                defn %find-index (index x)
+                  if (f x)
+                    :: true $ %some index
+                    :: false $ &+ 1 index
           :examples $ []
+            quote $ assert= (%some 1)
+              find-index ([] 1 2 3)
+                fn (x) (> x 1)
+            quote $ assert= (%none)
+              find-index ([] 1 2 3)
+                fn (x) (> x 9)
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T)
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
-        |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
+              :return $ :: 'Option 'Number
+        |first $ %{} :CodeEntry (:doc "|Return the first item as Option<T>; empty collections produce none.")
           :code $ quote
             defn first (x)
-              if (nil? x) x $ if (list? x) (&list:first x) (.first x)
+              cond
+                  list? x
+                  if (&list:empty? x) (%none)
+                    %some $ &list:first x
+                (string? x)
+                  if (&str:empty? x) (%none)
+                    %some $ &str:first x
+                (tuple? x)
+                  if
+                    &= 0 $ &tuple:count x
+                    %none
+                    %some $ &tuple:nth x 0
+                true $ raise (str-spaced |first |expected |a |list, |string, |or |tuple, |got: x)
           :examples $ []
-            quote $ assert= 1
+            quote $ assert= (%some 1)
               first $ [] 1 2 3
-            quote $ assert= |h (first |hello)
-            quote $ assert= nil (first nil)
+            quote $ assert= (%some |h) (first |hello)
+            quote $ assert= (%none)
+              first $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Optional 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'Dynamic
+              :args $ [] 'Dynamic
+              :return $ :: 'Option 'Dynamic
         |flipped $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro flipped (f & args)
@@ -3768,7 +3907,7 @@
                 not $ list? args
                 raise $ str-spaced "|fn expects args in list, got:" args
               if (&list:empty? body)
-                quasiquote $ defn f% ~args nil
+                quasiquote $ defn f% ~args (;nil)
                 quasiquote $ defn f% ~args ~@body
           :examples $ []
             quote $ map ([] 1 2 3)
@@ -3918,20 +4057,37 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |get $ %{} :CodeEntry (:doc "|Reads a value from collections or strings by key or index. Handles maps, lists, tuples, records, and strings; nil bases return nil.")
+        |get $ %{} :CodeEntry (:doc "|Return a keyed or indexed value as Option<T>; missing entries produce none.")
           :code $ quote
             defn get (base k)
-              if (nil? base) base $ if (list? base) (&list:nth base k) (.get base k)
+              cond
+                  map? base
+                  if (&map:contains? base k)
+                    %some $ &map:get base k
+                    %none
+                (record? base)
+                  if (&record:contains? base k)
+                    %some $ &record:get base k
+                    %none
+                (or (list? base) (string? base) (tuple? base))
+                  if (number? k) (nth base k) (%none)
+                true $ raise (str-spaced |get |expected |a |collection |or |record, |got: base)
           :examples $ []
-            quote $ assert= 2
+            quote $ assert= (%some 2)
               get ([] 0 2 4) 1
-            quote $ assert= |b (get |abc 1)
-            quote $ assert= nil (get nil :missing)
+            quote $ assert= (%some |b) (get |abc 1)
+            quote $ assert= (%some 1)
+              get
+                {} $ :a 1
+                , :a
+            quote $ assert= (%none)
+              get
+                {} $ :a 1
+                , :missing
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Optional 'T) 'K
-              :generics $ [] 'T 'K
-              :return $ :: 'Optional 'Dynamic
+              :args $ [] 'Dynamic 'Dynamic
+              :return $ :: 'Option 'Dynamic
         |get-char-code $ %{} :CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3939,42 +4095,47 @@
             {} (:return 'Number)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
-        |get-env $ %{} :CodeEntry (:doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found")
-          :code $ quote &runtime-implementation
+        |get-env $ %{} :CodeEntry (:doc "|Read an environment variable as Option<String>.")
+          :code $ quote
+            defn get-env (name)
+              optionally $ &get-env name
           :examples $ []
+            quote $ assert= (%none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
-              :return $ :: 'Optional 'String
-          :tags $ #{} :builtin :env :internal :io
-        |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
+              :features $ #{} :env :io
+              :return $ :: 'Option 'String
+          :tags $ #{} :env :io
+        |get-in $ %{} :CodeEntry (:doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal.")
           :code $ quote
             defn get-in (base path)
-              if
-                not $ list? path
-                raise $ str-spaced "|expects path in a list, got:" path
-              if (nil? base) base $ list-match path
-                () base
-                (y0 ys)
-                  recur (get base y0) ys
+              if (nil? base) (%none)
+                list-match path
+                  () $ %some base
+                  (y0 ys)
+                    tag-match (get base y0)
+                      (:some value) (recur value ys)
+                      (:none) (%none)
           :examples $ []
-            quote $ assert= 1
+            quote $ assert= (%some 1)
               get-in
                 {} $ :a
                   {} $ :b 1
                 [] :a :b
-            quote $ assert= 2
+            quote $ assert= (%some 2)
               get-in
                 [] ([] 1 2) ([] 3 4)
                 [] 0 1
-            quote $ assert= nil
+            quote $ assert= (%none)
               get-in
                 {} $ :x |value
                 [] :y
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
+            {}
               :args $ [] 'Dynamic (:: 'List 'K)
               :generics $ [] 'K
+              :return $ :: 'Option 'Dynamic
         |group-by $ %{} :CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
             defn group-by (xs0 f)
@@ -4041,21 +4202,22 @@
                   &= 2 $ count pair
                 raise $ str-spaced "|expected a pair, got:" pair
               &let
-                x $ nth pair 0
+                x $ &list:nth pair 0
                 if
                   not $ symbol? x
                   raise $ str-spaced "|expected a symbol for var name, got:" x
-                quasiquote $ &let
-                  ~x $ ~ (nth pair 1)
-                  if (some? ~x) ~then ~else
+                quasiquote $ option:fold
+                  ~ $ &list:nth pair 1
+                  fn () ~else
+                  fn (~x) ~then
           :examples $ []
             quote $ assert= |found
               if-let
-                v $ :: :some |found
+                v $ %some |found
                 , v |missing
             quote $ assert= |missing
               if-let
-                v $ :: :none
+                v $ %none
                 , v |missing
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
@@ -4081,6 +4243,17 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :macro
+        |impl-origin $ %{} :CodeEntry (:doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none.")
+          :code $ quote
+            defn impl-origin (impl)
+              optionally $ &impl:origin impl
+          :examples $ []
+            quote $ assert= (%none)
+              impl-origin $ &impl::new :PlainImpl
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Impl
+              :return $ :: 'Option 'Trait
         |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
           :code $ quote
             defn impl-traits (x & traits)
@@ -4122,28 +4295,29 @@
         |includes? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn includes? (x k)
-              if (nil? x) false $ if (list? x) (&list:includes? x k) (.includes? x k)
+              if (list? x) (&list:includes? x k) (.includes? x k)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'Dynamic 'Dynamic
-        |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
+        |index-of $ %{} :CodeEntry (:doc "|Find the first list item index as Option<Number>.")
           :code $ quote
             defn index-of (xs item)
-              foldl-shortcut xs 0 (;nil)
-                defn %index-of (idx x)
-                  if (&= item x) (:: true idx)
-                    :: false $ &+ 1 idx
+              foldl-shortcut xs 0 (%none)
+                defn %index-of (index x)
+                  if (&= item x)
+                    :: true $ %some index
+                    :: false $ &+ 1 index
           :examples $ []
-            quote $ assert= 1
-              index-of ([] |a |b |c) |b
-            quote $ assert= nil
-              index-of ([] 1 2 3) 5
+            quote $ assert= (%some 1)
+              index-of ([] |a |b) |b
+            quote $ assert= (%none)
+              index-of ([] |a |b) |z
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
         |interleave $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn interleave (xs0 ys0)
@@ -4232,6 +4406,30 @@
             {} (:return 'String)
               :args $ [] (:: 'List 'T) 'String
               :generics $ [] 'T
+        |js-nullish->option $ %{} :CodeEntry (:doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type.")
+          :code $ quote
+            defn js-nullish->option (x)
+              if (nil? x) (%none) (%some x)
+          :examples $ []
+            quote $ assert= (%none) (js-nullish->option nil)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'JsNullish 'T)
+              :features $ #{} :js-ffi
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+          :tags $ #{} :interop
+        |js-nullish? $ %{} :CodeEntry (:doc "|Return true when a JsNullish<T> boundary value is JavaScript null or undefined.")
+          :code $ quote
+            defn js-nullish? (x) (nil? x)
+          :examples $ []
+            quote $ assert= true (js-nullish? nil)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'JsNullish 'T)
+              :features $ #{} :js-ffi
+              :generics $ [] 'T
+          :tags $ #{} :interop
         |js-object $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro js-object (& xs)
@@ -4252,6 +4450,18 @@
               :args $ [] 'Dynamic
               :features $ #{} :js-ffi
           :tags $ #{} :interop :macro
+        |js-present? $ %{} :CodeEntry (:doc "|Return true when a JsNullish<T> boundary contains a non-null JavaScript value.")
+          :code $ quote
+            defn js-present? (x)
+              not $ nil? x
+          :examples $ []
+            quote $ assert= false (js-present? nil)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'JsNullish 'T)
+              :features $ #{} :js-ffi
+              :generics $ [] 'T
+          :tags $ #{} :interop
         |json-parse $ %{} :CodeEntry (:doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4303,16 +4513,15 @@
                   hint-fn $ {}
                     :args $ [] (:: 'Set 'K) 'Set
                     :return $ :: 'Set 'K
-                  if (&set:empty? pairs) acc $ &let
-                    set-pair $ &set:destruct pairs
-                    &let
-                      pair $ nth set-pair 0
+                  tag-match (destruct-set pairs)
+                    (:none) acc
+                    (:some pair remaining)
                       if
-                        nil? $ last pair
-                        recur acc $ nth set-pair 1
+                        nil? $ &list:last pair
+                        recur acc remaining
                         recur
                           include acc $ &list:first pair
-                          nth set-pair 1
+                          , remaining
           :examples $ []
             quote $ assert= (#{} :a :b)
               keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
@@ -4323,21 +4532,34 @@
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
               :return $ :: 'Set 'K
-        |last $ %{} :CodeEntry (:doc "|Returns the last element of a list-like collection\nReturns nil when the collection is empty.")
+        |last $ %{} :CodeEntry (:doc "|Return the last item as Option<T>; empty collections produce none.")
           :code $ quote
             defn last (xs)
-              if (empty? xs) (;nil)
-                nth xs $ &- (count xs) 1
+              cond
+                  list? xs
+                  if (&list:empty? xs) (%none)
+                    %some $ &list:last xs
+                (string? xs)
+                  if (&str:empty? xs) (%none)
+                    %some $ &str:nth xs
+                      &- (&str:count xs) 1
+                (tuple? xs)
+                  if
+                    &= 0 $ &tuple:count xs
+                    %none
+                    %some $ &tuple:nth xs
+                      &- (&tuple:count xs) 1
+                true $ raise (str-spaced |last |expected |a |list, |string, |or |tuple, |got: xs)
           :examples $ []
-            quote $ assert= 3
+            quote $ assert= (%some 3)
               last $ [] 1 2 3
-            quote $ assert= nil
+            quote $ assert= (%some |o) (last |hello)
+            quote $ assert= (%none)
               last $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Optional 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'Dynamic
+              :args $ [] 'Dynamic
+              :return $ :: 'Option 'Dynamic
         |let $ %{} :CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
             defmacro let (pairs & body)
@@ -4467,7 +4689,7 @@
                   let
                     ~ $ map items
                       defn gen-items% (x)
-                        [] x $ [] (turn-tag x) var-result
+                        [] x $ [] (quote &map:get) var-result (turn-tag x)
                     ~@ body
           :examples $ []
           :schema $ :: 'Macro
@@ -4551,7 +4773,7 @@
                 raise $ str-spaced "|expects pairs in pairs in loop, got:" pairs
               let
                   args $ map pairs &list:first
-                  values $ map pairs last
+                  values $ map pairs &list:last
                 assert "|loop requires symbols in pairs" $ every? args symbol?
                 quasiquote $ apply (defn generated-loop ~args ~@body) ([] ~@values)
           :examples $ []
@@ -4645,11 +4867,11 @@
                     :args $ [] 'Map 'List
                     :return 'Map
                   &let
-                    result $ f (nth pair 0) (nth pair 1)
+                    result $ f (&list:nth pair 0) (&list:nth pair 1)
                     if (list? result)
                       do
                         assert "|expected pair returned when mapping hashmap" $ &= 2 (&list:count result)
-                        &map:assoc acc (nth result 0) (nth result 1)
+                        &map:assoc acc (&list:nth result 0) (&list:nth result 1)
                       if
                         or (nil? result) (tuple? result)
                         , acc $ raise (str-spaced "|map-kv expected list or nil, got:" result)
@@ -4694,7 +4916,7 @@
             {}
               :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'Number
         |merge $ %{} :CodeEntry (:doc "|Combines maps left-to-right, with later maps overwriting keys from earlier ones by reducing through `&merge`.")
           :code $ quote
             defn merge (x0 & xs) (reduce xs x0 &merge)
@@ -4732,7 +4954,7 @@
             {}
               :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'Number
         |negate $ %{} :CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote
             defn negate (x) (&- 0 x)
@@ -4788,17 +5010,41 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
           :tags $ #{} :macro
-        |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
+        |nth $ %{} :CodeEntry (:doc "|Return the indexed item from a list, string, or tuple as Option<T>; invalid indexes produce none. Records use field-name get because positional order is not a cross-backend contract.")
           :code $ quote
             defn nth (x i)
-              if (list? x) (&list:nth x i) (.nth x i)
+              cond
+                  not $ number? i
+                  %none
+                (list? x)
+                  if
+                    and (&>= i 0)
+                      &< i $ &list:count x
+                    %some $ &list:nth x i
+                    %none
+                (string? x)
+                  if
+                    and (&>= i 0)
+                      &< i $ &str:count x
+                    %some $ &str:nth x i
+                    %none
+                (tuple? x)
+                  if
+                    and (&>= i 0)
+                      &< i $ &tuple:count x
+                    %some $ &tuple:nth x i
+                    %none
+                true $ raise (str-spaced |nth |expected |a |list, |string, |or |tuple, |got: x)
           :examples $ []
-            quote $ assert= 2
+            quote $ assert= (%some 2)
               nth ([] 1 2 3) 1
-            quote $ assert= |b (nth |abc 1)
+            quote $ assert= (%some |b) (nth |abc 1)
+            quote $ assert= (%none)
+              nth ([] 1 2 3) 9
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
+            {}
               :args $ [] 'Dynamic 'Number
+              :return $ :: 'Option 'Dynamic
         |number? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4830,6 +5076,29 @@
                   :return $ :: 'Option 'U
               :generics $ [] 'T 'U
               :return $ :: 'Option 'U
+        |option:fold $ %{} :CodeEntry (:doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload.")
+          :code $ quote
+            defn option:fold (opt on-none on-some)
+              tag-match opt
+                (:some value) (on-some value)
+                (:none) (on-none)
+          :examples $ []
+            quote $ assert= 4
+              option:fold (%some 3)
+                fn () 0
+                fn (value) (+ value 1)
+            quote $ assert= 0
+              option:fold (%none)
+                fn () 0
+                fn (value) (+ value 1)
+          :schema $ :: 'Fn
+            {} (:return 'U)
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {} (:return 'U)
+                  :args $ []
+                :: 'Fn $ {} (:return 'U)
+                  :args $ [] 'T
+              :generics $ [] 'T 'U
         |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
@@ -4872,6 +5141,19 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Option 'T)
               :generics $ [] 'T
+        |option:unwrap $ %{} :CodeEntry (:doc "|Return the payload of some; raise when the Option is none.")
+          :code $ quote
+            defn option:unwrap (opt)
+              tag-match opt
+                (:some value) value
+                (:none) (raise |option:unwrap-received-none)
+          :examples $ []
+            quote $ assert= 3
+              option:unwrap $ %some 3
+          :schema $ :: 'Fn
+            {} (:return 'T)
+              :args $ [] (:: 'Option 'T)
+              :generics $ [] 'T
         |option:unwrap-or $ %{} :CodeEntry (:doc "|Returns the :some payload, or the fallback for :none.")
           :code $ quote
             defn option:unwrap-or (opt fallback)
@@ -4885,16 +5167,20 @@
             {} (:return 'T)
               :args $ [] (:: 'Option 'T) 'T
               :generics $ [] 'T
-        |optionally $ %{} :CodeEntry (:doc |)
+        |optionally $ %{} :CodeEntry (:doc "|Convert a nullable Optional<T> value into nominal Option<T>.")
           :code $ quote
             defn optionally (s)
-              if (nil? s) (:: :none) (:: :some s)
+              if (nil? s) (%none) (%some s)
           :examples $ []
+            quote $ assert= (%some 1) (optionally 1)
+            quote $ assert= (%none) (optionally nil)
+            quote $ assert= Option
+              &tuple:enum $ optionally 1
           :schema $ :: 'Fn
             {}
-              :args $ [] 'T
+              :args $ [] (:: 'Optional 'T)
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'T
         |or $ %{} :CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.")
           :code $ quote
             defmacro or (item & xs)
@@ -4931,7 +5217,7 @@
                   assert "|expects pair for pairs-map" $ if (list? pair)
                     &= 2 $ &list:count pair
                     , false
-                  &map:assoc acc (&list:first pair) (last pair)
+                  &map:assoc acc (&list:first pair) (&list:last pair)
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -4959,14 +5245,19 @@
             {} (:return 'List)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
-        |parse-float $ %{} :CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
-          :code $ quote &runtime-implementation
+        |parse-float $ %{} :CodeEntry (:doc "|Parse a number as Result<Number,String>; err contains the original invalid input.")
+          :code $ quote
+            defn parse-float (source)
+              let
+                  parsed $ &parse-float source
+                if (nil? parsed) (%err source) (%ok parsed)
           :examples $ []
+            quote $ assert= (%ok 1.5) (parse-float |1.5)
+            quote $ assert= (%err |oops) (parse-float |oops)
           :schema $ :: 'Fn
             {}
               :args $ [] 'String
-              :return $ :: 'Optional 'Number
-          :tags $ #{} :builtin :internal
+              :return $ :: 'Result 'Number 'String
         |pow $ %{} :CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4995,7 +5286,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
-              :args $ [] (:: 'Optional 'Number)
+              :args $ [] 'Number
           :tags $ #{} :builtin :control :internal
         |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data")
           :code $ quote &runtime-implementation
@@ -5015,30 +5306,30 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] 'Number (:: 'Optional 'Number)
+              :args $ [] 'Number 'Number 'Number
               :return $ :: 'List 'Number
           :tags $ #{} :builtin :internal
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
-              if-let (y0 y)
-                range
-                  inc $ &- (&+ x x) y0
-                  , y0
+              if (nil? y)
                 range
                   inc $ negate x
                   , x
+                range
+                  inc $ &- (&+ x x) y
+                  , y
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] 'Number (:: 'Optional 'Number)
+              :args $ [] 'Number 'Number
               :return $ :: 'List 'Number
         |read-dir $ %{} :CodeEntry (:doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] 'String (:: 'Optional 'Bool)
+              :args $ [] 'String 'Bool
               :return $ :: 'List 'String
           :tags $ #{} :builtin :file :internal :io
         |read-file $ %{} :CodeEntry (:doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found")
@@ -5065,6 +5356,17 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Record)
           :tags $ #{} :macro
+        |record-struct $ %{} :CodeEntry (:doc "|Return the struct definition that owns a record value.")
+          :code $ quote
+            defn record-struct (record) (&record:struct record)
+          :examples $ []
+            quote $ let
+                User $ defstruct User (:name 'String)
+                user $ %{} User (:name |Ada)
+              assert= User $ record-struct user
+          :schema $ :: 'Fn
+            {} (:return 'Struct)
+              :args $ [] 'Record
         |record-with $ %{} :CodeEntry (:doc "|macro to extend existing record with new values in pairs, internally using &record:with which takes flattern items")
           :code $ quote
             defmacro record-with (record & pairs) (; "check if args are in pairs")
@@ -5156,20 +5458,20 @@
               :args $ [] (:: 'Ref 'T) 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :syntax
-        |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element\nNil input returns nil; lists delegate to &list:rest.")
+        |rest $ %{} :CodeEntry (:doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected.")
           :code $ quote
             defn rest (x)
-              if (nil? x) (;nil)
-                if (list? x) (&list:rest x) (.rest x)
+              if (list? x) (&list:rest x) (.rest x)
           :examples $ []
             quote $ assert= ([] 2 3)
               rest $ [] 1 2 3
-            quote $ assert= nil (rest nil)
+            quote $ assert= ([])
+              rest $ []
+            quote $ assert= | (rest |)
           :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Optional 'T)
+            {} (:return 'T)
+              :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
         |result:and-then $ %{} :CodeEntry (:doc "|Chains a Result-producing function over :ok and preserves :err.")
           :code $ quote
             defn result:and-then (res f)
@@ -5352,7 +5654,9 @@
         |slice $ %{} :CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
             defn slice (xs n ? m)
-              if (nil? xs) (;nil)
+              if (nil? m)
+                if (list? xs) (&list:slice xs n)
+                  if (string? xs) (&str:slice xs n) (.slice xs n)
                 if (list? xs) (&list:slice xs n m)
                   if (string? xs) (&str:slice xs n m) (.slice xs n m)
           :examples $ []
@@ -5362,22 +5666,11 @@
               slice ([] 1 2 3 4) 2
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
-              :args $ [] 'Dynamic 'Number (:: 'Optional 'Number)
+              :args $ [] 'Dynamic 'Number 'Number
         |some-in? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn some-in? (x path)
-              if (nil? x) false $ list-match path
-                () true
-                (k ps)
-                  if (map? x)
-                    if (contains? x k)
-                      recur (get x k) ps
-                      , false
-                    if (list? x)
-                      if (number? k)
-                        recur (get x k) ps
-                        , false
-                      raise $ &str:concat "|Unknown structure for some-in? detection: " x
+              option:some? $ get-in x path
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
@@ -5398,7 +5691,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'List 'T) (:: 'Optional 'Fn)
+              :args $ [] (:: 'List 'T) 'Fn
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
@@ -5445,6 +5738,19 @@
           :schema $ :: 'Fn
             {} (:rest 'Dynamic) (:return 'String)
               :args $ [] 'Dynamic
+        |str-find-index $ %{} :CodeEntry (:doc "|Find the first string index as Option<Number>, returning none when the pattern is absent.")
+          :code $ quote
+            defn str-find-index (text pattern)
+              let
+                  idx $ &str:find-index text pattern
+                if (&= idx -1) (%none) (%some idx)
+          :examples $ []
+            quote $ assert= (%some 1) (str-find-index |abc |b)
+            quote $ assert= (%none) (str-find-index |abc |z)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String 'String
+              :return $ :: 'Option 'Number
         |str-spaced $ %{} :CodeEntry (:doc "|converts values to string and joins them with spaces")
           :code $ quote
             defn str-spaced (& xs) (&str-spaced true & xs)
@@ -5681,6 +5987,19 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :control :internal :syntax
+        |tuple-enum $ %{} :CodeEntry (:doc "|Return the source enum prototype as Option<Enum>; plain tuples produce none.")
+          :code $ quote
+            defn tuple-enum (tuple)
+              optionally $ &tuple:enum tuple
+          :examples $ []
+            quote $ assert= (%some Option)
+              tuple-enum $ %some 1
+            quote $ assert= (%none)
+              tuple-enum $ :: :plain 1
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Tuple
+              :return $ :: 'Option 'Enum
         |tuple? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a tuple literal created with the `::` form.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5811,15 +6130,20 @@
                 :: 'Fn $ {} (:return 'T)
                   :args $ [] 'T
               :generics $ [] 'T
-        |update-in $ %{} :CodeEntry (:doc "|Walks a path of keys inside nested maps/lists and applies a function to the value, creating intermediate maps as needed.")
+        |update-in $ %{} :CodeEntry (:doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps.")
           :code $ quote
             defn update-in (data path f)
               list-match path
-                () $ f data
+                () $ f (%some data)
                 (p0 ps)
-                  assoc
-                    either data $ {}
-                    , p0 $ update-in (get data p0) ps f
+                  let
+                      current $ if (nil? data) (%none) (get data p0)
+                    assoc
+                      either data $ {}
+                      , p0 $ if (empty? ps) (f current)
+                        update-in
+                          option:unwrap-or current $ {}
+                          , ps f
           :examples $ []
             quote $ assert=
               {} $ :a
@@ -5828,28 +6152,31 @@
                 {} $ :a
                   {} $ :b 1
                 [] :a :b
-                , inc
+                fn (current)
+                  inc $ option:unwrap current
             quote $ assert=
               {} $ :profile
                 {} $ :visits 1
               update-in {} ([] :profile :visits)
-                fn (_missing) 1
+                fn (current)
+                  if (option:none? current) 1 $ raise |expected-missing-value
             quote $ assert=
               {} $ :x 10
               update-in
                 {} $ :x 5
                 [] :x
-                fn (v) (&* v 2)
+                fn (current)
+                  &* (option:unwrap current) 2
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic (:: 'List 'K)
                 :: 'Fn $ {} (:return 'T)
-                  :args $ [] 'T
+                  :args $ [] (:: 'Option 'T)
               :generics $ [] 'K 'T
         |vals $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn vals (x)
-              map (to-pairs x) last
+              map (to-pairs x) &list:last
           :examples $ []
             quote $ assert= (#{} 1 2)
               vals $ {} (:a 1) (:b 2)
@@ -5913,7 +6240,7 @@
               if
                 &= 1 $ &list:count body
                 quasiquote $ if ~condition
-                  ~ $ nth body 0
+                  ~ $ &list:nth body 0
                 quasiquote $ if ~condition
                   &let () ~@body
           :examples $ []
@@ -5924,7 +6251,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
           :tags $ #{} :macro
-        |when-let $ %{} :CodeEntry (:doc |)
+        |when-let $ %{} :CodeEntry (:doc "|Consume Option<T>, evaluate the body only for some, and return Option<R>.")
           :code $ quote
             defmacro when-let (pair & body)
               if
@@ -5932,17 +6259,20 @@
                   &= 2 $ count pair
                 raise $ str-spaced "|expected a pair, got:" pair
               &let
-                x $ nth pair 0
+                x $ &list:nth pair 0
                 if
                   not $ symbol? x
                   raise $ str-spaced "|expected a symbol for var name, got:" x
-                quasiquote $ &let
-                  ~x $ ~ (nth pair 1)
-                  if (some? ~x)
-                    do $ ~@ body
+                quasiquote $ option:fold
+                  ~ $ &list:nth pair 1
+                  fn () $ %none
+                  fn (~x)
+                    %some $ do (~@ body)
           :examples $ []
           :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
+            {}
+              :args $ [] 'Dynamic
+              :return $ :: 'Option 'Dynamic
           :tags $ #{} :macro
         |when-not $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -5951,7 +6281,7 @@
               if
                 &= 1 $ &list:count body
                 quasiquote $ if (not ~condition)
-                  ~ $ nth body 0
+                  ~ $ &list:nth body 0
                 quasiquote $ if (not ~condition)
                   &let () ~@body
           :examples $ []
@@ -6233,7 +6563,7 @@
               if (&list:empty? body)
                 quasiquote $ eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
                 &let
-                  pair $ first body
+                  pair $ &list:first body
                   if
                     not $ list? pair
                     raise $ str-spaced "|field-match expected arm in list, got:" pair
@@ -6302,9 +6632,9 @@
                   &let
                     head $ &list:first t0
                     &let
-                      second $ if (&>= size 2) (&list:nth t0 1) nil
+                      second $ if (&>= size 2) (&list:nth t0 1) ([])
                       &let
-                        third $ if (&>= size 3) (&list:nth t0 2) nil
+                        third $ if (&>= size 3) (&list:nth t0 2) ([])
                         &let
                           wrap-list $ fn (x)
                             if (list? x) x $ [] x

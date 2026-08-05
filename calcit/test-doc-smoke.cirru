@@ -26,7 +26,7 @@
           :code $ quote
             defimpl DocTraitImpl DocTrait $ .label
               fn (x)
-                str-spaced |doc $ :name x
+                str-spaced |doc $ &record:get x :name
           :examples $ []
           :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc "|Run docs smoke cases")
@@ -50,7 +50,7 @@
           :schema $ :: 'Dynamic
         |test-defimpl-order $ %{} :CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote
-            defn test-defimpl-order () $ assert= DocTrait (&impl:origin DocTraitImpl)
+            defn test-defimpl-order () $ assert= (%some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-impl-traits-struct-enum-only $ %{} :CodeEntry (:doc "|impl-traits only accepts struct/enum definitions")
@@ -79,10 +79,10 @@
             defn test-native-impl-new-dot-method () $ let
                 DotImpl $ &impl::new DocTrait
                   :: .label $ fn (x)
-                    str-spaced |native-dot $ :name x
+                    str-spaced |native-dot $ &record:get x :name
                 DotPerson $ impl-traits DocPerson0 DotImpl
                 p $ %{} DotPerson (:name |Bob)
-              assert= DocTrait $ &impl:origin DotImpl
+              assert= (%some DocTrait) (impl-origin DotImpl)
               assert= "|native-dot Bob" $ p .label
           :examples $ []
           :schema $ :: 'Dynamic

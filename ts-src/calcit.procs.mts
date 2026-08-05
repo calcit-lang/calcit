@@ -942,6 +942,18 @@ export let _$n_list_$o_first = (xs: CalcitValue): CalcitValue => {
   console.error(xs);
   throw new Error("Expected a list");
 };
+
+export let _$n_list_$o_last = (xs: CalcitValue): CalcitValue => {
+  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
+    if (xs.isEmpty()) {
+      return null;
+    }
+    return xs.get(xs.len() - 1);
+  }
+  console.error(xs);
+  throw new Error("Expected a list");
+};
+
 export let _$n_str_$o_first = (xs: CalcitValue): CalcitValue => {
   if (typeof xs === "string") {
     return xs[0];
@@ -983,10 +995,10 @@ export let timeout_call = (duration: number, f: CalcitFn): null => {
   return null;
 };
 
-export let _$n_list_$o_rest = (xs: CalcitValue): CalcitValue => {
+export let _$n_list_$o_rest = (xs: CalcitValue): CalcitList | CalcitSliceList => {
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     if (xs.len() === 0) {
-      return null;
+      return xs.slice(0, 0);
     }
     return xs.rest();
   }
@@ -1041,10 +1053,10 @@ export let last = (xs: CalcitValue): CalcitValue => {
   throw new Error("Data not ready for last");
 };
 
-export let butlast = (xs: CalcitValue): CalcitValue => {
+export let butlast = (xs: CalcitValue): CalcitList | CalcitSliceList | string => {
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     if (xs.len() === 0) {
-      return null;
+      return xs.slice(0, 0);
     }
     return xs.slice(0, xs.len() - 1);
   }
@@ -1349,12 +1361,12 @@ export let _$n_str_$o_find_index = (x: string, y: string): number => {
   return x.indexOf(y);
 };
 
-export let parse_float = (x: string): number | null => {
-  const value = parseFloat(x);
-  if (Number.isNaN(value)) {
+export let _$n_parse_float = (x: string): number | null => {
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(x)) {
     return null;
   }
-  return value;
+  const value = Number(x);
+  return Number.isNaN(value) ? null : value;
 };
 export let trim = (x: string, c: string): string => {
   if (c != null) {
@@ -1425,7 +1437,7 @@ export let js_delete = (obj: any, name: string): any => {
   return delete obj[name];
 };
 
-export let get_env = (name: string, v0: string): string => {
+export let _$n_get_env = (name: string, v0?: CalcitValue): CalcitValue => {
   let v = undefined;
   if (inNodeJs) {
     // only available for Node.js
@@ -1439,8 +1451,13 @@ export let get_env = (name: string, v0: string): string => {
   if (v == null && v0 == null) {
     console.warn(`(get-env "${name}"): config not found`);
   }
-  return v ?? v0;
+  return v ?? v0 ?? null;
 };
+
+// Keep already-emitted JS bundles loadable across the nominal Option migration.
+// Newly generated code calls the internal raw proc; source-level `get-env`
+// remains the typed Option wrapper defined in calcit.core.
+export let get_env = _$n_get_env;
 
 export let turn_tag = (x: CalcitValue): CalcitTag => {
   if (typeof x === "string") {

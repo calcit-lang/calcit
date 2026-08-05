@@ -10,12 +10,16 @@
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
             defimpl EnumImpl EnumMetadata $ .dummy
-              fn (self) nil
+              fn $ self
           :examples $ []
           :schema $ :: 'Impl
         |EnumMetadata $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait EnumMetadata $ .dummy :fn
+            deftrait EnumMetadata $ .dummy
+              :: :fn $ {}
+                :generics $ [] 'T
+                :args $ [] 'T
+                :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
         |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks")
@@ -45,12 +49,16 @@
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
             defimpl StructImpl StructMetadata $ .dummy
-              fn (self) nil
+              fn $ self
           :examples $ []
           :schema $ :: 'Impl
         |StructMetadata $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait StructMetadata $ .dummy :fn
+            deftrait StructMetadata $ .dummy
+              :: :fn $ {}
+                :generics $ [] 'T
+                :args $ [] 'T
+                :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
         |add-numbers $ %{} :CodeEntry (:doc |)
@@ -123,9 +131,11 @@
               :args $ [] 'String
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |show-type-info $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn show-type-info (x) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)
@@ -189,8 +199,8 @@
                 assert= :enum $ type-of enum-with-impls
                 assert= true $ any? (&tuple:impls ok)
                   fn (impl)
-                    = (&impl:origin impl) ResultTrait
-                assert= enum-with-result-impls $ &tuple:enum ok
+                    = (impl-origin impl) (%some ResultTrait)
+                assert= (%some enum-with-result-impls) (tuple-enum ok)
                 assert= "|(%:: :ok 1 (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
           :examples $ []
@@ -237,8 +247,8 @@
                   println |second: second-item
                   println |rest: rest-items
                   println |count: list-len
-                  assert= 1 first-item
-                  assert= 2 second-item
+                  assert= (%some 1) first-item
+                  assert= (%some 2) second-item
                   assert= 5 list-len
               , "|List method checks passed"
           :examples $ []
@@ -346,7 +356,7 @@
                   println |split: splitted
                   assert= |hello sliced
                   assert= 11 text-len
-                  assert= |h first-char
+                  assert= (%some |h) first-char
                   assert= true starts
               , "|String method checks passed"
           :examples $ []
@@ -372,7 +382,7 @@
                     rest-elems $ .rest typed-list
                   println "|Typed list access - first:" first-elem
                   println "|Typed list access - count:" list-size
-                  assert= 1 first-elem
+                  assert= (%some 1) first-elem
                   assert= 5 list-size
               ; "字符串也有类型相关的方法"
               let
@@ -384,7 +394,7 @@
                   println "|Typed string access - count:" str-len
                   println "|Typed string access - first:" str-first
                   assert= 11 str-len
-                  assert= |t str-first
+                  assert= (%some |t) str-first
               , "|Typed method access checks passed"
           :examples $ []
           :schema $ :: 'Dynamic

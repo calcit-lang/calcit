@@ -34,12 +34,12 @@
               assert= 97 $ .get-char-code |a
               assert= 27721 $ .get-char-code "|汉"
               assert= |a $ char-from-code 97
-              assert= |a $ nth |abc 0
-              assert= |b $ nth |abc 1
-              assert= |a $ first |abc
-              assert= |c $ last |abc
-              assert= nil $ first |
-              assert= nil $ last |
+              assert= (%some |a) (nth |abc 0)
+              assert= (%some |b) (nth |abc 1)
+              assert= (%some |a) (first |abc)
+              assert= (%some |c) (last |abc)
+              assert= (%none) (first |)
+              assert= (%none) (last |)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-format $ %{} :CodeEntry (:doc |)
@@ -72,11 +72,11 @@
             fn () (log-title "|Testing includes")
               assert= true $ includes? |abc |abc
               assert= false $ includes? |abd |abc
-              assert= 3 $ .find-index |0123456 |3
-              assert= 3 $ .find-index |0123456 |34
-              assert= 0 $ .find-index |0123456 |01
-              assert= 4 $ .find-index |0123456 |456
-              assert= -1 $ .find-index |0123456 |98
+              assert= (%some 3) (.find-index |0123456 |3)
+              assert= (%some 3) (.find-index |0123456 |34)
+              assert= (%some 0) (.find-index |0123456 |01)
+              assert= (%some 4) (.find-index |0123456 |456)
+              assert= (%none) (.find-index |0123456 |98)
               assert= true $ starts-with? |01234 |0
               assert= true $ starts-with? |01234 |01
               assert= false $ starts-with? |01234 |12
@@ -137,10 +137,10 @@
               assert= | $ .empty |a
               assert= true $ .ends-with? |abc |c
               assert= false $ .ends-with? |abc |b
-              assert= |a $ .get |abc 0
-              assert= |b $ .get |abc 1
-              assert= 1 $ .parse-float |1
-              assert= 1.1 $ .parse-float |1.1
+              assert= (%some |a) (.get |abc 0)
+              assert= (%some |b) (.get |abc 1)
+              assert= (%ok 1) (.parse-float |1)
+              assert= (%ok 1.1) (.parse-float |1.1)
               assert= |Abcd $ .replace |abcd |a |A
               assert= |AbAd $ .replace |abad |a |A
               assert= ([] |a |c) (.split |abc |b)
@@ -161,13 +161,13 @@
               assert= false $ .contains? |abcd 4
               assert= true $ .includes? |abcd |a
               assert= false $ .includes? |abcd |e
-              assert= |a $ .nth |abc 0
-              assert= |b $ .nth |abc 1
-              assert= |a $ .first |abc
-              assert= nil $ .first |
+              assert= (%some |a) (.nth |abc 0)
+              assert= (%some |b) (.nth |abc 1)
+              assert= (%some |a) (.first |abc)
+              assert= (%none) (.first |)
               assert= |bc $ .rest |abc
-              assert= 0 $ .find-index |abc |a
-              assert= 1 $ .find-index |abc |b
+              assert= (%some 0) (.find-index |abc |a)
+              assert= (%some 1) (.find-index |abc |b)
               assert= "|\"a \\\"\"" $ .escape "|a \""
               assert= |00000a $ .pad-left |a 6 |0
               assert= |a00000 $ .pad-right |a 6 |0
@@ -177,7 +177,10 @@
           :schema $ :: 'Dynamic
         |test-parse $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () $ assert= 0 (parse-float |0)
+            fn ()
+              assert= (%ok 0) (parse-float |0)
+              assert= (%err |1oops) (parse-float |1oops)
+              assert= (%err |1e) (parse-float |1e)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-str $ %{} :CodeEntry (:doc |)

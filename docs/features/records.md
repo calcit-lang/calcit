@@ -188,9 +188,9 @@ let
   println $ &record:matches? p Point
   ; => true
   ; get the struct definition the record was created from
-  println $ &record:struct p
+  println $ record-struct p
   ; compare structs directly for origin check
-  println $ = (&record:struct p) Point
+  println $ = (record-struct p) Point
   ; => true
   ; struct? checks struct definitions, not instances
   println $ struct? Point
@@ -210,9 +210,11 @@ let
     shape $ %{} Circle (:radius 5)
   record-match shape
     Circle c $ * 3.14
-      * (get c :radius) (get c :radius)
-    Square s $ * (get s :side) (get s :side)
-    _ _ nil
+      * (option:unwrap $ get c :radius)
+        option:unwrap $ get c :radius
+    Square s $ * (option:unwrap $ get s :side)
+      option:unwrap $ get s :side
+    _ _ 0
 
 ; => 78.5
 ```
@@ -249,7 +251,7 @@ let
   println $ &record:get-name p
   ; => :Person
   ; check the struct behind a record value
-  println $ &record:struct p
+  println $ record-struct p
 ```
 
 ### Struct Origin Check
@@ -262,7 +264,7 @@ let
     Dog $ defstruct Dog (:name :string)
     v1 $ %{} Cat (:name |Mimi) (:color :white)
   if
-    = (&record:struct v1) Cat
+    = (record-struct v1) Cat
     println "|Handle Cat branch"
     println "|Not a Cat"
 ```
@@ -305,7 +307,7 @@ let
 let
     Config $ defstruct Config (:host :string) (:port :number) (:debug :bool)
     config $ %{} Config (:host |localhost) (:port 3000) (:debug false)
-  println $ get config :port
+  println $ option:unwrap $ get config :port
   ; => 3000
 ```
 
@@ -315,7 +317,8 @@ let
 let
     Product $ defstruct Product (:id :string) (:name :string) (:price :number) (:discount :number)
     product $ %{} Product (:id |P001) (:name |Widget) (:price 100) (:discount 0.9)
-  println $ * (get product :price) (get product :discount)
+  println $ * (option:unwrap $ get product :price)
+    option:unwrap $ get product :discount
   ; => 90
 ```
 
@@ -328,7 +331,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      get user :name
+      option:unwrap $ get user :name
   println $ get-user-name
     %{} User (:name |John) (:age 30) (:email |john@example.com)
 
@@ -345,7 +348,7 @@ let
     sum-point $ fn (p)
       :: :fn $ {} (:return :number)
         :args $ [] 'app.main/Point
-      &+ (:x p) (:y p)
+      &+ (option:unwrap $ :x p) (option:unwrap $ :y p)
   ; Write a hashmap "—" preprocessor rewrites to record automatically:
   assert= 30 $ sum-point
     {} (:x 10) (:y 20)
@@ -384,7 +387,7 @@ Loose records support the same field access operations as struct-backed records:
 ```cirru
 let
     r $ ?{} :x 10 :y 20
-  println $ :x r
+  println $ option:unwrap $ :x r
   ; => 10
   println $ type-of r
   ; => :record
@@ -400,7 +403,7 @@ let
     sum-point $ fn (p)
       :: :fn $ {} (:return :number)
         :args $ [] 'app.main/Point
-      &+ (:x p) (:y p)
+      &+ (option:unwrap $ :x p) (option:unwrap $ :y p)
   ; Loose record rewritten to struct record at compile time:
   assert= 30 $ sum-point (?{} :x 10 :y 20)
   ; Equivalent to:
@@ -438,3 +441,8 @@ When the static analysis system knows a value's struct type, the preprocessor re
 - **Batch update** `record-with record (:f1 v1) (:f2 v2)` → `&record:with-at record <indexes> <values>` — all indices pre-resolved
 
 These rewrites are automatic and transparent. To benefit from them, provide type annotations via `:schema` or `hint-fn` so the preprocessor can resolve struct types.
+
+Record intentionally has no public `.nth` method: positional field order is not
+a cross-backend API contract. Use field-name `get`, which returns `Option<T>`.
+Only generated, statically checked field access uses internal `&record:nth`
+directly.

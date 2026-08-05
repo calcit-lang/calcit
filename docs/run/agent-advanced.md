@@ -164,7 +164,7 @@ echo 'range 10' | cr exec
 
 - `&methods-of value` — 列出某值的可用方法名（返回字符串列表 `[] |.foo |.bar ...`）
 - `&inspect-methods value` — 打印方法与 impl 来源（调试 trait override 链，可临时插入 pipeline）
-- `&impl:origin impl` — 读取 impl record 的 trait 来源
+- `impl-origin impl` — 以 `Option<Trait>` 读取 impl record 的 trait 来源
 - `&trait-call Trait :method receiver & args` — 显式消歧：只调用属于指定 trait 的方法实现
 
 > 📖 深入了解 trait 实现机制：`cr docs read traits.md` 或 `cr docs search 'trait-call'`

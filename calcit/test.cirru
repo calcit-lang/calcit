@@ -292,7 +292,7 @@
           :code $ quote
             fn () (log-title "|Testing effect")
               println "|Env mode:" $ get-env |mode
-              println "|Env mode:" $ get-env |m0 "|default m0"
+              println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
               eprintln "|stdout message"
           :examples $ []
           :schema $ :: 'Fn
@@ -339,9 +339,12 @@
             fn () (log-title "|Testing JSON")
               let
                   parsed $ json-parse "|{\"name\":\"demo\",\"items\":[1,null,true],\"meta\":{\"flag\":false}}"
-                assert= |demo $ get parsed :name
-                assert= ([] 1 nil true) (get parsed :items)
-                assert= false $ get (get parsed :meta) :flag
+                assert= (%some |demo) (get parsed :name)
+                assert=
+                  %some $ [] 1 nil true
+                  get parsed :items
+                assert= (%some false)
+                  get-in parsed $ [] :meta :flag
               assert=
                 json-parse $ json-stringify
                   {} (:status |ok)
@@ -366,7 +369,7 @@
                       assert-type a0-tuple 'Tuple
                       assert= true $ any? (&tuple:impls a0-tuple)
                         fn (impl)
-                          = (&impl:origin impl) NumTrait
+                          = (impl-origin impl) (%some NumTrait)
                 assert-traits a0 NumTrait calcit.core/Show
                 let
                     a1 $ .inc a0
@@ -397,7 +400,7 @@
                   v $ %:: ValueBox :value 1
                 assert-type v ValueBox
                 assert= 2 @v
-                assert= (nth v 1) 1
+                assert= (%some 1) (nth v 1)
               let
                   *b $ atom 0
                   *c $ atom 0
@@ -447,15 +450,21 @@
           :code $ quote
             fn () (log-title "|Testing tuple")
               assert= :tuple $ type-of (:: :a :b)
-              assert= :a $ nth (:: :a :b) 0
-              assert= :b $ nth (:: :a :b) 1
-              assert= :c $ nth (:: :a :b :c) 2
+              assert= (%some :a)
+                nth (:: :a :b) 0
+              assert= (%some :b)
+                nth (:: :a :b) 1
+              assert= (%some :c)
+                nth (:: :a :b :c) 2
               assert= 2 $ count (:: :a :b)
               assert= 3 $ count (:: :a :b :c)
               assert= 4 $ count (:: :a :b :c :d)
-              assert= :a $ get (:: :a :b) 0
-              assert= :b $ get (:: :a :b) 1
-              assert= :c $ get (:: :a :b :c) 2
+              assert= (%some :a)
+                get (:: :a :b) 0
+              assert= (%some :b)
+                get (:: :a :b) 1
+              assert= (%some :c)
+                get (:: :a :b :c) 2
               assert= true $ contains? (:: :a :b :c) 2
               assert= (:: 1 0)
                 update (:: 0 0) 0 inc

@@ -88,8 +88,8 @@
               &let
                 match-ab $ fn (data)
                   field-match data
-                    :a a $ [] :a (:a a)
-                    :b b $ [] :b (:b b)
+                    :a a $ [] :a (&map:get a :a)
+                    :b b $ [] :b (&map:get b :b)
                     _ :other
                 assert=
                   match-ab $ &{} :tag :a :a 1

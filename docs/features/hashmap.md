@@ -75,8 +75,12 @@ let
 let
     nested $ {} (:user $ {} (:name |Alice) (:age 30))
   println $ get-in nested $ [] :user :name
-  ; => Alice
+  ; => (%some |Alice)
 ```
+
+`get-in` returns `Option<Dynamic>` (`%some` for a resolved value and `%none`
+for a missing path or a `nil` encountered while traversing). Use
+`option:unwrap-or` or `tag-match` before consuming the payload.
 
 ## Modifying Maps
 
@@ -184,9 +188,9 @@ let
 
 ```cirru
 let
-    m $ {} (:a 1) (:b 2)
+    m $ {} (:a :one) (:b :two)
     val $ get m :missing
-  if (nil? val) :default val
+  option:unwrap-or val :default
   ; => :default
 ```
 
@@ -199,7 +203,7 @@ let
     freq $ foldl words init $ fn (acc w)
       let
           cur $ get acc w
-          n $ if (nil? cur) 0 cur
+          n $ option:unwrap-or cur 0
         assoc acc w (inc n)
   println freq
   ; ({} (:a 3) (:b 2) (:c 1))
