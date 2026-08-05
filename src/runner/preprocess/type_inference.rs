@@ -282,14 +282,18 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
   let mut current_type = resolve_type_value(base_arg, scope_types)?;
 
   if path_items.is_empty() {
-    return Some(current_type);
+    return Some(core_type_ref("Option", vec![current_type]));
   }
 
   for key in path_items {
     current_type = infer_get_return_type_from_type(current_type.as_ref(), Some(key))?;
   }
 
-  Some(current_type)
+  let payload_type = match current_type.as_ref() {
+    CalcitTypeAnnotation::Optional(inner) => inner.clone(),
+    _ => current_type,
+  };
+  Some(core_type_ref("Option", vec![payload_type]))
 }
 
 fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {

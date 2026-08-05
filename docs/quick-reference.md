@@ -260,7 +260,8 @@ let
 - `starts-with?`, `ends-with?` - prefix/suffix tests
 - `&str:slice` - extract substring
 - `&str:replace` - replace substring
-- `&str:find-index` - find position
+- `str-find-index`, string `.find-index` - find position as `Option<Number>`
+- `&str:find-index` - internal raw search primitive (`-1` when absent)
 - `&str:contains?`, `&str:includes?` - substring tests
 - `&str:pad-left`, `&str:pad-right` - padding
 - `parse-float` - parse number from string

@@ -239,7 +239,10 @@ Use `optionally` at a legacy nullable boundary to convert `Optional<T>` into nom
 
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
 
-- `find`, `find-index`, and `index-of` return `Option`.
+- `find`, `find-index`, `find-last`, `find-last-index`, `index-of`, and `last-index-of` return `Option`.
+- `get-in` returns `Option<Dynamic>` while preserving a more precise payload type for literal paths when inference can resolve it.
+- List/set `max` and `min` return `Option<Number>` so empty collections are explicit.
+- String `.find-index` and `str-find-index` return `Option<Number>`; the internal `&str:find-index` primitive retains its `-1` ABI sentinel.
 - `get-env` returns `Option<String>`; use `option:unwrap-or` for a default.
 - `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
 

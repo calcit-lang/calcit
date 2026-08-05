@@ -2741,6 +2741,7 @@ fn call_head_name(head: &Calcit) -> Option<&str> {
     Calcit::Import(CalcitImport { def, .. }) => Some(def.as_ref()),
     Calcit::Fn { info, .. } => Some(info.name.as_ref()),
     Calcit::Proc(proc) => Some(proc.as_ref()),
+    Calcit::Method(name, _) => Some(name.as_ref()),
     _ => None,
   }
 }
@@ -2777,25 +2778,78 @@ fn warn_on_nominal_enum_legacy_absence_use(
   let Some(operation) = call_head_name(head) else {
     return;
   };
-  if !matches!(operation, "nil?" | "some?" | "get" | "nth" | "first" | "last" | "&compare") {
+  if !matches!(
+    operation,
+    "nil?"
+      | "some?"
+      | "list?"
+      | "map?"
+      | "set?"
+      | "record?"
+      | "tuple?"
+      | "tag?"
+      | "number?"
+      | "string?"
+      | "keyword?"
+      | "symbol?"
+      | "fn?"
+      | "bool?"
+      | "buffer?"
+      | "cirru-quote?"
+      | "ref?"
+      | "macro?"
+      | "syntax?"
+      | "enum?"
+      | "struct?"
+      | "get"
+      | "nth"
+      | "first"
+      | "last"
+      | "count"
+      | "empty?"
+      | "contains?"
+      | "includes?"
+      | "="
+      | "&="
+      | "&compare"
+  ) {
     return;
   }
-  let Some(value) = args.first() else {
+
+  let nominal_args = args
+    .iter()
+    .filter_map(|value| {
+      let value_type = resolve_type_value(value, scope_types)?;
+      let enum_name = nominal_enum_type_name(value_type.as_ref())?;
+      Some((value, enum_name))
+    })
+    .collect::<Vec<_>>();
+  let Some((value, enum_name)) = nominal_args.first() else {
     return;
   };
-  let Some(value_type) = resolve_type_value(value, scope_types) else {
+
+  // Equality between values of the same nominal enum is intentional and safe.
+  // A nominal value compared with a payload or a Dynamic value, however, is a
+  // common migration bug after a nullable API starts returning Option/Result.
+  if matches!(operation, "=" | "&=") && nominal_args.len() == args.len() && nominal_args.iter().all(|(_, current)| current == enum_name)
+  {
     return;
-  };
-  let Some(enum_name) = nominal_enum_type_name(value_type.as_ref()) else {
-    return;
-  };
+  }
 
   let guidance = match operation {
     "nil?" | "some?" if enum_name == "Option" => {
       "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates"
     }
     "nil?" | "some?" => "use `tag-match` to inspect the nominal enum variant",
+    "=" | "&=" if enum_name == "Option" => {
+      "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload"
+    }
+    "=" | "&=" => "compare values of the same nominal enum, or pattern-match before comparing a payload",
     "&compare" if enum_name == "Option" => "unwrap or pattern-match the Option before comparing its payload",
+    "list?" | "map?" | "set?" | "record?" | "tuple?" | "tag?" | "number?" | "string?" | "keyword?" | "symbol?" | "fn?" | "bool?"
+    | "buffer?" | "cirru-quote?" | "ref?" | "macro?" | "syntax?" | "enum?" | "struct?" => {
+      "pattern-match the nominal enum before applying a payload type predicate"
+    }
     _ if enum_name == "Option" => "use `tag-match`, `option:unwrap-or`, or an Option method to access the payload",
     _ => "use `tag-match` instead of positional access on the nominal enum",
   };
@@ -2803,6 +2857,37 @@ fn warn_on_nominal_enum_legacy_absence_use(
     "[Warn] `{operation}` consumes nominal enum `{enum_name}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
   );
   if let Some(location) = head.get_location().or_else(|| value.get_location()) {
+    gen_check_warning_with_location_code(message, "W_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
+  } else {
+    gen_check_warning_code(message, "W_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
+  }
+}
+
+fn warn_on_nominal_enum_truthiness(
+  value: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+  let Some(value_type) = resolve_type_value(value, scope_types) else {
+    return;
+  };
+  let Some(enum_name) = nominal_enum_type_name(value_type.as_ref()) else {
+    return;
+  };
+
+  let guidance = if enum_name == "Option" {
+    "use `option:some?`, `option:none?`, or `tag-match`; `%none` is a truthy nominal value"
+  } else {
+    "use `tag-match` to select a nominal enum variant explicitly"
+  };
+  let message = format!(
+    "[Warn] nominal enum `{enum_name}` is used directly as an `if` condition in {file_ns}; this can silently select the truthy branch; {guidance}"
+  );
+  if let Some(location) = value.get_location() {
     gen_check_warning_with_location_code(message, "W_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
   } else {
     gen_check_warning_code(message, "W_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
@@ -3643,6 +3728,8 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.check_warnings,
     ctx.call_stack,
   )?;
+
+  warn_on_nominal_enum_truthiness(&cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
 
   let narrowing = extract_predicate_bindings(&cond_form, ctx.scope_types);
   let mut true_scope_types = ctx.scope_types.clone();
@@ -4970,9 +5057,9 @@ mod tests {
         Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
       )),
     });
-    let args = CalcitList::from(&[option_value] as &[Calcit]);
+    let args = CalcitList::from(std::slice::from_ref(&option_value));
 
-    for operation in ["some?", "get", "&compare"] {
+    for operation in ["some?", "get", "&compare", "record?"] {
       let head = Calcit::Symbol {
         sym: Arc::from(operation),
         info: Arc::new(CalcitSymbolInfo {
@@ -4986,6 +5073,57 @@ mod tests {
       assert_eq!(warnings.borrow().len(), 1, "{operation} should warn");
       assert_eq!(warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
     }
+
+    let method_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &Calcit::Method(Arc::from("count"), calcit::MethodKind::Invoke(calcit::DYNAMIC_TYPE.clone())),
+      &args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &method_warnings,
+    );
+    assert_eq!(method_warnings.borrow().len(), 1, "structural Option methods should warn");
+
+    let equality_head = Calcit::Symbol {
+      sym: Arc::from("="),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.option-migration"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+    let mixed_equality_args = CalcitList::from(&[option_value.to_owned(), Calcit::Number(1.0)] as &[Calcit]);
+    let mixed_equality_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &equality_head,
+      &mixed_equality_args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &mixed_equality_warnings,
+    );
+    assert_eq!(mixed_equality_warnings.borrow().len(), 1, "Option-to-payload equality should warn");
+
+    let nominal_equality_args = CalcitList::from(&[option_value.to_owned(), option_value.to_owned()] as &[Calcit]);
+    let nominal_equality_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &equality_head,
+      &nominal_equality_args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &nominal_equality_warnings,
+    );
+    assert!(
+      nominal_equality_warnings.borrow().is_empty(),
+      "Option-to-Option equality should stay valid"
+    );
+
+    let truthiness_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_truthiness(&option_value, &ScopeTypes::new(), "tests.option-migration", &truthiness_warnings);
+    assert_eq!(truthiness_warnings.borrow().len(), 1, "Option truthiness should warn");
+    assert_eq!(truthiness_warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
   }
 
   struct WarnDynMethodGuard {

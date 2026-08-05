@@ -416,7 +416,7 @@
           :tags $ #{} :internal
         |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare)
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -625,6 +625,23 @@
               :args $ [] 'String
               :return $ :: 'Optional 'String
           :tags $ #{} :builtin :env :internal :io
+        |&get-in $ %{} :CodeEntry (:doc "|Internal nullable traversal primitive used by the public Option-returning get-in API.")
+          :code $ quote
+            defn &get-in (base path)
+              if
+                not $ list? path
+                raise $ str-spaced "|expects path in a list, got:" path
+              if (nil? base) base $ list-match path
+                () base
+                (y0 ys)
+                  recur (get base y0) ys
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Dynamic (:: 'List 'K)
+              :generics $ [] 'K
+              :return $ :: 'Optional 'Dynamic
+          :tags $ #{} :internal
         |&get-os $ %{} :CodeEntry (:doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -872,10 +889,11 @@
         |&list:find-last $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last (xs f)
-              foldr-shortcut xs (;nil) (;nil)
+              foldr-shortcut xs (%none) (%none)
                 fn (_acc x)
-                  if (f x) (:: true x)
-                    :: false $ ;nil
+                  if (f x)
+                    :: true $ %some x
+                    :: false $ %none
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -883,16 +901,17 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'T
           :tags $ #{} :internal
         |&list:find-last-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last-index (xs f)
               foldr-shortcut xs
                 dec $ count xs
-                ;nil
+                %none
                 fn (idx x)
-                  if (f x) (:: true idx)
+                  if (f x)
+                    :: true $ %some idx
                     :: false $ &- 1 idx
           :examples $ []
           :schema $ :: 'Fn
@@ -901,7 +920,7 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:first $ %{} :CodeEntry (:doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty")
           :code $ quote &runtime-implementation
@@ -960,16 +979,17 @@
             defn &list:last-index-of (xs item)
               foldr-shortcut xs
                 dec $ count xs
-                ;nil
+                %none
                 fn (idx x)
-                  if (&= item x) (:: true idx)
+                  if (&= item x)
+                    :: true $ %some idx
                     :: false $ &- 1 idx
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:map $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1015,13 +1035,13 @@
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:max (xs)
-              if (&list:empty? xs) (&list:first xs)
-                &list:max-loop (&list:rest xs) (&list:first xs)
+              if (&list:empty? xs) (%none)
+                %some $ &list:max-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'Number)
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:max-loop $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1038,13 +1058,13 @@
         |&list:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:min (xs)
-              if (&list:empty? xs) (&list:first xs)
-                &list:min-loop (&list:rest xs) (&list:first xs)
+              if (&list:empty? xs) (%none)
+                %some $ &list:min-loop (&list:rest xs) (&list:first xs)
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'List 'Number)
-              :return $ :: 'Optional 'Number
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&list:min-loop $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1693,9 +1713,8 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :args $ [] (:: 'Set 'Number)
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&set:min $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1704,9 +1723,8 @@
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] (:: 'Set 'T)
-              :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :args $ [] (:: 'Set 'Number)
+              :return $ :: 'Option 'Number
           :tags $ #{} :internal
         |&set:to-list $ %{} :CodeEntry (:doc "|internal function for converting set to list\nSyntax: (&set:to-list set)\nParams: set (set)\nReturns: list\nConverts set to list of elements")
           :code $ quote &runtime-implementation
@@ -1789,13 +1807,12 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
-        |&str:find-index $ %{} :CodeEntry (:doc "|internal function for finding string index\nSyntax: (&str:find-index s pattern)\nParams: s (string), pattern (string)\nReturns: number or nil\nFinds first index of pattern in string, returns nil if not found")
+        |&str:find-index $ %{} :CodeEntry (:doc "|Internal string search primitive. Returns a numeric index or -1 when absent; public callers should use str-find-index or .find-index.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {}
+            {} (:return 'Number)
               :args $ [] 'String 'String
-              :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
         |&str:first $ %{} :CodeEntry (:doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty")
           :code $ quote &runtime-implementation
@@ -3982,34 +3999,29 @@
               :features $ #{} :env :io
               :return $ :: 'Option 'String
           :tags $ #{} :env :io
-        |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
+        |get-in $ %{} :CodeEntry (:doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal.")
           :code $ quote
             defn get-in (base path)
-              if
-                not $ list? path
-                raise $ str-spaced "|expects path in a list, got:" path
-              if (nil? base) base $ list-match path
-                () base
-                (y0 ys)
-                  recur (get base y0) ys
+              optionally $ &get-in base path
           :examples $ []
-            quote $ assert= 1
+            quote $ assert= (%some 1)
               get-in
                 {} $ :a
                   {} $ :b 1
                 [] :a :b
-            quote $ assert= 2
+            quote $ assert= (%some 2)
               get-in
                 [] ([] 1 2) ([] 3 4)
                 [] 0 1
-            quote $ assert= nil
+            quote $ assert= (%none)
               get-in
                 {} $ :x |value
                 [] :y
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
+            {}
               :args $ [] 'Dynamic (:: 'List 'K)
               :generics $ [] 'K
+              :return $ :: 'Option 'Dynamic
         |group-by $ %{} :CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
             defn group-by (xs0 f)
@@ -4730,7 +4742,7 @@
             {}
               :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'Number
         |merge $ %{} :CodeEntry (:doc "|Combines maps left-to-right, with later maps overwriting keys from earlier ones by reducing through `&merge`.")
           :code $ quote
             defn merge (x0 & xs) (reduce xs x0 &merge)
@@ -4768,7 +4780,7 @@
             {}
               :args $ [] 'T
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'Number
         |negate $ %{} :CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote
             defn negate (x) (&- 0 x)
@@ -5492,6 +5504,19 @@
           :schema $ :: 'Fn
             {} (:rest 'Dynamic) (:return 'String)
               :args $ [] 'Dynamic
+        |str-find-index $ %{} :CodeEntry (:doc "|Find the first string index as Option<Number>, returning none when the pattern is absent.")
+          :code $ quote
+            defn str-find-index (text pattern)
+              let
+                  idx $ &str:find-index text pattern
+                if (&= idx -1) (%none) (%some idx)
+          :examples $ []
+            quote $ assert= (%some 1) (str-find-index |abc |b)
+            quote $ assert= (%none) (str-find-index |abc |z)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'String 'String
+              :return $ :: 'Option 'Number
         |str-spaced $ %{} :CodeEntry (:doc "|converts values to string and joins them with spaces")
           :code $ quote
             defn str-spaced (& xs) (&str-spaced true & xs)

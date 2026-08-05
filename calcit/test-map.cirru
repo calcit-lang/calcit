@@ -63,7 +63,8 @@
           :code $ quote
             fn () (log-title "|Testing get")
               assert= nil $ get (&{}) :a
-              assert= nil $ get-in (&{}) ([] :a :b)
+              assert= (%none)
+                get-in (&{}) ([] :a :b)
               assert= nil $ get nil :a
               &let
                 m $ &{} :a 1 :b 2 :c 3 :d 4
@@ -206,11 +207,13 @@
               assert= true $ .empty? (&{})
               assert= 1 $ .get (&{} :a 1) :a
               assert= nil $ .get (&{} :a 1) :b
-              assert= 2 $ .get-in
-                {} $ :a
-                  {} $ :b 2
-                [] :a :b
-              assert= nil $ .get-in (&{}) ([] :a :b)
+              assert= (%some 2)
+                .get-in
+                  {} $ :a
+                    {} $ :b 2
+                  [] :a :b
+              assert= (%none)
+                .get-in (&{}) ([] :a :b)
               assert= true $ .includes? (&{} :a 1 :b 2) 1
               assert= false $ .includes? (&{} :a 1 :b 2) 3
               assert= (#{} :a :b)

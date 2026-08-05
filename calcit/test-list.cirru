@@ -393,27 +393,35 @@
               assert= (%none)
                 .find-index ([] :a :b :c)
                   fn (x) (= x :d)
-              assert= 9 $ .find-last ([] 1 3 5 7 9)
-                fn (x) (> x 5)
-              assert= nil $ .find-last ([] 1 3 5 7 9)
-                fn (x) (> x 10)
-              assert= 4 $ .find-last-index ([] 1 3 5 7 9)
-                fn (x) (> x 5)
-              assert= nil $ .find-last-index ([] 1 3 5 7 9)
-                fn (x) (> x 10)
-              assert= 3 $ .last-index-of ([] 1 1 2 1) 1
-              assert= nil $ .last-index-of ([] 1 1 2 1) 3
+              assert= (%some 9)
+                .find-last ([] 1 3 5 7 9)
+                  fn (x) (> x 5)
+              assert= (%none)
+                .find-last ([] 1 3 5 7 9)
+                  fn (x) (> x 10)
+              assert= (%some 4)
+                .find-last-index ([] 1 3 5 7 9)
+                  fn (x) (> x 5)
+              assert= (%none)
+                .find-last-index ([] 1 3 5 7 9)
+                  fn (x) (> x 10)
+              assert= (%some 3)
+                .last-index-of ([] 1 1 2 1) 1
+              assert= (%none)
+                .last-index-of ([] 1 1 2 1) 3
               assert= 10 $ .foldl ([] 1 2 3 4) 0 +
               assert=
                 {} (1 1) (2 2) (3 3)
                 frequencies $ [] 1 2 2 3 3 3
               assert= :b $ .get ([] :a :b :c :d) 1
-              assert= :c $ .get-in
-                [] :a $ [] :b ([] :c)
-                [] 1 1 0
-              assert= nil $ .get-in
-                [] :a $ [] :b ([] :c)
-                [] 1 1 1
+              assert= (%some :c)
+                .get-in
+                  [] :a $ [] :b ([] :c)
+                  [] 1 1 0
+              assert= (%none)
+                .get-in
+                  [] :a $ [] :b ([] :c)
+                  [] 1 1 1
               assert=
                 {}
                   1 $ [] 1 4
@@ -436,8 +444,14 @@
                 [] ([] 0 :a) ([] 1 :b) ([] 2 :c)
                 .map-indexed ([] :a :b :c)
                   fn (idx x) ([] idx x)
-              assert= 4 $ .max ([] 1 2 3 4)
-              assert= 1 $ .min ([] 1 2 3 4)
+              assert= (%some 4)
+                .max $ [] 1 2 3 4
+              assert= (%none)
+                .max $ []
+              assert= (%some 1)
+                .min $ [] 1 2 3 4
+              assert= (%none)
+                .min $ []
               assert= :b $ .nth ([] :a :b :c :d) 1
               assert= nil $ .nth ([] :a :b :c :d) 5
               assert= ([] 4 3 2 1)

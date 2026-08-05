@@ -56,8 +56,14 @@
               assert= (#{} 7 9)
                 .filter (#{} 1 3 5 7 9)
                   fn (x) (&> x 5)
-              assert= 4 $ .max (#{} 1 2 3 4)
-              assert= 1 $ .min (#{} 1 2 3 4)
+              assert= (%some 4)
+                .max $ #{} 1 2 3 4
+              assert= (%none)
+                .max $ #{}
+              assert= (%some 1)
+                .min $ #{} 1 2 3 4
+              assert= (%none)
+                .min $ #{}
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

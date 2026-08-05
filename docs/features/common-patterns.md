@@ -92,16 +92,9 @@ let
 
 ```cirru
 let
-    MyOption $ defenum MyOption
-      :some :dynamic
-      :none
     find-user $ fn (users id)
-      let
-          user $ find users $ fn (u)
-            = (get u :id) id
-        if (nil? user)
-          %:: MyOption :none
-          %:: MyOption :some user
+      find users $ fn (u)
+        = (get u :id) id
   println $ find-user
     [] ({} (:id |001) (:name |Alice))
     , |001
@@ -118,7 +111,7 @@ let
     result2 $ assoc-in data ([] :a :b :c) 100
     result3 $ update-in data ([] :a :b :c) inc
   println result1
-  ; => 1
+  ; => (%some 1)
   println result2
   ; => {} (:a $ {} (:b $ {} (:c 100)))
   println result3
@@ -203,10 +196,10 @@ let
 let
     result1 $ starts-with? |hello-world |hello
     result2 $ ends-with? |hello-world |world
-    result3 $ &str:find-index |hello-world |world
+    result3 $ str-find-index |hello-world |world
   ; result1 => true
   ; result2 => true
-  ; result3 => 6 (index of |world in |hello-world)
+  ; result3 => (%some 6) (index of |world in |hello-world)
   [] result1 result2 result3
 ```
 

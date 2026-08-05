@@ -72,11 +72,11 @@
             fn () (log-title "|Testing includes")
               assert= true $ includes? |abc |abc
               assert= false $ includes? |abd |abc
-              assert= 3 $ .find-index |0123456 |3
-              assert= 3 $ .find-index |0123456 |34
-              assert= 0 $ .find-index |0123456 |01
-              assert= 4 $ .find-index |0123456 |456
-              assert= -1 $ .find-index |0123456 |98
+              assert= (%some 3) (.find-index |0123456 |3)
+              assert= (%some 3) (.find-index |0123456 |34)
+              assert= (%some 0) (.find-index |0123456 |01)
+              assert= (%some 4) (.find-index |0123456 |456)
+              assert= (%none) (.find-index |0123456 |98)
               assert= true $ starts-with? |01234 |0
               assert= true $ starts-with? |01234 |01
               assert= false $ starts-with? |01234 |12
@@ -166,8 +166,8 @@
               assert= |a $ .first |abc
               assert= nil $ .first |
               assert= |bc $ .rest |abc
-              assert= 0 $ .find-index |abc |a
-              assert= 1 $ .find-index |abc |b
+              assert= (%some 0) (.find-index |abc |a)
+              assert= (%some 1) (.find-index |abc |b)
               assert= "|\"a \\\"\"" $ .escape "|a \""
               assert= |00000a $ .pad-left |a 6 |0
               assert= |a00000 $ .pad-right |a 6 |0

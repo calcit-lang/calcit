@@ -75,8 +75,12 @@ let
 let
     nested $ {} (:user $ {} (:name |Alice) (:age 30))
   println $ get-in nested $ [] :user :name
-  ; => Alice
+  ; => (%some |Alice)
 ```
+
+`get-in` returns `Option<Dynamic>` (`%some` for a resolved value and `%none`
+for a missing path or a `nil` encountered while traversing). Use
+`option:unwrap-or` or `tag-match` before consuming the payload.
 
 ## Modifying Maps
 

@@ -785,15 +785,18 @@ pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   Ok(())
 }
 
-/// `find xs f` — return first element satisfying f, or nil (0.0) if none.
+/// `find xs f` — return `Option` containing the first matching element.
 pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "find")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find: {e}"))?;
   let result = ctx.alloc_local();
+  let found = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(found));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
   ctx.emit(f64_const(0.0));
@@ -801,10 +804,17 @@ pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(elem));
   ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(found));
   ctx.emit(Instruction::Br(2)); // exit the block+loop
   ctx.emit(Instruction::End);
   emit_list_iter_end(ctx, i);
-  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::LocalGet(found));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_option_tuple(ctx, Some(result))?;
+  ctx.emit(Instruction::Else);
+  emit_option_tuple(ctx, None)?;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -888,15 +898,18 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   Ok(())
 }
 
-/// `find-index xs f` — return f64 index of first matching element, or -1.0.
+/// `find-index xs f` — return `Option` containing the first matching index.
 pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "find-index")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find-index: {e}"))?;
   let result = ctx.alloc_local();
-  ctx.emit(f64_const(-1.0));
+  let found = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(found));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem)?;
   ctx.emit(f64_const(0.0));
@@ -905,10 +918,17 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::LocalGet(i));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(found));
   ctx.emit(Instruction::Br(2)); // exit the block+loop
   ctx.emit(Instruction::End);
   emit_list_iter_end(ctx, i);
-  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(Instruction::LocalGet(found));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_option_tuple(ctx, Some(result))?;
+  ctx.emit(Instruction::Else);
+  emit_option_tuple(ctx, None)?;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

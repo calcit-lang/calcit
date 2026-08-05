@@ -635,6 +635,22 @@ fn emit_sequence_extreme_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, u
   ctx.emit(Instruction::End);
 }
 
+fn emit_sequence_extreme_option_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, use_min: bool) -> Result<(), String> {
+  let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
+  let count_local = emit_load_count_i32(ctx, ptr_local);
+  ctx.emit(Instruction::LocalGet(count_local));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_option_tuple(ctx, None)?;
+  ctx.emit(Instruction::Else);
+  emit_sequence_extreme_from_local(ctx, receiver_local, use_min);
+  let value_local = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value_local));
+  emit_option_tuple(ctx, Some(value_local))?;
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
 /// Allocates a 1-byte string containing the byte at (receiver+8+idx) and returns f64 ptr.
 /// Emits an inline If/Else that returns nil (0.0) when idx is out-of-range.
 fn emit_str_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
@@ -917,15 +933,15 @@ fn emit_method_min(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Stri
   ctx.emit(f64_const(list_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_from_local(ctx, receiver_local, true);
+  emit_sequence_extreme_option_from_local(ctx, receiver_local, true)?;
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
   ctx.emit(f64_const(set_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_from_local(ctx, receiver_local, true);
+  emit_sequence_extreme_option_from_local(ctx, receiver_local, true)?;
   ctx.emit(Instruction::Else);
-  ctx.emit(f64_const(0.0));
+  emit_option_tuple(ctx, None)?;
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   Ok(())
@@ -942,15 +958,15 @@ fn emit_method_max(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Stri
   ctx.emit(f64_const(list_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_from_local(ctx, receiver_local, false);
+  emit_sequence_extreme_option_from_local(ctx, receiver_local, false)?;
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
   ctx.emit(f64_const(set_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_from_local(ctx, receiver_local, false);
+  emit_sequence_extreme_option_from_local(ctx, receiver_local, false)?;
   ctx.emit(Instruction::Else);
-  ctx.emit(f64_const(0.0));
+  emit_option_tuple(ctx, None)?;
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   Ok(())

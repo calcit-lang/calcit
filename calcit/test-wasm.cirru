@@ -232,6 +232,38 @@
             defn test-display-by-hex () $ &str:count (&number:display-by 17 16)
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-find-found $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-find-found () $ option:unwrap-or
+              find ([] 1 2 3)
+                fn (x) (> x 1)
+              , -1
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-find-index-found $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-find-index-found () $ option:unwrap-or
+              find-index ([] 1 2 3)
+                fn (x) (> x 1)
+              , -1
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-find-index-not-found $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-find-index-not-found () $ option:unwrap-or
+              find-index ([] 1 2 3)
+                fn (x) (> x 9)
+              , -1
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-find-not-found $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-find-not-found () $ option:unwrap-or
+              find ([] 1 2 3)
+                fn (x) (> x 9)
+              , -1
+          :examples $ []
+          :schema $ :: 'Dynamic
         |test-floor $ %{} :CodeEntry (:doc "|floor function")
           :code $ quote
             defn test-floor (x) (floor x)
@@ -398,14 +430,25 @@
                 , 10 0
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-list-max-empty $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-list-max-empty () $ option:unwrap-or
+              .max $ []
+              , -1
+          :examples $ []
+          :schema $ :: 'Dynamic
         |test-list-max-method $ %{} :CodeEntry (:doc "|.max dispatches on list")
           :code $ quote
-            defn test-list-max-method () $ .max ([] 10 20 30 15)
+            defn test-list-max-method () $ option:unwrap-or
+              .max $ [] 10 20 30 15
+              , -1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-list-min-method $ %{} :CodeEntry (:doc "|.min dispatches on list")
           :code $ quote
-            defn test-list-min-method () $ .min ([] 10 20 30 15)
+            defn test-list-min-method () $ option:unwrap-or
+              .min $ [] 10 20 30 15
+              , -1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-list-nth $ %{} :CodeEntry (:doc "|list nth element")
@@ -904,12 +947,16 @@
           :schema $ :: 'Dynamic
         |test-set-max-method $ %{} :CodeEntry (:doc "|.max dispatches on set")
           :code $ quote
-            defn test-set-max-method () $ .max (#{} 10 20 30 15)
+            defn test-set-max-method () $ option:unwrap-or
+              .max $ #{} 10 20 30 15
+              , -1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-set-min-method $ %{} :CodeEntry (:doc "|.min dispatches on set")
           :code $ quote
-            defn test-set-min-method () $ .min (#{} 10 20 30 15)
+            defn test-set-min-method () $ option:unwrap-or
+              .min $ #{} 10 20 30 15
+              , -1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-set-union $ %{} :CodeEntry (:doc "|union merges two sets")
@@ -988,12 +1035,12 @@
           :schema $ :: 'Dynamic
         |test-str-find-index-found $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn test-str-find-index-found () $ &str:find-index |hello |ell
+            defn test-str-find-index-found () $ option:unwrap-or (.find-index |hello |ell) -1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-str-find-index-not-found $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn test-str-find-index-not-found () $ &str:find-index |hello |xyz
+            defn test-str-find-index-not-found () $ option:unwrap-or (.find-index |hello |xyz) -1
           :examples $ []
           :schema $ :: 'Dynamic
         |test-str-first $ %{} :CodeEntry (:doc "|first byte of hello = 104 (h)")

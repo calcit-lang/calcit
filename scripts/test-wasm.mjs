@@ -352,6 +352,11 @@ check("test-list-contains-method()", 1, e["test-list-contains-method"]); // 1+0
 check("test-list-includes-method()", 1, e["test-list-includes-method"]); // 1+0
 check("test-list-max-method()", 30, e["test-list-max-method"]);
 check("test-list-min-method()", 10, e["test-list-min-method"]);
+check("test-list-max-empty()", -1, e["test-list-max-empty"]);
+check("test-find-found()", 2, e["test-find-found"]);
+check("test-find-not-found()", -1, e["test-find-not-found"]);
+check("test-find-index-found()", 1, e["test-find-index-found"]);
+check("test-find-index-not-found()", -1, e["test-find-index-not-found"]);
 
 // --- Map tests ---
 check("test-map-count()", 3, e["test-map-count"]);
