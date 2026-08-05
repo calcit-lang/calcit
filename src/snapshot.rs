@@ -3285,24 +3285,27 @@ mod tests {
       panic!("optionally should have a function schema");
     };
 
-    assert!(
-      matches!(
-        schema.arg_types.as_slice(),
-        [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(_)))
-      ),
-      "optionally should accept Optional<T>: {:?}",
-      schema.arg_types
-    );
-    assert!(
-      matches!(
-        schema.return_type.as_ref(),
-        CalcitTypeAnnotation::TypeRef(name, args)
-          if name.as_ref() == "Option"
-            && matches!(args.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(_)))
-      ),
-      "optionally should return Option<T>: {:?}",
-      schema.return_type
-    );
+    let input_var = match schema.arg_types.as_slice() {
+      [arg] => match arg.as_ref() {
+        CalcitTypeAnnotation::Optional(inner) => match inner.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => name,
+          other => panic!("optionally Optional input should contain a type variable, got {other:?}"),
+        },
+        other => panic!("optionally should accept Optional<T>, got {other:?}"),
+      },
+      args => panic!("optionally should accept exactly one argument, got {args:?}"),
+    };
+    let output_var = match schema.return_type.as_ref() {
+      CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Option" => match args.as_slice() {
+        [arg] => match arg.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => name,
+          other => panic!("optionally Option output should contain a type variable, got {other:?}"),
+        },
+        args => panic!("optionally Option output should have one type argument, got {args:?}"),
+      },
+      other => panic!("optionally should return Option<T>, got {other:?}"),
+    };
+    assert_eq!(input_var, output_var, "optionally must preserve its input type variable");
   }
 
   #[test]

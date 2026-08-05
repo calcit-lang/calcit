@@ -15,7 +15,7 @@
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy
-              fn (_x) nil
+              fn (_x) (;nil)
           :examples $ []
           :schema $ :: 'Dynamic
         |ResultTrait $ %{} :CodeEntry (:doc |)
@@ -34,7 +34,7 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! () $ ;nil
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} :NsEntry (:doc |)

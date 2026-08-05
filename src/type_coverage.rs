@@ -521,7 +521,8 @@ fn child_is_return_position(
   }
   match head {
     Some("if") => matches!(child_index, 2 | 3),
-    Some("let" | "&let" | "do") => child_index >= 2 && child_index + 1 == child_count,
+    Some("let" | "&let") => child_index >= 2 && child_index + 1 == child_count,
+    Some("do") => child_index >= 1 && child_index + 1 == child_count,
     _ => false,
   }
 }
@@ -2201,7 +2202,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
     }));
   }
   let envelope = serde_json::json!({
-    "schema_version": 1,
+    "schema_version": 2,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {

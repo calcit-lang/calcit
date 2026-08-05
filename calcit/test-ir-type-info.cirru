@@ -19,7 +19,7 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! () $ ;nil
           :examples $ []
           :schema $ :: 'Dynamic
         |test-type-info $ %{} :CodeEntry (:doc |)

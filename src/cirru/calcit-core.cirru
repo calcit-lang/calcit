@@ -4888,10 +4888,12 @@
         |optionally $ %{} :CodeEntry (:doc "|Convert a nullable Optional<T> value into nominal Option<T>.")
           :code $ quote
             defn optionally (s)
-              if (nil? s) (:: :none) (:: :some s)
+              if (nil? s) (%none) (%some s)
           :examples $ []
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
+            quote $ assert= Option
+              &tuple:enum $ optionally 1
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'Optional 'T)

@@ -63,6 +63,7 @@
 - 将能在不丢失类型证据的情况下修正的 `parse-float` 和 `get-env` proc 返回标成 Optional；
 - 公开 core 的 `first`、`nth`、`get` schema 继续暴露 Optional；内部 `&list:first`、`&list:nth`、`&map:get` 的 Dynamic proc 契约及低层专用推断暂保留兼容行为；
 - `analyze weak-types` 仅在结构上可证明的返回位置读取函数契约，将显式 nil 区分为 `declared-unit`、`declared-optional` 与 `unresolved`；JSON 对后两类迁移债务发出 `W_NIL_TYPE_DEBT`；
+- `analyze.weak-types` 的机器协议升级到 schema v2，避免旧消费者在 v1 下错误接受新增的封闭 intent/diagnostic 枚举；
 - 修正既有 `optionally` 桥接函数的契约为 `Optional<T> -> Option<T>`，为遗留 nullable 边界提供不丢失类型关系的显式出口；
 - 为上述规则增加单元测试。
 

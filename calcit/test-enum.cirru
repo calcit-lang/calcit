@@ -25,7 +25,7 @@
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy
-              fn (_x) nil
+              fn (_x) (;nil)
           :examples $ []
           :schema $ :: 'Dynamic
         |ResultTrait $ %{} :CodeEntry (:doc |)
@@ -123,8 +123,10 @@
                 assert-type none-value $ :: 'Maybe1 'Dynamic
                 assert-type pair-value $ :: 'Duo 'Number 'String
                 assert-type swapped-value $ :: 'Duo 'Number 'String
-                assert= 1 $ unwrap-maybe (%:: Maybe1 :some 1)
-                assert= nil $ unwrap-maybe (%:: Maybe1 :none)
+                assert= (%some 1)
+                  unwrap-maybe $ %:: Maybe1 :some 1
+                assert= (%none)
+                  unwrap-maybe $ %:: Maybe1 :none
                 assert= :pair $ &tuple:nth pair-value 0
                 assert= 1 $ &tuple:nth pair-value 1
                 assert= |hi $ &tuple:nth pair-value 2
@@ -242,17 +244,17 @@
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |unwrap-maybe $ %{} :CodeEntry (:doc "|Return payload from Maybe1 or nil")
+        |unwrap-maybe $ %{} :CodeEntry (:doc "|Convert Maybe1<T> into nominal Option<T>.")
           :code $ quote
             defn unwrap-maybe (v)
               match v
-                (:none) nil
-                (:some item) item
+                (:none) (%none)
+                (:some item) (%some item)
           :examples $ []
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'test-enum.main/Maybe1 'T)
               :generics $ [] 'T
-              :return $ :: 'Optional 'T
+              :return $ :: 'Option 'T
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote (ns test-enum.main)

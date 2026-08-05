@@ -1564,6 +1564,7 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
+    assert_eq!(weak_value["schema_version"], 2);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");
@@ -1694,6 +1695,31 @@ mod tests {
       unit_row.occurrences[1].intent,
       type_coverage::WeakTypeIntent::DeclaredUnit,
       "only the final nil inherits the Unit return contract"
+    );
+
+    let single_do_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("single-unit-step"),
+        list(vec![]),
+        list(vec![leaf("do"), leaf("nil")]),
+      ]),
+      schema: unit_entry.schema.clone(),
+    };
+    let single_do_row = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "single-unit-step",
+      &single_do_entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+    )
+    .expect("single-expression do nil occurrence");
+    assert_eq!(
+      single_do_row.occurrences[0].intent,
+      type_coverage::WeakTypeIntent::DeclaredUnit,
+      "the sole expression in do is its return position"
     );
 
     let optional_entry = snapshot::CodeEntry {

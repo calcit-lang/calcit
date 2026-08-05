@@ -90,6 +90,8 @@ For one expression, `cr query type-at '<ns/def>' --path code@... --format json` 
 
 Both analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
 
+`analyze.weak-types` uses protocol `schema_version: 2` because nil intent classes and `W_NIL_TYPE_DEBT` extend previously closed machine-readable enums. Consumers should reject v1 when they require the nil-contract fields rather than accepting the old version and failing on new intent values.
+
 Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, and `deftrait` carry type information in their declarations, so they are classified as data declarations instead of receiving a false top-level `schema-dynamic` finding.
 
 `check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, record, or component tree. Output explicitly produced by an example is still shown.

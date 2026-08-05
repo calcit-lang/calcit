@@ -10,7 +10,7 @@
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
             defimpl EnumImpl EnumMetadata $ .dummy
-              fn (self) nil
+              fn (self) (;nil)
           :examples $ []
           :schema $ :: 'Impl
         |EnumMetadata $ %{} :CodeEntry (:doc |)
@@ -45,7 +45,7 @@
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
             defimpl StructImpl StructMetadata $ .dummy
-              fn (self) nil
+              fn (self) (;nil)
           :examples $ []
           :schema $ :: 'Impl
         |StructMetadata $ %{} :CodeEntry (:doc |)
@@ -123,7 +123,7 @@
               :args $ [] 'String
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () nil
+            defn reload! () $ ;nil
           :examples $ []
           :schema $ :: 'Dynamic
         |show-type-info $ %{} :CodeEntry (:doc |)
