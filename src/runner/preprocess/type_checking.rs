@@ -47,7 +47,7 @@ struct CheckContext<'a> {
 fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
   if actual_type.contains(":js-object") {
     message.push_str(
-      "; JS FFI values stay opaque after nil checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary",
+      "; JS FFI values stay opaque after JsNullish checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary",
     );
   }
   message
@@ -586,8 +586,8 @@ mod tests {
 
   #[test]
   fn js_ffi_mismatches_include_boundary_guidance() {
-    let message = append_js_ffi_type_hint("type mismatch".to_owned(), ":js-object?");
-    assert!(message.contains("stay opaque after nil checks"));
+    let message = append_js_ffi_type_hint("type mismatch".to_owned(), "js-nullish<:js-object>");
+    assert!(message.contains("stay opaque after JsNullish checks"));
     assert!(message.contains("unsafe-coerce"));
   }
 

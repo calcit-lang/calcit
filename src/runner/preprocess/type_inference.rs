@@ -327,8 +327,8 @@ fn js_host_value_type() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::JsObject)
 }
 
-fn optional_js_host_value_type() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Optional(js_host_value_type()))
+fn js_nullish_host_value_type() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::JsNullish(js_host_value_type()))
 }
 
 fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -336,7 +336,7 @@ fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types
     // JavaScript indexed/property reads may yield `undefined` or `null`. Keep
     // the raw host value opaque as well as nullable so a nil check alone does
     // not silently prove that it is a Calcit Number/String/etc.
-    "aget" | "js-get" => Some(optional_js_host_value_type()),
+    "aget" | "js-get" => Some(js_nullish_host_value_type()),
     // Assignment expressions evaluate to the assigned value in JavaScript.
     "aset" | "js-set" => call_expr
       .get(3)
@@ -344,7 +344,7 @@ fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types
       .or_else(|| Some(js_host_value_type())),
     "js-delete" | "exists?" | "instance?" => Some(tag_annotation("bool")),
     "&js-object" | "js-array" | "new" => Some(js_host_value_type()),
-    _ if name.starts_with("js/") => Some(optional_js_host_value_type()),
+    _ if name.starts_with("js/") => Some(js_nullish_host_value_type()),
     _ => None,
   }
 }
@@ -437,8 +437,9 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
     Calcit::Import(CalcitImport { info, .. }) if matches!(info.as_ref(), ImportInfo::JsDefault { .. }) => Some(js_host_value_type()),
     Calcit::Import(CalcitImport { ns, def, .. }) => infer_definition_value_type(ns, def),
-    Calcit::Symbol { sym, .. } if sym.starts_with("js/") => Some(optional_js_host_value_type()),
+    Calcit::Symbol { sym, .. } if sym.starts_with("js/") => Some(js_nullish_host_value_type()),
     Calcit::Symbol { sym, info, .. } => infer_definition_value_type(&info.at_ns, sym),
+    Calcit::RawCode(..) => Some(js_nullish_host_value_type()),
 
     // Local variable: read type_info
     Calcit::Local(local) => Some(local.type_info.clone()),
@@ -521,6 +522,8 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           None
         }
 
+        Calcit::RawCode(..) => Some(js_nullish_host_value_type()),
+
         // Direct Fn call: return the function's return type
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
@@ -570,24 +573,24 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
             return Some(field_type);
           }
           match head {
-            Calcit::Method(_, calcit::MethodKind::Access) => Some(optional_js_host_value_type()),
+            Calcit::Method(_, calcit::MethodKind::Access) => Some(js_nullish_host_value_type()),
             _ => None,
           }
         }
 
-        // Native JavaScript access/calls remain compatibility Optional values,
-        // not nominal Option values. The opaque JsObject payload prevents an
-        // unchecked host value from matching arbitrary strong Calcit types.
+        // Native JavaScript access/calls remain explicit JsNullish boundary values,
+        // not legacy Optional or nominal Option values. The opaque JsObject payload
+        // prevents an unchecked host value from matching strong Calcit types.
         Calcit::Method(field_name, calcit::MethodKind::AccessOptional) => {
           if let Some(receiver) = xs.get(1)
             && let Some(field_type) = infer_record_field_type(receiver, field_name.as_ref(), scope_types)
           {
             return Some(wrap_optional_type(field_type));
           }
-          Some(optional_js_host_value_type())
+          Some(js_nullish_host_value_type())
         }
         Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional) => {
-          Some(optional_js_host_value_type())
+          Some(js_nullish_host_value_type())
         }
 
         // Nested List call: the head is a function call expression
@@ -1501,10 +1504,10 @@ mod tests {
     })
   }
 
-  fn assert_optional_js_host_value(value: Option<Arc<CalcitTypeAnnotation>>) {
+  fn assert_js_nullish_host_value(value: Option<Arc<CalcitTypeAnnotation>>) {
     assert!(matches!(
       value.as_deref(),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+      Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
   }
 
@@ -1604,7 +1607,7 @@ mod tests {
   }
 
   #[test]
-  fn js_ffi_reads_and_native_calls_keep_nullable_opaque_types() {
+  fn js_ffi_reads_and_native_calls_keep_js_nullish_opaque_types() {
     let receiver = local("host", Arc::new(CalcitTypeAnnotation::JsObject));
     let access = Calcit::from(vec![
       Calcit::Method(Arc::from("value"), calcit::MethodKind::Access),
@@ -1620,9 +1623,19 @@ mod tests {
     ]);
     let indexed_read = Calcit::from(vec![symbol("aget"), receiver, Calcit::Str(Arc::from("value"))]);
     let global_call = Calcit::from(vec![symbol("js/Date.now")]);
+    let raw_global = Calcit::RawCode(calcit::RawCodeType::Js, Arc::from("Date.now"));
+    let raw_global_call = Calcit::from(vec![raw_global.clone()]);
 
-    for expression in [access, optional_access, native_call, indexed_read, global_call] {
-      assert_optional_js_host_value(infer_static_type_from_expr(&expression));
+    for expression in [
+      access,
+      optional_access,
+      native_call,
+      indexed_read,
+      global_call,
+      raw_global,
+      raw_global_call,
+    ] {
+      assert_js_nullish_host_value(infer_static_type_from_expr(&expression));
     }
 
     let opaque = CalcitTypeAnnotation::JsObject;

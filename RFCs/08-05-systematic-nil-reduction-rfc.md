@@ -10,7 +10,8 @@
 - 无业务返回值使用 `Unit`（运行时暂仍由 `nil` 承载）；
 - 正常的“可能缺失”最终使用名义类型 `Option<T>`；
 - 可恢复失败使用 `Result<T, E>`；
-- `Optional<T>` 只描述兼容期或 FFI 边界上“值可能是 `nil`”；
+- JavaScript `null`/`undefined` 只通过 `JsNullish<T>` 进入类型系统；
+- `Optional<T>` 不再是公开 API 类型，只作为编译器识别旧 schema 与内部自举债务的兼容表示；
 - 参数可以省略是调用约定，不再借用 `Optional<T>` 表示。
 
 这不是立即删除运行时 `nil`。迁移顺序是先让类型契约诚实，再由诊断推动调用方显式处理，最后收紧遗留运行时行为。
@@ -20,6 +21,7 @@
 当前实现已经具备迁移所需的主要构件：
 
 - `CalcitTypeAnnotation::Optional(T)` 能表达 `T | nil`；
+- `CalcitTypeAnnotation::JsNullish(T)` 独立表达 JavaScript 宿主空值，不与 Optional/Option 相互匹配；
 - `nil` 推断为 `Unit`，且 `Unit` 可以匹配 `Optional<T>`；
 - `nil?` / `some?` 已支持分支内的 Optional 类型收窄；
 - core 已定义 `Option<T>`、`Result<T, E>` 及基本组合函数；
@@ -38,11 +40,15 @@
 
 `Unit` 只用于副作用操作或明确没有有意义返回值的表达式，例如写文件、注册 watcher。运行时目前仍由 `nil` 承载 Unit，但源码不应因此显式返回 `nil` 或 `;nil`：空函数体直接声明 `Unit`，有副作用的函数让最后一个 Unit effect 自然成为返回项。只有语法必须提供占位节点时才保留 `;nil`，业务代码不得把它当缺失值容器。
 
-### Optional<T>
+### Optional<T>（遗留内部表示）
 
-`Optional<T>` 表示运行时值确实可能是 `T` 或 `nil`。它是兼容层，而不是新 API 的首选返回类型。调用方必须通过 `nil?`、`some?` 或显式兼容函数收窄后才能按 `T` 使用。
+`Optional<T>` 只用于识别旧 schema 和尚未完成自举迁移的 core 内部契约。非 core 的公开函数 schema 不再允许声明 Optional；普通缺失必须使用 Option，失败使用 Result，无业务返回使用 Unit。
 
-JS FFI 是一个重要的兼容边界，但不能因此把宿主值继续当成可匹配任意类型的 `Dynamic`。原生属性读取、方法调用与 `aget`/`js-get` 保持 `Optional<JsObject>`：Optional 表达 `null`/`undefined`，不透明的 `JsObject` payload 则要求调用方在进入强类型 Calcit 代码前显式验证、转换或在可信契约处 `unsafe-coerce`。`some?`/`nil?` 只收窄空值，不会把 `JsObject` 自动证明为 Number/String。该边界不得静默包装成 Option；Option 只能由显式转换 API 构造。
+### JsNullish<T>
+
+JS FFI 是无法立即消除的宿主空值边界。原生属性读取、方法调用、`aget`/`js-get` 与未声明的 `js/...` 调用返回 `JsNullish<JsObject>`：JsNullish 表达 `null`/`undefined`，不透明的 `JsObject` payload 仍要求调用方验证、转换或在可信契约处 `unsafe-coerce`。使用 `js-nullish?`/`js-present?` 收窄；旧 `nil?`/`some?` 会产生专用迁移诊断。
+
+`JsNullish<T>` 不匹配 `Optional<T>`，因此不能传给通用 `optionally` 静默包装。只有显式 `js-nullish->option` 可以建立 `Option<T>`，且该转换不负责验证 opaque payload。
 
 ### Option<T>
 
@@ -81,12 +87,12 @@ nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回�
 - 直接将原有 `find`、`find-index`、`index-of` 改为返回 `Option`，让旧调用在结果消费处产生明确的类型迁移提示；
 - 将公开 `parse-float` 改为 `String -> Result<Number,String>`，`:err` 保留原始非法输入；nullable 底层过程改名为内部 `&parse-float`；
 - 将公开 `get-env` 改为 `String -> Option<String>`，删除旧的第二个默认值参数；迁移时使用 `option:unwrap-or`，nullable 底层过程改名为内部 `&get-env`；
-- 继续以 `optionally` 作为内部 Optional 值到 Option 的显式桥接函数；
+- `optionally` 仅保留为 core/internal 遗留 Optional 到 Option 的桥接，不接受 JsNullish；
 - 泛型实参无法确定时，只把未绑定 payload 降为 Dynamic，保留 `Option<Dynamic>` / `Result<...,Dynamic>` 等外层名义类型，避免整个结果退化成 Dynamic；
 - 对 `some?`/`nil?`、位置式 `get`/`nth` 以及底层 `&compare` 消费名义 enum 的旧 nullable 用法报告 `W_NOMINAL_ENUM_LEGACY_USE`，提示改用 Option 方法、unwrap 或 `tag-match`；
 - core schema 成为公开函数契约，Rust proc 签名负责底层过程契约，并增加一致性审计。
 
-`first`、`last`、`nth`、`get` 暂时保留 Optional：它们参与 core 宏展开和编译器自举，直接切换会让 `let` 等宏在加载阶段收到 Option。后续需先把宏实现迁到明确的低层原语，再切换公开契约。JS FFI 仍保持 `Optional<JsObject>`，不会跟随这些 API 自动变为 Option。
+`first`、`last`、`nth`、`get` 的 core 自举实现暂时仍由编译器内部识别 Optional 债务：它们参与宏展开，直接切换会让 `let` 等宏在加载阶段收到 Option。后续需先把宏实现迁到明确的低层原语，再切换公开契约。该例外不允许出现在非 core 的公开函数 schema。JS FFI 已独立为 `JsNullish<JsObject>`，不会跟随这些 API 自动变为 Option，也不能通过 `optionally` 擦除边界。
 
 ### Phase 3：typed code 严格化
 
@@ -104,7 +110,7 @@ nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回�
 
 - 将公共安全 API 的返回值切换为 Option/Result；
 - 删除已无调用方的 nil-tolerant 分支；
-- 将 `Optional<T>` 限定在 FFI、旧模块和显式 unsafe/coerce 边界；
+- 删除 core 自举完成后剩余的 Optional 公开解析能力，仅在迁移工具中识别旧 schema；
 - 审计 JS/WASM 后端，确保名义类型的表示和分支行为一致。
 
 ## 类型提示修复策略
@@ -112,6 +118,7 @@ nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回�
 迁移应优先给出局部、可机械执行的建议：
 
 - `Optional<T> -> T`：提示先用 `some?`/`nil?` 收窄，或转换为 Option；
+- `JsNullish<T> -> T`：提示使用 `js-present?`/`js-nullish?` 收窄，验证 opaque payload，并只在显式需要时调用 `js-nullish->option`；
 - 缺少 else：提示补 else、改为 `Option<T>`，或明确声明 `Optional<T>` 兼容边界；
 - nil 作为集合：提示在来源处处理缺失，不自动替换成空集合，因为二者业务语义不同；
 - 可省略参数处显式传 nil：提示省略参数，或修改参数值类型为 Optional；

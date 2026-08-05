@@ -290,6 +290,10 @@ pub enum CalcitTypeAnnotation {
   Dynamic,
   /// Represents an type that can be nil or the given type
   Optional(Arc<CalcitTypeAnnotation>),
+  /// JavaScript FFI value that may be `null`/`undefined` (represented as nil at runtime).
+  /// This boundary type is intentionally distinct from both legacy Optional<T>
+  /// and the nominal Calcit Option<T> enum.
+  JsNullish(Arc<CalcitTypeAnnotation>),
   /// Struct type definition, optionally with applied generic arguments.
   /// `args` is empty when used as a bare type annotation (no generics applied).
   Struct(Arc<CalcitStruct>, Arc<Vec<Arc<CalcitTypeAnnotation>>>),
@@ -336,9 +340,12 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
     match self {
-      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Variadic(inner) | Self::Optional(inner) => {
-        inner.validate_applied_type_args()
-      }
+      Self::List(inner)
+      | Self::Set(inner)
+      | Self::Ref(inner)
+      | Self::Variadic(inner)
+      | Self::Optional(inner)
+      | Self::JsNullish(inner) => inner.validate_applied_type_args(),
       Self::Map(key, value) => {
         key.validate_applied_type_args()?;
         value.validate_applied_type_args()
@@ -495,6 +502,7 @@ impl CalcitTypeAnnotation {
       "cirru-quote" | "CirruQuote" => Some("CirruQuote"),
       "js-object" | "JsObject" => Some("JsObject"),
       "optional" | "Optional" => Some("Optional"),
+      "js-nullish" | "JsNullish" => Some("JsNullish"),
       "&" | "variadic" | "Variadic" => Some("Variadic"),
       "record" | "Record" => Some("Record"),
       "struct" | "Struct" => Some("Struct"),
@@ -528,7 +536,7 @@ impl CalcitTypeAnnotation {
         Some(Self::Custom(Arc::new(Calcit::tag(&legacy_name))))
       }
       // These forms require a payload and are handled by the type-expression parser.
-      "Optional" | "Variadic" => None,
+      "Optional" | "JsNullish" | "Variadic" => None,
       _ => None,
     }
   }
@@ -1782,6 +1790,7 @@ impl CalcitTypeAnnotation {
         }
         match name {
           "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Optional(args[0].clone())),
+          "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::JsNullish(args[0].clone())),
           "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
           "List" => {
             return Arc::new(CalcitTypeAnnotation::List(
@@ -2003,6 +2012,7 @@ impl CalcitTypeAnnotation {
             }
             match name {
               "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Optional(args[0].clone())),
+              "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::JsNullish(args[0].clone())),
               "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
               "List" => {
                 return Arc::new(CalcitTypeAnnotation::List(
@@ -2090,6 +2100,7 @@ impl CalcitTypeAnnotation {
       Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string()),
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("{}?", inner.to_brief_string()),
+      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.to_brief_string()),
       Self::Struct(base, args) => {
         if args.is_empty() {
           format!("struct {}", base.name)
@@ -2142,6 +2153,7 @@ impl CalcitTypeAnnotation {
       Self::Set(inner) => Arc::new(Self::Set(inner.substitute_type_vars(bindings))),
       Self::Ref(inner) => Arc::new(Self::Ref(inner.substitute_type_vars(bindings))),
       Self::Optional(inner) => Arc::new(Self::Optional(inner.substitute_type_vars(bindings))),
+      Self::JsNullish(inner) => Arc::new(Self::JsNullish(inner.substitute_type_vars(bindings))),
       Self::Variadic(inner) => Arc::new(Self::Variadic(inner.substitute_type_vars(bindings))),
       Self::Fn(sig) => {
         let new_args = sig.arg_types.iter().map(|a| a.substitute_type_vars(bindings)).collect();
@@ -2175,9 +2187,12 @@ impl CalcitTypeAnnotation {
     match self {
       Self::TypeVar(_) => true,
       Self::TypeRef(_, args) => args.iter().any(|a| a.contains_type_var()),
-      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Optional(inner) | Self::Variadic(inner) => {
-        inner.contains_type_var()
-      }
+      Self::List(inner)
+      | Self::Set(inner)
+      | Self::Ref(inner)
+      | Self::Optional(inner)
+      | Self::JsNullish(inner)
+      | Self::Variadic(inner) => inner.contains_type_var(),
       Self::Map(k, v) => k.contains_type_var() || v.contains_type_var(),
       Self::Fn(sig) => sig.arg_types.iter().any(|a| a.contains_type_var()) || sig.return_type.contains_type_var(),
       Self::Struct(_, args) | Self::Enum(_, args) => args.iter().any(|a| a.contains_type_var()),
@@ -2457,10 +2472,18 @@ impl CalcitTypeAnnotation {
       },
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
+        Self::JsNullish(_) => false,
         Self::Unit => true, // nil is always valid for Optional types
         _ => self.matches_with_bindings(expected_inner, bindings),
       },
       (Self::Optional(_), _) => false,
+      (_, Self::JsNullish(expected_inner)) => match self {
+        Self::JsNullish(actual_inner) => actual_inner.matches_with_bindings(expected_inner, bindings),
+        Self::Optional(_) => false,
+        Self::Unit => true,
+        _ => self.matches_with_bindings(expected_inner, bindings),
+      },
+      (Self::JsNullish(_), _) => false,
       (Self::Bool, Self::Bool)
       | (Self::Number, Self::Number)
       | (Self::String, Self::String)
@@ -2662,6 +2685,8 @@ impl CalcitTypeAnnotation {
           } else if tag_name == "optional" && tuple.extra.len() == 1 {
             // Optional type: (optional :type)
             return Self::Optional(Arc::new(Self::from_calcit(&tuple.extra[0])));
+          } else if tag_name == "js-nullish" && tuple.extra.len() == 1 {
+            return Self::JsNullish(Arc::new(Self::from_calcit(&tuple.extra[0])));
           }
         }
         match &tuple.sum_type {
@@ -2818,6 +2843,11 @@ impl CalcitTypeAnnotation {
         extra: vec![inner.to_calcit()],
         sum_type: None,
       }),
+      Self::JsNullish(inner) => Calcit::Tuple(CalcitTuple {
+        tag: Arc::new(Calcit::Tag(EdnTag::from("js-nullish"))),
+        extra: vec![inner.to_calcit()],
+        sum_type: None,
+      }),
       Self::Struct(struct_def, args) => {
         if args.is_empty() {
           Calcit::Struct((**struct_def).clone())
@@ -2913,6 +2943,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Self::Optional(inner) => Edn::tuple(Edn::Symbol(Arc::from("Optional")), vec![inner.to_type_edn()]),
+      Self::JsNullish(inner) => Edn::tuple(Edn::Symbol(Arc::from("JsNullish")), vec![inner.to_type_edn()]),
       Self::Variadic(inner) => Edn::tuple(Edn::Symbol(Arc::from("Variadic")), vec![inner.to_type_edn()]),
       Self::Fn(fn_annot) => Edn::tuple(Edn::Symbol(Arc::from("Fn")), vec![fn_annot.to_inline_type_schema_edn()]),
       Self::Struct(s, args) => {
@@ -3030,6 +3061,7 @@ impl CalcitTypeAnnotation {
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
       Self::Custom(_) => "custom".to_string(),
       Self::Optional(inner) => format!("optional<{}>", inner.describe()),
+      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.describe()),
       Self::Struct(base, args) => {
         if args.is_empty() {
           format!("struct {}", base.name)
@@ -3084,16 +3116,17 @@ impl CalcitTypeAnnotation {
       Self::Variadic(_) => 17,
       Self::Custom(_) => 18,
       Self::Optional(_) => 19,
-      Self::Dynamic => 20,
-      Self::TypeVar(_) => 21,
-      Self::TypeRef(_, _) => 22,
-      Self::Struct(_, _) => 23,
-      Self::Enum(_, _) => 24,
-      Self::Trait(_) => 25,
-      Self::TraitSet(_) => 26,
-      Self::Unit => 27,
-      Self::JsObject => 28,
-      Self::TypeSlot(_) => 29,
+      Self::JsNullish(_) => 20,
+      Self::Dynamic => 21,
+      Self::TypeVar(_) => 22,
+      Self::TypeRef(_, _) => 23,
+      Self::Struct(_, _) => 24,
+      Self::Enum(_, _) => 25,
+      Self::Trait(_) => 26,
+      Self::TraitSet(_) => 27,
+      Self::Unit => 28,
+      Self::JsObject => 29,
+      Self::TypeSlot(_) => 30,
     }
   }
 }
@@ -4424,6 +4457,22 @@ mod tests {
   }
 
   #[test]
+  fn js_nullish_and_legacy_optional_are_distinct_boundaries() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let optional = CalcitTypeAnnotation::Optional(number.clone());
+    let js_nullish = CalcitTypeAnnotation::JsNullish(number.clone());
+
+    assert!(!js_nullish.matches_annotation(&optional));
+    assert!(!optional.matches_annotation(&js_nullish));
+    assert!(CalcitTypeAnnotation::Number.matches_annotation(&js_nullish));
+    assert!(CalcitTypeAnnotation::Unit.matches_annotation(&js_nullish));
+    assert_eq!(
+      js_nullish.to_type_edn(),
+      Edn::tuple(Edn::Symbol(Arc::from("JsNullish")), vec![number.to_type_edn()])
+    );
+  }
+
+  #[test]
   fn concrete_struct_matches_struct_category() {
     let actual = CalcitTypeAnnotation::Struct(
       Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![EdnTag::new("name")])),
@@ -4495,6 +4544,10 @@ impl Hash for CalcitTypeAnnotation {
       }
       Self::Optional(inner) => {
         "optional".hash(state);
+        inner.hash(state);
+      }
+      Self::JsNullish(inner) => {
+        "js-nullish".hash(state);
         inner.hash(state);
       }
       Self::Dynamic => "dynamic".hash(state),
@@ -4576,6 +4629,7 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
       (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
+      (Self::JsNullish(a), Self::JsNullish(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
       (Self::TypeVar(a), Self::TypeVar(b)) => a.cmp(b),
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => a_name.cmp(b_name).then_with(|| a_args.cmp(b_args)),
@@ -4883,12 +4937,13 @@ impl CalcitFnTypeAnnotation {
 /// Check if a runtime `Calcit` value matches the expected `CalcitTypeAnnotation`.
 /// Used for runtime type validation when creating records (`%{}`) and enum tuples (`%::`).
 /// Returns `true` if the value is compatible with the declared type.
-/// `Dynamic` types always match. `Nil` matches `Optional` types.
+/// `Dynamic` types always match. `Nil` matches legacy Optional and JS-nullish boundary types.
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
   match expected {
     CalcitTypeAnnotation::Dynamic => true,
     CalcitTypeAnnotation::Unit => matches!(value, Calcit::Nil),
     CalcitTypeAnnotation::Optional(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
+    CalcitTypeAnnotation::JsNullish(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
     CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
     CalcitTypeAnnotation::Number => matches!(value, Calcit::Number(_)),
     CalcitTypeAnnotation::String => matches!(value, Calcit::Str(_)),

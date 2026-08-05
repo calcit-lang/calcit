@@ -656,7 +656,9 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     use CalcitTypeAnnotation as T;
     match annotation {
       T::Dynamic => true,
-      T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Variadic(inner) | T::Optional(inner) => contains_dynamic(inner),
+      T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Variadic(inner) | T::Optional(inner) | T::JsNullish(inner) => {
+        contains_dynamic(inner)
+      }
       T::Map(k, v) => contains_dynamic(k) || contains_dynamic(v),
       T::Fn(info) => {
         info.arg_types.iter().any(|t| contains_dynamic(t))

@@ -4300,6 +4300,42 @@
               :args $ [] 'Dynamic
               :features $ #{} :js-ffi
           :tags $ #{} :interop :macro
+        |js-nullish->option $ %{} :CodeEntry (:doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type.")
+          :code $ quote
+            defn js-nullish->option (x)
+              if (nil? x) (%none) (%some x)
+          :examples $ []
+            quote $ assert= (%none) (js-nullish->option nil)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'JsNullish 'T)
+              :generics $ [] 'T
+              :features $ #{} :js-ffi
+              :return $ :: 'Option 'T
+          :tags $ #{} :interop
+        |js-nullish? $ %{} :CodeEntry (:doc "|Return true when a JsNullish<T> boundary value is JavaScript null or undefined.")
+          :code $ quote
+            defn js-nullish? (x) (nil? x)
+          :examples $ []
+            quote $ assert= true (js-nullish? nil)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'JsNullish 'T)
+              :generics $ [] 'T
+              :features $ #{} :js-ffi
+          :tags $ #{} :interop
+        |js-present? $ %{} :CodeEntry (:doc "|Return true when a JsNullish<T> boundary contains a non-null JavaScript value.")
+          :code $ quote
+            defn js-present? (x)
+              not $ nil? x
+          :examples $ []
+            quote $ assert= false (js-present? nil)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] (:: 'JsNullish 'T)
+              :generics $ [] 'T
+              :features $ #{} :js-ffi
+          :tags $ #{} :interop
         |json-parse $ %{} :CodeEntry (:doc "|internal function for parsing JSON text\nSyntax: (json-parse text)\nParams: text (string)\nReturns: Calcit data\nParses JSON text into Calcit values. JSON object keys become tags, arrays become lists, and null becomes nil")
           :code $ quote &runtime-implementation
           :examples $ []

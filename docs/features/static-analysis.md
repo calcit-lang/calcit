@@ -231,11 +231,15 @@ let
 
 ### Complex Types
 
-#### Optional Types
+#### Legacy Optional Types
 
-Represent values that can be `nil`. Use the `:: 'Optional <type>` syntax:
+`Optional<T>` is parsed only for legacy core/internal compatibility. Public
+function schemas reject it; use `Option<T>`, `Result<T,E>`, or `Unit`. JavaScript
+`null`/`undefined` uses the distinct `JsNullish<T>` boundary.
 
-```cirru
+Existing migration tools still understand the old `:: 'Optional <type>` syntax:
+
+```cirru.no-check
 let
     greet $ fn (name)
       hint-fn $ {}
@@ -257,7 +261,7 @@ let
   sum 1 2 3
 ```
 
-A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant; for example, a callback accepting `optional<T>` can be used where the caller only supplies `T`.
+A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant. Optional callback examples describe legacy compatibility and should not be introduced in public schemas.
 
 `:any` is accepted only as a compatibility spelling and is parsed as `:dynamic`. Schema serialization, generated metadata, type queries, and diagnostics use `:dynamic`; new code should not introduce `:any`.
 
@@ -473,19 +477,22 @@ let
 
 **Note**: This is a development tool - remove it in production code. Returns `nil` at runtime.
 
-## Optional Types
+## Legacy Optional Types
 
-Calcit supports optional type annotations for nullable values:
+Calcit can read old Optional annotations for migration analysis, but new public
+function schemas must not declare them. Model absence with `Option`, failures
+with `Result`, effects with `Unit`, and JavaScript host nullability with
+`JsNullish`.
 
 Definition:
 
-```cirru
+```cirru.no-check
 defn find-user (id) (; May return nil if user not found) (println "|demo code")
 ```
 
 Schema on the namespace definition:
 
-```cirru
+```cirru.no-check
 :: :fn $ {}
   :args $ [] :dynamic
   :return $ :: :optional :record

@@ -313,17 +313,25 @@ fn scan_schema_dynamic_annotation(
     | CalcitTypeAnnotation::Set(inner)
     | CalcitTypeAnnotation::Ref(inner)
     | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Optional(inner) => {
+    | CalcitTypeAnnotation::Optional(inner)
+    | CalcitTypeAnnotation::JsNullish(inner) => {
       let segment = match annotation {
         CalcitTypeAnnotation::List(_) => "list-item",
         CalcitTypeAnnotation::Set(_) => "set-item",
         CalcitTypeAnnotation::Ref(_) => "ref-item",
         CalcitTypeAnnotation::Variadic(_) => "variadic-item",
         CalcitTypeAnnotation::Optional(_) => "optional-item",
+        CalcitTypeAnnotation::JsNullish(_) => "js-nullish-item",
         _ => unreachable!("composite item annotation should be covered by the match arm"),
       };
       let nested_detail = extend_schema_dynamic_detail(detail, segment);
+      let occurrence_start = occurrences.len();
       scan_schema_dynamic_annotation(inner, &format!("{path}.item"), &nested_detail, occurrences);
+      if matches!(annotation, CalcitTypeAnnotation::JsNullish(_)) {
+        for occurrence in &mut occurrences[occurrence_start..] {
+          occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
+        }
+      }
     }
     CalcitTypeAnnotation::Map(key, value) => {
       let key_detail = extend_schema_dynamic_detail(detail, "map-key");
@@ -502,6 +510,7 @@ fn nil_return_intent(annotation: &CalcitTypeAnnotation) -> WeakTypeIntent {
   match return_type {
     CalcitTypeAnnotation::Unit => WeakTypeIntent::DeclaredUnit,
     CalcitTypeAnnotation::Optional(_) => WeakTypeIntent::DeclaredOptional,
+    CalcitTypeAnnotation::JsNullish(_) => WeakTypeIntent::IntentionalJsFfi,
     _ => WeakTypeIntent::Unresolved,
   }
 }

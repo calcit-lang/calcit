@@ -609,6 +609,10 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       inner.clone(),
       scope_types,
     ))),
+    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(resolve_local_type_refs_for_body(
+      inner.clone(),
+      scope_types,
+    ))),
     CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(resolve_local_type_refs_for_body(
       inner.clone(),
       scope_types,
@@ -1175,6 +1179,7 @@ fn preprocess_list_call(
       if !has_spread {
         let mut current_args = CalcitList::from(ys.drop_left());
         warn_on_nominal_enum_legacy_absence_use(head, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+        warn_on_legacy_js_nullish_predicate(head, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         let mut any_rewritten = false;
         // Rewrite hashmap literal args to record literals when the expected type is a struct
         if let Some(rewritten) = try_rewrite_map_args_to_records(info.as_ref(), &current_args, file_ns, &def_name, check_warnings) {
@@ -1530,6 +1535,7 @@ fn preprocess_list_call(
           let processed_args = CalcitList::from(ys.drop_left());
           warn_on_nullable_js_ffi_dereference(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_nominal_enum_legacy_absence_use(head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          warn_on_legacy_js_nullish_predicate(head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_method_name_conflict(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         }
@@ -2710,7 +2716,7 @@ fn warn_on_nullable_js_ffi_dereference(
   let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
     return;
   };
-  let CalcitTypeAnnotation::Optional(inner) = receiver_type.as_ref() else {
+  let CalcitTypeAnnotation::JsNullish(inner) = receiver_type.as_ref() else {
     return;
   };
   if !matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject) {
@@ -2725,13 +2731,50 @@ fn warn_on_nullable_js_ffi_dereference(
     _ => "JS FFI access".to_owned(),
   };
   let message = format!(
-    "[Warn] nullable JS FFI value is dereferenced by `{operation}` in {file_ns}/{def_name}; use optional access, narrow with `some?`/`nil?`, then validate or explicitly `unsafe-coerce` the opaque JsObject value"
+    "[Warn] JsNullish FFI value is dereferenced by `{operation}` in {file_ns}/{def_name}; use optional access, narrow with `js-present?`/`js-nullish?`, then validate or explicitly `unsafe-coerce` the opaque JsObject value"
   );
 
   if let Some(location) = head.get_location().or_else(|| receiver.get_location()) {
     gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_DEREF", location, check_warnings);
   } else {
     gen_check_warning_code(message, "W_JS_FFI_NULLABLE_DEREF", file_ns, check_warnings);
+  }
+}
+
+fn warn_on_legacy_js_nullish_predicate(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+  let Some(operation) = call_head_name(head) else {
+    return;
+  };
+  if !matches!(operation, "nil?" | "some?") {
+    return;
+  }
+  let Some(value) = args.first() else {
+    return;
+  };
+  let Some(value_type) = resolve_type_value(value, scope_types) else {
+    return;
+  };
+  if !matches!(value_type.as_ref(), CalcitTypeAnnotation::JsNullish(_)) {
+    return;
+  }
+
+  let message = format!(
+    "[Warn] `{operation}` consumes a JsNullish FFI value in {file_ns}/{def_name}; use `js-nullish?` or `js-present?` so host nullability stays explicit"
+  );
+  if let Some(location) = head.get_location().or_else(|| value.get_location()) {
+    gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_PREDICATE", location, check_warnings);
+  } else {
+    gen_check_warning_code(message, "W_JS_FFI_NULLABLE_PREDICATE", file_ns, check_warnings);
   }
 }
 
@@ -3365,6 +3408,7 @@ fn check_callable_type(
     | Calcit::Import { .. }
     | Calcit::Registered { .. }
     | Calcit::Method(_, _)
+    | Calcit::RawCode(..)
     | Calcit::Symbol { .. } => (),
 
     // For List expressions, check if it's a function call that returns a callable
@@ -3834,7 +3878,8 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     };
   }
 
-  // nil?/some?: narrow both branches when the variable has Optional type
+  // Legacy nil?/some? narrow only legacy Optional values. JavaScript host
+  // nullability uses dedicated predicates so the FFI boundary stays visible.
   match pred_name {
     "nil?" => {
       let false_binding = scope_types.get(&sym).and_then(|current| {
@@ -3852,6 +3897,32 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     "some?" => {
       let true_binding = scope_types.get(&sym).and_then(|current| {
         if let CalcitTypeAnnotation::Optional(inner) = current.as_ref() {
+          Some((sym.clone(), inner.clone()))
+        } else {
+          None
+        }
+      });
+      PredicateNarrowing {
+        true_binding,
+        false_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+      }
+    }
+    "js-nullish?" => {
+      let false_binding = scope_types.get(&sym).and_then(|current| {
+        if let CalcitTypeAnnotation::JsNullish(inner) = current.as_ref() {
+          Some((sym.clone(), inner.clone()))
+        } else {
+          None
+        }
+      });
+      PredicateNarrowing {
+        true_binding: Some((sym, Arc::new(CalcitTypeAnnotation::Unit))),
+        false_binding,
+      }
+    }
+    "js-present?" => {
+      let true_binding = scope_types.get(&sym).and_then(|current| {
+        if let CalcitTypeAnnotation::JsNullish(inner) = current.as_ref() {
           Some((sym.clone(), inner.clone()))
         } else {
           None
@@ -4226,6 +4297,7 @@ pub fn preprocess_defn(
         }
       })?;
       let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
+      warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
       if !schema_issues.is_empty() {
         let details = schema_issues.join("\n  - ");
@@ -4933,6 +5005,46 @@ fn analyze_def_schema_param_arity(args: &CalcitList) -> (usize, bool) {
   (required_count, has_rest)
 }
 
+fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Optional(_) => true,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Variadic(inner)
+    | CalcitTypeAnnotation::JsNullish(inner) => contains_legacy_optional(inner),
+    CalcitTypeAnnotation::Map(key, value) => contains_legacy_optional(key) || contains_legacy_optional(value),
+    CalcitTypeAnnotation::Fn(info) => {
+      info.arg_types.iter().any(|item| contains_legacy_optional(item))
+        || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
+        || contains_legacy_optional(info.return_type.as_ref())
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.iter().any(|item| contains_legacy_optional(item))
+    }
+    _ => false,
+  }
+}
+
+fn warn_on_legacy_optional_public_schema(
+  ns: &str,
+  def_name: &str,
+  schema: &CalcitTypeAnnotation,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if ns == calcit::CORE_NS || !contains_legacy_optional(schema) {
+    return;
+  }
+  gen_check_warning_code(
+    format!(
+      "[Warn] {ns}/{def_name} exposes legacy Optional<T> in its function schema; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
+    ),
+    "W_LEGACY_OPTIONAL_SCHEMA",
+    ns,
+    check_warnings,
+  );
+}
+
 fn validate_def_schema_during_preprocess(
   head: &CalcitSyntax,
   ns: &str,
@@ -5003,7 +5115,7 @@ mod tests {
   }
 
   #[test]
-  fn nullable_js_ffi_values_require_safe_dereference() {
+  fn js_nullish_ffi_values_require_safe_dereference_and_dedicated_predicates() {
     let sym: Arc<str> = Arc::from("host");
     let receiver = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&sym),
@@ -5013,9 +5125,9 @@ mod tests {
         at_def: Arc::from("demo"),
       }),
       location: None,
-      type_info: Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::JsObject))),
+      type_info: Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::JsObject))),
     });
-    let args = CalcitList::from(&[receiver] as &[Calcit]);
+    let args = CalcitList::from(std::slice::from_ref(&receiver));
     let warnings = RefCell::new(vec![]);
 
     warn_on_nullable_js_ffi_dereference(
@@ -5039,6 +5151,40 @@ mod tests {
       &optional_warnings,
     );
     assert!(optional_warnings.borrow().is_empty());
+
+    let predicate_warnings = RefCell::new(vec![]);
+    warn_on_legacy_js_nullish_predicate(
+      &Calcit::Proc(CalcitProc::NilQuestion),
+      &args,
+      &ScopeTypes::new(),
+      "tests.js-ffi",
+      "demo",
+      &predicate_warnings,
+    );
+    assert_eq!(predicate_warnings.borrow().len(), 1);
+    assert_eq!(predicate_warnings.borrow()[0].code(), Some("W_JS_FFI_NULLABLE_PREDICATE"));
+
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("host"),
+      Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::JsObject))),
+    );
+    let predicate = Calcit::from(vec![
+      Calcit::Symbol {
+        sym: Arc::from("js-present?"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.js-ffi"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+      },
+      receiver,
+    ]);
+    let narrowing = extract_predicate_bindings(&predicate, &scope_types);
+    assert!(matches!(
+      narrowing.true_binding,
+      Some((name, inferred)) if name.as_ref() == "host" && matches!(inferred.as_ref(), CalcitTypeAnnotation::JsObject)
+    ));
   }
 
   #[test]
@@ -5360,6 +5506,28 @@ mod tests {
         other => panic!("expected optional type annotation, got {other:?}"),
       }
     }
+  }
+
+  #[test]
+  fn parses_js_nullish_type_annotation_without_treating_it_as_optional() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-type"),
+      Cirru::leaf("x"),
+      Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":js-nullish"), Cirru::leaf(":js-object")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    assert!(matches!(
+      scope_types.get("x").map(AsRef::as_ref),
+      Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+    ));
   }
 
   #[test]
@@ -7787,6 +7955,25 @@ mod tests {
 
     assert_eq!(issues.len(), 1, "expected 1 issue, got: {issues:?}");
     assert!(issues[0].contains("schema has 3 required arg(s) but code has 2"));
+  }
+
+  #[test]
+  fn warns_on_legacy_optional_in_public_function_schemas() {
+    let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number))),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    }));
+    let warnings = RefCell::new(vec![]);
+
+    warn_on_legacy_optional_public_schema("tests.schema", "demo", &schema, &warnings);
+
+    assert_eq!(warnings.borrow().len(), 1);
+    assert_eq!(warnings.borrow()[0].code(), Some("W_LEGACY_OPTIONAL_SCHEMA"));
   }
 
   #[test]

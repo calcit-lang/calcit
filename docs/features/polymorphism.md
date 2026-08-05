@@ -235,7 +235,7 @@ do
 - Option: `option:some?`, `option:none?`, `option:map`, `option:unwrap-or`, `option:and-then`
 - Result: `result:ok?`, `result:err?`, `result:map`, `result:map-err`, `result:unwrap-or`, `result:and-then`
 
-Use `optionally` at a legacy nullable boundary to convert `Optional<T>` into nominal `Option<T>`. New application APIs should return `Option<T>` directly rather than converting through nil internally.
+`optionally` exists only for legacy core/internal `Optional<T>` compatibility. Public function schemas reject `Optional<T>`; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
 
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
 
@@ -246,7 +246,7 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - `get-env` returns `Option<String>`; use `option:unwrap-or` for a default.
 - `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
 
-Raw JavaScript property reads and native calls are different: they remain `Optional<JsObject>`. Convert them only after an explicit host-value check or trusted FFI contract; these core API changes never auto-wrap JS FFI results as `Option`.
+Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `some?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
 When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional tuple access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods, `option:unwrap-or`, or `tag-match`.
 
