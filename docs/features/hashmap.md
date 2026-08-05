@@ -188,9 +188,9 @@ let
 
 ```cirru
 let
-    m $ {} (:a 1) (:b 2)
+    m $ {} (:a :one) (:b :two)
     val $ get m :missing
-  if (nil? val) :default val
+  option:unwrap-or val :default
   ; => :default
 ```
 
@@ -203,7 +203,7 @@ let
     freq $ foldl words init $ fn (acc w)
       let
           cur $ get acc w
-          n $ if (nil? cur) 0 cur
+          n $ option:unwrap-or cur 0
         assoc acc w (inc n)
   println freq
   ; ({} (:a 3) (:b 2) (:c 1))
