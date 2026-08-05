@@ -82,7 +82,7 @@ cr query type-at app.main/calculate-total --path code@3.2 --format json
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. It does not hide them: the report keeps the locations visible while separating them from unresolved dynamic types. The feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
-For `code-nil`, the report includes both raw `nil` and the explicit `;nil` macro, then uses the declared return contract only at structurally proven return positions. A final nil form under a returned `do`, or either returned branch of `if`, is `declared-unit` for a `Unit` return and `declared-optional` for an `Optional<T>` return. Other nil forms stay `unresolved`; in particular, an earlier `do` step does not inherit the enclosing return contract. `declared-unit` records a legitimate no-value result and is excluded from nil migration debt, but the source can usually omit the explicit nil form when a function has an empty body or already ends in a Unit-returning effect. `declared-optional` remains visible as compatibility debt so application APIs can move toward `Option` or `Result`.
+For `code-nil`, the report includes both raw `nil` and the explicit `;nil` Unit marker. Every nil form inside a function declared to return `Unit` is classified as `declared-unit`; `;nil` is also always classified as explicit Unit, including inside generated macro branches. For legacy `Optional<T>`, only structurally proven return positions inherit `declared-optional`; embedded nil values remain unresolved. `declared-unit` is excluded from migration debt, while `declared-optional` remains visible so application APIs move to `Option` or `Result`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-optional` and requires no findings.
 
 For one definition, `cr query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 
@@ -309,7 +309,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      get u :name
+      option:unwrap $ get u :name
   get-name $ %{} User (:name |Alice)
 ```
 

@@ -55,7 +55,7 @@
         |check-result-type $ %{} :CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote
             defn check-result-type (r)
-              some? $ &tuple:enum r
+              option:some? $ tuple-enum r
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)

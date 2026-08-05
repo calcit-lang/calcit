@@ -115,7 +115,6 @@
               assert= (/ 2) 0.5
               assert-detect identity $ < 1 2 3 4 5
               assert-detect identity $ > 10 8 6 4
-              assert-detect empty? nil
               assert-detect empty? $ []
               do true
           :examples $ []

@@ -605,8 +605,11 @@ fn scan_cirru_weak_types(
           weak_type_detail(WeakTypeKind::CodeNil, &format!("unit-macro:{}", classify_code_nil(parent))),
           format_cirru_path(root, path),
         );
-        if let (Some(intent), Some(occurrence)) = (nil_return_intent, occurrences.last_mut()) {
-          occurrence.intent = intent;
+        if let Some(occurrence) = occurrences.last_mut() {
+          // `;nil` is the explicit source-level Unit marker. Unlike a raw nil
+          // literal it cannot represent optional application data, including
+          // when it appears inside a macro-generated branch.
+          occurrence.intent = WeakTypeIntent::DeclaredUnit;
         }
       }
       for (idx, item) in items.iter().enumerate() {
@@ -622,15 +625,9 @@ fn scan_cirru_weak_types(
           idx,
           items.len(),
         );
-        scan_cirru_weak_types(
-          item,
-          root,
-          path,
-          Some(&next_parent),
-          nil_return_intent.filter(|_| child_return_position),
-          selected,
-          occurrences,
-        );
+        let child_nil_intent =
+          nil_return_intent.filter(|intent| matches!(intent, WeakTypeIntent::DeclaredUnit) || child_return_position);
+        scan_cirru_weak_types(item, root, path, Some(&next_parent), child_nil_intent, selected, occurrences);
         path.pop();
       }
     }

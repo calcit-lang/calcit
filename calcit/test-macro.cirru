@@ -36,13 +36,17 @@
                     &let
                       v__1 $ calcit.core/+ 1 2
                       if (&= v__1 1) |one $ if (&= v__1 2) |two
-                        if (&= v__1 3) |three nil
+                        if (&= v__1 3) |three $ raise (str-spaced |case |found |no |matching |pattern |for: v__1)
                 assert=
                   macroexpand $ quote
                     case (+ 1 2) (1 |one) (2 |two) (3 |three)
                   quote $ &let
                     v__2 $ + 1 2
-                    &case v__2 nil (1 |one) (2 |two) (3 |three)
+                    &case v__2
+                      raise $ str-spaced |case |found |no |matching |pattern |for: v__2
+                      1 |one
+                      2 |two
+                      3 |three
                 assert=
                   macroexpand $ quote
                     &case v__2 nil (1 |one) (2 |two) (3 |three)
@@ -59,15 +63,16 @@
                     assert-detect fn? $ fn () 1
                   quote $ &let
                     v__1 $ fn () 1
-                    if (fn? v__1) nil $ &let () (eprintln)
-                      eprintln
-                        format-to-lisp $ quote
-                          fn () 1
-                        , "|does not satisfy:"
-                          format-to-lisp $ quote fn?
-                          , "| <--------"
-                      eprintln "|  value is:" v__1
-                      raise "|Not satisfied in assertion!"
+                    if (fn? v__1) (;nil)
+                      &let () (eprintln)
+                        eprintln
+                          format-to-lisp $ quote
+                            fn () 1
+                          , "|does not satisfy:"
+                            format-to-lisp $ quote fn?
+                            , "| <--------"
+                        eprintln "|  value is:" v__1
+                        raise "|Not satisfied in assertion!"
           :examples $ []
           :schema $ :: 'Dynamic
         |test-expr-in-case $ %{} :CodeEntry (:doc |)
@@ -91,8 +96,8 @@
                   quote $ &let (result__1 o)
                     assert (str "|expected map for destructing: " result__1) (map? result__1)
                     let
-                        a $ :a result__1
-                        b $ :b result__1
+                        a $ &map:get result__1 :a
+                        b $ &map:get result__1 :b
                       + a b
               &let
                 base $ {} (:a 5) (:b 6)
@@ -162,14 +167,22 @@
           :code $ quote
             fn () (log-title "|if let")
               assert= 6 $ if-let
-                a $ + 1 2 3
+                a $ %some (+ 1 2 3)
                 , a
               assert= nil $ if-let
                 a $ get (&{}) :a
                 + 1 2
-              assert= 2 $ if-let (a nil) 1 2
-              assert= nil $ when-let (a nil) 1 2
-              assert= 2 $ when-let (a 10) 1 2
+              assert= 2 $ if-let
+                a $ %none
+                , 1 2
+              assert= (%none)
+                when-let
+                  a $ %none
+                  , 1 2
+              assert= (%some 2)
+                when-let
+                  a $ %some 10
+                  , 1 2
           :examples $ []
           :schema $ :: 'Dynamic
         |test-lambda $ %{} :CodeEntry (:doc |)

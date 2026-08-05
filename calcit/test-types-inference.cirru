@@ -53,7 +53,6 @@
         |test-count-inference $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-count-inference ()
-              assert-type (count nil) 'Number
               assert-type
                 count $ [] 1 2 3
                 , 'Number
@@ -138,14 +137,6 @@
                 assert-type empty-xs $ :: 'List 'Number
                 &inspect-type empty-xs
               let
-                  empty-nil $ empty nil
-                assert-type empty-nil $ :: 'Optional 'String
-                &inspect-type empty-nil
-              let
-                  rest-nil $ rest nil
-                assert-type rest-nil $ :: 'Optional 'String
-                &inspect-type rest-nil
-              let
                   tail $ rest |abc
                 assert-type tail 'String
                 &inspect-type tail
@@ -161,30 +152,21 @@
                   string-first $ first |abc
                   empty-list-first $ first ([])
                   empty-str-first $ first |
-                  nil-first $ first nil
-                  tuple-first $ first (:: :a 1 2)
-                assert-type list-first $ :: 'Optional 'Dynamic
-                assert-type string-first $ :: 'Optional 'Dynamic
-                assert-type empty-list-first $ :: 'Optional 'Dynamic
-                assert-type empty-str-first $ :: 'Optional 'Dynamic
-                assert-type nil-first $ :: 'Optional 'Dynamic
-                assert-type tuple-first $ :: 'Optional 'Dynamic
+                assert-type list-first $ :: 'Option 'Number
+                assert-type string-first $ :: 'Option 'String
+                assert-type empty-list-first $ :: 'Option 'Dynamic
+                assert-type empty-str-first $ :: 'Option 'String
                 &inspect-type list-first
                 &inspect-type string-first
                 &inspect-type empty-list-first
                 &inspect-type empty-str-first
-                &inspect-type nil-first
-                &inspect-type tuple-first
               let
                   list-last $ last ([] 1 2 3)
                   empty-list-last $ last ([])
-                  nil-last $ last nil
-                assert-type list-last $ :: 'Optional 'Dynamic
-                assert-type empty-list-last $ :: 'Optional 'Dynamic
-                assert-type nil-last $ :: 'Optional 'Dynamic
+                assert-type list-last $ :: 'Option 'Number
+                assert-type empty-list-last $ :: 'Option 'Dynamic
                 &inspect-type list-last
                 &inspect-type empty-list-last
-                &inspect-type nil-last
               let
                   nth-char $ &str:nth |abc 1
                   missing-char $ &str:nth |abc 9
@@ -265,19 +247,16 @@
                   map-miss $ get
                     {} $ :a 1
                     , :b
-                  nil-hit $ get nil :a
-                assert-type list-hit $ :: 'Optional 'Number
-                assert-type list-miss $ :: 'Optional 'Number
-                assert-type string-hit $ :: 'Optional 'String
-                assert-type map-hit $ :: 'Optional 'Number
-                assert-type map-miss $ :: 'Optional 'Number
-                assert-type nil-hit $ :: 'Optional 'Dynamic
+                assert-type list-hit $ :: 'Option 'Number
+                assert-type list-miss $ :: 'Option 'Number
+                assert-type string-hit $ :: 'Option 'String
+                assert-type map-hit $ :: 'Option 'Number
+                assert-type map-miss $ :: 'Option 'Number
                 &inspect-type list-hit
                 &inspect-type list-miss
                 &inspect-type string-hit
                 &inspect-type map-hit
                 &inspect-type map-miss
-                &inspect-type nil-hit
               let
                   nested-hit $ get-in
                     [] $ {} (:a 1)

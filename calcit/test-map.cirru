@@ -37,23 +37,23 @@
                 #{} :a
               let
                   triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-                assert= (nth triple 0) (#{} :b)
-                assert= (nth triple 1) (&{} :c 3)
+                assert= (&list:nth triple 0) (#{} :b)
+                assert= (&list:nth triple 1) (&{} :c 3)
                 assert=
-                  count $ nth triple 2
+                  count $ &list:nth triple 2
                   , 1
                 let
-                    first-triple $ first (nth triple 2)
-                    k $ nth first-triple 0
-                    va $ nth first-triple 1
-                    vb $ nth first-triple 2
+                    first-triple $ &list:first (&list:nth triple 2)
+                    k $ &list:nth first-triple 0
+                    va $ &list:nth first-triple 1
+                    vb $ &list:nth first-triple 2
                   do (assert= k :a) (assert= va 1) (assert= vb 2)
               let
                   triple2 $ &map:diff-triple (&{} :a 1 :b 2 :c 3) (&{} :a 1 :b 2 :c 3)
-                assert= (nth triple2 0) (#{})
-                assert= (nth triple2 1) (&{})
+                assert= (&list:nth triple2 0) (#{})
+                assert= (&list:nth triple2 1) (&{})
                 assert=
-                  count $ nth triple2 2
+                  count $ &list:nth triple2 2
                   , 3
           :examples $ []
           :schema $ :: 'Fn
@@ -62,10 +62,10 @@
         |test-get $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing get")
-              assert= nil $ get (&{}) :a
+              assert= (%none)
+                get (&{}) :a
               assert= (%none)
                 get-in (&{}) ([] :a :b)
-              assert= nil $ get nil :a
               &let
                 m $ &{} :a 1 :b 2 :c 3 :d 4
                 assert=
@@ -75,7 +75,7 @@
                   last $ &map:destruct m
                   last $ &map:destruct m
                 assert= 3 $ count
-                  last $ &map:destruct m
+                  option:unwrap $ last (&map:destruct m)
                 assert= 10 $ foldl m 0
                   fn (acc pair)
                     let[] (k v) pair $ &+ acc v
@@ -205,8 +205,10 @@
                 .empty $ &{} :a 1 :b 2
               assert= false $ .empty? (&{} :a 1 :b 2)
               assert= true $ .empty? (&{})
-              assert= 1 $ .get (&{} :a 1) :a
-              assert= nil $ .get (&{} :a 1) :b
+              assert= (%some 1)
+                .get (&{} :a 1) :a
+              assert= (%none)
+                .get (&{} :a 1) :b
               assert= (%some 2)
                 .get-in
                   {} $ :a
@@ -224,18 +226,18 @@
                 {} (:a 11) (:b 12)
                 .map (&{} :a 1 :b 2)
                   fn (entry)
-                    [] (first entry)
-                      + 10 $ last entry
+                    [] (&list:first entry)
+                      + 10 $ &list:last entry
               ; "not so stable, :bbbb is rare so it could be larger"
               let
                   mapped $ .map-list (&{} :a 1 :bbbb 2)
                     fn (entry)
-                      [] (first entry)
-                        + 10 $ last entry
+                      [] (&list:first entry)
+                        + 10 $ &list:last entry
                   _ $ assert-type mapped 'List
                 assert=
                   [] ([] :a 11) ([] :bbbb 12)
-                  .sort-by mapped first
+                  .sort-by mapped &list:first
               assert=
                 {} $ :a 11
                 .map-kv
@@ -276,22 +278,12 @@
               assert= (#{} 1 2 3)
                 .values $ &{} :a 1 :b 2 :c 3
               println $ .destruct (&{} :a 1 :b 2 :c 3)
-              assert= true $ tag?
-                nth
-                  .destruct $ &{} :a 1 :b 2 :c 3
-                  , 0
-              assert= true $ number?
-                nth
-                  .destruct $ &{} :a 1 :b 2 :c 3
-                  , 1
-              assert= true $ map?
-                nth
-                  .destruct $ &{} :a 1 :b 2 :c 3
-                  , 2
-              assert= 3 $ count
+              tag-match
                 .destruct $ &{} :a 1 :b 2 :c 3
-              assert= 2 $ count
-                last $ .destruct (&{} :a 1 :b 2 :c 3)
+                (:none) (raise |expected-map-entry)
+                (:some k v remaining)
+                  do (assert-detect tag? k) (assert-detect number? v)
+                    assert= 2 $ count remaining
               assert= (&{} :c 3)
                 .diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
               assert= (#{} :c)
@@ -300,10 +292,10 @@
                 .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
               let
                   triple $ .diff-triple (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-                assert= (nth triple 0) (#{} :c)
-                assert= (nth triple 1) (&{})
+                assert= (&list:nth triple 0) (#{} :c)
+                assert= (&list:nth triple 1) (&{})
                 assert=
-                  count $ nth triple 2
+                  count $ &list:nth triple 2
                   , 2
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1

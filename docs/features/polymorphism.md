@@ -245,6 +245,10 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - String `.find-index` and `str-find-index` return `Option<Number>`; the internal `&str:find-index` primitive retains its `-1` ABI sentinel.
 - `get-env` returns `Option<String>`; use `option:unwrap-or` for a default.
 - `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
+- Reflection uses `tuple-enum: Tuple -> Option<Enum>` and `impl-origin: Impl -> Option<Trait>`; `record-struct: Record -> Struct` is total and does not invent absence.
+- `destruct-list`, `destruct-map`, `destruct-set`, and `destruct-str` return named `*Destruct` enums, preserving the familiar `:some`/`:none` branches with checked payloads.
+- Public collection methods follow the same contract: Map/Set `.destruct` return their named destruct enums. Record does not expose `.nth`, because field position is not stable across backends; use field-name `get` returning `Option<T>`.
+- `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil.
 
 Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `some?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 

@@ -2752,7 +2752,7 @@ fn warn_on_legacy_js_nullish_predicate(
   if file_ns == calcit::CORE_NS {
     return;
   }
-  let Some(operation) = call_head_name(head) else {
+  let Some(operation) = canonical_absence_operation_name(head) else {
     return;
   };
   if !matches!(operation, "nil?" | "some?") {
@@ -2778,11 +2778,9 @@ fn warn_on_legacy_js_nullish_predicate(
   }
 }
 
-fn call_head_name(head: &Calcit) -> Option<&str> {
+fn canonical_absence_operation_name(head: &Calcit) -> Option<&str> {
   match head {
-    Calcit::Symbol { sym, .. } => Some(sym.as_ref()),
-    Calcit::Import(CalcitImport { def, .. }) => Some(def.as_ref()),
-    Calcit::Fn { info, .. } => Some(info.name.as_ref()),
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS => Some(def.as_ref()),
     Calcit::Proc(proc) => Some(proc.as_ref()),
     Calcit::Method(name, _) => Some(name.as_ref()),
     _ => None,
@@ -2790,17 +2788,11 @@ fn call_head_name(head: &Calcit) -> Option<&str> {
 }
 
 fn nominal_enum_type_name(annotation: &CalcitTypeAnnotation) -> Option<String> {
-  if let Some(enum_def) = annotation.resolve_to_enum() {
-    let name = enum_def.name().ref_str();
-    if matches!(name, "Option" | "Result") {
-      return Some(name.to_owned());
-    }
-    return None;
-  }
   if let CalcitTypeAnnotation::TypeRef(name, _) = annotation {
-    let short_name = name.rsplit('/').next().unwrap_or(name);
-    if matches!(short_name, "Option" | "Result") {
-      return Some(short_name.to_owned());
+    match name.as_ref() {
+      "calcit.core/Option" => return Some("Option".to_owned()),
+      "calcit.core/Result" => return Some("Result".to_owned()),
+      _ => {}
     }
   }
   None
@@ -2818,7 +2810,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
     return;
   }
 
-  let Some(operation) = call_head_name(head) else {
+  let Some(operation) = canonical_absence_operation_name(head) else {
     return;
   };
   if !matches!(
@@ -2897,7 +2889,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
     _ => "use `tag-match` instead of positional access on the nominal enum",
   };
   let message = format!(
-    "[Warn] `{operation}` consumes nominal enum `{enum_name}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
+    "[Warn] `{operation}` consumes nominal enum `{enum_name}` value `{value}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
   );
   if let Some(location) = head.get_location().or_else(|| value.get_location()) {
     gen_check_warning_with_location_code(message, "W_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
@@ -3195,21 +3187,8 @@ fn try_specialize_polymorphic_call(
     ("contains?", T::Set(_)) => NativeSetIncludes,
     ("contains?", T::String) => NativeStrContains,
     ("contains?", T::Record(_)) => NativeRecordContains,
-    // first
-    ("first", T::List(_)) => NativeListFirst,
-    ("first", T::String) => NativeStrFirst,
     // rest
     ("rest", T::List(_)) => NativeListRest,
-    // nth
-    ("nth", T::List(_)) => NativeListNth,
-    ("nth", T::String) => NativeStrNth,
-    ("nth", T::Tuple(_) | T::DynTuple) => NativeTupleNth,
-    // get
-    ("get", T::Map(_, _)) => NativeMapGet,
-    ("get", T::List(_)) => NativeListNth,
-    ("get", T::String) => NativeStrNth,
-    ("get", T::Tuple(_) | T::DynTuple) => NativeTupleNth,
-    ("get", T::Record(_)) => NativeRecordGet,
     // assoc
     ("assoc", T::List(_)) => NativeListAssoc,
     ("assoc", T::Map(_, _)) => NativeMapAssoc,
@@ -5032,7 +5011,14 @@ fn warn_on_legacy_optional_public_schema(
   schema: &CalcitTypeAnnotation,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  if ns == calcit::CORE_NS || !contains_legacy_optional(schema) {
+  if !contains_legacy_optional(schema) {
+    return;
+  }
+  // Core `&` definitions are semver-private primitives and may still model
+  // nullable host/runtime values. Public core wrappers must obey the same
+  // nominal absence rule as application code. `optionally` is the one explicit
+  // bridge from an internal Optional<T> value to Option<T>.
+  if ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "optionally") {
     return;
   }
   gen_check_warning_code(
@@ -5189,6 +5175,16 @@ mod tests {
 
   #[test]
   fn nominal_options_warn_on_legacy_nil_and_tuple_operations() {
+    let core_head = |operation: &str| {
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(calcit::CORE_NS),
+        def: Arc::from(operation),
+        info: Arc::new(ImportInfo::Core {
+          at_ns: Arc::from("tests.option-migration"),
+        }),
+        def_id: None,
+      })
+    };
     let sym: Arc<str> = Arc::from("found");
     let option_value = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&sym),
@@ -5206,14 +5202,7 @@ mod tests {
     let args = CalcitList::from(std::slice::from_ref(&option_value));
 
     for operation in ["some?", "get", "&compare", "record?"] {
-      let head = Calcit::Symbol {
-        sym: Arc::from(operation),
-        info: Arc::new(CalcitSymbolInfo {
-          at_ns: Arc::from("tests.option-migration"),
-          at_def: Arc::from("demo"),
-        }),
-        location: None,
-      };
+      let head = core_head(operation);
       let warnings = RefCell::new(vec![]);
       warn_on_nominal_enum_legacy_absence_use(&head, &args, &ScopeTypes::new(), "tests.option-migration", "demo", &warnings);
       assert_eq!(warnings.borrow().len(), 1, "{operation} should warn");
@@ -5231,14 +5220,7 @@ mod tests {
     );
     assert_eq!(method_warnings.borrow().len(), 1, "structural Option methods should warn");
 
-    let equality_head = Calcit::Symbol {
-      sym: Arc::from("="),
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from("tests.option-migration"),
-        at_def: Arc::from("demo"),
-      }),
-      location: None,
-    };
+    let equality_head = core_head("=");
     let mixed_equality_args = CalcitList::from(&[option_value.to_owned(), Calcit::Number(1.0)] as &[Calcit]);
     let mixed_equality_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_legacy_absence_use(
@@ -5264,6 +5246,57 @@ mod tests {
     assert!(
       nominal_equality_warnings.borrow().is_empty(),
       "Option-to-Option equality should stay valid"
+    );
+
+    let application_get = Calcit::Symbol {
+      sym: Arc::from("get"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.option-migration"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+    let application_get_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &application_get,
+      &args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &application_get_warnings,
+    );
+    assert!(
+      application_get_warnings.borrow().is_empty(),
+      "application-defined get must not warn"
+    );
+
+    let application_option_sym: Arc<str> = Arc::from("application-option");
+    let application_option = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&application_option_sym),
+      sym: application_option_sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.option-migration"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("app.model/Option"),
+        Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+      )),
+    });
+    let application_option_args = CalcitList::from(std::slice::from_ref(&application_option));
+    let application_option_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("some?"),
+      &application_option_args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &application_option_warnings,
+    );
+    assert!(
+      application_option_warnings.borrow().is_empty(),
+      "application-defined Option must not warn"
     );
 
     let truthiness_warnings = RefCell::new(vec![]);
@@ -7974,6 +8007,25 @@ mod tests {
 
     assert_eq!(warnings.borrow().len(), 1);
     assert_eq!(warnings.borrow()[0].code(), Some("W_LEGACY_OPTIONAL_SCHEMA"));
+
+    let core_public_warnings = RefCell::new(vec![]);
+    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "future-public-api", &schema, &core_public_warnings);
+    assert_eq!(
+      core_public_warnings.borrow().len(),
+      1,
+      "public core APIs must not expose Optional<T>"
+    );
+
+    let core_raw_warnings = RefCell::new(vec![]);
+    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &core_raw_warnings);
+    assert!(core_raw_warnings.borrow().is_empty(), "raw core primitives are semver-private");
+
+    let bridge_warnings = RefCell::new(vec![]);
+    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "optionally", &schema, &bridge_warnings);
+    assert!(
+      bridge_warnings.borrow().is_empty(),
+      "optionally is the explicit nullable-to-nominal bridge"
+    );
   }
 
   #[test]

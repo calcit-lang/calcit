@@ -32,7 +32,7 @@
                   schema $ &get-def-schema |calcit.core/map
                 assert= true $ includes? doc |map
                 assert= 'Fn $ &tuple:nth schema 0
-                assert= true $ some?
+                assert= true $ option:some?
                   get (&tuple:nth schema 1) :args
           :examples $ []
           :schema $ :: 'Dynamic
@@ -44,7 +44,8 @@
                   schema $ &get-def-schema |test-def-meta.main/MetaSample
                 assert= "|Sample definition for def metadata lookup tests" doc
                 assert= 'Fn $ &tuple:nth schema 0
-                assert= 'Number $ get (&tuple:nth schema 1) :return
+                assert= (%some 'Number)
+                  get (&tuple:nth schema 1) :return
           :examples $ []
           :schema $ :: 'Dynamic
         |test-missing-doc $ %{} :CodeEntry (:doc "|missing definition returns empty doc string")

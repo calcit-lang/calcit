@@ -84,7 +84,7 @@
               hint-fn $ {} (:async true)
               let
                   a $ {} (:a 1)
-                  b $ :a a
+                  b $ option:unwrap (:a a)
                   ret $ js-await
                     case-default b
                       new js/Promise $ fn (resolve _reject)
@@ -175,7 +175,7 @@
                 js/console.log "|is a Number"
               .!log (unsafe-coerce js/console JsObject) |demo
               js/console.log "|Dates in difference syntax" $ .!now (unsafe-coerce js/Date JsObject)
-              js/console.log $ .-PI $ unsafe-coerce js/Math JsObject
+              js/console.log $ .-PI (unsafe-coerce js/Math JsObject)
               js/console.log $ aget (unsafe-coerce js/Math JsObject) |PI
               let
                   a js/{}

@@ -35,7 +35,8 @@
                     {} $ :b
                       {} $ :c 2
                   [] :a :b :c
-                  , inc
+                  fn (value)
+                    inc $ option:unwrap value
                 {} $ :a
                   {} $ :b
                     {} $ :c 3
@@ -43,17 +44,20 @@
                 update-in
                   {} $ :a ([] 1 2 3)
                   [] :a 1
-                  , inc
+                  fn (value)
+                    inc $ option:unwrap value
                 {} $ :a ([] 1 3 3)
               assert=
                 update-in
                   {} $ :a (:: 'quote 1)
                   [] :a 1
-                  , inc
+                  fn (value)
+                    inc $ option:unwrap value
                 {} $ :a (:: 'quote 2)
               assert=
                 update-in ({}) ([] :a :b)
-                  fn (x) 1
+                  fn (value)
+                    if (option:none? value) 1 $ raise |expected-missing-value
                 {} $ :a
                   {} $ :b 1
               assert=

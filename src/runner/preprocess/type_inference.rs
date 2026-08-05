@@ -262,6 +262,16 @@ fn infer_core_nominal_absence_return_type(
       Some(core_type_ref("Option", vec![element_type]))
     }
     "find-index" | "index-of" => Some(core_type_ref("Option", vec![tag_annotation("number")])),
+    "first" | "last" => {
+      let receiver_type = call_expr.get(1).and_then(|value| resolve_type_value(value, scope_types))?;
+      let payload_type = infer_sequence_payload_type(receiver_type.as_ref())?;
+      Some(core_type_ref("Option", vec![payload_type]))
+    }
+    "nth" => {
+      let receiver_type = call_expr.get(1).and_then(|value| resolve_type_value(value, scope_types))?;
+      let payload_type = infer_sequence_payload_type(receiver_type.as_ref())?;
+      Some(core_type_ref("Option", vec![payload_type]))
+    }
     "parse-float" => Some(core_type_ref("Result", vec![tag_annotation("number"), tag_annotation("string")])),
     "get-env" => Some(core_type_ref("Option", vec![tag_annotation("string")])),
     _ => None,
@@ -286,22 +296,34 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
   }
 
   for key in path_items {
-    current_type = infer_get_return_type_from_type(current_type.as_ref(), Some(key))?;
+    current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
   }
 
-  let payload_type = match current_type.as_ref() {
-    CalcitTypeAnnotation::Optional(inner) => inner.clone(),
-    _ => current_type,
-  };
-  Some(core_type_ref("Option", vec![payload_type]))
+  Some(core_type_ref("Option", vec![current_type]))
 }
 
 fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
+  infer_lookup_payload_type_from_type(base_type, key_arg).map(|payload| core_type_ref("Option", vec![payload]))
+}
+
+fn infer_sequence_payload_type(base_type: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
   match base_type {
-    CalcitTypeAnnotation::Optional(inner) => infer_get_return_type_from_type(inner.as_ref(), key_arg).map(wrap_optional_type),
-    CalcitTypeAnnotation::List(element_type) => Some(wrap_optional_type(element_type.clone())),
-    CalcitTypeAnnotation::Map(_, value_type) => Some(wrap_optional_type(value_type.clone())),
-    CalcitTypeAnnotation::String => Some(wrap_optional_type(tag_annotation("string"))),
+    CalcitTypeAnnotation::List(element_type) => Some(element_type.clone()),
+    CalcitTypeAnnotation::String => Some(tag_annotation("string")),
+    CalcitTypeAnnotation::Tuple(_) | CalcitTypeAnnotation::DynTuple => Some(calcit::DYNAMIC_TYPE.clone()),
+    _ => None,
+  }
+}
+
+fn infer_lookup_payload_type_from_type(
+  base_type: &CalcitTypeAnnotation,
+  key_arg: Option<&Calcit>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  match base_type {
+    CalcitTypeAnnotation::List(element_type) => Some(element_type.clone()),
+    CalcitTypeAnnotation::Map(_, value_type) => Some(value_type.clone()),
+    CalcitTypeAnnotation::String => Some(tag_annotation("string")),
+    CalcitTypeAnnotation::Tuple(_) | CalcitTypeAnnotation::DynTuple => Some(calcit::DYNAMIC_TYPE.clone()),
     CalcitTypeAnnotation::Record(_) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::TypeRef(_, _) => {
       if let Some(field_name) = key_arg.and_then(extract_field_name)
         && let Some(field_type) = resolve_struct_field_type(base_type, field_name)
@@ -310,7 +332,7 @@ fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Op
         // declared type instead of applying the conservative map lookup rule.
         return Some(field_type);
       }
-      Some(wrap_optional_type(calcit::DYNAMIC_TYPE.clone()))
+      Some(calcit::DYNAMIC_TYPE.clone())
     }
     _ => None,
   }
@@ -923,10 +945,9 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Ref(initial_type)));
   }
-  // These low-level collection intrinsics retain their legacy unchecked
-  // inference for core macro expansion. Public `first`/`nth`/`get` schemas
-  // still expose Optional<T>; removing this compatibility path needs
-  // non-empty collection evidence rather than broad unsafe coercions.
+  // These low-level collection intrinsics retain their unchecked payload
+  // inference strictly for guarded core macro expansion. Public lookup APIs
+  // return nominal Option<T> and never expose this nullable representation.
   if matches!(proc, CalcitProc::NativeListNth | CalcitProc::NativeListFirst)
     && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
@@ -1645,7 +1666,7 @@ mod tests {
   }
 
   #[test]
-  fn known_struct_get_preserves_required_field_type() {
+  fn known_struct_get_wraps_required_field_type_in_nominal_option() {
     let mut struct_def = CalcitStruct::from_fields(EdnTag::from("User"), vec![EdnTag::from("name")]);
     struct_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
     let user_type = CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![]));
@@ -1653,12 +1674,14 @@ mod tests {
 
     assert!(matches!(
       infer_get_return_type_from_type(&user_type, Some(&key)).as_deref(),
-      Some(CalcitTypeAnnotation::String)
+      Some(CalcitTypeAnnotation::TypeRef(name, args))
+        if name.as_ref() == "calcit.core/Option"
+          && matches!(args.first().map(AsRef::as_ref), Some(CalcitTypeAnnotation::String))
     ));
-    assert!(matches!(
-      infer_get_return_type_from_type(&CalcitTypeAnnotation::Optional(Arc::new(user_type)), Some(&key)).as_deref(),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
-    ));
+    assert!(
+      infer_get_return_type_from_type(&CalcitTypeAnnotation::Optional(Arc::new(user_type)), Some(&key)).is_none(),
+      "legacy Optional receivers must be narrowed or converted before nominal lookup"
+    );
   }
 
   #[test]

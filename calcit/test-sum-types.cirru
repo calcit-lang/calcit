@@ -36,7 +36,7 @@
                   err-action $ make-err |boom
                 assert= true $ any? (&tuple:impls ok-action)
                   fn (impl)
-                    = (&impl:origin impl) ActionTrait
+                    option:some? $ impl-origin impl
                 assert= "|(%:: :ok 42 (:enum Result))" $ str ok-action
                 assert= "|Action ok -> 42" $ ok-action .describe
                 assert= "|Action err -> boom" $ err-action .describe

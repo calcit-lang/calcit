@@ -66,14 +66,14 @@
               assert= :many $ try-size (:: :dyn 1 2 3 4 5)
               let
                   ok $ %:: Result :ok 1
-                assert= :enum $ type-of (&tuple:enum ok)
+                assert= (%some Result) (tuple-enum ok)
                 assert= "|(%:: :ok 1 (:enum Result))" $ str ok
                 assert= true $ &tuple:enum-has-variant? Result :ok
                 assert= 1 $ &tuple:enum-variant-arity Result :ok
                 assert= nil $ &tuple:validate-enum ok :ok
               let
                   plain $ :: :plain 1
-                assert= nil $ &tuple:enum plain
+                assert= (%none) (tuple-enum plain)
           :examples $ []
           :schema $ :: 'Dynamic
         |try-size $ %{} :CodeEntry (:doc |)

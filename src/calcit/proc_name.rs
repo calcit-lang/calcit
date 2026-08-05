@@ -1278,7 +1278,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("record")],
       }),
       NativeRecordStruct => Some(ProcTypeSignature {
-        return_type: optional_tag("struct"),
+        return_type: some_tag("struct"),
         arg_types: vec![some_tag("record")],
       }),
       NativeRecordImpls => Some(ProcTypeSignature {
@@ -1455,10 +1455,25 @@ mod tests {
     assert_eq!(CalcitProc::GenerateId.arity(), Some(ProcArity { min: 0, max: Some(2) }));
     assert!(matches!(generate_id.arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
 
-    for proc in CalcitProc::iter() {
-      let Some(signature) = proc.get_type_signature() else {
-        continue;
-      };
+    for proc in [
+      CalcitProc::GenerateId,
+      CalcitProc::Range,
+      CalcitProc::NativeListRange,
+      CalcitProc::NativeInspectMethods,
+      CalcitProc::NativeInspectType,
+      CalcitProc::Trim,
+      CalcitProc::NativeStrSlice,
+      CalcitProc::Sort,
+      CalcitProc::NativeListSort,
+      CalcitProc::NativeListSlice,
+      CalcitProc::NativeRecordNth,
+      CalcitProc::ReadDir,
+      CalcitProc::GetEnv,
+      CalcitProc::ParseCirruEdn,
+      CalcitProc::FormatCirru,
+      CalcitProc::FormatCirruEdn,
+    ] {
+      let signature = proc.get_type_signature().expect("migrated proc signature");
       assert!(
         signature
           .arg_types
@@ -1467,6 +1482,16 @@ mod tests {
         "{proc} must not encode parameter omission as Optional<T>"
       );
     }
+
+    let explicitly_nullable = ProcTypeSignature {
+      return_type: dynamic_tag(),
+      arg_types: vec![optional_tag("string")],
+    };
+    assert_eq!(explicitly_nullable.arity(0), ProcArity { min: 1, max: Some(1) });
+    assert!(matches!(
+      explicitly_nullable.arg_types[0].as_ref(),
+      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
+    ));
 
     for (proc, expected) in [
       (CalcitProc::GenerateId, ProcArity { min: 0, max: Some(2) }),
@@ -1492,13 +1517,22 @@ mod tests {
 
   #[test]
   fn absence_returning_proc_signatures_are_nullable() {
-    for proc in [CalcitProc::ParseFloat, CalcitProc::GetEnv] {
-      let signature = proc.get_type_signature().expect("proc signature");
-      assert!(
-        matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Optional(_)),
-        "{proc} must expose its nil result"
-      );
-    }
+    let parse_float = CalcitProc::ParseFloat.get_type_signature().expect("parse-float signature");
+    assert!(matches!(
+      parse_float.return_type.as_ref(),
+      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+
+    let get_env = CalcitProc::GetEnv.get_type_signature().expect("get-env signature");
+    assert!(matches!(
+      get_env.return_type.as_ref(),
+      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+    ));
+
+    let record_struct = CalcitProc::NativeRecordStruct
+      .get_type_signature()
+      .expect("record-struct signature");
+    assert_eq!(record_struct.return_type, some_tag("struct"));
   }
 
   #[test]

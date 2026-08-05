@@ -405,7 +405,8 @@
           :schema $ :: 'Dynamic
         |test-list-first-generic $ %{} :CodeEntry (:doc "|generic first() on list via invoke")
           :code $ quote
-            defn test-list-first-generic () $ first ([] 42 99)
+            defn test-list-first-generic () $ option:unwrap
+              first $ [] 42 99
           :examples $ []
           :schema $ :: 'Dynamic
         |test-list-includes $ %{} :CodeEntry (:doc "|includes checks value presence")
@@ -483,8 +484,8 @@
           :schema $ :: 'Dynamic
         |test-list-rest-generic-first $ %{} :CodeEntry (:doc "|generic rest() on list via invoke")
           :code $ quote
-            defn test-list-rest-generic-first () $ first
-              rest $ [] 10 20 30
+            defn test-list-rest-generic-first () $ option:unwrap
+              first $ rest ([] 10 20 30)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-list-reverse $ %{} :CodeEntry (:doc "|reverse a list")
@@ -815,7 +816,7 @@
             defn test-record-struct-eq () $ &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &= (&record:struct point) Point
+                &= (record-struct point) Point
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic

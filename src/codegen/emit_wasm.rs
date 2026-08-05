@@ -1099,6 +1099,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "slice" if args_list.len() >= 2 && args_list.len() <= 3 => return emit_list_slice(ctx, &args_list),
           // `dissoc` — delegated to map dissoc for 2-arg calls.
           "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
+          // Public reflection wrapper around the native record metadata operation.
+          "record-struct" if args_list.len() == 1 => return emit_record_struct(ctx, &args_list),
           // `conj` — append one or more elements to a list.
           "conj" if args_list.len() >= 2 => return emit_conj(ctx, &args_list),
           // `update` — map update: new map with key set to f(old value).
@@ -1177,6 +1179,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
+        "record-struct" if args_list.len() == 1 => return emit_record_struct(ctx, &args_list),
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
@@ -1199,7 +1202,10 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         return emit_body(ctx, &body);
       }
-      let fn_idx = *ctx.fn_index.get(name).ok_or_else(|| format!("unknown function: {sym}"))?;
+      let fn_idx = *ctx
+        .fn_index
+        .get(name)
+        .ok_or_else(|| format!("unknown function symbol in direct call: {sym:?}"))?;
       let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(args_list.len() as u32);
       let rest_fixed = ctx.fn_has_rest.get(name).copied();
       emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
@@ -1248,6 +1254,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
+          "record-struct" if args_list.len() == 1 => return emit_record_struct(ctx, &args_list),
           _ => {}
         }
       }
@@ -1348,6 +1355,9 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
 
   match head {
     Calcit::Import(import) => {
+      if import.ns.as_ref() == "calcit.core" && import.def.as_ref() == "record-struct" && call_args.len() == 1 {
+        return emit_record_struct(ctx, call_args);
+      }
       let qualified = format!("{}/{}", import.ns, import.def);
       let fn_idx = ctx
         .fn_index
@@ -1372,7 +1382,13 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
     }
     Calcit::Symbol { sym, .. } => {
       let name = sym.as_ref();
-      let fn_idx = *ctx.fn_index.get(name).ok_or_else(|| format!("unknown function: {sym}"))?;
+      if name == "record-struct" && call_args.len() == 1 {
+        return emit_record_struct(ctx, call_args);
+      }
+      let fn_idx = *ctx
+        .fn_index
+        .get(name)
+        .ok_or_else(|| format!("unknown function symbol in spread call: {sym:?}"))?;
       let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(call_args.len() as u32);
       let rest_fixed = ctx.fn_has_rest.get(name).copied();
       emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
@@ -1386,6 +1402,9 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
           info.def_ns, info.name
         )
       })?;
+      if def_ref.def_ns.as_ref() == "calcit.core" && def_ref.def_name.as_ref() == "record-struct" && call_args.len() == 1 {
+        return emit_record_struct(ctx, call_args);
+      }
       let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
       let fn_idx = ctx
         .fn_index

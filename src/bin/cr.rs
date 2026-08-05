@@ -1661,7 +1661,7 @@ mod tests {
   }
 
   #[test]
-  fn analyze_weak_types_classifies_nil_only_at_declared_return_positions() {
+  fn analyze_weak_types_classifies_nil_inside_unit_definitions_as_declared_unit() {
     let unit_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
@@ -1690,11 +1690,11 @@ mod tests {
       &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
     )
     .expect("unit nil occurrences");
-    assert_eq!(unit_row.occurrences[0].intent, type_coverage::WeakTypeIntent::Unresolved);
+    assert_eq!(unit_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredUnit);
     assert_eq!(
       unit_row.occurrences[1].intent,
       type_coverage::WeakTypeIntent::DeclaredUnit,
-      "only the final nil inherits the Unit return contract"
+      "all nil forms inside a Unit definition inherit its no-value contract"
     );
 
     let single_do_entry = snapshot::CodeEntry {

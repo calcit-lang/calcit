@@ -277,7 +277,8 @@ let
 - `&tuple:count` - get element count
 - `&tuple:class` - get class
 - `&tuple:params` - get parameters
-- `&tuple:enum` - get enum tag
+- `tuple-enum` - get an enum prototype as `Option<Enum>`
+- `destruct-list`, `destruct-map`, `destruct-set`, `destruct-str` - split collections using nominal `*Destruct` enums
 - `&tuple:with-class` - change class
 
 ### Record Operations
@@ -289,7 +290,7 @@ let
 - `record-with` - update multiple fields, returns new record
 - `&record:get` - get field value
 - `&record:assoc` - set field value (low-level)
-- `&record:struct` - get the struct definition the record was created from
+- `record-struct` - get the struct definition the record was created from
 - `&record:matches?` - type check
 - `&record:from-map` - convert from map
 - `&record:to-map` - convert to map
@@ -310,6 +311,7 @@ let
 ## Traits & Methods
 
 - `deftrait` - define a trait (method set + type signatures)
+- `impl-origin` - get an impl's trait origin as `Option<Trait>`
 - `defimpl` - define an impl record for a trait: `defimpl ImplName Trait ...`
 - `impl-traits` - attach impl records to a struct/enum definition (user impls: later impls override earlier ones for same method name)
 - `.method` - normal method dispatch
@@ -339,14 +341,21 @@ let
 
 - `if` - conditional
 - `when`, `when-not` - single-branch conditionals
-- `cond` - multi-way conditional
-- `case` - pattern matching on values
+- `cond` - multi-way conditional; requires a final `(true value)` branch
+- `case` - pattern matching on values; raises when no pattern matches
 - `&case` - internal case macro
 - `match` - preferred enum/tuple pattern matching
 - `tag-match` - legacy enum/tuple pattern matching
 - `record-match` - record pattern matching
 - `list-match` - list destructuring match
 - `field-match` - map field matching
+- `if-let` - unwrap an `Option<T>` with explicit some/none branches
+- `when-let` - run a body for `%some` and return `Option<R>`
+
+Nested updates are nominal as well: `update-in` passes `Option<T>` to its
+updater, and `dissoc-in` treats an empty path as a no-op. Public lookup and
+positional APIs (`get`, `get-in`, `first`, `last`, and collection `nth`) return
+`Option<T>`. Record has no public positional `.nth`; use field-name `get`.
 
 ### Threading Macros
 
