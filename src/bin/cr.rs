@@ -1722,6 +1722,41 @@ mod tests {
       "the sole expression in do is its return position"
     );
 
+    let unit_macro_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![leaf("defn"), leaf("explicit-unit"), list(vec![]), list(vec![leaf(";nil")])]),
+      schema: unit_entry.schema.clone(),
+    };
+    let unit_macro_row = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "explicit-unit",
+      &unit_macro_entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+    )
+    .expect("explicit ;nil occurrence");
+    assert_eq!(unit_macro_row.occurrences[0].detail, "code-nil:unit-macro:literal");
+    assert_eq!(unit_macro_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredUnit);
+
+    let empty_unit_entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tags: HashSet::new(),
+      code: list(vec![leaf("defn"), leaf("implicit-unit"), list(vec![])]),
+      schema: unit_entry.schema.clone(),
+    };
+    assert!(
+      type_coverage::analyze_weak_types_entry(
+        "app.main",
+        "implicit-unit",
+        &empty_unit_entry,
+        &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
+      )
+      .is_none(),
+      "an empty Unit function should not need an explicit nil form"
+    );
+
     let optional_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],

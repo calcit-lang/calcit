@@ -676,7 +676,6 @@
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :tuple &core-tuple-impls :record &core-record-impls :scalar &core-scalar-impls
-                ;nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
@@ -2086,8 +2085,9 @@
           :tags $ #{} :builtin :internal
         |;nil $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defmacro ;nil (& _body) nil
+            defmacro ;nil $ & _body
           :examples $ []
+            quote $ assert-type (;nil) (quote Unit)
           :schema $ :: 'Macro
             {} (:return 'Unit)
               :args $ []

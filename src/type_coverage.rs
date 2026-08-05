@@ -360,14 +360,17 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
 
   if occurrence.kind == WeakTypeKind::CodeNil {
     return match occurrence.intent {
+      WeakTypeIntent::DeclaredUnit if occurrence.detail.contains("unit-macro") => {
+        "Keep the Unit return contract, but remove explicit `;nil` when an empty body or final Unit-returning effect already expresses no result."
+      }
       WeakTypeIntent::DeclaredUnit => {
-        "Keep Unit for a no-value result; do not convert this nil to Option unless it represents application-level absence."
+        "Keep the Unit return contract and remove explicit nil when an empty body or final Unit-returning effect already expresses no result."
       }
       WeakTypeIntent::DeclaredOptional => {
         "Keep Optional only at a compatibility/FFI boundary; migrate application-level absence to Option and failures with details to Result."
       }
       _ => {
-        "Declare Unit for a no-value result, use Option/Result for application absence or failure, or remove the implicit nil-producing branch."
+        "Declare Unit for a no-value result and remove explicit nil/`;nil` when possible; use Option/Result for application absence or failure."
       }
     };
   }
@@ -398,11 +401,13 @@ fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
   }
   if occurrence.kind == WeakTypeKind::CodeNil {
     return match occurrence.intent {
-      WeakTypeIntent::DeclaredUnit => "The nil is confined to a declared Unit return and does not model application-level absence.",
+      WeakTypeIntent::DeclaredUnit => {
+        "The explicit nil form is confined to a declared Unit return, but may still be redundant source-level noise."
+      }
       WeakTypeIntent::DeclaredOptional => {
         "The nil is covered by an Optional return contract but remains compatibility debt until callers use a nominal Option/Result API."
       }
-      _ => "Implicit nil weakens branch and return inference because no Unit or Optional return contract covers this position.",
+      _ => "A nil form weakens branch and return inference because no Unit or Optional return contract covers this position.",
     };
   }
   if occurrence.detail.contains("fn-arg") || occurrence.detail.contains("fn-return") {
@@ -584,6 +589,17 @@ fn scan_cirru_weak_types(
         Cirru::Leaf(text) => Some(text.to_string()),
         _ => None,
       });
+      if root == "code" && selected.contains(&WeakTypeKind::CodeNil) && matches!(head.as_deref(), Some(";nil")) {
+        push_weak_type_occurrence(
+          occurrences,
+          WeakTypeKind::CodeNil,
+          weak_type_detail(WeakTypeKind::CodeNil, &format!("unit-macro:{}", classify_code_nil(parent))),
+          format_cirru_path(root, path),
+        );
+        if let (Some(intent), Some(occurrence)) = (nil_return_intent, occurrences.last_mut()) {
+          occurrence.intent = intent;
+        }
+      }
       for (idx, item) in items.iter().enumerate() {
         path.push(idx);
         let next_parent = WeakCodeParent {
@@ -894,7 +910,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
     );
     let _ = writeln!(
       out,
-      "- next: filter `--only code-nil --intent unresolved,declared-optional`; declare Unit for no-value returns and prefer Option/Result for application absence or failure."
+      "- next: filter `--only code-nil --intent unresolved,declared-optional`; declare Unit and remove redundant nil/`;nil` for no-value returns, then prefer Option/Result for application absence or failure."
     );
   }
   if options.summary_only {
@@ -2198,7 +2214,7 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{nil_debt} nil occurrence(s) are unresolved or covered only by Optional compatibility contracts."),
-      "suggestion": "Declare Unit for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
+      "suggestion": "Declare Unit and remove redundant nil/`;nil` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
     }));
   }
   let envelope = serde_json::json!({

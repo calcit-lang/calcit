@@ -25,12 +25,16 @@
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy
-              fn (_x) (;nil)
+              fn $ _x
           :examples $ []
           :schema $ :: 'Dynamic
         |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait ResultTrait $ .dummy :fn
+            deftrait ResultTrait $ .dummy
+              :: :fn $ {}
+                :generics $ [] 'T
+                :args $ [] 'T
+                :return 'Unit
           :examples $ []
           :schema $ :: 'Dynamic
         |ShownBox $ %{} :CodeEntry (:doc "|Generic struct with where-bound on payload type")

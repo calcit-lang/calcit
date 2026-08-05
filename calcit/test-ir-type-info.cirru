@@ -19,9 +19,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ ;nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |test-type-info $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-type-info () $ let

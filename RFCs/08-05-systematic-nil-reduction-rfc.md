@@ -36,7 +36,7 @@
 
 ### Unit
 
-`Unit` 只用于副作用操作或明确没有有意义返回值的表达式，例如写文件、注册 watcher。迁移期可以继续使用运行时 `nil` 表示，但业务代码不得把它当缺失值容器。
+`Unit` 只用于副作用操作或明确没有有意义返回值的表达式，例如写文件、注册 watcher。运行时目前仍由 `nil` 承载 Unit，但源码不应因此显式返回 `nil` 或 `;nil`：空函数体直接声明 `Unit`，有副作用的函数让最后一个 Unit effect 自然成为返回项。只有语法必须提供占位节点时才保留 `;nil`，业务代码不得把它当缺失值容器。
 
 ### Optional<T>
 
@@ -62,7 +62,7 @@
 - proc 参数检查不再剥离 `Optional<T>`；
 - 将能在不丢失类型证据的情况下修正的 `parse-float` 和 `get-env` proc 返回标成 Optional；
 - 公开 core 的 `first`、`nth`、`get` schema 继续暴露 Optional；内部 `&list:first`、`&list:nth`、`&map:get` 的 Dynamic proc 契约及低层专用推断暂保留兼容行为；
-- `analyze weak-types` 仅在结构上可证明的返回位置读取函数契约，将显式 nil 区分为 `declared-unit`、`declared-optional` 与 `unresolved`；JSON 对后两类迁移债务发出 `W_NIL_TYPE_DEBT`；
+- `analyze weak-types` 将裸 `nil` 与 `;nil` 都纳入审计，仅在结构上可证明的返回位置读取函数契约，并区分 `declared-unit`、`declared-optional` 与 `unresolved`；JSON 对后两类迁移债务发出 `W_NIL_TYPE_DEBT`；
 - `analyze.weak-types` 的机器协议升级到 schema v2，避免旧消费者在 v1 下错误接受新增的封闭 intent/diagnostic 枚举；
 - 修正既有 `optionally` 桥接函数的契约为 `Optional<T> -> Option<T>`，为遗留 nullable 边界提供不丢失类型关系的显式出口；
 - 为上述规则增加单元测试。

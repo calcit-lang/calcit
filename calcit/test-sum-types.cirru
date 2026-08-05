@@ -62,9 +62,11 @@
               :args $ [] 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ ;nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)

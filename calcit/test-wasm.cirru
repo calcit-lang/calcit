@@ -69,9 +69,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ ;nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |sum-range $ %{} :CodeEntry (:doc "|Sum 1..n via helper")
           :code $ quote
             defn sum-range (n) (sum-range-step 0 1 n)

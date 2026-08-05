@@ -10,12 +10,16 @@
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
             defimpl EnumImpl EnumMetadata $ .dummy
-              fn (self) (;nil)
+              fn $ self
           :examples $ []
           :schema $ :: 'Impl
         |EnumMetadata $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait EnumMetadata $ .dummy :fn
+            deftrait EnumMetadata $ .dummy
+              :: :fn $ {}
+                :generics $ [] 'T
+                :args $ [] 'T
+                :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
         |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks")
@@ -45,12 +49,16 @@
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
             defimpl StructImpl StructMetadata $ .dummy
-              fn (self) (;nil)
+              fn $ self
           :examples $ []
           :schema $ :: 'Impl
         |StructMetadata $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait StructMetadata $ .dummy :fn
+            deftrait StructMetadata $ .dummy
+              :: :fn $ {}
+                :generics $ [] 'T
+                :args $ [] 'T
+                :return 'Unit
           :examples $ []
           :schema $ :: 'Trait
         |add-numbers $ %{} :CodeEntry (:doc |)
@@ -123,9 +131,11 @@
               :args $ [] 'String
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ ;nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |show-type-info $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn show-type-info (x) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)

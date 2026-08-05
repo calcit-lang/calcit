@@ -14,9 +14,11 @@
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn reload! () $ ;nil
+            defn reload! $
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ []
         |test-type-mismatch $ %{} :CodeEntry (:doc "|Demonstrates Proc type checking - intentional type error")
           :code $ quote
             defn test-type-mismatch () (; This should generate a warning: passing string to numeric operation)
