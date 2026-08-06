@@ -72,7 +72,7 @@
             defimpl Num NumTrait
               .inc $ fn (x) (update x 1 inc)
               .show $ fn (x)
-                str $ &tuple:nth x 1
+                str $ &enum:nth x 1
           :examples $ []
           :schema $ :: 'Dynamic
         |NumBox $ %{} :CodeEntry (:doc |)
@@ -367,7 +367,7 @@
                     let
                         a0-tuple a0
                       assert-type a0-tuple 'Tuple
-                      assert= true $ any? (&tuple:impls a0-tuple)
+                      assert= true $ any? (&enum:impls a0-tuple)
                         fn (impl)
                           = (impl-origin impl) (%some NumTrait)
                 assert-traits a0 NumTrait calcit.core/Show
@@ -449,7 +449,7 @@
         |test-tuple $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tuple")
-              assert= :tuple $ type-of (:: :a :b)
+              assert= :enum $ type-of (:: :a :b)
               assert= (%some :a)
                 nth (:: :a :b) 0
               assert= (%some :b)
@@ -477,20 +477,20 @@
               assert= (:: 0 0 1)
                 update (:: 0 0 0) 2 inc
               assert= 1 $ count (:: :none)
-              assert-detect tuple? $ parse-cirru-edn "|:: :none"
+              assert-detect enum? $ parse-cirru-edn "|:: :none"
               assert= false $ = (:: :t 1) (:: :t 2)
               assert= false $ = (:: :t 1) (:: :t 1 2)
               let
                   a $ :: :a 1
                   b $ %:: Demo :a 1
-                assert= true $ any? (&tuple:impls b)
+                assert= true $ any? (&enum:impls b)
                   fn (impl)
                     includes? (str impl) |DemoGetTrait
                 assert=
-                  &tuple:params $ :: :a 1 2 3
+                  &enum:params $ :: :a 1 2 3
                   [] 1 2 3
-                assert= "|(%:: :a 1 (:enum Demo))" $ str b
-              assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
+                assert= "|(%:: 'Demo :a 1)" $ str b
+              assert= "|(%:: _ :a :b :c)" $ str (:: :a :b :c)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use cirru_edn::EdnTag;
 
 use crate::calcit::{
-  Calcit, CalcitEnum, CalcitFn, CalcitFnTypeAnnotation, CalcitImport, CalcitList, CalcitProc, CalcitStruct, CalcitTypeAnnotation,
+  Calcit, CalcitEnumDef, CalcitFn, CalcitFnTypeAnnotation, CalcitImport, CalcitList, CalcitProc, CalcitStructDef, CalcitTypeAnnotation,
   ImportInfo, LocatedWarning,
 };
 
@@ -341,7 +341,7 @@ fn try_rewrite_single_tuple_to_enum_tuple(
 
 /// Build a Calcit node referencing a struct definition, using Import when ns/def is known.
 pub(crate) fn build_struct_ref_node(
-  struct_def: &CalcitStruct,
+  struct_def: &CalcitStructDef,
   ns_def_path: Option<(Arc<str>, Arc<str>)>,
   file_ns: &str,
   def_name: &str,
@@ -364,13 +364,13 @@ pub(crate) fn build_struct_ref_node(
       def_id: None,
     })
   } else {
-    Calcit::Struct(struct_def.clone())
+    Calcit::StructDef(struct_def.clone())
   }
 }
 
 /// Build a Calcit node referencing an enum definition, using Import when ns/def is known.
 pub(crate) fn build_enum_ref_node(
-  enum_def: CalcitEnum,
+  enum_def: CalcitEnumDef,
   ns_def_path: Option<(Arc<str>, Arc<str>)>,
   file_ns: &str,
   def_name: &str,
@@ -393,6 +393,6 @@ pub(crate) fn build_enum_ref_node(
       def_id: None,
     })
   } else {
-    Calcit::Record(enum_def.to_record_prototype())
+    Calcit::Struct(enum_def.to_record_prototype())
   }
 }

@@ -2,7 +2,7 @@
 
 use crate::builtins;
 use crate::calcit::CalcitTypeAnnotation;
-use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitStruct, CalcitSyntax};
+use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax};
 use crate::program::{
   ImportRule, PROGRAM_CODE_DATA, lookup_codegen_type_hint, lookup_def_code, lookup_def_schema, lookup_ns_target_in_import,
 };
@@ -383,7 +383,7 @@ impl EffectsGraphAnalyzer {
       Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => {
         self.walk_expr(code, current_ns, out, depth);
       }
-      Calcit::Tuple(tuple) => {
+      Calcit::Enum(tuple) => {
         for item in &tuple.extra {
           self.walk_expr(item, current_ns, out, depth);
         }
@@ -590,7 +590,7 @@ fn extract_call_targets_recursive(code: &Calcit, current_ns: &str, calls: &mut V
     Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => {
       extract_call_targets_recursive(code, current_ns, calls);
     }
-    Calcit::Tuple(tuple) => {
+    Calcit::Enum(tuple) => {
       for item in &tuple.extra {
         extract_call_targets_recursive(item, current_ns, calls);
       }
@@ -891,7 +891,7 @@ fn format_schema_annotation(schema: &std::sync::Arc<CalcitTypeAnnotation>, conte
   }
 }
 
-fn format_struct_fields(st: &CalcitStruct, context_ns: &str, depth: usize) -> String {
+fn format_struct_fields(st: &CalcitStructDef, context_ns: &str, depth: usize) -> String {
   let fields: Vec<String> = st
     .fields
     .iter()
@@ -947,7 +947,7 @@ fn walk_for_record_templates(code: &Calcit, best: &mut Option<Vec<(String, Strin
       }
     }
     Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => walk_for_record_templates(code, best),
-    Calcit::Record(record) => {
+    Calcit::Struct(record) => {
       if let Some(fields) = record_fields_from_calcit(record)
         && fields.len() >= 2
         && best.as_ref().is_none_or(|current| current.len() < fields.len())
@@ -981,7 +981,7 @@ fn format_record_fields(fields: &[(String, String)], context_ns: &str, depth: us
 }
 
 fn parse_record_field_pairs(expr: &Calcit) -> Option<Vec<(String, String)>> {
-  if let Calcit::Record(record) = expr {
+  if let Calcit::Struct(record) = expr {
     return record_fields_from_calcit(record);
   }
   let Calcit::List(list) = expr else {
@@ -1022,7 +1022,7 @@ fn parse_nested_record_entries(list: &crate::calcit::CalcitList, start: usize) -
   if fields.is_empty() { None } else { Some(fields) }
 }
 
-fn record_fields_from_calcit(record: &crate::calcit::CalcitRecord) -> Option<Vec<(String, String)>> {
+fn record_fields_from_calcit(record: &crate::calcit::CalcitStructValue) -> Option<Vec<(String, String)>> {
   let fields = record.fields();
   let values = record.values.as_ref();
   if fields.is_empty() || fields.len() != values.len() {

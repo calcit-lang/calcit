@@ -516,10 +516,10 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
         .unwrap_or_else(|| Edn::Symbol(Arc::from("Dynamic"))),
       _ => Edn::Symbol(Arc::from("Dynamic")),
     },
-    CalcitTypeAnnotation::Record(_) => Edn::Symbol(Arc::from("Record")),
+    CalcitTypeAnnotation::StructValue(_) => Edn::Symbol(Arc::from("Struct")),
     CalcitTypeAnnotation::Struct(..) => Edn::Symbol(Arc::from("Struct")),
     CalcitTypeAnnotation::Enum(..) => Edn::Symbol(Arc::from("Enum")),
-    CalcitTypeAnnotation::Tuple(_) => Edn::Symbol(Arc::from("Tuple")),
+    CalcitTypeAnnotation::EnumValue(_) => Edn::Symbol(Arc::from("Enum")),
     CalcitTypeAnnotation::Trait(_) => Edn::Symbol(Arc::from("Trait")),
     other => other.to_type_edn(),
   };
@@ -1077,11 +1077,31 @@ fn looks_like_undeclared_type_var(name: &str) -> bool {
 
 /// Allowed primitive tag types usable as a bare leaf schema (e.g. `:string`, `:number`).
 pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
-  "any", "bool", "number", "string", "symbol", "tag", "list", "map", "set", "fn", "tuple", "ref", "buffer", "dynamic", "unit",
-  "record", "struct", "enum", "trait", "impl",
+  "any",
+  "bool",
+  "number",
+  "string",
+  "symbol",
+  "tag",
+  "list",
+  "map",
+  "set",
+  "fn",
+  "tuple",
+  "ref",
+  "buffer",
+  "dynamic",
+  "unit",
+  "record",
+  "struct",
+  "enum",
+  "struct-def",
+  "enum-def",
+  "trait",
+  "impl",
 ];
 
-const PARAMETERIZED_SCHEMA_TAGS: &[&str] = &["list", "map", "set", "fn", "tuple", "ref"];
+const PARAMETERIZED_SCHEMA_TAGS: &[&str] = &["list", "map", "set", "fn", "ref"];
 
 fn canonical_schema_symbol_from_cirru(node: &Cirru) -> Option<&'static str> {
   let Cirru::Leaf(value) = node else {
@@ -1100,10 +1120,46 @@ fn is_qualified_nominal_schema_ref(value: &str) -> bool {
   !namespace.is_empty() && !definition.is_empty()
 }
 
+fn check_no_legacy_data_type_names(schema: &Cirru) -> Result<(), String> {
+  match schema {
+    Cirru::Leaf(value) => {
+      let name = value.trim_start_matches(['\'', ':']);
+      let replacement = match name {
+        "record" | "Record" => Some("Struct"),
+        "tuple" | "Tuple" => Some("Enum"),
+        _ => None,
+      };
+      if let Some(replacement) = replacement {
+        return Err(format!(
+          "Legacy type name `{name}` was removed by the struct/enum data-model migration; use `'{replacement}`."
+        ));
+      }
+      Ok(())
+    }
+    Cirru::List(items) => {
+      for item in items {
+        check_no_legacy_data_type_names(item)?;
+      }
+      Ok(())
+    }
+  }
+}
+
 fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
   parse_schema_data(schema)?;
   check_no_nil_type(schema)?;
   check_no_excess_quotes(schema)?;
+
+  if let Cirru::List(items) = schema
+    && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::")
+    && let Some(Cirru::Leaf(type_name)) = items.get(1)
+    && canonical_schema_symbol_from_cirru(&items[1]).is_none()
+    && !is_qualified_nominal_schema_ref(type_name)
+  {
+    return Err(format!(
+      "Unknown standalone type `{type_name}`. Use a built-in type name or a fully qualified nominal type such as `'app.schema/Store`."
+    ));
+  }
 
   let schema_edn = schema_cirru_to_edn(schema.clone());
   if matches!(schema_edn, Edn::Nil) {
@@ -1115,10 +1171,7 @@ fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
   {
     return Ok(());
   }
-  if matches!(
-    annotation.as_ref(),
-    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::DynTuple
-  ) {
+  if matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Tag) {
     return Err(format!(
       "Unsupported standalone type schema: {}",
       cirru_parser::format(std::slice::from_ref(schema), true.into()).unwrap_or_else(|_| format!("{schema:?}"))
@@ -1132,12 +1185,13 @@ fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
 /// `(:: :fn ({} ...))` / `(:: :macro ({} ...))` callable schemas. Loading
 /// existing snapshots remains deliberately more permissive.
 pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
+  check_no_legacy_data_type_names(schema)?;
   let raw_items = match schema {
     Cirru::List(items) => items,
     Cirru::Leaf(s) => {
       let tag_name = s.trim_start_matches(':');
       if let Some(canonical) = canonical_schema_symbol_from_cirru(schema) {
-        let parameterized = matches!(canonical, "List" | "Map" | "Set" | "Fn" | "Tuple" | "Ref");
+        let parameterized = matches!(canonical, "List" | "Map" | "Set" | "Fn" | "Ref");
         if !parameterized {
           return Ok(());
         }
@@ -1162,7 +1216,6 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         let example = match tag_name {
           "map" => ":: :map :tag :bool",
           "fn" => ":: :fn $ {} (:args $ []) (:return :unit)",
-          "tuple" => ":: :tuple :bool",
           other => {
             return Err(format!(
               "Bare `:{other}` leaves its nested type dynamic. Use an explicit type expression such as `:: :{other} :bool`; write `:dynamic` as the nested type only when the boundary is intentionally dynamic."
@@ -2623,6 +2676,21 @@ mod tests {
     let quoted_string = Cirru::Leaf(Arc::from("'String"));
     let parsed_quoted_string = parse_schema_annotation_for_write(&quoted_string).expect("'String leaf should parse");
     assert!(matches!(parsed_quoted_string.as_ref(), CalcitTypeAnnotation::String));
+
+    for (legacy, replacement) in [
+      ("'Record", "'Struct"),
+      ("'Tuple", "'Enum"),
+      (":record", "'Struct"),
+      (":tuple", "'Enum"),
+    ] {
+      let error =
+        validate_schema_for_write(&Cirru::Leaf(Arc::from(legacy))).expect_err("legacy data type names must be rejected on write");
+      assert!(error.contains(replacement), "error should point to {replacement}: {error}");
+    }
+
+    let nested_legacy = parse_one(":: 'List 'Record");
+    let error = validate_schema_for_write(&nested_legacy).expect_err("nested legacy data type names must be rejected on write");
+    assert!(error.contains("'Struct"), "nested error should point to 'Struct: {error}");
     let leaf_fn = Cirru::Leaf(Arc::from(":fn"));
     assert!(validate_schema_for_write(&leaf_fn).is_err(), "bare :fn should require a signature");
     let leaf_ref = Cirru::Leaf(Arc::from(":ref"));
@@ -2636,13 +2704,11 @@ mod tests {
     assert!(validate_schema_for_write(&leaf_trait).is_ok(), ":trait leaf should pass");
     let leaf_enum = Cirru::Leaf(Arc::from(":enum"));
     assert!(validate_schema_for_write(&leaf_enum).is_ok(), ":enum leaf should pass");
-    let leaf_record = Cirru::Leaf(Arc::from(":record"));
-    assert!(validate_schema_for_write(&leaf_record).is_ok(), ":record leaf should pass");
     let leaf_struct = Cirru::Leaf(Arc::from(":struct"));
     assert!(validate_schema_for_write(&leaf_struct).is_ok(), ":struct leaf should pass");
     let leaf_impl = Cirru::Leaf(Arc::from(":impl"));
     assert!(validate_schema_for_write(&leaf_impl).is_ok(), ":impl leaf should pass");
-    for kind in ["record", "struct", "enum", "trait", "impl"] {
+    for kind in ["struct", "enum", "trait", "impl"] {
       let schema = Cirru::Leaf(Arc::from(format!(":{kind}")));
       let annotation = parse_schema_annotation_for_write(&schema).unwrap_or_else(|error| panic!(":{kind} should parse: {error}"));
       assert!(
@@ -3159,7 +3225,7 @@ mod tests {
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
-    assert!(matches!(map.tag_get("return"), Some(Edn::Symbol(name)) if name.as_ref() == "Record"));
+    assert!(matches!(map.tag_get("return"), Some(Edn::Symbol(name)) if name.as_ref() == "Struct"));
   }
 
   #[test]

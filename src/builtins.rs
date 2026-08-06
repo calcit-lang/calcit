@@ -372,8 +372,8 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NumberQuestion => meta::number_question(args),
     BoolQuestion => meta::bool_question(args),
     SetQuestion => meta::set_question(args),
-    TupleQuestion => meta::tuple_question(args),
-    RecordQuestion => meta::record_question(args),
+    EnumQuestion => meta::enum_question(args),
+    StructQuestion => meta::struct_question(args),
     FnQuestion => meta::fn_question(args),
     IsSpreadingMark => meta::is_spreading_mark(args),
     // tuple

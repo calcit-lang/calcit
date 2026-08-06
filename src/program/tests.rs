@@ -1,6 +1,6 @@
 use super::*;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
-use crate::calcit::{CalcitImport, CalcitStruct, CalcitSyntax, ImportInfo};
+use crate::calcit::{CalcitImport, CalcitStructDef, CalcitSyntax, ImportInfo};
 use crate::call_stack::CallStackList;
 use crate::data::cirru::code_to_calcit;
 use crate::run_program_with_docs;
@@ -32,7 +32,7 @@ fn strict_edn_decoder_nominals_are_compiled_dependencies() {
   let graph = DataShapeGraph::from_nodes(
     0,
     vec![DataShapeNode::Struct {
-      nominal: Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![])),
+      nominal: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Person"), vec![])),
       nominal_path: Some((ns.clone(), def.clone())),
       type_args: Arc::new(vec![]),
       fields: vec![],

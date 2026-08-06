@@ -164,7 +164,7 @@ echo 'range 10' | cr exec
 
 - `&methods-of value` — 列出某值的可用方法名（返回字符串列表 `[] |.foo |.bar ...`）
 - `&inspect-methods value` — 打印方法与 impl 来源（调试 trait override 链，可临时插入 pipeline）
-- `impl-origin impl` — 以 `Option<Trait>` 读取 impl record 的 trait 来源
+- `impl-origin impl` — 以 `Option<Trait>` 读取 nominal impl 的 trait 来源
 - `&trait-call Trait :method receiver & args` — 显式消歧：只调用属于指定 trait 的方法实现
 
 > 📖 深入了解 trait 实现机制：`cr docs read traits.md` 或 `cr docs search 'trait-call'`
@@ -211,7 +211,7 @@ echo 'range 10' | cr exec
 详细内容已移入独立文件：
 
 - `Cirru 语法核心概念` → [cirru-syntax.md](../cirru-syntax.md)
-- `数据结构：Tuple vs Vector` → [features/tuples.md](../features/tuples.md)
+- `数据结构：Anonymous Enum vs List` → [features/tuples.md](../features/tuples.md)
 - `类型标注与检查` → [features/static-analysis.md](../features/static-analysis.md)
 
 ### 其他易错点
@@ -551,27 +551,27 @@ hello / "hello"   => symbol hello, not a string
 
 **不放心修改是否正确？** 每步后用 `cr tree show` 验证。
 
-**Tuple vs Vector：**
+**Anonymous Enum vs List：**
 
 ```cirru.no-check
-; ✅ Tuple - 用于事件、模式匹配
-:: :clipboard/read text
+; ✅ anonymous enum - 用于事件、模式匹配
+%:: _ :clipboard/read text
 
 ; ✅ Vector - 用于 DOM 列表
 [] (button) (div)
 
 ; ❌ 错误：用 vector 传事件
 send-to-component! $ [] :clipboard/read text
-; 报错：tag-match expected tuple
+; 报错：tag-match expected enum value
 
-; ✅ 正确：用 tuple
-send-to-component! $ :: :clipboard/read text
+; ✅ 正确：用 anonymous enum
+send-to-component! $ %:: _ :clipboard/read text
 ```
 
 **记忆规则：**
 
-- **`::` (tuple)**: 事件、模式匹配、不可变数据结构
-- **`[]` (vector)**: DOM 元素列表、动态集合
+- **`%:: _` (anonymous enum)**: 事件、模式匹配、短生命周期 tagged data；`::` 仍是简写
+- **`[]` (list)**: DOM 元素列表、动态集合
 
 ### 4. 输入大小限制 ⭐⭐⭐
 
@@ -736,7 +736,7 @@ cr tree replace 'app.core/checkout' --path @3.2.1 --code 'quote calculate-discou
 **其他差异：**
 
 - **宏系统**：Calcit 更简洁，缺少 Clojure 的 reader macro（如 `#()`）
-- **数据类型**：Calcit 的 Tuple (`::`) 和 Vector (`[]`) 有特定用途（见"Cirru 字符串和数据类型"）
+- **数据类型**：Calcit 的 Anonymous Enum (`%:: _`，`::` 为简写) 和 List (`[]`) 有不同用途（见"Cirru 字符串和数据类型"）
 
 ---
 
@@ -850,7 +850,7 @@ cr query error
 | `tree-replace: root path is not allowed` | 写操作传了空 path                             | 改用 `cr edit def --overwrite` 覆盖整段定义            |
 | `add-import: import rule already exists` | 重复添加相同 import                           | 跳过或先手动移除旧规则                                 |
 | `Definition 'xxx' already exists`        | `cr edit def` 未传 `--overwrite`              | 加 `--overwrite`                                       |
-| `tag-match expected tuple`               | 传入 vector 而非 tuple                        | 改用 `::` 语法，如 `:: :event-name data`               |
+| `tag-match expected enum value`          | 传入 list 而非 enum                           | 改用 `%:: _`，如 `%:: _ :event-name data`               |
 | `unknown symbol: xxx`                    | 符号未定义或未 import                         | `cr query find` 确认位置，`cr edit add-import` 引入    |
 | `expects pairs in list for let`          | `let` 绑定语法错误                            | 改为 `let ((x val)) body`（双层括号）                  |
 | `cannot be used as operator`             | 末尾符号被当作函数调用                        | 改用 `, acc` 前缀传递值，或用函数包裹                  |

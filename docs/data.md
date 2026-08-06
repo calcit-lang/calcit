@@ -31,13 +31,13 @@ Calcit uses persistent values by default, with a small set of explicit stateful 
 
 ## Named Data
 
-- **Record / Struct**: `defstruct` declares a fixed field layout; `%{}` constructs a record value.
-- **Enum / Tuple**: `defenum` declares named alternatives. Enum instances use the tuple runtime representation and retain their enum identity.
-- **Tuple**: `::` creates lightweight tagged positional data when a full enum declaration is unnecessary.
+- **Struct**: `defstruct` creates a `StructDef`; `%{}` constructs a fixed-field struct value.
+- **Enum**: `defenum` creates an `EnumDef`; `%::` constructs a tagged enum value.
+- **Anonymous Struct / Enum**: `%{} _ ...` and `%:: _ ...` create short-lived values without named definitions.
 - **Option**: `Option T` has `%some T` and `%none` variants.
 - **Result**: `Result T E` has `%ok T` and `%err E` variants.
 
-Prefer records and enums at module boundaries: their declarations carry schemas, support trait attachment, and give static analysis more information than ad-hoc maps or tuples.
+Prefer named structs and enums at module boundaries: their definitions carry schemas, support trait attachment, and give static analysis more information than ad-hoc maps or anonymous values.
 
 ## Explicitly Stateful Values
 
@@ -56,7 +56,7 @@ Prefer records and enums at module boundaries: their declarations carry schemas,
 - **Rust runtime**: Uses [rpds](https://github.com/orium/rpds) for HashMap/HashSet and [ternary-tree](https://github.com/calcit-lang/ternary-tree.rs/) for vectors
 - **JavaScript runtime**: Uses [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts) for all collections
 
-Collection method availability is also expressed through built-in traits. `Countable` and `Contains` cover List, Map, Set, String, Record, and Tuple; `Compare` covers Number and String. See [Polymorphism](features/polymorphism.md) for the full matrix.
+Collection method availability is also expressed through built-in traits. `Countable` and `Contains` cover List, Map, Set, String, Struct, and Enum; `Compare` covers Number and String. See [Polymorphism](features/polymorphism.md) for the full matrix.
 
 For serialization fidelity and unsupported runtime values, see:
 

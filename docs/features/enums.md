@@ -13,7 +13,7 @@ parent: core/features
 
 # Enums (defenum)
 
-Calcit enums are tagged unions — each variant has a tag (keyword) and zero or more typed payload fields. Under the hood enums are represented as tuples with a class reference.
+Calcit enums are tagged unions: each variant has a tag and zero or more typed payload values. `defenum` creates an enum definition; `%::` constructs enum values that retain that definition.
 
 ## Quick Recipes
 
@@ -21,7 +21,7 @@ Calcit enums are tagged unions — each variant has a tag (keyword) and zero or 
 - **Create**: `%:: Shape :circle 5`
 - **Match** (recommended): `match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Legacy Fallback**: `tag-match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Type Check**: `assert-type shape 'Enum`
+- **Type Check**: `assert-type shape 'Shape`
 
 ## Defining Enums
 
@@ -30,7 +30,7 @@ let
     Color $ defenum Color (:red) (:green) (:blue)
     c $ %:: Color :red
   println c
-  ; => $ %:: :red (:enum Color)
+  ; => $ %:: 'Color :red
 ```
 
 Variants with payloads:
@@ -41,9 +41,9 @@ let
     c $ %:: Shape :circle 5
     r $ %:: Shape :rect 3 4
   println c
-  ; => $ %:: :circle 5 (:enum Shape)
+  ; => $ %:: 'Shape :circle 5
   println r
-  ; => $ %:: :rect 3 4 (:enum Shape)
+  ; => $ %:: 'Shape :rect 3 4
 ```
 
 ## Generic Enums
@@ -57,8 +57,8 @@ let
     err $ %:: ResultX :err |oops
   assert-type ok $ :: 'ResultX 'Number 'String
   assert-type err $ :: 'ResultX 'Number 'String
-  assert= 1 $ &tuple:nth ok 1
-  assert= |oops $ &tuple:nth err 1
+  assert= 1 $ &enum:nth ok 1
+  assert= |oops $ &enum:nth err 1
 ```
 
 At the type level, `(:: 'ResultX 'Number 'String)` means the first slot is bound to `T` and the second slot is bound to `E`.
@@ -77,10 +77,10 @@ let
     none-val $ %:: ShownMaybe :none
   assert-type some-val $ :: 'ShownMaybe 'Number
   assert= |1 $ match some-val
-    (:some item) (item .show)
+    (:some item) (.show item)
     (:none) |none
   assert= |none $ match none-val
-    (:some item) (item .show)
+    (:some item) (.show item)
     (:none) |none
 ```
 
@@ -90,14 +90,14 @@ The `where` map uses type variables as keys and trait names as values. `%::` che
 
 Enum payload slots can reference named structs, not just primitive tags. Use the same applied named type syntax that `defstruct` uses in schemas.
 
-```cirru
+```cirru.no-check
 let
     Point $ defstruct Point (:x :number) (:y :number)
     Shape $ defenum Shape (:point Point) (:label :string)
     p $ %{} Point (:x 1) (:y 2)
     shape $ %:: Shape :point p
   assert-type shape Shape
-  assert= 1 $ option:unwrap $ get (&tuple:nth shape 1) :x
+  assert= 1 $ get (&enum:nth shape 1) :x
 ```
 
 Applied generic structs also work in enum payloads:
@@ -110,9 +110,9 @@ let
       :empty
     value $ %:: Wrapped :box
       %{} Box $ :value 1
-    boxed $ &tuple:nth value 1
+    boxed $ &enum:nth value 1
   assert-type value $ :: 'Wrapped :number
-  assert= 1 $ option:unwrap $ :value boxed
+  assert= 1 $ :value boxed
 ```
 
 When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.
@@ -283,13 +283,13 @@ let
 
 ## Checking Enum Origin
 
-Use the Option-returning `tuple-enum` API to verify a tuple belongs to a specific enum:
+Use the Option-returning `enum-definition` API to inspect the definition behind an enum value:
 
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :number) (:err :string)
     x $ %:: ApiResult :ok 1
-  println $ = (tuple-enum x) (%some ApiResult)
+  println $ = (enum-definition x) (%some ApiResult)
   ; => true
 ```
 
@@ -370,9 +370,9 @@ defenum Shape2 (:point Point) (:circle :number)
 
 Runtime type validation is enforced at instance creation — passing the wrong type to `%::` will raise an error.
 
-## Automatic Tuple-to-Enum Rewrite
+## Automatic Anonymous-to-Named Enum Rewrite
 
-When a function parameter is typed as an enum in its schema, the preprocessor automatically rewrites untyped tuple literal (`::`) arguments to typed enum tuple construction (`%::`). This lets you write shorter tuple syntax while still getting full enum type checking.
+When a function parameter is typed as an enum, the preprocessor can rewrite an anonymous enum (`%:: _`) to the expected named definition.
 
 ```cirru
 let
@@ -384,30 +384,30 @@ let
         (:ok) :ok
         (:err msg) msg
         _ :unknown
-  ; Write an untyped tuple "—" preprocessor rewrites to enum tuple automatically:
-  assert= :ok $ takes-result (:: :ok)
+  ; The anonymous enum is rewritten to the expected named enum:
+  assert= :ok $ takes-result (%:: _ :ok)
   ; Equivalent to:
   assert= :ok $ takes-result (%:: Result0 :ok)
 ```
 
 Requirements for the rewrite to trigger:
 
-- The function must have a schema with `:args` that references an enum type (via `TypeRef` like `'ns/EnumName`, `Enum`, or `Tuple`)
-- The argument at the call site must be an untyped tuple literal (`::`)
+- The function schema must reference a named enum type such as `'ns/EnumName`
+- The argument at the call site must be an anonymous enum literal (`%:: _`)
 - The enum definition must be resolvable at preprocess time
 
 If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
 
 ## Notes
 
-- Enum instances are immutable tuples with a class reference.
+- Enum values are immutable and retain their enum definition.
 - `match` is the recommended pattern matching syntax with exhaustiveness checking.
 - `tag-match` is a legacy macro; keep it for legacy code paths or when you explicitly want the old syntax.
-- Use `&tuple:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
-- Enums vs plain tuples: plain `:: :tag val` tuples have no class; `%:: Enum :tag val` tuples carry their enum class for origin checking.
+- Use `&enum:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
+- `%:: _ :tag ...` constructs an anonymous enum; `%:: EnumDef :tag ...` constructs a named enum.
 
 ## See Also
 
-- [Tuples](tuples.md) — raw tagged tuples without a class
-- [Records](records.md) — named-field structs with `defstruct`
+- [Anonymous enums](tuples.md) — short-lived enum values without `defenum`
+- [Structs](records.md) — named-field structures with `defstruct`
 - [Static Analysis](static-analysis.md) — type checking for enum payloads and type slots

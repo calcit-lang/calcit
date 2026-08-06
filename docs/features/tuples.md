@@ -1,294 +1,97 @@
 ---
-title: "Tuples"
+title: "Anonymous Enums"
 scope: "core"
 kind: "reference"
 category: "features"
 aliases:
-  - "tuple"
-  - "tagged tuple"
-  - "tuple match"
+  - "anonymous enum"
+  - "legacy tuple migration"
 id: core/features/tuples
 parent: core/features
 ---
 
-# Tuples
+# Anonymous Enums
 
-Tuples in Calcit are tagged unions that can hold multiple values with a tag. They are used for representing structured data and are the foundation for records and enums.
-
-## Quick Recipes
-
-- **Create**: `:: :point 10 20`
-- **Create Typed**: `%:: Shape :circle 5`
-- **Access**: `&tuple:nth t 1`
-- **Match Tuples**: `match t ((:point x y) ...)` (recommended for both plain tuples and enum-backed tuples)
-- **Legacy Match**: `tag-match t ((:point x y) ...)`
-- **Update**: `&tuple:assoc t 1 99`
-
-## Creating Tuples
-
-### Shorthand Syntax
-
-Use `::` to create a tuple with a tag:
+Anonymous enums are short-lived tagged values that do not need a named
+`defenum` declaration. Use `_` in the definition position:
 
 ```cirru
 let
-    result 42
-    message |error-occurred
-  do
-    :: :point 10 20
-    :: :ok result
-    :: :err message
+    value $ %:: _ :point 10 20
+  println value
+  ; => $ %:: _ :point 10 20
 ```
 
-### With Class Syntax
+The `_` marker makes the missing definition explicit. The old “tuple” name and
+`&tuple:*` native APIs have been removed; diagnostics point to their `enum`
+replacements.
 
-Use `%::` to create a typed tuple from an enum:
+## Accessing Values
+
+Use `&enum:nth` when positional access is genuinely appropriate. Index `0` is
+the variant tag and payload values begin at index `1`.
 
 ```cirru
 let
-    Shape $ defenum Shape (:point :number :number) (:circle :number)
-  %:: Shape :point 10 20
+    value $ %:: _ :point 10 20
+  assert= :point $ &enum:nth value 0
+  assert= 10 $ &enum:nth value 1
+  assert= 3 $ &enum:count value
 ```
 
-## Tuple Structure
+Anonymous enum access remains bounds-checked and reports ordinary diagnostics;
+it never relies on unchecked indexing.
 
-A tuple consists of:
+## Matching
 
-- **Tag**: A keyword identifying the tuple type (index 0)
-- **Class**: Optional class metadata (hidden)
-- **Parameters**: Zero or more values (indices 1+)
+`tag-match` can match an anonymous enum when there is no definition available
+for exhaustiveness analysis:
 
 ```cirru
 let
-    t $ :: :point 10 20
-  ; Index 0: :point, Index 1: 10, Index 2: 20
-  [] (&tuple:nth t 0) (&tuple:nth t 1) (&tuple:nth t 2)
+    value $ %:: _ :point 10 20
+  assert= 30 $ tag-match value
+    (:point x y) (+ x y)
+    _ 0
 ```
 
-## Accessing Tuple Elements
+For domain data, prefer a named enum and native `match`, which can validate
+variants, payload arity, and exhaustiveness:
 
 ```cirru
 let
-    t $ :: :point 10 20
-  &tuple:nth t 0
-  ; => :point
-
-  &tuple:nth t 1
-  ; => 10
-
-  &tuple:nth t 2
-  ; => 20
+    Shape $ defenum Shape (:point 'Number 'Number) (:none)
+    value $ %:: Shape :point 10 20
+  assert= 30 $ match value
+    (:point x y) (+ x y)
+    (:none) 0
 ```
 
-## Tuple Properties
+## Named Conversion
 
-```cirru
-let
-    t $ :: :point 10 20
-  do
-    ; count includes the tag
-    &tuple:count (:: :a 1 2 3)
-    ; => 4
-    &tuple:params t
-    ; => ([] 10 20)
-    tuple-enum t
-    ; => (%none) (plain tuple, not from enum)
-```
+When the expected function parameter type is a named enum, the preprocessor can
+rewrite `%:: _ :variant ...` to that named definition. Variant and payload
+validation then use the target `defenum` declaration.
 
-`tuple-enum` is the source-prototype API for tuples:
+## Migration
 
-- If a tuple is created from an enum (`%::`), it returns `%some` with that enum definition.
-- If a tuple is created as a plain tuple (`::`), it returns `%none`.
+Use these replacements when upgrading older code:
 
-The nullable `&tuple:enum` primitive remains internal for core bootstrapping.
+| Removed spelling | Replacement |
+| --- | --- |
+| tuple value / `:tuple` | enum value / `:enum` |
+| `tuple?` | `enum?` for values, `enum-def?` for definitions |
+| `tuple-enum` | `enum-definition` |
+| `&tuple:nth` | `&enum:nth` |
+| `&tuple:count` | `&enum:count` |
+| `&tuple:assoc` | `&enum:assoc` |
+| `&tuple:*` | corresponding `&enum:*` API |
 
-```cirru
-do
-  let
-      plain $ :: :point 10 20
-    option:none? $ tuple-enum plain
-    ; => true
-  let
-      ApiResult $ defenum ApiResult (:ok :number) (:err :string)
-      ok $ %:: ApiResult :ok 1
-    assert= (%some ApiResult) $ tuple-enum ok
-```
+Compatibility readers may still load historical snapshots, but newly written
+schemas and source should use `Enum`, `EnumDef`, `enum`, and `enum-def` names.
 
-### Accurate Origin Check (Enum Eq)
+## See Also
 
-```cirru
-let
-    ApiResult $ defenum ApiResult (:ok :number) (:err :string)
-    x $ %:: ApiResult :ok 1
-  assert= (tuple-enum x) (%some ApiResult)
-```
-
-### Complex Branching Example (Safe + Validation)
-
-```cirru
-do
-  defenum Result
-    :ok :number
-    :err :string
-  let
-      xs $ []
-        %:: Result :ok 1
-        %:: Result :err |bad
-        :: :plain 42
-    if (option:none? (tuple-enum (&list:nth xs 2)))
-      if (= (tuple-enum (&list:nth xs 0)) (%some Result))
-        , |result-and-plain
-        , |result-missing
-      , |unexpected
-```
-
-## Updating Tuples
-
-```cirru
-; Update element at index
-&tuple:assoc (:: :point 10 20) 1 100
-; => (:: :point 100 20)
-```
-
-## Pattern Matching with Tuples
-
-### match (recommended)
-
-`match` is the preferred pattern matching syntax. It is a native syntax (not a macro) and provides compile-time exhaustiveness checking for enum types:
-
-```cirru
-let
-    MyResult $ defenum MyResult (:ok :number) (:err :string)
-    result $ %:: MyResult :ok 42
-  match result
-    (:ok v) (str |Success: v)
-    (:err msg) (str |Error: msg)
-```
-
-See [Enums](enums.md) for full details on `match` including exhaustiveness checking and migration from `tag-match`.
-
-### tag-match (legacy)
-
-`tag-match` is a macro that also branches on enum/tuple tags. It works without a static enum type and accepts a `_` wildcard, but has no compile-time checks:
-
-```cirru
-let
-    MyResult $ defenum MyResult (:ok :number) (:err :string)
-    result $ %:: MyResult :ok 42
-  tag-match result
-    (:ok v) (str |Success: v)
-    (:err msg) (str |Error: msg)
-    _ |Unknown
-```
-
-`tag-match` remains available as a legacy alternative, but `match` also works on plain (untyped) tuples.
-
-### list-match
-
-For simple list-like destructuring:
-
-```cirru
-; list-match takes (head rest) branches — rest captures remaining elements as a list
-list-match ([] :point 10 20)
-  () |Empty
-  (h tl) ([] h tl)
-```
-
-The function forms `destruct-list`, `destruct-map`, `destruct-set`, and
-`destruct-str` return the nominal enums `ListDestruct<T>`,
-`MapDestruct<K,V>`, `SetDestruct<T>`, and `StringDestruct`. Their variants stay
-`:none` and `:some`, so existing `tag-match` branches keep the same shape while
-the schema now checks every payload.
-
-## Enums as Tuples
-
-Enums are specialized tuples with predefined variants:
-
-```cirru
-; Define enum
-defenum Option
-  :some :dynamic
-  :none
-
-; Create enum instances
-%:: Option :some 42
-%:: Option :none
-
-; Check variant
-&tuple:enum-has-variant? Option :some
-; => true
-
-; Get variant arity
-&tuple:enum-variant-arity Option :some
-; => 1
-```
-
-## Common Use Cases
-
-### Result Types
-
-```cirru
-let
-    MyResult $ defenum MyResult (:ok :number) (:err :string)
-    divide $ defn divide (a b)
-      if (= b 0)
-        %:: MyResult :err |Division-by-zero
-        %:: MyResult :ok (/ a b)
-    result $ divide 10 2
-  match result
-    (:ok value) (str |ok: value)
-    (:err msg) (str |err: msg)
-```
-
-### Optional Values
-
-```cirru
-let
-    MaybeInt $ defenum MaybeInt (:some :number) (:none)
-    find-item $ fn (items target)
-      reduce items (%:: MaybeInt :none)
-        fn (acc x)
-          if (= x target) (%:: MaybeInt :some x) acc
-    result $ find-item ([] 1 2 3) 2
-  match result
-    (:some v) v
-    (:none) |not-found
-```
-
-### Tagged Data
-
-```cirru
-; Represent different message types
-:: :greeting |Hello
-:: :number 42
-:: :list ([] 1 2 3)
-```
-
-## Type Annotations
-
-```cirru
-let
-    ApiResult $ defenum ApiResult (:ok :string) (:err :string)
-    process-result $ fn (r)
-      hint-fn $ {} (:args $ [] :dynamic) (:return :string)
-      match r
-        (:ok v) (str v)
-        (:err msg) msg
-  process-result $ %:: ApiResult :ok |done
-```
-
-## Tuple vs Record
-
-| Feature   | Tuple         | Record             |
-| --------- | ------------- | ------------------ |
-| Access    | By index      | By field name      |
-| Structure | Tag + params  | Named fields       |
-| Methods   | Via class     | Via traits         |
-| Use case  | Tagged unions | Structured objects |
-
-## Performance Notes
-
-- Tuples are immutable
-- Element access is O(1)
-- `&tuple:assoc` creates a new tuple
-- Use records for complex objects with named fields
+- [Enums](enums.md) — named enums declared with `defenum`
+- [Structs](records.md) — fixed named fields declared with `defstruct`
+- [Static Analysis](static-analysis.md) — enum payload and match checking

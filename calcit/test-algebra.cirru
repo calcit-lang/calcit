@@ -32,29 +32,29 @@
             defimpl AlgebraBoxApplyImpl AlgebraApply $ .apply
               fn (box fs)
                 let
-                    f $ &record:get fs :value
-                  assoc box :value $ f (&record:get box :value)
+                    f $ &struct:get fs :value
+                  assoc box :value $ f (&struct:get box :value)
           :examples $ []
           :schema $ :: 'Dynamic
         |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxBindImpl AlgebraBind $ .bind
               fn (box f)
-                f $ &record:get box :value
+                f $ &struct:get box :value
           :examples $ []
           :schema $ :: 'Dynamic
         |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxMapImpl AlgebraMap $ .map
               fn (box f)
-                assoc box :value $ f (&record:get box :value)
+                assoc box :value $ f (&struct:get box :value)
           :examples $ []
           :schema $ :: 'Dynamic
         |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxMappendImpl AlgebraMappend $ .mappend
               fn (a b)
-                assoc a :value $ + (&record:get a :value) (&record:get b :value)
+                assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
           :examples $ []
           :schema $ :: 'Dynamic
         |AlgebraMap $ %{} :CodeEntry (:doc |)
@@ -91,7 +91,7 @@
               assert-traits bf AlgebraApply
               let
                   b2 $ .apply b1 bf
-                assert= (%some 12) (get b2 :value)
+                assert= 12 $ get b2 :value
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -105,7 +105,7 @@
                   b2 $ .bind b1
                     fn (x)
                       %{} AlgebraBox $ :value (+ x 20)
-                assert= (%some 25) (get b2 :value)
+                assert= 25 $ get b2 :value
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -118,7 +118,7 @@
               let
                   b2 $ .map b1
                     fn (x) (+ x 10)
-                assert= (%some 12) (get b2 :value)
+                assert= 12 $ get b2 :value
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -132,7 +132,7 @@
               assert-traits b2 AlgebraMappend
               let
                   b3 $ .mappend b1 b2
-                assert= (%some 7) (get b3 :value)
+                assert= 7 $ get b3 :value
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

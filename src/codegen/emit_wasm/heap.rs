@@ -156,7 +156,7 @@ pub(super) fn emit_option_tuple(ctx: &mut WasmGenCtx, payload_local: Option<u32>
     .ok_or_else(|| format!("Option tag missing from WASM tag index: {tag_name}"))? as f64;
   let payload_count = usize::from(payload_local.is_some());
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, ((2 + payload_count) * 8) as i32, ptr_local, "tuple");
+  emit_bump_alloc(ctx, ((2 + payload_count) * 8) as i32, ptr_local, "enum");
 
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(f64_const(payload_count as f64));

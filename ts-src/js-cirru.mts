@@ -3,12 +3,12 @@ import { CirruWriterNode, writeCirruCode, writeCirruOneLiner } from "@cirru/writ
 
 import { CalcitValue, isLiteral, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
-import { CalcitRecord } from "./js-record.mjs";
+import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTag, CalcitSymbol, CalcitRecur, newTag } from "./calcit-data.mjs";
-import { CalcitTuple } from "./js-tuple.mjs";
-import { CalcitEnum } from "./js-enum.mjs";
+import { CalcitEnumValue } from "./js-enum-value.mjs";
+import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
@@ -151,7 +151,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     }
     return buffer;
   }
-  if (x instanceof CalcitRecord) {
+  if (x instanceof CalcitStructValue) {
     let buffer: [string, CirruEdnFormat][] = [];
     for (let idx = 0; idx < x.fields.length; idx++) {
       buffer.push([x.fields[idx].toString(), to_cirru_edn(x.values[idx])]);
@@ -174,7 +174,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     }
     return buffer;
   }
-  if (x instanceof CalcitTuple) {
+  if (x instanceof CalcitEnumValue) {
     if (x.tag instanceof CalcitSymbol && x.tag.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
@@ -182,7 +182,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       let enumTag = unwrap_enum_prototype_local(x.enumPrototype).name.toString();
       if (x.tag instanceof CalcitTag) {
         return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
-      } else if (x.tag instanceof CalcitRecord) {
+      } else if (x.tag instanceof CalcitStructValue) {
         return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
       } else if (x.tag instanceof CalcitImpl) {
         return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
@@ -191,7 +191,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       }
     } else if (x.tag instanceof CalcitTag) {
       return ["::", x.tag.toString(), ...x.extra.map(to_cirru_edn)];
-    } else if (x.tag instanceof CalcitRecord) {
+    } else if (x.tag instanceof CalcitStructValue) {
       return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitImpl) {
       return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
@@ -230,8 +230,11 @@ let extractFieldTag = (x: string) => {
 let resolveEnumPrototype = (enumName: string, options: CalcitValue) => {
   if (options instanceof CalcitMap || options instanceof CalcitSliceMap) {
     let value = options.get(extractFieldTag(enumName));
-    if (value instanceof CalcitEnum || value instanceof CalcitRecord) {
+    if (value instanceof CalcitEnumDef) {
       return value;
+    }
+    if (value instanceof CalcitStructValue) {
+      throw new Error(`Enum ${enumName} uses a legacy struct prototype; provide an EnumDef produced by defenum`);
     }
     if (value != null) {
       throw new Error(`Expected enum prototype for ${enumName}, got: ${value}`);
@@ -240,20 +243,17 @@ let resolveEnumPrototype = (enumName: string, options: CalcitValue) => {
   return null;
 };
 
-// local helper to unwrap an enum prototype value to a CalcitRecord prototype
-const unwrap_enum_prototype_local = (enumPrototype: CalcitValue): CalcitRecord => {
-  if (enumPrototype instanceof CalcitEnum) {
+// local helper to inspect an EnumDef's variant prototype
+const unwrap_enum_prototype_local = (enumPrototype: CalcitValue): CalcitStructValue => {
+  if (enumPrototype instanceof CalcitEnumDef) {
     return enumPrototype.prototype;
   }
-  if (enumPrototype instanceof CalcitRecord) {
-    return enumPrototype;
-  }
-  throw new Error(`expected enum prototype`);
+  throw new Error(`expected an EnumDef produced by defenum`);
 };
 
 const tag_to_string = (tag: CalcitValue): string => {
   if (tag instanceof CalcitTag) return tag.toString();
-  if (tag instanceof CalcitRecord) return tag.name.toString();
+  if (tag instanceof CalcitStructValue) return tag.name.toString();
   throw new Error(`Unsupported tag for EDN: ${tag}`);
 };
 
@@ -321,7 +321,7 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
     if (x[0] === "%{}") {
       let name = x[1];
       if (typeof name != "string") {
-        throw new Error(`Expected string for record name, got: ${name}`);
+        throw new Error(`Expected string for struct name, got: ${name}`);
       }
       // put to entries first, sort and then...
       let entries: Array<[CalcitTag, CalcitValue]> = [];
@@ -344,7 +344,7 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
             throw new Error(`Expected pair of size 2, got: ${pair}`);
           }
         } else {
-          throw new Error(`Expected pairs for record, got: ${pair}`);
+          throw new Error(`Expected field pairs for struct, got: ${pair}`);
         }
       });
       entries.sort((a, b) => {
@@ -360,14 +360,14 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
 
       if (options instanceof CalcitMap || options instanceof CalcitSliceMap) {
         let v = options.get(extractFieldTag(name));
-        if (v != null && v instanceof CalcitRecord) {
+        if (v != null && v instanceof CalcitStructValue) {
           if (deepEqual(v.fields, fields)) {
-            return new CalcitRecord(extractFieldTag(name), fields, values, v.structRef);
+            return new CalcitStructValue(extractFieldTag(name), fields, values, v.structRef);
           }
         }
       }
 
-      return new CalcitRecord(extractFieldTag(name), fields, values);
+      return new CalcitStructValue(extractFieldTag(name), fields, values);
     }
     let notComment = (x: any) => {
       if (x instanceof Array && x[0] === ";") {
@@ -402,9 +402,9 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
     }
     if (x[0] === "::") {
       if (x.length < 2) {
-        throw new Error(`tuple expects at least 1 value, got: ${x}`);
+        throw new Error(`anonymous enum expects at least 1 value, got: ${x}`);
       }
-      return new CalcitTuple(
+      return new CalcitEnumValue(
         extract_cirru_edn_inner(x[1], options, preserveSourceEntries),
         x
           .slice(2)
@@ -424,7 +424,7 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
       // unwrap prototype to record then extract name
       const proto = enumPrototype != null ? unwrap_enum_prototype_local(enumPrototype) : null;
       const enumTag = proto != null ? proto.name.toString() : enumName;
-      return new CalcitTuple(
+      return new CalcitEnumValue(
         extract_cirru_edn_inner(x[2], options, preserveSourceEntries),
         x
           .slice(3)
@@ -505,12 +505,12 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
   if (x instanceof CalcitList || x instanceof CalcitSliceList) return x;
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return x;
   if (x instanceof CalcitSet) return x;
-  if (x instanceof CalcitRecord) return x;
+  if (x instanceof CalcitStructValue) return x;
   if (x instanceof CalcitRecur) return x;
   if (x instanceof CalcitRef) return x;
   if (x instanceof CalcitTag) return x;
   if (x instanceof CalcitSymbol) return x;
-  if (x instanceof CalcitTuple) return x;
+  if (x instanceof CalcitEnumValue) return x;
 
   // detects object
   if (x === Object(x)) {

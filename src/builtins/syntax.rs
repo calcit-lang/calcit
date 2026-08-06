@@ -14,7 +14,7 @@ use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitLocal, CalcitMacro,
   CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
 };
-use crate::calcit::{Calcit, CalcitErr, CalcitScope, CalcitTuple, gen_core_id};
+use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
 use crate::runner::{self, call_expr, evaluate_expr};
 
@@ -218,7 +218,7 @@ fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitRecord, CalcitStruct, CalcitTrait};
+  use crate::calcit::{CalcitStructDef, CalcitStructValue, CalcitTrait};
   use crate::call_stack::CallStackList;
   use cirru_edn::EdnTag;
 
@@ -361,7 +361,7 @@ mod tests {
     let sym = Arc::from("x");
     let idx = CalcitLocal::track_sym(&sym);
     let empty_trait_def = Arc::new(CalcitTrait::new(EdnTag::from("Noop"), vec![], vec![]));
-    let mut person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![]);
+    let mut person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![]);
     person_struct.impls.push(Arc::new(crate::calcit::CalcitImpl {
       name: empty_trait_def.name.clone(),
       origin: Some(empty_trait_def.clone()),
@@ -370,7 +370,7 @@ mod tests {
     }));
     scope.insert_mut(
       idx,
-      Calcit::Record(CalcitRecord {
+      Calcit::Struct(CalcitStructValue {
         struct_ref: Arc::new(person_struct),
         values: Arc::new(vec![]),
       }),
@@ -391,7 +391,7 @@ mod tests {
       empty_trait,
     ]);
     let result = assert_traits(&expr, &scope, "tests.assert", &CallStackList::default()).expect("assert-traits should pass");
-    assert!(matches!(result, Calcit::Record(_)));
+    assert!(matches!(result, Calcit::Struct(_)));
   }
 
   #[test]
@@ -1111,12 +1111,12 @@ pub fn syntax_match(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_
   let value = evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
   let (tag, extra) = match &value {
-    Calcit::Tuple(CalcitTuple { tag, extra, .. }) => match tag.as_ref() {
+    Calcit::Enum(CalcitEnumValue { tag, extra, .. }) => match tag.as_ref() {
       Calcit::Tag(t) => (t.to_owned(), extra),
       _ => {
         return Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Type,
-          format!("match expected tuple with tag as first element, got: {tag}"),
+          format!("match expected enum with tag as first element, got: {tag}"),
           call_stack,
           expr[0].get_location(),
         ));
@@ -1125,7 +1125,7 @@ pub fn syntax_match(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_
     _ => {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!("match expected a tuple value, got: {}", calcit::brief_type_of_value(&value)),
+        format!("match expected an enum value, got: {}", calcit::brief_type_of_value(&value)),
         call_stack,
         expr[0].get_location(),
       ));

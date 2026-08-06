@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnAnyRef;
 
-use super::{Calcit, CalcitEnum, CalcitFn, CalcitImpl, CalcitRecord, CalcitStruct, CalcitTrait};
+use super::{Calcit, CalcitEnumDef, CalcitFn, CalcitImpl, CalcitStructDef, CalcitStructValue, CalcitTrait};
 
 pub(super) fn compare_calcit_trait_values(a: &CalcitTrait, b: &CalcitTrait) -> Ordering {
   match (a.runtime_id, b.runtime_id) {
@@ -104,7 +104,7 @@ fn compare_impl_origin(a: Option<&Arc<CalcitTrait>>, b: Option<&Arc<CalcitTrait>
   }
 }
 
-pub(super) fn compare_calcit_struct_values(a: &CalcitStruct, b: &CalcitStruct) -> Ordering {
+pub(super) fn compare_calcit_struct_values(a: &CalcitStructDef, b: &CalcitStructDef) -> Ordering {
   match a.name.cmp(&b.name) {
     Equal => match a.fields.cmp(&b.fields) {
       Equal => match a.field_types.cmp(&b.field_types) {
@@ -138,7 +138,7 @@ fn compare_struct_impls(a: &[Arc<CalcitImpl>], b: &[Arc<CalcitImpl>]) -> Orderin
   }
 }
 
-pub(super) fn compare_calcit_enum_values(a: &CalcitEnum, b: &CalcitEnum) -> Ordering {
+pub(super) fn compare_calcit_enum_values(a: &CalcitEnumDef, b: &CalcitEnumDef) -> Ordering {
   match a.name().cmp(b.name()) {
     Equal => a
       .generics()
@@ -208,7 +208,7 @@ pub(super) fn compare_map_values(a: &rpds::HashTrieMapSync<Calcit, Calcit>, b: &
   }
 }
 
-pub(super) fn compare_record_values(a: &CalcitRecord, b: &CalcitRecord) -> Ordering {
+pub(super) fn compare_record_values(a: &CalcitStructValue, b: &CalcitStructValue) -> Ordering {
   match a.struct_ref.name.cmp(&b.struct_ref.name) {
     Equal => match a.struct_ref.fields.cmp(&b.struct_ref.fields) {
       Equal => a.values.cmp(&b.values),

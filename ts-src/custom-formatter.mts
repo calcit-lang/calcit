@@ -2,13 +2,13 @@ import { CalcitValue, isLiteral } from "./js-primes.mjs";
 import { CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 
-import { CalcitRecord } from "./js-record.mjs";
-import { CalcitStruct } from "./js-struct.mjs";
-import { CalcitEnum } from "./js-enum.mjs";
+import { CalcitStructValue } from "./js-struct-value.mjs";
+import { CalcitStructDef } from "./js-struct-def.mjs";
+import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
 
 declare global {
@@ -181,66 +181,38 @@ export let load_console_formatter_$x_ = () => {
               preview
             );
           }
-          if (obj instanceof CalcitRecord) {
-            let name = new CalcitSymbol(obj.name.value);
-            if (obj.structRef.impls.length > 0) {
-              let ret: any[] = div(
-                { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
-                span({}, "%{}"),
-                span({ marginLeft: "6px" }, embedObject(obj.structRef.impls[0])),
-                span({ marginLeft: "6px" }, embedObject(name)),
-                span({ marginLeft: "6px" }, `...`)
-              );
-              return ret;
-            } else {
-              let ret: any[] = div(
-                { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
-                "%{} ",
-                embedObject(name),
-                " ..."
-              );
-              return ret;
-            }
+          if (obj instanceof CalcitStructValue) {
+            const name = new CalcitSymbol(obj.name.value);
+            return div({ color: hsl(280, 80, 60, 0.4), maxWidth: "100%" }, "%{} ", embedObject(name), " ...");
           }
-          if (obj instanceof CalcitStruct) {
+          if (obj instanceof CalcitStructDef) {
             return div(
               { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
-              "%struct ",
+              "%struct-def ",
               embedObject(new CalcitSymbol(obj.name.value)),
               " ..."
             );
           }
-          if (obj instanceof CalcitEnum) {
+          if (obj instanceof CalcitEnumDef) {
             return div(
               { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
-              "%enum ",
+              "%enum-def ",
               embedObject(new CalcitSymbol(obj.prototype.name.value)),
               " ..."
             );
           }
-          if (obj instanceof CalcitTuple) {
-            if (obj.impls.length > 0) {
-              let ret: any[] = div(
-                { marginRight: "16px" },
-                div({ display: "inline-block", color: hsl(300, 100, 40) }, "%::"),
-                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.impls[0])),
-                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
-              );
-              for (let idx = 0; idx < obj.extra.length; idx++) {
-                ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
-              }
-              return ret;
-            } else {
-              let ret: any[] = div(
-                { marginRight: "16px" },
-                div({ display: "inline-block", color: hsl(300, 100, 40) }, "::"),
-                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
-              );
-              for (let idx = 0; idx < obj.extra.length; idx++) {
-                ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
-              }
-              return ret;
+          if (obj instanceof CalcitEnumValue) {
+            const enumName = obj.enumPrototype == null ? "_" : obj.enumPrototype.name();
+            let ret: any[] = div(
+              { marginRight: "16px" },
+              div({ display: "inline-block", color: hsl(300, 100, 40) }, "%::"),
+              div({ marginLeft: "6px", display: "inline-block" }, embedObject(new CalcitSymbol(enumName))),
+              div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
+            );
+            for (let idx = 0; idx < obj.extra.length; idx++) {
+              ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
             }
+            return ret;
           }
           if (obj instanceof CalcitRef) {
             return div(
@@ -276,11 +248,11 @@ export let load_console_formatter_$x_ = () => {
             let hasCollection = obj.nestedDataInChildren();
             return obj.len() > 0 && hasCollection;
           }
-          if (obj instanceof CalcitRecord) {
+          if (obj instanceof CalcitStructValue) {
             return obj.fields.length > 0;
           }
-          if (obj instanceof CalcitStruct || obj instanceof CalcitEnum) {
-            return obj instanceof CalcitStruct ? obj.fields.length > 0 : obj.prototype.fields.length > 0;
+          if (obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef) {
+            return obj instanceof CalcitStructDef ? obj.fields.length > 0 : obj.prototype.fields.length > 0;
           }
           return false;
         },
@@ -344,7 +316,7 @@ export let load_console_formatter_$x_ = () => {
             }
             return ret;
           }
-          if (obj instanceof CalcitRecord) {
+          if (obj instanceof CalcitStructValue) {
             let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             for (let idx = 0; idx < obj.fields.length; idx++) {
               ret.push(
@@ -357,7 +329,7 @@ export let load_console_formatter_$x_ = () => {
             }
             return ret;
           }
-          if (obj instanceof CalcitStruct) {
+          if (obj instanceof CalcitStructDef) {
             let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             for (let idx = 0; idx < obj.fields.length; idx++) {
               ret.push(
@@ -370,7 +342,7 @@ export let load_console_formatter_$x_ = () => {
             }
             return ret;
           }
-          if (obj instanceof CalcitEnum) {
+          if (obj instanceof CalcitEnumDef) {
             let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             for (let idx = 0; idx < obj.prototype.fields.length; idx++) {
               ret.push(

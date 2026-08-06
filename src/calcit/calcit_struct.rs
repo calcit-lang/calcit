@@ -6,7 +6,7 @@ use cirru_edn::EdnTag;
 use super::{CalcitGenericBound, CalcitImpl, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitStruct {
+pub struct CalcitStructDef {
   pub name: EdnTag,
   pub fields: Arc<Vec<EdnTag>>,
   pub field_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
@@ -16,11 +16,11 @@ pub struct CalcitStruct {
   pub impls: Vec<Arc<CalcitImpl>>,
 }
 
-impl CalcitStruct {
+impl CalcitStructDef {
   pub fn from_fields(name: EdnTag, fields: Vec<EdnTag>) -> Self {
     let field_types = vec![super::DYNAMIC_TYPE.clone(); fields.len()];
     let generics = Arc::new(vec![]);
-    CalcitStruct {
+    CalcitStructDef {
       name,
       fields: Arc::new(fields),
       field_types: Arc::new(field_types),
@@ -36,7 +36,7 @@ impl CalcitStruct {
   }
 }
 
-impl Hash for CalcitStruct {
+impl Hash for CalcitStructDef {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.name.hash(state);
     self.fields.hash(state);

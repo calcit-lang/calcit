@@ -427,7 +427,7 @@ let
 
 1. **Use type annotations** for function parameters and return values
 2. **Prefer immutable data** - use `swap!` instead of manual mutation
-3. **Use pattern matching** (`match`, `record-match`) for control flow; `match` also works on plain tuples, while `tag-match` is mainly for legacy code
+3. **Use pattern matching** (`match`, `struct-match`) for control flow; `tag-match` also works on anonymous enums when no definition is available
 4. **Leverage threading macros** (`->`, `->>`) for data pipelines
 5. **Use enums for result types** instead of exceptions
 6. **Keep functions small** and focused on a single responsibility

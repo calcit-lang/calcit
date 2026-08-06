@@ -1101,7 +1101,7 @@ mod type_query_tests {
     let result_type = CalcitTypeAnnotation::TypeRef(Arc::from("test-enum.main/Result0"), Arc::new(vec![]));
     assert!(result_type.resolve_to_enum().is_some(), "source-backed Result0 should resolve");
     assert!(
-      result_type.matches_annotation(&CalcitTypeAnnotation::DynTuple),
+      result_type.matches_annotation(&CalcitTypeAnnotation::AnonymousEnum),
       "a source-backed enum reference should satisfy tuple operations"
     );
     let person_symbol =

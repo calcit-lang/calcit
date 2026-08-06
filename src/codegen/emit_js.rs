@@ -91,8 +91,8 @@ fn is_preferred_js_proc(name: &str) -> bool {
       | "fn?"
       | "bool?"
       | "ref?"
-      | "record?"
-      | "tuple?"
+      | "struct?"
+      | "enum?"
       | "starts-with?"
       | "ends-with?"
   )
@@ -496,8 +496,8 @@ fn gen_call_code(
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),
-    // &record:nth: with 3 args (record, idx, :field-tag), use record.getRequired(tag) for JS
-    // because JS CalcitRecord fields are sorted by tag.idx (registration order), not alphabetically.
+    // &struct:nth: with 3 args (record, idx, :field-tag), use record.getRequired(tag) for JS
+    // because JS CalcitStructValue fields are sorted by tag.idx (registration order), not alphabetically.
     // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).
     Calcit::Proc(CalcitProc::NativeRecordNth) => {
       if body.len() == 3 {
@@ -509,10 +509,10 @@ fn gen_call_code(
         let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
         Ok(format!("{return_code}{record_code}.values[{idx_code}]"))
       } else {
-        Err(format!("&record:nth expected 2-3 arguments, got: {body}"))
+        Err(format!("&struct:nth expected 2-3 arguments, got: {body}"))
       }
     }
-    // &record:assoc-at: optimized assoc with pre-resolved index.
+    // &struct:assoc-at: optimized assoc with pre-resolved index.
     // JS uses record.assoc(tag, value) since JS field ordering differs from Rust.
     Calcit::Proc(CalcitProc::NativeRecordAssocAt) => {
       if body.len() == 4 {
@@ -521,10 +521,10 @@ fn gen_call_code(
         let value_code = to_js_code(&body[3], ns, local_defs, file_imports, tags, None)?;
         Ok(format!("{return_code}{record_code}.assoc({tag_code}, {value_code})"))
       } else {
-        Err(format!("&record:assoc-at expected 4 arguments, got: {body}"))
+        Err(format!("&struct:assoc-at expected 4 arguments, got: {body}"))
       }
     }
-    // &record:with-at: optimized with pre-resolved indices.
+    // &struct:with-at: optimized with pre-resolved indices.
     // JS ignores indices and calls the same _$n_record_$o_with(proto, tag, val, ...) function.
     Calcit::Proc(CalcitProc::NativeRecordWithAt) => {
       if body.len() >= 3 && (body.len() - 1).is_multiple_of(3) {
@@ -542,12 +542,12 @@ fn gen_call_code(
         }
         Ok(format!(
           "{return_code}{proc_prefix}{}({})",
-          escape_var("&record:with"),
+          escape_var("&struct:with"),
           all_args.join(", ")
         ))
       } else {
         Err(format!(
-          "&record:with-at expected (record, idx, tag, val, ...) triples, got: {body}"
+          "&struct:with-at expected (record, idx, tag, val, ...) triples, got: {body}"
         ))
       }
     }
@@ -1037,7 +1037,7 @@ fn gen_let_code(
 
 /// Generate JS code for `match` syntax.
 /// After preprocessing, `body` is: [<value>, (<pattern1> <body1>), (<pattern2> <body2>), ...]
-/// Generated JS is an IIFE with if-else chain checking tuple tag and arity.
+/// Generated JS is an IIFE with if-else chain checking enum tag and arity.
 fn gen_match_code(
   body: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
@@ -1061,7 +1061,7 @@ fn gen_match_code(
 
   let mut chunk = String::new();
   writeln!(chunk, "let {val_var} = {value_code};").expect("write");
-  writeln!(chunk, "let {tag_var} = {proc_prefix}_$n_tuple_$o_nth({val_var}, 0);").expect("write");
+  writeln!(chunk, "let {tag_var} = {proc_prefix}_$n_enum_$o_nth({val_var}, 0);").expect("write");
 
   let mut first = true;
   for branch_idx in 1..body.len() {
@@ -1102,12 +1102,12 @@ fn gen_match_code(
 
         tags.borrow_mut().insert(tag_name.to_owned());
         let tag_code = tags::tag_access(tag_name.ref_str());
-        let arity = pat_xs.len(); // includes tag, so total tuple count
+        let arity = pat_xs.len(); // includes tag, so total enum item count
 
         let else_mark = if first { "" } else { " else " };
         write!(
           chunk,
-          "{else_mark}if ({tag_var} === {tag_code} && {proc_prefix}_$n_tuple_$o_count({val_var}) === {arity}) {{"
+          "{else_mark}if ({tag_var} === {tag_code} && {proc_prefix}_$n_enum_$o_count({val_var}) === {arity}) {{"
         )
         .expect("write");
 
@@ -1122,7 +1122,7 @@ fn gen_match_code(
           if let Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } = binding {
             scoped_defs.insert(sym.to_owned());
           }
-          write!(chunk, "\nlet {bind_name} = {proc_prefix}_$n_tuple_$o_nth({val_var}, {});", i + 1).expect("write");
+          write!(chunk, "\nlet {bind_name} = {proc_prefix}_$n_enum_$o_nth({val_var}, {});", i + 1).expect("write");
         }
 
         let body_code = to_js_code(branch_body, ns, &scoped_defs, file_imports, tags, Some(return_label))?;

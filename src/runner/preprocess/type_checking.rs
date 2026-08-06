@@ -567,7 +567,7 @@ pub(crate) fn check_function_return_type(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitLocal, CalcitStruct, CalcitSymbolInfo};
+  use crate::calcit::{CalcitLocal, CalcitStructDef, CalcitSymbolInfo};
   use cirru_edn::EdnTag;
 
   fn make_local(name: &str, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
@@ -593,7 +593,7 @@ mod tests {
 
   #[test]
   fn specialize_update_uses_record_field_type_for_callback() {
-    let task_struct = Arc::new(CalcitStruct {
+    let task_struct = Arc::new(CalcitStructDef {
       name: EdnTag::new("Task"),
       fields: Arc::new(vec![EdnTag::new("done?")]),
       field_types: Arc::new(vec![tag_annotation("bool")]),
@@ -614,7 +614,7 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![
-        Arc::new(CalcitTypeAnnotation::Record(task_struct.clone())),
+        Arc::new(CalcitTypeAnnotation::StructValue(task_struct.clone())),
         crate::calcit::DYNAMIC_TYPE.clone(),
         Arc::new(CalcitTypeAnnotation::from_function_parts(
           vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
@@ -625,7 +625,7 @@ mod tests {
     };
 
     let args = CalcitList::from(&[
-      make_local("task", Arc::new(CalcitTypeAnnotation::Record(task_struct))),
+      make_local("task", Arc::new(CalcitTypeAnnotation::StructValue(task_struct))),
       Calcit::Tag(EdnTag::new("done?")),
       make_local(
         "not",

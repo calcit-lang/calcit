@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
   Calcit,
-  calcit::{CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax, CalcitTuple},
+  calcit::{CalcitEnumValue, CalcitList, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax},
 };
 
 pub mod cirru;
@@ -91,7 +91,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     ]))),
     Registered(s) => Ok(Calcit::Registered(s.to_owned())),
     Nil => Ok(Calcit::Nil),
-    Tuple(CalcitTuple { tag: t, extra, .. }) => {
+    Enum(CalcitEnumValue { tag: t, extra, .. }) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::NativeTuple), data_to_calcit(t, ns, at_def)?];
       for x in extra {
         ys.push(data_to_calcit(x, ns, at_def)?);
@@ -122,7 +122,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
       Ok(Calcit::from(ys))
     }
-    Record(CalcitRecord { struct_ref, values, .. }) => {
+    Struct(CalcitStructValue { struct_ref, values, .. }) => {
       let mut ys = vec![Calcit::Symbol {
         sym: "%{}".into(),
         info: Arc::new(crate::calcit::CalcitSymbolInfo {
@@ -148,7 +148,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
       Ok(Calcit::from(ys))
     }
-    Struct(CalcitStruct {
+    StructDef(CalcitStructDef {
       name,
       fields,
       field_types,
@@ -205,7 +205,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         Ok(struct_value)
       }
     }
-    Enum(enum_def) => {
+    EnumDef(enum_def) => {
       let mut ys = vec![Calcit::Symbol {
         sym: "defenum".into(),
         info: Arc::new(crate::calcit::CalcitSymbolInfo {

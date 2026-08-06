@@ -4,36 +4,36 @@ use cirru_edn::EdnTag;
 
 use crate::Calcit;
 
-use super::CalcitStruct;
+use super::CalcitStructDef;
 
-/// Sentinel name for loose records (records without a declared struct).
-/// Analogous to how CalcitTuple has sum_type: None for untyped tuples.
-pub const LOOSE_RECORD_NAME: &str = "?";
+/// Display-only sentinel for anonymous structs (values without a `StructDef`).
+/// Code must use `is_anonymous` rather than treating `_` as nominal identity.
+pub const ANONYMOUS_STRUCT_NAME: &str = "_";
 
 #[derive(Debug, Clone)]
-pub struct CalcitRecord {
-  pub struct_ref: Arc<CalcitStruct>,
+pub struct CalcitStructValue {
+  pub struct_ref: Arc<CalcitStructDef>,
   pub values: Arc<Vec<Calcit>>,
 }
 
-impl PartialEq for CalcitRecord {
+impl PartialEq for CalcitStructValue {
   fn eq(&self, other: &Self) -> bool {
     self.struct_ref.name == other.struct_ref.name && self.struct_ref.fields == other.struct_ref.fields && self.values == other.values
   }
 }
 
-impl Eq for CalcitRecord {}
+impl Eq for CalcitStructValue {}
 
-impl Default for CalcitRecord {
-  fn default() -> CalcitRecord {
-    CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("record"), vec![])),
+impl Default for CalcitStructValue {
+  fn default() -> CalcitStructValue {
+    CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("record"), vec![])),
       values: Arc::new(vec![]),
     }
   }
 }
 
-impl CalcitRecord {
+impl CalcitStructValue {
   pub fn name(&self) -> &EdnTag {
     &self.struct_ref.name
   }
@@ -42,16 +42,16 @@ impl CalcitRecord {
     &self.struct_ref.fields
   }
 
-  /// Returns true if this record was created with `?{}` (no declared struct).
-  pub fn is_loose(&self) -> bool {
-    self.struct_ref.name.ref_str() == LOOSE_RECORD_NAME
+  /// Returns true when the value has no declared struct definition.
+  pub fn is_anonymous(&self) -> bool {
+    self.struct_ref.name.ref_str() == ANONYMOUS_STRUCT_NAME
   }
 
-  /// Create a loose record from sorted field-value pairs.
+  /// Create an anonymous struct from sorted field-value pairs.
   /// Fields must already be sorted alphabetically.
-  pub fn from_loose_pairs(fields: Vec<EdnTag>, values: Vec<Calcit>) -> Self {
-    CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new(LOOSE_RECORD_NAME), fields)),
+  pub fn from_anonymous_pairs(fields: Vec<EdnTag>, values: Vec<Calcit>) -> Self {
+    CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new(ANONYMOUS_STRUCT_NAME), fields)),
       values: Arc::new(values),
     }
   }
@@ -89,7 +89,7 @@ impl CalcitRecord {
     }
   }
 
-  pub fn extend_field(&self, new_field: &EdnTag, new_tag: &Calcit, new_value: &Calcit) -> Result<CalcitRecord, String> {
+  pub fn extend_field(&self, new_field: &EdnTag, new_tag: &Calcit, new_value: &Calcit) -> Result<CalcitStructValue, String> {
     let mut next_fields: Vec<EdnTag> = Vec::with_capacity(self.struct_ref.fields.len());
     let mut next_values: Vec<Calcit> = Vec::with_capacity(self.struct_ref.fields.len());
     let mut inserted: bool = false;
@@ -129,11 +129,11 @@ impl CalcitRecord {
     let new_name_id: EdnTag = match new_tag {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnTag(s.to_owned()),
       Calcit::Tag(s) => s.to_owned(),
-      _ => return Err("extend-field expected a record name, but received an invalid type".to_string()),
+      _ => return Err("extend-field expected a struct name, but received an invalid type".to_string()),
     };
 
-    Ok(CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(new_name_id, next_fields)),
+    Ok(CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(new_name_id, next_fields)),
       values: Arc::new(next_values),
     })
   }
@@ -145,8 +145,8 @@ mod tests {
 
   #[test]
   fn extend_field_returns_err_on_duplicate_field() {
-    let record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![EdnTag::new("age")])),
+    let record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Person"), vec![EdnTag::new("age")])),
       values: Arc::new(vec![Calcit::Number(1.0)]),
     };
 

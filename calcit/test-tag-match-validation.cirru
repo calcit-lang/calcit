@@ -44,7 +44,7 @@
             defn test-invalid-tag () (println "|  Testing invalid tag detection...") (; Create a valid enum tuple then corrupt its tag)
               let
                   ok-tuple $ %:: Result :ok
-                  invalid-with-enum $ &tuple:assoc ok-tuple 0 :invalid
+                  invalid-with-enum $ &enum:assoc ok-tuple 0 :invalid
                 try
                   tag-match invalid-with-enum
                     (:invalid x) x
@@ -77,7 +77,7 @@
             defn test-wrong-arity () (println "|  Testing wrong arity detection...")
               let
                   err-tuple $ %:: Result :err |failed |reason
-                  wrong-arity $ &tuple:assoc err-tuple 0 :ok
+                  wrong-arity $ &enum:assoc err-tuple 0 :ok
                 println "|    Tuple:" wrong-arity
                 println "|    Testing enum arity mismatch..."
                 try

@@ -43,7 +43,7 @@ Calcit inherits most features from Clojure/ClojureScript while adding its own in
 - **Ternary tree collections** - Custom persistent data structures optimized for Rust
 - **Incremental compilation** - Fast hot reload with `.compact-inc.cirru` format
 - **Pattern matching** - Tagged unions with compile-time validation
-- **Record types** - Lightweight structs with field access validation
+- **Struct types** - Fixed-field values with required field access validation
 - **Traits & method dispatch** - Attach capability-based methods to values, with explicit disambiguation when needed
 
 ## Language Features
@@ -67,8 +67,8 @@ For detailed information about specific features:
 
 Use this section as a keyword index for `cr docs read`:
 
-- **Collections**: list, map, set, tuple, record
-- **Pattern Matching**: enum, match, legacy tag-match, tuple-match, result, exhaustiveness
+- **Collections**: list, map, set, struct, enum
+- **Pattern Matching**: enum, match, anonymous enum, tag-match, result, exhaustiveness
 - **Types**: static-analysis, assert-type, optional, variadic
 - **Methods**: trait, impl-traits, method dispatch, trait-call
 - **Interop**: js interop, async, promise, js-await
@@ -77,7 +77,7 @@ Use this section as a keyword index for `cr docs read`:
 Task-oriented jump map:
 
 - Data transforms → [List](features/list.md), [HashMap](features/hashmap.md), [Sets](features/sets.md)
-- Domain modeling → [Records](features/records.md), [Enums](features/enums.md), [Tuples](features/tuples.md)
+- Domain modeling → [Structs](features/records.md), [Enums](features/enums.md), [Anonymous Enums](features/tuples.md)
 - Type safety → [Static Analysis](features/static-analysis.md), [Error Handling](features/error-handling.md)
 - Extensibility → [Macros](features/macros.md), [Traits](features/traits.md), [Polymorphism](features/polymorphism.md)
 - Runtime integration → [JavaScript Interop](features/js-interop.md), [Imports](features/imports.md)
@@ -97,8 +97,8 @@ Task-oriented jump map:
 Calcit's static analysis provides:
 
 - **Function arity checking** - Validates argument counts at compile time
-- **Record field validation** - Checks field names exist in record types
-- **Tuple bounds checking** - Validates tuple index access
+- **Struct field validation** - Checks that required fields exist in struct definitions
+- **Enum bounds checking** - Validates positional enum payload access
 - **Enum variant validation** - Ensures correct enum construction
 - **Method existence checking** - Verifies methods exist for types
 - **Recur arity validation** - Checks recursive calls have correct arguments
@@ -110,6 +110,6 @@ Calcit's static analysis provides:
 - **Zero-cost abstractions** - Persistent data structures with minimal overhead
 - **Lazy sequences** - Efficient processing of large datasets
 - **Optimized compilation** - JavaScript output with tree-shaking support
-- **Type-directed optimizations** - Compile-time rewrites for record field access/update when types are known (e.g., `&record:assoc` → `&record:assoc-at`)
+- **Type-directed optimizations** - Compile-time rewrites for struct field access/update when types are known (e.g., `&struct:assoc` → `&struct:assoc-at`)
 
 Calcit is designed to be familiar to Clojure developers while providing modern tooling, type safety, and excellent development experience.

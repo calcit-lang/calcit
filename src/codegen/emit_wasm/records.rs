@@ -32,7 +32,7 @@ pub(super) fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 
   // Allocate: save i32 pointer to a temporary local
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_size, ptr_local, "record");
+  emit_bump_alloc(ctx, total_size, ptr_local, "struct");
 
   // Store field count at offset 0
   ctx.emit(Instruction::LocalGet(ptr_local));
@@ -59,21 +59,21 @@ pub(super) fn emit_record_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// Resolve a struct reference (either inline Calcit::Struct or Calcit::Import) to a CalcitStruct.
-pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStruct, String> {
+/// Resolve a struct reference (either inline Calcit::StructDef or Calcit::Import) to a CalcitStructDef.
+pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStructDef, String> {
   match node {
-    Calcit::Struct(s) => Ok(s.clone()),
+    Calcit::StructDef(s) => Ok(s.clone()),
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       // Try runtime first
-      if let Some(Calcit::Struct(s)) = program::lookup_runtime_ready(ns, def) {
+      if let Some(Calcit::StructDef(s)) = program::lookup_runtime_ready(ns, def) {
         return Ok(s);
       }
       // Try compiled def
       if let Some(compiled) = program::lookup_compiled_def(ns, def) {
-        if let Calcit::Struct(s) = &compiled.codegen_form {
+        if let Calcit::StructDef(s) = &compiled.codegen_form {
           return Ok(s.clone());
         }
-        if let Calcit::Struct(s) = &compiled.preprocessed_code {
+        if let Calcit::StructDef(s) = &compiled.preprocessed_code {
           return Ok(s.clone());
         }
         // Try to extract struct from defrecord form: (defrecord Name :field1 :field2 ...)
@@ -97,8 +97,8 @@ pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStruct, String> 
   }
 }
 
-/// Try to extract a CalcitStruct from a `(defrecord Name :field1 :field2 ...)` form.
-pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStruct> {
+/// Try to extract a CalcitStructDef from a `(defrecord Name :field1 :field2 ...)` form.
+pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef> {
   let Calcit::List(xs) = code else { return None };
   if xs.len() < 2 {
     return None;
@@ -130,7 +130,7 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStruct> {
     }
   }
   fields.sort();
-  Some(CalcitStruct {
+  Some(CalcitStructDef {
     name,
     fields: std::sync::Arc::new(fields),
     field_types: std::sync::Arc::new(vec![]),
@@ -140,13 +140,13 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStruct> {
   })
 }
 
-/// Emit `&record:nth record idx_literal tag_literal` — O(1) field access by index.
+/// Emit `&struct:nth record idx_literal tag_literal` — O(1) field access by index.
 ///
 /// `idx` must be a compile-time Number constant.
 pub(super) fn emit_record_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   // args: [record_expr, idx_expr, tag_expr]
   if args.len() < 2 {
-    return Err("&record:nth requires at least 2 args (record, index)".into());
+    return Err("&struct:nth requires at least 2 args (record, index)".into());
   }
   // Layout: [count:f64][struct_tag:f64][field0:f64]...
   // Field at byte offset (2 + idx) * 8 from the record pointer
@@ -182,13 +182,13 @@ pub(super) fn emit_record_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// Emit `&record:get record :field_tag` — dynamic field access by tag name.
+/// Emit `&struct:get record :field_tag` — dynamic field access by tag name.
 ///
 /// Performs a compile-time dispatch table: for each known struct type, scans
 /// field tags and returns the matching field value. A missing tag traps instead
 /// of silently returning the numeric representation of nil.
 pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&record:get requires 2 args (record, tag)")?;
+  expect_arity(2, args, "&struct:get requires 2 args (record, tag)")?;
 
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
@@ -243,12 +243,12 @@ pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// Emit `&record:count record` — returns the number of fields.
+/// Emit `&struct:count record` — returns the number of fields.
 /// Layout: [count:f64][struct_tag:f64][fields...]
 /// Count is at offset 0 from the record pointer.
 pub(super) fn emit_record_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() {
-    return Err("&record:count requires 1 arg (record)".into());
+    return Err("&struct:count requires 1 arg (record)".into());
   }
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -257,7 +257,7 @@ pub(super) fn emit_record_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 }
 
 pub(super) fn emit_record_field_tag(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&record:field-tag requires 2 args (record, index)")?;
+  expect_arity(2, args, "&struct:field-tag requires 2 args (record, index)")?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -321,7 +321,7 @@ pub(super) fn emit_record_field_tag(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 }
 
 pub(super) fn emit_record_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&record:get-name requires 1 arg (record)")?;
+  expect_arity(1, args, "&struct:get-name requires 1 arg (record)")?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -330,7 +330,7 @@ pub(super) fn emit_record_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 }
 
 pub(super) fn emit_record_struct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&record:struct requires 1 arg (record)")?;
+  expect_arity(1, args, "&struct:definition requires 1 arg (record)")?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -339,7 +339,7 @@ pub(super) fn emit_record_struct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 }
 
 pub(super) fn emit_record_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&record:to-map requires 1 arg (record)")?;
+  expect_arity(1, args, "&struct:to-map requires 1 arg (record)")?;
 
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let struct_tag_local = ctx.alloc_local();
@@ -387,12 +387,12 @@ pub(super) fn emit_record_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// Emit `&record:matches? a b` — check if two records have the same struct type.
+/// Emit `&struct:matches? a b` — check if two records have the same struct type.
 ///
 /// Record layout: [count: f64] [struct_tag: f64] [field0: f64] ...
 /// Compares the struct_tag (offset 0) of both records.
 pub(super) fn emit_record_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&record:matches? expects 2 args")?;
+  expect_arity(2, args, "&struct:matches? expects 2 args")?;
   // Load struct_tag of first record (at offset 8, after count)
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -413,12 +413,12 @@ pub(super) fn emit_record_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
-/// Emit `&record:contains? record key_tag` — check if a field tag exists in a record.
+/// Emit `&struct:contains? record key_tag` — check if a field tag exists in a record.
 ///
 /// Layout: [count:f64][struct_tag:f64][field0:f64]...
 /// Field tags are compile-time known via ctx.record_field_tags.
 pub(super) fn emit_record_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&record:contains? requires 2 args (record, key_tag)")?;
+  expect_arity(2, args, "&struct:contains? requires 2 args (record, key_tag)")?;
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
   // Load struct_tag from record at offset 8
@@ -509,7 +509,7 @@ pub(super) fn emit_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   let total_size = ((2 + payload.len()) * 8) as i32;
 
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_size, ptr_local, "tuple");
+  emit_bump_alloc(ctx, total_size, ptr_local, "enum");
 
   // Store count at offset 0
   ctx.emit(Instruction::LocalGet(ptr_local));
@@ -562,7 +562,7 @@ pub(super) fn emit_enum_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let total_size = ((2 + payload.len()) * 8) as i32;
 
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, total_size, ptr_local, "tuple");
+  emit_bump_alloc(ctx, total_size, ptr_local, "enum");
 
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(f64_const(payload.len() as f64));
@@ -583,13 +583,13 @@ pub(super) fn emit_enum_tuple_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
-/// Emit `&tuple:nth tuple idx` — O(1) payload access by index.
+/// Emit `&enum:nth tuple idx` — O(1) payload access by index.
 ///
 /// Tuple layout: [count:f64][tag:f64][payload0:f64]...
 /// idx 0 returns tag, idx 1+ returns payloads.
 /// Offset = (1 + idx) * 8  (skip count slot).
 pub(super) fn emit_tuple_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&tuple:nth requires 2 args (tuple, index)")?;
+  expect_arity(2, args, "&enum:nth requires 2 args (tuple, index)")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let idx_local = ctx.alloc_local_typed(ValType::I32);
   emit_expr(ctx, &args[1])?;
@@ -607,14 +607,14 @@ pub(super) fn emit_tuple_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
-/// Emit `&tuple:count tuple` — matches interpreter semantics: payload count + 1 (includes tag).
+/// Emit `&enum:count tuple` — matches interpreter semantics: payload count + 1 (includes tag).
 ///
 /// Tuple layout: [count:f64][tag:f64][payload0:f64]...
 /// Stored count at offset 0 is the raw payload count; the interpreter returns `extra.len() + 1`.
 /// The +1 is required for `&tag-match-internal` which compares `(&list:count pattern)` (tag + bindings)
-/// against `(&tuple:count value)`.
+/// against `(&enum:count value)`.
 pub(super) fn emit_tuple_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&tuple:count expects 1 arg")?;
+  expect_arity(1, args, "&enum:count expects 1 arg")?;
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -625,7 +625,7 @@ pub(super) fn emit_tuple_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 }
 
 pub(super) fn emit_tuple_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(3, args, "&tuple:assoc expects 3 args")?;
+  expect_arity(3, args, "&enum:assoc expects 3 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let idx = ctx.alloc_local_typed(ValType::I32);
@@ -649,7 +649,7 @@ pub(super) fn emit_tuple_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::LocalSet(size));
 
   let dst = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc_dynamic(ctx, size, dst, "tuple");
+  emit_bump_alloc_dynamic(ctx, size, dst, "enum");
 
   let dst_base = emit_addr_offset(ctx, dst, 0);
   let src_base = emit_addr_offset(ctx, src, 0);

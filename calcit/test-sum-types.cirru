@@ -34,10 +34,10 @@
               let
                   ok-action $ make-ok 42
                   err-action $ make-err |boom
-                assert= true $ any? (&tuple:impls ok-action)
+                assert= true $ any? (&enum:impls ok-action)
                   fn (impl)
                     option:some? $ impl-origin impl
-                assert= "|(%:: :ok 42 (:enum Result))" $ str ok-action
+                assert= "|(%:: 'Result :ok 42)" $ str ok-action
                 assert= "|Action ok -> 42" $ ok-action .describe
                 assert= "|Action err -> boom" $ err-action .describe
                 assert= "|handled ok 42" $ summarize ok-action

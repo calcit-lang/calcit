@@ -21,16 +21,20 @@ try {
   const todoName = runtimeA.newTag("TodoState");
   const todoField = runtimeA.newTag("draft");
   const todoType = new runtimeA.CalcitSymbol("String");
-  const todoRecord = new runtimeA.CalcitRecord(todoName, [todoField], [""]);
-  const todoStruct = new runtimeA.CalcitStruct(todoName, [todoField], [todoType]);
-  const todoEnum = new runtimeA.CalcitEnum(new runtimeA.CalcitRecord(todoName, [todoField], [todoType]));
+  const todoRecord = new runtimeA.CalcitStructValue(todoName, [todoField], [""]);
+  const todoStruct = new runtimeA.CalcitStructDef(todoName, [todoField], [todoType]);
+  const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
+  const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
+  const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
   assert.equal(todoRecord.toString(), "(%{} 'TodoState (:draft |))");
-  assert.equal(todoStruct.toString(), "(%struct 'TodoState (:draft 'String))");
-  assert.equal(todoEnum.toString(), "(%enum 'TodoState)");
+  assert.equal(todoStruct.toString(), "(%struct-def 'TodoState (:draft 'String))");
+  assert.equal(todoEnum.toString(), "(%enum-def 'TodoState)");
+  assert.equal(todoEnumValue.toString(), "(%:: 'TodoState :draft |)");
+  assert.equal(anonymousEnumValue.toString(), "(%:: _ :draft |)");
   assert.throws(
-    () => runtimeA._$n_record_$o_get(todoRecord, runtimeA.newTag("missing")),
+    () => runtimeA._$n_struct_$o_get(todoRecord, runtimeA.newTag("missing")),
     /does not define field :missing/,
-    "record field lookup must reject a missing field instead of returning nil"
+    "struct field lookup must reject a missing field instead of returning nil"
   );
 
   runtimeA.load_console_formatter_$x_();
@@ -48,13 +52,16 @@ try {
     const name = embeddedObjects(formatter.header(value)).find((item) => item?.value === "TodoState");
     assert.ok(name instanceof runtimeA.CalcitSymbol, `${kind} formatter should render its name as a symbol`);
   };
-  assertNominalNameIsSymbol(todoRecord, "record");
-  assertNominalNameIsSymbol(todoStruct, "struct");
-  assertNominalNameIsSymbol(todoEnum, "enum");
-  assert.ok(formatter.hasBody(todoStruct), "struct formatter should expose field types");
-  assert.ok(formatter.hasBody(todoEnum), "enum formatter should expose variants");
-  assert.ok(embeddedObjects(formatter.body(todoStruct)).includes(todoType), "struct formatter should embed field types");
-  assert.ok(embeddedObjects(formatter.body(todoEnum)).includes(todoType), "enum formatter should embed variant payload types");
+  assertNominalNameIsSymbol(todoRecord, "struct value");
+  assertNominalNameIsSymbol(todoStruct, "struct definition");
+  assertNominalNameIsSymbol(todoEnum, "enum definition");
+  assertNominalNameIsSymbol(todoEnumValue, "enum value");
+  const anonymousEnumName = embeddedObjects(formatter.header(anonymousEnumValue)).find((item) => item?.value === "_");
+  assert.ok(anonymousEnumName instanceof runtimeA.CalcitSymbol, "anonymous enum formatter should render `_` as a symbol");
+  assert.ok(formatter.hasBody(todoStruct), "struct definition formatter should expose field types");
+  assert.ok(formatter.hasBody(todoEnum), "enum definition formatter should expose variants");
+  assert.ok(embeddedObjects(formatter.body(todoStruct)).includes(todoType), "struct definition formatter should embed field types");
+  assert.ok(embeddedObjects(formatter.body(todoEnum)).includes(todoType), "enum definition formatter should embed variant payload types");
 
   const foreignField = runtimeA.newTag("show");
   const method = () => "demo";

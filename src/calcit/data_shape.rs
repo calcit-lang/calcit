@@ -6,7 +6,7 @@ use cirru_edn::EdnTag;
 use md5::{Digest, Md5};
 
 use super::type_annotation::{TypeBindings, validate_runtime_generic_where_bounds};
-use super::{Calcit, CalcitEnum, CalcitStruct, CalcitTypeAnnotation};
+use super::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation};
 use crate::program;
 
 const DATA_SHAPE_ABI_VERSION: u16 = 1;
@@ -43,13 +43,13 @@ pub(crate) enum DataShapeNode {
   },
   Ref(usize),
   Struct {
-    nominal: Arc<CalcitStruct>,
+    nominal: Arc<CalcitStructDef>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     type_args: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
     fields: Vec<(EdnTag, usize)>,
   },
   Enum {
-    nominal: Arc<CalcitEnum>,
+    nominal: Arc<CalcitEnumDef>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     type_args: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
     variants: Vec<(EdnTag, Vec<usize>)>,
@@ -250,20 +250,20 @@ impl DataShapeGraph {
         self.validate_node_value(*inner, &inner_value, &format!("{path}.value"), depth + 1)
       }
       DataShapeNode::Struct { nominal, fields, .. } => {
-        let Calcit::Record(record) = value else {
-          return Err(shape_kind_mismatch(path, &format!("record :{}", nominal.name), value));
+        let Calcit::Struct(record) = value else {
+          return Err(shape_kind_mismatch(path, &format!("struct :{}", nominal.name), value));
         };
         if !Arc::ptr_eq(&record.struct_ref, nominal) {
           return Err(DataShapeValueError::at(
             path,
-            format!("expected nominal record :{}, got :{}", nominal.name, record.struct_ref.name),
+            format!("expected nominal struct :{}, got :{}", nominal.name, record.struct_ref.name),
           ));
         }
         if record.values.len() != fields.len() {
           return Err(DataShapeValueError::at(
             path,
             format!(
-              "record :{} expects {} value(s), got {}",
+              "struct :{} expects {} value(s), got {}",
               nominal.name,
               fields.len(),
               record.values.len()
@@ -274,7 +274,7 @@ impl DataShapeGraph {
           if record.struct_ref.fields.get(idx) != Some(field) {
             return Err(DataShapeValueError::at(
               path,
-              format!("record :{} field #{idx} does not match :{field}", nominal.name),
+              format!("struct :{} field #{idx} does not match :{field}", nominal.name),
             ));
           }
           self.validate_node_value(*child, item, &format!("{path}.{}", field.ref_str()), depth + 1)?;
@@ -282,13 +282,13 @@ impl DataShapeGraph {
         Ok(())
       }
       DataShapeNode::Enum { nominal, variants, .. } => {
-        let Calcit::Tuple(tuple) = value else {
+        let Calcit::Enum(tuple) = value else {
           return Err(shape_kind_mismatch(path, &format!("enum :{}", nominal.name()), value));
         };
         let Some(actual_enum) = tuple.sum_type.as_ref() else {
           return Err(DataShapeValueError::at(
             path,
-            format!("expected enum :{}, got ordinary tuple", nominal.name()),
+            format!("expected nominal enum :{}, got anonymous enum", nominal.name()),
           ));
         };
         if !Arc::ptr_eq(actual_enum, nominal) {
@@ -353,7 +353,7 @@ impl DataShapeNode {
       Self::Set(_) => "set",
       Self::Map { .. } => "map",
       Self::Ref(_) => "ref",
-      Self::Struct { .. } => "record",
+      Self::Struct { .. } => "struct",
       Self::Enum { .. } => "enum",
     }
   }
@@ -408,7 +408,7 @@ impl GraphBuilder {
         let path = infer_nominal_path(default_ns, nominal.name.ref_str());
         self.build_struct(nominal.clone(), args, path, default_ns)
       }
-      CalcitTypeAnnotation::Record(nominal) => {
+      CalcitTypeAnnotation::StructValue(nominal) => {
         let path = infer_nominal_path(default_ns, nominal.name.ref_str());
         self.build_struct(nominal.clone(), &Arc::new(vec![]), path, default_ns)
       }
@@ -416,10 +416,13 @@ impl GraphBuilder {
         let path = infer_nominal_path(default_ns, nominal.name().ref_str());
         self.build_enum(nominal.clone(), args, path, default_ns)
       }
-      CalcitTypeAnnotation::Tuple(nominal) => {
+      CalcitTypeAnnotation::EnumValue(nominal) => {
         let path = infer_nominal_path(default_ns, nominal.name().ref_str());
         self.build_enum(nominal.clone(), &Arc::new(vec![]), path, default_ns)
       }
+      CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Err(unsupported_type(
+        "type-definition values are not closed application data; use the corresponding Struct or Enum instance type",
+      )),
       CalcitTypeAnnotation::TypeRef(name, args) => self.build_named(name, args, default_ns),
       CalcitTypeAnnotation::TypeSlot(name) => match super::resolve_type_slot(name) {
         Some(resolved) => {
@@ -435,7 +438,7 @@ impl GraphBuilder {
       },
       CalcitTypeAnnotation::Dynamic => Err(unsupported_type("Dynamic is forbidden in a closed data shape")),
       CalcitTypeAnnotation::TypeVar(name) => Err(unsupported_type(&format!("generic variable '{name} is not bound"))),
-      CalcitTypeAnnotation::DynTuple => Err(unsupported_type("ordinary tuple has no declared enum schema")),
+      CalcitTypeAnnotation::AnonymousEnum => Err(unsupported_type("anonymous enum has no declared enum schema")),
       CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Err(unsupported_type("function values are not closed data")),
       CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => {
         Err(unsupported_type("trait constraints are not data shapes"))
@@ -482,7 +485,7 @@ impl GraphBuilder {
 
   fn build_struct(
     &mut self,
-    nominal: Arc<CalcitStruct>,
+    nominal: Arc<CalcitStructDef>,
     args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     default_ns: &str,
@@ -528,7 +531,7 @@ impl GraphBuilder {
 
   fn build_enum(
     &mut self,
-    nominal: Arc<CalcitEnum>,
+    nominal: Arc<CalcitEnumDef>,
     args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     default_ns: &str,
@@ -695,10 +698,10 @@ fn update_nominal_fingerprint(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitGenericBound, CalcitImpl, CalcitList, CalcitRecord, CalcitTrait, CalcitTuple};
+  use crate::calcit::{CalcitEnumValue, CalcitGenericBound, CalcitImpl, CalcitList, CalcitStructValue, CalcitTrait};
 
-  fn phantom_box() -> Arc<CalcitStruct> {
-    Arc::new(CalcitStruct {
+  fn phantom_box() -> Arc<CalcitStructDef> {
+    Arc::new(CalcitStructDef {
       name: EdnTag::new("PhantomBox"),
       fields: Arc::new(vec![]),
       field_types: Arc::new(vec![]),
@@ -736,7 +739,7 @@ mod tests {
     let dynamic = DataShapeGraph::build(&CalcitTypeAnnotation::Dynamic, "tests.shape").expect_err("dynamic must fail");
     assert!(dynamic.to_string().contains("Dynamic is forbidden"));
 
-    let generic = Arc::new(CalcitStruct {
+    let generic = Arc::new(CalcitStructDef {
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
@@ -762,26 +765,26 @@ mod tests {
 
   #[test]
   fn rejects_structurally_equal_but_distinct_nominal_declarations() {
-    let nominal = Arc::new(CalcitStruct::from_fields(EdnTag::new("Point"), vec![]));
+    let nominal = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Point"), vec![]));
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), "tests.shape").expect("point shape");
     let impostor = Arc::new((*nominal).clone());
-    let record = Calcit::Record(CalcitRecord {
+    let record = Calcit::Struct(CalcitStructValue {
       struct_ref: impostor,
       values: Arc::new(vec![]),
     });
 
     let error = shape.validate_value(&record).expect_err("distinct struct declaration must fail");
-    assert!(error.message.contains("expected nominal record"), "unexpected error: {error}");
+    assert!(error.message.contains("expected nominal struct"), "unexpected error: {error}");
 
-    let enum_prototype = || CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Outcome"), vec![EdnTag::new("none")])),
+    let enum_prototype = || CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Outcome"), vec![EdnTag::new("none")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
     };
-    let nominal = Arc::new(CalcitEnum::from_record(enum_prototype()).expect("outcome enum"));
+    let nominal = Arc::new(CalcitEnumDef::from_record(enum_prototype()).expect("outcome enum"));
     let shape = DataShapeGraph::build(&CalcitTypeAnnotation::Enum(nominal, Arc::new(vec![])), "tests.shape").expect("outcome shape");
-    let impostor = Arc::new(CalcitEnum::from_record(enum_prototype()).expect("impostor outcome enum"));
-    let tuple = Calcit::Tuple(CalcitTuple {
+    let impostor = Arc::new(CalcitEnumDef::from_record(enum_prototype()).expect("impostor outcome enum"));
+    let tuple = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::new("none"))),
       extra: vec![],
       sum_type: Some(impostor),
@@ -794,7 +797,7 @@ mod tests {
   #[test]
   fn enforces_generic_where_bounds_while_deriving() {
     let marker = Arc::new(CalcitTrait::new(EdnTag::new("DataMarker"), vec![], vec![]));
-    let bounded = Arc::new(CalcitStruct {
+    let bounded = Arc::new(CalcitStructDef {
       name: EdnTag::new("MarkedBox"),
       fields: Arc::new(vec![EdnTag::new("value")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
@@ -813,7 +816,7 @@ mod tests {
     .expect_err("Number does not implement the nominal marker trait");
     assert!(rejected.to_string().contains("does not satisfy"));
 
-    let mut marked_value = CalcitStruct::from_fields(EdnTag::new("MarkedValue"), vec![]);
+    let mut marked_value = CalcitStructDef::from_fields(EdnTag::new("MarkedValue"), vec![]);
     marked_value.impls.push(Arc::new(CalcitImpl {
       name: EdnTag::new("MarkedValueDataMarker"),
       origin: Some(marker),

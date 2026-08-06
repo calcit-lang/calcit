@@ -115,8 +115,8 @@ $procs.register_calcit_builtin_impls({{
   set: _$n_core_set_impls,
   string: _$n_core_string_impls,
   fn: _$n_core_fn_impls,
-  tuple: _$n_core_tuple_impls,
-  record: _$n_core_record_impls,
+  enum: _$n_core_enum_impls,
+  struct: _$n_core_struct_impls,
   scalar: _$n_core_scalar_impls,
 }});
 

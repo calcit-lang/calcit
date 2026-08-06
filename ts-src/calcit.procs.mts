@@ -22,22 +22,22 @@ import {
 } from "./calcit-data.mjs";
 
 import { CalcitRef, atom } from "./js-ref.mjs";
-import { CalcitRecord } from "./js-record.mjs";
+import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
-import { CalcitStruct } from "./js-struct.mjs";
-import { CalcitEnum } from "./js-enum.mjs";
+import { CalcitStructDef } from "./js-struct-def.mjs";
+import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 
 export * from "./calcit-data.mjs";
-export * from "./js-record.mjs";
+export * from "./js-struct-value.mjs";
 export * from "./js-impl.mjs";
-export * from "./js-struct.mjs";
-export * from "./js-enum.mjs";
+export * from "./js-struct-def.mjs";
+export * from "./js-enum-def.mjs";
 export * from "./js-map.mjs";
 export * from "./js-list.mjs";
 export * from "./js-set.mjs";
 export * from "./js-primes.mjs";
-export * from "./js-tuple.mjs";
+export * from "./js-enum-value.mjs";
 export * from "./js-trait.mjs";
 export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
@@ -49,7 +49,7 @@ export { _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
 import { TypedEdnSetView } from "./typed-edn.mjs";
 
@@ -77,8 +77,8 @@ export let type_of = (x: any): CalcitTag => {
   if (x instanceof CalcitRef) {
     return newTag("ref");
   }
-  if (x instanceof CalcitTuple) {
-    return newTag("tuple");
+  if (x instanceof CalcitEnumValue) {
+    return newTag("enum");
   }
   if (x instanceof CalcitSymbol) {
     return newTag("symbol");
@@ -86,17 +86,17 @@ export let type_of = (x: any): CalcitTag => {
   if (x instanceof CalcitSet) {
     return newTag("set");
   }
-  if (x instanceof CalcitRecord) {
-    return newTag("record");
+  if (x instanceof CalcitStructValue) {
+    return newTag("struct");
   }
   if (x instanceof CalcitImpl) {
     return newTag("impl");
   }
-  if (x instanceof CalcitStruct) {
-    return newTag("struct");
+  if (x instanceof CalcitStructDef) {
+    return newTag("struct-def");
   }
-  if (x instanceof CalcitEnum) {
-    return newTag("enum");
+  if (x instanceof CalcitEnumDef) {
+    return newTag("enum-def");
   }
   if (x instanceof CalcitTrait) {
     return newTag("trait");
@@ -212,7 +212,7 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   }
   const impls = pair[0];
   const reverse =
-    value instanceof CalcitRecord || value instanceof CalcitTuple || value instanceof CalcitStruct || value instanceof CalcitEnum;
+    value instanceof CalcitStructValue || value instanceof CalcitEnumValue || value instanceof CalcitStructDef || value instanceof CalcitEnumDef;
   const ordered = reverse ? [...impls].reverse() : impls;
   const selected = ordered.find((impl) => impl != null && impl.origin === traitDef);
   if (selected == null) {
@@ -237,7 +237,7 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   return value;
 };
 
-export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
+export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStructDef => {
   const structName = castTag(name);
   const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
   const fieldEntries = trimDataDefinitionEntries(entries);
@@ -261,10 +261,10 @@ export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStr
 
   const fieldTags = fields.map((entry) => entry.tag);
   const fieldTypes = fields.map((entry) => entry.type);
-  return new CalcitStruct(structName, fieldTags, fieldTypes, null);
+  return new CalcitStructDef(structName, fieldTags, fieldTypes, null);
 };
 
-export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum => {
+export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnumDef => {
   const enumName = castTag(name);
   const entries: Array<{ tag: CalcitTag; payload: CalcitSliceList }> = [];
   const variantEntries = trimDataDefinitionEntries(variants);
@@ -288,8 +288,8 @@ export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum
 
   const tags = entries.map((entry) => entry.tag);
   const values = entries.map((entry) => entry.payload);
-  const prototype = new CalcitRecord(enumName, tags, values, null);
-  return new CalcitEnum(prototype);
+  const prototype = new CalcitStructValue(enumName, tags, values, null);
+  return new CalcitEnumDef(prototype);
 };
 
 export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): CalcitImpl => {
@@ -301,14 +301,14 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
   if (pairs.length === 1 && pairs[0] instanceof CalcitImpl) {
     const sourceImpl = pairs[0];
     sourcePairs = sourceImpl.fields.map(
-      (field, idx) => new CalcitTuple(newTag(field.value), [sourceImpl.values[idx]], null)
+      (field, idx) => new CalcitEnumValue(newTag(field.value), [sourceImpl.values[idx]], null)
     );
   }
   for (let idx = 0; idx < sourcePairs.length; idx++) {
     const pairValue = sourcePairs[idx];
     let fieldTag: CalcitTag;
     let value: CalcitValue;
-    if (pairValue instanceof CalcitTuple) {
+    if (pairValue instanceof CalcitEnumValue) {
       if (pairValue.extra.length !== 1) {
         throw new Error(`&impl::new expects (field value) pairs, got: ${toString(pairValue, true)}`);
       }
@@ -350,11 +350,11 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
   return new CalcitImpl(implName, fields, values, origin);
 };
 
-export let _$n_struct_$o__$o_new = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
+export let _$n_struct_def_$o_new = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStructDef => {
   return defstruct(name, ...entries);
 };
 
-export let _$n_enum_$o__$o_new = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum => {
+export let _$n_enum_def_$o_new = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnumDef => {
   return defenum(name, ...variants);
 };
 
@@ -378,23 +378,23 @@ export function _$n_map_$o_count(x: CalcitValue): number {
 
   throw new Error(`expected a map ${x}`);
 }
-export function _$n_record_$o_count(x: CalcitValue): number {
-  if (x instanceof CalcitRecord) return x.fields.length;
+export function _$n_struct_$o_count(x: CalcitValue): number {
+  if (x instanceof CalcitStructValue) return x.fields.length;
 
-  throw new Error(`expected a record ${x}`);
+  throw new Error(`expected a struct value ${x}`);
 }
 
-export function _$n_record_$o_field_tag(x: CalcitValue, idx: CalcitValue): CalcitTag {
-  if (!(x instanceof CalcitRecord)) throw new Error(`&record:field-tag expected a record, got ${x}`);
+export function _$n_struct_$o_field_tag(x: CalcitValue, idx: CalcitValue): CalcitTag {
+  if (!(x instanceof CalcitStructValue)) throw new Error(`&struct:field-tag expected a struct value, got ${x}`);
   const i = idx as number;
-  if (i < 0 || i >= x.fields.length) throw new Error(`&record:field-tag index ${i} out of bounds (${x.fields.length})`);
+  if (i < 0 || i >= x.fields.length) throw new Error(`&struct:field-tag index ${i} out of bounds (${x.fields.length})`);
   return x.fields[i];
 }
 
-export function _$n_record_$o_nth(x: CalcitValue, idx: CalcitValue): CalcitValue {
-  if (!(x instanceof CalcitRecord)) throw new Error(`&record:nth expected a record, got ${x}`);
+export function _$n_struct_$o_nth(x: CalcitValue, idx: CalcitValue): CalcitValue {
+  if (!(x instanceof CalcitStructValue)) throw new Error(`&struct:nth expected a struct value, got ${x}`);
   const i = idx as number;
-  if (i < 0 || i >= x.values.length) throw new Error(`&record:nth index ${i} out of range for record with ${x.values.length} fields`);
+  if (i < 0 || i >= x.values.length) throw new Error(`&struct:nth index ${i} out of range for struct with ${x.values.length} fields`);
   return x.values[i];
 }
 
@@ -494,10 +494,10 @@ export let _$n_map_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean 
   throw new Error("map `contains?` expected a map");
 };
 
-export let _$n_record_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
-  if (xs instanceof CalcitRecord) return xs.contains(x);
+export let _$n_struct_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+  if (xs instanceof CalcitStructValue) return xs.contains(x);
 
-  throw new Error("record `contains?` expected a record");
+  throw new Error("struct `contains?` expected a struct value");
 };
 
 export let _$n_str_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
@@ -566,18 +566,18 @@ export let _$n_list_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_enum_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
-  if (xs instanceof CalcitTuple) return xs.get(k);
+  if (xs instanceof CalcitEnumValue) return xs.get(k);
 
   throw new Error("Does not support `nth` on this type");
 };
-export let _$n_tuple_$o_count = function (xs: CalcitValue) {
-  if (arguments.length !== 1) throw new Error("&tuple:count takes 1 arguments");
+export let _$n_enum_$o_count = function (xs: CalcitValue) {
+  if (arguments.length !== 1) throw new Error("&enum:count takes 1 arguments");
 
-  if (xs instanceof CalcitTuple) return xs.count();
+  if (xs instanceof CalcitEnumValue) return xs.count();
 
   throw new Error("Does not support `count` on this type");
 };
@@ -589,65 +589,62 @@ const coerce_impl = (value: CalcitValue, procName: string): CalcitImpl => {
   throw new Error(`${procName} expects trait impls as impls`);
 };
 
-export let _$n_tuple_$o_impls = function (x: CalcitTuple) {
-  if (arguments.length !== 1) throw new Error("&tuple:impls takes 1 argument");
+export let _$n_enum_$o_impls = function (x: CalcitEnumValue) {
+  if (arguments.length !== 1) throw new Error("&enum:impls takes 1 argument");
   return new CalcitSliceList(x.impls);
 };
 
-export let _$n_tuple_$o_params = function (x: CalcitTuple) {
-  if (arguments.length !== 1) throw new Error("&tuple:params takes 1 argument");
+export let _$n_enum_$o_params = function (x: CalcitEnumValue) {
+  if (arguments.length !== 1) throw new Error("&enum:params takes 1 argument");
   return new CalcitSliceList(x.extra);
 };
 
-export let _$n_tuple_$o_with_impls = function (x: CalcitTuple, y: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&tuple:with-impls takes 2 arguments");
-  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-impls expects a tuple");
-  const impl = coerce_impl(y, "&tuple:with-impls");
+export let _$n_enum_$o_with_impls = function (x: CalcitEnumValue, y: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&enum:with-impls takes 2 arguments");
+  if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:with-impls expects an enum value");
+  const impl = coerce_impl(y, "&enum:with-impls");
   let proto = x.enumPrototype;
   if (proto == null) {
-    proto = new CalcitEnum(new CalcitRecord(newTag("anonymous-tuple"), [], [], new CalcitStruct(newTag("anonymous-tuple"), [], [])));
+    proto = new CalcitEnumDef(new CalcitStructValue(newTag("_"), [], [], new CalcitStructDef(newTag("_"), [], [])));
   }
-  return new CalcitTuple(x.tag, x.extra, proto.withImpls(impl));
+  return new CalcitEnumValue(x.tag, x.extra, proto.withImpls(impl));
 };
 
-export let _$n_tuple_$o_impl_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&tuple:impl-traits takes 2+ arguments");
-  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:impl-traits expects a tuple");
-  const impls = traits.map((trait) => coerce_impl(trait, "&tuple:impl-traits"));
+export let _$n_enum_$o_impl_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
+  if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:impl-traits expects an enum value");
+  const impls = traits.map((trait) => coerce_impl(trait, "&enum:impl-traits"));
   let proto = x.enumPrototype;
   if (proto == null) {
     const tagName = x.tag instanceof CalcitTag ? x.tag : newTag("tag");
     const anyTypes = new CalcitSliceList(new Array(x.extra.length).fill(newTag("any")));
-    proto = new CalcitEnum(
-      new CalcitRecord(newTag("anonymous-tuple"), [tagName], [anyTypes], new CalcitStruct(newTag("anonymous-tuple"), [tagName], [anyTypes]))
+    proto = new CalcitEnumDef(
+      new CalcitStructValue(newTag("_"), [tagName], [anyTypes], new CalcitStructDef(newTag("_"), [tagName], [anyTypes]))
     );
   }
-  return new CalcitTuple(x.tag, x.extra, proto.withImpls(impls));
+  return new CalcitEnumValue(x.tag, x.extra, proto.withImpls(impls));
 };
 
-export let _$n_tuple_$o_enum = function (x: CalcitTuple) {
-  if (arguments.length !== 1) throw new Error("&tuple:enum takes 1 argument");
-  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:enum expects a tuple");
+export let _$n_enum_$o_definition = function (x: CalcitEnumValue) {
+  if (arguments.length !== 1) throw new Error("&enum:definition takes 1 argument");
+  if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:definition expects an enum value");
   if (x.enumPrototype == null) {
     return null;
   }
-  if (x.enumPrototype instanceof CalcitEnum) {
-    return x.enumPrototype;
-  }
-  return new CalcitEnum(x.enumPrototype as CalcitRecord);
+  return x.enumPrototype;
 };
 
-const unwrap_enum_prototype = (enumPrototype: CalcitValue, procName: string): CalcitRecord => {
-  if (enumPrototype instanceof CalcitEnum) {
+const unwrap_enum_prototype = (enumPrototype: CalcitValue, procName: string): CalcitStructValue => {
+  if (enumPrototype instanceof CalcitEnumDef) {
     return enumPrototype.prototype;
   }
-  if (enumPrototype instanceof CalcitRecord) {
-    return enumPrototype;
+  if (enumPrototype instanceof CalcitStructValue) {
+    throw new Error(`${procName} no longer accepts a struct prototype; pass an EnumDef produced by defenum`);
   }
-  throw new Error(`${procName} expects enum prototype as first argument`);
+  throw new Error(`${procName} expects an EnumDef as first argument`);
 };
 
-const assert_enum_tag_args = (procName: string, enumPrototype: CalcitValue, variantTag: CalcitTag): CalcitRecord => {
+const assert_enum_tag_args = (procName: string, enumPrototype: CalcitValue, variantTag: CalcitTag): CalcitStructValue => {
   const proto = unwrap_enum_prototype(enumPrototype, procName);
   if (!(variantTag instanceof CalcitTag)) {
     throw new Error(`${procName} expects tag as second argument`);
@@ -655,17 +652,17 @@ const assert_enum_tag_args = (procName: string, enumPrototype: CalcitValue, vari
   return proto;
 };
 
-export let _$n_tuple_$o_enum_has_variant_$q_ = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
-  if (arguments.length !== 2) throw new Error("&tuple:enum-has-variant? takes 2 arguments");
-  const proto = assert_enum_tag_args("&tuple:enum-has-variant?", enumPrototype, variantTag);
+export let _$n_enum_def_$o_has_variant_$q_ = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
+  if (arguments.length !== 2) throw new Error("&enum-def:has-variant? takes 2 arguments");
+  const proto = assert_enum_tag_args("&enum-def:has-variant?", enumPrototype, variantTag);
   return proto.contains(variantTag);
 };
 
-export let _$n_tuple_$o_enum_has_variant = _$n_tuple_$o_enum_has_variant_$q_;
+export let _$n_enum_def_$o_has_variant = _$n_enum_def_$o_has_variant_$q_;
 
-export let _$n_tuple_$o_enum_variant_arity = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
-  if (arguments.length !== 2) throw new Error("&tuple:enum-variant-arity takes 2 arguments");
-  const proto = assert_enum_tag_args("&tuple:enum-variant-arity", enumPrototype, variantTag);
+export let _$n_enum_def_$o_variant_arity = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
+  if (arguments.length !== 2) throw new Error("&enum-def:variant-arity takes 2 arguments");
+  const proto = assert_enum_tag_args("&enum-def:variant-arity", enumPrototype, variantTag);
 
   const variant = proto.getOrNil(variantTag);
   if (variant === undefined) {
@@ -678,26 +675,26 @@ export let _$n_tuple_$o_enum_variant_arity = function (enumPrototype: CalcitValu
   throw new Error("Expected variant to be a list");
 };
 
-export let _$n_tuple_$o_validate_enum = function (tuple: CalcitValue, tag: CalcitValue): CalcitValue {
-  if (arguments.length !== 2) throw new Error("&tuple:validate-enum takes 2 arguments");
-  if (!(tuple instanceof CalcitTuple)) throw new Error("&tuple:validate-enum expects a tuple as first argument");
-  if (tuple.enumPrototype == null) {
+export let _$n_enum_$o_validate = function (enumValue: CalcitValue, tag: CalcitValue): CalcitValue {
+  if (arguments.length !== 2) throw new Error("&enum:validate takes 2 arguments");
+  if (!(enumValue instanceof CalcitEnumValue)) throw new Error("&enum:validate expects an enum value as first argument");
+  if (enumValue.enumPrototype == null) {
     return null;
   }
 
-  const proto = assert_enum_tag_args("&tuple:validate-enum", tuple.enumPrototype as CalcitValue, tag as CalcitTag);
+  const proto = assert_enum_tag_args("&enum:validate", enumValue.enumPrototype as CalcitValue, tag as CalcitTag);
 
   const tagValue = tag as CalcitTag;
   const variant = proto.getOrNil(tagValue);
   if (variant === undefined) {
-    throw new Error(`enum does not have variant ${tagValue.value} for ${tuple}`);
+    throw new Error(`enum does not have variant ${tagValue.value} for ${enumValue}`);
   }
 
   if (variant instanceof CalcitSliceList) {
     const expected = variant.len();
-    const actual = tuple.extra.length;
+    const actual = enumValue.extra.length;
     if (expected !== actual) {
-      throw new Error(`enum variant expects ${expected} payload(s), got ${actual} for ${tuple}`);
+      throw new Error(`enum variant expects ${expected} payload(s), got ${actual} for ${enumValue}`);
     }
     return null;
   }
@@ -705,12 +702,12 @@ export let _$n_tuple_$o_validate_enum = function (tuple: CalcitValue, tag: Calci
   throw new Error("Expected variant to be a list");
 };
 
-export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitTag) {
+export let _$n_struct_$o_get = function (xs: CalcitValue, k: CalcitTag) {
   if (arguments.length !== 2) {
-    throw new Error("record &get takes 2 arguments");
+    throw new Error("&struct:get takes 2 arguments");
   }
 
-  if (xs instanceof CalcitRecord) return xs.getRequired(k);
+  if (xs instanceof CalcitStructValue) return xs.getRequired(k);
 
   throw new Error("Does not support `&get` on this type");
 };
@@ -726,17 +723,17 @@ export let _$n_list_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: Cal
   }
   throw new Error("list `assoc` expected a list");
 };
-export let _$n_tuple_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
+export let _$n_enum_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
   if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
-  if (xs instanceof CalcitTuple) {
+  if (xs instanceof CalcitEnumValue) {
     if (typeof k !== "number") {
       throw new Error("Expected number index for lists");
     }
     return xs.assoc(k, v);
   }
 
-  throw new Error("tuple `assoc` expected a tuple");
+  throw new Error("enum `assoc` expected an enum value");
 };
 export let _$n_map_$o_assoc = function (xs: CalcitValue, ...args: CalcitValue[]) {
   if (arguments.length < 3) throw new Error("assoc takes at least 3 arguments");
@@ -746,47 +743,43 @@ export let _$n_map_$o_assoc = function (xs: CalcitValue, ...args: CalcitValue[])
 
   throw new Error("map `assoc` expected a map");
 };
-export let _$n_record_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
+export let _$n_struct_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
   if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
-  if (xs instanceof CalcitRecord) return xs.assoc(k, v);
+  if (xs instanceof CalcitStructValue) return xs.assoc(k, v);
 
-  throw new Error("record `assoc` expected a record");
+  throw new Error("struct `assoc` expected a struct value");
 };
 
-export let _$n_record_$o_impls = function (xs: CalcitValue) {
-  if (arguments.length !== 1) throw new Error("&record:impls takes 1 argument");
-  if (xs instanceof CalcitRecord) return new CalcitSliceList(xs.structRef.impls);
-  throw new Error("&record:impls expected a record");
-};
-
-export let _$n_record_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&record:impl-traits takes 2+ arguments");
-  if (!(xs instanceof CalcitRecord)) throw new Error("&record:impl-traits expected a record");
-  const impls = traits.map((trait) => coerce_impl(trait, "&record:impl-traits"));
-  const nextStruct = new CalcitStruct(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls));
-  return new CalcitRecord(xs.name, xs.fields, xs.values, nextStruct);
+export let _$n_struct_$o_impls = function (xs: CalcitValue) {
+  if (arguments.length !== 1) throw new Error("&struct:impls takes 1 argument");
+  if (xs instanceof CalcitStructValue) return new CalcitSliceList(xs.structRef.impls);
+  throw new Error("&struct:impls expected a struct value");
 };
 
 export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
   if (traits.length < 1) throw new Error("&struct:impl-traits takes 2+ arguments");
-  if (!(xs instanceof CalcitStruct)) throw new Error("&struct:impl-traits expected a struct");
-  const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
-  const baseImpls = xs.impls ?? [];
-  return new CalcitStruct(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls));
+  if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
+  const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
+  const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls));
+  return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
 
-export let _$n_enum_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
-  const addedImpls = traits.map((trait) => coerce_impl(trait, "&enum:impl-traits"));
-  if (xs instanceof CalcitEnum) {
+export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&struct-def:impl-traits takes 2+ arguments");
+  if (!(xs instanceof CalcitStructDef)) throw new Error("&struct-def:impl-traits expected a struct definition");
+  const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct-def:impl-traits"));
+  const baseImpls = xs.impls ?? [];
+  return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls));
+};
+
+export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&enum-def:impl-traits takes 2+ arguments");
+  const addedImpls = traits.map((trait) => coerce_impl(trait, "&enum-def:impl-traits"));
+  if (xs instanceof CalcitEnumDef) {
     return xs.withImpls(addedImpls);
   }
-  if (xs instanceof CalcitRecord) {
-    const nextStruct = new CalcitStruct(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(addedImpls));
-    return new CalcitRecord(xs.name, xs.fields, xs.values, nextStruct);
-  }
-  throw new Error("&enum:impl-traits expected an enum or enum record");
+  throw new Error("&enum-def:impl-traits expected an enum definition");
 };
 
 export let _$n_impl_$o_origin = function (impl: CalcitValue): CalcitValue {
@@ -1194,7 +1187,7 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
       throw new Error("Expected an argument of map");
     }
   }
-  if (a instanceof CalcitRecord) {
+  if (a instanceof CalcitStructValue) {
     if (b instanceof CalcitMap || b instanceof CalcitSliceMap) {
       let values = [];
       for (let idx = 0; idx < a.values.length; idx++) {
@@ -1217,10 +1210,10 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
           throw new Error(`Cannot find field ${field} among (${a.fields.join(", ")})`);
         }
       }
-      return new CalcitRecord(a.name, a.fields, values);
+      return new CalcitStructValue(a.name, a.fields, values);
     }
   }
-  throw new Error("Expected map or record");
+  throw new Error("Expected map or struct value");
 };
 
 export let _$n_merge_non_nil = (a: CalcitMap | CalcitSliceMap, b: CalcitMap | CalcitSliceMap): CalcitMap | CalcitSliceMap => {
@@ -1248,7 +1241,7 @@ export let to_pairs = (xs: CalcitValue): CalcitValue | CalcitSliceList => {
       result.push(new CalcitSliceList(pairs[idx]));
     }
     return new CalcitSet(result);
-  } else if (xs instanceof CalcitRecord) {
+  } else if (xs instanceof CalcitStructValue) {
     let arr_result: Array<CalcitSliceList> = [];
     for (let idx = 0; idx < xs.fields.length; idx++) {
       arr_result.push(new CalcitSliceList([xs.fields[idx], xs.values[idx]]));
@@ -1626,11 +1619,17 @@ export let fn_$q_ = (x: CalcitValue): boolean => {
 export let ref_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitRef;
 };
-export let record_$q_ = (x: CalcitValue): boolean => {
-  return x instanceof CalcitRecord;
+export let struct_$q_ = (x: CalcitValue): boolean => {
+  if (x instanceof CalcitStructDef) {
+    throw new Error("`struct?` now checks struct values; use `struct-def?` for a value produced by `defstruct`");
+  }
+  return x instanceof CalcitStructValue;
 };
-export let tuple_$q_ = (x: CalcitValue): boolean => {
-  return x instanceof CalcitTuple;
+export let enum_$q_ = (x: CalcitValue): boolean => {
+  if (x instanceof CalcitEnumDef) {
+    throw new Error("`enum?` now checks enum values; use `enum-def?` for a value produced by `defenum`");
+  }
+  return x instanceof CalcitEnumValue;
 };
 export let buffer_$q_ = (x: CalcitValue): boolean => {
   console.warn("TODO, detecting buffer");
@@ -1680,8 +1679,8 @@ type DataShapeNode =
   | { kind: "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" }
   | { kind: "optional" | "list" | "set" | "ref"; inner: number }
   | { kind: "map"; key: number; value: number }
-  | { kind: "struct"; nominal: CalcitStruct; fields: Array<[string, number]> }
-  | { kind: "enum"; nominal: CalcitEnum; variants: Array<{ tag: string; payload: number[] }> };
+  | { kind: "struct"; nominal: CalcitStructDef; fields: Array<[string, number]> }
+  | { kind: "enum"; nominal: CalcitEnumDef; variants: Array<{ tag: string; payload: number[] }> };
 
 type DataShapeGraph = {
   version: number;
@@ -1700,8 +1699,8 @@ const typed_edn_kind = (value: any): string => {
   if (value instanceof CalcitList || value instanceof CalcitSliceList) return "list";
   if (value instanceof CalcitMap || value instanceof CalcitSliceMap) return "map";
   if (value instanceof CalcitSet || value instanceof TypedEdnSetView) return "set";
-  if (value instanceof CalcitRecord) return "record";
-  if (value instanceof CalcitTuple) return value.enumPrototype == null ? "tuple" : "enum";
+  if (value instanceof CalcitStructValue) return "struct";
+  if (value instanceof CalcitEnumValue) return "enum";
   if (value instanceof CalcitRef) return "atom";
   if (value instanceof CalcitCirruQuote) return "cirru-quote";
   if (value instanceof Uint8Array) return "buffer";
@@ -1712,8 +1711,8 @@ const typed_edn_error = (path: string, message: string): never => {
   throw new Error(`parse-cirru-edn-as failed at ${path}: ${message}`);
 };
 
-const enum_prototype_name = (value: CalcitEnum | CalcitRecord): string => {
-  return value instanceof CalcitEnum ? value.name() : value.name.value;
+const enum_prototype_name = (value: CalcitEnumDef | CalcitStructValue): string => {
+  return value instanceof CalcitEnumDef ? value.name() : value.name.value;
 };
 
 const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any, path: string, depth: number): any => {
@@ -1795,11 +1794,11 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       if (!(input instanceof CalcitRef)) return typed_edn_error(path, `expected atom, got ${typed_edn_kind(input)}`);
       return atom(decode_typed_edn_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
     case "struct": {
-      if (!(input instanceof CalcitRecord)) {
-        return typed_edn_error(path, `expected record :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
+      if (!(input instanceof CalcitStructValue)) {
+        return typed_edn_error(path, `expected struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
       }
       if (input.name.value !== node.nominal.name.value) {
-        return typed_edn_error(path, `expected record :${node.nominal.name.value}, got record :${input.name.value}`);
+        return typed_edn_error(path, `expected struct :${node.nominal.name.value}, got struct :${input.name.value}`);
       }
       const expectedNames = node.fields.map(([name]) => name);
       const actualNames = input.fields.map((field) => field.value);
@@ -1808,7 +1807,7 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       if (missing.length > 0 || unknown.length > 0 || expectedNames.length !== actualNames.length) {
         return typed_edn_error(
           path,
-          `record :${node.nominal.name.value} fields mismatch; missing [${missing.join(", ")}], unknown [${unknown.join(", ")}]`
+          `struct :${node.nominal.name.value} fields mismatch; missing [${missing.join(", ")}], unknown [${unknown.join(", ")}]`
         );
       }
       const decodedFields = new Map<string, CalcitValue>();
@@ -1819,18 +1818,18 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       // Native declarations use lexical field order while the JS runtime keeps
       // its interned-tag order. Re-align values to the nominal JS declaration.
       if (decodedFields.size !== node.nominal.fields.length) {
-        return typed_edn_error(path, `record :${node.nominal.name.value} decoder fields do not match its nominal declaration`);
+        return typed_edn_error(path, `struct :${node.nominal.name.value} decoder fields do not match its nominal declaration`);
       }
       const values = node.nominal.fields.map((field) => {
         if (!decodedFields.has(field.value)) {
-          return typed_edn_error(path, `record :${node.nominal.name.value} is missing declared field :${field.value}`);
+          return typed_edn_error(path, `struct :${node.nominal.name.value} is missing declared field :${field.value}`);
         }
         return decodedFields.get(field.value)!;
       });
-      return new CalcitRecord(node.nominal.name, node.nominal.fields, values, node.nominal);
+      return new CalcitStructValue(node.nominal.name, node.nominal.fields, values, node.nominal);
     }
     case "enum": {
-      if (!(input instanceof CalcitTuple) || input.enumPrototype == null) {
+      if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null) {
         return typed_edn_error(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);
       }
       const actualEnumName = enum_prototype_name(input.enumPrototype);
@@ -1854,7 +1853,7 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       const values = variant.payload.map((payloadNode, idx) =>
         decode_typed_edn_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1)
       );
-      return new CalcitTuple(newTag(variant.tag), values, node.nominal);
+      return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
     default:
       return typed_edn_error(path, `invalid data shape node kind: ${(node as any).kind}`);
@@ -1937,13 +1936,13 @@ const calcit_to_json = (value: CalcitValue): any => {
     }
     return result;
   }
-  if (value instanceof CalcitTuple) {
+  if (value instanceof CalcitEnumValue) {
     return [calcit_to_json(value.tag), ...value.extra.map(calcit_to_json)];
   }
   if (value instanceof CalcitCirruQuote) {
     return cirru_quote_to_json(value.value as ICirruNode);
   }
-  if (value instanceof CalcitRecord) {
+  if (value instanceof CalcitStructValue) {
     const result: Record<string, any> = {};
     for (let idx = 0; idx < value.fields.length; idx++) {
       result[value.fields[idx].value] = calcit_to_json(value.values[idx]);
@@ -2054,11 +2053,11 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
   return ret;
 };
 
-export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(tagName, extra, null);
+export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitEnumValue => {
+  return new CalcitEnumValue(tagName, extra, null);
 };
 
-export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitEnumValue => {
   const proto = assert_enum_tag_args("%::", enumPrototype, tag as CalcitTag);
   const tagValue = tag as CalcitTag;
 
@@ -2077,11 +2076,10 @@ export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...ext
     throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
   }
 
-  const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
-  return new CalcitTuple(tag, extra, tupleEnumPrototype);
+  return new CalcitEnumValue(tag, extra, enumPrototype as CalcitEnumDef);
 };
 
-export let _PCT__PCT__$o__$o_ = (impl: CalcitValue, enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+export let _PCT__PCT__$o__$o_ = (impl: CalcitValue, enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitEnumValue => {
   // Runtime validation: check if tag exists in enum and arity matches
   const proto = assert_enum_tag_args("%%::", enumPrototype, tag as CalcitTag);
   const tagValue = tag as CalcitTag;
@@ -2101,9 +2099,8 @@ export let _PCT__PCT__$o__$o_ = (impl: CalcitValue, enumPrototype: CalcitValue, 
     throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
   }
 
-  const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : (proto as any);
   const implValue = coerce_impl(impl, "%:: with impl");
-  return new CalcitTuple(tag, extra, tupleEnumPrototype.withImpls(implValue));
+  return new CalcitEnumValue(tag, extra, (enumPrototype as CalcitEnumDef).withImpls(implValue));
 };
 
 // mutable place for core to register
@@ -2116,8 +2113,8 @@ let calcit_builtin_impls = {
   list: null as CalcitImplEntry,
   map: null as CalcitImplEntry,
   fn: null as CalcitImplEntry,
-  tuple: null as CalcitImplEntry,
-  record: null as CalcitImplEntry,
+  enum: null as CalcitImplEntry,
+  struct: null as CalcitImplEntry,
   scalar: null as CalcitImplEntry,
 };
 
@@ -2156,10 +2153,10 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
     tag = "&core-map-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.map);
-  } else if (obj instanceof CalcitRecord) {
+  } else if (obj instanceof CalcitStructValue) {
     tag = obj.name.toString();
     let instanceImpls = obj.structRef.impls;
-    let builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.record);
+    let builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.struct);
     if (builtinRecordImpls && instanceImpls && instanceImpls.length > 0) {
       impls = [...builtinRecordImpls, ...instanceImpls];
     } else if (builtinRecordImpls) {
@@ -2167,10 +2164,10 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     } else {
       impls = instanceImpls;
     }
-  } else if (obj instanceof CalcitTuple) {
+  } else if (obj instanceof CalcitEnumValue) {
     tag = obj.tag.toString();
     let instanceImpls = obj.impls;
-    let builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.tuple);
+    let builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.enum);
     if (builtinTupleImpls && instanceImpls && instanceImpls.length > 0) {
       impls = [...builtinTupleImpls, ...instanceImpls];
     } else if (builtinTupleImpls) {
@@ -2181,16 +2178,16 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.set);
-  } else if (obj instanceof CalcitStruct) {
+  } else if (obj instanceof CalcitStructDef) {
     // Bare type definitions (not yet instantiated) carry their own attached
     // impls, so introspection tools like `&methods-of` can answer "what
     // methods will instances of this type have" without a concrete instance.
     tag = obj.name.toString();
-    const builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.record) ?? [];
+    const builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.struct) ?? [];
     impls = [...builtinRecordImpls, ...(obj.impls ?? [])];
-  } else if (obj instanceof CalcitEnum) {
+  } else if (obj instanceof CalcitEnumDef) {
     tag = obj.name();
-    const builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.tuple) ?? [];
+    const builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.enum) ?? [];
     impls = [...builtinTupleImpls, ...(obj.impls ?? [])];
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
@@ -2226,7 +2223,7 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   let tag = pair[1];
   // builtin impl lists are ordered by priority in calcit-core.
   // user-defined values use impl-traits append, so later impls override earlier ones.
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
+  let reverse = obj instanceof CalcitStructValue || obj instanceof CalcitEnumValue || obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef;
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     let klass = impls[idx];
@@ -2255,7 +2252,7 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
     throw new Error(`&methods-of cannot resolve impls for: ${toString(obj, true)}`);
   }
   let impls = pair[0];
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
+  let reverse = obj instanceof CalcitStructValue || obj instanceof CalcitEnumValue || obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef;
   let seen = new Set<string>();
   let ys: CalcitValue[] = [];
 
@@ -2298,7 +2295,7 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
     throw new Error(`&inspect-methods cannot resolve impls for: ${toString(obj, true)}`);
   }
   let impls = pair[0];
-  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
+  let reverse = obj instanceof CalcitStructValue || obj instanceof CalcitEnumValue || obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef;
 
   console.log("\n&inspect-methods");
   console.log(`Note: ${toString(note, true)}`);
@@ -2352,7 +2349,7 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
     throw new Error(`&trait-call cannot resolve impls for: ${toString(obj, true)}`);
   }
   const impls = pair[0];
-  const reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple || obj instanceof CalcitStruct || obj instanceof CalcitEnum;
+  const reverse = obj instanceof CalcitStructValue || obj instanceof CalcitEnumValue || obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef;
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     const impl = impls[idx];

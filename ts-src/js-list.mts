@@ -18,7 +18,7 @@ import {
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitEnumValue } from "./js-enum-value.mjs";
 
 import { isNestedCalcitData, tipNestedCalcitData, toString, CalcitFn } from "./calcit-data.mjs";
 
@@ -349,7 +349,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let idx = 0; idx < size; idx++) {
       let item = xs.get(idx);
       let pair = f(state, item);
-      if (pair instanceof CalcitTuple) {
+      if (pair instanceof CalcitEnumValue) {
         if (typeof pair.tag === "boolean") {
           if (pair.tag) {
             return pair.get(1);
@@ -369,7 +369,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let idx = 0; idx < values.length; idx++) {
       let item = values[idx];
       let pair = f(state, item);
-      if (pair instanceof CalcitTuple) {
+      if (pair instanceof CalcitEnumValue) {
         if (typeof pair.tag === "boolean") {
           if (pair.tag) {
             return pair.get(1);
@@ -390,7 +390,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let i = 0; i < size; i++) {
       let pos = i << 1;
       let pair = f(state, new CalcitSliceList([xs.chunk[pos], xs.chunk[pos + 1]]));
-      if (pair instanceof CalcitTuple) {
+      if (pair instanceof CalcitEnumValue) {
         if (typeof pair.tag === "boolean") {
           if (pair.tag) {
             return pair.get(1);
@@ -410,7 +410,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let idx = 0; idx < pairs.length; idx++) {
       let item = pairs[idx];
       let pair = f(state, new CalcitSliceList(item));
-      if (pair instanceof CalcitTuple) {
+      if (pair instanceof CalcitEnumValue) {
         if (typeof pair.tag === "boolean") {
           if (pair.tag) {
             return pair.get(1);
@@ -440,7 +440,7 @@ export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let idx = xs.len() - 1; idx >= 0; idx--) {
       let item = xs.get(idx);
       let pair = f(state, item);
-      if (pair instanceof CalcitTuple) {
+      if (pair instanceof CalcitEnumValue) {
         if (typeof pair.tag === "boolean") {
           if (pair.tag) {
             return pair.get(1);

@@ -85,7 +85,7 @@
           :schema $ :: 'Dynamic
         |check-point-type $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn check-point-type (p) (record? p)
+            defn check-point-type (p) (struct? p)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
@@ -119,7 +119,7 @@
                     {} $ :Lagopus0
                       %{} Lagopus $ :name nil
                 println |EDN: data
-                assert= true $ any? (&record:impls data)
+                assert= true $ any? (&struct:impls data)
                   fn (impl)
                     = (impl-origin impl) (%some BirdTrait)
               let
@@ -158,15 +158,15 @@
                   a1 $ %{} A (:a 1)
                   b1 $ %{} B (:b 2)
                   c1 $ %{} C (:c 3)
-                assert= 1 $ record-match a1
+                assert= 1 $ struct-match a1
                   A aa $ :a aa
                   B bb $ :b bb
                   _ o (println |others) :other
-                assert= 2 $ record-match b1
+                assert= 2 $ struct-match b1
                   A aa $ :a aa
                   B bb $ :b bb
                   _ o (println |others) :other
-                assert= :other $ record-match c1
+                assert= :other $ struct-match c1
                   A aa $ :a aa
                   B bb $ :b bb
                   _ o (println |others) :other
@@ -179,34 +179,34 @@
             fn () (log-title "|Testing record methods")
               &let
                 kitty $ %{} Cat (:name |kitty) (:color :red)
-                assert= :Cat $ &record:get-name kitty
-                assert= :red $ &record:get kitty :color
-                assert= true $ = (record-struct kitty) Cat
-                assert= true $ struct? (record-struct kitty)
-                assert= true $ &record:matches? kitty
-                  %{} (record-struct kitty) (:name |kitty) (:color :red)
-                assert= (&record:to-map kitty) (&{} :name |kitty :color :red)
-                assert= 2 $ &record:count kitty
+                assert= :Cat $ &struct:get-name kitty
+                assert= :red $ &struct:get kitty :color
+                assert= true $ = (&struct:definition kitty) Cat
+                assert= true $ struct-def? (&struct:definition kitty)
+                assert= true $ &struct:matches? kitty
+                  %{} (&struct:definition kitty) (:name |kitty) (:color :red)
+                assert= (&struct:to-map kitty) (&{} :name |kitty :color :red)
+                assert= 2 $ &struct:count kitty
                 assert=
-                  &record:get kitty $ &record:field-tag kitty 0
-                  &record:nth kitty 0
+                  &struct:get kitty $ &struct:field-tag kitty 0
+                  &struct:nth kitty 0
                 assert=
-                  &record:get kitty $ &record:field-tag kitty 1
-                  &record:nth kitty 1
-                assert= true $ &record:contains? kitty (&record:field-tag kitty 0)
-                assert= true $ &record:contains? kitty (&record:field-tag kitty 1)
-                assert= true $ &record:contains? kitty :color
-                assert= false $ &record:contains? kitty :age
+                  &struct:get kitty $ &struct:field-tag kitty 1
+                  &struct:nth kitty 1
+                assert= true $ &struct:contains? kitty (&struct:field-tag kitty 0)
+                assert= true $ &struct:contains? kitty (&struct:field-tag kitty 1)
+                assert= true $ &struct:contains? kitty :color
+                assert= false $ &struct:contains? kitty :age
                 assert=
                   %{} Cat (:name |kitty) (:color :blue)
-                  &record:assoc kitty :color :blue
+                  &struct:assoc kitty :color :blue
                 assert=
-                  &record:from-map Cat $ &{} :name |kitty :color :red
+                  &struct:from-map Cat $ &{} :name |kitty :color :red
                   %{} Cat (:name |kitty) (:color :red)
                 &let
-                  persian $ &record:extend-as kitty :Persian :age 10
-                  assert= 10 $ &record:get persian :age
-                  assert= :Persian $ &record:get-name persian
+                  persian $ &struct:extend-as kitty :Persian :age 10
+                  assert= 10 $ &struct:get persian :age
+                  assert= :Persian $ &struct:get-name persian
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -218,13 +218,13 @@
                   p1 $ %{}? Person (:name |Chen)
                   p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
                   p3 $ %{}? Person (:age 31)
-                assert= (%some |Chen) (get p1 :name)
-                assert= (%some nil) (get p1 :age)
-                assert= (%some nil) (get p1 :position)
-                assert= (%some 20) (get p2 :age)
-                assert= (%some nil) (get p3 :name)
-                assert= (%some 31) (get p3 :age)
-                assert= (%some nil) (get p3 :position)
+                assert= |Chen $ get p1 :name
+                assert= nil $ get p1 :age
+                assert= nil $ get p1 :position
+                assert= 20 $ get p2 :age
+                assert= nil $ get p3 :name
+                assert= 31 $ get p3 :age
+                assert= nil $ get p3 :position
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -246,7 +246,7 @@
                   println l1
                   l1t .show
                   l2t .show
-                  assert= (&record:impls l1) (&record:impls a1r)
+                  assert= (&struct:impls l1) (&struct:impls a1r)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -282,29 +282,28 @@
                   p0 $ &%{} Person :name nil :age nil :position nil
                   p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                   c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
-                assert= true $ = (record-struct p0) Person
-                assert= (%some nil) (get p0 :age)
-                assert= (%some nil) (get p0 :name)
-                assert= (%some nil) (get p0 :position)
-                assert= (%some 20) (get p1 :age)
-                assert= (%some 20) (get p2 :age)
-                assert= (%some 23) (get p3 :age)
-                assert= 23 $ &record:get p3 :age
-                assert= :record $ type-of p1
-                assert= (&record:to-map p1)
+                assert= true $ = (&struct:definition p0) Person
+                assert= nil $ get p0 :age
+                assert= nil $ get p0 :name
+                assert= nil $ get p0 :position
+                assert= 20 $ get p1 :age
+                assert= 20 $ get p2 :age
+                assert= 23 $ get p3 :age
+                assert= 23 $ &struct:get p3 :age
+                assert= :struct $ type-of p1
+                assert= (&struct:to-map p1)
                   {} (:name |Chen) (:age 20) (:position :mainland)
-                assert= (%some 21)
-                  get
-                    &record:from-map Person $ {} (:name |Chen) (:age 21) (:position :mainland)
-                    , :age
+                assert= 21 $ get
+                  &struct:from-map Person $ {} (:name |Chen) (:age 21) (:position :mainland)
+                  , :age
                 assert= (keys p2) (#{} :age :name :position)
-                assert-detect identity $ &record:matches? p1 p1
-                assert-detect identity $ &record:matches? p1 p2
-                assert-detect not $ &record:matches? p1 c1
+                assert-detect identity $ &struct:matches? p1 p1
+                assert-detect identity $ &struct:matches? p1 p2
+                assert-detect not $ &struct:matches? p1 c1
                 &let
                   p4 $ assoc p1 :age 30
-                  assert= (%some 20) (get p1 :age)
-                  assert= (%some 30) (get p4 :age)
+                  assert= 20 $ get p1 :age
+                  assert= 30 $ get p4 :age
                 inside-js: $ js/console.log (to-js-data p1)
                 assert-detect identity $ = p1 p1
                 assert-detect identity $ = p1 p2
@@ -319,11 +318,10 @@
                 assert-detect identity $ contains? p1 :name
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1
-                assert= (%some 21)
-                  get
-                    update p1 :age $ fn (age)
-                      if (nil? age) 1 $ inc age
-                    , :age
+                assert= 21 $ get
+                  update p1 :age $ fn (age)
+                    if (nil? age) 1 $ inc age
+                  , :age
                 assert= 20 $ :age p1
           :examples $ []
           :schema $ :: 'Fn
@@ -335,13 +333,13 @@
             fn () (log-title "|Testing record-with")
               let
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
-                  p2 $ record-with p1 (:age 21) (:position :shanghai)
+                  p2 $ struct-with p1 (:age 21) (:position :shanghai)
                 ; println |P2 p2
-                assert= (%some 20) (get p1 :age)
-                assert= (%some 21) (get p2 :age)
-                assert= (%some :hangzhou) (get p1 :position)
-                assert= (%some :shanghai) (get p2 :position)
-                assert= (%some |Chen) (get p2 :name)
+                assert= 20 $ get p1 :age
+                assert= 21 $ get p2 :age
+                assert= :hangzhou $ get p1 :position
+                assert= :shanghai $ get p2 :position
+                assert= |Chen $ get p2 :name
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
