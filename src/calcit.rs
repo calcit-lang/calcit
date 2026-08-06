@@ -256,7 +256,7 @@ impl fmt::Display for Calcit {
         if record::LOOSE_RECORD_NAME == struct_ref.name.ref_str() {
           f.write_str("(?{}")?;
         } else {
-          f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+          f.write_str(&format!("(%{{}} '{}", struct_ref.name))?;
         }
         for idx in 0..struct_ref.fields.len() {
           f.write_str(&format!(" ({} {})", Calcit::tag(struct_ref.fields[idx].ref_str()), values[idx]))?;
@@ -267,7 +267,7 @@ impl fmt::Display for Calcit {
         name, fields, field_types, ..
       }) => {
         f.write_str("(%struct ")?;
-        f.write_str(&format!(":{name}"))?;
+        f.write_str(&format!("'{name}"))?;
         for (k, t) in fields.iter().zip(field_types.iter()) {
           f.write_char(' ')?;
           f.write_str(&format!("(:{k} {})", t.to_brief_string()))?;
@@ -276,7 +276,7 @@ impl fmt::Display for Calcit {
       }
       Enum(enum_def) => {
         f.write_str("(%enum ")?;
-        f.write_str(&format!(":{}", enum_def.name()))?;
+        f.write_str(&format!("'{}", enum_def.name()))?;
         for variant in enum_def.variants() {
           f.write_char(' ')?;
           f.write_str(&format!("(:{}", variant.tag))?;
@@ -1605,9 +1605,21 @@ mod tests {
     };
     let enum_value = Calcit::Enum(CalcitEnum::from_record(enum_record).expect("valid enum"));
     let text = enum_value.to_string();
-    assert!(text.starts_with("(%enum :Result"), "unexpected display: {text}");
+    assert!(text.starts_with("(%enum 'Result"), "unexpected display: {text}");
     assert!(text.contains(":ok)"), "missing zero-payload variant: {text}");
     assert!(text.contains(":err :string)"), "missing payload variant: {text}");
+  }
+
+  #[test]
+  fn named_data_display_uses_symbol_name() {
+    let record = Calcit::Record(CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("TodoState"), vec![EdnTag::new("draft")])),
+      values: Arc::new(vec![Calcit::Str(Arc::from(""))]),
+    });
+    let struct_def = Calcit::Struct(CalcitStruct::from_fields(EdnTag::new("TodoState"), vec![EdnTag::new("draft")]));
+
+    assert_eq!(record.to_string(), "(%{} 'TodoState (:draft |))");
+    assert!(struct_def.to_string().starts_with("(%struct 'TodoState"));
   }
 
   #[test]

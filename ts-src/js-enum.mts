@@ -31,6 +31,6 @@ export class CalcitEnum {
   }
 
   toString(): string {
-    return `(%enum :${this.prototype.name.value})`;
+    return `(%enum '${this.prototype.name.value})`;
   }
 }

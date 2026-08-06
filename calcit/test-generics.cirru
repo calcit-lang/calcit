@@ -18,6 +18,13 @@
               :box $ :: 'Box 'T
           :examples $ []
           :schema $ :: 'Dynamic
+        |Node $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Node
+              :next $ :: 'Optional Node
+              :value 'Number
+          :examples $ []
+          :schema $ :: 'Dynamic
         |Pair $ %{} :CodeEntry (:doc "|Generic pair struct")
           :code $ quote
             defstruct Pair ([] 'T 'U) (:left 'T) (:right 'U)
@@ -25,7 +32,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () $ do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-fn-generics) (println "|Generics tests passed")
+            defn main! () $ do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-recursive-struct) (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
           :schema $ :: 'Dynamic
         |pair-right $ %{} :CodeEntry (:doc "|Return the right value from a generic pair")
@@ -82,6 +89,17 @@
               &inspect-type n
               &inspect-type s
               &inspect-type show-id
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-recursive-struct $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-recursive-struct () (println "|Testing recursive struct support...")
+              let
+                  leaf $ %{} Node (:next nil) (:value 1)
+                  nested $ %{} Node (:next leaf) (:value 2)
+                assert= 1 $ :value (:next nested)
+                assert= 2 $ :value nested
+                println "|Recursive struct support passed"
           :examples $ []
           :schema $ :: 'Dynamic
         |test-struct-generics $ %{} :CodeEntry (:doc |)

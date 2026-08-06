@@ -3,6 +3,8 @@ import { CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 
 import { CalcitRecord } from "./js-record.mjs";
+import { CalcitStruct } from "./js-struct.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet } from "./js-set.mjs";
@@ -180,19 +182,41 @@ export let load_console_formatter_$x_ = () => {
             );
           }
           if (obj instanceof CalcitRecord) {
+            let name = new CalcitSymbol(obj.name.value);
             if (obj.structRef.impls.length > 0) {
               let ret: any[] = div(
                 { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
                 span({}, "%{}"),
                 span({ marginLeft: "6px" }, embedObject(obj.structRef.impls[0])),
-                span({ marginLeft: "6px" }, embedObject(obj.name)),
+                span({ marginLeft: "6px" }, embedObject(name)),
                 span({ marginLeft: "6px" }, `...`)
               );
               return ret;
             } else {
-              let ret: any[] = div({ color: hsl(280, 80, 60, 0.4), maxWidth: "100%" }, `%{} ${obj.name} ...`);
+              let ret: any[] = div(
+                { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
+                "%{} ",
+                embedObject(name),
+                " ..."
+              );
               return ret;
             }
+          }
+          if (obj instanceof CalcitStruct) {
+            return div(
+              { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
+              "%struct ",
+              embedObject(new CalcitSymbol(obj.name.value)),
+              " ..."
+            );
+          }
+          if (obj instanceof CalcitEnum) {
+            return div(
+              { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
+              "%enum ",
+              embedObject(new CalcitSymbol(obj.prototype.name.value)),
+              " ..."
+            );
           }
           if (obj instanceof CalcitTuple) {
             if (obj.impls.length > 0) {
@@ -254,6 +278,9 @@ export let load_console_formatter_$x_ = () => {
           }
           if (obj instanceof CalcitRecord) {
             return obj.fields.length > 0;
+          }
+          if (obj instanceof CalcitStruct || obj instanceof CalcitEnum) {
+            return obj instanceof CalcitStruct ? obj.fields.length > 0 : obj.prototype.fields.length > 0;
           }
           return false;
         },
@@ -325,6 +352,32 @@ export let load_console_formatter_$x_ = () => {
                   {},
                   td({ paddingLeft: "8px", verticalAlign: "top", whiteSpace: "pre", minWidth: "40px" }, embedObject(obj.fields[idx])),
                   td({ paddingLeft: "8px" }, embedObject(obj.values[idx]))
+                )
+              );
+            }
+            return ret;
+          }
+          if (obj instanceof CalcitStruct) {
+            let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
+            for (let idx = 0; idx < obj.fields.length; idx++) {
+              ret.push(
+                tr(
+                  {},
+                  td({ paddingLeft: "8px", verticalAlign: "top", whiteSpace: "pre", minWidth: "40px" }, embedObject(obj.fields[idx])),
+                  td({ paddingLeft: "8px" }, embedObject(obj.fieldTypes[idx]))
+                )
+              );
+            }
+            return ret;
+          }
+          if (obj instanceof CalcitEnum) {
+            let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
+            for (let idx = 0; idx < obj.prototype.fields.length; idx++) {
+              ret.push(
+                tr(
+                  {},
+                  td({ paddingLeft: "8px", verticalAlign: "top", whiteSpace: "pre", minWidth: "40px" }, embedObject(obj.prototype.fields[idx])),
+                  td({ paddingLeft: "8px" }, embedObject(obj.prototype.values[idx]))
                 )
               );
             }
