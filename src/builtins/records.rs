@@ -1512,6 +1512,26 @@ mod tests {
   }
 
   #[test]
+  fn required_recursive_field_returns_a_type_error_without_recursing() {
+    let struct_def = CalcitStruct {
+      name: EdnTag::new("RequiredNode"),
+      fields: Arc::new(vec![EdnTag::new("next")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("RequiredNode"),
+        Arc::new(vec![]),
+      ))]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    };
+
+    let err = call_record(&[Calcit::Struct(struct_def), Calcit::tag("next"), Calcit::Nil])
+      .expect_err("a required recursive field must reject nil instead of recursing");
+
+    assert!(err.msg.contains("expects type `'RequiredNode`"), "unexpected error: {err:?}");
+  }
+
+  #[test]
   fn indexed_record_updates_reject_stale_field_tags() {
     let record = indexed_record_fixture();
     let assoc_error = record_assoc_at(&[record.clone(), Calcit::Number(0.0), Calcit::tag("y"), Calcit::Number(3.0)])

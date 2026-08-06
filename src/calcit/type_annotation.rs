@@ -2065,6 +2065,17 @@ impl CalcitTypeAnnotation {
       }
     }
 
+    // Keep a self-referential field annotation nominal. Resolving it would
+    // eagerly rebuild its struct and unfold the declaration until the process
+    // exhausts its stack. Other named forms retain their existing resolution
+    // behavior (notably trait references).
+    if strict_named_refs
+      && matches!(form, Calcit::Symbol { sym, info, .. } if sym == &info.at_def)
+      && let Some(name) = Self::extract_type_ref_name(form)
+    {
+      return Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])));
+    }
+
     if let Some(resolved) = resolve_calcit_value(form) {
       match resolved {
         Calcit::Trait(trait_def) => return Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def))),
@@ -3575,6 +3586,29 @@ mod tests {
       }),
       location: None,
     }
+  }
+
+  #[test]
+  fn strict_parser_keeps_recursive_struct_name_as_type_ref() {
+    let self_symbol = Calcit::Symbol {
+      sym: Arc::from("Node"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests"),
+        at_def: Arc::from("Node"),
+      }),
+      location: None,
+    };
+    let optional_node = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeTuple), symbol("Optional"), self_symbol]);
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&optional_node, &[]);
+    assert!(
+      matches!(
+        parsed.as_ref(),
+        CalcitTypeAnnotation::Optional(inner)
+          if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Node" && args.is_empty())
+      ),
+      "recursive field annotation must remain a finite TypeRef, got {parsed:?}"
+    );
   }
 
   fn generic_result_enum() -> Arc<CalcitEnum> {

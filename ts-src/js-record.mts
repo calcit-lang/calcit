@@ -70,7 +70,7 @@ export class CalcitRecord {
   }
   toString(disableJsDataWarning: boolean = false): string {
     // Optimize string building using array join instead of concatenation
-    const parts = ["(%{} ", this.name.toString()];
+    const parts = ["(%{} '", this.name.value];
     for (let idx = 0; idx < this.fields.length; idx++) {
       parts.push(" (", this.fields[idx].toString(), " ", toString(this.values[idx], true, disableJsDataWarning), ")");
     }

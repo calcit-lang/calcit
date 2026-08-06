@@ -33,7 +33,7 @@ export class CalcitStruct {
     if (this.fields.length !== this.fieldTypes.length) {
       throw new Error("CalcitStruct: fields and fieldTypes length mismatch");
     }
-    const parts: string[] = ["(%struct :", this.name.value];
+    const parts: string[] = ["(%struct '", this.name.value];
     for (let idx = 0; idx < this.fields.length; idx++) {
       const field = this.fields[idx];
       const fieldType = this.fieldTypes[idx];
