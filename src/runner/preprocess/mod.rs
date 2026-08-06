@@ -1423,7 +1423,7 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_quasiquote(name, name_ns, &args, &mut ctx)?)
         }
-        CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
+        CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_defn(name, name_ns, &args, &mut ctx)?)
         }
@@ -2280,7 +2280,10 @@ fn check_recur_arity_in_expr(
           );
         }
       } else if let Some(Calcit::Syntax(s, _)) = xs.first()
-        && (s == &CalcitSyntax::Defn || s == &CalcitSyntax::Defmacro)
+        && (s == &CalcitSyntax::Defn
+          || s == &CalcitSyntax::Defmacro
+          || s == &CalcitSyntax::DefWasmExport
+          || s == &CalcitSyntax::DefWasmImport)
       {
         // This is a separate function scope. It will be checked by its own preprocess_defn call.
         return;
@@ -5211,6 +5214,8 @@ fn validate_def_schema_during_preprocess(
 
   let code_kind = match head {
     CalcitSyntax::Defn => "defn",
+    CalcitSyntax::DefWasmExport => "defwasm-export",
+    CalcitSyntax::DefWasmImport => "defwasm-import",
     CalcitSyntax::Defmacro => "defmacro",
     _ => return vec![],
   };

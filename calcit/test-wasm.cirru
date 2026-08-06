@@ -62,6 +62,13 @@
               if (&= b 0) a $ recur b (&number:rem a b)
           :examples $ []
           :schema $ :: 'Dynamic
+        |host-string-upcase $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defwasm-import host-string-upcase (text) |host |string-upcase
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'String)
+              :args $ [] 'String
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ println (fibo 10)
@@ -1173,6 +1180,20 @@
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
+        |wasm-ffi-add $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export wasm-ffi-add (a b) (&+ a b)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Number 'Number
+        |wasm-ffi-upcase $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defwasm-export wasm-ffi-upcase (text) (host-string-upcase text)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'String)
+              :args $ [] 'String
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
           ns test-wasm.main $ :require (test-wasm.helper :as helper)

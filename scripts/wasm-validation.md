@@ -35,6 +35,7 @@
 | `&str:includes?`                       | ✅   | `find-index >= 0`          |
 | `&str:pad-left` / `&str:pad-right`     | ✅   | 循环填充 pattern 字节    |
 | `__str_new` (FFI)                      | ✅   | JS → WASM 字符串传递     |
+| `defwasm-import` / `defwasm-export`    | ✅   | 显式声明 host ABI，支持 Number / String |
 
 **不支持（留给解释器/JS codegen）：**
 
@@ -51,6 +52,30 @@ yarn try-wasm
 ```
 
 脚本会通过 `internal-wasm` feature 构建内部 runner，生成 `js-out/program.wasm`，再使用 Node.js 验证导出函数。不支持的函数会把 skip 信息写到 stderr。
+
+## 声明式 WASM FFI
+
+`defwasm-export` 标记提供给宿主程序的稳定入口；它和 `defn` 使用同一函数形状。若带该标记的定义无法被 WASM codegen 编译，编译会失败，避免把错误的占位函数暴露给宿主：
+
+```cirru.no-check
+defwasm-export add (a b)
+  &+ a b
+```
+
+`defwasm-import` 声明一个由宿主提供的函数。定义体的前两个字符串分别是 WASM import 的 module 和 field：
+
+```cirru.no-check
+defwasm-import host-upcase (text)
+  |host
+  |string-upcase
+
+defwasm-export upcase (text)
+  host-upcase text
+```
+
+首版 ABI 的所有参数和返回值都是 `f64`。`Number` 直接传递；`String` 传递其 Calcit 字符串的逻辑指针（以 `f64` 表示）。因此宿主应使用下文的字符串布局读取 String，并使用 `__str_new` 或同一布局分配返回 String。`nil` 为 `0`。
+
+为了保持现有内部调试入口兼容，当前模块仍导出可编译的普通 `defn`；`defwasm-export` 的作用是声明并校验面向宿主的 ABI，而不是隐藏旧导出。以后如需要严格的 export allowlist，会以显式编译选项引入。
 
 ## 字符串内存布局
 

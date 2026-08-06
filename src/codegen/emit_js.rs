@@ -388,7 +388,7 @@ fn gen_call_code(
           (_, _) => Err(format!("defatom expected name and value, got: {body}")),
         },
 
-        CalcitSyntax::Defn => match (body.first(), body.get(1)) {
+        CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport => match (body.first(), body.get(1)) {
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &[]);
@@ -875,7 +875,13 @@ fn detect_await(xs: &CalcitList) -> bool {
   for x in xs {
     match x {
       Calcit::List(al) => {
-        if let Some(Calcit::Syntax(CalcitSyntax::Defn, _s)) = al.get(0) {
+        if matches!(
+          al.get(0),
+          Some(Calcit::Syntax(
+            CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+            _
+          ))
+        ) {
           // a nested function has its own scope deciding if it's async
           return false;
         } else if detect_await(al) {
@@ -1297,8 +1303,8 @@ fn uses_recur(xs: &Calcit) -> bool {
     Calcit::Symbol { sym: s, .. } => &**s == "recur",
     Calcit::Proc(s) => *s == CalcitProc::Recur,
     Calcit::List(ys) => match &ys.first() {
-      Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => false,
-      Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
+      Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)) => false,
+      Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "defn" | "defwasm-export" | "defwasm-import") => false,
       _ => {
         for y in &**ys {
           if uses_recur(y) {
@@ -1570,7 +1576,11 @@ fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Cal
   };
 
   match (items.first(), items.get(1), items.get(2)) {
-    (Some(Calcit::Syntax(CalcitSyntax::Defn, _)), Some(Calcit::Symbol { .. }), Some(Calcit::List(args))) => {
+    (
+      Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)),
+      Some(Calcit::Symbol { .. }),
+      Some(Calcit::List(args)),
+    ) => {
       let raw_args = get_raw_args_fn(args)?;
       Ok((raw_args, items.drop_left().drop_left().drop_left().to_vec()))
     }

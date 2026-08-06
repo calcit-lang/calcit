@@ -78,8 +78,11 @@ impl CompiledDefKind {
       Calcit::Proc(..) => Self::Proc,
       Calcit::Syntax(..) => Self::Syntax,
       Calcit::List(xs) => match xs.first() {
-        Some(Calcit::Syntax(calcit::CalcitSyntax::Defn, _)) => Self::Fn,
-        Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defn" => Self::Fn,
+        Some(Calcit::Syntax(
+          calcit::CalcitSyntax::Defn | calcit::CalcitSyntax::DefWasmExport | calcit::CalcitSyntax::DefWasmImport,
+          _,
+        )) => Self::Fn,
+        Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "defn" | "defwasm-export" | "defwasm-import") => Self::Fn,
         Some(Calcit::Syntax(calcit::CalcitSyntax::Defmacro, _)) => Self::Macro,
         Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro" => Self::Macro,
         _ => Self::LazyValue,

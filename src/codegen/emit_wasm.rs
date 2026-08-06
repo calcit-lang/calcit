@@ -46,7 +46,7 @@ use records::{
   emit_record_matches, emit_record_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count,
   emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
 };
-use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
+use runtime::{HOST_IMPORTS, HostImport, build_runtime_fns, build_wasm_module};
 
 /// Base offset — reserve first 16 bytes for bookkeeping.
 /// The actual heap start will be shifted when string literals occupy the
@@ -140,6 +140,12 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
+      if is_wasm_import_def(&compiled.preprocessed_code) {
+        parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
+          format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
+        })?;
+        continue;
+      }
       match extract_fn_parts(&compiled.preprocessed_code) {
         Ok((args, body)) => {
           fn_defs.push((ns.to_string(), def_name.to_string(), args, body));
@@ -155,8 +161,33 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
 
-  // Build fn_index: host imports first, then user functions offset by num_imports
-  let num_imports = HOST_IMPORTS.len() as u32;
+  // Build the import table before assigning user function indices. Built-in imports
+  // stay first so internal lowering keeps its stable indices; user declarations
+  // append after them.
+  let mut host_imports = HOST_IMPORTS.to_vec();
+  let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
+  for &ns in &ns_order {
+    let Some(file_info) = program_data.get(ns) else {
+      continue;
+    };
+    for (def_name, compiled) in &file_info.defs {
+      if !is_wasm_import_def(&compiled.preprocessed_code) {
+        continue;
+      }
+      let (module, name, args) = parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
+        format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
+      })?;
+      let index = host_imports.len() as u32;
+      host_imports.push(HostImport {
+        module,
+        name,
+        arity: compute_fn_arity(&args).0 as usize,
+      });
+      wasm_import_names.insert(format!("{ns}/{def_name}"), index);
+      wasm_import_names.insert(def_name.to_string(), index);
+    }
+  }
+  let num_imports = host_imports.len() as u32;
 
   // Collect tags early — needed to embed the string type tag in the __str_new helper.
   let tag_index = collect_all_tags_from(&fn_defs);
@@ -198,6 +229,9 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // fn_table_index: user calcit fn (index i in fn_defs) → table slot i.
   // Table slots are 0-based within user calcit functions only (not runtime helpers).
   let mut fn_table_index: HashMap<String, u32> = HashMap::new();
+  for (name, index) in &wasm_import_names {
+    fn_index.insert(name.clone(), *index);
+  }
   for (i, (ns, name, args, _)) in fn_defs.iter().enumerate() {
     let idx = num_imports + runtime_fn_count + i as u32;
     let qualified = format!("{ns}/{name}");
@@ -269,6 +303,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Second pass: compile. If a function fails, we still reserve its slot
   // with a trivial body so indices remain stable.
   for (ns, def_name, args, body) in &fn_defs {
+    let explicit_export = program_data
+      .get(ns.as_str())
+      .and_then(|file| file.defs.get(def_name.as_str()))
+      .is_some_and(|compiled| is_wasm_export_def(&compiled.preprocessed_code));
     let export_name = if export_name_counts.get(def_name).copied().unwrap_or(0) > 1 {
       format!("{ns}/{def_name}")
     } else {
@@ -280,6 +318,9 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     match result {
       Ok(func) => compiled_fns.push(func),
       Err(e) => {
+        if explicit_export {
+          return Err(format!("[wasm] exported function {ns}/{def_name} is not compilable: {e}"));
+        }
         eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
         let (arity, _) = compute_fn_arity(args);
         compiled_fns.push(CompiledFn {
@@ -300,6 +341,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Build module using wasm-encoder
   let wasm_bytes = build_wasm_module(
     &compiled_fns,
+    &host_imports,
     heap_start,
     &string_data_segment,
     &atom_initial_values,
@@ -352,12 +394,50 @@ fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String
     return Err(format!("expected preprocessed defn list, got: {code}"));
   };
   match (items.first(), items.get(1), items.get(2)) {
-    (Some(Calcit::Syntax(CalcitSyntax::Defn, _)), Some(Calcit::Symbol { .. }), Some(Calcit::List(args))) => {
+    (
+      Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)),
+      Some(Calcit::Symbol { .. }),
+      Some(Calcit::List(args)),
+    ) => {
       let raw_args = get_raw_args_fn(args)?;
       Ok((raw_args, items.drop_left().drop_left().drop_left().to_vec()))
     }
     _ => Err(format!("expected preprocessed defn form, got: {code}")),
   }
+}
+
+fn is_wasm_export_def(code: &Calcit) -> bool {
+  matches!(code, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmExport, _))))
+}
+
+fn is_wasm_import_def(code: &Calcit) -> bool {
+  matches!(code, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmImport, _))))
+}
+
+/// A WASM import is a function-shaped definition whose first two body forms are
+/// literal module and field names, for example:
+/// `defwasm-import host-upper (text) |host |upper`.
+fn parse_wasm_import_def(code: &Calcit) -> Option<(String, String, CalcitFnArgs)> {
+  let Calcit::List(xs) = code else {
+    return None;
+  };
+  if !matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmImport, _))) {
+    return None;
+  }
+  let Calcit::List(args) = xs.get(2)? else {
+    return None;
+  };
+  let args = get_raw_args_fn(args).ok()?;
+  // Schema validation can prepend internal forms to the function body, so find
+  // the first two literal strings after the argument list instead of relying on
+  // fixed child positions in preprocessed code.
+  let mut names = xs.iter().skip(3).filter_map(|item| match item {
+    Calcit::Str(value) => Some(value.to_string()),
+    _ => None,
+  });
+  let module = names.next()?;
+  let name = names.next()?;
+  Some((module, name, args))
 }
 
 /// Context for WASM code generation within a single function.

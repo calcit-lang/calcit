@@ -119,10 +119,44 @@ const inst = new WebAssembly.Instance(mod, {
       return strPtr;
     },
   },
+  // User-declared FFI import used by `defwasm-import` regression tests.
+  // It receives and returns Calcit string pointers through the standard f64 ABI.
+  host: {
+    "string-upcase": (ptr) => {
+      const input = readWasmStr(ptr);
+      if (input === null) return 0;
+      const bytes = new TextEncoder().encode(input.toUpperCase());
+      const strPtr = allocString(bytes.length);
+      const mem = new DataView(inst.exports.memory.buffer);
+      const iptr = strPtr | 0;
+      mem.setFloat64(iptr, bytes.length, true);
+      new Uint8Array(mem.buffer, iptr + 8, bytes.length).set(bytes);
+      return strPtr;
+    },
+  },
 });
 const e = inst.exports;
 
 let fail = 0;
+
+function checkModuleContract(label, matched) {
+  if (matched) {
+    console.log(`  ${label}  OK`);
+  } else {
+    console.log(`  ${label}  FAIL`);
+    fail++;
+  }
+}
+
+const moduleExports = new Set(WebAssembly.Module.exports(mod).filter((item) => item.kind === "function").map((item) => item.name));
+checkModuleContract("exports wasm-ffi-add", moduleExports.has("wasm-ffi-add"));
+checkModuleContract("exports wasm-ffi-upcase", moduleExports.has("wasm-ffi-upcase"));
+
+const moduleImports = WebAssembly.Module.imports(mod);
+checkModuleContract(
+  "imports host/string-upcase",
+  moduleImports.some((item) => item.kind === "function" && item.module === "host" && item.name === "string-upcase")
+);
 
 function check(label, expected, fn, ...args) {
   const got = fn(...args);
@@ -498,6 +532,17 @@ check("test-display-by-hex()", 4, e["test-display-by-hex"]); // 17 in hex = "0x1
     console.log(`  __str_new FFI: '${decoded}'  FAIL (expected 'world')`);
     fail++;
   }
+}
+
+// --- Declared WASM FFI regression tests ---
+check("wasm-ffi-add(20, 22)", 42, e["wasm-ffi-add"], 20, 22);
+{
+  const bytes = new TextEncoder().encode("Calcit");
+  const strPtr = allocString(bytes.length);
+  const mem = new DataView(inst.exports.memory.buffer);
+  mem.setFloat64(strPtr | 0, bytes.length, true);
+  new Uint8Array(mem.buffer, (strPtr | 0) + 8, bytes.length).set(bytes);
+  checkStr("wasm-ffi-upcase('Calcit')", "CALCIT", e["wasm-ffi-upcase"], strPtr);
 }
 
 // --- println host import test ---

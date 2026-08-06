@@ -150,7 +150,13 @@ fn is_complex_syntax(x: &Calcit) -> bool {
     Calcit::List(xs) => match xs.first() {
       Some(Calcit::Syntax(syn, _)) => matches!(
         syn,
-        CalcitSyntax::If | CalcitSyntax::Try | CalcitSyntax::CoreLet | CalcitSyntax::Defn | CalcitSyntax::Defmacro
+        CalcitSyntax::If
+          | CalcitSyntax::Try
+          | CalcitSyntax::CoreLet
+          | CalcitSyntax::Defn
+          | CalcitSyntax::DefWasmExport
+          | CalcitSyntax::DefWasmImport
+          | CalcitSyntax::Defmacro
       ),
       Some(Calcit::Proc(CalcitProc::Raise)) => true,
       _ => false,

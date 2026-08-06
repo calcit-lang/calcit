@@ -490,7 +490,9 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // A preprocessed function remains a syntax list until runtime construction. Preserve an
         // explicit body `hint-fn` as its static value type; without a schema we only know that the
         // value is callable and deliberately keep its argument/return details dynamic.
-        Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::Defmacro, _) => Some(infer_preprocessed_function_type(xs)),
+        Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _) => {
+          Some(infer_preprocessed_function_type(xs))
+        }
 
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs.get(2).map(CalcitTypeAnnotation::parse_type_annotation_form),
 

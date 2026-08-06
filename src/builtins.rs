@@ -616,7 +616,7 @@ pub fn handle_syntax(
 ) -> Result<Calcit, CalcitErr> {
   use CalcitSyntax::*;
   match name {
-    Defn => syntax::defn(nodes, scope, file_ns),
+    Defn | DefWasmExport | DefWasmImport => syntax::defn(nodes, scope, file_ns),
     Eval => syntax::eval(nodes, scope, file_ns, call_stack),
     Defmacro => syntax::defmacro(nodes, scope, file_ns),
     Quote => syntax::quote(nodes, scope, file_ns),

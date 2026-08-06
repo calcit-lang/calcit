@@ -16,6 +16,12 @@ pub struct SyntaxTypeSignature {
 pub enum CalcitSyntax {
   #[strum(serialize = "defn")]
   Defn,
+  /// Define a function that is exported from a generated WASM module.
+  #[strum(serialize = "defwasm-export")]
+  DefWasmExport,
+  /// Declare a host function imported by a generated WASM module.
+  #[strum(serialize = "defwasm-import")]
+  DefWasmImport,
   #[strum(serialize = "defmacro")]
   Defmacro,
   #[strum(serialize = "if")]
@@ -183,7 +189,7 @@ impl CalcitSyntax {
         param_types: vec![dyn_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),
-      Defn | Defmacro | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
+      Defn | Defmacro | DefWasmExport | DefWasmImport | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
     }
   }
 }
