@@ -1297,7 +1297,7 @@ fn infer_record_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Optio
 
 fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
-  match builtins::records::new_struct(&args).ok()? {
+  match builtins::structs::new_struct(&args).ok()? {
     Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def)))),
     _ => None,
   }
@@ -1305,7 +1305,7 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
 
 fn infer_enum_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
-  match builtins::records::new_enum(&args).ok()? {
+  match builtins::structs::new_enum(&args).ok()? {
     Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def)))),
     _ => None,
   }

@@ -505,7 +505,7 @@ fn enum_prototype_marker() -> CalcitImpl {
 
 /// Partial record constructor — missing fields default to nil.
 /// Proto must be a `Calcit::StructDef` from `defstruct`.
-pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn call_struct_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{}? expected at least 1 argument, but received:", xs);
@@ -595,7 +595,7 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 /// Create a loose record from key-value pairs: `?{} :field1 val1 :field2 val2`
 /// Fields are sorted alphabetically, mirroring struct-backed record behaviour.
-pub fn call_loose_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn call_loose_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len().rem(2) != 0 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "?{} expected pairs of :field value, but received:", xs);
   }
@@ -633,7 +633,7 @@ pub fn call_loose_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 /// Direct indexed access to a struct field: `&struct:nth record index`
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
-pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // Accept 2 or 3 args: (struct, idx) or (struct, idx, :field-tag)
   // The 3rd arg (field tag) is only used by JS codegen; Rust runtime ignores it.
   if xs.len() < 2 || xs.len() > 3 {
@@ -668,7 +668,7 @@ pub fn record_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 /// Get the field tag (name) at a given index: `&struct:field-tag record index`
-pub fn record_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:field-tag expected 2 arguments, but received:", xs);
   }
@@ -702,7 +702,7 @@ pub fn record_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 /// Direct indexed assoc on a struct field: `&struct:assoc-at record index :field value`
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
-pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // 4 args: (struct, idx, :field-tag, value)
   // Keep the field tag as a runtime consistency check so a stale index cannot
   // silently update an adjacent field after schema drift.
@@ -761,7 +761,7 @@ pub fn record_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// Optimized `&struct:with` — field indices pre-resolved at compile time.
 /// Args: (struct, idx1, :tag1, val1, idx2, :tag2, val2, ...)
 /// Tags are carried for JS codegen; Rust runtime uses indices directly.
-pub fn record_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || !(xs.len() - 1).is_multiple_of(3) {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -841,7 +841,7 @@ fn checked_record_index(value: f64, operation: &str) -> Result<usize, CalcitErr>
   Ok(value as usize)
 }
 
-pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn call_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected at least 2 arguments, but received:", xs);
@@ -852,7 +852,7 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
       };
-      call_record_with_prototype(&record, xs)
+      call_struct_with_prototype(&record, xs)
     }
     Calcit::Struct(_) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -869,7 +869,7 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-fn call_record_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+fn call_struct_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   let CalcitStructValue { struct_ref, values: v0 } = record;
   if (args_size - 1).rem(2) != 0 {
@@ -981,7 +981,7 @@ fn call_record_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Resu
 }
 
 /// takes a record and pairs of key value(flatterned), and update the record. raise error if key not existed in the record
-pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 3 {
     return CalcitErr::err_nodes(
@@ -1112,7 +1112,7 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:from-map expected 2 arguments, but received:", xs);
   }
@@ -1188,7 +1188,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_record_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn get_struct_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:get-name expected a struct value, but received:", xs);
   }
@@ -1205,7 +1205,7 @@ pub fn get_record_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_record_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn get_struct_def(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
@@ -1533,7 +1533,7 @@ mod tests {
       impls: vec![],
     };
 
-    let err = call_record(&[Calcit::StructDef(struct_def), Calcit::tag("next"), Calcit::Nil])
+    let err = call_struct(&[Calcit::StructDef(struct_def), Calcit::tag("next"), Calcit::Nil])
       .expect_err("a required recursive field must reject nil instead of recursing");
 
     assert!(err.msg.contains("expects type `'RequiredNode`"), "unexpected error: {err:?}");
@@ -1551,24 +1551,24 @@ mod tests {
   #[test]
   fn indexed_record_updates_reject_stale_field_tags() {
     let record = indexed_record_fixture();
-    let assoc_error = record_assoc_at(&[record.clone(), Calcit::Number(0.0), Calcit::tag("y"), Calcit::Number(3.0)])
+    let assoc_error = struct_assoc_at(&[record.clone(), Calcit::Number(0.0), Calcit::tag("y"), Calcit::Number(3.0)])
       .expect_err("stale assoc tag must fail");
     assert!(assoc_error.msg.contains("expects field `:x`"));
 
     let with_error =
-      record_with_at(&[record, Calcit::Number(1.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect_err("stale with tag must fail");
+      struct_with_at(&[record, Calcit::Number(1.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect_err("stale with tag must fail");
     assert!(with_error.msg.contains("expects field `:y`"));
   }
 
   #[test]
   fn indexed_record_updates_validate_indices_and_apply_matching_tags() {
     let record = indexed_record_fixture();
-    let invalid_index = record_assoc_at(&[record.clone(), Calcit::Number(-1.0), Calcit::tag("x"), Calcit::Number(3.0)])
+    let invalid_index = struct_assoc_at(&[record.clone(), Calcit::Number(-1.0), Calcit::tag("x"), Calcit::Number(3.0)])
       .expect_err("negative index must fail");
     assert!(invalid_index.msg.contains("non-negative integer index"));
 
     let updated =
-      record_assoc_at(&[record, Calcit::Number(0.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect("matching index/tag update");
+      struct_assoc_at(&[record, Calcit::Number(0.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect("matching index/tag update");
     let Calcit::Struct(updated) = updated else {
       panic!("updated value must remain a record");
     };
@@ -1664,7 +1664,7 @@ mod tests {
   #[test]
   fn generic_struct_where_bounds_accept_nominal_trait_values() {
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
-    let result = call_record(&[
+    let result = call_struct(&[
       Calcit::StructDef(shown_box_struct(show_trait.clone())),
       Calcit::tag("value"),
       value_with_trait(show_trait),
@@ -1676,7 +1676,7 @@ mod tests {
   #[test]
   fn generic_struct_where_bounds_reject_missing_nominal_trait() {
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
-    let err = call_record(&[
+    let err = call_struct(&[
       Calcit::StructDef(shown_box_struct(show_trait)),
       Calcit::tag("value"),
       Calcit::Proc(CalcitProc::NativeResetGenSymIndex),

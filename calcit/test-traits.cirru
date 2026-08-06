@@ -116,7 +116,7 @@
               :where $ {} ('T 'Countable)
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-show-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-tuple-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
+            defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-show-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-enum-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -527,9 +527,9 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-tuple-impl-precedence-order $ %{} :CodeEntry (:doc "|Test tuple impl precedence order")
+        |test-enum-impl-precedence-order $ %{} :CodeEntry (:doc "|Test enum impl precedence order")
           :code $ quote
-            defn test-tuple-impl-precedence-order () (println "|Testing tuple impl precedence order...")
+            defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
               let
                   t $ %:: DemoBar :demo 1
                 assert-traits t MyBar

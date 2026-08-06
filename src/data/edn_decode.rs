@@ -324,11 +324,11 @@ mod tests {
       DataShapeGraph::build(&CalcitTypeAnnotation::Struct(person.clone(), Arc::new(vec![])), "tests.edn").expect("derive person shape");
     let input = cirru_edn::parse("%{} :Person (:age 23) (:name |Ada)").expect("parse edn");
     let decoded = decode(&shape, &input).expect("decode person");
-    let Calcit::Struct(record) = decoded else {
-      panic!("expected record");
+    let Calcit::Struct(struct_value) = decoded else {
+      panic!("expected struct");
     };
-    assert!(Arc::ptr_eq(&record.struct_ref, &person));
-    assert_eq!(record.values.as_ref(), &[Calcit::Number(23.0), Calcit::Str(Arc::from("Ada"))]);
+    assert!(Arc::ptr_eq(&struct_value.struct_ref, &person));
+    assert_eq!(struct_value.values.as_ref(), &[Calcit::Number(23.0), Calcit::Str(Arc::from("Ada"))]);
   }
 
   #[test]
@@ -422,10 +422,10 @@ mod tests {
       DataShapeGraph::build(&CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])), "tests.edn").expect("derive enum shape");
     let input = cirru_edn::parse("%:: :ResultText :err |oops").expect("parse edn");
     let decoded = decode(&shape, &input).expect("decode enum");
-    let Calcit::Enum(tuple) = decoded else {
-      panic!("expected tuple");
+    let Calcit::Enum(enum_value) = decoded else {
+      panic!("expected enum");
     };
-    assert!(tuple.sum_type.as_ref().is_some_and(|actual| Arc::ptr_eq(actual, &enum_def)));
+    assert!(enum_value.sum_type.as_ref().is_some_and(|actual| Arc::ptr_eq(actual, &enum_def)));
 
     let invalid = cirru_edn::parse("%:: :ResultText :ok 1").expect("parse invalid enum");
     let error = decode(&shape, &invalid).expect_err("arity must fail");

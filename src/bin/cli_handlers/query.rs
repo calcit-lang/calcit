@@ -1085,7 +1085,7 @@ mod type_query_tests {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_snapshot("calcit/test.cirru").expect("test snapshot should load");
     prepare_program_for_type_query_on_cli_stack(snapshot.clone());
-    let schema = program::lookup_def_schema("test-record.main", "sum-point");
+    let schema = program::lookup_def_schema("test-struct.main", "sum-point");
     let CalcitTypeAnnotation::Fn(annotation) = schema.as_ref() else {
       panic!("sum-point should have a function schema");
     };
@@ -1105,25 +1105,25 @@ mod type_query_tests {
       "a source-backed enum reference should satisfy tuple operations"
     );
     let person_symbol =
-      code_to_calcit(&Cirru::Leaf(Arc::from("Person")), "test-record.main", "test-record", vec![]).expect("Person symbol should parse");
+      code_to_calcit(&Cirru::Leaf(Arc::from("Person")), "test-struct.main", "test-struct", vec![]).expect("Person symbol should parse");
     let person_type = runner::preprocess::infer_static_type_from_expr(&person_symbol).expect("Person type should infer statically");
     assert!(
-      matches!(person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-record.main/Person"),
+      matches!(person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-struct.main/Person"),
       "data definitions should remain named type refs rather than synthetic record instances: {person_type}"
     );
     let (queried_person_type, source) =
-      resolve_type_query_target(&snapshot, "test-record.main/Person").expect("type query should infer defstruct type");
+      resolve_type_query_target(&snapshot, "test-struct.main/Person").expect("type query should infer defstruct type");
     assert_eq!(source, "definition inference");
     assert!(
-      matches!(queried_person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-record.main/Person"),
+      matches!(queried_person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-struct.main/Person"),
       "query type should expose the source-backed struct type: {queried_person_type}"
     );
 
     let warnings = RefCell::new(vec![]);
-    runner::preprocess::compile_source_def_for_snapshot("test-record.main", "sum-point", &warnings, &CallStackList::default())
+    runner::preprocess::compile_source_def_for_snapshot("test-struct.main", "sum-point", &warnings, &CallStackList::default())
       .expect("sum-point should preprocess");
-    let compiled = program::lookup_compiled_def("test-record.main", "sum-point").expect("compiled sum-point");
-    let target = find_preprocessed_node_at_path(&compiled.preprocessed_code, "test-record.main", "sum-point", &[3, 1], true)
+    let compiled = program::lookup_compiled_def("test-struct.main", "sum-point").expect("compiled sum-point");
+    let target = find_preprocessed_node_at_path(&compiled.preprocessed_code, "test-struct.main", "sum-point", &[3, 1], true)
       .expect("field access expression should retain a source path");
     let Calcit::List(field_access) = target else {
       panic!("field access should remain a call");

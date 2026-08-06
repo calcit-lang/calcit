@@ -36,18 +36,18 @@ use crate::program;
 
 #[path = "emit_wasm/methods.rs"]
 mod methods;
-#[path = "emit_wasm/records.rs"]
-mod records;
 #[path = "emit_wasm/runtime.rs"]
 mod runtime;
+#[path = "emit_wasm/structs.rs"]
+mod structs;
 
 use methods::{emit_call_args, emit_method_invoke};
-use records::{
-  emit_enum_tuple_new, emit_record_contains, emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name,
-  emit_record_matches, emit_record_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count,
-  emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
-};
 use runtime::{HOST_IMPORTS, HostImport, build_runtime_fns, build_wasm_module};
+use structs::{
+  emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
+  emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
+  emit_struct_to_map, resolve_struct_ref, try_parse_defrecord_form,
+};
 
 /// Base offset — reserve first 16 bytes for bookkeeping.
 /// The actual heap start will be shifted when string literals occupy the
@@ -259,7 +259,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     fn_table_index.insert(name.clone(), i as u32);
   }
 
-  let record_field_tags = collect_record_field_tags_from_program(&program_data, &tag_index);
+  let struct_field_tags = collect_struct_field_tags_from_program(&program_data, &tag_index);
 
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index);
@@ -303,7 +303,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     fn_has_rest,
     runtime_fn_index,
     tag_index,
-    record_field_tags,
+    struct_field_tags,
     string_pool,
     atom_globals,
     value_imports,
@@ -389,7 +389,7 @@ struct WasmCompileEnv {
   fn_has_rest: HashMap<String, u32>,
   runtime_fn_index: HashMap<String, u32>,
   tag_index: HashMap<String, u32>,
-  record_field_tags: HashMap<u32, Vec<u32>>,
+  struct_field_tags: HashMap<u32, Vec<u32>>,
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
@@ -492,7 +492,7 @@ struct WasmGenCtx {
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
   tag_index: HashMap<String, u32>,
   /// Record struct tag id → field tag ids in index order.
-  record_field_tags: HashMap<u32, Vec<u32>>,
+  struct_field_tags: HashMap<u32, Vec<u32>>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
@@ -524,7 +524,7 @@ impl WasmGenCtx {
       fn_has_rest: env.fn_has_rest,
       runtime_fn_index: env.runtime_fn_index,
       tag_index: env.tag_index,
-      record_field_tags: env.record_field_tags,
+      struct_field_tags: env.struct_field_tags,
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
@@ -1907,14 +1907,14 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Record operations
-    CalcitProc::NativeRecord => emit_record_new(ctx, args),
-    CalcitProc::NativeRecordNth => emit_record_nth(ctx, args),
-    CalcitProc::NativeRecordGet => emit_record_get(ctx, args),
-    CalcitProc::NativeRecordCount => emit_record_count(ctx, args),
-    CalcitProc::NativeRecordFieldTag => emit_record_field_tag(ctx, args),
-    CalcitProc::NativeRecordStruct => emit_record_struct(ctx, args),
-    CalcitProc::NativeRecordGetName => emit_record_get_name(ctx, args),
-    CalcitProc::NativeRecordToMap => emit_record_to_map(ctx, args),
+    CalcitProc::NativeRecord => emit_struct_new(ctx, args),
+    CalcitProc::NativeRecordNth => emit_struct_nth(ctx, args),
+    CalcitProc::NativeRecordGet => emit_struct_get(ctx, args),
+    CalcitProc::NativeRecordCount => emit_struct_count(ctx, args),
+    CalcitProc::NativeRecordFieldTag => emit_struct_field_tag(ctx, args),
+    CalcitProc::NativeRecordStruct => emit_struct_def(ctx, args),
+    CalcitProc::NativeRecordGetName => emit_struct_get_name(ctx, args),
+    CalcitProc::NativeRecordToMap => emit_struct_to_map(ctx, args),
     CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
       Err(format!("{proc} not yet supported in WASM codegen"))
     }
@@ -1924,23 +1924,23 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     | CalcitProc::NativeRecordImpls
     | CalcitProc::NativeRecordWithAt
     | CalcitProc::NativeLooseRecord => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeRecordContains => emit_record_contains(ctx, args),
-    CalcitProc::NativeRecordMatches => emit_record_matches(ctx, args),
+    CalcitProc::NativeRecordContains => emit_struct_contains(ctx, args),
+    CalcitProc::NativeRecordMatches => emit_struct_matches(ctx, args),
 
     // Tuple operations
-    CalcitProc::NativeTuple => emit_tuple_new(ctx, args),
-    CalcitProc::NativeTupleNth => emit_tuple_nth(ctx, args),
-    CalcitProc::NativeTupleCount => emit_tuple_count(ctx, args),
+    CalcitProc::NativeTuple => emit_enum_new(ctx, args),
+    CalcitProc::NativeTupleNth => emit_enum_nth(ctx, args),
+    CalcitProc::NativeTupleCount => emit_enum_count(ctx, args),
     CalcitProc::NativeTupleValidateEnum => ctx.stub_proc(args), // no-op in WASM
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
-    CalcitProc::NativeEnumTupleNew => emit_enum_tuple_new(ctx, args),
+    CalcitProc::NativeEnumTupleNew => emit_named_enum_new(ctx, args),
     CalcitProc::NativeTupleImpls
     | CalcitProc::NativeTupleParams
     | CalcitProc::NativeTupleEnum
     | CalcitProc::NativeTupleImplTraits
     | CalcitProc::NativeTupleEnumHasVariant
     | CalcitProc::NativeTupleEnumVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeTupleAssoc => emit_tuple_assoc(ctx, args),
+    CalcitProc::NativeTupleAssoc => emit_enum_assoc(ctx, args),
 
     // Bitwise operations — convert to i32, operate, convert back to f64
     CalcitProc::BitShl => emit_bitwise_binary(ctx, Instruction::I32Shl, args),
@@ -3142,7 +3142,7 @@ fn build_string_pool(
   (pool, data, heap_start)
 }
 
-fn collect_record_field_tags_from_program(
+fn collect_struct_field_tags_from_program(
   program_data: &program::CompiledProgram,
   tag_index: &HashMap<String, u32>,
 ) -> HashMap<u32, Vec<u32>> {

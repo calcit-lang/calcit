@@ -1,11 +1,11 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-record) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-struct) (:version |0.0.0)
   :entries $ {}
-    :default $ {} (:description |) (:init-fn 'test-record.main/main!) (:mode :native) (:reload-fn 'test-record.main/reload!)
+    :default $ {} (:description |) (:init-fn 'test-struct.main/main!) (:mode :native) (:reload-fn 'test-struct.main/reload!)
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-record.main $ %{} :FileEntry
+    |test-struct.main $ %{} :FileEntry
       :defs $ {}
         |A $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -89,10 +89,10 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'test-record.main/Point2D
+              :args $ [] 'test-struct.main/Point2D
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (test-loose-record-rewrite) (test-map-to-record) (test-postfix) (do true)
+            defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-partial-struct) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -109,7 +109,7 @@
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)
-              :args $ [] 'test-record.main/Point2D
+              :args $ [] 'test-struct.main/Point2D
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -135,16 +135,16 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-loose-record-rewrite $ %{} :CodeEntry (:doc |)
+        |test-loose-struct-rewrite $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing loose-record-to-struct rewrite")
+            fn () (log-title "|Testing loose-to-struct rewrite")
               assert= 30 $ sum-point (?{} :x 10 :y 20)
               assert= true $ check-point-type (?{} :x 10 :y 20)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-map-to-record $ %{} :CodeEntry (:doc |)
+        |test-map-to-struct $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing map-to-record rewrite")
+            fn () (log-title "|Testing map-to-struct rewrite")
               assert= 30 $ sum-point
                 {} (:x 10) (:y 20)
               assert= true $ check-point-type
@@ -153,7 +153,7 @@
           :schema $ :: 'Dynamic
         |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing record match")
+            fn () (log-title "|Testing struct match")
               let
                   a1 $ %{} A (:a 1)
                   b1 $ %{} B (:b 2)
@@ -176,7 +176,7 @@
               :args $ []
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing record methods")
+            fn () (log-title "|Testing struct methods")
               &let
                 kitty $ %{} Cat (:name |kitty) (:color :red)
                 assert= :Cat $ &struct:get-name kitty
@@ -211,9 +211,9 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-partial-record $ %{} :CodeEntry (:doc |)
+        |test-partial-struct $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing partial record")
+            fn () (log-title "|Testing partial struct")
               let
                   p1 $ %{}? Person (:name |Chen)
                   p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
@@ -231,7 +231,7 @@
               :args $ []
         |test-polymorphism $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Test record polymorphism") (println Lagopus)
+            fn () (log-title "|Test struct polymorphism") (println Lagopus)
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                   a1 A0
@@ -273,9 +273,9 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-record $ %{} :CodeEntry (:doc |)
+        |test-struct $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing record")
+            fn () (log-title "|Testing struct")
               let
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
                   p2 $ &%{} Person :name |Chen :age 20 :position :mainland
@@ -328,9 +328,9 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
+        |test-struct-with $ %{} :CodeEntry (:doc "|test struct-with")
           :code $ quote
-            fn () (log-title "|Testing record-with")
+            fn () (log-title "|Testing struct-with")
               let
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
                   p2 $ struct-with p1 (:age 21) (:position :shanghai)
@@ -346,5 +346,5 @@
               :args $ []
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
-          ns test-record.main $ :require
+          ns test-struct.main $ :require
             util.core :refer $ log-title inside-js:

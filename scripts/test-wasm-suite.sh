@@ -27,7 +27,7 @@ TEST_FILES=(
   calcit/test-cond.cirru
   calcit/test-fn.cirru
   calcit/test-string.cirru
-  calcit/test-tuple.cirru
+  calcit/test-anonymous-enum.cirru
 )
 
 pass=0

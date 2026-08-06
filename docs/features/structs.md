@@ -7,7 +7,7 @@ aliases:
   - "record type"
   - "field access"
   - "struct fields"
-id: core/features/records
+id: core/features/structs
 parent: core/features
 ---
 
@@ -378,7 +378,7 @@ Use `_` as the definition marker when a short-lived struct does not need a named
 ; => $ %{} _ (:age 30) (:name |John)
 ```
 
-Fields are automatically sorted alphabetically, matching the behavior of struct-backed records. All keys must be tags, and duplicate keys produce an error.
+Fields are automatically sorted alphabetically, matching the field ordering of named structs. All keys must be tags, and duplicate keys produce an error.
 
 ### Accessing Fields
 

@@ -5,10 +5,10 @@ mod logics;
 mod maps;
 mod math;
 pub mod meta;
-pub(crate) mod records;
 mod refs;
 mod sets;
 mod strings;
+pub(crate) mod structs;
 pub mod syntax;
 
 use std::collections::{HashMap, HashSet};
@@ -385,10 +385,10 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleImpls => meta::tuple_impls(args),
     NativeTupleParams => meta::tuple_params(args),
     NativeTupleEnum => meta::tuple_enum(args),
-    NativeStructNew => records::new_struct(args),
-    NativeEnumNew => records::new_enum(args),
+    NativeStructNew => structs::new_struct(args),
+    NativeEnumNew => structs::new_enum(args),
     NativeTraitNew => meta::trait_new(args),
-    NativeImplNew => records::new_impl(args),
+    NativeImplNew => structs::new_impl(args),
     NativeImplOrigin => meta::impl_origin(args),
     NativeRecordImplTraits => meta::record_impl_traits(args),
     NativeTupleImplTraits => meta::tuple_impl_traits(args),
@@ -565,25 +565,25 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     AddWatch => refs::add_watch(args),
     RemoveWatch => refs::remove_watch(args),
     // records
-    NativeLooseRecord => records::call_loose_record(args),
-    NativeRecord => records::call_record(args),
-    NativeRecordPartial => records::call_record_partial(args),
-    NativeRecordWith => records::record_with(args),
-    NativeRecordImpls => records::get_impls(args),
-    NativeRecordFromMap => records::record_from_map(args),
-    NativeRecordGetName => records::get_record_name(args),
-    NativeRecordStruct => records::get_record_struct(args),
-    NativeRecordToMap => records::turn_map(args),
-    NativeRecordMatches => records::matches(args),
-    NativeRecordCount => records::count(args),
-    NativeRecordContains => records::contains_ques(args),
-    NativeRecordGet => records::get(args),
-    NativeRecordNth => records::record_nth(args),
-    NativeRecordFieldTag => records::record_field_tag(args),
-    NativeRecordAssoc => records::assoc(args),
-    NativeRecordAssocAt => records::record_assoc_at(args),
-    NativeRecordWithAt => records::record_with_at(args),
-    NativeRecordExtendAs => records::extend_as(args),
+    NativeLooseRecord => structs::call_loose_struct(args),
+    NativeRecord => structs::call_struct(args),
+    NativeRecordPartial => structs::call_struct_partial(args),
+    NativeRecordWith => structs::struct_with(args),
+    NativeRecordImpls => structs::get_impls(args),
+    NativeRecordFromMap => structs::struct_from_map(args),
+    NativeRecordGetName => structs::get_struct_name(args),
+    NativeRecordStruct => structs::get_struct_def(args),
+    NativeRecordToMap => structs::turn_map(args),
+    NativeRecordMatches => structs::matches(args),
+    NativeRecordCount => structs::count(args),
+    NativeRecordContains => structs::contains_ques(args),
+    NativeRecordGet => structs::get(args),
+    NativeRecordNth => structs::struct_nth(args),
+    NativeRecordFieldTag => structs::struct_field_tag(args),
+    NativeRecordAssoc => structs::assoc(args),
+    NativeRecordAssocAt => structs::struct_assoc_at(args),
+    NativeRecordWithAt => structs::struct_with_at(args),
+    NativeRecordExtendAs => structs::extend_as(args),
     DeftypeSlot => meta::deftype_slot(args),
     WithTypeSlot => meta::with_type_slot_runtime(args),
   }

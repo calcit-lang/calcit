@@ -381,8 +381,8 @@ impl CallTreeAnalyzer {
           Self::extract_calls_recursive(code, current_ns, calls);
         }
       },
-      Calcit::Enum(tuple) => {
-        for item in &tuple.extra {
+      Calcit::Enum(enum_value) => {
+        for item in &enum_value.extra {
           Self::extract_calls_recursive(item, current_ns, calls);
         }
       }

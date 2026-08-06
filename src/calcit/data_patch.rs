@@ -230,17 +230,17 @@ fn apply_patch_node(
       let DataShapeNode::Struct { fields, .. } = &shape.nodes[*node] else {
         return Err(DataPatchError::at(path, "StructFields reached a non-struct shape node"));
       };
-      let Calcit::Struct(record) = base else {
-        return Err(DataPatchError::at(path, "StructFields base is not a record"));
+      let Calcit::Struct(struct_value) = base else {
+        return Err(DataPatchError::at(path, "StructFields base is not a struct"));
       };
-      let mut values = record.values.as_ref().clone();
+      let mut values = struct_value.values.as_ref().clone();
       for (field_index, field_tag, child_patch) in updates {
         let (_, child_node) = fields
           .get(*field_index)
           .ok_or_else(|| DataPatchError::at(path, format!("struct field index {field_index} is out of bounds")))?;
         let field_value = values
           .get(*field_index)
-          .ok_or_else(|| DataPatchError::at(path, format!("record is missing field index {field_index}")))?
+          .ok_or_else(|| DataPatchError::at(path, format!("struct is missing field index {field_index}")))?
           .clone();
         let next = apply_patch_node(
           shape,
@@ -255,7 +255,7 @@ fn apply_patch_node(
         values[*field_index] = next;
       }
       Ok(Calcit::Struct(CalcitStructValue {
-        struct_ref: record.struct_ref.clone(),
+        struct_ref: struct_value.struct_ref.clone(),
         values: Arc::new(values),
       }))
     }
@@ -267,19 +267,19 @@ fn apply_patch_node(
       let DataShapeNode::Enum { variants, .. } = &shape.nodes[*node] else {
         return Err(DataPatchError::at(path, "EnumPayload reached a non-enum shape node"));
       };
-      let Calcit::Enum(tuple) = base else {
-        return Err(DataPatchError::at(path, "EnumPayload base is not an enum tuple"));
+      let Calcit::Enum(enum_value) = base else {
+        return Err(DataPatchError::at(path, "EnumPayload base is not an enum"));
       };
       let (expected_tag, payload_nodes) = variants
         .get(*variant)
         .ok_or_else(|| DataPatchError::at(path, format!("enum variant index {variant} is out of bounds")))?;
-      if !matches!(tuple.tag.as_ref(), Calcit::Tag(actual) if actual == expected_tag) {
+      if !matches!(enum_value.tag.as_ref(), Calcit::Tag(actual) if actual == expected_tag) {
         return Err(DataPatchError::at(
           path,
           format!("base enum variant does not match :{expected_tag}; use Replace for variant changes"),
         ));
       }
-      let mut payloads = tuple.extra.clone();
+      let mut payloads = enum_value.extra.clone();
       for (payload_index, child_patch) in updates {
         let child_node = payload_nodes
           .get(*payload_index)
@@ -295,9 +295,9 @@ fn apply_patch_node(
         payloads[*payload_index] = next;
       }
       Ok(Calcit::Enum(CalcitEnumValue {
-        tag: tuple.tag.clone(),
+        tag: enum_value.tag.clone(),
         extra: payloads,
-        sum_type: tuple.sum_type.clone(),
+        sum_type: enum_value.sum_type.clone(),
       }))
     }
   }
@@ -346,7 +346,7 @@ mod tests {
 
     let value = patch.apply(&shape, &base).expect("apply point patch");
     let (Calcit::Struct(before), Calcit::Struct(after)) = (&base, &value) else {
-      panic!("point values must be records");
+      panic!("point values must be structs");
     };
     assert!(Arc::ptr_eq(&before.struct_ref, &after.struct_ref));
     assert_eq!(after.values.as_ref(), &[Calcit::Number(2.0), Calcit::Str(Arc::from("old"))]);
@@ -441,10 +441,10 @@ mod tests {
     .expect("valid enum payload patch");
 
     let value = patch.apply(&shape, &base).expect("apply enum patch");
-    let Calcit::Enum(tuple) = value else {
-      panic!("patched outcome must remain an enum tuple");
+    let Calcit::Enum(enum_value) = value else {
+      panic!("patched outcome must remain an enum");
     };
-    assert_eq!(tuple.extra, vec![Calcit::Number(2.0)]);
-    assert!(tuple.sum_type.is_some());
+    assert_eq!(enum_value.extra, vec![Calcit::Number(2.0)]);
+    assert!(enum_value.sum_type.is_some());
   }
 }

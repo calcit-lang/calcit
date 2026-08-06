@@ -164,10 +164,10 @@ Use a Snapshot path returned by `query search`, `query context`, or another stru
 
 ```bash
 # Inspect one field-access expression without running the project entry
-cr query type-at test-record.main/sum-point --path code@3.1
+cr query type-at test-struct.main/sum-point --path code@3.1
 
 # Machine-readable evidence envelope
-cr query type-at test-record.main/sum-point --path code@3.1 --format json
+cr query type-at test-struct.main/sum-point --path code@3.1 --format json
 ```
 
 `query type-at` statically preprocesses the selected definition and reports:

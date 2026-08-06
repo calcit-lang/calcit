@@ -408,6 +408,6 @@ If any condition is not met, the argument is left unchanged (no error is raised)
 
 ## See Also
 
-- [Anonymous enums](tuples.md) — short-lived enum values without `defenum`
-- [Structs](records.md) — named-field structures with `defstruct`
+- [Anonymous enums](anonymous-enums.md) — short-lived enum values without `defenum`
+- [Structs](structs.md) — named-field structures with `defstruct`
 - [Static Analysis](static-analysis.md) — type checking for enum payloads and type slots

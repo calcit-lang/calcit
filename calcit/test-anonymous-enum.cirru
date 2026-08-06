@@ -1,11 +1,11 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-tuple) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-anonymous-enum) (:version |0.0.0)
   :entries $ {}
-    :default $ {} (:description |) (:init-fn 'test-tuple.main/main!) (:mode :native) (:reload-fn 'test-tuple.main/reload!)
+    :default $ {} (:description |) (:init-fn 'test-anonymous-enum.main/main!) (:mode :native) (:reload-fn 'test-anonymous-enum.main/reload!)
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-tuple.main $ %{} :FileEntry
+    |test-anonymous-enum.main $ %{} :FileEntry
       :defs $ {}
         |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -14,7 +14,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing tuple")
+            defn main! () (log-title "|Testing anonymous enum")
               assert= (:: :parts |1 |23)
                 tag-match (destruct-str |123)
                   (:none) (:: :empty)
@@ -91,5 +91,5 @@
               :args $ [] 'Dynamic
       :ns $ %{} :NsEntry (:doc |)
         :code $ quote
-          ns test-tuple.main $ :require
+          ns test-anonymous-enum.main $ :require
             util.core :refer $ log-title

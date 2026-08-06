@@ -40,7 +40,7 @@ parse-cirru-edn-as "|[] 1 2 3" $ :: 'List 'Number
 parse-cirru-edn-as "|%{} :Box (:value |hi)" $ :: Box 'String
 ```
 
-Successful decoding guarantees the recursive container elements, struct fields, enum variant and payloads, generic arguments, and nominal struct/enum identity all match the target type. It does not coerce strings to numbers, maps to structs, or ordinary tuples to enums.
+Successful decoding guarantees the recursive container elements, struct fields, enum variant and payloads, generic arguments, and nominal struct/enum identity all match the target type. It does not coerce strings to numbers, maps to structs, or ordinary lists to enums.
 
 Strict decoder derivation rejects `Dynamic`, bare containers with implicit Dynamic elements, missing generic arguments, unbound type variables/type slots, functions, traits, impls, `JsObject`, and unknown custom types. This is a compile-time error rather than a warning or runtime Dynamic fallback.
 

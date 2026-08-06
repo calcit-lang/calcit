@@ -211,7 +211,7 @@ echo 'range 10' | cr exec
 详细内容已移入独立文件：
 
 - `Cirru 语法核心概念` → [cirru-syntax.md](../cirru-syntax.md)
-- `数据结构：Anonymous Enum vs List` → [features/tuples.md](../features/tuples.md)
+- `数据结构：Anonymous Enum vs List` → [features/anonymous-enums.md](../features/anonymous-enums.md)
 - `类型标注与检查` → [features/static-analysis.md](../features/static-analysis.md)
 
 ### 其他易错点
