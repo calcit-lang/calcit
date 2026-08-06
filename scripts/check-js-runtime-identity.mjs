@@ -27,6 +27,11 @@ try {
   assert.equal(todoRecord.toString(), "(%{} 'TodoState (:draft |))");
   assert.equal(todoStruct.toString(), "(%struct 'TodoState (:draft 'String))");
   assert.equal(todoEnum.toString(), "(%enum 'TodoState)");
+  assert.throws(
+    () => runtimeA._$n_record_$o_get(todoRecord, runtimeA.newTag("missing")),
+    /does not define field :missing/,
+    "record field lookup must reject a missing field instead of returning nil"
+  );
 
   runtimeA.load_console_formatter_$x_();
   const formatter = globalThis.devtoolsFormatters.at(-1);

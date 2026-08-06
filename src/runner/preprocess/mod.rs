@@ -120,6 +120,18 @@ pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
 
+/// A loose record has a runtime field set but no nominal declaration from which
+/// the preprocessor can derive an index. It is still a record: postfix access
+/// must use the required record lookup rather than the Option-producing
+/// collection `get` API.
+fn is_unshaped_record_type(type_info: &CalcitTypeAnnotation) -> bool {
+  matches!(
+    type_info,
+    CalcitTypeAnnotation::Custom(value)
+      if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str().trim_start_matches(':') == "record")
+  )
+}
+
 /// Extract type information from a Calcit definition
 /// Functions and procs are converted into `CalcitTypeAnnotation::Function` to retain argument/return hints
 /// Other values fall back to their concrete annotation (tag/record/tuple/custom)
@@ -1006,19 +1018,34 @@ fn preprocess_list_call(
     let first_arg = &args[0];
     match first_arg {
       Calcit::Tag(field_tag) if args.len() == 1 => {
-        if let Some(type_info) = resolve_type_value(&head_form, scope_types)
-          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
-          && let Some(idx) = struct_def.index_of(field_tag.ref_str())
-        {
-          // Rewrite to (&record:nth expr idx :field-tag) — same as the existing
-          // `(:tag expr)` rewrite, works in both Rust runtime and JS codegen.
-          let items: Vec<Calcit> = vec![
-            Calcit::Proc(CalcitProc::NativeRecordNth),
-            head_form,
-            Calcit::Number(idx as f64),
-            Calcit::Tag(field_tag.to_owned()),
-          ];
-          return Ok(Calcit::from(CalcitList::from(items.as_slice())));
+        if let Some(type_info) = resolve_type_value(&head_form, scope_types) {
+          if let Some(struct_def) = type_info.as_ref().resolve_to_struct()
+            && let Some(idx) = struct_def.index_of(field_tag.ref_str())
+          {
+            // Rewrite to (&record:nth expr idx :field-tag) — same as the existing
+            // `(:tag expr)` rewrite, works in both Rust runtime and JS codegen.
+            // A nominal struct has a fixed field set, so this returns the field
+            // directly rather than wrapping it in Option.
+            let items: Vec<Calcit> = vec![
+              Calcit::Proc(CalcitProc::NativeRecordNth),
+              head_form,
+              Calcit::Number(idx as f64),
+              Calcit::Tag(field_tag.to_owned()),
+            ];
+            return Ok(Calcit::from(CalcitList::from(items.as_slice())));
+          }
+
+          // A record field is never an optional collection lookup. For a
+          // nominal record this path means the tag was not declared; for a
+          // loose record the field set is known only at runtime. Both use the
+          // required record lookup and report a normal error when absent.
+          if type_info.as_ref().resolve_to_struct().is_some() || is_unshaped_record_type(type_info.as_ref()) {
+            return Ok(Calcit::from(CalcitList::from(&[
+              Calcit::Proc(CalcitProc::NativeRecordGet),
+              head_form,
+              first_arg.to_owned(),
+            ])));
+          }
         }
         // For non-record types (Dynamic, Fn, etc.), silently fall through —
         // `:tag` is a normal argument like `(list :a)` or `(f :a)`.
@@ -1253,6 +1280,15 @@ fn preprocess_list_call(
             ];
             let nth_call = Calcit::from(CalcitList::from(items.as_slice()));
             return Ok(nth_call);
+          }
+          if let Some(type_info) = resolve_type_value(&processed_arg, scope_types)
+            && (type_info.as_ref().resolve_to_struct().is_some() || is_unshaped_record_type(type_info.as_ref()))
+          {
+            return Ok(Calcit::from(CalcitList::from(&[
+              Calcit::Proc(CalcitProc::NativeRecordGet),
+              processed_arg,
+              head.to_owned(),
+            ])));
           }
           // Fallback: rewrite to (get arg :tag) and re-preprocess
           let get_method = Calcit::Import(CalcitImport {
@@ -6044,6 +6080,70 @@ mod tests {
 
     // Currently no warnings expected for valid field access
     // In future, we'll check warnings.borrow().is_empty()
+  }
+
+  #[test]
+  fn postfix_nominal_record_access_uses_direct_field_lookup() {
+    let expr = Cirru::List(vec![Cirru::leaf("person"), Cirru::leaf(":name")]);
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse postfix field access");
+    let mut scope_defs = HashSet::new();
+    scope_defs.insert(Arc::from("person"));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("person"),
+      Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Person"),
+        vec![EdnTag::from("name")],
+      )))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.record",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess nominal postfix field access");
+
+    let Calcit::List(items) = resolved else {
+      panic!("expected specialized field access call");
+    };
+    assert!(
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecordNth))),
+      "nominal field access should bypass Option-producing get: {items}"
+    );
+  }
+
+  #[test]
+  fn postfix_loose_record_access_uses_required_record_get() {
+    let expr = Cirru::List(vec![Cirru::leaf("record"), Cirru::leaf(":name")]);
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse postfix field access");
+    let mut scope_defs = HashSet::new();
+    scope_defs.insert(Arc::from("record"));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("record"), tag_annotation("record"));
+
+    let warnings = RefCell::new(vec![]);
+    let resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.record",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess loose record postfix field access");
+
+    let Calcit::List(items) = resolved else {
+      panic!("expected required record get call");
+    };
+    assert!(
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecordGet))),
+      "loose record access should never use Option-producing get: {items}"
+    );
   }
 
   #[test]

@@ -496,14 +496,14 @@ fn gen_call_code(
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),
-    // &record:nth: with 3 args (record, idx, :field-tag), use record.get(tag) for JS
+    // &record:nth: with 3 args (record, idx, :field-tag), use record.getRequired(tag) for JS
     // because JS CalcitRecord fields are sorted by tag.idx (registration order), not alphabetically.
     // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).
     Calcit::Proc(CalcitProc::NativeRecordNth) => {
       if body.len() == 3 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
-        Ok(format!("{return_code}{record_code}.get({tag_code})"))
+        Ok(format!("{return_code}{record_code}.getRequired({tag_code})"))
       } else if body.len() == 2 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let idx_code = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;

@@ -710,7 +710,7 @@ export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitTag) {
     throw new Error("record &get takes 2 arguments");
   }
 
-  if (xs instanceof CalcitRecord) return xs.get(k);
+  if (xs instanceof CalcitRecord) return xs.getRequired(k);
 
   throw new Error("Does not support `&get` on this type");
 };

@@ -37,6 +37,11 @@ export class CalcitRecord {
       return undefined;
     }
   }
+  getRequired(k: CalcitValue): CalcitValue {
+    const value = this.get(k);
+    if (value !== undefined) return value;
+    throw new Error(`record '${this.name.value}' does not define field ${castTag(k).toString()}`);
+  }
   getOrNil(k: CalcitValue) {
     let field = castTag(k);
     let idx = findInFields(this.fields, field);

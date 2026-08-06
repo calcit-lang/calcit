@@ -1575,13 +1575,12 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        |&record:get $ %{} :CodeEntry (:doc "|internal function for getting record field\nSyntax: (&record:get record key) or (&record:get record key default)\nParams: record (record), key (any), default (any, optional)\nReturns: any\nGets field value, returns default if field not found")
+        |&record:get $ %{} :CodeEntry (:doc "|Internal required record field lookup. Syntax: (&record:get record key). Returns the declared field value; raises when the field is not defined.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {}
+            {} (:return 'Dynamic)
               :args $ [] 'Record 'Tag
-              :return $ :: 'Optional 'Dynamic
           :tags $ #{} :builtin :internal
         |&record:get-name $ %{} :CodeEntry (:doc "|internal function for getting record name\nSyntax: (&record:get-name record)\nParams: record (record)\nReturns: keyword\nReturns name of record")
           :code $ quote &runtime-implementation

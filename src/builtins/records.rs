@@ -1341,24 +1341,27 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Record(record @ CalcitRecord { values, .. })), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match record.index_of(k) {
+    (Some(Calcit::Record(record @ CalcitRecord { values, struct_ref })), Some(a)) => {
+      let field_name = match a {
+        Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => k.as_ref(),
+        Calcit::Tag(k) => k.ref_str(),
+        a => {
+          let msg = format!(
+            "&record:get requires a field in string/tag, but received: {}",
+            type_of(std::slice::from_ref(a))?.lisp_str()
+          );
+          let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+          return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+        }
+      };
+      match record.index_of(field_name) {
         Some(idx) => Ok(values[idx].to_owned()),
-        None => Ok(Calcit::Nil),
-      },
-      Calcit::Tag(k) => match record.index_of(k.ref_str()) {
-        Some(idx) => Ok(values[idx].to_owned()),
-        None => Ok(Calcit::Nil),
-      },
-      a => {
-        let msg = format!(
-          "&record:get requires a field in string/tag, but received: {}",
-          type_of(std::slice::from_ref(a))?.lisp_str()
-        );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
-        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+        None => CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("&record:get record `{}` does not define field `:{field_name}`", struct_ref.name),
+        ),
       }
-    },
+    }
     (Some(_), None) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&record:get expected 2 arguments, but received:", xs, hint)
@@ -1529,6 +1532,15 @@ mod tests {
       .expect_err("a required recursive field must reject nil instead of recursing");
 
     assert!(err.msg.contains("expects type `'RequiredNode`"), "unexpected error: {err:?}");
+  }
+
+  #[test]
+  fn record_get_rejects_missing_fields_instead_of_returning_nil() {
+    let record = indexed_record_fixture();
+    let err = get(&[record, Calcit::tag("missing")]).expect_err("missing record field must not become nil");
+
+    assert_eq!(err.kind, CalcitErrKind::Type);
+    assert!(err.msg.contains("does not define field `:missing`"), "unexpected error: {err:?}");
   }
 
   #[test]

@@ -331,7 +331,14 @@ pub fn call_expr(
             Some(value) => Ok(value.to_owned()),
             None => Ok(Calcit::Nil),
           },
-          Calcit::Record(record) => Ok(record.get(k.ref_str()).cloned().unwrap_or(Calcit::Nil)),
+          Calcit::Record(record) => record.get(k.ref_str()).cloned().ok_or_else(|| {
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Type,
+              format!("record `{}` does not define field `:{k}`", record.struct_ref.name),
+              call_stack,
+              v.get_location(),
+            )
+          }),
           _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected a hashmap or record, got: {v}"),

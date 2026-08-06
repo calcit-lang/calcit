@@ -185,7 +185,8 @@ pub(super) fn emit_record_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// Emit `&record:get record :field_tag` — dynamic field access by tag name.
 ///
 /// Performs a compile-time dispatch table: for each known struct type, scans
-/// field tags and returns the matching field value. Returns nil (0.0) if tag not found.
+/// field tags and returns the matching field value. A missing tag traps instead
+/// of silently returning the numeric representation of nil.
 pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&record:get requires 2 args (record, tag)")?;
 
@@ -216,7 +217,7 @@ pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
     ctx.emit(Instruction::F64Eq);
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
 
-    // Nested if-chain: return field value for matching tag, else 0.0 (nil)
+    // Nested if-chain: return field value for matching tag, else trap.
     for (field_idx, field_tag_id) in field_tag_ids.iter().enumerate() {
       ctx.emit(Instruction::LocalGet(key_tag_local));
       ctx.emit(f64_const(*field_tag_id as f64));
@@ -227,7 +228,7 @@ pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
       ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + field_idx) * 8) as u64)));
       ctx.emit(Instruction::Else);
     }
-    ctx.emit(f64_const(0.0)); // field tag not found → nil
+    ctx.emit(Instruction::Unreachable);
     for _ in field_tag_ids {
       ctx.emit(Instruction::End);
     }
@@ -235,7 +236,7 @@ pub(super) fn emit_record_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
     ctx.emit(Instruction::Else);
   }
 
-  ctx.emit(f64_const(0.0)); // unknown struct type → nil
+  ctx.emit(Instruction::Unreachable);
   for _ in &struct_entries {
     ctx.emit(Instruction::End);
   }
