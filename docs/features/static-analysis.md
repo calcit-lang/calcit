@@ -94,11 +94,11 @@ Both analysis commands run as static Snapshot readers: they load configured modu
 
 Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, and `deftrait` carry type information in their declarations, so they are classified as data declarations instead of receiving a false top-level `schema-dynamic` finding.
 
-`check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, record, or component tree. Output explicitly produced by an example is still shown.
+`check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, struct, or component tree. Output explicitly produced by an example is still shown.
 
 ## Type Annotations
 
-Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `cr edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, record keys, `:return` schema keys, or `:kind` values.
+Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `cr edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, struct field keys, `:return` schema keys, or `:kind` values.
 
 ### Function Parameter Types
 
@@ -222,7 +222,8 @@ let
 | `'List` | List |
 | `'Map` | Hash Map |
 | `'Set` | Set |
-| `'Tuple` | Tuple (general) |
+| `'Enum` | Enum value (anonymous or named) |
+| `'Struct` | Struct value (anonymous or named) |
 | `'Fn` | Function |
 | `'Ref` | Atom / Ref |
 | `'Dynamic` | Unknown/unresolved type; static checks are disabled at this boundary |
@@ -298,7 +299,7 @@ If the body only needs a capability, add a trait bound rather than replacing `'T
 
 The same rule applies inside containers and callbacks: `:: :list 'T` preserves a homogeneous item relationship, while bare `:list` means `list<dynamic>`; a complete `:: :fn` callback schema preserves argument/return checking, while bare `:fn` does not.
 
-#### Record and Enum Types
+#### Struct and Enum Types
 
 Use the name defined by `defstruct` or `defenum`:
 
@@ -309,7 +310,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      option:unwrap $ get u :name
+      &struct:get u :name
   get-name $ %{} User (:name |Alice)
 ```
 
@@ -327,24 +328,26 @@ defn greet (name age) (str "|Hello " name "|, you are " age)
 ; greet |Alice
 ```
 
-### Record Field Access
+### Struct Field Access
 
-Validates that record fields exist:
+Validates that struct fields exist. A known field has its declared type directly;
+an unknown field is a diagnostic rather than an `Option` result:
 
 ```cirru
 defstruct User (:name :string) (:age :number)
 
-defn get-user-email (user) (.-email user) (; Warning: field 'email' not found in record User) (; Available fields: name, age)
+defn get-user-email (user) (.-email user) (; Warning: field ':email' not found in struct User) (; Available fields: :name, :age)
 ```
 
-### Tuple Index Bounds
+### Enum Index Bounds
 
-Checks tuple index access at compile time:
+Enum positional access is bounds-checked at runtime and reports an ordinary
+diagnostic rather than panicking:
 
 ```cirru.no-check
 let
-    point $ %:: :Point 10 20 30
-  &tuple:nth point 5 ; Warning: index 5 out of bounds, tuple has 4 elements
+    point $ %:: _ :point 10 20 30
+  &enum:nth point 5 ; Error: index 5 is outside this enum value
 ```
 
 ### Enum Variant Validation
@@ -421,7 +424,7 @@ let
   [] n numbers
 ```
 
-### Record and Struct Types
+### Struct Types
 
 ```cirru
 let
@@ -495,7 +498,7 @@ Schema on the namespace definition:
 ```cirru.no-check
 :: :fn $ {}
   :args $ [] :dynamic
-  :return $ :: :optional :record
+  :return $ :: 'Optional 'Struct
 ```
 
 ## Variadic Types
@@ -554,13 +557,13 @@ Checks are automatically skipped for:
 
 Beyond warning about type errors, the static analysis system drives **compile-time performance optimizations**. When the preprocessor knows a value's type, it rewrites operations to skip runtime dispatches:
 
-### Record Field Operations
+### Struct Field Operations
 
-When a record's struct type is known:
+When a struct definition is known:
 
-- **Field read** `(:field record)` → `&record:nth record <index>` — O(1) direct access instead of O(log n) name lookup
-- **Field update** `&record:assoc record :field value` → `&record:assoc-at record <index> value` — pre-resolved field index
-- **Batch update** `record-with record (:f1 v1) (:f2 v2)` → `&record:with-at record <indexes> <values>` — all indices pre-resolved
+- **Field read** `(:field value)` → `&struct:nth value <index>` — O(1) direct access instead of a name lookup
+- **Field update** `&struct:assoc value :field next` → `&struct:assoc-at value <index> next`
+- **Batch update** `struct-with value (:f1 v1) (:f2 v2)` → `&struct:with-at value <indexes> <values>`
 
 ### Conditional Folding
 
@@ -756,7 +759,7 @@ Type check warnings include:
 Example warning:
 
 ```
-[Warn] Tuple index out of bounds: tuple has 3 element(s), but trying to access index 5, at my-app.core/process-point
+[Warn] Field `:email` does not exist in struct `User`. Available fields: [:age, :name]. Struct field access is required and never returns nil/Option for a missing field; use a declared field instead
 ```
 
 ## Advanced Topics

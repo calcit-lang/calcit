@@ -117,15 +117,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Tag(_)
     | Str(_)
     | Ref(..)
-    | Tuple { .. }
+    | Enum { .. }
     | Buffer(..)
     | BufList(..)
     | CirruQuote(..)
     | Proc(_)
     | Macro { .. }
     | Fn { .. }
-    | Struct { .. }
-    | Enum { .. }
+    | StructDef { .. }
+    | EnumDef { .. }
     | Trait { .. }
     | Impl { .. }
     | Syntax(_, _)
@@ -172,9 +172,9 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       call_stack,
       expr.get_location(),
     )),
-    Record { .. } => Err(CalcitErr::use_msg_stack_location(
+    Struct { .. } => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
-      "unexpected record for expr",
+      "unexpected struct value for expr",
       call_stack,
       expr.get_location(),
     )),
@@ -331,7 +331,14 @@ pub fn call_expr(
             Some(value) => Ok(value.to_owned()),
             None => Ok(Calcit::Nil),
           },
-          Calcit::Record(record) => Ok(record.get(k.ref_str()).cloned().unwrap_or(Calcit::Nil)),
+          Calcit::Struct(record) => record.get(k.ref_str()).cloned().ok_or_else(|| {
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Type,
+              format!("record `{}` does not define field `:{k}`", record.struct_ref.name),
+              call_stack,
+              v.get_location(),
+            )
+          }),
           _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected a hashmap or record, got: {v}"),

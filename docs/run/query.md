@@ -248,8 +248,8 @@ let
   do
     ; "Get all methods/traits implemented by a value"
     println $ &methods-of p
-    ; 'Get tag name of a record or enum'
-    println $ &record:get-name p
+    ; 'Get the definition tag name of a struct value'
+    println $ &struct:get-name p
     ; "Describe any value's internal type"
     println $ &inspect-type p
 ```

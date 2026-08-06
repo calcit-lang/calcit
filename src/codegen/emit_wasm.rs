@@ -9,8 +9,8 @@
 //! - `recur` (tail recursion via WASM loop)
 //! - Number literals, Bool literals, Nil (→ 0.0)
 //! - Tag values (compiled to f64 integer constants)
-//! - Record creation (`&%{}`) and field access (`&record:nth`, `&record:get`)
-//! - Tuple creation (`::`) and field access (`&tuple:nth`)
+//! - Record creation (`&%{}`) and field access (`&struct:nth`, `&struct:get`)
+//! - Tuple creation (`::`) and field access (`&enum:nth`)
 //!
 //! All values are represented as f64 (matching Calcit's single numeric type).
 //! Booleans: true → 1.0, false/nil → 0.0.
@@ -29,7 +29,7 @@ use wasm_encoder::{
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStruct, CalcitSyntax, MethodKind,
+  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, MethodKind,
 };
 use crate::program;
 
@@ -887,7 +887,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         .ok_or_else(|| format!("unknown tag in WASM codegen: {tag_str}"))?;
       ctx.emit(f64_const(id as f64));
     }
-    Calcit::Struct(s) => {
+    Calcit::StructDef(s) => {
       let tag_str = s.name.to_string();
       let id = *ctx
         .tag_index
@@ -951,8 +951,8 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         .ok_or_else(|| format!("string literal not found in pool: {s}"))?;
       ctx.emit(f64_const(*ptr as f64));
     }
-    Calcit::Record(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
-    Calcit::Tuple(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Struct(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Enum(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
     // Function value (Fn with def_ref) — encode as f64 table slot index for call_indirect.
     Calcit::Fn { info, .. } => {
       if let Some(def_ref) = &info.def_ref {
@@ -1067,6 +1067,13 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // High-level set wrappers (union/difference/include) use reduce+lambda which can't be
       // compiled to WASM directly. Intercept and inline native 2+ arg set operations.
       if import.ns.as_ref() == "calcit.core" {
+        // Native placeholders may remain imports when WASM consumes a source
+        // form instead of the fully lowered expression. Resolve their current
+        // public names through CalcitProc so ABI renames do not silently turn
+        // supported operations into skipped functions.
+        if let Ok(proc) = import.def.parse::<CalcitProc>() {
+          return emit_proc_call(ctx, &proc, &args_list);
+        }
         match import.def.as_ref() {
           "union" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Union),
           "difference" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Difference),
@@ -1099,8 +1106,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "slice" if args_list.len() >= 2 && args_list.len() <= 3 => return emit_list_slice(ctx, &args_list),
           // `dissoc` — delegated to map dissoc for 2-arg calls.
           "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
-          // Public reflection wrapper around the native record metadata operation.
-          "record-struct" if args_list.len() == 1 => return emit_record_struct(ctx, &args_list),
           // `conj` — append one or more elements to a list.
           "conj" if args_list.len() >= 2 => return emit_conj(ctx, &args_list),
           // `update` — map update: new map with key set to f(old value).
@@ -1163,6 +1168,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         ctx.emit(f64_const(0.0)); // nil
         return Ok(());
       }
+      if let Ok(proc) = name.parse::<CalcitProc>() {
+        return emit_proc_call(ctx, &proc, &args_list);
+      }
       // HOF interceptors — Symbol-head calls appear when preprocessor doesn't resolve
       // intra-namespace references to Import nodes (e.g. calcit.core internal calls).
       match name {
@@ -1179,7 +1187,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
-        "record-struct" if args_list.len() == 1 => return emit_record_struct(ctx, &args_list),
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
@@ -1254,7 +1261,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
-          "record-struct" if args_list.len() == 1 => return emit_record_struct(ctx, &args_list),
           _ => {}
         }
       }
@@ -1355,9 +1361,6 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
 
   match head {
     Calcit::Import(import) => {
-      if import.ns.as_ref() == "calcit.core" && import.def.as_ref() == "record-struct" && call_args.len() == 1 {
-        return emit_record_struct(ctx, call_args);
-      }
       let qualified = format!("{}/{}", import.ns, import.def);
       let fn_idx = ctx
         .fn_index
@@ -1382,9 +1385,6 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
     }
     Calcit::Symbol { sym, .. } => {
       let name = sym.as_ref();
-      if name == "record-struct" && call_args.len() == 1 {
-        return emit_record_struct(ctx, call_args);
-      }
       let fn_idx = *ctx
         .fn_index
         .get(name)
@@ -1402,9 +1402,6 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
           info.def_ns, info.name
         )
       })?;
-      if def_ref.def_ns.as_ref() == "calcit.core" && def_ref.def_name.as_ref() == "record-struct" && call_args.len() == 1 {
-        return emit_record_struct(ctx, call_args);
-      }
       let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
       let fn_idx = ctx
         .fn_index
@@ -1705,8 +1702,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NumberQuestion => emit_type_predicate(ctx, "number", args),
     CalcitProc::BoolQuestion => emit_type_predicate(ctx, "bool", args),
     CalcitProc::SetQuestion => emit_type_predicate(ctx, "set", args),
-    CalcitProc::TupleQuestion => emit_type_predicate(ctx, "tuple", args),
-    CalcitProc::RecordQuestion => emit_type_predicate(ctx, "record", args),
+    // The current WASM heap ABI keeps its legacy storage tag numbers; these
+    // strings are not exposed as Calcit language type names.
+    CalcitProc::EnumQuestion => emit_type_predicate(ctx, "enum", args),
+    CalcitProc::StructQuestion => emit_type_predicate(ctx, "struct", args),
     CalcitProc::FnQuestion => emit_type_predicate(ctx, "fn", args),
 
     // Recur
@@ -2926,7 +2925,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Builtin type tags always registered in tag_index, so `type-of` can return them
 /// and heap objects can carry them in their header slot.
 const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "buf-list", "list", "map", "set", "tuple", "record", "number", "bool", "nil", "tag", "fn", "string", "symbol",
+  "buf-list", "list", "map", "set", "enum", "struct", "number", "bool", "nil", "tag", "fn", "string", "symbol",
 ];
 
 fn collect_all_tags_from(fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)]) -> HashMap<String, u32> {
@@ -2955,7 +2954,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
         collect_tags_from_expr(x, tags);
       }
     }
-    Calcit::Struct(s) => {
+    Calcit::StructDef(s) => {
       tags.push(s.name.to_string());
       for f in s.fields.iter() {
         tags.push(f.to_string());

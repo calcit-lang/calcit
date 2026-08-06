@@ -189,19 +189,19 @@
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
           :code $ quote
             defn test-defstruct-defenum ()
-              assert= :struct $ type-of Person
-              assert= :enum $ type-of Result
-              assert= :struct $ type-of (impl-traits Person StructImpl)
+              assert= :struct-def $ type-of Person
+              assert= :enum-def $ type-of Result
+              assert= :struct-def $ type-of (impl-traits Person StructImpl)
               let
                   enum-with-impls $ impl-traits Result EnumImpl
                   enum-with-result-impls $ impl-traits enum-with-impls ResultImpl
                   ok $ %:: enum-with-result-impls :ok 1
-                assert= :enum $ type-of enum-with-impls
-                assert= true $ any? (&tuple:impls ok)
+                assert= :enum-def $ type-of enum-with-impls
+                assert= true $ any? (&enum:impls ok)
                   fn (impl)
                     = (impl-origin impl) (%some ResultTrait)
-                assert= (%some enum-with-result-impls) (tuple-enum ok)
-                assert= "|(%:: :ok 1 (:enum Result))" $ str ok
+                assert= (%some enum-with-result-impls) (enum-definition ok)
+                assert= "|(%:: 'Result :ok 1)" $ str ok
               , "|defstruct/defenum checks passed"
           :examples $ []
           :schema $ :: 'Dynamic

@@ -128,12 +128,12 @@
               let
                   enum-ok $ parse-cirru-edn "|%:: :DemoEnum :ok"
                     {} $ :DemoEnum DemoEnum
-                assert= :ok $ &tuple:nth enum-ok 0
+                assert= :ok $ &enum:nth enum-ok 0
                 assert= "|%:: :DemoEnum :ok" $ trim (format-cirru-edn enum-ok)
               let
                   enum-err $ parse-cirru-edn "|%:: :DemoEnum :err |oops"
                     {} $ :DemoEnum DemoEnum
-                assert= :err $ &tuple:nth enum-err 0
+                assert= :err $ &enum:nth enum-err 0
                 assert= "|%:: :DemoEnum :err |oops" $ trim (format-cirru-edn enum-err)
               assert= "|do \"|a b\"" $ trim (format-cirru-edn "|a b")
               assert= "|do |hello" $ trim (format-cirru-edn |hello)
@@ -170,7 +170,7 @@
                 assert= data $ eval (&data-to-code data)
               let
                   d $ %{}? A
-                assert= true $ record? d
+                assert= true $ struct? d
               let
                   data $ #{} 1 2 3
                 assert= data $ eval (&data-to-code data)
@@ -207,7 +207,7 @@
               assert=
                 %{} Box $ :value |hello
                 , boxed
-              assert= :err $ &tuple:nth enum-value 0
+              assert= :err $ &enum:nth enum-value 0
               assert= true $ try
                 do
                   parse-cirru-edn-as "|[] $ %{} :Person (:age |old) (:name |Ada)" $ :: 'List Person

@@ -26,7 +26,7 @@
           :code $ quote
             defimpl DocTraitImpl DocTrait $ .label
               fn (x)
-                str-spaced |doc $ &record:get x :name
+                str-spaced |doc $ &struct:get x :name
           :examples $ []
           :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc "|Run docs smoke cases")
@@ -59,8 +59,8 @@
               let
                   DocPerson $ impl-traits DocPerson0 DocTraitImpl
                   DocEnum $ impl-traits DocEnum0 DocTraitImpl
-                assert= true $ struct? DocPerson
-                assert= true $ enum? DocEnum
+                assert= true $ struct-def? DocPerson
+                assert= true $ enum-def? DocEnum
               let
                   msg $ try
                     do
@@ -79,7 +79,7 @@
             defn test-native-impl-new-dot-method () $ let
                 DotImpl $ &impl::new DocTrait
                   :: .label $ fn (x)
-                    str-spaced |native-dot $ &record:get x :name
+                    str-spaced |native-dot $ &struct:get x :name
                 DotPerson $ impl-traits DocPerson0 DotImpl
                 p $ %{} DotPerson (:name |Bob)
               assert= (%some DocTrait) (impl-origin DotImpl)

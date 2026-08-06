@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rpds::HashTrieSet;
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitTuple};
+use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitList};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
@@ -368,7 +368,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
         for x in xs.iter() {
           let pair = runner::run_fn(&[state.to_owned(), (*x).to_owned()], info, call_stack)?;
           match pair {
-            Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
+            Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
@@ -408,7 +408,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
         for x in xs {
           let pair = runner::run_fn(&[state.to_owned(), x.to_owned()], info, call_stack)?;
           match pair {
-            Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
+            Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
@@ -452,7 +452,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
             call_stack,
           )?;
           match pair {
-            Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
+            Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
@@ -521,7 +521,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
           let x = xs[size - 1 - i].to_owned();
           let pair = runner::run_fn(&[state.to_owned(), x.to_owned()], info, call_stack)?;
           match pair {
-            Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
+            Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,

@@ -6,9 +6,9 @@ use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport,
-    CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTypeAnnotation,
-    GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind, brief_type_of_value, pop_type_slot_override,
-    push_type_slot_override, register_type_slot,
+    CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
+    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind, brief_type_of_value,
+    pop_type_slot_override, push_type_slot_override, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -51,7 +51,7 @@ thread_local! {
   /// When set, the hashmap literal preprocessor uses this struct definition to look up
   /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
   /// This enables type propagation through record literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
-  static EXPECTED_STRUCT_TYPE: RefCell<Option<CalcitStruct>> = const { RefCell::new(None) };
+  static EXPECTED_STRUCT_TYPE: RefCell<Option<CalcitStructDef>> = const { RefCell::new(None) };
   /// Feature flags of the current function being preprocessed.
   /// Used to check whether js-ffi calls are permitted.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
@@ -120,9 +120,63 @@ pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
 
+fn removed_data_api_replacement(name: &str) -> Option<String> {
+  match name {
+    "record?" => Some("struct? (values) or struct-def? (definitions)".to_owned()),
+    "tuple?" => Some("enum? (values) or enum-def? (definitions)".to_owned()),
+    "record-struct" => Some("struct-definition".to_owned()),
+    "tuple-enum" => Some("enum-definition".to_owned()),
+    "record-with" => Some("struct-with".to_owned()),
+    "record-match" => Some("struct-match".to_owned()),
+    "&record:struct" => Some("&struct:definition".to_owned()),
+    "&tuple:enum" => Some("&enum:definition".to_owned()),
+    "&tuple:enum-has-variant?" => Some("&enum-def:has-variant?".to_owned()),
+    "&tuple:enum-variant-arity" => Some("&enum-def:variant-arity".to_owned()),
+    "&tuple:validate-enum" => Some("&enum:validate".to_owned()),
+    _ if name.starts_with("&record:") => Some(name.replacen("&record:", "&struct:", 1)),
+    _ if name.starts_with("&tuple:") => Some(name.replacen("&tuple:", "&enum:", 1)),
+    _ => None,
+  }
+}
+
+fn warn_on_removed_data_api_call(
+  head: &Calcit,
+  call_location: Option<NodeLocation>,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let Calcit::Import(CalcitImport { ns, def, .. }) = head else {
+    return;
+  };
+  if ns.as_ref() != calcit::CORE_NS {
+    return;
+  }
+  let Some(replacement) = removed_data_api_replacement(def) else {
+    return;
+  };
+  let message = format!("[Warn] `{def}` was removed by the struct/enum data-model migration; use `{replacement}`");
+  if let Some(location) = call_location {
+    gen_check_warning_with_location_code(message, "W_REMOVED_DATA_API", location, check_warnings);
+  } else {
+    gen_check_warning_code(message, "W_REMOVED_DATA_API", file_ns, check_warnings);
+  }
+}
+
+/// An anonymous struct has a runtime field set but no nominal declaration from
+/// which the preprocessor can derive an index. Postfix access must use the
+/// required struct lookup rather than the Option-producing
+/// collection `get` API.
+fn is_anonymous_struct_type(type_info: &CalcitTypeAnnotation) -> bool {
+  matches!(
+    type_info,
+    CalcitTypeAnnotation::Custom(value)
+      if matches!(value.as_ref(), Calcit::Tag(tag) if matches!(tag.ref_str().trim_start_matches(':'), "record" | "struct"))
+  )
+}
+
 /// Extract type information from a Calcit definition
 /// Functions and procs are converted into `CalcitTypeAnnotation::Function` to retain argument/return hints
-/// Other values fall back to their concrete annotation (tag/record/tuple/custom)
+/// Other values fall back to their concrete annotation.
 pub struct PreprocessContext<'a> {
   scope_defs: &'a HashSet<Arc<str>>,
   scope_types: &'a mut ScopeTypes,
@@ -328,10 +382,10 @@ fn preprocess_with_type_slot_block(
 
   let type_annotation: Arc<CalcitTypeAnnotation> = if let Some((ns, def)) = &import_path {
     match &resolved {
-      Calcit::Enum(_) | Calcit::Struct(_) => {
+      Calcit::EnumDef(_) | Calcit::StructDef(_) => {
         Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
       }
-      Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+      Calcit::Struct(record) => Arc::new(CalcitTypeAnnotation::StructValue(record.struct_ref.clone())),
       other => {
         return Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Unexpected,
@@ -346,14 +400,14 @@ fn preprocess_with_type_slot_block(
     }
   } else {
     match &resolved {
-      Calcit::Enum(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
-      Calcit::Struct(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
-      Calcit::Record(record) => Arc::new(CalcitTypeAnnotation::Record(record.struct_ref.clone())),
+      Calcit::EnumDef(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def.to_owned()), Arc::new(vec![]))),
+      Calcit::StructDef(struct_def) => Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def.to_owned()), Arc::new(vec![]))),
+      Calcit::Struct(record) => Arc::new(CalcitTypeAnnotation::StructValue(record.struct_ref.clone())),
       other => match infer_type_from_expr(other, scope_types) {
         Some(inferred)
           if matches!(
             inferred.as_ref(),
-            CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::Record(_)
+            CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_)
           ) =>
         {
           inferred
@@ -577,10 +631,10 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       let short_name = name.rsplit('/').next().unwrap_or(name.as_ref());
       let local_type = scope_types.get(name).or_else(|| scope_types.get(short_name));
       match local_type.map(AsRef::as_ref) {
-        Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::Record(struct_def)) => {
+        Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
           Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
         }
-        Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::Tuple(enum_def)) => {
+        Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
           Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
         }
         Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
@@ -926,11 +980,21 @@ pub fn preprocess_expr(
                   for def in scope_defs {
                     names.push(def.to_owned());
                   }
-                  gen_check_warning_with_location(
-                    format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
-                    NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
-                    check_warnings,
-                  );
+                  let node_location = NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default());
+                  if let Some(replacement) = removed_data_api_replacement(def) {
+                    gen_check_warning_with_location_code(
+                      format!("[Warn] `{def}` was removed by the struct/enum data-model migration; use `{replacement}`"),
+                      "W_REMOVED_DATA_API",
+                      node_location,
+                      check_warnings,
+                    );
+                  } else {
+                    gen_check_warning_with_location(
+                      format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
+                      node_location,
+                      check_warnings,
+                    );
+                  }
                   Ok(expr.to_owned())
                 }
               }
@@ -954,9 +1018,9 @@ pub fn preprocess_expr(
     | Calcit::Bool(..)
     | Calcit::Tag(..)
     | Calcit::CirruQuote(..)
-    | Calcit::Struct(..)
-    | Calcit::Enum(..)
-    | Calcit::Record(..) => Ok(expr.to_owned()),
+    | Calcit::StructDef(..)
+    | Calcit::EnumDef(..)
+    | Calcit::Struct(..) => Ok(expr.to_owned()),
     Calcit::Method(..) => Ok(expr.to_owned()),
     Calcit::Proc(..) => Ok(expr.to_owned()),
     Calcit::Syntax(..) => Ok(expr.to_owned()),
@@ -991,6 +1055,59 @@ fn preprocess_list_call(
     def_name: &def_name,
     call_location: call_location.clone(),
   };
+  warn_on_removed_data_api_call(&head_form, call_location.clone(), file_ns, check_warnings);
+
+  let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
+  let is_constructor_named = |name: &str| {
+    matches!(&head_form, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == name)
+      || matches!(&head_form, Calcit::Symbol { sym, .. } if sym.as_ref() == name)
+  };
+
+  // `%{} _ (:field value) ...` is the canonical anonymous-struct
+  // constructor. Lower it before macro arguments are preprocessed so `_`
+  // cannot be mistaken for a normal unresolved symbol.
+  if has_anonymous_definition_marker && is_constructor_named("%{}") {
+    let mut items = vec![Calcit::Proc(CalcitProc::NativeLooseRecord)];
+    for entry in args.iter().skip(1) {
+      let Calcit::List(pair) = entry else {
+        return CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("%{{}} _ expects (:field value) entries, but received: {entry}"),
+        );
+      };
+      if pair.len() != 2 {
+        return CalcitErr::err_str(
+          CalcitErrKind::Arity,
+          format!("%{{}} _ expects (:field value) entries, but received: {entry}"),
+        );
+      }
+      items.extend(pair.iter().cloned());
+    }
+    return preprocess_expr(
+      &Calcit::from(CalcitList::from(items.as_slice())),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
+  }
+
+  // `%:: _ :variant ...` is the canonical anonymous-enum constructor.
+  if has_anonymous_definition_marker
+    && (matches!(&head_form, Calcit::Proc(CalcitProc::NativeEnumTupleNew)) || is_constructor_named("%::"))
+  {
+    let mut items = vec![Calcit::Proc(CalcitProc::NativeTuple)];
+    items.extend(args.iter().skip(1).cloned());
+    return preprocess_expr(
+      &Calcit::from(CalcitList::from(items.as_slice())),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
+  }
 
   // === Postfix record field access / method call detection ===
   // Pattern: (expr :field) where expr has a known record type → rewrite to (.-field expr)
@@ -1006,19 +1123,34 @@ fn preprocess_list_call(
     let first_arg = &args[0];
     match first_arg {
       Calcit::Tag(field_tag) if args.len() == 1 => {
-        if let Some(type_info) = resolve_type_value(&head_form, scope_types)
-          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
-          && let Some(idx) = struct_def.index_of(field_tag.ref_str())
-        {
-          // Rewrite to (&record:nth expr idx :field-tag) — same as the existing
-          // `(:tag expr)` rewrite, works in both Rust runtime and JS codegen.
-          let items: Vec<Calcit> = vec![
-            Calcit::Proc(CalcitProc::NativeRecordNth),
-            head_form,
-            Calcit::Number(idx as f64),
-            Calcit::Tag(field_tag.to_owned()),
-          ];
-          return Ok(Calcit::from(CalcitList::from(items.as_slice())));
+        if let Some(type_info) = resolve_type_value(&head_form, scope_types) {
+          if let Some(struct_def) = type_info.as_ref().resolve_to_struct()
+            && let Some(idx) = struct_def.index_of(field_tag.ref_str())
+          {
+            // Rewrite to (&struct:nth expr idx :field-tag) — same as the existing
+            // `(:tag expr)` rewrite, works in both Rust runtime and JS codegen.
+            // A nominal struct has a fixed field set, so this returns the field
+            // directly rather than wrapping it in Option.
+            let items: Vec<Calcit> = vec![
+              Calcit::Proc(CalcitProc::NativeRecordNth),
+              head_form,
+              Calcit::Number(idx as f64),
+              Calcit::Tag(field_tag.to_owned()),
+            ];
+            return Ok(Calcit::from(CalcitList::from(items.as_slice())));
+          }
+
+          // A record field is never an optional collection lookup. For a
+          // nominal record this path means the tag was not declared; for a
+          // loose record the field set is known only at runtime. Both use the
+          // required record lookup and report a normal error when absent.
+          if type_info.as_ref().resolve_to_struct().is_some() || is_anonymous_struct_type(type_info.as_ref()) {
+            return Ok(Calcit::from(CalcitList::from(&[
+              Calcit::Proc(CalcitProc::NativeRecordGet),
+              head_form,
+              first_arg.to_owned(),
+            ])));
+          }
         }
         // For non-record types (Dynamic, Fn, etc.), silently fall through —
         // `:tag` is a normal argument like `(list :a)` or `(f :a)`.
@@ -1178,6 +1310,9 @@ fn preprocess_list_call(
       }
       if !has_spread {
         let mut current_args = CalcitList::from(ys.drop_left());
+        // Core helpers such as `get` resolve to ordinary functions, so validate
+        // their statically known struct fields in this branch as well.
+        check_record_field_access(&head_form, &current_args, scope_types, file_ns, check_warnings);
         warn_on_nominal_enum_legacy_absence_use(head, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         warn_on_legacy_js_nullish_predicate(head, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         let mut any_rewritten = false;
@@ -1243,7 +1378,7 @@ fn preprocess_list_call(
             && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
             && let Some(idx) = struct_def.index_of(tag.ref_str())
           {
-            // Emit (&record:nth processed_arg idx :field-tag)
+            // Emit (&struct:nth processed_arg idx :field-tag)
             // The 3rd arg (field tag) is used by JS codegen where field order differs from Rust
             let items: Vec<Calcit> = vec![
               Calcit::Proc(CalcitProc::NativeRecordNth),
@@ -1253,6 +1388,15 @@ fn preprocess_list_call(
             ];
             let nth_call = Calcit::from(CalcitList::from(items.as_slice()));
             return Ok(nth_call);
+          }
+          if let Some(type_info) = resolve_type_value(&processed_arg, scope_types)
+            && (type_info.as_ref().resolve_to_struct().is_some() || is_anonymous_struct_type(type_info.as_ref()))
+          {
+            return Ok(Calcit::from(CalcitList::from(&[
+              Calcit::Proc(CalcitProc::NativeRecordGet),
+              processed_arg,
+              head.to_owned(),
+            ])));
           }
           // Fallback: rewrite to (get arg :tag) and re-preprocess
           let get_method = Calcit::Import(CalcitImport {
@@ -1371,10 +1515,14 @@ fn preprocess_list_call(
       | Calcit::List(..)
       | Calcit::RawCode(..)
       | Calcit::Symbol { .. }
-      | Calcit::Struct(..)
-      | Calcit::Enum(..) => {
-        // Check if the head (the thing being called) is actually callable
-        check_callable_type(&head_form, scope_types, file_ns, &def_name, check_warnings);
+      | Calcit::StructDef(..)
+      | Calcit::EnumDef(..) => {
+        // Postfix method syntax is represented as `(receiver .method ...)` at
+        // this stage. The receiver is deliberately not callable; the method
+        // rewrite below validates and resolves the actual call target.
+        if !matches!(args.first(), Some(Calcit::Method(..))) {
+          check_callable_type(&head_form, scope_types, file_ns, &def_name, check_warnings);
+        }
 
         let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
         let mut has_spread = false;
@@ -1439,7 +1587,7 @@ fn preprocess_list_call(
         check_record_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_record_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
 
-        // Optimize &record:get to &record:nth when field index can be resolved at compile time
+        // Optimize &struct:get to &struct:nth when field index can be resolved at compile time
         if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordGet))
           && processed_args.len() == 2
           && let (Some(record_arg), Some(Calcit::Tag(field_tag))) = (processed_args.first(), processed_args.get(1))
@@ -1455,7 +1603,7 @@ fn preprocess_list_call(
           ]);
         }
 
-        // Optimize &record:assoc to &record:assoc-at when field index can be resolved at compile time
+        // Optimize &struct:assoc to &struct:assoc-at when field index can be resolved at compile time
         if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordAssoc))
           && processed_args.len() == 3
           && let (Some(record_arg), Some(Calcit::Tag(field_tag)), Some(value_arg)) =
@@ -1473,7 +1621,7 @@ fn preprocess_list_call(
           ]);
         }
 
-        // Optimize &record:with to &record:with-at when all field indices can be resolved at compile time
+        // Optimize &struct:with to &struct:with-at when all field indices can be resolved at compile time
         if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordWith))
           && processed_args.len() >= 3
           && (processed_args.len() - 1) % 2 == 0
@@ -1692,8 +1840,8 @@ fn try_rewrite_struct_enum_constructor_head_call(
   // A record instance and its struct prototype intentionally share most type
   // information, so `resolve_type_value` alone cannot distinguish them.
   let constructor_kind = match head_form {
-    Calcit::Struct(_) => Some("defstruct"),
-    Calcit::Enum(_) => Some("defenum"),
+    Calcit::StructDef(_) => Some("defstruct"),
+    Calcit::EnumDef(_) => Some("defenum"),
     Calcit::Import(CalcitImport { ns, def, .. }) => data_definition_kind(ns, def),
     Calcit::Symbol { sym, info, .. } => data_definition_kind(&info.at_ns, sym),
     _ => None,
@@ -1703,8 +1851,12 @@ fn try_rewrite_struct_enum_constructor_head_call(
     return Ok(None);
   };
 
+  let resolved_struct_definition = match type_info.as_ref() {
+    CalcitTypeAnnotation::StructDef(struct_def) => Some((struct_def.as_ref().clone(), None)),
+    other => other.resolve_to_struct_with_ref(),
+  };
   if constructor_kind == Some("defstruct")
-    && let Some((struct_def, ns_def_path)) = type_info.as_ref().resolve_to_struct_with_ref()
+    && let Some((struct_def, ns_def_path)) = resolved_struct_definition
   {
     // Only attempt constructor-style rewriting for tag/value-style positional args.
     // Method-call syntax (expr .method ...) is represented as `Method` in the first arg
@@ -1837,8 +1989,12 @@ fn try_rewrite_struct_enum_constructor_head_call(
     return Ok(Some(Calcit::from(record_items)));
   }
 
+  let resolved_enum_definition = match type_info.as_ref() {
+    CalcitTypeAnnotation::EnumDef(enum_def) => Some((enum_def.as_ref().clone(), None)),
+    other => other.resolve_to_enum_with_ref(),
+  };
   if constructor_kind == Some("defenum")
-    && let Some((enum_def, ns_def_path)) = type_info.as_ref().resolve_to_enum_with_ref()
+    && let Some((enum_def, ns_def_path)) = resolved_enum_definition
   {
     let Some(first_arg) = args.first() else {
       gen_check_warning(
@@ -2214,19 +2370,19 @@ fn check_record_field_access(
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  // Check if this is a call to &record:get
+  // Check if this is a call to &struct:get
   if let Calcit::Proc(CalcitProc::NativeRecordGet) = head {
-    // &record:get takes 2 args: (record, field)
+    // &struct:get takes 2 args: (record, field)
     if args.len() >= 2
       && let (Some(record_arg), Some(field_arg)) = (args.first(), args.get(1))
     {
       check_field_in_record(record_arg, field_arg, scope_types, file_ns, check_warnings);
     }
   }
-  // Also check for Import of &record:get from calcit.core
+  // Also check calcit.core imports that perform required struct field access.
   else if let Calcit::Import(CalcitImport { ns, def, .. }) = head {
     if &**ns == calcit::CORE_NS
-      && (&**def == "record-get" || &**def == "&record:get")
+      && (&**def == "get" || &**def == "record-get" || &**def == "&struct:get")
       && args.len() >= 2
       && let (Some(record_arg), Some(field_arg)) = (args.first(), args.get(1))
     {
@@ -2341,17 +2497,21 @@ fn check_field_in_record(
   let available_fields: Vec<&str> = struct_def.fields.iter().map(|f| f.ref_str()).collect();
   gen_check_warning(
     format!(
-      "[Warn] Field `{field_name}` does not exist in record `{}`. Available fields: [{}]",
+      "[Warn] Field `:{field_name}` does not exist in struct `{}`. Available fields: [{}]. Struct field access is required and never returns nil/Option for a missing field; use a declared field instead",
       struct_def.name,
-      available_fields.join(", ")
+      available_fields
+        .iter()
+        .map(|field| format!(":{field}"))
+        .collect::<Vec<_>>()
+        .join(", ")
     ),
     file_ns,
     check_warnings,
   );
 }
 
-/// Check tuple index bounds for &tuple:nth operations.
-/// NOTE: Static bounds checking is not available for `Tuple(Arc<CalcitEnum>)` since
+/// Check tuple index bounds for &enum:nth operations.
+/// NOTE: Static bounds checking is not available for `Tuple(Arc<CalcitEnumDef>)` since
 /// the enum definition does not carry the per-variant payload sizes. This function is
 /// a no-op: bounds errors will be caught at runtime instead.
 pub(crate) fn check_tuple_nth_bounds(
@@ -2820,8 +2980,6 @@ fn warn_on_nominal_enum_legacy_absence_use(
       | "list?"
       | "map?"
       | "set?"
-      | "record?"
-      | "tuple?"
       | "tag?"
       | "number?"
       | "string?"
@@ -2881,8 +3039,8 @@ fn warn_on_nominal_enum_legacy_absence_use(
     }
     "=" | "&=" => "compare values of the same nominal enum, or pattern-match before comparing a payload",
     "&compare" if enum_name == "Option" => "unwrap or pattern-match the Option before comparing its payload",
-    "list?" | "map?" | "set?" | "record?" | "tuple?" | "tag?" | "number?" | "string?" | "keyword?" | "symbol?" | "fn?" | "bool?"
-    | "buffer?" | "cirru-quote?" | "ref?" | "macro?" | "syntax?" | "enum?" | "struct?" => {
+    "list?" | "map?" | "set?" | "struct?" | "enum?" | "struct-def?" | "enum-def?" | "tag?" | "number?" | "string?" | "keyword?"
+    | "symbol?" | "fn?" | "bool?" | "buffer?" | "cirru-quote?" | "ref?" | "macro?" | "syntax?" => {
       "pattern-match the nominal enum before applying a payload type predicate"
     }
     _ if enum_name == "Option" => "use `tag-match`, `option:unwrap-or`, or an Option method to access the payload",
@@ -3137,8 +3295,10 @@ fn try_specialize_polymorphic_call(
       | ("bool?", T::Bool)
       | ("tag?", T::Tag)
       | ("fn?", T::Fn(_) | T::DynFn)
-      | ("tuple?", T::Tuple(_) | T::DynTuple)
-      | ("record?", T::Record(_) | T::Struct(_, _))
+      | ("enum?", T::EnumValue(_) | T::AnonymousEnum | T::Enum(_, _))
+      | ("struct?", T::StructValue(_) | T::Struct(_, _))
+      | ("struct-def?", T::StructDef(_))
+      | ("enum-def?", T::EnumDef(_))
   );
   if predicate_true {
     return Some(Calcit::Bool(true));
@@ -3174,8 +3334,8 @@ fn try_specialize_polymorphic_call(
     ("count", T::Map(_, _)) => NativeMapCount,
     ("count", T::Set(_)) => NativeSetCount,
     ("count", T::String) => NativeStrCount,
-    ("count", T::Tuple(_) | T::DynTuple) => NativeTupleCount,
-    ("count", T::Record(_)) => NativeRecordCount,
+    ("count", T::EnumValue(_) | T::AnonymousEnum) => NativeTupleCount,
+    ("count", T::StructValue(_)) => NativeRecordCount,
     // empty?
     ("empty?", T::List(_)) => NativeListEmpty,
     ("empty?", T::Map(_, _)) => NativeMapEmpty,
@@ -3186,14 +3346,14 @@ fn try_specialize_polymorphic_call(
     ("contains?", T::Map(_, _)) => NativeMapContains,
     ("contains?", T::Set(_)) => NativeSetIncludes,
     ("contains?", T::String) => NativeStrContains,
-    ("contains?", T::Record(_)) => NativeRecordContains,
+    ("contains?", T::StructValue(_)) => NativeRecordContains,
     // rest
     ("rest", T::List(_)) => NativeListRest,
     // assoc
     ("assoc", T::List(_)) => NativeListAssoc,
     ("assoc", T::Map(_, _)) => NativeMapAssoc,
-    ("assoc", T::Tuple(_) | T::DynTuple) => NativeTupleAssoc,
-    ("assoc", T::Record(_)) => NativeRecordAssoc,
+    ("assoc", T::EnumValue(_) | T::AnonymousEnum) => NativeTupleAssoc,
+    ("assoc", T::StructValue(_)) => NativeRecordAssoc,
     // includes?
     ("includes?", T::List(_)) => NativeListIncludes,
     ("includes?", T::Map(_, _)) => NativeMapIncludes,
@@ -3476,7 +3636,7 @@ fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>
 fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
   if let Some(struct_def) = type_value.resolve_to_struct() {
     // Prepend core record impls; user impls come after and win (last_wins=true)
-    let mut impls = resolve_core_impl_records("&core-record-impls").unwrap_or_default();
+    let mut impls = resolve_core_impl_records("&core-struct-impls").unwrap_or_default();
     impls.extend(struct_def.impls.iter().cloned());
     return Some(impls);
   }
@@ -3487,14 +3647,14 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
 
   if let Some(enum_def) = type_value.resolve_to_enum() {
     // Prepend core tuple impls; user impls come after and win (last_wins=true)
-    let mut impls = resolve_core_impl_records("&core-tuple-impls").unwrap_or_default();
+    let mut impls = resolve_core_impl_records("&core-enum-impls").unwrap_or_default();
     impls.extend(enum_def.impls.iter().cloned());
     return Some(impls);
   }
 
-  if let CalcitTypeAnnotation::DynTuple = type_value {
+  if let CalcitTypeAnnotation::AnonymousEnum = type_value {
     // Untyped tuple: only core impls
-    if let Some(core_impls) = resolve_core_impl_records("&core-tuple-impls") {
+    if let Some(core_impls) = resolve_core_impl_records("&core-enum-impls") {
       return Some(core_impls);
     }
   }
@@ -3844,7 +4004,10 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     "set?" => Some(tag_annotation("set")),
     "string?" => Some(tag_annotation("string")),
     "number?" => Some(tag_annotation("number")),
-    "tuple?" => Some(tag_annotation("tuple")),
+    "enum?" => Some(tag_annotation("enum")),
+    "struct?" => Some(tag_annotation("struct")),
+    "enum-def?" => Some(tag_annotation("enum-def")),
+    "struct-def?" => Some(tag_annotation("struct-def")),
     "tag?" => Some(tag_annotation("tag")),
     "bool?" => Some(tag_annotation("bool")),
     "symbol?" => Some(tag_annotation("symbol")),
@@ -3916,7 +4079,11 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   }
 }
 
-fn resolve_enum_type_for_match(type_ref: &CalcitTypeAnnotation, file_ns: &str, scope_types: &ScopeTypes) -> Option<calcit::CalcitEnum> {
+fn resolve_enum_type_for_match(
+  type_ref: &CalcitTypeAnnotation,
+  file_ns: &str,
+  scope_types: &ScopeTypes,
+) -> Option<calcit::CalcitEnumDef> {
   if let Some(enum_def) = type_ref.resolve_to_enum() {
     return Some(enum_def);
   }
@@ -3940,8 +4107,8 @@ fn resolve_enum_type_for_match(type_ref: &CalcitTypeAnnotation, file_ns: &str, s
     (Arc::from(calcit::CORE_NS), Arc::from(stripped))
   };
   match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
-    Some(Calcit::Enum(enum_def)) => Some(enum_def),
-    Some(Calcit::Record(record)) => calcit::CalcitEnum::from_record(record).ok(),
+    Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
+    Some(Calcit::Struct(record)) => calcit::CalcitEnumDef::from_record(record).ok(),
     _ => None,
   }
 }
@@ -3990,14 +4157,14 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
   // can be specialized instead of falling back to Dynamic.
   let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
   let enum_match = inferred_match_type.and_then(|t| match t.as_ref() {
-    CalcitTypeAnnotation::Tuple(enum_ref) => Some((enum_ref.as_ref().to_owned(), Arc::new(vec![]))),
+    CalcitTypeAnnotation::EnumValue(enum_ref) => Some((enum_ref.as_ref().to_owned(), Arc::new(vec![]))),
     CalcitTypeAnnotation::Enum(enum_ref, args) => Some((enum_ref.as_ref().to_owned(), args.clone())),
     CalcitTypeAnnotation::TypeRef(_, args) => {
       resolve_enum_type_for_match(t.as_ref(), ctx.file_ns, ctx.scope_types).map(|enum_ref| (enum_ref, args.clone()))
     }
     CalcitTypeAnnotation::TypeSlot(name) => calcit::resolve_type_slot(name).and_then(|resolved| match resolved.as_ref() {
       CalcitTypeAnnotation::Enum(e, args) => Some((e.as_ref().to_owned(), args.clone())),
-      CalcitTypeAnnotation::Tuple(e) => Some((e.as_ref().to_owned(), Arc::new(vec![]))),
+      CalcitTypeAnnotation::EnumValue(e) => Some((e.as_ref().to_owned(), Arc::new(vec![]))),
       _ => None,
     }),
     _ => None,
@@ -5088,7 +5255,7 @@ fn validate_def_schema_during_preprocess(
 mod tests {
   use super::*;
   use crate::calcit::{
-    CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitRecord, CalcitScope, CalcitStruct, ImportInfo,
+    CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitScope, CalcitStructDef, CalcitStructValue, ImportInfo,
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
@@ -5098,6 +5265,50 @@ mod tests {
 
   fn lock_preprocess_test_state() -> std::sync::MutexGuard<'static, ()> {
     PREPROCESS_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner())
+  }
+
+  #[test]
+  fn removed_data_apis_point_to_their_struct_enum_replacements() {
+    let cases = [
+      ("record?", "struct? (values) or struct-def? (definitions)"),
+      ("tuple?", "enum? (values) or enum-def? (definitions)"),
+      ("record-struct", "struct-definition"),
+      ("tuple-enum", "enum-definition"),
+      ("record-with", "struct-with"),
+      ("record-match", "struct-match"),
+      ("&record:get", "&struct:get"),
+      ("&record:struct", "&struct:definition"),
+      ("&tuple:nth", "&enum:nth"),
+      ("&tuple:enum", "&enum:definition"),
+      ("&tuple:enum-has-variant?", "&enum-def:has-variant?"),
+      ("&tuple:enum-variant-arity", "&enum-def:variant-arity"),
+      ("&tuple:validate-enum", "&enum:validate"),
+    ];
+
+    for (legacy, replacement) in cases {
+      assert_eq!(removed_data_api_replacement(legacy).as_deref(), Some(replacement));
+    }
+    assert_eq!(removed_data_api_replacement("&map:get"), None);
+  }
+
+  #[test]
+  fn removed_core_data_api_calls_emit_migration_diagnostics() {
+    let head = Calcit::Import(CalcitImport {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("record?"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.migration"),
+      }),
+      def_id: None,
+    });
+    let warnings = RefCell::new(vec![]);
+
+    warn_on_removed_data_api_call(&head, None, "tests.migration", &warnings);
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].code(), Some("W_REMOVED_DATA_API"));
+    assert!(warnings[0].message().contains("struct? (values) or struct-def? (definitions)"));
   }
 
   #[test]
@@ -5201,7 +5412,7 @@ mod tests {
     });
     let args = CalcitList::from(std::slice::from_ref(&option_value));
 
-    for operation in ["some?", "get", "&compare", "record?"] {
+    for operation in ["some?", "get", "&compare", "struct?"] {
       let head = core_head(operation);
       let warnings = RefCell::new(vec![]);
       warn_on_nominal_enum_legacy_absence_use(&head, &args, &ScopeTypes::new(), "tests.option-migration", "demo", &warnings);
@@ -5338,7 +5549,7 @@ mod tests {
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
     });
     let type_value = CalcitTypeAnnotation::Struct(
-      Arc::new(CalcitStruct {
+      Arc::new(CalcitStructDef {
         name: EdnTag::new("Demo"),
         fields: Arc::new(vec![]),
         field_types: Arc::new(vec![]),
@@ -6011,12 +6222,12 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitStruct::from_fields(
+    let test_record = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
       vec![EdnTag::from("age"), EdnTag::from("name")],
     ))));
 
-    // Test expression: (assert-type user <record-type>) (&record:get user :name)
+    // Test expression: (assert-type user <record-type>) (&struct:get user :name)
     let expr = Cirru::List(vec![
       Cirru::leaf("&let"),
       Cirru::List(vec![Cirru::leaf("user"), Cirru::leaf("nil")]),
@@ -6025,7 +6236,7 @@ mod tests {
         Cirru::leaf("user"),
         Cirru::leaf("record-type"), // placeholder, will be replaced
       ]),
-      Cirru::List(vec![Cirru::leaf("&record:get"), Cirru::leaf("user"), Cirru::leaf(":name")]),
+      Cirru::List(vec![Cirru::leaf("&struct:get"), Cirru::leaf("user"), Cirru::leaf(":name")]),
     ]);
 
     let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
@@ -6047,12 +6258,117 @@ mod tests {
   }
 
   #[test]
+  fn common_get_reports_missing_known_struct_field_during_preprocess() {
+    let struct_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
+      EdnTag::from("Person"),
+      vec![EdnTag::from("name")],
+    ))));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("person"), struct_type);
+
+    let head = Calcit::Import(CalcitImport {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("get"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.struct"),
+      }),
+      def_id: None,
+    });
+    let args = CalcitList::from(
+      &[
+        Calcit::Symbol {
+          sym: Arc::from("person"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("tests.struct"),
+            at_def: Arc::from("demo"),
+          }),
+          location: None,
+        },
+        Calcit::Tag(EdnTag::from("missing")),
+      ][..],
+    );
+    let warnings = RefCell::new(vec![]);
+
+    check_record_field_access(&head, &args, &scope_types, "tests.struct", &warnings);
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1);
+    let message = warnings[0].message();
+    assert!(message.contains("Field `:missing` does not exist in struct `Person`"));
+    assert!(message.contains("never returns nil/Option"));
+  }
+
+  #[test]
+  fn postfix_nominal_record_access_uses_direct_field_lookup() {
+    let expr = Cirru::List(vec![Cirru::leaf("person"), Cirru::leaf(":name")]);
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse postfix field access");
+    let mut scope_defs = HashSet::new();
+    scope_defs.insert(Arc::from("person"));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("person"),
+      Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
+        EdnTag::from("Person"),
+        vec![EdnTag::from("name")],
+      )))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.record",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess nominal postfix field access");
+
+    let Calcit::List(items) = resolved else {
+      panic!("expected specialized field access call");
+    };
+    assert!(
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecordNth))),
+      "nominal field access should bypass Option-producing get: {items}"
+    );
+  }
+
+  #[test]
+  fn postfix_loose_record_access_uses_required_record_get() {
+    let expr = Cirru::List(vec![Cirru::leaf("record"), Cirru::leaf(":name")]);
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse postfix field access");
+    let mut scope_defs = HashSet::new();
+    scope_defs.insert(Arc::from("record"));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("record"), tag_annotation("record"));
+
+    let warnings = RefCell::new(vec![]);
+    let resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.record",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess loose record postfix field access");
+
+    let Calcit::List(items) = resolved else {
+      panic!("expected required record get call");
+    };
+    assert!(
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecordGet))),
+      "loose record access should never use Option-producing get: {items}"
+    );
+  }
+
+  #[test]
   fn rewrites_struct_head_call_to_record_ctor() {
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+    let person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
 
     let expr = Cirru::List(vec![
       Cirru::leaf("Person"),
@@ -6067,7 +6383,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Struct(person_struct.clone());
+    code_items[0] = Calcit::StructDef(person_struct.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6092,7 +6408,7 @@ mod tests {
 
     assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))));
     match items.get(1) {
-      Some(Calcit::Struct(struct_def)) => assert_eq!(struct_def.name, person_struct.name),
+      Some(Calcit::StructDef(struct_def)) => assert_eq!(struct_def.name, person_struct.name),
       other => panic!("expected struct prototype at position 1, got {other:?}"),
     }
     assert_eq!(*items.get(2).expect("name field key"), Calcit::Tag(EdnTag::from("name")));
@@ -6103,13 +6419,13 @@ mod tests {
 
   #[test]
   fn rewrites_enum_head_call_to_enum_tuple_ctor() {
-    use crate::calcit::CalcitEnum;
+    use crate::calcit::CalcitEnumDef;
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Result"),
         vec![EdnTag::from("ok"), EdnTag::from("err")],
       )),
@@ -6118,7 +6434,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let result_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid result enum");
+    let result_enum = CalcitEnumDef::from_record(enum_record.clone()).expect("valid result enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":ok")]);
 
@@ -6127,7 +6443,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Enum(result_enum.clone());
+    code_items[0] = Calcit::EnumDef(result_enum.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6152,7 +6468,7 @@ mod tests {
 
     assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))));
     match items.get(1) {
-      Some(Calcit::Record(enum_record)) => assert_eq!(enum_record.struct_ref.name, *result_enum.name()),
+      Some(Calcit::Struct(enum_record)) => assert_eq!(enum_record.struct_ref.name, *result_enum.name()),
       other => panic!("expected enum prototype at position 1, got {other:?}"),
     }
     assert_eq!(*items.get(2).expect("tag key"), Calcit::Tag(EdnTag::from("ok")));
@@ -6165,7 +6481,7 @@ mod tests {
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+    let person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
 
     let expr = Cirru::List(vec![Cirru::leaf("Person"), Cirru::leaf(":name")]);
 
@@ -6174,7 +6490,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Struct(person_struct.clone());
+    code_items[0] = Calcit::StructDef(person_struct.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6216,7 +6532,7 @@ mod tests {
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+    let person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
 
     let expr = Cirru::List(vec![
       Cirru::leaf("Person"),
@@ -6231,7 +6547,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Struct(person_struct.clone());
+    code_items[0] = Calcit::StructDef(person_struct.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6271,7 +6587,7 @@ mod tests {
   fn rejects_struct_head_call_with_duplicate_or_missing_required_field() {
     use cirru_edn::EdnTag;
 
-    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
+    let person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("age")]);
     let warnings = RefCell::new(vec![]);
     let scope_types = ScopeTypes::new();
     let stack = CallStackList::default();
@@ -6286,7 +6602,7 @@ mod tests {
       .as_slice(),
     );
     let duplicate_result = try_rewrite_struct_enum_constructor_head_call(
-      &Calcit::Struct(person_struct.clone()),
+      &Calcit::StructDef(person_struct.clone()),
       &duplicate_args,
       &scope_types,
       "tests.record",
@@ -6306,7 +6622,7 @@ mod tests {
     warnings.borrow_mut().clear();
     let missing_args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("name")), Calcit::Str(Arc::from("Alice"))].as_slice());
     let missing_result = try_rewrite_struct_enum_constructor_head_call(
-      &Calcit::Struct(person_struct),
+      &Calcit::StructDef(person_struct),
       &missing_args,
       &scope_types,
       "tests.record",
@@ -6326,20 +6642,20 @@ mod tests {
 
   #[test]
   fn record_and_enum_instances_are_not_constructor_heads() {
-    use crate::calcit::{CalcitEnum, CalcitTuple};
+    use crate::calcit::{CalcitEnumDef, CalcitEnumValue};
     use cirru_edn::EdnTag;
 
-    let person_struct = CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name")]);
-    let person = Calcit::Record(CalcitRecord {
+    let person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name")]);
+    let person = Calcit::Struct(CalcitStructValue {
       struct_ref: Arc::new(person_struct),
       values: Arc::new(vec![Calcit::Str(Arc::from("Alice"))]),
     });
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Result"), vec![EdnTag::from("ok")])),
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("Result"), vec![EdnTag::from("ok")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
     };
-    let result_enum = CalcitEnum::from_record(enum_record).expect("valid enum");
-    let enum_value = Calcit::Tuple(CalcitTuple {
+    let result_enum = CalcitEnumDef::from_record(enum_record).expect("valid enum");
+    let enum_value = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::from("ok"))),
       extra: vec![],
       sum_type: Some(Arc::new(result_enum)),
@@ -6366,12 +6682,12 @@ mod tests {
   fn warns_on_record_constructor_field_type_mismatch() {
     use cirru_edn::EdnTag;
 
-    let mut point_struct = CalcitStruct::from_fields(EdnTag::from("Point"), vec![EdnTag::from("x")]);
+    let mut point_struct = CalcitStructDef::from_fields(EdnTag::from("Point"), vec![EdnTag::from("x")]);
     point_struct.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
     let args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("x")), Calcit::Str(Arc::from("wrong"))].as_slice());
     let warnings = RefCell::new(vec![]);
     let result = try_rewrite_struct_enum_constructor_head_call(
-      &Calcit::Struct(point_struct),
+      &Calcit::StructDef(point_struct),
       &args,
       &ScopeTypes::new(),
       "tests.record",
@@ -6393,7 +6709,7 @@ mod tests {
     use cirru_edn::EdnTag;
 
     let generic: Arc<str> = Arc::from("T");
-    let mut box_struct = CalcitStruct::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]);
+    let mut box_struct = CalcitStructDef::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]);
     box_struct.generics = Arc::new(vec![generic.clone()]);
     box_struct.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic))]);
     let receiver = Calcit::Local(CalcitLocal {
@@ -6434,7 +6750,7 @@ mod tests {
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let cat_struct = CalcitStruct::from_fields(EdnTag::from("Cat"), vec![EdnTag::from("name"), EdnTag::from("color")]);
+    let cat_struct = CalcitStructDef::from_fields(EdnTag::from("Cat"), vec![EdnTag::from("name"), EdnTag::from("color")]);
 
     let expr = Cirru::List(vec![Cirru::leaf("kitty"), Cirru::leaf(".rename"), Cirru::leaf("|LagopusB")]);
     let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct method call");
@@ -6443,7 +6759,10 @@ mod tests {
     scope_defs.insert(Arc::from("kitty"));
 
     let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("kitty"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(cat_struct))));
+    scope_types.insert(
+      Arc::from("kitty"),
+      Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(cat_struct))),
+    );
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -6469,13 +6788,13 @@ mod tests {
 
   #[test]
   fn rejects_enum_head_call_with_missing_tag() {
-    use crate::calcit::{CalcitEnum, CalcitRecord};
+    use crate::calcit::{CalcitEnumDef, CalcitStructValue};
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Result"),
         vec![EdnTag::from("ok"), EdnTag::from("err")],
       )),
@@ -6484,7 +6803,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let result_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid result enum");
+    let result_enum = CalcitEnumDef::from_record(enum_record.clone()).expect("valid result enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Result")]);
 
@@ -6493,7 +6812,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Enum(result_enum.clone());
+    code_items[0] = Calcit::EnumDef(result_enum.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6531,13 +6850,13 @@ mod tests {
 
   #[test]
   fn rejects_enum_head_call_with_invalid_tag() {
-    use crate::calcit::{CalcitEnum, CalcitRecord};
+    use crate::calcit::{CalcitEnumDef, CalcitStructValue};
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Result"),
         vec![EdnTag::from("ok"), EdnTag::from("err")],
       )),
@@ -6546,7 +6865,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let result_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid result enum");
+    let result_enum = CalcitEnumDef::from_record(enum_record.clone()).expect("valid result enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":bad")]);
 
@@ -6555,7 +6874,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Enum(result_enum.clone());
+    code_items[0] = Calcit::EnumDef(result_enum.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6593,13 +6912,13 @@ mod tests {
 
   #[test]
   fn rejects_enum_head_call_with_non_tag_first_arg() {
-    use crate::calcit::{CalcitEnum, CalcitRecord};
+    use crate::calcit::{CalcitEnumDef, CalcitStructValue};
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
 
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Mode"),
         vec![EdnTag::from("dark"), EdnTag::from("light")],
       )),
@@ -6608,7 +6927,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let mode_enum = CalcitEnum::from_record(enum_record.clone()).expect("valid mode enum");
+    let mode_enum = CalcitEnumDef::from_record(enum_record.clone()).expect("valid mode enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Mode"), Cirru::leaf("dark")]);
 
@@ -6617,7 +6936,7 @@ mod tests {
       panic!("expected parsed call");
     };
     let mut code_items = parsed_items.to_vec();
-    code_items[0] = Calcit::Enum(mode_enum.clone());
+    code_items[0] = Calcit::EnumDef(mode_enum.clone());
     let code = Calcit::from(code_items);
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -6660,14 +6979,14 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitStruct::from_fields(
+    let test_record = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
       vec![EdnTag::from("age"), EdnTag::from("name")],
     ))));
 
-    // Test expression: (&record:get user :email) with user already typed
+    // Test expression: (&struct:get user :email) with user already typed
     let expr = Cirru::List(vec![
-      Cirru::leaf("&record:get"),
+      Cirru::leaf("&struct:get"),
       Cirru::leaf("user"),
       Cirru::leaf(":email"), // invalid field
     ]);
@@ -6727,8 +7046,8 @@ mod tests {
       values: Arc::new(vec![method_import.clone()]),
     };
 
-    let class_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct {
+    let class_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef {
         name: EdnTag::from("Greeter"),
         fields: Arc::new(vec![EdnTag::from("greet")]),
         field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
@@ -6740,7 +7059,7 @@ mod tests {
     };
     scope_types.insert(
       Arc::from("user"),
-      Arc::new(CalcitTypeAnnotation::Record(class_record.struct_ref.clone())),
+      Arc::new(CalcitTypeAnnotation::StructValue(class_record.struct_ref.clone())),
     );
 
     let warnings = RefCell::new(vec![]);
@@ -6766,7 +7085,7 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitStruct::from_fields(
+    let test_record = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
       vec![EdnTag::from("age"), EdnTag::from("name")],
     ))));
@@ -6990,7 +7309,7 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitStruct::from_fields(
+    let test_record = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
       vec![EdnTag::from("age"), EdnTag::from("name")],
     ))));
@@ -7034,7 +7353,7 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with limited methods
-    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitStruct::from_fields(
+    let test_record = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
       vec![EdnTag::from("age"), EdnTag::from("name")],
     ))));
@@ -7308,14 +7627,14 @@ mod tests {
     });
     let args = CalcitList::from(&[arg_local] as &[Calcit]);
 
-    let mut shown_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Shown"), vec![EdnTag::new("name")]);
+    let mut shown_struct = crate::calcit::CalcitStructDef::from_fields(EdnTag::new("Shown"), vec![EdnTag::new("name")]);
     shown_struct.impls = vec![Arc::new(crate::calcit::CalcitImpl {
       name: EdnTag::new("ShowImpl"),
       origin: Some(show_trait.clone()),
       fields: Arc::new(vec![EdnTag::new("show")]),
       values: Arc::new(vec![Calcit::Nil]),
     })];
-    let plain_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Plain"), vec![EdnTag::new("name")]);
+    let plain_struct = crate::calcit::CalcitStructDef::from_fields(EdnTag::new("Plain"), vec![EdnTag::new("name")]);
 
     let mut ok_scope_types: ScopeTypes = ScopeTypes::new();
     ok_scope_types.insert(
@@ -7407,14 +7726,14 @@ mod tests {
     });
     let args = CalcitList::from(&[arg_local] as &[Calcit]);
 
-    let mut shown_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Shown"), vec![EdnTag::new("name")]);
+    let mut shown_struct = crate::calcit::CalcitStructDef::from_fields(EdnTag::new("Shown"), vec![EdnTag::new("name")]);
     shown_struct.impls = vec![Arc::new(CalcitImpl {
       name: EdnTag::new("ShowImpl"),
       origin: Some(show_trait.clone()),
       fields: Arc::new(vec![EdnTag::new("show")]),
       values: Arc::new(vec![Calcit::Nil]),
     })];
-    let plain_struct = crate::calcit::CalcitStruct::from_fields(EdnTag::new("Plain"), vec![EdnTag::new("name")]);
+    let plain_struct = crate::calcit::CalcitStructDef::from_fields(EdnTag::new("Plain"), vec![EdnTag::new("name")]);
 
     let call_info = CallTypeCheckInfo {
       file_ns: "tests.where",
@@ -7597,8 +7916,8 @@ mod tests {
       values: Arc::new(vec![method_value.clone()]),
     };
 
-    let class_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct {
+    let class_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef {
         name: EdnTag::from("Person"),
         fields: Arc::new(vec![EdnTag::from("greet")]),
         field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
@@ -7624,7 +7943,7 @@ mod tests {
     let mut scope_types: ScopeTypes = ScopeTypes::new();
     scope_types.insert(
       Arc::from("user"),
-      Arc::new(CalcitTypeAnnotation::Record(class_record.struct_ref.clone())),
+      Arc::new(CalcitTypeAnnotation::StructValue(class_record.struct_ref.clone())),
     );
 
     let warnings = RefCell::new(vec![]);
@@ -7649,12 +7968,12 @@ mod tests {
 
   #[test]
   fn checks_enum_tuple_invalid_variant() {
-    use crate::calcit::CalcitEnum;
+    use crate::calcit::CalcitEnumDef;
     use cirru_edn::EdnTag;
 
     // Create a test enum: Result with :ok and :err variants
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Result"),
         vec![EdnTag::from("err"), EdnTag::from("ok")],
       )),
@@ -7664,13 +7983,13 @@ mod tests {
         Calcit::from(CalcitList::default()),       // :ok payload types (empty)
       ]),
     };
-    let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_record(enum_record.clone()).expect("valid enum");
 
     // Test: create enum tuple with invalid variant :invalid
     let args = CalcitList::from(
       &vec![
-        Calcit::Enum(enum_proto), // enum prototype
-        Calcit::tag("invalid"),   // invalid variant tag
+        Calcit::EnumDef(enum_proto), // enum prototype
+        Calcit::tag("invalid"),      // invalid variant tag
       ][..],
     );
 
@@ -7694,12 +8013,12 @@ mod tests {
 
   #[test]
   fn checks_enum_tuple_wrong_arity() {
-    use crate::calcit::CalcitEnum;
+    use crate::calcit::CalcitEnumDef;
     use cirru_edn::EdnTag;
 
     // Create a test enum: Result with :ok (0 payloads) and :err (1 payload)
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Result"),
         vec![EdnTag::from("err"), EdnTag::from("ok")],
       )),
@@ -7708,14 +8027,14 @@ mod tests {
         Calcit::from(CalcitList::default()),       // :ok expects 0 payloads
       ]),
     };
-    let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_record(enum_record.clone()).expect("valid enum");
 
     // Test: create :err tuple but without the required payload
     let args = CalcitList::from(
       &vec![
-        Calcit::Enum(enum_proto), // enum prototype
-        Calcit::tag("err"),       // :err variant expects 1 payload
-                                  // missing payload!
+        Calcit::EnumDef(enum_proto), // enum prototype
+        Calcit::tag("err"),          // :err variant expects 1 payload
+                                     // missing payload!
       ][..],
     );
 
@@ -7739,12 +8058,12 @@ mod tests {
 
   #[test]
   fn checks_enum_tuple_payload_type() {
-    use crate::calcit::CalcitEnum;
+    use crate::calcit::CalcitEnumDef;
     use cirru_edn::EdnTag;
 
     // Create a test enum: Result with :err (string payload)
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::from("Result"),
         vec![EdnTag::from("err"), EdnTag::from("ok")],
       )),
@@ -7753,14 +8072,14 @@ mod tests {
         Calcit::from(CalcitList::default()),       // :ok expects no payloads
       ]),
     };
-    let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_record(enum_record.clone()).expect("valid enum");
 
     // Test: create :err tuple with number instead of string
     let args = CalcitList::from(
       &vec![
-        Calcit::Enum(enum_proto), // enum prototype
-        Calcit::tag("err"),       // :err variant
-        Calcit::Number(42.0),     // should be string, not number!
+        Calcit::EnumDef(enum_proto), // enum prototype
+        Calcit::tag("err"),          // :err variant
+        Calcit::Number(42.0),        // should be string, not number!
       ][..],
     );
 
@@ -7787,10 +8106,10 @@ mod tests {
     use cirru_edn::EdnTag;
     let _ = EdnTag::from("point"); // tag retained for documentation
 
-    // With Arc<CalcitEnum> typed tuples, size is not statically known;
-    // bounds checking falls through (same as DynTuple). Verify no warning.
+    // With Arc<CalcitEnumDef> typed tuples, size is not statically known;
+    // bounds checking falls through (same as AnonymousEnum). Verify no warning.
     let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("my-tuple"), Arc::new(CalcitTypeAnnotation::DynTuple));
+    scope_types.insert(Arc::from("my-tuple"), Arc::new(CalcitTypeAnnotation::AnonymousEnum));
 
     let args = CalcitList::from(
       &vec![
@@ -7813,7 +8132,7 @@ mod tests {
     let warnings_vec = warnings.borrow();
     assert!(
       warnings_vec.is_empty(),
-      "DynTuple: no static bounds checking, should have no warning"
+      "AnonymousEnum: no static bounds checking, should have no warning"
     );
   }
 
@@ -7822,9 +8141,9 @@ mod tests {
     use cirru_edn::EdnTag;
     let _ = EdnTag::from("point"); // tag retained for documentation
 
-    // DynTuple: bounds checking not performed, no warning expected
+    // AnonymousEnum: bounds checking not performed, no warning expected
     let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("my-tuple"), Arc::new(CalcitTypeAnnotation::DynTuple));
+    scope_types.insert(Arc::from("my-tuple"), Arc::new(CalcitTypeAnnotation::AnonymousEnum));
 
     let args = CalcitList::from(
       &vec![
@@ -7853,9 +8172,9 @@ mod tests {
     use cirru_edn::EdnTag;
     let _ = EdnTag::from("point"); // tag retained for documentation
 
-    // DynTuple: dynamic index - should skip checking
+    // AnonymousEnum: dynamic index - should skip checking
     let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("my-tuple"), Arc::new(CalcitTypeAnnotation::DynTuple));
+    scope_types.insert(Arc::from("my-tuple"), Arc::new(CalcitTypeAnnotation::AnonymousEnum));
 
     // Test: dynamic index (variable) - should skip checking
     let args = CalcitList::from(

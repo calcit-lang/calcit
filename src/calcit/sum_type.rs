@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitGenericBound, CalcitImpl, CalcitList, CalcitRecord, CalcitStruct, CalcitTypeAnnotation};
+use crate::calcit::{Calcit, CalcitGenericBound, CalcitImpl, CalcitList, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
@@ -22,7 +22,7 @@ impl EnumVariant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitEnum {
+pub struct CalcitEnumDef {
   name: EdnTag,
   generics: Arc<Vec<Arc<str>>>,
   where_bounds: Arc<Vec<CalcitGenericBound>>,
@@ -33,14 +33,14 @@ pub struct CalcitEnum {
   variant_index: Arc<HashMap<String, usize>>,
 }
 
-impl CalcitEnum {
-  /// Create from a `CalcitRecord` using the old-style enum definition format.
+impl CalcitEnumDef {
+  /// Create from a `CalcitStructValue` using the old-style enum definition format.
   /// The record's fields are variant tags and values are payload type lists.
-  pub fn from_record(record: CalcitRecord) -> Result<Self, String> {
+  pub fn from_record(record: CalcitStructValue) -> Result<Self, String> {
     Self::from_arc(Arc::new(record))
   }
 
-  pub fn from_arc(record: Arc<CalcitRecord>) -> Result<Self, String> {
+  pub fn from_arc(record: Arc<CalcitStructValue>) -> Result<Self, String> {
     let (variants, variant_index) = Self::collect_variants(&record)?;
     let name = record.name().to_owned();
     let generics = record.struct_ref.generics.clone();
@@ -68,9 +68,9 @@ impl CalcitEnum {
     self.where_bounds.as_ref()
   }
 
-  /// Reconstruct a `CalcitRecord` prototype from the enum's data.
+  /// Reconstruct a `CalcitStructValue` prototype from the enum's data.
   /// Used for serialization and backwards-compatibility paths that expect a record.
-  pub fn to_record_prototype(&self) -> CalcitRecord {
+  pub fn to_record_prototype(&self) -> CalcitStructValue {
     let fields: Vec<EdnTag> = self.variants.iter().map(|v| v.tag.clone()).collect();
     let values: Vec<Calcit> = self
       .variants
@@ -84,7 +84,7 @@ impl CalcitEnum {
         }
       })
       .collect();
-    let struct_def = CalcitStruct {
+    let struct_def = CalcitStructDef {
       name: self.name.clone(),
       fields: Arc::new(fields),
       field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
@@ -92,7 +92,7 @@ impl CalcitEnum {
       where_bounds: self.where_bounds.clone(),
       impls: self.impls.clone(),
     };
-    CalcitRecord {
+    CalcitStructValue {
       struct_ref: Arc::new(struct_def),
       values: Arc::new(values),
     }
@@ -118,7 +118,7 @@ impl CalcitEnum {
     self.variant_index.get(name).map(|idx| &self.variants[*idx])
   }
 
-  fn collect_variants(record: &CalcitRecord) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
+  fn collect_variants(record: &CalcitStructValue) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
     let mut variants: Vec<EnumVariant> = Vec::with_capacity(record.fields().len());
     let mut index: HashMap<String, usize> = HashMap::with_capacity(record.fields().len());
     let generics = record.struct_ref.generics.as_ref();
@@ -173,7 +173,7 @@ impl CalcitEnum {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitList, CalcitStruct, CalcitSymbolInfo, CalcitTuple, CalcitTypeAnnotation};
+  use crate::calcit::{CalcitEnumValue, CalcitList, CalcitStructDef, CalcitSymbolInfo, CalcitTypeAnnotation};
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
@@ -194,9 +194,9 @@ mod tests {
     Calcit::List(Arc::new(CalcitList::Vector(items)))
   }
 
-  fn sample_enum_record() -> CalcitRecord {
-    CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+  fn sample_enum_record() -> CalcitStructValue {
+    CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::new("Result"),
         vec![EdnTag::new("err"), EdnTag::new("ok")],
       )),
@@ -207,7 +207,7 @@ mod tests {
   #[test]
   fn parses_enum_prototype() {
     let record = sample_enum_record();
-    let enum_proto = CalcitEnum::from_record(record).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_record(record).expect("valid enum");
 
     assert_eq!(enum_proto.name(), &EdnTag::new("Result"));
     let err_variant = enum_proto.find_variant_by_name("err").expect("err variant");
@@ -221,8 +221,8 @@ mod tests {
 
   #[test]
   fn parses_generic_enum_prototype() {
-    let record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct {
+    let record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef {
         name: EdnTag::new("Result"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
         field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
@@ -233,7 +233,7 @@ mod tests {
       values: Arc::new(vec![list_from(vec![symbol("E")]), list_from(vec![symbol("T")])]),
     };
 
-    let enum_proto = CalcitEnum::from_record(record).expect("valid generic enum");
+    let enum_proto = CalcitEnumDef::from_record(record).expect("valid generic enum");
     assert_eq!(enum_proto.generics(), &[Arc::from("T"), Arc::from("E")]);
     assert!(matches!(
       enum_proto.find_variant_by_name("ok").and_then(|v| v.payload_types().first()).map(|t| t.as_ref()),
@@ -247,18 +247,18 @@ mod tests {
 
   #[test]
   fn rejects_non_generic_struct_type_args_in_payloads() {
-    let pair = CalcitStruct::from_fields(EdnTag::new("Pair"), vec![EdnTag::new("left"), EdnTag::new("right")]);
-    let applied_pair = Calcit::Tuple(CalcitTuple {
-      tag: Arc::new(Calcit::Struct(pair)),
+    let pair = CalcitStructDef::from_fields(EdnTag::new("Pair"), vec![EdnTag::new("left"), EdnTag::new("right")]);
+    let applied_pair = Calcit::Enum(CalcitEnumValue {
+      tag: Arc::new(Calcit::StructDef(pair)),
       extra: vec![Calcit::tag("number"), Calcit::tag("string")],
       sum_type: None,
     });
-    let record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Wrapped"), vec![EdnTag::new("pair")])),
+    let record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Wrapped"), vec![EdnTag::new("pair")])),
       values: Arc::new(vec![list_from(vec![applied_pair])]),
     };
 
-    let err = CalcitEnum::from_record(record).expect_err("non-generic struct should reject type args in enum payloads");
+    let err = CalcitEnumDef::from_record(record).expect_err("non-generic struct should reject type args in enum payloads");
     assert!(
       err.contains("enum variant `pair` has invalid payload type annotation")
         && err.contains("struct `Pair` is not generic but received 2 type argument(s)"),

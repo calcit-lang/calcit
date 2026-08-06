@@ -63,17 +63,17 @@ Map and Set iteration order is not a semantic guarantee. The formatter applies a
 | Map | Arbitrary EDN keys preserved | Keys must be Tag or String; parsed object keys become Tag |
 | Set | Preserved | Encoded as an array; Set identity is lost |
 | Buffer | Preserved | Encoded as a `0x...` string; Buffer identity is lost |
-| Tuple / enum value | Tag, fields, and enum name preserved | Encoded as an array; tuple and enum identity is lost |
-| Record | Record name and fields preserved | Encoded as an object; struct identity is lost |
+| Enum value | Variant, payloads, and enum name preserved | Encoded as an array; enum identity is lost |
+| Struct value | Struct name and fields preserved | Encoded as an object; struct identity is lost |
 | Cirru quote | Preserved | Encoded as nested strings and arrays |
 | Ref | Encoded as `atom`; parsing creates a new Ref | Unsupported |
 | AnyRef, function, trait/impl, mutable builder | Not portable; do not use as interchange data | Unsupported |
 
 `json-stringify` rejects unsupported values and Maps with non-Tag/non-String keys instead of silently inventing a representation. It also rejects non-finite numbers. `json-parse` maps JSON arrays to List and JSON objects to Maps whose keys are Tags.
 
-## Restoring declared record and enum identity
+## Restoring declared struct and enum identity
 
-Cirru EDN always retains the printed record or enum name. To reconnect parsed values to the exact `defstruct` or `defenum` object (including attached traits), pass an options Map keyed by that name:
+Cirru EDN always retains the printed struct or enum name. To reconnect parsed values to the exact `defstruct` or `defenum` object (including attached traits), pass an options Map keyed by that name:
 
 ```cirru
 let
@@ -83,7 +83,7 @@ let
     :Person $ %{} Person (:name |)
 ```
 
-Without this options Map, parsing still produces a structurally equivalent Record or Tuple, but it cannot recover declaration-attached trait implementations from text alone. The options Map does not validate field value types, container elements, enum payloads, generics, or constraints. Prefer `parse-cirru-edn-as` when those guarantees are required.
+Without this options Map, parsing still produces a structurally equivalent anonymous Struct or Enum, but it cannot recover declaration-attached trait implementations from text alone. The options Map does not validate field value types, container elements, enum payloads, generics, or constraints. Prefer `parse-cirru-edn-as` when those guarantees are required.
 
 ## Literals
 
@@ -165,7 +165,7 @@ also can be nested:
     :d 3
 ```
 
-Records retain their type name and fields:
+Structs retain their type name and fields:
 
 ```cirru
 let
@@ -175,10 +175,12 @@ let
     :a 1
 ```
 
-Enums use `%::`, while ordinary tagged tuples use `::`:
+Named enums use `%:: EnumDef ...`; anonymous enum values use `%:: _ ...` or the `::` shorthand:
 
 ```cirru.no-run
-%:: :Result :ok 1
+let
+    SampleResult $ defenum SampleResult (:ok 'Number) (:err 'String)
+  %:: SampleResult :ok 1
 :: :point 10 20
 ```
 
@@ -190,7 +192,7 @@ Quoted Cirru is preserved as syntax data. This is used by runtime snapshots (`ca
 quote $ def a 1
 ```
 
-at runtime, it's represented with tuples:
+at runtime, its syntax tree uses anonymous enum values:
 
 ```cirru
 :: 'quote $ [] |def |a |1
@@ -213,7 +215,7 @@ $ cr eval 'parse-cirru-edn "|quote $ def a 1"'
 took 0.011ms: (:: 'quote ([] |def |a |1))
 ```
 
-The runtime display may resemble a tuple, but Cirru EDN gives `quote` dedicated parsing and formatting semantics.
+The runtime display uses an anonymous enum shape, but Cirru EDN gives `quote` dedicated parsing and formatting semantics.
 
 ## Buffers
 

@@ -138,7 +138,7 @@
         |myfoo:foo $ %{} :CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote
             defn myfoo:foo (p)
-              str "|foo " $ &record:get p :name
+              str "|foo " $ &struct:get p :name
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -146,7 +146,7 @@
         |myfoo:foo2 $ %{} :CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote
             defn myfoo:foo2 (p)
-              str "|foo2 " $ &record:get p :name
+              str "|foo2 " $ &struct:get p :name
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

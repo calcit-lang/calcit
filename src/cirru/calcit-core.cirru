@@ -16,12 +16,12 @@
               :generics $ [] 'T
               :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
-        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:impl-traits to attach impls)")
+        |%:: $ %{} :CodeEntry (:doc "|Construct an enum value. Use an EnumDef for nominal values or `_` for an anonymous/open enum.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
-              :args $ [] 'Enum 'Tag
+            {} (:return 'Enum)
+              :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
         |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
           :code $ quote
@@ -68,7 +68,7 @@
               :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'Option 'T
-        |%{} $ %{} :CodeEntry (:doc "|Macro for constructing struct-based records\nSyntax: (%{} StructName & field-value-pairs)\nParams: StructName (struct from defstruct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
+        |%{} $ %{} :CodeEntry (:doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct.")
           :code $ quote
             defmacro %{} (R & xs)
               if
@@ -76,17 +76,19 @@
                 raise $ str-spaced "|%{} expects field entries in list, got:" xs
               &let
                 args $ &list:concat & xs
-                quasiquote $ &%{} ~R ~@args
+                if (&= R '_)
+                  quasiquote $ ?{} ~@args
+                  quasiquote $ &%{} ~R ~@args
           :examples $ []
             quote $ let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
                 rec $ %{} Point ([] :x 1) ([] :y 2)
               assert= 1 $ :x rec
           :schema $ :: 'Macro
-            {} (:return 'Record)
-              :args $ [] 'Struct
+            {} (:return 'Struct)
+              :args $ [] 'Dynamic
           :tags $ #{} :macro
-        |%{}? $ %{} :CodeEntry (:doc "|Partial record constructor — allows omitting optional fields\nOmitted fields default to nil when using a struct prototype.\nSyntax: (%{}? R & field-value-pairs)\nParams: R (struct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
+        |%{}? $ %{} :CodeEntry (:doc "|Partial struct constructor. It allows declared Optional fields to be omitted and fills them with nil.")
           :code $ quote
             defmacro %{}? (R & xs)
               if
@@ -101,7 +103,7 @@
                 p $ %{}? Point (:x 1)
               assert= nil $ :y p
           :schema $ :: 'Macro
-            {} (:return 'Record)
+            {} (:return 'Struct)
               :args $ [] 'Struct
           :tags $ #{} :macro
         |& $ %{} :CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading")
@@ -109,18 +111,18 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |&%{} $ %{} :CodeEntry (:doc "|internal function for native record creation\nSyntax: (&%{} name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates native record with name and fields")
+        |&%{} $ %{} :CodeEntry (:doc "|Internal native constructor for a struct value from a StructDef and field/value pairs.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Record)
+            {} (:return 'Struct)
               :args $ [] 'Struct
           :tags $ #{} :builtin :internal
-        |&%{}? $ %{} :CodeEntry (:doc "|internal function for partial record construction\nSyntax: (&%{}? proto & key-value-pairs)\nParams: proto (struct), key-value-pairs (any, variadic)\nReturns: record\nMissing fields default to nil.")
+        |&%{}? $ %{} :CodeEntry (:doc "|Internal partial struct constructor; omitted declared Optional fields default to nil.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Record)
+            {} (:return 'Struct)
               :args $ [] 'Struct
           :tags $ #{} :builtin :internal
         |&* $ %{} :CodeEntry (:doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats")
@@ -322,6 +324,24 @@
             {} (:return 'Number)
               :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal
+        |&core-enum-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for enum values.")
+          :code $ quote
+            def &core-enum-impls $ [] &core-enum-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
+        |&core-enum-methods $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-enum-methods $ &impl::new :&core-enum-methods (:: :count &enum:count) (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first)
+              :: :empty? $ defn &enum:empty?-impl (x)
+                &= 0 $ &enum:count x
+              :: :contains? $ defn &enum:contains?-impl (x k)
+                if (&>= k 0)
+                  &< k $ &enum:count x
+                  , false
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
         |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn")
           :code $ quote
             def &core-fn-impls $ [] &core-fn-methods (&impl::new Show internal/&core-show-impl)
@@ -376,20 +396,6 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        |&core-record-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for record")
-          :code $ quote
-            def &core-record-impls $ [] &core-record-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-record-impl) (&impl::new Contains internal/&core-contains-record-impl)
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :internal
-        |&core-record-methods $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            def &core-record-methods $ &impl::new :&core-record-methods (:: :count &record:count) (:: :contains? &record:contains?) (:: :get get) (:: :assoc &record:assoc) (:: :to-map &record:to-map)
-              :: :empty? $ defn &record:empty?-impl (x)
-                &= 0 $ &record:count x
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :internal
         |&core-scalar-impls $ %{} :CodeEntry (:doc "|Built-in nominal Show/Eq implementation list for scalar literals")
           :code $ quote
             def &core-scalar-impls $ [] (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl)
@@ -420,21 +426,17 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        |&core-tuple-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for tuple")
+        |&core-struct-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for struct values.")
           :code $ quote
-            def &core-tuple-impls $ [] &core-tuple-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-tuple-impl) (&impl::new Contains internal/&core-contains-tuple-impl)
+            def &core-struct-impls $ [] &core-struct-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        |&core-tuple-methods $ %{} :CodeEntry (:doc |)
+        |&core-struct-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-tuple-methods $ &impl::new :&core-tuple-methods (:: :count &tuple:count) (:: :nth nth) (:: :get get) (:: :assoc &tuple:assoc) (:: :first first)
-              :: :empty? $ defn &tuple:empty?-impl (x)
-                &= 0 $ &tuple:count x
-              :: :contains? $ defn &tuple:contains?-impl (x k)
-                if (&>= k 0)
-                  &< k $ &tuple:count x
-                  , false
+            def &core-struct-methods $ &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :get get) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
+              :: :empty? $ defn &struct:empty?-impl (x)
+                &= 0 $ &struct:count x
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -482,20 +484,92 @@
             {} (:return 'Unit)
               :args $ [] 'Dynamic
           :tags $ #{} :effect :internal :macro
-        |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations")
+        |&enum-def:has-variant? $ %{} :CodeEntry (:doc "|Test whether an EnumDef declares a variant.")
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ &enum::new :Result ([] :ok :number) ([] :err :string)
           :schema $ :: 'Fn
-            {} (:return 'Enum)
+            {} (:return 'Bool)
+              :args $ [] 'Tag 'Tag
+          :tags $ #{} :builtin :internal
+        |&enum-def:impl-traits $ %{} :CodeEntry (:doc "|Attach implementations to an EnumDef.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Tag)
               :args $ [] 'Tag
           :tags $ #{} :builtin :internal
-        |&enum:impl-traits $ %{} :CodeEntry (:doc "|internal function for enum trait impl attachment\nSyntax: (&enum:impl-traits enum impls)\nParams: enum (enum), impls (record)\nReturns: enum value with trait implementations\nAttaches impls info to an enum prototype")
+        |&enum-def:new $ %{} :CodeEntry (:doc "|Create an EnumDef from a name and declared variants.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ &enum-def:new :Result ([] :ok :number) ([] :err :string)
+          :schema $ :: 'Fn
+            {} (:return 'Tag)
+              :args $ [] 'Tag
+          :tags $ #{} :builtin :internal
+        |&enum-def:variant-arity $ %{} :CodeEntry (:doc "|Read the payload arity of an EnumDef variant.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Tag 'Tag
+          :tags $ #{} :builtin :internal
+        |&enum:assoc $ %{} :CodeEntry (:doc "|Associate a payload position on an enum value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Enum)
+              :args $ [] 'Enum 'Number 'Tag
+          :tags $ #{} :builtin :internal
+        |&enum:count $ %{} :CodeEntry (:doc "|Count tag and payload positions in an enum value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Enum
+          :tags $ #{} :builtin :internal
+        |&enum:definition $ %{} :CodeEntry (:doc "|Return the EnumDef of a nominal enum value, or nil for an anonymous enum.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Enum
+              :return $ :: 'Optional 'Tag
+          :tags $ #{} :builtin :internal
+        |&enum:impl-traits $ %{} :CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Enum)
               :args $ [] 'Enum
+          :tags $ #{} :builtin :internal
+        |&enum:impls $ %{} :CodeEntry (:doc "|Return implementations attached to an enum value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Enum
+              :return $ :: 'List 'Impl
+          :tags $ #{} :builtin :internal
+        |&enum:nth $ %{} :CodeEntry (:doc "|Read a tag or payload position from an enum value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Tag)
+              :args $ [] 'Enum 'Number
+          :tags $ #{} :builtin :internal
+        |&enum:params $ %{} :CodeEntry (:doc "|Return enum payload parameters as a list.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'List)
+              :args $ [] 'Enum
+          :tags $ #{} :builtin :internal
+        |&enum:validate $ %{} :CodeEntry (:doc "|Validate an enum value against its definition.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ [] 'Enum 'Tag
           :tags $ #{} :builtin :internal
         |&exclude $ %{} :CodeEntry (:doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded")
           :code $ quote &runtime-implementation
@@ -612,7 +686,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ assert= :fn
-              &tuple:nth (&get-def-schema |calcit.core/map) 0
+              &enum:nth (&get-def-schema |calcit.core/map) 0
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
@@ -657,9 +731,9 @@
                   &list:nth base k
                 (map? base) (&map:get base k)
                 (string? base) (&str:nth base k)
-                (tuple? base) (&tuple:nth base k)
-                (record? base) (&record:get base k)
-                true $ raise (str-spaced |&get-raw |expected |a |collection |or |record, |got: base)
+                (enum? base) (&enum:nth base k)
+                (struct? base) (&struct:get base k)
+                true $ raise (str-spaced |&get-raw |expected |a |collection |or |struct, |got: base)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -721,10 +795,10 @@
           :tags $ #{} :builtin :internal
         |&init-builtin-impls! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-tuple-impls) (identity &core-record-impls) (identity &core-scalar-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
-                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :tuple &core-tuple-impls :record &core-record-impls :scalar &core-scalar-impls
+                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
@@ -1241,7 +1315,7 @@
             {}
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
-              :return $ :: 'Optional 'Tuple
+              :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
         |&map:diff-keys $ %{} :CodeEntry (:doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps")
           :code $ quote &runtime-implementation
@@ -1275,7 +1349,7 @@
                 common-triples $ nth triple 2
               list drop-keys new-diff common-triples
           :schema $ :: 'Fn
-            {} (:return 'Tuple)
+            {} (:return 'Enum)
               :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
               :generics $ [] 'K 'V 'W
           :tags $ #{} :builtin :internal
@@ -1422,7 +1496,7 @@
             {}
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
-              :return $ :: 'List 'Tuple
+              :return $ :: 'List 'Enum
           :tags $ #{} :builtin :internal
         |&map:vals $ %{} :CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
@@ -1516,124 +1590,6 @@
               :args $ [] 'String
               :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
-        |&record-match-internal $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defmacro &record-match-internal (value & body)
-              if (&list:empty? body)
-                quasiquote $ eprintln "|[Warn] record-match found no matched case, missing `_` case?" ~value
-                &let
-                  pair $ &list:nth body 0
-                  if
-                    not $ list? pair
-                    raise $ str-spaced "|record-match expected arm in list, got:" pair
-                  let
-                      pattern $ &list:nth pair 0
-                    assert "|expected record or symbol as pattern" $ or (record? pattern) (symbol? pattern)
-                    if (&= pattern '_)
-                      &let ()
-                        assert "|record-match expected a branch after `_`" $ &<= 3 (&list:count pair)
-                        quasiquote $ &let
-                            ~ $ &list:nth pair 1
-                            , ~value
-                          ~@ $ &list:slice pair 2
-                      &let ()
-                        assert "|record-match expected an with (proto new-name & body)" $ &<= 3 (&list:count pair)
-                        quasiquote $ if (&record:matches? ~value ~pattern)
-                          &let
-                              ~ $ &list:nth pair 1
-                              , ~value
-                            ~@ $ &list:slice pair 2
-                          &record-match-internal ~value $ ~@ (&list:rest body)
-          :examples $ []
-          :schema $ :: 'Macro
-            {} $ :args ([] 'Record)
-          :tags $ #{} :internal :macro
-        |&record:assoc $ %{} :CodeEntry (:doc "|internal function for record field association\nSyntax: (&record:assoc record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with field associations")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:contains? $ %{} :CodeEntry (:doc "|internal function for checking if record contains field\nSyntax: (&record:contains? record key)\nParams: record (record), key (any)\nReturns: boolean\nReturns true if record contains field")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:count $ %{} :CodeEntry (:doc "|internal function for counting record fields\nSyntax: (&record:count record)\nParams: record (record)\nReturns: number\nReturns number of fields in record")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Tag
-          :tags $ #{} :builtin :internal
-        |&record:extend-as $ %{} :CodeEntry (:doc "|internal function for extending record as new type\nSyntax: (&record:extend-as record new-name)\nParams: record (record), new-name (keyword)\nReturns: record\nExtends record as new type with different name")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:from-map $ %{} :CodeEntry (:doc "|internal function for creating record from map\nSyntax: (&record:from-map name map)\nParams: name (keyword), map (map)\nReturns: record\nCreates record from map with specified name")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:get $ %{} :CodeEntry (:doc "|internal function for getting record field\nSyntax: (&record:get record key) or (&record:get record key default)\nParams: record (record), key (any), default (any, optional)\nReturns: any\nGets field value, returns default if field not found")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Record 'Tag
-              :return $ :: 'Optional 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:get-name $ %{} :CodeEntry (:doc "|internal function for getting record name\nSyntax: (&record:get-name record)\nParams: record (record)\nReturns: keyword\nReturns name of record")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tag
-          :tags $ #{} :builtin :internal
-        |&record:impl-traits $ %{} :CodeEntry (:doc "|internal function for record trait impl attachment\nSyntax: (&record:impl-traits record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Record)
-              :args $ [] 'Record
-          :tags $ #{} :builtin :internal
-        |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Record
-              :return $ :: 'List 'Impl
-          :tags $ #{} :builtin :internal
-        |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:struct $ %{} :CodeEntry (:doc "|internal function for getting record source struct\nSyntax: (&record:struct record)\nParams: record (record)\nReturns: struct or nil\nReturns source struct definition of record, or nil when unavailable")
-          :code $ quote &runtime-implementation
-          :examples $ []
-            quote $ let
-                User $ defstruct User (:name 'String)
-                u $ %{} User (:name |Alice)
-              assert= User $ &record:struct u
-          :schema $ :: 'Fn
-            {} (:return 'Struct)
-              :args $ [] 'Record
-          :tags $ #{} :builtin :internal
-        |&record:to-map $ %{} :CodeEntry (:doc "|internal function for converting record to map\nSyntax: (&record:to-map record)\nParams: record (record)\nReturns: map\nConverts record to map")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {}
-              :args $ [] 'Record
-              :return $ :: 'Map 'Tag 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&record:with $ %{} :CodeEntry (:doc "|internal function for record with operation\nSyntax: (&record:with record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with updated fields")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
         |&reset-gensym-index! $ %{} :CodeEntry (:doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1656,7 +1612,7 @@
             {}
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
-              :return $ :: 'Optional 'Tuple
+              :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
         |&set:empty $ %{} :CodeEntry (:doc "|internal helper for set :empty method entry")
           :code $ quote
@@ -1895,96 +1851,143 @@
             {} (:return 'String)
               :args $ [] 'String 'Number 'Number
           :tags $ #{} :builtin :internal
-        |&struct::new $ %{} :CodeEntry (:doc "|internal function for creating struct definitions\nSyntax: (&struct::new name (field type) ...)\nParams: name (tag), field pairs (list)\nReturns: struct definition value\nCreates a struct definition with fields and type annotations")
+        |&struct-def:impl-traits $ %{} :CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ &struct::new :Person ([] :name :string) ([] :age :number)
           :schema $ :: 'Fn
-            {} (:return 'Struct)
+            {} (:return 'Tag)
               :args $ [] 'Tag
           :tags $ #{} :builtin :internal
-        |&struct:impl-traits $ %{} :CodeEntry (:doc "|internal function for struct trait impl attachment\nSyntax: (&struct:impl-traits struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition")
+        |&struct-def:new $ %{} :CodeEntry (:doc "|Create a StructDef from a name and declared field types.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ &struct-def:new :Person ([] :name :string) ([] :age :number)
+          :schema $ :: 'Fn
+            {} (:return 'Tag)
+              :args $ [] 'Tag
+          :tags $ #{} :builtin :internal
+        |&struct-match-internal $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defmacro &struct-match-internal (value & body)
+              if (&list:empty? body)
+                quasiquote $ eprintln "|[Warn] struct-match found no matched case, missing `_` case?" ~value
+                &let
+                  pair $ &list:nth body 0
+                  if
+                    not $ list? pair
+                    raise $ str-spaced "|struct-match expected arm in list, got:" pair
+                  let
+                      pattern $ &list:nth pair 0
+                    assert "|expected struct or symbol as pattern" $ or (struct? pattern) (symbol? pattern)
+                    if (&= pattern '_)
+                      &let ()
+                        assert "|struct-match expected a branch after `_`" $ &<= 3 (&list:count pair)
+                        quasiquote $ &let
+                            ~ $ &list:nth pair 1
+                            , ~value
+                          ~@ $ &list:slice pair 2
+                      &let ()
+                        assert "|struct-match expected (StructDef binding & body)" $ &<= 3 (&list:count pair)
+                        quasiquote $ if (&struct:matches? ~value ~pattern)
+                          &let
+                              ~ $ &list:nth pair 1
+                              , ~value
+                            ~@ $ &list:slice pair 2
+                          &struct-match-internal ~value $ ~@ (&list:rest body)
+          :examples $ []
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Struct)
+          :tags $ #{} :internal :macro
+        |&struct:assoc $ %{} :CodeEntry (:doc "|Associate a declared field on a struct value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :builtin :internal
+        |&struct:contains? $ %{} :CodeEntry (:doc "|Test whether a struct value declares a field.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :builtin :internal
+        |&struct:count $ %{} :CodeEntry (:doc "|Count fields in a struct value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Number)
+              :args $ [] 'Struct
+          :tags $ #{} :builtin :internal
+        |&struct:definition $ %{} :CodeEntry (:doc "|Return the StructDef of a nominal struct value, or nil for an anonymous struct.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ let
+                User $ defstruct User (:name 'String)
+                user $ %{} User (:name |Alice)
+              assert= User $ &struct:definition user
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Struct
+              :return $ :: 'Optional 'Tag
+          :tags $ #{} :builtin :internal
+        |&struct:extend-as $ %{} :CodeEntry (:doc "|Extend a struct value with a declared field.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :builtin :internal
+        |&struct:from-map $ %{} :CodeEntry (:doc "|Construct a struct value from a StructDef and map.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :builtin :internal
+        |&struct:get $ %{} :CodeEntry (:doc "|Read a required declared field from a struct value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Struct 'Tag
+          :tags $ #{} :builtin :internal
+        |&struct:get-name $ %{} :CodeEntry (:doc "|Return the name tag of a struct value.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Tag)
+              :args $ [] 'Tag
+          :tags $ #{} :builtin :internal
+        |&struct:impl-traits $ %{} :CodeEntry (:doc "|Attach implementations to a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Struct)
               :args $ [] 'Struct
           :tags $ #{} :builtin :internal
-        |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Dynamic
-          :tags $ #{} :builtin :internal
-        |&tuple:assoc $ %{} :CodeEntry (:doc "|internal function for tuple assoc operation\nSyntax: (&tuple:assoc tuple index value)\nParams: tuple (tuple), index (number), value (any)\nReturns: new tuple with updated value\nReturns new tuple with value at index updated")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tuple)
-              :args $ [] 'Tuple 'Number 'Tag
-          :tags $ #{} :builtin :internal
-        |&tuple:count $ %{} :CodeEntry (:doc "|internal function for tuple count operation\nSyntax: (&tuple:count tuple)\nParams: tuple (tuple)\nReturns: number of elements\nReturns the number of elements in the tuple")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Tuple
-          :tags $ #{} :builtin :internal
-        |&tuple:enum $ %{} :CodeEntry (:doc "|Get the enum prototype from a tuple\nSyntax: (&tuple:enum tuple)\nParams: tuple (tuple)\nReturns: enum value or nil if not an enum tuple")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tuple
-          :tags $ #{} :builtin :internal
-        |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (enum), tag (tag)\nReturns: bool - true if variant exists")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Bool)
-              :args $ [] 'Enum 'Tag
-          :tags $ #{} :builtin :internal
-        |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (enum), tag (tag)\nReturns: number - number of payload fields for the variant")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Number)
-              :args $ [] 'Enum 'Tag
-          :tags $ #{} :builtin :internal
-        |&tuple:impl-traits $ %{} :CodeEntry (:doc "|internal function for tuple trait impl attachment\nSyntax: (&tuple:impl-traits tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tuple)
-              :args $ [] 'Tuple
-          :tags $ #{} :builtin :internal
-        |&tuple:impls $ %{} :CodeEntry (:doc "|internal function for getting tuple impls\nSyntax: (&tuple:impls tuple)\nParams: tuple (tuple)\nReturns: impls of the tuple\nReturns the impls/type identifier of the tuple")
+        |&struct:impls $ %{} :CodeEntry (:doc "|Return implementations attached to a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {}
-              :args $ [] 'Tuple
+              :args $ [] 'Struct
               :return $ :: 'List 'Impl
           :tags $ #{} :builtin :internal
-        |&tuple:nth $ %{} :CodeEntry (:doc "|internal function for tuple nth operation\nSyntax: (&tuple:nth tuple index)\nParams: tuple (tuple), index (number)\nReturns: value at index or nil\nGets the value at specified index in tuple, returns nil if out of bounds")
+        |&struct:matches? $ %{} :CodeEntry (:doc "|Test whether a struct value matches a struct pattern.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Tag)
-              :args $ [] 'Tuple 'Number
+          :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
-        |&tuple:params $ %{} :CodeEntry (:doc "|internal function for getting tuple params\nSyntax: (&tuple:params tuple)\nParams: tuple (tuple)\nReturns: list of parameter values\nReturns the parameter values of the tuple as a list")
+        |&struct:to-map $ %{} :CodeEntry (:doc "|Convert a struct value to a map.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'List)
-              :args $ [] 'Tuple
+            {}
+              :args $ [] 'Struct
+              :return $ :: 'Map 'Tag 'Dynamic
           :tags $ #{} :builtin :internal
-        |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity")
+        |&struct:with $ %{} :CodeEntry (:doc "|Return a struct value with updated fields.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Unit)
-              :args $ [] 'Tuple 'Tag
+          :schema $ :: 'Dynamic
+          :tags $ #{} :builtin :internal
+        |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
         |&union $ %{} :CodeEntry (:doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets")
           :code $ quote &runtime-implementation
@@ -2119,7 +2122,7 @@
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'Dynamic 'Dynamic
-        |: $ %{} :CodeEntry (:doc "|Macro sugar for tagged tuples\nExpands to `::` while passing the tag through `turn-tag`, so both keywords and bare symbols may be used.")
+        |: $ %{} :CodeEntry (:doc "|Macro sugar for anonymous enums. Expands to `::` and normalizes the variant tag with `turn-tag`.")
           :code $ quote
             defmacro : (tag & args)
               if
@@ -2134,7 +2137,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
           :tags $ #{} :macro
-        |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: impls & values)\nParams: impls (any), values (any, variable number)\nReturns: tuple with impls and values\nCreates a tuple with specified impls and values")
+        |:: $ %{} :CodeEntry (:doc "|Construct an anonymous enum value. The implicit enum definition is `_`.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
@@ -2655,7 +2658,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
           :tags $ #{} :control :log :macro
-        |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
+        |assoc $ %{} :CodeEntry (:doc "|Associate a key or index in maps, lists, enums, and structs.")
           :code $ quote
             defn assoc (x k v)
               if (nil? x)
@@ -2958,7 +2961,7 @@
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
-        |contains-in? $ %{} :CodeEntry (:doc "|Checks whether a nested path exists within maps, records, tuples, or lists. Returns true only when every hop succeeds.")
+        |contains-in? $ %{} :CodeEntry (:doc "|Check whether every hop in a nested path exists across maps, structs, enums, or lists.")
           :code $ quote
             defn contains-in? (xs path)
               list-match path
@@ -2974,15 +2977,15 @@
                       if (&map:contains? xs p0)
                         recur (&map:get xs p0) ps
                         , false
-                    (record? xs)
-                      if (&record:contains? xs p0)
-                        recur (&record:get xs p0) ps
+                    (struct? xs)
+                      if (&struct:contains? xs p0)
+                        recur (&struct:get xs p0) ps
                         , false
-                    (tuple? xs)
+                    (enum? xs)
                       if
                         and (&>= p0 0)
-                          &< p0 $ &tuple:count xs
-                        recur (&tuple:nth xs p0) ps
+                          &< p0 $ &enum:count xs
+                        recur (&enum:nth xs p0) ps
                         , false
                     true false
           :examples $ []
@@ -3147,7 +3150,7 @@
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal :state :syntax
-        |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name [('T 'E)] (:variant type...) ...)\nParams: Name (symbol/tag), optional generics list, variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")
+        |defenum $ %{} :CodeEntry (:doc "|Define an EnumDef with a closed set of variants.")
           :code $ quote
             defmacro defenum (name & variants)
               assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
@@ -3204,20 +3207,20 @@
                                       quasiquote $ [] (~ variant-tag) (~@ payload-forms)
                             if (empty? generics)
                               if has-where-form?
-                                quasiquote $ &enum::new
+                                quasiquote $ &enum-def:new
                                   ~ $ turn-tag name
                                   ~ where-form
                                   ~@ normalized
-                                quasiquote $ &enum::new
+                                quasiquote $ &enum-def:new
                                   ~ $ turn-tag name
                                   ~@ normalized
                               if has-where-form?
-                                quasiquote $ &enum::new
+                                quasiquote $ &enum-def:new
                                   ~ $ turn-tag name
                                   [] ~@generics
                                   ~ where-form
                                   ~@ normalized
-                                quasiquote $ &enum::new
+                                quasiquote $ &enum-def:new
                                   ~ $ turn-tag name
                                   [] ~@generics
                                   ~@ normalized
@@ -3359,7 +3362,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
           :tags $ #{} :macro
-        |defstruct $ %{} :CodeEntry (:doc "|macro for defining record structs\nSyntax: (defstruct Name [('T 'S)] :field :type ...)\nParams: Name (symbol/tag), optional generics list, field pairs (tag + type)\nReturns: struct definition value\nExpands to &struct::new")
+        |defstruct $ %{} :CodeEntry (:doc "|Define a StructDef with fixed fields and field types.")
           :code $ quote
             defmacro defstruct (name & pairs)
               assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
@@ -3421,20 +3424,20 @@
                                         quasiquote $ [] (~ field-name) (~ type-form)
                             if (empty? generics)
                               if has-where-form?
-                                quasiquote $ &struct::new
+                                quasiquote $ &struct-def:new
                                   ~ $ turn-tag name
                                   ~ where-form
                                   ~@ normalized
-                                quasiquote $ &struct::new
+                                quasiquote $ &struct-def:new
                                   ~ $ turn-tag name
                                   ~@ normalized
                               if has-where-form?
-                                quasiquote $ &struct::new
+                                quasiquote $ &struct-def:new
                                   ~ $ turn-tag name
                                   [] ~@generics
                                   ~ where-form
                                   ~@ normalized
-                                quasiquote $ &struct::new
+                                quasiquote $ &struct-def:new
                                   ~ $ turn-tag name
                                   [] ~@generics
                                   ~@ normalized
@@ -3711,19 +3714,44 @@
             {} (:return 'Bool)
               :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
-        |enum? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is an enum definition.")
+        |enum-def? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is an enum definition.")
           :code $ quote
-            defn enum? (x)
-              &= (type-of x) :enum
+            defn enum-def? (x)
+              &= (type-of x) :enum-def
           :examples $ []
             quote $ assert= true
-              enum? $ defenum Result (:ok) (:err 'String)
+              enum-def? $ defenum Result (:ok) (:err 'String)
             quote $ assert= false
-              enum? $ :: :ok 1
+              enum-def? $ %:: _ :ok 1
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'T
               :generics $ [] 'T
+        |enum-definition $ %{} :CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
+          :code $ quote
+            defn enum-definition (tuple)
+              optionally $ &enum:definition tuple
+          :examples $ []
+            quote $ assert= (%some Option)
+              enum-definition $ %some 1
+            quote $ assert= (%none)
+              enum-definition $ :: :plain 1
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Enum
+              :return $ :: 'Option 'Tag
+        |enum? $ %{} :CodeEntry (:doc "|Predicate that checks nominal and anonymous enum values. Passing an EnumDef reports a migration error.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= true
+              enum? $ %:: _ :ok 1
+            quote $ assert= false
+              enum? $ {} (:ok 1)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'T
+              :generics $ [] 'T
+          :tags $ #{} :builtin :internal
         |eval $ %{} :CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3868,12 +3896,12 @@
                 (string? x)
                   if (&str:empty? x) (%none)
                     %some $ &str:first x
-                (tuple? x)
+                (enum? x)
                   if
-                    &= 0 $ &tuple:count x
+                    &= 0 $ &enum:count x
                     %none
-                    %some $ &tuple:nth x 0
-                true $ raise (str-spaced |first |expected |a |list, |string, |or |tuple, |got: x)
+                    %some $ &enum:nth x 0
+                true $ raise (str-spaced |first |expected |a |list, |string, |or |enum, |got: x)
           :examples $ []
             quote $ assert= (%some 1)
               first $ [] 1 2 3
@@ -4057,7 +4085,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |get $ %{} :CodeEntry (:doc "|Return a keyed or indexed value as Option<T>; missing entries produce none.")
+        |get $ %{} :CodeEntry (:doc "|Lookup by key or index. Struct fields return their declared value directly and unknown fields raise; maps and indexed collections return Option<T>.")
           :code $ quote
             defn get (base k)
               cond
@@ -4065,13 +4093,10 @@
                   if (&map:contains? base k)
                     %some $ &map:get base k
                     %none
-                (record? base)
-                  if (&record:contains? base k)
-                    %some $ &record:get base k
-                    %none
-                (or (list? base) (string? base) (tuple? base))
+                (struct? base) (&struct:get base k)
+                (or (list? base) (string? base) (enum? base))
                   if (number? k) (nth base k) (%none)
-                true $ raise (str-spaced |get |expected |a |collection |or |record, |got: base)
+                true $ raise (str-spaced |get |expected |a |collection |or |struct, |got: base)
           :examples $ []
             quote $ assert= (%some 2)
               get ([] 0 2 4) 1
@@ -4114,9 +4139,11 @@
                 list-match path
                   () $ %some base
                   (y0 ys)
-                    tag-match (get base y0)
-                      (:some value) (recur value ys)
-                      (:none) (%none)
+                    if (struct? base)
+                      recur (&struct:get base y0) ys
+                      tag-match (get base y0)
+                        (:some value) (recur value ys)
+                        (:none) (%none)
           :examples $ []
             quote $ assert= (%some 1)
               get-in
@@ -4262,8 +4289,8 @@
                   fn (trait)
                     = :impl $ type-of trait
                 raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-              if (struct? x) (&struct:impl-traits x & traits)
-                if (enum? x) (&enum:impl-traits x & traits)
+              if (struct-def? x) (&struct-def:impl-traits x & traits)
+                if (enum-def? x) (&enum-def:impl-traits x & traits)
                   raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
           :schema $ :: 'Fn
@@ -4543,13 +4570,13 @@
                   if (&str:empty? xs) (%none)
                     %some $ &str:nth xs
                       &- (&str:count xs) 1
-                (tuple? xs)
+                (enum? xs)
                   if
-                    &= 0 $ &tuple:count xs
+                    &= 0 $ &enum:count xs
                     %none
-                    %some $ &tuple:nth xs
-                      &- (&tuple:count xs) 1
-                true $ raise (str-spaced |last |expected |a |list, |string, |or |tuple, |got: xs)
+                    %some $ &enum:nth xs
+                      &- (&enum:count xs) 1
+                true $ raise (str-spaced |last |expected |a |list, |string, |or |enum, |got: xs)
           :examples $ []
             quote $ assert= (%some 3)
               last $ [] 1 2 3
@@ -4873,7 +4900,7 @@
                         assert "|expected pair returned when mapping hashmap" $ &= 2 (&list:count result)
                         &map:assoc acc (&list:nth result 0) (&list:nth result 1)
                       if
-                        or (nil? result) (tuple? result)
+                        or (nil? result) (enum? result)
                         , acc $ raise (str-spaced "|map-kv expected list or nil, got:" result)
           :examples $ []
           :schema $ :: 'Fn
@@ -5010,7 +5037,7 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
           :tags $ #{} :macro
-        |nth $ %{} :CodeEntry (:doc "|Return the indexed item from a list, string, or tuple as Option<T>; invalid indexes produce none. Records use field-name get because positional order is not a cross-backend contract.")
+        |nth $ %{} :CodeEntry (:doc "|Return an indexed item from a list, string, or enum as Option<T>. Struct fields are accessed by their declared names.")
           :code $ quote
             defn nth (x i)
               cond
@@ -5028,13 +5055,13 @@
                       &< i $ &str:count x
                     %some $ &str:nth x i
                     %none
-                (tuple? x)
+                (enum? x)
                   if
                     and (&>= i 0)
-                      &< i $ &tuple:count x
-                    %some $ &tuple:nth x i
+                      &< i $ &enum:count x
+                    %some $ &enum:nth x i
                     %none
-                true $ raise (str-spaced |nth |expected |a |list, |string, |or |tuple, |got: x)
+                true $ raise (str-spaced |nth |expected |a |list, |string, |or |enum, |got: x)
           :examples $ []
             quote $ assert= (%some 2)
               nth ([] 1 2 3) 1
@@ -5062,7 +5089,7 @@
               tag-match opt
                 (:some value) (f value)
                 (:none)
-                  %:: (&tuple:enum opt) :none
+                  %:: (&enum:definition opt) :none
           :examples $ []
             quote $ assert= (%some 4)
               option:and-then (%some 2)
@@ -5104,9 +5131,9 @@
             defn option:map (opt f)
               tag-match opt
                 (:some value)
-                  %:: (&tuple:enum opt) :some $ f value
+                  %:: (&enum:definition opt) :some $ f value
                 (:none)
-                  %:: (&tuple:enum opt) :none
+                  %:: (&enum:definition opt) :none
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -5175,7 +5202,7 @@
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
             quote $ assert= Option
-              &tuple:enum $ optionally 1
+              &enum:definition $ optionally 1
           :schema $ :: 'Fn
             {}
               :args $ [] (:: 'Optional 'T)
@@ -5339,60 +5366,31 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :file :internal :io
-        |record-match $ %{} :CodeEntry (:doc |)
+        |record-match $ %{} :CodeEntry (:doc "|Removed legacy macro. Use struct-match.")
           :code $ quote
-            defmacro record-match (value & body)
-              if (&list:empty? body) (raise "|record-match expected patterns for matching")
-                if (list? value)
-                  &let
-                    v# $ gensym |v
-                    quasiquote $ &let (~v# ~value)
-                      assert "|expected record to match" $ record? ~v#
-                      &record-match-internal ~v# ~@body
-                  quasiquote $ &let ()
-                    assert "|expected record to match" $ record? ~value
-                    &record-match-internal ~value ~@body
+            defmacro record-match (& _args) (raise "|`record-match` was removed; use `struct-match`")
           :examples $ []
-          :schema $ :: 'Macro
-            {} $ :args ([] 'Record)
-          :tags $ #{} :macro
-        |record-struct $ %{} :CodeEntry (:doc "|Return the struct definition that owns a record value.")
+          :schema $ :: 'Dynamic
+        |record-struct $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn record-struct (record) (&record:struct record)
+            defn record-struct (_value) (raise "|`record-struct` was removed; use `struct-definition`, which returns Option<StructDef>")
           :examples $ []
-            quote $ let
-                User $ defstruct User (:name 'String)
-                user $ %{} User (:name |Ada)
-              assert= User $ record-struct user
           :schema $ :: 'Fn
-            {} (:return 'Struct)
-              :args $ [] 'Record
-        |record-with $ %{} :CodeEntry (:doc "|macro to extend existing record with new values in pairs, internally using &record:with which takes flattern items")
+            {}
+              :args $ [] 'Dynamic
+              :return $ :: 'Option 'Tag
+        |record-with $ %{} :CodeEntry (:doc "|Removed legacy macro. Use struct-with.")
           :code $ quote
-            defmacro record-with (record & pairs) (; "check if args are in pairs")
-              if
-                not $ and (list? pairs)
-                  every? pairs $ fn (xs)
-                    and (list? xs)
-                      &= 2 $ count xs
-                raise $ str-spaced "|record-with expects a list of pairs (each with exactly two elements), got:" pairs
-              ; "call &record:with"
-              quasiquote $ &record:with ~record
-                ~@ $ &list:concat & pairs
+            defmacro record-with (& _args) (raise "|`record-with` was removed; use `struct-with`")
           :examples $ []
-          :schema $ :: 'Macro
-            {} $ :args ([] 'Dynamic)
-          :tags $ #{} :macro
-        |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct-based record (created with defstruct + %{}).")
-          :code $ quote &runtime-implementation
+          :schema $ :: 'Dynamic
+        |record? $ %{} :CodeEntry (:doc "|Removed legacy predicate. Use struct? for values or struct-def? for definitions.")
+          :code $ quote
+            defn record? (_value) (raise "|`record?` was removed; use `struct?` for struct values or `struct-def?` for definitions")
           :examples $ []
-            quote $ assert= false
-              record? $ {} (:x 1)
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-          :tags $ #{} :builtin :internal
+              :args $ [] 'Dynamic
         |recur $ %{} :CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5478,7 +5476,7 @@
               tag-match res
                 (:ok value) (f value)
                 (:err err)
-                  %:: (&tuple:enum res) :err err
+                  %:: (&enum:definition res) :err err
           :examples $ []
             quote $ assert= (%ok 4)
               result:and-then (%ok 2)
@@ -5510,9 +5508,9 @@
             defn result:map (res f)
               tag-match res
                 (:ok value)
-                  %:: (&tuple:enum res) :ok $ f value
+                  %:: (&enum:definition res) :ok $ f value
                 (:err err)
-                  %:: (&tuple:enum res) :err err
+                  %:: (&enum:definition res) :err err
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -5526,9 +5524,9 @@
             defn result:map-err (res f)
               tag-match res
                 (:ok value)
-                  %:: (&tuple:enum res) :ok value
+                  %:: (&enum:definition res) :ok value
                 (:err err)
-                  %:: (&tuple:enum res) :err $ f err
+                  %:: (&enum:definition res) :err $ f err
           :examples $ []
             quote $ assert= (%err |failed!)
               result:map-err (%err |failed)
@@ -5797,18 +5795,76 @@
           :schema $ :: 'Fn
             {} (:return 'String)
               :args $ [] 'String 'String
-        |struct? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct definition.")
+        |struct-def? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct definition.")
           :code $ quote
-            defn struct? (x)
-              &= (type-of x) :struct
+            defn struct-def? (x)
+              &= (type-of x) :struct-def
           :examples $ []
             quote $ assert= true
-              struct? $ defstruct Person (:name 'String)
+              struct-def? $ defstruct Person (:name 'String)
+            quote $ assert= false
+              struct-def? $ %{} _ (:x 1)
+          :schema $ :: 'Fn
+            {} (:return 'Bool)
+              :args $ [] 'Dynamic
+        |struct-definition $ %{} :CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
+          :code $ quote
+            defn struct-definition (value)
+              optionally $ &struct:definition value
+          :examples $ []
+            quote $ let
+                User $ defstruct User (:name 'String)
+                user $ %{} User (:name |Ada)
+              assert= (%some User) (struct-definition user)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] 'Struct
+              :return $ :: 'Option 'Tag
+        |struct-match $ %{} :CodeEntry (:doc "|Pattern-match a struct value by StructDef and fields.")
+          :code $ quote
+            defmacro struct-match (value & body)
+              if (&list:empty? body) (raise "|struct-match expected patterns for matching")
+                if (list? value)
+                  &let
+                    v# $ gensym |v
+                    quasiquote $ &let (~v# ~value)
+                      assert "|expected struct value to match" $ struct? ~v#
+                      &struct-match-internal ~v# ~@body
+                  quasiquote $ &let ()
+                    assert "|expected struct value to match" $ struct? ~value
+                    &struct-match-internal ~value ~@body
+          :examples $ []
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Struct)
+          :tags $ #{} :macro
+        |struct-with $ %{} :CodeEntry (:doc "|Construct a new struct value by replacing declared fields.")
+          :code $ quote
+            defmacro struct-with (record & pairs) (; "check if args are in pairs")
+              if
+                not $ and (list? pairs)
+                  every? pairs $ fn (xs)
+                    and (list? xs)
+                      &= 2 $ count xs
+                raise $ str-spaced "|struct-with expects a list of pairs (each with exactly two elements), got:" pairs
+              ; "|call &struct:with"
+              quasiquote $ &struct:with ~record
+                ~@ $ &list:concat & pairs
+          :examples $ []
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic)
+          :tags $ #{} :macro
+        |struct? $ %{} :CodeEntry (:doc "|Predicate that checks struct values, including nominal and anonymous structs. Passing a StructDef reports a migration error.")
+          :code $ quote &runtime-implementation
+          :examples $ []
+            quote $ assert= true
+              struct? $ %{} _ (:x 1)
             quote $ assert= false
               struct? $ {} (:x 1)
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'Dynamic
+              :args $ [] 'T
+              :generics $ [] 'T
+          :tags $ #{} :builtin :internal
         |swap! $ %{} :CodeEntry (:doc "|Atomically updates a reference by applying a function to its current value and storing the result.")
           :code $ quote
             defmacro swap! (a f & args)
@@ -5842,7 +5898,7 @@
             {} (:return 'Bool)
               :args $ [] 'T
               :generics $ [] 'T
-        |tag-match $ %{} :CodeEntry (:doc "|Pattern matching on tagged tuples, dispatches based on the first element of the tuple")
+        |tag-match $ %{} :CodeEntry (:doc "|Pattern-match an enum value by its variant tag.")
           :code $ quote
             defmacro tag-match (value & body)
               if (&list:empty? body) (raise "|tag-match expected some patterns and matches")
@@ -5852,11 +5908,11 @@
                     v# $ gensym |v
                     quasiquote $ &let (~v# ~value)
                       if
-                        not $ tuple? ~v#
-                        raise $ str "|tag-match expected tuple, got" ~v#
+                        not $ enum? ~v#
+                        raise $ str "|tag-match expected enum value, got" ~v#
                       &let
-                        ~t# $ &tuple:nth ~v# 0
-                        &tuple:validate-enum ~v# ~t#
+                        ~t# $ &enum:nth ~v# 0
+                        &enum:validate ~v# ~t#
                         internal/&tag-match-internal ~v# ~t# $ ~@ body
           :examples $ []
             quote $ assert= 11
@@ -5973,7 +6029,7 @@
             {}
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
-              :return $ :: 'Set 'Tuple
+              :return $ :: 'Set 'Enum
           :tags $ #{} :builtin :internal
         |trim $ %{} :CodeEntry (:doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string")
           :code $ quote &runtime-implementation
@@ -5987,31 +6043,21 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :control :internal :syntax
-        |tuple-enum $ %{} :CodeEntry (:doc "|Return the source enum prototype as Option<Enum>; plain tuples produce none.")
+        |tuple-enum $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn tuple-enum (tuple)
-              optionally $ &tuple:enum tuple
+            defn tuple-enum (_value) (raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>")
           :examples $ []
-            quote $ assert= (%some Option)
-              tuple-enum $ %some 1
-            quote $ assert= (%none)
-              tuple-enum $ :: :plain 1
           :schema $ :: 'Fn
             {}
-              :args $ [] 'Tuple
-              :return $ :: 'Option 'Enum
-        |tuple? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a tuple literal created with the `::` form.")
-          :code $ quote &runtime-implementation
+              :args $ [] 'Dynamic
+              :return $ :: 'Option 'Tag
+        |tuple? $ %{} :CodeEntry (:doc "|Removed legacy predicate. Use enum? for values or enum-def? for definitions.")
+          :code $ quote
+            defn tuple? (_value) (raise "|`tuple?` was removed; use `enum?` for enum values or `enum-def?` for definitions")
           :examples $ []
-            quote $ assert= true
-              tuple? $ :: :a :b
-            quote $ assert= false
-              tuple? $ [] :a :b
           :schema $ :: 'Fn
             {} (:return 'Bool)
-              :args $ [] 'T
-              :generics $ [] 'T
-          :tags $ #{} :builtin :internal
+              :args $ [] 'Dynamic
         |turn-str $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn turn-str (x) (turn-string x)
@@ -6104,11 +6150,11 @@
                   if (&list:contains? x k)
                     assoc x k $ f (&list:nth x k)
                     , x
-                  if (tuple? x)
-                    assoc x k $ f (&tuple:nth x k)
-                    if (record? x)
+                  if (enum? x)
+                    assoc x k $ f (&enum:nth x k)
+                    if (struct? x)
                       if (contains? x k)
-                        assoc x k $ f (&record:get x k)
+                        assoc x k $ f (&struct:get x k)
                         , x
                       raise $ &str:concat "|Cannot update key on item: " (to-lispy-string x)
           :examples $ []
@@ -6443,6 +6489,15 @@
             def &core-compare-string-impl $ &impl::new :&core-compare-string-impl (:: :compare &str:compare)
           :examples $ []
           :schema $ :: 'Dynamic
+        |&core-contains-enum-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-contains-enum-impl $ &impl::new :&core-contains-enum-impl
+              :: :contains? $ fn (x k)
+                if (&>= k 0)
+                  &< k $ &enum:count x
+                  , false
+          :examples $ []
+          :schema $ :: 'Dynamic
         |&core-contains-list-impl $ %{} :CodeEntry (:doc |)
           :code $ quote
             def &core-contains-list-impl $ &impl::new :&core-contains-list-impl (:: :contains? &list:contains?)
@@ -6451,11 +6506,6 @@
         |&core-contains-map-impl $ %{} :CodeEntry (:doc |)
           :code $ quote
             def &core-contains-map-impl $ &impl::new :&core-contains-map-impl (:: :contains? &map:contains?)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |&core-contains-record-impl $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            def &core-contains-record-impl $ &impl::new :&core-contains-record-impl (:: :contains? &record:contains?)
           :examples $ []
           :schema $ :: 'Dynamic
         |&core-contains-set-impl $ %{} :CodeEntry (:doc |)
@@ -6468,13 +6518,14 @@
             def &core-contains-string-impl $ &impl::new :&core-contains-string-impl (:: :contains? &str:contains?)
           :examples $ []
           :schema $ :: 'Dynamic
-        |&core-contains-tuple-impl $ %{} :CodeEntry (:doc |)
+        |&core-contains-struct-impl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-contains-tuple-impl $ &impl::new :&core-contains-tuple-impl
-              :: :contains? $ fn (x k)
-                if (&>= k 0)
-                  &< k $ &tuple:count x
-                  , false
+            def &core-contains-struct-impl $ &impl::new :&core-contains-struct-impl (:: :contains? &struct:contains?)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |&core-countable-enum-impl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def &core-countable-enum-impl $ &impl::new :&core-countable-enum-impl (:: :count &enum:count)
           :examples $ []
           :schema $ :: 'Dynamic
         |&core-countable-list-impl $ %{} :CodeEntry (:doc |)
@@ -6487,11 +6538,6 @@
             def &core-countable-map-impl $ &impl::new :&core-countable-map-impl (:: :count &map:count)
           :examples $ []
           :schema $ :: 'Dynamic
-        |&core-countable-record-impl $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            def &core-countable-record-impl $ &impl::new :&core-countable-record-impl (:: :count &record:count)
-          :examples $ []
-          :schema $ :: 'Dynamic
         |&core-countable-set-impl $ %{} :CodeEntry (:doc |)
           :code $ quote
             def &core-countable-set-impl $ &impl::new :&core-countable-set-impl (:: :count &set:count)
@@ -6502,9 +6548,9 @@
             def &core-countable-string-impl $ &impl::new :&core-countable-string-impl (:: :count &str:count)
           :examples $ []
           :schema $ :: 'Dynamic
-        |&core-countable-tuple-impl $ %{} :CodeEntry (:doc |)
+        |&core-countable-struct-impl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-countable-tuple-impl $ &impl::new :&core-countable-tuple-impl (:: :count &tuple:count)
+            def &core-countable-struct-impl $ &impl::new :&core-countable-struct-impl (:: :count &struct:count)
           :examples $ []
           :schema $ :: 'Dynamic
         |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")
@@ -6610,13 +6656,13 @@
                           size $ &list:count pattern
                           quasiquote $ if
                             if (identical? ~t ~k)
-                              identical? ~size $ &tuple:count ~value
+                              identical? ~size $ &enum:count ~value
                               , false
                             let
                               ~ $ map-indexed (&list:rest pattern)
                                 defn %tag-match (idx x)
                                   [] x $ quasiquote
-                                    &tuple:nth ~value $ ~ (inc idx)
+                                    &enum:nth ~value $ ~ (inc idx)
                               , ~branch
                             &tag-match-internal ~value ~t $ ~@ (&list:rest body)
                       if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)

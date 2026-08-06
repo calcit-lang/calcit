@@ -59,7 +59,7 @@ related:
 
 ### 类型标注语法迁移
 
-新版本把 schema 类型的推荐写法统一为 quoted symbol：`'String`、`'Number`、`'List`、`'Ref`、`'Fn` 和 `'Dynamic`。旧的 `:string`、`:number`、`:list`、`:ref`、`:fn`、`:dynamic` 仍可加载，以便平滑升级；普通 tag 数据（例如 enum variant `:ok`、record key 和 schema 的 `:return`/`:kind` key）不会被改变。
+新版本把 schema 类型的推荐写法统一为 quoted symbol：`'String`、`'Number`、`'List`、`'Ref`、`'Fn` 和 `'Dynamic`。旧的 `:string`、`:number`、`:list`、`:ref`、`:fn`、`:dynamic` 仍可加载，以便平滑升级；普通 tag 数据（例如 enum variant `:ok`、struct field key 和 schema 的 `:return`/`:kind` key）不会被改变。
 
 在完成依赖升级后执行：
 
@@ -69,6 +69,35 @@ cr calcit.cirru --check-only
 ```
 
 `edit format` 会只改写 schema、`hint-fn`、`assert-type`、`unsafe-coerce`、`defstruct` 和 `defenum` 等类型位置，并将 entry schema 重新序列化为 canonical symbols；它不会猜测或加强实际类型契约。提交前检查 diff，尤其是具有手写 tag 数据的宏或 DSL。
+
+### Struct / Enum 数据模型命名迁移
+
+新数据模型明确区分定义和值：`defstruct` 返回 `StructDef`，`defenum` 返回
+`EnumDef`；实例类型分别是 `Struct` 和 `Enum`。没有具名定义的临时值使用
+`%{} _ ...` 和 `%:: _ ...`。旧的 record / tuple 公开名称会产生
+`W_REMOVED_DATA_API`，诊断中同时给出替代写法；新 Snapshot 不再写出
+`:record`、`:tuple`、`Record` 或 `Tuple`。
+
+常用迁移如下：
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `record?` | `struct?`（值）或 `struct-def?`（定义） |
+| `tuple?` | `enum?`（值）或 `enum-def?`（定义） |
+| `record-struct` | `struct-definition` |
+| `tuple-enum` | `enum-definition` |
+| `record-with` / `record-match` | `struct-with` / `struct-match` |
+| `&record:*` / `&tuple:*` | 对应的 `&struct:*` / `&enum:*`；定义元数据使用 `&struct-def:*` / `&enum-def:*` |
+
+Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field` 和
+`.field` 直接返回字段声明类型，不再自动包装 `Option<T>`。不存在的字段会在
+静态检查阶段报告，运行期也会抛出普通错误；升级业务代码时应删除这类访问后的
+`option:unwrap`。Map 等动态容器的访问仍返回 `Option<T>`，`get-in` 也继续保留
+可失败路径语义，不能批量删除其 unwrap。
+
+推荐先执行 `cr calcit.cirru --check-only`，按诊断逐项替换，再运行完整 JS
+回归。不要先全局删除 `option:unwrap`；只处理接收者已被推断为 Struct 且字段在
+`defstruct` 中声明的访问。
 
 下面流程按“先确认版本，再对齐工具链，再更新依赖，最后按 CI 链路验证”的顺序执行。
 
@@ -262,7 +291,7 @@ let
 - concrete trait impl 必须完整实现声明的方法，且不能夹带 trait 未声明的方法；
 - trait method 的值必须可调用；native 预处理在签名信息可用时还会检查函数签名；
 - 同名方法不会跨 impl 拼接成一个 trait，也不会让两个独立 trait 互相冒充；
-- list/map/set/string/number/record/tuple 等内建能力现在由 native 与 JS 共用的 nominal core impl 表提供。
+- list/map/set/string/number/struct/enum 等内建能力现在由 native 与 JS 共用的 nominal core impl 表提供。
 
 建议在升级验证中显式覆盖两类负向用例：只有 `TraitA/.method` 时，`assert-traits value TraitB` 和 `&trait-call TraitB :method value` 都必须失败。
 

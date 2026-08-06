@@ -26,7 +26,7 @@
           :code $ quote
             defimpl ShowImpl ShowTrait $ .show
               fn (self)
-                str "|Person: " $ &record:get self :name
+                str "|Person: " $ &struct:get self :name
           :examples $ []
           :schema $ :: 'Dynamic
         |ShowTrait $ %{} :CodeEntry (:doc |)

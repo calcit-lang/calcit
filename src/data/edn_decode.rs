@@ -6,7 +6,7 @@ use cirru_edn::{Edn, EdnRecordView, EdnTupleView};
 
 use crate::builtins::quick_build_atom;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
-use crate::calcit::{self, Calcit, CalcitList, CalcitRecord, CalcitTuple};
+use crate::calcit::{self, Calcit, CalcitEnumValue, CalcitList, CalcitStructValue};
 
 const MAX_DECODE_DEPTH: usize = 1024;
 
@@ -189,7 +189,7 @@ impl Decoder<'_> {
               .expect("record field sets were checked");
             values.push(self.decode_node(*field_node, raw_value, &format!("{path}.{}", field.ref_str()), depth + 1)?);
           }
-          Ok(Calcit::Record(CalcitRecord {
+          Ok(Calcit::Struct(CalcitStructValue {
             struct_ref: nominal.clone(),
             values: Arc::new(values),
           }))
@@ -235,7 +235,7 @@ impl Decoder<'_> {
           for (idx, (payload_node, raw_value)) in payload_nodes.iter().zip(extra.iter()).enumerate() {
             values.push(self.decode_node(*payload_node, raw_value, &format!("{path}.payload[{idx}]"), depth + 1)?);
           }
-          Ok(Calcit::Tuple(CalcitTuple {
+          Ok(Calcit::Enum(CalcitEnumValue {
             tag: Arc::new(Calcit::Tag(variant_tag.clone())),
             extra: values,
             sum_type: Some(nominal.clone()),
@@ -303,11 +303,11 @@ fn sorted_duplicate_names<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<
 mod tests {
   use super::*;
   use crate::calcit::data_shape::DataShapeGraph;
-  use crate::calcit::{CalcitEnum, CalcitStruct, CalcitTypeAnnotation, EnumVariant};
+  use crate::calcit::{CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation, EnumVariant};
   use cirru_edn::EdnTag;
 
-  fn person_struct() -> Arc<CalcitStruct> {
-    Arc::new(CalcitStruct {
+  fn person_struct() -> Arc<CalcitStructDef> {
+    Arc::new(CalcitStructDef {
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age"), EdnTag::new("name")]),
       field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
@@ -324,7 +324,7 @@ mod tests {
       DataShapeGraph::build(&CalcitTypeAnnotation::Struct(person.clone(), Arc::new(vec![])), "tests.edn").expect("derive person shape");
     let input = cirru_edn::parse("%{} :Person (:age 23) (:name |Ada)").expect("parse edn");
     let decoded = decode(&shape, &input).expect("decode person");
-    let Calcit::Record(record) = decoded else {
+    let Calcit::Struct(record) = decoded else {
       panic!("expected record");
     };
     assert!(Arc::ptr_eq(&record.struct_ref, &person));
@@ -402,8 +402,8 @@ mod tests {
 
   #[test]
   fn decodes_enum_and_checks_payload_arity() {
-    let prototype = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct {
+    let prototype = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef {
         name: EdnTag::new("ResultText"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
         field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone(), calcit::DYNAMIC_TYPE.clone()]),
@@ -416,13 +416,13 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::Vector(vec![]))),
       ]),
     };
-    let enum_def = Arc::new(CalcitEnum::from_record(prototype).expect("enum prototype"));
+    let enum_def = Arc::new(CalcitEnumDef::from_record(prototype).expect("enum prototype"));
     assert!(matches!(enum_def.variants(), [EnumVariant { .. }, EnumVariant { .. }]));
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])), "tests.edn").expect("derive enum shape");
     let input = cirru_edn::parse("%:: :ResultText :err |oops").expect("parse edn");
     let decoded = decode(&shape, &input).expect("decode enum");
-    let Calcit::Tuple(tuple) = decoded else {
+    let Calcit::Enum(tuple) = decoded else {
       panic!("expected tuple");
     };
     assert!(tuple.sum_type.as_ref().is_some_and(|actual| Arc::ptr_eq(actual, &enum_def)));

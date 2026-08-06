@@ -789,7 +789,7 @@
             defn test-record-field-tag () $ &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &= (&record:field-tag point 0) :x
+                &= (&struct:field-tag point 0) :x
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
@@ -798,7 +798,7 @@
             defn test-record-get-name () $ &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &= (&record:get-name point) :Point
+                &= (&struct:get-name point) :Point
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
@@ -808,7 +808,7 @@
               a $ %{} Point (:x 1) (:y 2)
               &let
                 b $ %{} Point (:x 3) (:y 4)
-                if (&record:matches? a b) 1 0
+                if (&struct:matches? a b) 1 0
           :examples $ []
           :schema $ :: 'Dynamic
         |test-record-struct-eq $ %{} :CodeEntry (:doc "|record struct equals source struct")
@@ -816,7 +816,7 @@
             defn test-record-struct-eq () $ &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &= (record-struct point) Point
+                &= (&struct:definition point) Point
                 , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
@@ -825,7 +825,7 @@
             defn test-record-sum (x y)
               &let
                 p $ %{} Point (:x x) (:y y)
-                &+ (&record:nth p 0 :x) (&record:nth p 1 :y)
+                &+ (&struct:nth p 0 :x) (&struct:nth p 1 :y)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-record-to-map $ %{} :CodeEntry (:doc "|record to-map exposes field values by tag")
@@ -833,7 +833,7 @@
             defn test-record-to-map () $ &let
               point $ %{} Point (:x 1) (:y 2)
               &let
-                m $ &record:to-map point
+                m $ &struct:to-map point
                 &+ (&map:get m :x) (&map:get m :y)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -1112,22 +1112,22 @@
         |test-tuple-assoc $ %{} :CodeEntry (:doc "|Tuple assoc updates payload by index")
           :code $ quote
             defn test-tuple-assoc () $ &let
-              t $ &tuple:assoc (:: :pair 10 20) 1 9
-              &+ (&tuple:nth t 1) (&tuple:nth t 2)
+              t $ &enum:assoc (:: :pair 10 20) 1 9
+              &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-tuple-count $ %{} :CodeEntry (:doc "|Tuple count returns payload count")
           :code $ quote
             defn test-tuple-count () $ &let
               t $ :: :pair 10 20
-              &tuple:count t
+              &enum:count t
           :examples $ []
           :schema $ :: 'Dynamic
         |test-tuple-sum $ %{} :CodeEntry (:doc "|Tuple create + nth access: idx 1 and 2 are payloads")
           :code $ quote
             defn test-tuple-sum () $ &let
               t $ :: :pair 10 20
-              &+ (&tuple:nth t 1) (&tuple:nth t 2)
+              &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-type-of-list $ %{} :CodeEntry (:doc "|type-of list == :list tag")
@@ -1169,7 +1169,7 @@
             defn test-type-of-tuple () $ if
               &=
                 type-of $ :: :Pair 1 2
-                , :tuple
+                , :enum
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic

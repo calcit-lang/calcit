@@ -1,13 +1,13 @@
 import { CalcitTag, CalcitSymbol, CalcitFn, CalcitRecur } from "./calcit-data.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
-import { CalcitRecord } from "./js-record.mjs";
+import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
-import { CalcitStruct } from "./js-struct.mjs";
-import { CalcitEnum } from "./js-enum.mjs";
+import { CalcitStructDef } from "./js-struct-def.mjs";
+import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet as CalcitSet } from "./js-set.mjs";
-import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 
@@ -23,14 +23,14 @@ export type CalcitValue =
   | CalcitTag
   | CalcitSymbol
   | CalcitRef
-  | CalcitTuple
+  | CalcitEnumValue
   | CalcitFn
   | CalcitRecur // should not be exposed to function
-  | CalcitRecord
+  | CalcitStructValue
   | CalcitImpl
   | CalcitTrait
-  | CalcitStruct
-  | CalcitEnum
+  | CalcitStructDef
+  | CalcitEnumDef
   | CalcitCirruQuote
   | null;
 
@@ -52,15 +52,15 @@ enum PseudoTypeIndex {
   tag,
   string,
   ref,
-  tuple,
+  enum_value,
   recur,
   list,
   set,
   map,
-  record,
+  struct_value,
   impl,
-  struct,
-  enum_type,
+  struct_def,
+  enum_def,
   fn,
   cirru_quote,
 }
@@ -75,15 +75,15 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitTag) return PseudoTypeIndex.tag;
   if (t === "string") return PseudoTypeIndex.string;
   if (x instanceof CalcitRef) return PseudoTypeIndex.ref;
-  if (x instanceof CalcitTuple) return PseudoTypeIndex.tuple;
+  if (x instanceof CalcitEnumValue) return PseudoTypeIndex.enum_value;
   if (x instanceof CalcitRecur) return PseudoTypeIndex.recur;
   if (x instanceof CalcitList || x instanceof CalcitSliceList) return PseudoTypeIndex.list;
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return PseudoTypeIndex.map;
-  if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
+  if (x instanceof CalcitStructValue) return PseudoTypeIndex.struct_value;
   if (x instanceof CalcitImpl) return PseudoTypeIndex.impl;
-  if (x instanceof CalcitStruct) return PseudoTypeIndex.struct;
-  if (x instanceof CalcitEnum) return PseudoTypeIndex.enum_type;
+  if (x instanceof CalcitStructDef) return PseudoTypeIndex.struct_def;
+  if (x instanceof CalcitEnumDef) return PseudoTypeIndex.enum_def;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;

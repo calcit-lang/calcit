@@ -31,9 +31,9 @@
                   doc $ &get-def-doc |calcit.core/map
                   schema $ &get-def-schema |calcit.core/map
                 assert= true $ includes? doc |map
-                assert= 'Fn $ &tuple:nth schema 0
+                assert= 'Fn $ &enum:nth schema 0
                 assert= true $ option:some?
-                  get (&tuple:nth schema 1) :args
+                  get (&enum:nth schema 1) :args
           :examples $ []
           :schema $ :: 'Dynamic
         |test-local-def $ %{} :CodeEntry (:doc "|lookup local definition metadata")
@@ -43,9 +43,9 @@
                   doc $ &get-def-doc |test-def-meta.main/MetaSample
                   schema $ &get-def-schema |test-def-meta.main/MetaSample
                 assert= "|Sample definition for def metadata lookup tests" doc
-                assert= 'Fn $ &tuple:nth schema 0
+                assert= 'Fn $ &enum:nth schema 0
                 assert= (%some 'Number)
-                  get (&tuple:nth schema 1) :return
+                  get (&enum:nth schema 1) :return
           :examples $ []
           :schema $ :: 'Dynamic
         |test-missing-doc $ %{} :CodeEntry (:doc "|missing definition returns empty doc string")

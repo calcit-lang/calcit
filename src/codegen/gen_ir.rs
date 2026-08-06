@@ -7,8 +7,8 @@ use std::sync::Arc;
 use cirru_edn::{Edn, EdnListView, format};
 
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitEnum, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitLocal, CalcitRecord, CalcitStruct, CalcitTuple,
-  CalcitTypeAnnotation, ImportInfo, MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitEnumValue, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitLocal, CalcitStructDef,
+  CalcitStructValue, CalcitTypeAnnotation, ImportInfo, MethodKind,
 };
 use crate::program;
 
@@ -247,11 +247,11 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       });
       Edn::from(ys)
     }
-    Calcit::Tuple(tuple) => dump_tuple_code(tuple),
-    Calcit::Record(record) => dump_record_code(record),
+    Calcit::Enum(tuple) => dump_tuple_code(tuple),
+    Calcit::Struct(record) => dump_record_code(record),
     Calcit::Impl(impl_def) => dump_impl_code(impl_def),
-    Calcit::Struct(struct_def) => dump_struct_code(struct_def),
-    Calcit::Enum(enum_def) => dump_enum_code(enum_def),
+    Calcit::StructDef(struct_def) => dump_struct_code(struct_def),
+    Calcit::EnumDef(enum_def) => dump_enum_code(enum_def),
     Calcit::Method(method, kind) => {
       let mut entries = vec![
         (Edn::tag("kind"), Edn::tag("method")),
@@ -352,7 +352,7 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
   type_info.to_type_edn()
 }
 
-fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {
+fn dump_tuple_code(tuple: &CalcitEnumValue) -> Edn {
   let mut entries = tuple_metadata_entries(tuple);
   let mut values = EdnListView::default();
   for value in &tuple.extra {
@@ -363,7 +363,7 @@ fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {
   Edn::map_from_iter(entries)
 }
 
-fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
+fn tuple_metadata_entries(tuple: &CalcitEnumValue) -> Vec<(Edn, Edn)> {
   let mut entries = vec![
     (Edn::tag("kind"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
@@ -374,7 +374,7 @@ fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
   entries
 }
 
-fn dump_record_code(record: &CalcitRecord) -> Edn {
+fn dump_record_code(record: &CalcitStructValue) -> Edn {
   let mut entries = record_metadata(record);
   let mut fields = EdnListView::default();
   for (field, value) in record.struct_ref.fields.iter().zip(record.values.iter()) {
@@ -409,7 +409,7 @@ fn dump_impl_code(impl_def: &CalcitImpl) -> Edn {
   Edn::map_from_iter(entries)
 }
 
-fn dump_struct_code(struct_def: &CalcitStruct) -> Edn {
+fn dump_struct_code(struct_def: &CalcitStructDef) -> Edn {
   let mut entries = vec![
     (Edn::tag("kind"), Edn::tag("struct")),
     (Edn::tag("name"), Edn::Str(struct_def.name.ref_str().into())),
@@ -435,7 +435,7 @@ fn dump_struct_code(struct_def: &CalcitStruct) -> Edn {
   Edn::map_from_iter(entries)
 }
 
-fn dump_enum_code(enum_def: &CalcitEnum) -> Edn {
+fn dump_enum_code(enum_def: &CalcitEnumDef) -> Edn {
   let mut entries = vec![
     (Edn::tag("kind"), Edn::tag("enum")),
     (Edn::tag("name"), Edn::Str(enum_def.name().ref_str().into())),
@@ -466,7 +466,7 @@ fn dump_enum_code(enum_def: &CalcitEnum) -> Edn {
   Edn::map_from_iter(entries)
 }
 
-fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
+fn record_metadata(record: &CalcitStructValue) -> Vec<(Edn, Edn)> {
   let entries = vec![
     (Edn::tag("kind"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),

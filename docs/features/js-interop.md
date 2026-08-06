@@ -35,7 +35,7 @@ inferred as `JsNullish<JsObject>`:
   it is deliberately distinct from legacy `Optional` and nominal `Option`.
 - `JsObject` is an opaque host value. A `js-present?`/`js-nullish?` check proves only that the
   value is present; it does not prove that the payload is a Calcit `String`,
-  `Number`, record, or collection.
+  `Number`, struct, or collection.
 - Before passing the value into strongly typed Calcit code, validate/convert it
   with a boundary decoder. `unsafe-coerce` is available only when an external
   API contract is trusted and the unchecked conversion is intentional.

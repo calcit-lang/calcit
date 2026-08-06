@@ -83,10 +83,10 @@ cr eval "echo |done"
 - **Lists**: `[] 1 2 3`
 - **HashMaps**: `{} (:a 1) (:b 2)`
 - **HashSets**: `#{} :a :b :c`
-- **Tuples**: `:: :tag 1 2` - tagged unions with class support
-- **Records**: `%{} RecordName (:key1 val1) (:key2 val2)`, similar to structs
-- **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` - record type definitions
-- **Enums**: `defenum Result (:ok ..) (:err 'String)` - sum types
+- **Anonymous Enums**: `%:: _ :tag 1 2` (or `:: :tag 1 2`) - short-lived tagged values
+- **Anonymous Structs**: `%{} _ (:key1 val1) (:key2 val2)` - short-lived fixed-field values
+- **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `%{} Point ...`
+- **Enums**: `defenum Result (:ok ..) (:err 'String)` and `%:: Result ...`
 - **Refs/Atoms**: `atom 0` - mutable references
 - **Buffers**: `&buffer 0x01 0x02` - binary data
 
@@ -162,7 +162,7 @@ defn add (a b) (+ a b)
 ### Built-in Types
 
 - `'Number`, `'String`, `'Bool`, `'Nil`, `'Dynamic`
-- `'List`, `'Map`, `'Set`, `'Record`, `'Fn`, `'Tuple`
+- `'List`, `'Map`, `'Set`, `'Struct`, `'Enum`, `'StructDef`, `'EnumDef`, `'Fn`
 - `'Dynamic` - wildcard type (default when no annotation)
 - Generic types (Cirru style):
 
@@ -180,8 +180,8 @@ let
 ### Static Checks (Compile-time)
 
 - **Arity checking**: Function call argument count validation
-- **Record field checking**: Validates field names in record access
-- **Tuple index bounds**: Ensures tuple indices are valid
+- **Struct field checking**: Validates required field names in struct access
+- **Enum index bounds**: Ensures enum payload indices are valid
 - **Enum tag matching**: Validates tags in `&case` and `&extract-case`
 - **Method validation**: Checks method names and class types
 - **Recur arity**: Validates recur argument count matches function params
@@ -268,51 +268,52 @@ let
 - `get-char-code`, `char-from-code` - character operations
 - `&str:escape` - escape string
 
-### Tuple Operations
+### Enum Operations
 
-- `::` - create tuple (shorthand)
-- `%::` - create tuple with class
-- `&tuple:nth` - access element by index
-- `&tuple:assoc` - update element
-- `&tuple:count` - get element count
-- `&tuple:class` - get class
-- `&tuple:params` - get parameters
-- `tuple-enum` - get an enum prototype as `Option<Enum>`
+- `defenum` - define a named enum
+- `%::` - create a named enum value, or an anonymous value with `%:: _ ...`
+- `::` - shorthand for an anonymous enum value
+- `&enum:nth` - access the variant tag or payload by index
+- `&enum:assoc` - update a payload position
+- `&enum:count` - count the variant tag and payload positions
+- `&enum:params` - get payload parameters
+- `enum-definition` - get the definition as `Option<EnumDef>`
 - `destruct-list`, `destruct-map`, `destruct-set`, `destruct-str` - split collections using nominal `*Destruct` enums
-- `&tuple:with-class` - change class
+- `enum?`, `enum-def?` - distinguish values from definitions
 
-### Record Operations
+### Struct Operations
 
 - `defstruct` - define a struct type with typed fields
-- `%{}` - create a record instance from a struct
-- `%{}?` - create a partial record (unset fields default to nil)
-- `&%{}` - low-level record constructor (flat key-value pairs, no type check)
-- `record-with` - update multiple fields, returns new record
-- `&record:get` - get field value
-- `&record:assoc` - set field value (low-level)
-- `record-struct` - get the struct definition the record was created from
-- `&record:matches?` - type check
-- `&record:from-map` - convert from map
-- `&record:to-map` - convert to map
-- `&record:get-name` - get tag name of the record's struct
-- `record?`, `struct?` - predicates
+- `%{}` - create a named struct value, or an anonymous value with `%{} _ ...`
+- `%{}?` - create a partial struct (unset fields default to nil)
+- `&%{}` - low-level struct constructor (flat key-value pairs, no type check)
+- `struct-with` - update multiple declared fields
+- `&struct:get` - get a required declared field
+- `&struct:assoc` - set a declared field (low-level)
+- `struct-definition` - get the definition as `Option<StructDef>`
+- `&struct:matches?` - type check
+- `&struct:from-map` - convert from map
+- `&struct:to-map` - convert to map
+- `&struct:get-name` - get the tag name of the struct definition
+- `struct?`, `struct-def?` - distinguish values from definitions
 
 ### Struct & Enum Operations
 
 - `defstruct` - define struct type
 - `defenum` - define enum type
-- `&struct::new`, `&enum::new` - create instances
-- `struct?`, `enum?` - predicates
-- `&tuple:enum-has-variant?` - check variant
-- `&tuple:enum-variant-arity` - get variant arity
-- `match` - native pattern matching on enums and tuples
-- `tag-match` - legacy enum/tuple matching syntax
+- `&struct-def:new`, `&enum-def:new` - internal definition constructors
+- `struct?`, `enum?` - value predicates
+- `struct-def?`, `enum-def?` - definition predicates
+- `&enum-def:has-variant?` - check a declared variant
+- `&enum-def:variant-arity` - get declared variant arity
+- `match` - native pattern matching on named enums
+- `tag-match` - fallback matching for anonymous enums
 
 ## Traits & Methods
 
 - `deftrait` - define a trait (method set + type signatures)
 - `impl-origin` - get an impl's trait origin as `Option<Trait>`
-- `defimpl` - define an impl record for a trait: `defimpl ImplName Trait ...`
+- `defimpl` - define a nominal impl value for a trait: `defimpl ImplName Trait ...`
 - `impl-traits` - attach impl records to a struct/enum definition (user impls: later impls override earlier ones for same method name)
 - `.method` - normal method dispatch
 - `&trait-call` - explicit trait method call: `&trait-call Trait :method receiver & args`
@@ -333,8 +334,8 @@ let
 
 - `nil?`, `some?` - nil checks
 - `number?`, `string?`, `tag?`, `symbol?`
-- `list?`, `map?`, `set?`, `tuple?`
-- `record?`, `struct?`, `enum?`, `ref?`
+- `list?`, `map?`, `set?`, `struct?`, `enum?`
+- `struct-def?`, `enum-def?`, `ref?`
 - `fn?`, `macro?`
 
 ### Control Flow
@@ -344,9 +345,9 @@ let
 - `cond` - multi-way conditional; requires a final `(true value)` branch
 - `case` - pattern matching on values; raises when no pattern matches
 - `&case` - internal case macro
-- `match` - preferred enum/tuple pattern matching
-- `tag-match` - legacy enum/tuple pattern matching
-- `record-match` - record pattern matching
+- `match` - preferred named-enum pattern matching
+- `tag-match` - fallback anonymous-enum pattern matching
+- `struct-match` - struct pattern matching
 - `list-match` - list destructuring match
 - `field-match` - map field matching
 - `if-let` - unwrap an `Option<T>` with explicit some/none branches
@@ -355,7 +356,9 @@ let
 Nested updates are nominal as well: `update-in` passes `Option<T>` to its
 updater, and `dissoc-in` treats an empty path as a no-op. Public lookup and
 positional APIs (`get`, `get-in`, `first`, `last`, and collection `nth`) return
-`Option<T>`. Record has no public positional `.nth`; use field-name `get`.
+`Option<T>`. Accessing a statically known struct field with `get`, `:field`, or
+`.field` returns the field's declared type directly; an undeclared field is a
+diagnostic, not `nil`. Struct has no public positional `.nth`.
 
 ### Threading Macros
 

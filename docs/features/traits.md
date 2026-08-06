@@ -40,7 +40,7 @@ deftrait MyFoo $ .foo
 
 ## Implement a trait
 
-Use `defimpl` to create an impl record for a trait.
+Use `defimpl` to create a nominal impl value for a trait.
 
 ```cirru
 let
@@ -67,7 +67,7 @@ let
 defimpl ImplName Trait ...
 ```
 
-- First argument is the **impl record name**.
+- First argument is the **impl value name**.
 - Second argument is the concrete **trait value** (normally a symbol). A tag is accepted only for the legacy method-bag form described below.
 
 Examples:
@@ -145,7 +145,7 @@ Implementation notes:
 Constraints:
 
 - `impl-traits` only accepts **struct/enum** values.
-- Record/tuple instances must be created from a struct/enum that already has impls attached (`%{}` or `%::`).
+- Struct/enum values must be created from a definition that already has impls attached (`%{}` or `%::`).
 
 Syntax:
 
@@ -237,7 +237,7 @@ When you want to **disambiguate** (or bypass `.method` resolution), use `&trait-
 
 Usage: `&trait-call Trait :method receiver & args`
 
-`&trait-call` matches by the impl record's trait origin, not just by trait name text. This avoids accidental dispatch when two different trait values share the same printed name.
+`&trait-call` matches by the impl value's trait origin, not just by trait name text. This avoids accidental dispatch when two different trait values share the same printed name.
 
 Example with two traits sharing the same method name:
 
@@ -297,10 +297,10 @@ let
     Shape0 $ defenum Shape (:point 'Number 'Number)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (t)
-        str |shape: $ &tuple:nth t 0
+        str |shape: $ &enum:nth t 0
     Shape $ impl-traits Shape0 MyFooImpl
-    some-tuple $ %:: Shape :point 10 20
-    impls $ &tuple:impls some-tuple
+    shape $ %:: Shape :point 10 20
+    impls $ &enum:impls shape
   any? impls $ fn (impl)
     = (impl-origin impl) (%some MyFoo)
 ```

@@ -1,5 +1,5 @@
 use crate::builtins::{err_arity, err_arity_with_hint, meta::type_of};
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, CalcitRecord, CalcitTuple, format_proc_examples_hint};
+use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitProc, CalcitStructValue, format_proc_examples_hint};
 use crate::util::number::is_integer;
 use cirru_parser::Cirru;
 use serde_json::{Map, Number, Value};
@@ -112,7 +112,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
       }
       Ok(Value::Object(object))
     }
-    Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
+    Calcit::Enum(CalcitEnumValue { tag, extra, .. }) => {
       let mut items = Vec::with_capacity(extra.len() + 1);
       items.push(calcit_to_json(tag)?);
       for item in extra {
@@ -122,7 +122,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     }
     Calcit::CirruQuote(code) => cirru_to_json(code),
     Calcit::Buffer(buffer) => Ok(Value::String(format!("0x{}", hex::encode(buffer)))),
-    Calcit::Record(CalcitRecord { struct_ref, values }) => {
+    Calcit::Struct(CalcitStructValue { struct_ref, values }) => {
       let mut object = Map::with_capacity(struct_ref.fields.len());
       for (idx, field) in struct_ref.fields.iter().enumerate() {
         object.insert(field.ref_str().to_owned(), calcit_to_json(&values[idx])?);
@@ -132,8 +132,8 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     Calcit::Ref(..)
     | Calcit::Thunk(..)
     | Calcit::Recur(..)
-    | Calcit::Struct(..)
-    | Calcit::Enum(..)
+    | Calcit::StructDef(..)
+    | Calcit::EnumDef(..)
     | Calcit::Trait(..)
     | Calcit::Impl(..)
     | Calcit::Proc(..)

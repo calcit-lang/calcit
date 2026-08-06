@@ -285,22 +285,16 @@
               assert-type p $ :: Person
               &inspect-type p
               let
-                  name-v $ &record:get p :name
-                assert-type name-v $ :: 'Optional 'Dynamic
+                  name-v $ &struct:get p :name
+                assert-type name-v String
                 &inspect-type name-v
               let
                   top-name-v $ get p :name
-                  top-miss-v $ get p :email
                   city-v $ get-in p ([] :address :city)
-                  city-miss-v $ get-in p ([] :address :zip)
-                assert-type top-name-v $ :: 'Optional 'String
-                assert-type top-miss-v $ :: 'Optional 'Dynamic
+                assert-type top-name-v String
                 assert-type city-v $ :: 'Option 'String
-                assert-type city-miss-v $ :: 'Option 'Dynamic
                 &inspect-type top-name-v
-                &inspect-type top-miss-v
                 &inspect-type city-v
-                &inspect-type city-miss-v
           :examples $ []
           :schema $ :: 'Dynamic
         |test-ref-inference $ %{} :CodeEntry (:doc |)

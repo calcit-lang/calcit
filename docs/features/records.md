@@ -1,5 +1,5 @@
 ---
-title: "Records"
+title: "Structs"
 scope: "core"
 kind: "reference"
 category: "features"
@@ -11,9 +11,9 @@ id: core/features/records
 parent: core/features
 ---
 
-# Records
+# Structs
 
-Calcit provides Records as a way to define structured data types with named fields, similar to structs in other languages. Records are defined with `defstruct` and instantiated with the `%{}` macro.
+Calcit structs are declared data types with a fixed set of named fields. Struct definitions are created with `defstruct`; struct values are constructed with `%{}`.
 
 ## Quick Recipes
 
@@ -21,7 +21,7 @@ Calcit provides Records as a way to define structured data types with named fiel
 - **Create**: `%{} Point (:x 1) (:y 2)`
 - **Access**: `get p :x` or `(:x p)`
 - **Update**: `assoc p :x 10` or `update p :x inc`
-- **Type Check**: `assert-type p 'Record`
+- **Type Check**: `assert-type p 'Point`
 
 ## Defining a Struct Type
 
@@ -72,9 +72,9 @@ let
   assert= |1 $ item .show
 ```
 
-Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a record instance, so the constraint lives on the data definition rather than on each individual function schema.
+Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a struct value, so the constraint lives on the data definition rather than on each individual function schema.
 
-## Creating Records
+## Creating Struct Values
 
 Use the `%{}` macro to instantiate a struct:
 
@@ -96,7 +96,7 @@ let
 
 ## Accessing Fields
 
-Use `get` (or `&record:get`) to read a field:
+Use `get` (or `&struct:get`) to read a field:
 
 ```cirru
 let
@@ -106,7 +106,9 @@ let
   ; => 1
 ```
 
-Standard collection functions like `keys`, `count`, and `contains?` also work on records:
+For a statically known struct, field access returns the field's declared type directly. A missing field is a type/checking error; struct access never produces `Option` merely because the field name might be absent.
+
+Standard collection functions like `keys`, `count`, and `contains?` also work on structs:
 
 ```cirru
 let
@@ -122,7 +124,7 @@ let
 
 ## Updating Fields
 
-Records are immutable. Use `assoc` or `record-with` to produce an updated copy:
+Struct values are immutable. Use `assoc` or `struct-with` to produce an updated copy:
 
 ```cirru
 let
@@ -139,23 +141,23 @@ let
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
     p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
-    p2 $ record-with p (:age 21) (:position :shanghai)
+    p2 $ struct-with p (:age 21) (:position :shanghai)
   println p2
   ; p2 has updated :age and :position, :name is unchanged
 ```
 
-`&record:assoc` is the low-level variant (no type checking):
+`&struct:assoc` is the low-level variant:
 
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  println $ &record:assoc p :x 100
+  println $ &struct:assoc p :x 100
 ```
 
-## Partial Records
+## Partial Struct Construction
 
-Use `%{}?` to create a record with only some fields set (others default to `nil`):
+Use `%{}?` to create a partial struct with only some fields set (others default to `nil`):
 
 ```cirru
 let
@@ -181,45 +183,43 @@ let
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  ; check if a value is a record $ struct instance
-  println $ record? p
+  ; check if a value is a struct
+  println $ struct? p
   ; => true
   ; check if it matches a specific struct
-  println $ &record:matches? p Point
+  println $ &struct:matches? p Point
   ; => true
-  ; get the struct definition the record was created from
-  println $ record-struct p
-  ; compare structs directly for origin check
-  println $ = (record-struct p) Point
+  ; get the definition used to construct the value
+  println $ struct-definition p
+  ; compare definitions directly for an origin check
+  println $ = (option:unwrap $ struct-definition p) Point
   ; => true
-  ; struct? checks struct definitions, not instances
-  println $ struct? Point
+  ; struct-def? is the definition predicate
+  println $ struct-def? Point
   ; => true
-  println $ struct? p
+  println $ struct-def? p
   ; => false
 ```
 
 ## Pattern Matching
 
-Use `record-match` to branch on record types:
+Use `struct-match` to branch on struct definitions:
 
 ```cirru
 let
     Circle $ defstruct Circle (:radius :number)
-    Square $ defstruct Square (:side :number)
+    Square $ defstruct Square (:radius :number)
     shape $ %{} Circle (:radius 5)
-  record-match shape
+  struct-match shape
     Circle c $ * 3.14
-      * (option:unwrap $ get c :radius)
-        option:unwrap $ get c :radius
-    Square s $ * (option:unwrap $ get s :side)
-      option:unwrap $ get s :side
+      * (get c :radius) (get c :radius)
+    Square s $ * (get s :radius) (get s :radius)
     _ _ 0
 
 ; => 78.5
 ```
 
-## Converting Records
+## Converting Structs
 
 ### To Map
 
@@ -227,11 +227,11 @@ let
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  println $ &record:to-map p
+  println $ &struct:to-map p
   ; => {} (:x 1) (:y 2)
 ```
 
-`merge` also works and returns a new record of the same struct:
+`merge` also works and returns a new value of the same struct definition:
 
 ```cirru
 let
@@ -241,22 +241,22 @@ let
     {} (:age 23) (:name |Ye)
 ```
 
-## Record Name and Struct Inspection
+## Struct Name and Definition Inspection
 
 ```cirru
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
     p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
-  ; get the tag name of the record
-  println $ &record:get-name p
+  ; get the tag name of the struct value
+  println $ &struct:get-name p
   ; => :Person
-  ; check the struct behind a record value
-  println $ record-struct p
+  ; inspect the definition behind a struct value
+  println $ struct-definition p
 ```
 
 ### Struct Origin Check
 
-Compare struct definitions directly when you need to confirm a record's origin:
+Compare struct definitions directly when you need to confirm a struct value's origin:
 
 ```cirru
 let
@@ -264,7 +264,7 @@ let
     Dog $ defstruct Dog (:name :string)
     v1 $ %{} Cat (:name |Mimi) (:color :white)
   if
-    = (record-struct v1) Cat
+    = (option:unwrap $ struct-definition v1) Cat
     println "|Handle Cat branch"
     println "|Not a Cat"
 ```
@@ -307,7 +307,7 @@ let
 let
     Config $ defstruct Config (:host :string) (:port :number) (:debug :bool)
     config $ %{} Config (:host |localhost) (:port 3000) (:debug false)
-  println $ option:unwrap $ get config :port
+  println $ get config :port
   ; => 3000
 ```
 
@@ -317,8 +317,7 @@ let
 let
     Product $ defstruct Product (:id :string) (:name :string) (:price :number) (:discount :number)
     product $ %{} Product (:id |P001) (:name |Widget) (:price 100) (:discount 0.9)
-  println $ * (option:unwrap $ get product :price)
-    option:unwrap $ get product :discount
+  println $ * (get product :price) (get product :discount)
   ; => 90
 ```
 
@@ -331,87 +330,89 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      option:unwrap $ get user :name
+      &struct:get user :name
   println $ get-user-name
     %{} User (:name |John) (:age 30) (:email |john@example.com)
 
 ; => John
 ```
 
-## Automatic Map-to-Record Rewrite
+## Automatic Map-to-Struct Rewrite
 
-When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to record construction (`%{}`). This lets you write ergonomic hashmap syntax while still getting full record type checking at runtime.
+When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to struct construction (`%{}`). This keeps ergonomic literal syntax while retaining the nominal type.
 
-```cirru
-let
-    Point $ defstruct Point (:x :number) (:y :number)
-    sum-point $ fn (p)
-      :: :fn $ {} (:return :number)
-        :args $ [] 'app.main/Point
-      &+ (option:unwrap $ :x p) (option:unwrap $ :y p)
-  ; Write a hashmap "—" preprocessor rewrites to record automatically:
-  assert= 30 $ sum-point
-    {} (:x 10) (:y 20)
-  ; Equivalent to:
-  assert= 30 $ sum-point
-    %{} Point (:x 10) (:y 20)
+```cirru.no-check
+defstruct Point (:x :number) (:y :number)
+
+defn sum-point (p)
+  hint-fn $ {} (:return :number)
+    :args $ [] 'app.main/Point
+  &+ (:x p) (:y p)
+
+; The preprocessor rewrites this hashmap to the expected struct:
+assert= 30 $ sum-point
+  {} (:x 10) (:y 20)
+; Equivalent to:
+assert= 30 $ sum-point
+  %{} Point (:x 10) (:y 20)
 ```
 
 Requirements for the rewrite to trigger:
 
-- The function must have a schema with `:args` that references a struct type (via `TypeRef` like `'ns/StructName`, `Struct`, or `Record`)
+- The function must have a schema with `:args` that references a struct type (for example `'ns/StructName` or `'Struct`)
 - The argument at the call site must be a hashmap literal (`{}` with tag keys)
 - All keys in the hashmap must be tags (`:field-name`)
 - The struct definition must be resolvable at preprocess time
 
 If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
 
-## Loose Records (`?{}`)
+## Anonymous Structs
 
-Loose records are records created without a declared struct definition, using the `?{}` syntax. This is analogous to how untyped tuples (`::`) work without requiring a `defenum` — loose records provide the same convenience for named fields.
+Use `_` as the definition marker when a short-lived struct does not need a named `defstruct` declaration.
 
-### Creating a Loose Record
+### Creating an Anonymous Struct
 
 ```cirru
-?{} :name |John :age 30
+%{} _ (:name |John) (:age 30)
 
-; => $ ?{} (:age 30) (:name |John)
+; => $ %{} _ (:age 30) (:name |John)
 ```
 
 Fields are automatically sorted alphabetically, matching the behavior of struct-backed records. All keys must be tags, and duplicate keys produce an error.
 
 ### Accessing Fields
 
-Loose records support the same field access operations as struct-backed records:
+Anonymous structs still have a fixed field set, so access is direct and missing fields are errors:
 
 ```cirru
 let
-    r $ ?{} :x 10 :y 20
-  println $ option:unwrap $ :x r
+    r $ %{} _ (:x 10) (:y 20)
+  println $ :x r
   ; => 10
   println $ type-of r
-  ; => :record
+  ; => :struct
 ```
 
-### Automatic Rewrite to Struct Record
+### Automatic Rewrite to a Named Struct
 
-When a loose record is passed to a function whose parameter is typed as a struct, the preprocessor automatically rewrites it to a struct-backed record — just like the map-to-record rewrite:
+When an anonymous struct is passed to a function whose parameter is a named struct, the preprocessor can rewrite it to the expected nominal definition:
 
-```cirru
-let
-    Point $ defstruct Point (:x :number) (:y :number)
-    sum-point $ fn (p)
-      :: :fn $ {} (:return :number)
-        :args $ [] 'app.main/Point
-      &+ (option:unwrap $ :x p) (option:unwrap $ :y p)
-  ; Loose record rewritten to struct record at compile time:
-  assert= 30 $ sum-point (?{} :x 10 :y 20)
-  ; Equivalent to:
-  assert= 30 $ sum-point
-    %{} Point (:x 10) (:y 20)
+```cirru.no-check
+defstruct Point (:x :number) (:y :number)
+
+defn sum-point (p)
+  hint-fn $ {} (:return :number)
+    :args $ [] 'app.main/Point
+  &+ (:x p) (:y p)
+
+; Anonymous struct rewritten to the expected named struct:
+assert= 30 $ sum-point (%{} _ (:x 10) (:y 20))
+; Equivalent to:
+assert= 30 $ sum-point
+  %{} Point (:x 10) (:y 20)
 ```
 
-The rewrite uses the same requirements as map-to-record rewrite. Fields not present in the loose record but defined in the struct are filled with `nil`.
+The rewrite uses the same requirements as the map-to-struct rewrite. Fields not present in the anonymous struct but defined in the target struct are filled with `nil`; their declared field types must therefore permit `nil`.
 
 ### Design Symmetry
 
@@ -420,29 +421,29 @@ The collection type system follows a consistent "precision increasing" pattern:
 | Positional (by index)            | Named (by field)                       |
 | -------------------------------- | -------------------------------------- |
 | `list` (dynamic)                 | `hashmap` (dynamic)                    |
-| `:: :tag ...` (untyped tuple)    | `?{} :field val` (loose record)        |
-| `%:: Enum :tag ...` (typed enum) | `%{} Struct :field val` (typed record) |
+| `%:: _ :tag ...` (anonymous enum) | `%{} _ (:field val)` (anonymous struct) |
+| `%:: Enum :tag ...` (named enum)  | `%{} Struct (:field val)` (named struct) |
 
-Both untyped tuples and loose records can be automatically rewritten to their typed counterparts when function parameter types are known at compile time.
+Both anonymous enums and anonymous structs can be rewritten to their named counterparts when function parameter types are known at compile time.
 
 ## Performance Notes
 
-- Records are immutable — updates create new records
+- Struct values are immutable — updates create new values
 - Field access is O(1) when the struct type is known at preprocess time (compile-time index resolution)
 - When the type is unknown, field access falls back to O(log n) binary search over sorted field names
-- Use `record-with` to update multiple fields at once and minimize intermediate allocations
+- Use `struct-with` to update multiple fields at once and minimize intermediate allocations
 
 ### Type-Directed Optimizations
 
 When the static analysis system knows a value's struct type, the preprocessor rewrites field operations to skip runtime name lookups:
 
-- **Field read** `(:field record)` → `&record:nth record <index>` — direct index access instead of name search
-- **Field update** `&record:assoc record :field value` → `&record:assoc-at record <index> value` — skips `index_of` binary search
-- **Batch update** `record-with record (:f1 v1) (:f2 v2)` → `&record:with-at record <indexes> <values>` — all indices pre-resolved
+- **Field read** `(:field value)` → `&struct:nth value <index>` — direct index access instead of name search
+- **Field update** `&struct:assoc value :field next` → `&struct:assoc-at value <index> next`
+- **Batch update** `struct-with value (:f1 v1) (:f2 v2)` → `&struct:with-at value <indexes> <values>`
 
 These rewrites are automatic and transparent. To benefit from them, provide type annotations via `:schema` or `hint-fn` so the preprocessor can resolve struct types.
 
-Record intentionally has no public `.nth` method: positional field order is not
-a cross-backend API contract. Use field-name `get`, which returns `Option<T>`.
-Only generated, statically checked field access uses internal `&record:nth`
-directly.
+Struct intentionally has no public `.nth` method: positional field order is not
+a cross-backend API contract. Use field-name `get`, which returns the declared
+field type directly. Only generated, statically checked access uses internal
+`&struct:nth`.

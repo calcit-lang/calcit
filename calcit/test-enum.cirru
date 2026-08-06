@@ -55,7 +55,7 @@
         |check-result-type $ %{} :CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote
             defn check-result-type (r)
-              option:some? $ tuple-enum r
+              option:some? $ enum-definition r
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
@@ -91,17 +91,17 @@
               let
                   valid-ok $ %:: Result0 :ok
                   Result1 $ impl-traits Result0 ResultImpl
-                assert= :ok $ &tuple:nth valid-ok 0
+                assert= :ok $ &enum:nth valid-ok 0
                 let
                     ok-impl $ %:: Result1 :ok
-                  assert= true $ any? (&tuple:impls ok-impl)
+                  assert= true $ any? (&enum:impls ok-impl)
                     fn (impl)
                       includes? (str impl) |ResultTrait
-                  assert= "|(%:: :ok (:enum Result0))" $ str ok-impl
+                  assert= "|(%:: 'Result0 :ok)" $ str ok-impl
               let
                   valid-err $ %:: Result0 :err |error-msg
-                assert= :err $ &tuple:nth valid-err 0
-                assert= true $ tuple? valid-err
+                assert= :err $ &enum:nth valid-err 0
+                assert= true $ enum? valid-err
               ; Test invalid tag $ should fail - uncomment to see error
               ; let
                 (invalid (%:: Result0 :invalid))
@@ -131,9 +131,9 @@
                   unwrap-maybe $ %:: Maybe1 :some 1
                 assert= (%none)
                   unwrap-maybe $ %:: Maybe1 :none
-                assert= :pair $ &tuple:nth pair-value 0
-                assert= 1 $ &tuple:nth pair-value 1
-                assert= |hi $ &tuple:nth pair-value 2
+                assert= :pair $ &enum:nth pair-value 0
+                assert= 1 $ &enum:nth pair-value 1
+                assert= |hi $ &enum:nth pair-value 2
               println "|✓ Generic enum creation passed"
           :examples $ []
           :schema $ :: 'Fn

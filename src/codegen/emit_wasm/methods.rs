@@ -800,8 +800,8 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Resu
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
   let string_tag = get_type_tag(ctx, "string");
-  let tuple_tag = get_type_tag(ctx, "tuple");
-  let record_tag = get_type_tag(ctx, "record");
+  let tuple_tag = get_type_tag(ctx, "enum");
+  let record_tag = get_type_tag(ctx, "struct");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -1039,7 +1039,7 @@ fn emit_tuple_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_
   ctx.emit(Instruction::LocalSet(size));
 
   let dst = ctx.alloc_local_typed(ValType::I32);
-  super::emit_bump_alloc_dynamic(ctx, size, dst, "tuple");
+  super::emit_bump_alloc_dynamic(ctx, size, dst, "enum");
 
   let dst_base = super::emit_addr_offset(ctx, dst, 0);
   let src_base = super::emit_addr_offset(ctx, ptr_local, 0);
@@ -1061,7 +1061,7 @@ fn emit_tuple_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_
 fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, val_local: u32) -> Result<(), String> {
   let list_tag = super::get_type_tag(ctx, "list");
   let map_tag = super::get_type_tag(ctx, "map");
-  let tuple_tag = super::get_type_tag(ctx, "tuple");
+  let tuple_tag = super::get_type_tag(ctx, "enum");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -1098,8 +1098,8 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
   let string_tag = get_type_tag(ctx, "string");
-  let tuple_tag = get_type_tag(ctx, "tuple");
-  let record_tag = get_type_tag(ctx, "record");
+  let tuple_tag = get_type_tag(ctx, "enum");
+  let record_tag = get_type_tag(ctx, "struct");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -1130,7 +1130,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
 
 fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
-  let tuple_tag = get_type_tag(ctx, "tuple");
+  let tuple_tag = get_type_tag(ctx, "enum");
   let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -1163,7 +1163,7 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
 
 fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
-  let tuple_tag = get_type_tag(ctx, "tuple");
+  let tuple_tag = get_type_tag(ctx, "enum");
   let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -1217,7 +1217,7 @@ fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Str
 fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) -> Result<(), String> {
   let map_tag = get_type_tag(ctx, "map");
   let list_tag = get_type_tag(ctx, "list");
-  let tuple_tag = get_type_tag(ctx, "tuple");
+  let tuple_tag = get_type_tag(ctx, "enum");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));

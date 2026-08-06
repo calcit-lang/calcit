@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::builtins::meta::type_of;
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitRecord, format_proc_examples_hint};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitStructValue, format_proc_examples_hint};
 
 use crate::util::number::is_even;
 
@@ -101,7 +101,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (Calcit::Record(record @ CalcitRecord { struct_ref, values }), Calcit::Map(ys)) => {
+      (Calcit::Struct(record @ CalcitStructValue { struct_ref, values }), Calcit::Map(ys)) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
@@ -110,7 +110,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               None => {
                 return CalcitErr::err_str(
                   CalcitErrKind::Type,
-                  format!("&map:merge invalid field `{s}` for record: {:?}", struct_ref.fields),
+                  format!("&map:merge invalid field `{s}` for struct: {:?}", struct_ref.fields),
                 );
               }
             },
@@ -119,14 +119,14 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               None => {
                 return CalcitErr::err_str(
                   CalcitErrKind::Type,
-                  format!("&map:merge invalid field `{s}` for record: {:?}", struct_ref.fields),
+                  format!("&map:merge invalid field `{s}` for struct: {:?}", struct_ref.fields),
                 );
               }
             },
             a => return CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge invalid field key, but received: {a}")),
           }
         }
-        Ok(Calcit::Record(CalcitRecord {
+        Ok(Calcit::Struct(CalcitStructValue {
           struct_ref: record.struct_ref.to_owned(),
           values: Arc::new(new_values),
         }))
@@ -150,7 +150,7 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    Some(Calcit::Record(CalcitRecord { struct_ref, values, .. })) => {
+    Some(Calcit::Struct(CalcitStructValue { struct_ref, values, .. })) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..struct_ref.fields.len() {
         let chunk = vec![Calcit::Tag(struct_ref.fields[idx].to_owned()), values[idx].to_owned()];
@@ -160,7 +160,7 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     Some(a) => {
       let msg = format!(
-        "&map:to-pairs requires a map or record, but received: {}",
+        "&map:to-pairs requires a map or struct, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::ToPairs).unwrap_or_default();

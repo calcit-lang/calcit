@@ -5,7 +5,7 @@ use std::sync::Arc;
 use cirru_edn::EdnTag;
 
 use super::data_shape::{DataShapeGraph, DataShapeNode};
-use super::{Calcit, CalcitRecord, CalcitTuple};
+use super::{Calcit, CalcitEnumValue, CalcitStructValue};
 
 const MAX_PATCH_DEPTH: usize = 1024;
 
@@ -230,7 +230,7 @@ fn apply_patch_node(
       let DataShapeNode::Struct { fields, .. } = &shape.nodes[*node] else {
         return Err(DataPatchError::at(path, "StructFields reached a non-struct shape node"));
       };
-      let Calcit::Record(record) = base else {
+      let Calcit::Struct(record) = base else {
         return Err(DataPatchError::at(path, "StructFields base is not a record"));
       };
       let mut values = record.values.as_ref().clone();
@@ -254,7 +254,7 @@ fn apply_patch_node(
           .map_err(|error| DataPatchError::at(error.path, error.message))?;
         values[*field_index] = next;
       }
-      Ok(Calcit::Record(CalcitRecord {
+      Ok(Calcit::Struct(CalcitStructValue {
         struct_ref: record.struct_ref.clone(),
         values: Arc::new(values),
       }))
@@ -267,7 +267,7 @@ fn apply_patch_node(
       let DataShapeNode::Enum { variants, .. } = &shape.nodes[*node] else {
         return Err(DataPatchError::at(path, "EnumPayload reached a non-enum shape node"));
       };
-      let Calcit::Tuple(tuple) = base else {
+      let Calcit::Enum(tuple) = base else {
         return Err(DataPatchError::at(path, "EnumPayload base is not an enum tuple"));
       };
       let (expected_tag, payload_nodes) = variants
@@ -294,7 +294,7 @@ fn apply_patch_node(
           .map_err(|error| DataPatchError::at(error.path, error.message))?;
         payloads[*payload_index] = next;
       }
-      Ok(Calcit::Tuple(CalcitTuple {
+      Ok(Calcit::Enum(CalcitEnumValue {
         tag: tuple.tag.clone(),
         extra: payloads,
         sum_type: tuple.sum_type.clone(),
@@ -306,15 +306,15 @@ fn apply_patch_node(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitEnum, CalcitList, CalcitStruct, CalcitTypeAnnotation};
+  use crate::calcit::{CalcitEnumDef, CalcitList, CalcitStructDef, CalcitTypeAnnotation};
 
-  fn point_fixture() -> (DataShapeGraph, Arc<CalcitStruct>, Calcit) {
-    let mut nominal = CalcitStruct::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x"), EdnTag::new("label")]);
+  fn point_fixture() -> (DataShapeGraph, Arc<CalcitStructDef>, Calcit) {
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x"), EdnTag::new("label")]);
     nominal.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]);
     let nominal = Arc::new(nominal);
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), "tests.patch").expect("point data shape");
-    let value = Calcit::Record(CalcitRecord {
+    let value = Calcit::Struct(CalcitStructValue {
       struct_ref: nominal.clone(),
       values: Arc::new(vec![Calcit::Number(1.0), Calcit::Str(Arc::from("old"))]),
     });
@@ -345,7 +345,7 @@ mod tests {
     .expect("valid point patch");
 
     let value = patch.apply(&shape, &base).expect("apply point patch");
-    let (Calcit::Record(before), Calcit::Record(after)) = (&base, &value) else {
+    let (Calcit::Struct(before), Calcit::Struct(after)) = (&base, &value) else {
       panic!("point values must be records");
     };
     assert!(Arc::ptr_eq(&before.struct_ref, &after.struct_ref));
@@ -401,8 +401,8 @@ mod tests {
 
   #[test]
   fn applies_payload_patch_only_to_the_declared_enum_variant() {
-    let enum_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(
+    let enum_record = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::new("Outcome"),
         vec![EdnTag::new("none"), EdnTag::new("score")],
       )),
@@ -411,7 +411,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::from([CalcitTypeAnnotation::Number.to_calcit()].as_slice()))),
       ]),
     };
-    let nominal = Arc::new(CalcitEnum::from_record(enum_record).expect("outcome enum"));
+    let nominal = Arc::new(CalcitEnumDef::from_record(enum_record).expect("outcome enum"));
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![])), "tests.patch").expect("outcome shape");
     let DataShapeNode::Enum { variants, .. } = &shape.nodes[shape.root] else {
@@ -419,7 +419,7 @@ mod tests {
     };
     let variant = variants.iter().position(|(tag, _)| tag.ref_str() == "score").unwrap();
     let score_node = variants[variant].1[0];
-    let base = Calcit::Tuple(CalcitTuple {
+    let base = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::new("score"))),
       extra: vec![Calcit::Number(1.0)],
       sum_type: Some(nominal),
@@ -441,7 +441,7 @@ mod tests {
     .expect("valid enum payload patch");
 
     let value = patch.apply(&shape, &base).expect("apply enum patch");
-    let Calcit::Tuple(tuple) = value else {
+    let Calcit::Enum(tuple) = value else {
       panic!("patched outcome must remain an enum tuple");
     };
     assert_eq!(tuple.extra, vec![Calcit::Number(2.0)]);

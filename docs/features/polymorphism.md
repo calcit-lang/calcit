@@ -214,11 +214,11 @@ Core types provide origin-carrying built-in trait implementations registered con
 | Trait | Method | Built-in value categories |
 | --- | --- | --- |
 | `Compare` | `.compare` | Number, String |
-| `Countable` | `.count` | List, Map, Set, String, Record, Tuple/enum |
-| `Contains` | `.contains?` | List, Map, Set, String, Record, Tuple/enum |
+| `Countable` | `.count` | List, Map, Set, String, Struct, Enum |
+| `Contains` | `.contains?` | List, Map, Set, String, Struct, Enum |
 | `Mappable` | `.map` | List, Map, Set, Option, Result |
-| `Show` | `.show` | Number, String, Bool, Tag, Symbol, Nil, CirruQuote, List, Map, Set, Fn, Record, Tuple |
-| `Eq` | `.eq?` | The same scalar/collection/record/tuple categories registered for `Show` |
+| `Show` | `.show` | Number, String, Bool, Tag, Symbol, Nil, CirruQuote, List, Map, Set, Fn, Struct, Enum |
+| `Eq` | `.eq?` | The same scalar, collection, struct, and enum categories registered for `Show` |
 
 `Compare` returns a negative number, zero, or a positive number. It intentionally starts with Number and String; cross-category ordering is not defined.
 
@@ -245,14 +245,14 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - String `.find-index` and `str-find-index` return `Option<Number>`; the internal `&str:find-index` primitive retains its `-1` ABI sentinel.
 - `get-env` returns `Option<String>`; use `option:unwrap-or` for a default.
 - `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
-- Reflection uses `tuple-enum: Tuple -> Option<Enum>` and `impl-origin: Impl -> Option<Trait>`; `record-struct: Record -> Struct` is total and does not invent absence.
+- Reflection uses `enum-definition: Enum -> Option<EnumDef>`, `struct-definition: Struct -> Option<StructDef>`, and `impl-origin: Impl -> Option<Trait>`.
 - `destruct-list`, `destruct-map`, `destruct-set`, and `destruct-str` return named `*Destruct` enums, preserving the familiar `:some`/`:none` branches with checked payloads.
-- Public collection methods follow the same contract: Map/Set `.destruct` return their named destruct enums. Record does not expose `.nth`, because field position is not stable across backends; use field-name `get` returning `Option<T>`.
+- Public collection methods follow the same contract: Map/Set `.destruct` return their named destruct enums. Struct does not expose `.nth`, because field position is not stable across backends; field-name `get` returns the field's declared type directly.
 - `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil.
 
 Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `some?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
-When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional tuple access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods, `option:unwrap-or`, or `tag-match`.
+When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional enum access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods, `option:unwrap-or`, or `tag-match`.
 
 The same operations are available as methods on enum values:
 
