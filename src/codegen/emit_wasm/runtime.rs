@@ -99,8 +99,8 @@ pub(super) fn build_wasm_module(
 
   // Type section:
   //   0..MAX_CANONICAL_ARITY  — canonical HOF callback types: (f64×N) → f64
-  //   MAX_CANONICAL_ARITY + 0..HOST_IMPORTS.len() — host import types
-  //   MAX_CANONICAL_ARITY + HOST_IMPORTS.len() + 0..fns.len() — user fn types
+  //   MAX_CANONICAL_ARITY + 0..host_imports.len() — host import types
+  //   MAX_CANONICAL_ARITY + host_imports.len() + 0..fns.len() — compiled fn types
   let mut types = TypeSection::new();
   for arity in 0..MAX_CANONICAL_ARITY {
     types.ty().function(vec![ValType::F64; arity as usize], vec![ValType::F64]);

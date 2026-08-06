@@ -883,7 +883,7 @@ fn detect_await(xs: &CalcitList) -> bool {
           ))
         ) {
           // a nested function has its own scope deciding if it's async
-          return false;
+          continue;
         } else if detect_await(al) {
           return true;
         }

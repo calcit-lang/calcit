@@ -29,7 +29,8 @@ use wasm_encoder::{
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, MethodKind,
+  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation,
+  MethodKind,
 };
 use crate::program;
 
@@ -166,6 +167,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // append after them.
   let mut host_imports = HOST_IMPORTS.to_vec();
   let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
+  let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
   for &ns in &ns_order {
     let Some(file_info) = program_data.get(ns) else {
       continue;
@@ -177,21 +179,25 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
       let (module, name, args) = parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
         format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
       })?;
+      let arity = wasm_import_arity(&args).map_err(|reason| format!("[wasm] invalid import declaration {ns}/{def_name}: {reason}"))?;
       let index = host_imports.len() as u32;
       host_imports.push(HostImport {
         module,
         name,
-        arity: compute_fn_arity(&args).0 as usize,
+        arity: arity as usize,
       });
-      wasm_import_names.insert(format!("{ns}/{def_name}"), index);
+      let qualified = format!("{ns}/{def_name}");
+      wasm_import_names.insert(qualified.clone(), index);
       wasm_import_names.insert(def_name.to_string(), index);
+      wasm_import_arities.insert(qualified, arity);
+      wasm_import_arities.insert(def_name.to_string(), arity);
     }
   }
   let num_imports = host_imports.len() as u32;
 
   // Collect tags early — needed to embed the string type tag in the __str_new helper.
   let tag_index = collect_all_tags_from(&fn_defs);
-  println!("TAG INDEX: {tag_index:?}");
+  eprintln!("[wasm] tag index: {tag_index:?}");
 
   let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
     num_imports,
@@ -231,6 +237,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   let mut fn_table_index: HashMap<String, u32> = HashMap::new();
   for (name, index) in &wasm_import_names {
     fn_index.insert(name.clone(), *index);
+    fn_arity.insert(
+      name.clone(),
+      *wasm_import_arities.get(name).expect("WASM import arity must be registered"),
+    );
   }
   for (i, (ns, name, args, _)) in fn_defs.iter().enumerate() {
     let idx = num_imports + runtime_fn_count + i as u32;
@@ -428,16 +438,32 @@ fn parse_wasm_import_def(code: &Calcit) -> Option<(String, String, CalcitFnArgs)
     return None;
   };
   let args = get_raw_args_fn(args).ok()?;
-  // Schema validation can prepend internal forms to the function body, so find
-  // the first two literal strings after the argument list instead of relying on
-  // fixed child positions in preprocessed code.
-  let mut names = xs.iter().skip(3).filter_map(|item| match item {
-    Calcit::Str(value) => Some(value.to_string()),
-    _ => None,
-  });
-  let module = names.next()?;
-  let name = names.next()?;
-  Some((module, name, args))
+  // Preprocessing prepends a `hint-fn` form for a declared schema. Apart from
+  // that internal annotation, the declaration body is exactly two strings.
+  let body: Vec<&Calcit> = xs
+    .iter()
+    .skip(3)
+    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .collect();
+  let [Calcit::Str(module), Calcit::Str(name)] = body.as_slice() else {
+    return None;
+  };
+  Some((module.to_string(), name.to_string(), args))
+}
+
+fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
+  match args {
+    CalcitFnArgs::Args(names) => Ok(names.len() as u32),
+    CalcitFnArgs::MarkedArgs(labels) => {
+      if labels
+        .iter()
+        .any(|label| matches!(label, CalcitArgLabel::OptionalMark | CalcitArgLabel::RestMark))
+      {
+        return Err("optional and rest parameters are not supported for defwasm-import".into());
+      }
+      Ok(labels.iter().filter(|label| matches!(label, CalcitArgLabel::Idx(_))).count() as u32)
+    }
+  }
 }
 
 /// Context for WASM code generation within a single function.
