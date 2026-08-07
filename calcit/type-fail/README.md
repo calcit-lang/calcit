@@ -11,6 +11,7 @@
 - `cargo run --bin cr -- calcit/type-fail/schema-rest-unexpected.cirru --check-only`
 - `cargo run --bin cr -- calcit/type-fail/schema-kind-mismatch.cirru --check-only`
 - `cargo run --bin cr -- calcit/type-fail/schema-call-arg-type-mismatch.cirru --check-only`
+- `cargo run --bin cr -- calcit/type-fail/trait-method-generic-receiver-mismatch.cirru --check-only`
 - `cargo run --bin cr -- calcit/type-fail/generic-where-bound-mismatch.cirru --check-only`
 - `cargo run --bin cr -- calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru --check-only`
 - `cargo run --bin cr -- calcit/type-fail/type-slot-bind-unknown.cirru --check-only`
@@ -20,6 +21,7 @@
 
 - 前 4 个会触发 `schema mismatch while preprocessing definition`（定义时校验）。
 - `schema-call-arg-type-mismatch.cirru` 会触发基于 schema 的函数参数类型告警，并在 `--check-only` 下被当作错误处理。
+- `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback。
 - `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
 - `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 record 实例后，`*slot` 参与调用点类型检查。
 - `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
@@ -45,6 +47,7 @@
 
 - `E_SCHEMA_DEF_MISMATCH`：定义与 `:schema` 的 `:kind` / `:args` / `:rest` 不匹配
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
+- `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
 - `W_PROC_ARG_TYPE_MISMATCH`：内建 proc 参数类型不匹配
 - `W_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
 - `W_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配

@@ -152,6 +152,29 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
 }
 
 #[test]
+fn type_fail_trait_method_generic_receiver_fixture_reports_warning_code() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/trait-method-generic-receiver-mismatch.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("trait method fixture should preprocess with warnings, not hard errors");
+
+    let warnings = warnings.borrow();
+    let matched: Vec<&LocatedWarning> = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH"))
+      .collect();
+    assert_eq!(matched.len(), 1, "expected one method argument warning, got: {warnings:?}");
+    assert!(
+      matched[0].message().contains(".unwrap-or") && matched[0].message().contains("expects type `:string`, but got `:number`"),
+      "warning message was: {}",
+      matched[0].message()
+    );
+  });
+}
+
+#[test]
 fn type_fail_generic_where_bound_fixture_reports_warning_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/generic-where-bound-mismatch.cirru");
