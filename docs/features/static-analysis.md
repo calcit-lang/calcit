@@ -74,6 +74,9 @@ cr analyze weak-types --ns app.main --intent unresolved --summary-only --format 
 # Validate only one definition's examples
 cr analyze check-examples --ns app.main --def calculate-total
 
+# Validate examples that depend on JavaScript-only FFI syntax
+cr analyze check-examples --ns app.main --def detect-nodejs? --js
+
 # Explain one expression using inferred and expected types
 cr query type-at app.main/calculate-total --path code@3.2 --format json
 ```
@@ -94,7 +97,7 @@ Both analysis commands run as static Snapshot readers: they load configured modu
 
 Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, and `deftrait` carry type information in their declarations, so they are classified as data declarations instead of receiving a false top-level `schema-dynamic` finding.
 
-`check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, struct, or component tree. Output explicitly produced by an example is still shown.
+`check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, struct, or component tree. Output explicitly produced by an example is still shown. Pass `--js` to compile the generated examples entry and execute it with Node.js; this is intended for definitions whose examples use JavaScript-only FFI syntax such as `exists? js/process`.
 
 ## Type Annotations
 

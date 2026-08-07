@@ -27,7 +27,7 @@ mod cr_type_fail_tests;
 #[path = "cr_tests/cirru_suite.rs"]
 mod cr_cirru_suite_tests;
 
-use calcit::calcit::LocatedWarning;
+use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, EffectsGraphCommand, ToplevelCalcit,
@@ -44,6 +44,7 @@ use calcit::{
   ProgramEntries, builtins, call_stack, cli_args, codegen, codegen::COMPILE_ERRORS_FILE, codegen::emit_js::gen_stack, program, runner,
   snapshot, util,
 };
+use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 
 fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
@@ -332,9 +333,13 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
-      AnalyzeSubcommand::CheckExamples(check_options) => {
-        run_check_examples(&check_options.ns, check_options.definition.as_deref(), &snapshot)
-      }
+      AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(
+        &check_options.ns,
+        check_options.definition.as_deref(),
+        check_options.js,
+        &cli_args.emit_path,
+        &snapshot,
+      ),
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
@@ -764,10 +769,18 @@ fn throw_on_warnings(warnings: &[LocatedWarning]) -> Result<(), String> {
   }
 }
 
-fn run_check_examples(target_ns: &str, target_def: Option<&str>, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  match target_def {
-    Some(definition) => println!("Checking examples for definition: {target_ns}/{definition}"),
-    None => println!("Checking examples in namespace: {target_ns}"),
+fn run_check_examples(
+  target_ns: &str,
+  target_def: Option<&str>,
+  js_mode: bool,
+  emit_path: &str,
+  snapshot: &snapshot::Snapshot,
+) -> Result<(), String> {
+  match (js_mode, target_def) {
+    (true, Some(definition)) => println!("Checking JavaScript examples for definition: {target_ns}/{definition}"),
+    (true, None) => println!("Checking JavaScript examples in namespace: {target_ns}"),
+    (false, Some(definition)) => println!("Checking examples for definition: {target_ns}/{definition}"),
+    (false, None) => println!("Checking examples in namespace: {target_ns}"),
   }
 
   // Find the target namespace
@@ -861,7 +874,11 @@ fn run_check_examples(target_ns: &str, target_def: Option<&str>, snapshot: &snap
         examples: Vec::new(),
         tags: std::collections::HashSet::new(),
         code: check_function_code,
-        schema: calcit::calcit::DYNAMIC_TYPE.clone(),
+        schema: if js_mode {
+          check_examples_js_schema()
+        } else {
+          calcit::calcit::DYNAMIC_TYPE.clone()
+        },
       },
     );
   }
@@ -876,13 +893,21 @@ fn run_check_examples(target_ns: &str, target_def: Option<&str>, snapshot: &snap
   let started_time = Instant::now();
   println!("Running {total_examples} examples...");
 
-  let result = calcit::run_program_with_docs(Arc::from(target_ns), Arc::from(check_fn_name.as_str()), &[]);
+  let result = if js_mode {
+    run_js_examples(target_ns, &check_fn_name, emit_path)
+  } else {
+    calcit::run_program_with_docs(Arc::from(target_ns), Arc::from(check_fn_name.as_str()), &[])
+      .map(|_| ())
+      .map_err(|err| {
+        LocatedWarning::print_list(&err.warnings);
+        err.msg
+      })
+  };
 
   let duration = Instant::now().duration_since(started_time);
 
   match result {
-    Ok(value) => {
-      let _ = value;
+    Ok(()) => {
       println!("{}", format!("took {}ms: ok", duration.as_micros() as f64 / 1000.0).dimmed());
 
       // Print summary
@@ -925,11 +950,55 @@ fn run_check_examples(target_ns: &str, target_def: Option<&str>, snapshot: &snap
 
       Ok(())
     }
-    Err(e) => {
-      LocatedWarning::print_list(&e.warnings);
-      Err(format!("Failed to run examples: {}", e.msg))
-    }
+    Err(e) => Err(format!("Failed to run examples: {e}")),
   }
+}
+
+fn run_js_examples(target_ns: &str, check_fn_name: &str, emit_path: &str) -> Result<(), String> {
+  let check_fn_path = format!("{target_ns}/{check_fn_name}");
+  let entries = ProgramEntries {
+    init_fn: Arc::from(check_fn_path.clone()),
+    reload_fn: Arc::from(check_fn_path),
+    init_def: Arc::from(check_fn_name),
+    init_ns: Arc::from(target_ns),
+    reload_ns: Arc::from(target_ns),
+    reload_def: Arc::from(check_fn_name),
+  };
+  run_codegen(&entries, emit_path, false, false)?;
+
+  let runner_path = Path::new(emit_path).join(format!(".calcit-check-examples-{}.mjs", std::process::id()));
+  fs::write(&runner_path, js_examples_runner_source(target_ns, check_fn_name))
+    .map_err(|err| format!("Failed to write JavaScript examples runner at {}: {err}", runner_path.display()))?;
+
+  let status = std::process::Command::new("node")
+    .arg(&runner_path)
+    .status()
+    .map_err(|err| format!("Failed to start Node.js for JavaScript examples: {err}"));
+  let _ = fs::remove_file(&runner_path);
+
+  match status {
+    Ok(status) if status.success() => Ok(()),
+    Ok(status) => Err(format!("JavaScript examples exited with status {status}")),
+    Err(err) => Err(err),
+  }
+}
+
+fn js_examples_runner_source(target_ns: &str, check_fn_name: &str) -> String {
+  let module_path = serde_json::to_string(&format!("./{target_ns}.mjs")).expect("JavaScript module path should serialize");
+  let check_fn = codegen::emit_js::escape_symbol_for_js(check_fn_name);
+  format!("import * as examples from {module_path};\nexamples.{check_fn}();\n")
+}
+
+fn check_examples_js_schema() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
+    arg_types: vec![],
+    return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
+    fn_kind: SchemaKind::Fn,
+    rest_type: None,
+    features: Arc::new(HashSet::from([EdnTag::from("js-ffi")])),
+  })))
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
@@ -1047,6 +1116,25 @@ mod tests {
       })),
       snapshot::SnapshotRunMode::Js,
     ));
+  }
+
+  #[test]
+  fn js_examples_runner_calls_the_escaped_generated_entry() {
+    let check_fn = "&calcit:check-examples";
+    let source = js_examples_runner_source("demo.main", check_fn);
+
+    assert!(source.contains("import * as examples from \"./demo.main.mjs\";"));
+    assert!(source.contains(&format!("examples.{}();", codegen::emit_js::escape_symbol_for_js(check_fn))));
+  }
+
+  #[test]
+  fn js_examples_schema_allows_js_ffi() {
+    let generated_schema = check_examples_js_schema();
+    let CalcitTypeAnnotation::Fn(schema) = generated_schema.as_ref() else {
+      panic!("generated JavaScript examples should use a function schema");
+    };
+
+    assert!(schema.features.contains(&EdnTag::from("js-ffi")));
   }
 
   fn leaf(text: &str) -> Cirru {
