@@ -357,6 +357,18 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
+        |test-enum-impl-precedence-order $ %{} :CodeEntry (:doc "|Test enum impl precedence order")
+          :code $ quote
+            defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
+              let
+                  t $ %:: DemoBar :demo 1
+                assert-traits t MyBar
+                assert= |bar2 $ t .bar
+              println "|  tuple precedence: ✓"
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ []
         |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")
           :code $ quote
             defn test-eq-trait () (println "|Testing Eq trait...") (; Value equality)
@@ -472,6 +484,8 @@
                 assert= (%none) (opt-none .map step)
                 assert= (%ok 2) (res-ok .map step)
                 assert= (%err |oops) (res-err .map step)
+                assert= (%some 2)
+                  opt-some .map $ fn (x) (inc x)
               let
                   opt-some $ %some 1
                   opt-none $ %none
@@ -523,18 +537,6 @@
                 {} $ :a 1
               ; assert= "|(#{} 1 2)" $ str (#{} 1 2)
               println "|  Show trait: ✓"
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-enum-impl-precedence-order $ %{} :CodeEntry (:doc "|Test enum impl precedence order")
-          :code $ quote
-            defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
-              let
-                  t $ %:: DemoBar :demo 1
-                assert-traits t MyBar
-                assert= |bar2 $ t .bar
-              println "|  tuple precedence: ✓"
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

@@ -1020,7 +1020,8 @@ pub fn preprocess_expr(
     | Calcit::CirruQuote(..)
     | Calcit::StructDef(..)
     | Calcit::EnumDef(..)
-    | Calcit::Struct(..) => Ok(expr.to_owned()),
+    | Calcit::Struct(..)
+    | Calcit::Local(..) => Ok(expr.to_owned()),
     Calcit::Method(..) => Ok(expr.to_owned()),
     Calcit::Proc(..) => Ok(expr.to_owned()),
     Calcit::Syntax(..) => Ok(expr.to_owned()),
@@ -1049,7 +1050,12 @@ fn preprocess_list_call(
   let call_location = derive_call_expr_location(head);
   let head_form = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
   let args = xs.drop_left();
-  let def_name = grab_def_name(head);
+  let mut def_name = grab_def_name(head);
+  if def_name.as_ref() == "??"
+    && let Some(receiver) = args.first()
+  {
+    def_name = grab_def_name(receiver);
+  }
   let call_info = CallTypeCheckInfo {
     file_ns,
     def_name: &def_name,
@@ -1180,8 +1186,25 @@ fn preprocess_list_call(
           if is_nominal_or_trait || has_known_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_info.clone()));
-            let mut ys = CalcitList::new_inner_from(&[typed_method, head_form]);
+            let mut processed_args = CalcitList::new_inner_from(&[]);
+            processed_args = processed_args.push(preprocess_expr(
+              &head_form,
+              scope_defs,
+              scope_types,
+              file_ns,
+              check_warnings,
+              call_stack,
+            )?);
             for arg in args.iter().skip(1) {
+              processed_args = processed_args.push(preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?);
+            }
+            let processed_args = CalcitList::from(processed_args);
+            if type_info.as_ref().resolve_to_enum().is_some() {
+              check_record_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+            }
+
+            let mut ys = CalcitList::new_inner_from(&[typed_method]);
+            for arg in processed_args.iter() {
               ys = ys.push(arg.to_owned());
             }
             return Ok(Calcit::from(CalcitList::from(ys)));
@@ -2166,7 +2189,7 @@ fn check_fn_args(
 // TODO this native implementation only handles symbols
 fn grab_def_name(x: &Calcit) -> Arc<str> {
   match x {
-    Calcit::Symbol { info, .. } => info.at_def.to_owned(),
+    Calcit::Symbol { info, .. } | Calcit::Local(CalcitLocal { info, .. }) => info.at_def.to_owned(),
     _ => String::from("??").into(),
   }
 }
@@ -2645,11 +2668,9 @@ fn check_record_method_args(
     return; // No type info, skip check
   };
 
-  if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
-    let Some((trait_def, method_type)) = find_trait_method_type(&traits, method_name.as_ref()) else {
-      return;
-    };
-
+  if let Some(traits) = trait_list_from_type(type_value.as_ref())
+    && let Some((trait_def, method_type)) = find_trait_method_type(&traits, method_name.as_ref())
+  {
     let Some(signature) = method_type.as_function() else {
       return;
     };
@@ -2672,6 +2693,11 @@ fn check_record_method_args(
     }
 
     let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+    if let Some(receiver_type) = resolve_type_value(receiver, scope_types) {
+      receiver_type
+        .as_ref()
+        .matches_with_bindings(signature.arg_types[0].as_ref(), &mut bindings);
+    }
     let arg_types_without_receiver = signature.arg_types.iter().skip(1);
     for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
       if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
@@ -2681,7 +2707,7 @@ fn check_record_method_args(
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
         && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
       {
-        let expected_str = expected_type.as_ref().to_brief_string();
+        let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
           format!(
@@ -2709,13 +2735,69 @@ fn check_record_method_args(
   };
 
   // Get function info from method entry
-  let fn_info: Option<&CalcitFn> = match method_entry {
-    Calcit::Fn { info, .. } => Some(info.as_ref()),
-    Calcit::Import(_import) => {
-      // Imports will be inlined and checked by check_proc_arg_types later
-      // Skip checking here to avoid duplicate warnings
+  let declared_schema = match method_entry {
+    Calcit::Import(import) => Some((
+      program::lookup_def_schema(&import.ns, &import.def),
+      format!("{} / {}", import.ns, import.def),
+    )),
+    Calcit::Fn { info, .. } if info.def_ref.is_some() => Some((
+      program::lookup_def_schema(&info.def_ns, &info.name),
+      format!("{} / {}", info.def_ns, info.name),
+    )),
+    _ => None,
+  };
+  if let Some((schema, implementation_name)) = declared_schema
+    && schema.contains_type_var()
+    && type_value.as_ref().resolve_to_enum().is_some()
+  {
+    let Some(signature) = schema.as_function() else {
+      return;
+    };
+    let Ok(method_args) = args.skip(1) else {
+      return;
+    };
+    let expected_count = signature.arg_types.len();
+    let actual_with_receiver = method_args.len() + 1;
+    if expected_count != 0 && expected_count != actual_with_receiver {
+      gen_check_warning(
+        format!(
+          "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
+        ),
+        file_ns,
+        check_warnings,
+      );
       return;
     }
+
+    let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+    type_value
+      .as_ref()
+      .matches_with_bindings(signature.arg_types[0].as_ref(), &mut bindings);
+    for (idx, (arg, expected_type)) in method_args.iter().zip(signature.arg_types.iter().skip(1)).enumerate() {
+      if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+        continue;
+      }
+      if let Some(actual_type) = resolve_type_value(arg, scope_types)
+        && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
+      {
+        let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
+        gen_check_warning_code(
+          format!(
+            "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name} (implementation {implementation_name})",
+            idx + 2,
+          ),
+          "W_METHOD_ARG_TYPE_MISMATCH",
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+    return;
+  }
+
+  let fn_info: Option<&CalcitFn> = match method_entry {
+    Calcit::Fn { info, .. } => Some(info.as_ref()),
     Calcit::Proc(_proc) => {
       // Procs will be inlined and checked by check_proc_arg_types later
       // Skip checking here to avoid duplicate warnings
