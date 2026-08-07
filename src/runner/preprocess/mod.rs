@@ -1423,7 +1423,7 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_quasiquote(name, name_ns, &args, &mut ctx)?)
         }
-        CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
+        CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_defn(name, name_ns, &args, &mut ctx)?)
         }
@@ -2280,7 +2280,10 @@ fn check_recur_arity_in_expr(
           );
         }
       } else if let Some(Calcit::Syntax(s, _)) = xs.first()
-        && (s == &CalcitSyntax::Defn || s == &CalcitSyntax::Defmacro)
+        && (s == &CalcitSyntax::Defn
+          || s == &CalcitSyntax::Defmacro
+          || s == &CalcitSyntax::DefWasmExport
+          || s == &CalcitSyntax::DefWasmImport)
       {
         // This is a separate function scope. It will be checked by its own preprocess_defn call.
         return;
@@ -4443,6 +4446,18 @@ pub fn preprocess_defn(
         }
       })?;
       let def_schema = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
+      if matches!(head, CalcitSyntax::DefWasmImport) && !has_valid_wasm_import_body(args) {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          "defwasm-import expects exactly two literal strings for the WASM module and field name",
+          ctx.call_stack,
+          Some(NodeLocation::new(
+            info.at_ns.to_owned(),
+            info.at_def.to_owned(),
+            location.to_owned().unwrap_or_default(),
+          )),
+        ));
+      }
       warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
       let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
       if !schema_issues.is_empty() {
@@ -4600,6 +4615,13 @@ pub fn preprocess_defn(
       ))
     }
   }
+}
+
+fn has_valid_wasm_import_body(args: &CalcitList) -> bool {
+  matches!(
+    (args.get(2), args.get(3), args.get(4)),
+    (Some(Calcit::Str(_)), Some(Calcit::Str(_)), None)
+  )
 }
 
 // warn if this symbol is used
@@ -5211,6 +5233,8 @@ fn validate_def_schema_during_preprocess(
 
   let code_kind = match head {
     CalcitSyntax::Defn => "defn",
+    CalcitSyntax::DefWasmExport => "defwasm-export",
+    CalcitSyntax::DefWasmImport => "defwasm-import",
     CalcitSyntax::Defmacro => "defmacro",
     _ => return vec![],
   };
@@ -5221,8 +5245,8 @@ fn validate_def_schema_during_preprocess(
     (SchemaKind::Fn, "defmacro") => {
       issues.push(format!("{ns}/{def_name}: schema :kind is :fn but code uses defmacro"));
     }
-    (SchemaKind::Macro, "defn") => {
-      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses defn"));
+    (SchemaKind::Macro, "defn" | "defwasm-export" | "defwasm-import") => {
+      issues.push(format!("{ns}/{def_name}: schema :kind is :macro but code uses {code_kind}"));
     }
     _ => {}
   }
@@ -8370,6 +8394,32 @@ mod tests {
 
     assert_eq!(issues.len(), 1, "expected 1 issue, got: {issues:?}");
     assert!(issues[0].contains("schema :kind is :macro but code uses defn"));
+  }
+
+  #[test]
+  fn rejects_macro_schemas_for_wasm_function_declarations() {
+    let args = CalcitList::from(
+      &[Calcit::Symbol {
+        sym: Arc::from("a"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.schema"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+      }][..],
+    );
+
+    for head in [CalcitSyntax::DefWasmExport, CalcitSyntax::DefWasmImport] {
+      let issues = validate_def_schema_during_preprocess(
+        &head,
+        "tests.schema",
+        "demo",
+        &args,
+        &fn_schema_annotation(SchemaKind::Macro, 1, false),
+      );
+      assert_eq!(issues.len(), 1, "expected one issue for {head}");
+      assert!(issues[0].contains("schema :kind is :macro"));
+    }
   }
 
   #[test]

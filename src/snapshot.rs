@@ -1884,6 +1884,8 @@ impl Default for Snapshot {
 const TOP_LEVEL_DEF_HEADS: &[&str] = &[
   "def",
   "defn",
+  "defwasm-export",
+  "defwasm-import",
   "defcomp",
   "defeffect",
   "defatom",

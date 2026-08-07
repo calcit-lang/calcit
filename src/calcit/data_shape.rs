@@ -250,28 +250,28 @@ impl DataShapeGraph {
         self.validate_node_value(*inner, &inner_value, &format!("{path}.value"), depth + 1)
       }
       DataShapeNode::Struct { nominal, fields, .. } => {
-        let Calcit::Struct(record) = value else {
+        let Calcit::Struct(struct_value) = value else {
           return Err(shape_kind_mismatch(path, &format!("struct :{}", nominal.name), value));
         };
-        if !Arc::ptr_eq(&record.struct_ref, nominal) {
+        if !Arc::ptr_eq(&struct_value.struct_ref, nominal) {
           return Err(DataShapeValueError::at(
             path,
-            format!("expected nominal struct :{}, got :{}", nominal.name, record.struct_ref.name),
+            format!("expected nominal struct :{}, got :{}", nominal.name, struct_value.struct_ref.name),
           ));
         }
-        if record.values.len() != fields.len() {
+        if struct_value.values.len() != fields.len() {
           return Err(DataShapeValueError::at(
             path,
             format!(
               "struct :{} expects {} value(s), got {}",
               nominal.name,
               fields.len(),
-              record.values.len()
+              struct_value.values.len()
             ),
           ));
         }
-        for (idx, ((field, child), item)) in fields.iter().zip(record.values.iter()).enumerate() {
-          if record.struct_ref.fields.get(idx) != Some(field) {
+        for (idx, ((field, child), item)) in fields.iter().zip(struct_value.values.iter()).enumerate() {
+          if struct_value.struct_ref.fields.get(idx) != Some(field) {
             return Err(DataShapeValueError::at(
               path,
               format!("struct :{} field #{idx} does not match :{field}", nominal.name),
@@ -282,10 +282,10 @@ impl DataShapeGraph {
         Ok(())
       }
       DataShapeNode::Enum { nominal, variants, .. } => {
-        let Calcit::Enum(tuple) = value else {
+        let Calcit::Enum(enum_value) = value else {
           return Err(shape_kind_mismatch(path, &format!("enum :{}", nominal.name()), value));
         };
-        let Some(actual_enum) = tuple.sum_type.as_ref() else {
+        let Some(actual_enum) = enum_value.sum_type.as_ref() else {
           return Err(DataShapeValueError::at(
             path,
             format!("expected nominal enum :{}, got anonymous enum", nominal.name()),
@@ -297,7 +297,7 @@ impl DataShapeGraph {
             format!("expected nominal enum :{}, got :{}", nominal.name(), actual_enum.name()),
           ));
         }
-        let Calcit::Tag(tag) = tuple.tag.as_ref() else {
+        let Calcit::Tag(tag) = enum_value.tag.as_ref() else {
           return Err(DataShapeValueError::at(path, "enum variant is not a tag"));
         };
         let Some((_, payload_nodes)) = variants.iter().find(|(candidate, _)| candidate == tag) else {
@@ -306,18 +306,18 @@ impl DataShapeGraph {
             format!("enum :{} has no variant :{tag}", nominal.name()),
           ));
         };
-        if tuple.extra.len() != payload_nodes.len() {
+        if enum_value.extra.len() != payload_nodes.len() {
           return Err(DataShapeValueError::at(
             path,
             format!(
               "enum :{} variant :{tag} expects {} payload(s), got {}",
               nominal.name(),
               payload_nodes.len(),
-              tuple.extra.len()
+              enum_value.extra.len()
             ),
           ));
         }
-        for (idx, (child, item)) in payload_nodes.iter().zip(tuple.extra.iter()).enumerate() {
+        for (idx, (child, item)) in payload_nodes.iter().zip(enum_value.extra.iter()).enumerate() {
           self.validate_node_value(*child, item, &format!("{path}.payload[{idx}]"), depth + 1)?;
         }
         Ok(())

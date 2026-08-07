@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Extended WASM suite: compile calcit/test-wasm-suite.cirru — a hand-authored
 # multi-module entry that pulls in pure-compute test modules from yarn check-all
-# (test-cond, test-math, test-set, test-tuple, plus util) and runs each
+# (test-cond, test-math, test-set, test-anonymous-enum, plus util) and runs each
 # module's main! in sequence under one WASM instance.
 #
 # Goal: gradually grow this entry as more procs / syntax are supported in WASM.

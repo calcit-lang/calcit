@@ -6,7 +6,7 @@ category: "features"
 aliases:
   - "anonymous enum"
   - "legacy tuple migration"
-id: core/features/tuples
+id: core/features/anonymous-enums
 parent: core/features
 ---
 
@@ -93,5 +93,5 @@ schemas and source should use `Enum`, `EnumDef`, `enum`, and `enum-def` names.
 ## See Also
 
 - [Enums](enums.md) — named enums declared with `defenum`
-- [Structs](records.md) — fixed named fields declared with `defstruct`
+- [Structs](structs.md) — fixed named fields declared with `defstruct`
 - [Static Analysis](static-analysis.md) — enum payload and match checking

@@ -40,7 +40,7 @@ jobs:
           RUST_MIN_STACK: "16777216"
       - run: cargo run --bin cr calcit/test.cirru
 
-      - name: "try wasm"
+      - name: "verify WASM exports and FFI"
         run: >
           cargo build --bin cr-wasm
           && CR_WASM_BIN="./target/debug/cr-wasm" bash scripts/test-wasm.sh

@@ -490,7 +490,9 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // A preprocessed function remains a syntax list until runtime construction. Preserve an
         // explicit body `hint-fn` as its static value type; without a schema we only know that the
         // value is callable and deliberately keep its argument/return details dynamic.
-        Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::Defmacro, _) => Some(infer_preprocessed_function_type(xs)),
+        Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _) => {
+          Some(infer_preprocessed_function_type(xs))
+        }
 
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs.get(2).map(CalcitTypeAnnotation::parse_type_annotation_form),
 
@@ -1295,7 +1297,7 @@ fn infer_record_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Optio
 
 fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
-  match builtins::records::new_struct(&args).ok()? {
+  match builtins::structs::new_struct(&args).ok()? {
     Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def)))),
     _ => None,
   }
@@ -1303,7 +1305,7 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
 
 fn infer_enum_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
-  match builtins::records::new_enum(&args).ok()? {
+  match builtins::structs::new_enum(&args).ok()? {
     Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def)))),
     _ => None,
   }

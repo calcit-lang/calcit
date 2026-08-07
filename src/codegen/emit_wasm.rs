@@ -29,24 +29,25 @@ use wasm_encoder::{
 
 use crate::builtins::syntax::get_raw_args_fn;
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, MethodKind,
+  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation,
+  MethodKind,
 };
 use crate::program;
 
 #[path = "emit_wasm/methods.rs"]
 mod methods;
-#[path = "emit_wasm/records.rs"]
-mod records;
 #[path = "emit_wasm/runtime.rs"]
 mod runtime;
+#[path = "emit_wasm/structs.rs"]
+mod structs;
 
 use methods::{emit_call_args, emit_method_invoke};
-use records::{
-  emit_enum_tuple_new, emit_record_contains, emit_record_count, emit_record_field_tag, emit_record_get, emit_record_get_name,
-  emit_record_matches, emit_record_new, emit_record_nth, emit_record_struct, emit_record_to_map, emit_tuple_assoc, emit_tuple_count,
-  emit_tuple_new, emit_tuple_nth, resolve_struct_ref, try_parse_defrecord_form,
+use runtime::{HOST_IMPORTS, HostImport, build_runtime_fns, build_wasm_module};
+use structs::{
+  emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
+  emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
+  emit_struct_to_map, resolve_struct_ref, try_parse_defrecord_form,
 };
-use runtime::{HOST_IMPORTS, build_runtime_fns, build_wasm_module};
 
 /// Base offset — reserve first 16 bytes for bookkeeping.
 /// The actual heap start will be shifted when string literals occupy the
@@ -140,6 +141,12 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
+      if is_wasm_import_def(&compiled.preprocessed_code) {
+        parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
+          format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
+        })?;
+        continue;
+      }
       match extract_fn_parts(&compiled.preprocessed_code) {
         Ok((args, body)) => {
           fn_defs.push((ns.to_string(), def_name.to_string(), args, body));
@@ -155,12 +162,42 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
 
-  // Build fn_index: host imports first, then user functions offset by num_imports
-  let num_imports = HOST_IMPORTS.len() as u32;
+  // Build the import table before assigning user function indices. Built-in imports
+  // stay first so internal lowering keeps its stable indices; user declarations
+  // append after them.
+  let mut host_imports = HOST_IMPORTS.to_vec();
+  let mut wasm_import_names: HashMap<String, u32> = HashMap::new();
+  let mut wasm_import_arities: HashMap<String, u32> = HashMap::new();
+  for &ns in &ns_order {
+    let Some(file_info) = program_data.get(ns) else {
+      continue;
+    };
+    for (def_name, compiled) in &file_info.defs {
+      if !is_wasm_import_def(&compiled.preprocessed_code) {
+        continue;
+      }
+      let (module, name, args) = parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
+        format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
+      })?;
+      let arity = wasm_import_arity(&args).map_err(|reason| format!("[wasm] invalid import declaration {ns}/{def_name}: {reason}"))?;
+      let index = host_imports.len() as u32;
+      host_imports.push(HostImport {
+        module,
+        name,
+        arity: arity as usize,
+      });
+      let qualified = format!("{ns}/{def_name}");
+      wasm_import_names.insert(qualified.clone(), index);
+      wasm_import_names.insert(def_name.to_string(), index);
+      wasm_import_arities.insert(qualified, arity);
+      wasm_import_arities.insert(def_name.to_string(), arity);
+    }
+  }
+  let num_imports = host_imports.len() as u32;
 
   // Collect tags early — needed to embed the string type tag in the __str_new helper.
   let tag_index = collect_all_tags_from(&fn_defs);
-  println!("TAG INDEX: {tag_index:?}");
+  eprintln!("[wasm] tag index: {tag_index:?}");
 
   let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
     num_imports,
@@ -198,6 +235,13 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // fn_table_index: user calcit fn (index i in fn_defs) → table slot i.
   // Table slots are 0-based within user calcit functions only (not runtime helpers).
   let mut fn_table_index: HashMap<String, u32> = HashMap::new();
+  for (name, index) in &wasm_import_names {
+    fn_index.insert(name.clone(), *index);
+    fn_arity.insert(
+      name.clone(),
+      *wasm_import_arities.get(name).expect("WASM import arity must be registered"),
+    );
+  }
   for (i, (ns, name, args, _)) in fn_defs.iter().enumerate() {
     let idx = num_imports + runtime_fn_count + i as u32;
     let qualified = format!("{ns}/{name}");
@@ -215,7 +259,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     fn_table_index.insert(name.clone(), i as u32);
   }
 
-  let record_field_tags = collect_record_field_tags_from_program(&program_data, &tag_index);
+  let struct_field_tags = collect_struct_field_tags_from_program(&program_data, &tag_index);
 
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &tag_index);
@@ -259,7 +303,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     fn_has_rest,
     runtime_fn_index,
     tag_index,
-    record_field_tags,
+    struct_field_tags,
     string_pool,
     atom_globals,
     value_imports,
@@ -269,6 +313,10 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Second pass: compile. If a function fails, we still reserve its slot
   // with a trivial body so indices remain stable.
   for (ns, def_name, args, body) in &fn_defs {
+    let explicit_export = program_data
+      .get(ns.as_str())
+      .and_then(|file| file.defs.get(def_name.as_str()))
+      .is_some_and(|compiled| is_wasm_export_def(&compiled.preprocessed_code));
     let export_name = if export_name_counts.get(def_name).copied().unwrap_or(0) > 1 {
       format!("{ns}/{def_name}")
     } else {
@@ -280,6 +328,9 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
     match result {
       Ok(func) => compiled_fns.push(func),
       Err(e) => {
+        if explicit_export {
+          return Err(format!("[wasm] exported function {ns}/{def_name} is not compilable: {e}"));
+        }
         eprintln!("[wasm] skipping {ns}/{def_name}: {e}");
         let (arity, _) = compute_fn_arity(args);
         compiled_fns.push(CompiledFn {
@@ -300,6 +351,7 @@ pub fn emit_wasm(init_ns: &str, emit_path: &str) -> Result<(), String> {
   // Build module using wasm-encoder
   let wasm_bytes = build_wasm_module(
     &compiled_fns,
+    &host_imports,
     heap_start,
     &string_data_segment,
     &atom_initial_values,
@@ -337,7 +389,7 @@ struct WasmCompileEnv {
   fn_has_rest: HashMap<String, u32>,
   runtime_fn_index: HashMap<String, u32>,
   tag_index: HashMap<String, u32>,
-  record_field_tags: HashMap<u32, Vec<u32>>,
+  struct_field_tags: HashMap<u32, Vec<u32>>,
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
@@ -352,11 +404,65 @@ fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String
     return Err(format!("expected preprocessed defn list, got: {code}"));
   };
   match (items.first(), items.get(1), items.get(2)) {
-    (Some(Calcit::Syntax(CalcitSyntax::Defn, _)), Some(Calcit::Symbol { .. }), Some(Calcit::List(args))) => {
+    (
+      Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)),
+      Some(Calcit::Symbol { .. }),
+      Some(Calcit::List(args)),
+    ) => {
       let raw_args = get_raw_args_fn(args)?;
       Ok((raw_args, items.drop_left().drop_left().drop_left().to_vec()))
     }
     _ => Err(format!("expected preprocessed defn form, got: {code}")),
+  }
+}
+
+fn is_wasm_export_def(code: &Calcit) -> bool {
+  matches!(code, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmExport, _))))
+}
+
+fn is_wasm_import_def(code: &Calcit) -> bool {
+  matches!(code, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmImport, _))))
+}
+
+/// A WASM import is a function-shaped definition whose first two body forms are
+/// literal module and field names, for example:
+/// `defwasm-import host-upper (text) |host |upper`.
+fn parse_wasm_import_def(code: &Calcit) -> Option<(String, String, CalcitFnArgs)> {
+  let Calcit::List(xs) = code else {
+    return None;
+  };
+  if !matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DefWasmImport, _))) {
+    return None;
+  }
+  let Calcit::List(args) = xs.get(2)? else {
+    return None;
+  };
+  let args = get_raw_args_fn(args).ok()?;
+  // Preprocessing prepends a `hint-fn` form for a declared schema. Apart from
+  // that internal annotation, the declaration body is exactly two strings.
+  let body: Vec<&Calcit> = xs
+    .iter()
+    .skip(3)
+    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .collect();
+  let [Calcit::Str(module), Calcit::Str(name)] = body.as_slice() else {
+    return None;
+  };
+  Some((module.to_string(), name.to_string(), args))
+}
+
+fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
+  match args {
+    CalcitFnArgs::Args(names) => Ok(names.len() as u32),
+    CalcitFnArgs::MarkedArgs(labels) => {
+      if labels
+        .iter()
+        .any(|label| matches!(label, CalcitArgLabel::OptionalMark | CalcitArgLabel::RestMark))
+      {
+        return Err("optional and rest parameters are not supported for defwasm-import".into());
+      }
+      Ok(labels.iter().filter(|label| matches!(label, CalcitArgLabel::Idx(_))).count() as u32)
+    }
   }
 }
 
@@ -386,7 +492,7 @@ struct WasmGenCtx {
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
   tag_index: HashMap<String, u32>,
   /// Record struct tag id → field tag ids in index order.
-  record_field_tags: HashMap<u32, Vec<u32>>,
+  struct_field_tags: HashMap<u32, Vec<u32>>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
@@ -418,7 +524,7 @@ impl WasmGenCtx {
       fn_has_rest: env.fn_has_rest,
       runtime_fn_index: env.runtime_fn_index,
       tag_index: env.tag_index,
-      record_field_tags: env.record_field_tags,
+      struct_field_tags: env.struct_field_tags,
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
@@ -1801,14 +1907,14 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Record operations
-    CalcitProc::NativeRecord => emit_record_new(ctx, args),
-    CalcitProc::NativeRecordNth => emit_record_nth(ctx, args),
-    CalcitProc::NativeRecordGet => emit_record_get(ctx, args),
-    CalcitProc::NativeRecordCount => emit_record_count(ctx, args),
-    CalcitProc::NativeRecordFieldTag => emit_record_field_tag(ctx, args),
-    CalcitProc::NativeRecordStruct => emit_record_struct(ctx, args),
-    CalcitProc::NativeRecordGetName => emit_record_get_name(ctx, args),
-    CalcitProc::NativeRecordToMap => emit_record_to_map(ctx, args),
+    CalcitProc::NativeRecord => emit_struct_new(ctx, args),
+    CalcitProc::NativeRecordNth => emit_struct_nth(ctx, args),
+    CalcitProc::NativeRecordGet => emit_struct_get(ctx, args),
+    CalcitProc::NativeRecordCount => emit_struct_count(ctx, args),
+    CalcitProc::NativeRecordFieldTag => emit_struct_field_tag(ctx, args),
+    CalcitProc::NativeRecordStruct => emit_struct_def(ctx, args),
+    CalcitProc::NativeRecordGetName => emit_struct_get_name(ctx, args),
+    CalcitProc::NativeRecordToMap => emit_struct_to_map(ctx, args),
     CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
       Err(format!("{proc} not yet supported in WASM codegen"))
     }
@@ -1818,23 +1924,23 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     | CalcitProc::NativeRecordImpls
     | CalcitProc::NativeRecordWithAt
     | CalcitProc::NativeLooseRecord => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeRecordContains => emit_record_contains(ctx, args),
-    CalcitProc::NativeRecordMatches => emit_record_matches(ctx, args),
+    CalcitProc::NativeRecordContains => emit_struct_contains(ctx, args),
+    CalcitProc::NativeRecordMatches => emit_struct_matches(ctx, args),
 
     // Tuple operations
-    CalcitProc::NativeTuple => emit_tuple_new(ctx, args),
-    CalcitProc::NativeTupleNth => emit_tuple_nth(ctx, args),
-    CalcitProc::NativeTupleCount => emit_tuple_count(ctx, args),
+    CalcitProc::NativeTuple => emit_enum_new(ctx, args),
+    CalcitProc::NativeTupleNth => emit_enum_nth(ctx, args),
+    CalcitProc::NativeTupleCount => emit_enum_count(ctx, args),
     CalcitProc::NativeTupleValidateEnum => ctx.stub_proc(args), // no-op in WASM
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
-    CalcitProc::NativeEnumTupleNew => emit_enum_tuple_new(ctx, args),
+    CalcitProc::NativeEnumTupleNew => emit_named_enum_new(ctx, args),
     CalcitProc::NativeTupleImpls
     | CalcitProc::NativeTupleParams
     | CalcitProc::NativeTupleEnum
     | CalcitProc::NativeTupleImplTraits
     | CalcitProc::NativeTupleEnumHasVariant
     | CalcitProc::NativeTupleEnumVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeTupleAssoc => emit_tuple_assoc(ctx, args),
+    CalcitProc::NativeTupleAssoc => emit_enum_assoc(ctx, args),
 
     // Bitwise operations — convert to i32, operate, convert back to f64
     CalcitProc::BitShl => emit_bitwise_binary(ctx, Instruction::I32Shl, args),
@@ -3036,7 +3142,7 @@ fn build_string_pool(
   (pool, data, heap_start)
 }
 
-fn collect_record_field_tags_from_program(
+fn collect_struct_field_tags_from_program(
   program_data: &program::CompiledProgram,
   tag_index: &HashMap<String, u32>,
 ) -> HashMap<u32, Vec<u32>> {

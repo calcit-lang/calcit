@@ -1,73 +1,77 @@
 use super::*;
+use std::sync::LazyLock;
 use wasm_encoder::{BlockType, Ieee64};
 
+#[derive(Clone, Debug)]
 pub(super) struct HostImport {
-  pub(super) module: &'static str,
-  pub(super) name: &'static str,
+  pub(super) module: String,
+  pub(super) name: String,
   pub(super) arity: usize,
 }
 
 /// List of host-imported functions.
 /// These are provided by the JS environment and indexed before user functions.
-pub(super) const HOST_IMPORTS: &[HostImport] = &[
-  HostImport {
-    module: "math",
-    name: "pow",
-    arity: 2,
-  },
-  HostImport {
-    module: "math",
-    name: "sin",
-    arity: 1,
-  },
-  HostImport {
-    module: "math",
-    name: "cos",
-    arity: 1,
-  },
-  // IO: log a single value (f64) — host reads memory to decode type
-  HostImport {
-    module: "io",
-    name: "log_value",
-    arity: 1,
-  },
-  // IO: log a string directly (ptr to heap string) — more efficient than log_value for strings
-  HostImport {
-    module: "io",
-    name: "log_str",
-    arity: 1,
-  },
-  // IO: read file contents as string (ptr to path in heap)
-  HostImport {
-    module: "io",
-    name: "read_file_str",
-    arity: 1,
-  },
-  // IO: check if file exists (ptr to path in heap) — returns 1.0 if exists, 0.0 otherwise
-  HostImport {
-    module: "io",
-    name: "file_exists",
-    arity: 1,
-  },
-  // IO: parse JSON string (ptr to JSON string in heap) — returns parsed value or nil on error
-  HostImport {
-    module: "io",
-    name: "parse_json",
-    arity: 1,
-  },
-  // IO: get current time in milliseconds
-  HostImport {
-    module: "io",
-    name: "current_time",
-    arity: 0,
-  },
-  // IO: get environment variable (ptr to key in heap) — returns value string or nil
-  HostImport {
-    module: "io",
-    name: "get_env",
-    arity: 1,
-  },
-];
+pub(super) static HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
+  vec![
+    HostImport {
+      module: "math".into(),
+      name: "pow".into(),
+      arity: 2,
+    },
+    HostImport {
+      module: "math".into(),
+      name: "sin".into(),
+      arity: 1,
+    },
+    HostImport {
+      module: "math".into(),
+      name: "cos".into(),
+      arity: 1,
+    },
+    // IO: log a single value (f64) — host reads memory to decode type
+    HostImport {
+      module: "io".into(),
+      name: "log_value".into(),
+      arity: 1,
+    },
+    // IO: log a string directly (ptr to heap string) — more efficient than log_value for strings
+    HostImport {
+      module: "io".into(),
+      name: "log_str".into(),
+      arity: 1,
+    },
+    // IO: read file contents as string (ptr to path in heap)
+    HostImport {
+      module: "io".into(),
+      name: "read_file_str".into(),
+      arity: 1,
+    },
+    // IO: check if file exists (ptr to path in heap) — returns 1.0 if exists, 0.0 otherwise
+    HostImport {
+      module: "io".into(),
+      name: "file_exists".into(),
+      arity: 1,
+    },
+    // IO: parse JSON string (ptr to JSON string in heap) — returns parsed value or nil on error
+    HostImport {
+      module: "io".into(),
+      name: "parse_json".into(),
+      arity: 1,
+    },
+    // IO: get current time in milliseconds
+    HostImport {
+      module: "io".into(),
+      name: "current_time".into(),
+      arity: 0,
+    },
+    // IO: get environment variable (ptr to key in heap) — returns value string or nil
+    HostImport {
+      module: "io".into(),
+      name: "get_env".into(),
+      arity: 1,
+    },
+  ]
+});
 
 /// Maximum arity covered by canonical call_indirect type entries.
 /// Types 0..MAX_CANONICAL_ARITY are reserved: type N = (f64 × N) → f64.
@@ -82,6 +86,7 @@ pub(super) const MAX_CANONICAL_ARITY: u32 = 8;
 /// (fns[runtime_fn_count..]) are registered in the funcref table.
 pub(super) fn build_wasm_module(
   fns: &[CompiledFn],
+  host_imports: &[HostImport],
   heap_start: i32,
   string_data: &[u8],
   atom_initial_values: &[f64],
@@ -89,18 +94,18 @@ pub(super) fn build_wasm_module(
   runtime_fn_count: u32,
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
-  let num_imports = HOST_IMPORTS.len() as u32;
+  let num_imports = host_imports.len() as u32;
   let user_fn_count = fns.len() as u32 - runtime_fn_count;
 
   // Type section:
   //   0..MAX_CANONICAL_ARITY  — canonical HOF callback types: (f64×N) → f64
-  //   MAX_CANONICAL_ARITY + 0..HOST_IMPORTS.len() — host import types
-  //   MAX_CANONICAL_ARITY + HOST_IMPORTS.len() + 0..fns.len() — user fn types
+  //   MAX_CANONICAL_ARITY + 0..host_imports.len() — host import types
+  //   MAX_CANONICAL_ARITY + host_imports.len() + 0..fns.len() — compiled fn types
   let mut types = TypeSection::new();
   for arity in 0..MAX_CANONICAL_ARITY {
     types.ty().function(vec![ValType::F64; arity as usize], vec![ValType::F64]);
   }
-  for imp in HOST_IMPORTS {
+  for imp in host_imports {
     let params: Vec<ValType> = vec![ValType::F64; imp.arity];
     types.ty().function(params, vec![ValType::F64]);
   }
@@ -111,10 +116,10 @@ pub(super) fn build_wasm_module(
 
   // Import section: host functions (type indices shifted by MAX_CANONICAL_ARITY)
   let mut imports = wasm_encoder::ImportSection::new();
-  for (i, imp) in HOST_IMPORTS.iter().enumerate() {
+  for (i, imp) in host_imports.iter().enumerate() {
     imports.import(
-      imp.module,
-      imp.name,
+      imp.module.as_str(),
+      imp.name.as_str(),
       wasm_encoder::EntityType::Function(MAX_CANONICAL_ARITY + i as u32),
     );
   }

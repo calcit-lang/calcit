@@ -16,8 +16,8 @@ entry_for:
 id: core/features
 leads_to:
   - core/features/list
-  - core/features/records
-  - core/features/tuples
+  - core/features/structs
+  - core/features/anonymous-enums
   - core/features/enums
 ---
 
@@ -77,7 +77,7 @@ Use this section as a keyword index for `cr docs read`:
 Task-oriented jump map:
 
 - Data transforms → [List](features/list.md), [HashMap](features/hashmap.md), [Sets](features/sets.md)
-- Domain modeling → [Structs](features/records.md), [Enums](features/enums.md), [Anonymous Enums](features/tuples.md)
+- Domain modeling → [Structs](features/structs.md), [Enums](features/enums.md), [Anonymous Enums](features/anonymous-enums.md)
 - Type safety → [Static Analysis](features/static-analysis.md), [Error Handling](features/error-handling.md)
 - Extensibility → [Macros](features/macros.md), [Traits](features/traits.md), [Polymorphism](features/polymorphism.md)
 - Runtime integration → [JavaScript Interop](features/js-interop.md), [Imports](features/imports.md)

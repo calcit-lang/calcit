@@ -62,7 +62,7 @@
               :args $ [] 'test-enum.main/Result0
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-tag-match-validation) (test-tuple-to-enum) (test-match) (println "|All tests passed!")
+            defn main! () $ do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-tag-match-validation) (test-anonymous-enum-to-named) (test-match) (println "|All tests passed!")
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
@@ -213,9 +213,9 @@
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |test-tuple-to-enum $ %{} :CodeEntry (:doc "|Test automatic tuple-to-enum rewrite")
+        |test-anonymous-enum-to-named $ %{} :CodeEntry (:doc "|Test automatic anonymous-enum-to-named rewrite")
           :code $ quote
-            defn test-tuple-to-enum () $ do (println "|Testing tuple-to-enum rewrite...") (; Untyped tuple :: :ok gets rewritten to %:: Result0 :ok)
+            defn test-anonymous-enum-to-named () $ do (println "|Testing anonymous-enum-to-named rewrite...") (; Untyped anonymous enum :: :ok gets rewritten to %:: Result0 :ok)
               assert= :ok $ takes-result (:: :ok)
               ; Untyped tuple with payload
               assert= |error-msg $ takes-result (:: :err |error-msg)

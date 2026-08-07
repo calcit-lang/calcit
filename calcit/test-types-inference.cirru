@@ -42,7 +42,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-set-inference) (test-ref-inference) (test-record-inference) (test-type-ref-combos) (test-generics-identity)
+            defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity)
           :examples $ []
           :schema $ :: 'Dynamic
         |reload! $ %{} :CodeEntry (:doc |)
@@ -277,9 +277,9 @@
                 &inspect-type nil-nested
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-record-inference $ %{} :CodeEntry (:doc |)
+        |test-struct-inference $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn test-record-inference () $ let
+            defn test-struct-inference () $ let
                 addr $ %{} Address (:city |sh)
                 p $ %{} Person (:name |n) (:age 20) (:address addr)
               assert-type p $ :: Person

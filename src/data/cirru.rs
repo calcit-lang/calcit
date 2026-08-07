@@ -26,6 +26,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
       "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
+      "defwasm-export" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmExport, ns.into())),
+      "defwasm-import" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmImport, ns.into())),
       "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
       "parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, ns.into())),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),

@@ -6,16 +6,16 @@ mod compare;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod data_patch;
 pub(crate) mod data_shape;
+mod enum_value;
 mod fns;
 mod list;
 mod local;
 mod proc_name;
-mod record;
+mod struct_value;
 mod sum_type;
 mod symbol;
 mod syntax_name;
 mod thunk;
-mod tuple;
 pub(crate) mod type_annotation;
 
 use core::cmp::Ord;
@@ -37,16 +37,16 @@ use im_ternary_tree::TernaryTreeList;
 pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStructDef;
 pub use calcit_trait::CalcitTrait;
+pub use enum_value::CalcitEnumValue;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
 pub use proc_name::{CalcitProc, ProcArity, ProcTypeSignature};
-pub use record::CalcitStructValue;
+pub use struct_value::CalcitStructValue;
 pub use sum_type::{CalcitEnumDef, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
-pub use tuple::CalcitEnumValue;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, brief_type_of_value, clear_type_slots,
   configure_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot,
@@ -245,7 +245,7 @@ impl fmt::Display for Calcit {
         Ok(())
       }
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
-        if record::ANONYMOUS_STRUCT_NAME == struct_ref.name.ref_str() {
+        if struct_value::ANONYMOUS_STRUCT_NAME == struct_ref.name.ref_str() {
           f.write_str("(%{} _")?;
         } else {
           f.write_str(&format!("(%{{}} '{}", struct_ref.name))?;

@@ -16,7 +16,7 @@ entry_for:
 
 Calcit models polymorphism with traits. Traits define method capabilities and can be attached to struct/enum definitions with `impl-traits`.
 
-For capability-based dispatch via struct/enum-attached impls (used by records/tuples created from them), see [Traits](traits.md).
+For capability-based dispatch via struct/enum-attached impls (used by struct/enum values created from them), see [Traits](traits.md).
 
 Historically, the idea was inspired by JavaScript, and also [borrowed from a trick of Haskell](https://www.well-typed.com/blog/2018/03/oop-in-haskell/) (simulating OOP with immutable data structures). The current model is trait-based.
 

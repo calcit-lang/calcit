@@ -119,10 +119,44 @@ const inst = new WebAssembly.Instance(mod, {
       return strPtr;
     },
   },
+  // User-declared FFI import used by `defwasm-import` regression tests.
+  // It receives and returns Calcit string pointers through the standard f64 ABI.
+  host: {
+    "string-upcase": (ptr) => {
+      const input = readWasmStr(ptr);
+      if (input === null) return 0;
+      const bytes = new TextEncoder().encode(input.toUpperCase());
+      const strPtr = allocString(bytes.length);
+      const mem = new DataView(inst.exports.memory.buffer);
+      const iptr = strPtr | 0;
+      mem.setFloat64(iptr, bytes.length, true);
+      new Uint8Array(mem.buffer, iptr + 8, bytes.length).set(bytes);
+      return strPtr;
+    },
+  },
 });
 const e = inst.exports;
 
 let fail = 0;
+
+function checkModuleContract(label, matched) {
+  if (matched) {
+    console.log(`  ${label}  OK`);
+  } else {
+    console.log(`  ${label}  FAIL`);
+    fail++;
+  }
+}
+
+const moduleExports = new Set(WebAssembly.Module.exports(mod).filter((item) => item.kind === "function").map((item) => item.name));
+checkModuleContract("exports wasm-ffi-add", moduleExports.has("wasm-ffi-add"));
+checkModuleContract("exports wasm-ffi-upcase", moduleExports.has("wasm-ffi-upcase"));
+
+const moduleImports = WebAssembly.Module.imports(mod);
+checkModuleContract(
+  "imports host/string-upcase",
+  moduleImports.some((item) => item.kind === "function" && item.module === "host" && item.name === "string-upcase")
+);
 
 function check(label, expected, fn, ...args) {
   const got = fn(...args);
@@ -168,10 +202,16 @@ function findStaticStringTag() {
 function allocString(byteLen) {
   const mem = new DataView(inst.exports.memory.buffer);
   const heapPtr = inst.exports.__heap_ptr.value;
-  // Total: 16 bytes header + byteLen, aligned to 8
+  if (!Number.isSafeInteger(byteLen) || byteLen < 0) {
+    throw new RangeError(`invalid string byte length: ${byteLen}`);
+  }
+  // Total: 8-byte header plus the 8-byte length field and data, aligned to 8.
   const payloadSize = 8 + byteLen; // byte_len (8) + bytes
   const paddedPayload = (payloadSize + 7) & ~7;
-  const newHeapPtr = heapPtr + paddedPayload;
+  const newHeapPtr = heapPtr + 8 + paddedPayload;
+  if (!Number.isSafeInteger(heapPtr) || heapPtr < 0 || newHeapPtr > mem.byteLength) {
+    throw new RangeError(`WASM string allocation is outside linear memory: ${heapPtr}..${newHeapPtr}`);
+  }
   inst.exports.__heap_ptr.value = newHeapPtr;
   // Set up header
   mem.setInt32(heapPtr, HEAP_MAGIC, true);
@@ -181,13 +221,16 @@ function allocString(byteLen) {
 
 function readWasmStr(ptr) {
   const mem = new DataView(inst.exports.memory.buffer);
-  const iptr = ptr | 0;
-  if (iptr < 16) return null;
+  if (!Number.isFinite(ptr) || !Number.isInteger(ptr)) return null;
+  const iptr = ptr;
+  if (iptr < 8 || iptr + 8 > mem.byteLength) return null;
   const magic = mem.getInt32(iptr - 8, true);
   if (magic !== HEAP_MAGIC) return null;
   const tag = mem.getInt32(iptr - 4, true);
   if (tag !== STRING_TAG) return null;
   const byteLen = mem.getFloat64(iptr, true);
+  const payloadStart = iptr + 8;
+  if (!Number.isSafeInteger(byteLen) || byteLen < 0 || byteLen > mem.byteLength - payloadStart) return null;
   return new TextDecoder().decode(new Uint8Array(mem.buffer, iptr + 8, byteLen));
 }
 
@@ -498,6 +541,17 @@ check("test-display-by-hex()", 4, e["test-display-by-hex"]); // 17 in hex = "0x1
     console.log(`  __str_new FFI: '${decoded}'  FAIL (expected 'world')`);
     fail++;
   }
+}
+
+// --- Declared WASM FFI regression tests ---
+check("wasm-ffi-add(20, 22)", 42, e["wasm-ffi-add"], 20, 22);
+{
+  const bytes = new TextEncoder().encode("Calcit");
+  const strPtr = allocString(bytes.length);
+  const mem = new DataView(inst.exports.memory.buffer);
+  mem.setFloat64(strPtr | 0, bytes.length, true);
+  new Uint8Array(mem.buffer, (strPtr | 0) + 8, bytes.length).set(bytes);
+  checkStr("wasm-ffi-upcase('Calcit')", "CALCIT", e["wasm-ffi-upcase"], strPtr);
 }
 
 // --- println host import test ---

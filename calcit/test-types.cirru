@@ -108,7 +108,7 @@
               println "|--- Testing typed method calls ---"
               println $ test-list-methods
               println $ test-string-methods
-              ; println $ test-record-methods
+              ; println $ test-struct-methods
               println "|--- Testing typed method access patterns ---"
               println $ test-typed-method-access
               println "|--- Testing preprocess method validation ---"
@@ -319,9 +319,9 @@
             defn test-proc-type-warnings () (; This function intentionally contains type errors for testing) (; It is not called in normal tests to avoid blocking execution) (println "|Warning: This test contains intentional type errors")
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with impls")
+        |test-struct-methods $ %{} :CodeEntry (:doc "|Tests method calls on Struct instances with impls")
           :code $ quote
-            defn test-record-methods () (; "使用" impl-traits "挂载实现" Record methods)
+            defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
               let
                   PersonGreeting $ deftrait PersonGreeting (.greet :fn)
                   PersonImpl $ defimpl PersonImpl PersonGreeting

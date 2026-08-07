@@ -451,7 +451,7 @@ fn emit_list_rest_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
   ctx.ptr_to_f64(dst);
 }
 
-fn emit_tuple_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
+fn emit_enum_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
   ctx.emit(Instruction::LocalGet(index_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::I32Const(1));
@@ -1018,7 +1018,7 @@ fn emit_list_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
   ctx.ptr_to_f64(dst);
 }
 
-fn emit_tuple_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32, val_local: u32) {
+fn emit_enum_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32, val_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
   let count_local = super::emit_load_count_i32(ctx, ptr_local);
   let total_slots = ctx.alloc_local_typed(ValType::I32);
@@ -1082,7 +1082,7 @@ fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, 
   ctx.emit(f64_const(tuple_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_tuple_assoc_from_local(ctx, receiver_local, key_local, val_local);
+  emit_enum_assoc_from_local(ctx, receiver_local, key_local, val_local);
   ctx.emit(Instruction::Else);
   // Unhandled (record not implemented yet in dynamic dispatch)
   ctx.emit(f64_const(0.0));
@@ -1146,7 +1146,7 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
   ctx.emit(f64_const(tuple_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_tuple_nth_from_local(ctx, receiver_local, index_local);
+  emit_enum_nth_from_local(ctx, receiver_local, index_local);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
   ctx.emit(f64_const(string_tag));
@@ -1182,7 +1182,7 @@ fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   let zero = ctx.alloc_local();
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(zero));
-  emit_tuple_nth_from_local(ctx, receiver_local, zero);
+  emit_enum_nth_from_local(ctx, receiver_local, zero);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
   ctx.emit(f64_const(string_tag));
@@ -1238,7 +1238,7 @@ fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) ->
   ctx.emit(f64_const(tuple_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_tuple_nth_from_local(ctx, receiver_local, key_local);
+  emit_enum_nth_from_local(ctx, receiver_local, key_local);
   ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::End);
