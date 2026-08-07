@@ -1186,22 +1186,12 @@ fn preprocess_list_call(
           if is_nominal_or_trait || has_known_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_info.clone()));
-            let mut processed_args = CalcitList::new_inner_from(&[]);
-            processed_args = processed_args.push(preprocess_expr(
-              &head_form,
-              scope_defs,
-              scope_types,
-              file_ns,
-              check_warnings,
-              call_stack,
-            )?);
+            let mut processed_args = CalcitList::new_inner_from(&[head_form]);
             for arg in args.iter().skip(1) {
               processed_args = processed_args.push(preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?);
             }
             let processed_args = CalcitList::from(processed_args);
-            if type_info.as_ref().resolve_to_enum().is_some() {
-              check_record_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
-            }
+            check_record_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
 
             let mut ys = CalcitList::new_inner_from(&[typed_method]);
             for arg in processed_args.iter() {
@@ -2186,7 +2176,7 @@ fn check_fn_args(
   }
 }
 
-// TODO this native implementation only handles symbols
+// Retrieves the definition name from a symbol or local receiver.
 fn grab_def_name(x: &Calcit) -> Arc<str> {
   match x {
     Calcit::Symbol { info, .. } | Calcit::Local(CalcitLocal { info, .. }) => info.at_def.to_owned(),
@@ -2693,10 +2683,12 @@ fn check_record_method_args(
     }
 
     let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-    if let Some(receiver_type) = resolve_type_value(receiver, scope_types) {
+    if let Some(expected_receiver) = signature.arg_types.first()
+      && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    {
       receiver_type
         .as_ref()
-        .matches_with_bindings(signature.arg_types[0].as_ref(), &mut bindings);
+        .matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
     }
     let arg_types_without_receiver = signature.arg_types.iter().skip(1);
     for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
@@ -2770,9 +2762,9 @@ fn check_record_method_args(
     }
 
     let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-    type_value
-      .as_ref()
-      .matches_with_bindings(signature.arg_types[0].as_ref(), &mut bindings);
+    if let Some(expected_receiver) = signature.arg_types.first() {
+      type_value.as_ref().matches_with_bindings(expected_receiver.as_ref(), &mut bindings);
+    }
     for (idx, (arg, expected_type)) in method_args.iter().zip(signature.arg_types.iter().skip(1)).enumerate() {
       if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
         continue;
