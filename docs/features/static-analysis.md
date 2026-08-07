@@ -75,7 +75,7 @@ cr analyze weak-types --ns app.main --intent unresolved --summary-only --format 
 cr analyze check-examples --ns app.main --def calculate-total
 
 # Validate examples that depend on JavaScript-only FFI syntax
-cr analyze check-examples --ns app.main --def detect-nodejs? --js
+cr analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 
 # Explain one expression using inferred and expected types
 cr query type-at app.main/calculate-total --path code@3.2 --format json
