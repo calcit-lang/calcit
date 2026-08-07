@@ -15,7 +15,7 @@
 //! All values are represented as f64 (matching Calcit's single numeric type).
 //! Booleans: true → 1.0, false/nil → 0.0.
 //! Tags: mapped to positive f64 integers at compile time.
-//! Record/Tuple pointers: i32 offsets into linear memory, converted to/from f64.
+//! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
 use std::collections::HashMap;
@@ -1540,7 +1540,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       }
     }
     // Method spread call: e.g. `(.dissoc x & args)` — emit unreachable trap.
-    // In practice reached only for record/tuple methods not yet implemented in WASM.
+    // In practice reached only for struct/enum methods not yet implemented in WASM.
     // List/map cases are handled via their native procs before this point.
     Calcit::Method(_name, MethodKind::Invoke(_)) => {
       ctx.emit(Instruction::Unreachable);
@@ -1927,7 +1927,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeRecordContains => emit_struct_contains(ctx, args),
     CalcitProc::NativeRecordMatches => emit_struct_matches(ctx, args),
 
-    // Tuple operations
+    // Enum operations
     CalcitProc::NativeTuple => emit_enum_new(ctx, args),
     CalcitProc::NativeTupleNth => emit_enum_nth(ctx, args),
     CalcitProc::NativeTupleCount => emit_enum_count(ctx, args),
@@ -2887,11 +2887,11 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
   }
 }
 
-/// Emit WASM for `match` expression (pattern matching on enum tuples).
+/// Emit WASM for `match` expression (pattern matching on enums).
 ///
 /// Preprocessed form: [value_expr, (pattern body), (pattern body), ...]
 /// Each pattern is either `_` (wildcard) or `(:tag binding1 binding2 ...)`.
-/// The value must be a tuple — we read its tag_id at offset 0 and compare.
+/// The value must be an enum — we read its tag_id at offset 0 and compare.
 ///
 /// Compilation strategy: nested if/else chain comparing the tag_id.
 ///   evaluate value → store pointer in temp local
@@ -3172,10 +3172,10 @@ fn collect_struct_field_tags_from_program(
   result
 }
 
-/// If `expr` is a literal tuple constructor `(NativeTuple :tag val0 val1...)` with only
+/// If `expr` is a literal enum constructor `(NativeTuple :tag val0 val1...)` with only
 /// literal args (Tag, Str, Number, Bool, Nil), return its lispy string representation.
 /// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
-pub(crate) fn try_format_tuple_literal(expr: &Calcit) -> Option<String> {
+pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
   if let Calcit::List(list) = expr
     && !list.is_empty()
     && let Calcit::Proc(p) = &list[0]
@@ -3223,9 +3223,9 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
         let s = crate::calcit::format_to_lisp(&inner[1]);
         strings.push(s);
       }
-      // Pre-intern lispy strings for literal tuple constructors (used by `str`/`turn-string`).
-      if let Some(tuple_str) = try_format_tuple_literal(expr) {
-        strings.push(tuple_str);
+      // Pre-intern lispy strings for literal enum constructors (used by `str`/`turn-string`).
+      if let Some(enum_str) = try_format_enum_literal(expr) {
+        strings.push(enum_str);
       }
       for x in xs.iter() {
         collect_strings_from_expr(x, strings);

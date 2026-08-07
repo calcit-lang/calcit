@@ -454,7 +454,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       }
 
       let struct_ref = match find_record_in_options(&name.arc_str(), options) {
-        Some(Calcit::Struct(record)) if fields == *record.struct_ref.fields => Arc::clone(&record.struct_ref),
+        Some(Calcit::Struct(struct_value)) if fields == *struct_value.struct_ref.fields => Arc::clone(&struct_value.struct_ref),
         _ => Arc::new(CalcitStructDef::from_fields(name.to_owned(), fields)),
       };
       Calcit::Struct(CalcitStructValue {
@@ -555,10 +555,10 @@ mod tests {
     let mut input = EdnRecordView::new(EdnTag::new("Person"));
     input.insert(EdnTag::new("name"), Edn::str("Ada"));
     let decoded = edn_to_calcit(&Edn::Record(input), &Calcit::Map(options));
-    let Calcit::Struct(record) = decoded else {
-      panic!("expected record");
+    let Calcit::Struct(struct_value) = decoded else {
+      panic!("expected struct");
     };
-    assert!(!Arc::ptr_eq(&record.struct_ref, &declared));
-    assert_eq!(record.fields().as_slice(), &[EdnTag::new("name")]);
+    assert!(!Arc::ptr_eq(&struct_value.struct_ref, &declared));
+    assert_eq!(struct_value.fields().as_slice(), &[EdnTag::new("name")]);
   }
 }

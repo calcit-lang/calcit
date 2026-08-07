@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::type_inference::infer_record_field_type;
+use super::type_inference::infer_struct_field_type;
 use crate::calcit::{
   self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
   NodeLocation,
@@ -24,8 +24,8 @@ use crate::calcit::{
 use crate::program;
 
 use super::{
-  ScopeTypes, check_enum_tuple_construction, check_tuple_nth_bounds, gen_check_warning, gen_check_warning_code,
-  gen_check_warning_code_at, resolve_type_value, tag_annotation,
+  ScopeTypes, check_enum_construction, check_enum_nth_bounds, gen_check_warning, gen_check_warning_code, gen_check_warning_code_at,
+  resolve_type_value, tag_annotation,
 };
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ fn specialize_update_expected_types(
     _ => return None,
   };
 
-  let field_type = infer_record_field_type(receiver, field_name, scope_types)?;
+  let field_type = infer_struct_field_type(receiver, field_name, scope_types)?;
   let mut specialized = expected_types.to_vec();
   specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![field_type.clone()], field_type));
   Some(specialized)
@@ -297,12 +297,12 @@ pub(crate) fn check_proc_arg_types(
   }
 
   if matches!(proc, CalcitProc::NativeEnumTupleNew) {
-    check_enum_tuple_construction(args, scope_types, file_ns, def_name, check_warnings);
+    check_enum_construction(args, scope_types, file_ns, def_name, check_warnings);
     return;
   }
 
   if matches!(proc, CalcitProc::NativeTupleNth) {
-    check_tuple_nth_bounds(args, scope_types, file_ns, def_name, check_warnings);
+    check_enum_nth_bounds(args, scope_types, file_ns, def_name, check_warnings);
     return;
   }
 
@@ -592,7 +592,7 @@ mod tests {
   }
 
   #[test]
-  fn specialize_update_uses_record_field_type_for_callback() {
+  fn specialize_update_uses_struct_field_type_for_callback() {
     let task_struct = Arc::new(CalcitStructDef {
       name: EdnTag::new("Task"),
       fields: Arc::new(vec![EdnTag::new("done?")]),
@@ -638,7 +638,7 @@ mod tests {
 
     let scope_types = ScopeTypes::new();
     let specialized = specialize_update_expected_types(&fn_info, &args, &scope_types, fn_info.arg_types.as_slice())
-      .expect("update callback type should specialize from record field");
+      .expect("update callback type should specialize from struct field");
 
     let CalcitTypeAnnotation::Fn(callback) = specialized[2].as_ref() else {
       panic!("specialized callback should be fn type");

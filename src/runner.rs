@@ -331,10 +331,10 @@ pub fn call_expr(
             Some(value) => Ok(value.to_owned()),
             None => Ok(Calcit::Nil),
           },
-          Calcit::Struct(record) => record.get(k.ref_str()).cloned().ok_or_else(|| {
+          Calcit::Struct(struct_value) => struct_value.get(k.ref_str()).cloned().ok_or_else(|| {
             CalcitErr::use_msg_stack_location(
               CalcitErrKind::Type,
-              format!("record `{}` does not define field `:{k}`", record.struct_ref.name),
+              format!("struct `{}` does not define field `:{k}`", struct_value.struct_ref.name),
               call_stack,
               v.get_location(),
             )

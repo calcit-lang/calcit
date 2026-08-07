@@ -1766,7 +1766,7 @@ fn render_schema_param_type(ty_node: Option<&Cirru>, wrap_rest_as_list: bool) ->
   }
 }
 
-fn read_schema_param_tuple(item: &Cirru, default_name: &str, wrap_rest_as_list: bool) -> Option<(String, String)> {
+fn read_schema_param_wrapped(item: &Cirru, default_name: &str, wrap_rest_as_list: bool) -> Option<(String, String)> {
   match item {
     Cirru::Leaf(_) => Some((default_name.to_owned(), render_schema_param_type(Some(item), wrap_rest_as_list))),
     Cirru::List(xs) => {
@@ -1809,7 +1809,7 @@ pub fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
     && matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]")
   {
     for (idx, item) in items.iter().skip(1).enumerate() {
-      if let Some((name, ty)) = read_schema_param_tuple(item, &format!("arg{idx}"), false) {
+      if let Some((name, ty)) = read_schema_param_wrapped(item, &format!("arg{idx}"), false) {
         params.push(name.clone());
         param_annotations.entry(name).or_default().push(ty);
       }
@@ -1817,7 +1817,7 @@ pub fn extract_fn_schema_hints(schema: &Cirru) -> Option<FnSchemaHints> {
   }
 
   if let Some(rest_node) = schema.get(":rest")
-    && let Some((name, ty)) = read_schema_param_tuple(rest_node, "rest", true)
+    && let Some((name, ty)) = read_schema_param_wrapped(rest_node, "rest", true)
   {
     params.push(name.clone());
     param_annotations.entry(name).or_default().push(ty);

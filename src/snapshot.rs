@@ -2589,8 +2589,8 @@ mod tests {
     let optional_wrapped = Cirru::List(vec![Cirru::leaf(":optional"), valid.clone()]);
     assert!(parse_schema_data(&optional_wrapped).is_ok());
 
-    let optional_wrapped_by_tuple = Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), valid]);
-    assert!(parse_schema_data(&optional_wrapped_by_tuple).is_ok());
+    let optional_wrapped_by_enum = Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), valid]);
+    assert!(parse_schema_data(&optional_wrapped_by_enum).is_ok());
 
     let invalid_edn = Cirru::List(vec![Cirru::leaf("~"), Cirru::leaf("x")]);
     assert!(parse_schema_data(&invalid_edn).is_err());
@@ -2980,7 +2980,7 @@ mod tests {
   }
 
   #[test]
-  fn test_normalize_schema_unwraps_wrapped_fn_tuple() {
+  fn test_normalize_schema_unwraps_wrapped_fn_enum() {
     let wrapped = Edn::tuple(
       Edn::tag("fn"),
       vec![Edn::Map(EdnMapView::from(HashMap::from([
@@ -2998,7 +2998,7 @@ mod tests {
   }
 
   #[test]
-  fn test_normalize_schema_unwraps_wrapped_macro_tuple() {
+  fn test_normalize_schema_unwraps_wrapped_macro_enum() {
     let wrapped = Edn::tuple(
       Edn::tag("macro"),
       vec![Edn::Map(EdnMapView::from(HashMap::from([

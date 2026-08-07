@@ -383,8 +383,8 @@ impl EffectsGraphAnalyzer {
       Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => {
         self.walk_expr(code, current_ns, out, depth);
       }
-      Calcit::Enum(tuple) => {
-        for item in &tuple.extra {
+      Calcit::Enum(enum_value) => {
+        for item in &enum_value.extra {
           self.walk_expr(item, current_ns, out, depth);
         }
       }
@@ -590,8 +590,8 @@ fn extract_call_targets_recursive(code: &Calcit, current_ns: &str, calls: &mut V
     Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => {
       extract_call_targets_recursive(code, current_ns, calls);
     }
-    Calcit::Enum(tuple) => {
-      for item in &tuple.extra {
+    Calcit::Enum(enum_value) => {
+      for item in &enum_value.extra {
         extract_call_targets_recursive(item, current_ns, calls);
       }
     }
@@ -913,18 +913,18 @@ fn expand_from_def_template(ns: &str, def: &str, context_ns: &str, depth: usize)
     return None;
   }
   let code = lookup_def_code(ns, def)?;
-  let fields = find_best_record_template(&code)?;
-  Some(format_record_fields(&fields, context_ns, depth - 1))
+  let fields = find_best_struct_template(&code)?;
+  Some(format_struct_template_fields(&fields, context_ns, depth - 1))
 }
 
-fn find_best_record_template(code: &Calcit) -> Option<Vec<(String, String)>> {
+fn find_best_struct_template(code: &Calcit) -> Option<Vec<(String, String)>> {
   let mut best: Option<Vec<(String, String)>> = None;
-  walk_for_record_templates(code, &mut best);
+  walk_for_struct_templates(code, &mut best);
   best
 }
 
-fn walk_for_record_templates(code: &Calcit, best: &mut Option<Vec<(String, String)>>) {
-  if let Some(fields) = parse_record_field_pairs(code)
+fn walk_for_struct_templates(code: &Calcit, best: &mut Option<Vec<(String, String)>>) {
+  if let Some(fields) = parse_struct_field_pairs(code)
     && fields.len() >= 2
     && best.as_ref().is_none_or(|current| current.len() < fields.len())
   {
@@ -933,22 +933,22 @@ fn walk_for_record_templates(code: &Calcit, best: &mut Option<Vec<(String, Strin
   match code {
     Calcit::List(list) => {
       for item in list.iter() {
-        walk_for_record_templates(item, best);
+        walk_for_struct_templates(item, best);
       }
     }
     Calcit::Fn { info, .. } => {
       for expr in info.body.iter() {
-        walk_for_record_templates(expr, best);
+        walk_for_struct_templates(expr, best);
       }
     }
     Calcit::Macro { info, .. } => {
       for expr in info.body.iter() {
-        walk_for_record_templates(expr, best);
+        walk_for_struct_templates(expr, best);
       }
     }
-    Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => walk_for_record_templates(code, best),
-    Calcit::Struct(record) => {
-      if let Some(fields) = record_fields_from_calcit(record)
+    Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => walk_for_struct_templates(code, best),
+    Calcit::Struct(struct_value) => {
+      if let Some(fields) = struct_fields_from_calcit(struct_value)
         && fields.len() >= 2
         && best.as_ref().is_none_or(|current| current.len() < fields.len())
       {
@@ -957,15 +957,15 @@ fn walk_for_record_templates(code: &Calcit, best: &mut Option<Vec<(String, Strin
     }
     Calcit::Map(map) => {
       for (k, v) in map.iter() {
-        walk_for_record_templates(k, best);
-        walk_for_record_templates(v, best);
+        walk_for_struct_templates(k, best);
+        walk_for_struct_templates(v, best);
       }
     }
     _ => {}
   }
 }
 
-fn format_record_fields(fields: &[(String, String)], context_ns: &str, depth: usize) -> String {
+fn format_struct_template_fields(fields: &[(String, String)], context_ns: &str, depth: usize) -> String {
   let parts: Vec<String> = fields
     .iter()
     .map(|(key, hint)| {
@@ -980,18 +980,18 @@ fn format_record_fields(fields: &[(String, String)], context_ns: &str, depth: us
   format!("{{ {} }}", parts.join(", "))
 }
 
-fn parse_record_field_pairs(expr: &Calcit) -> Option<Vec<(String, String)>> {
-  if let Calcit::Struct(record) = expr {
-    return record_fields_from_calcit(record);
+fn parse_struct_field_pairs(expr: &Calcit) -> Option<Vec<(String, String)>> {
+  if let Calcit::Struct(struct_value) = expr {
+    return struct_fields_from_calcit(struct_value);
   }
   let Calcit::List(list) = expr else {
     return None;
   };
-  let start = if is_record_literal_head(list.first()) { 1 } else { 0 };
-  parse_flat_record_pairs(list, start).or_else(|| parse_nested_record_entries(list, start))
+  let start = if is_struct_literal_head(list.first()) { 1 } else { 0 };
+  parse_flat_struct_pairs(list, start).or_else(|| parse_nested_struct_entries(list, start))
 }
 
-fn parse_flat_record_pairs(list: &crate::calcit::CalcitList, start: usize) -> Option<Vec<(String, String)>> {
+fn parse_flat_struct_pairs(list: &crate::calcit::CalcitList, start: usize) -> Option<Vec<(String, String)>> {
   if start >= list.len() {
     return None;
   }
@@ -1007,7 +1007,7 @@ fn parse_flat_record_pairs(list: &crate::calcit::CalcitList, start: usize) -> Op
   if fields.is_empty() { None } else { Some(fields) }
 }
 
-fn parse_nested_record_entries(list: &crate::calcit::CalcitList, start: usize) -> Option<Vec<(String, String)>> {
+fn parse_nested_struct_entries(list: &crate::calcit::CalcitList, start: usize) -> Option<Vec<(String, String)>> {
   let mut fields = vec![];
   for idx in start..list.len() {
     let Some(entry) = list.get(idx) else { continue };
@@ -1022,9 +1022,9 @@ fn parse_nested_record_entries(list: &crate::calcit::CalcitList, start: usize) -
   if fields.is_empty() { None } else { Some(fields) }
 }
 
-fn record_fields_from_calcit(record: &crate::calcit::CalcitStructValue) -> Option<Vec<(String, String)>> {
-  let fields = record.fields();
-  let values = record.values.as_ref();
+fn struct_fields_from_calcit(struct_value: &crate::calcit::CalcitStructValue) -> Option<Vec<(String, String)>> {
+  let fields = struct_value.fields();
+  let values = struct_value.values.as_ref();
   if fields.is_empty() || fields.len() != values.len() {
     return None;
   }
@@ -1037,7 +1037,7 @@ fn record_fields_from_calcit(record: &crate::calcit::CalcitStructValue) -> Optio
   )
 }
 
-fn is_record_literal_head(head: Option<&Calcit>) -> bool {
+fn is_struct_literal_head(head: Option<&Calcit>) -> bool {
   match head {
     Some(Calcit::Proc(CalcitProc::NativeLooseRecord)) => true,
     Some(Calcit::Proc(CalcitProc::NativeTuple)) => true,
@@ -1068,9 +1068,9 @@ fn value_shape_hint(value: &Calcit) -> String {
     Calcit::Map(map) if map.is_empty() => ":map {}".into(),
     Calcit::List(list) if list.is_empty() => ":list []".into(),
     Calcit::List(list) if list.len() == 1 && matches!(list.first(), Some(Calcit::Proc(CalcitProc::List))) => ":list []".into(),
-    Calcit::List(_) => parse_record_field_pairs(value)
-      .map(|fields| format_record_fields(&fields, "", 1))
-      .unwrap_or_else(|| ":record".into()),
+    Calcit::List(_) => parse_struct_field_pairs(value)
+      .map(|fields| format_struct_template_fields(&fields, "", 1))
+      .unwrap_or_else(|| ":struct".into()),
     _ => "…".into(),
   }
 }
@@ -2336,7 +2336,7 @@ mod tests {
     assert_eq!(resolved.1, "store");
 
     let code = lookup_def_code(&resolved.0, &resolved.1).expect("lookup store code");
-    let template = find_best_record_template(&code);
+    let template = find_best_struct_template(&code);
     assert!(template.is_some(), "record template not found in code: {code:?}");
 
     let expanded = expand_type_ref_path("schema/store", "app.main", MAX_SCHEMA_DEPTH).expect("expand schema/store");

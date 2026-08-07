@@ -1719,62 +1719,66 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    if let Calcit::Enum(tuple) = form {
-      if let Some(struct_def) = resolve_struct_def(tuple.tag.as_ref()) {
-        let args = tuple.extra.iter().map(parse_nested).collect::<Vec<_>>();
+    if let Calcit::Enum(enum_value) = form {
+      if let Some(struct_def) = resolve_struct_def(enum_value.tag.as_ref()) {
+        let args = enum_value.extra.iter().map(parse_nested).collect::<Vec<_>>();
         return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(args)));
       }
-      if let Calcit::Tag(tag) = tuple.tag.as_ref() {
+      if let Calcit::Tag(tag) = enum_value.tag.as_ref() {
         if is_optional_tag(tag) {
-          if tuple.extra.len() != 1 {
-            eprintln!("[Warn] :optional expects 1 argument, got {}", tuple.extra.len());
+          if enum_value.extra.len() != 1 {
+            eprintln!("[Warn] :optional expects 1 argument, got {}", enum_value.extra.len());
           }
-          if let Some(inner_form) = tuple.extra.first() {
+          if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
           }
         }
         if is_list_tag(tag) {
-          if tuple.extra.len() > 1 {
-            eprintln!("[Warn] :list expects at most 1 argument, got {}", tuple.extra.len());
+          if enum_value.extra.len() > 1 {
+            eprintln!("[Warn] :list expects at most 1 argument, got {}", enum_value.extra.len());
           }
-          if let Some(inner_form) = tuple.extra.first() {
+          if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::List(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
         }
         if is_map_tag(tag) {
-          if tuple.extra.len() > 2 {
-            eprintln!("[Warn] :map expects at most 2 arguments, got {}", tuple.extra.len());
+          if enum_value.extra.len() > 2 {
+            eprintln!("[Warn] :map expects at most 2 arguments, got {}", enum_value.extra.len());
           }
-          let key_type = tuple.extra.first().map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
-          let val_type = tuple.extra.get(1).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let key_type = enum_value
+            .extra
+            .first()
+            .map(parse_nested)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let val_type = enum_value.extra.get(1).map(parse_nested).unwrap_or_else(|| Arc::new(Self::Dynamic));
           return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
         }
         if is_set_tag(tag) {
-          if tuple.extra.len() > 1 {
-            eprintln!("[Warn] :set expects at most 1 argument, got {}", tuple.extra.len());
+          if enum_value.extra.len() > 1 {
+            eprintln!("[Warn] :set expects at most 1 argument, got {}", enum_value.extra.len());
           }
-          if let Some(inner_form) = tuple.extra.first() {
+          if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::Set(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
         }
         if is_ref_tag(tag) {
-          if tuple.extra.len() > 1 {
-            eprintln!("[Warn] :ref expects at most 1 argument, got {}", tuple.extra.len());
+          if enum_value.extra.len() > 1 {
+            eprintln!("[Warn] :ref expects at most 1 argument, got {}", enum_value.extra.len());
           }
-          if let Some(inner_form) = tuple.extra.first() {
+          if let Some(inner_form) = enum_value.extra.first() {
             return Arc::new(CalcitTypeAnnotation::Ref(parse_nested(inner_form)));
           }
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
         if tag.ref_str().trim_start_matches(':') == "fn" {
-          if let Some(schema_form) = tuple.extra.first()
+          if let Some(schema_form) = enum_value.extra.first()
             && let Some(parsed) = Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs)
           {
             return parsed;
           }
-          if tuple.extra.is_empty() {
+          if enum_value.extra.is_empty() {
             return Arc::new(CalcitTypeAnnotation::DynFn);
           }
           emit_legacy_fn_type_syntax_warning(":: :fn $ {} ...", form);
@@ -1782,9 +1786,9 @@ impl CalcitTypeAnnotation {
         }
       }
 
-      let base_name = Self::canonical_type_form_name(tuple.tag.as_ref());
-      let base = Self::parse_type_annotation_form_inner(tuple.tag.as_ref(), generics, strict_named_refs);
-      let args = tuple.extra.iter().map(parse_nested).collect::<Vec<_>>();
+      let base_name = Self::canonical_type_form_name(enum_value.tag.as_ref());
+      let base = Self::parse_type_annotation_form_inner(enum_value.tag.as_ref(), generics, strict_named_refs);
+      let args = enum_value.extra.iter().map(parse_nested).collect::<Vec<_>>();
       if let Some(name) = base_name {
         if args.is_empty()
           && matches!(
@@ -1839,7 +1843,7 @@ impl CalcitTypeAnnotation {
               args.first().cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone()),
             ));
           }
-          "Fn" if let Some(schema_form) = tuple.extra.first() => {
+          "Fn" if let Some(schema_form) = enum_value.extra.first() => {
             if let Some(parsed) = Self::parse_fn_annotation_from_schema_form(schema_form, generics, strict_named_refs) {
               return parsed;
             }
@@ -1921,13 +1925,13 @@ impl CalcitTypeAnnotation {
         }
       }
 
-      let is_tuple_constructor = match xs.first() {
+      let is_enum_constructor = match xs.first() {
         Some(Calcit::Proc(CalcitProc::NativeTuple)) => true,
         Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::" => true,
         _ => false,
       };
 
-      if is_tuple_constructor {
+      if is_enum_constructor {
         if xs.len() == 3
           && let (Some(Calcit::Tag(marker)), Some(inner_form)) = (xs.get(1), xs.get(2))
           && marker.ref_str().trim_start_matches(':') == "&"
@@ -2240,7 +2244,7 @@ impl CalcitTypeAnnotation {
   }
 
   /// Try to resolve this type annotation to a concrete `CalcitStructDef` definition.
-  /// Works for `Struct(def, _)`, `Record(def)`, and `TypeRef("ns/name", _)` that can be
+  /// Works for `Struct(def, _)`, `StructValue(def)`, and `TypeRef("ns/name", _)` that can be
   /// looked up from the program registry.
   pub fn resolve_to_struct(&self) -> Option<CalcitStructDef> {
     self.resolve_to_struct_with_ref().map(|(s, _)| s)
@@ -2268,7 +2272,7 @@ impl CalcitTypeAnnotation {
   }
 
   /// Try to resolve this type annotation to a concrete `CalcitEnumDef` definition.
-  /// Works for `Enum(def, _)`, `Tuple(def)`, and `TypeRef("ns/name", _)` that can be
+  /// Works for `Enum(def, _)`, `EnumValue(def)`, and `TypeRef("ns/name", _)` that can be
   /// looked up from the program registry.
   pub fn resolve_to_enum(&self) -> Option<CalcitEnumDef> {
     self.resolve_to_enum_with_ref().map(|(e, _)| e)
@@ -2447,7 +2451,7 @@ impl CalcitTypeAnnotation {
       }
       // Primitive values use a real core impl list whenever it has finished
       // evaluating. Do not let bootstrap names override that authoritative
-      // result; record/tuple categories keep their shared core capabilities in
+      // result; struct/enum categories keep their shared core capabilities in
       // the fallback because their attached impl list is separate.
       if self.core_impl_list_symbol().is_some() {
         return false;
@@ -2592,9 +2596,9 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(name, _), Self::StructValue(base)) | (Self::StructValue(base), Self::TypeRef(name, _)) => {
-        // Records are structurally map-like (field name -> value), so procs typed as
-        // accepting a generic "map" (e.g. `to-pairs`/`keys`) should also accept records,
-        // in addition to matching the record's own type name.
+        // Structs are structurally map-like (field name -> value), so procs typed as
+        // accepting a generic "map" (e.g. `to-pairs`/`keys`) should also accept structs,
+        // in addition to matching the struct's own type name.
         Self::type_ref_name_matches(name, base.name.ref_str()) || Self::type_ref_name_matches(name, "map")
       }
       (Self::TypeRef(name, _), Self::EnumValue(base)) | (Self::EnumValue(base), Self::TypeRef(name, _)) => {
@@ -2676,9 +2680,9 @@ impl CalcitTypeAnnotation {
         true
       }
       (Self::EnumValue(_), Self::AnonymousEnum) | (Self::AnonymousEnum, Self::EnumValue(_)) => true,
-      // Enum values use the tuple runtime representation, so a concrete named
-      // enum is safe wherever a builtin proc accepts a dynamic tuple. Keep the
-      // relation directional: a dynamic tuple cannot satisfy a named enum.
+      // Enum values use a tagged runtime representation, so a concrete named
+      // enum is safe wherever a builtin proc accepts a dynamic enum. Keep the
+      // relation directional: a dynamic enum cannot satisfy a named enum.
       (Self::Enum(_, _), Self::AnonymousEnum) => true,
       (type_ref @ Self::TypeRef(_, _), Self::AnonymousEnum) => type_ref.resolve_to_enum().is_some(),
       (type_ref @ Self::TypeRef(_, _), Self::Custom(expected)) | (Self::Custom(expected), type_ref @ Self::TypeRef(_, _))
@@ -2732,24 +2736,24 @@ impl CalcitTypeAnnotation {
       Calcit::List(_) => Self::List(Arc::new(Self::Dynamic)),
       Calcit::Map(_) => Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic)),
       Calcit::Set(_) => Self::Set(Arc::new(Self::Dynamic)),
-      Calcit::Struct(record) => Self::StructValue(record.struct_ref.clone()),
+      Calcit::Struct(struct_value) => Self::StructValue(struct_value.struct_ref.clone()),
       Calcit::EnumDef(enum_def) => Self::EnumDef(Arc::new(enum_def.to_owned())),
       Calcit::StructDef(struct_def) => Self::StructDef(Arc::new(struct_def.to_owned())),
-      Calcit::Enum(tuple) => {
-        // Check for special tuple patterns
-        if let Calcit::Tag(tag) = tuple.tag.as_ref() {
+      Calcit::Enum(enum_value) => {
+        // Check for special enum patterns
+        if let Calcit::Tag(tag) = enum_value.tag.as_ref() {
           let tag_name = tag.ref_str().trim_start_matches(':');
-          if tag_name == "&" && tuple.extra.len() == 1 {
+          if tag_name == "&" && enum_value.extra.len() == 1 {
             // Variadic type: (& :type)
-            return Self::Variadic(Arc::new(Self::from_calcit(&tuple.extra[0])));
-          } else if tag_name == "optional" && tuple.extra.len() == 1 {
+            return Self::Variadic(Arc::new(Self::from_calcit(&enum_value.extra[0])));
+          } else if tag_name == "optional" && enum_value.extra.len() == 1 {
             // Optional type: (optional :type)
-            return Self::Optional(Arc::new(Self::from_calcit(&tuple.extra[0])));
-          } else if tag_name == "js-nullish" && tuple.extra.len() == 1 {
-            return Self::JsNullish(Arc::new(Self::from_calcit(&tuple.extra[0])));
+            return Self::Optional(Arc::new(Self::from_calcit(&enum_value.extra[0])));
+          } else if tag_name == "js-nullish" && enum_value.extra.len() == 1 {
+            return Self::JsNullish(Arc::new(Self::from_calcit(&enum_value.extra[0])));
           }
         }
-        match &tuple.sum_type {
+        match &enum_value.sum_type {
           Some(enum_def) => Self::EnumValue(enum_def.clone()),
           None => Self::AnonymousEnum,
         }
@@ -3043,15 +3047,11 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  pub fn as_record(&self) -> Option<&CalcitStructDef> {
-    self.as_struct()
-  }
-
-  pub fn as_tuple(&self) -> Option<&CalcitEnumDef> {
+  pub fn as_enum(&self) -> Option<&CalcitEnumDef> {
     match self {
       Self::EnumValue(enum_def) => Some(enum_def),
       Self::Enum(enum_def, _) => Some(enum_def),
-      Self::Optional(inner) => inner.as_tuple(),
+      Self::Optional(inner) => inner.as_enum(),
       _ => None,
     }
   }
@@ -3061,7 +3061,7 @@ impl CalcitTypeAnnotation {
       Self::StructValue(struct_def) => Some(struct_def),
       Self::Struct(struct_def, _) => Some(struct_def),
       Self::Custom(value) => match value.as_ref() {
-        Calcit::Struct(record) => Some(record.struct_ref.as_ref()),
+        Calcit::Struct(struct_value) => Some(struct_value.struct_ref.as_ref()),
         Calcit::StructDef(struct_def) => Some(struct_def),
         _ => None,
       },
@@ -3198,16 +3198,16 @@ impl CalcitTypeAnnotation {
 
 fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitStructDef> {
   let mut struct_def = resolve_struct_def(struct_form)?;
-  if let Some(class_record) = class_form.and_then(resolve_record_def) {
-    struct_def.impls = vec![Arc::new(CalcitImpl::from_record(&class_record))];
+  if let Some(class_struct) = class_form.and_then(resolve_struct_value) {
+    struct_def.impls = vec![Arc::new(CalcitImpl::from_struct(&class_struct))];
   }
   Some(struct_def)
 }
 
 fn resolve_enum_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitEnumDef> {
   let mut enum_def = resolve_enum_def(enum_form)?;
-  if let Some(class_record) = class_form.and_then(resolve_record_def) {
-    enum_def.set_impls(vec![Arc::new(CalcitImpl::from_record(&class_record))]);
+  if let Some(class_struct) = class_form.and_then(resolve_struct_value) {
+    enum_def.set_impls(vec![Arc::new(CalcitImpl::from_struct(&class_struct))]);
   }
   Some(enum_def)
 }
@@ -3215,10 +3215,10 @@ fn resolve_enum_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> O
 fn resolve_struct_def(form: &Calcit) -> Option<CalcitStructDef> {
   match form {
     Calcit::StructDef(struct_def) => Some(struct_def.to_owned()),
-    Calcit::Struct(record) => Some(record.struct_ref.as_ref().to_owned()),
+    Calcit::Struct(struct_value) => Some(struct_value.struct_ref.as_ref().to_owned()),
     _ => resolve_calcit_value(form).and_then(|value| match value {
       Calcit::StructDef(struct_def) => Some(struct_def),
-      Calcit::Struct(record) => Some(record.struct_ref.as_ref().to_owned()),
+      Calcit::Struct(struct_value) => Some(struct_value.struct_ref.as_ref().to_owned()),
       _ => None,
     }),
   }
@@ -3251,10 +3251,10 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
   lookup_runtime_ready_registered(ns, def)
     .and_then(|value| match &value {
       Calcit::EnumDef(e) => Some(e.to_owned()),
-      Calcit::Struct(record) => CalcitEnumDef::from_record(record.to_owned()).ok(),
+      Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value.to_owned()).ok(),
       _ => resolve_type_def_from_code(&value).and_then(|resolved| match resolved {
         Calcit::EnumDef(e) => Some(e),
-        Calcit::Struct(record) => CalcitEnumDef::from_record(record).ok(),
+        Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value).ok(),
         _ => None,
       }),
     })
@@ -3262,7 +3262,7 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
       lookup_def_code_registered(ns, def).and_then(|code| {
         resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
           Calcit::EnumDef(e) => Some(e),
-          Calcit::Struct(record) => CalcitEnumDef::from_record(record).ok(),
+          Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value).ok(),
           _ => None,
         })
       })
@@ -3272,20 +3272,20 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
 fn resolve_enum_def(form: &Calcit) -> Option<CalcitEnumDef> {
   match form {
     Calcit::EnumDef(enum_def) => Some(enum_def.to_owned()),
-    Calcit::Struct(record) => CalcitEnumDef::from_record(record.to_owned()).ok(),
+    Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value.to_owned()).ok(),
     _ => resolve_calcit_value(form).and_then(|value| match value {
       Calcit::EnumDef(enum_def) => Some(enum_def),
-      Calcit::Struct(record) => CalcitEnumDef::from_record(record).ok(),
+      Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value).ok(),
       _ => None,
     }),
   }
 }
 
-fn resolve_record_def(form: &Calcit) -> Option<CalcitStructValue> {
+fn resolve_struct_value(form: &Calcit) -> Option<CalcitStructValue> {
   match form {
-    Calcit::Struct(record) => Some(record.to_owned()),
+    Calcit::Struct(struct_value) => Some(struct_value.to_owned()),
     _ => resolve_calcit_value(form).and_then(|value| match value {
-      Calcit::Struct(record) => Some(record),
+      Calcit::Struct(struct_value) => Some(struct_value),
       _ => None,
     }),
   }
@@ -3299,7 +3299,10 @@ fn calcit_type_to_edn(form: &Calcit) -> Edn {
     Calcit::Tag(t) => Edn::Tag(t.clone()),
     Calcit::Symbol { sym, .. } => Edn::Symbol(sym.clone()),
     Calcit::List(xs) => Edn::List(EdnListView(xs.iter().map(calcit_type_to_edn).collect())),
-    Calcit::Enum(t) => Edn::tuple(calcit_type_to_edn(t.tag.as_ref()), t.extra.iter().map(calcit_type_to_edn).collect()),
+    Calcit::Enum(enum_value) => Edn::tuple(
+      calcit_type_to_edn(enum_value.tag.as_ref()),
+      enum_value.extra.iter().map(calcit_type_to_edn).collect(),
+    ),
     _ => Edn::Nil,
   }
 }
@@ -3505,11 +3508,11 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
   let mut struct_ref = CalcitStructDef::from_fields(name, fields);
   struct_ref.generics = Arc::new(generics);
   struct_ref.where_bounds = Arc::new(where_bounds);
-  let record = CalcitStructValue {
+  let struct_value = CalcitStructValue {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
   };
-  CalcitEnumDef::from_record(record).ok()
+  CalcitEnumDef::from_record(struct_value).ok()
 }
 
 fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
@@ -3753,22 +3756,22 @@ mod tests {
   }
 
   #[test]
-  fn generic_map_type_ref_accepts_records_structurally() {
-    // Records are field-name -> value, structurally map-like, so a proc typed
+  fn generic_map_type_ref_accepts_structs_structurally() {
+    // Structs are field-name -> value, structurally map-like, so a proc typed
     // as accepting a generic "map" (e.g. `to-pairs`/`keys`) should not warn
-    // when called with a record. See RFC 07-19-type-introspection-consistency.
-    let record_struct = CalcitStructDef::from_fields(EdnTag::new("Person"), vec![EdnTag::new("name")]);
-    let record_type = CalcitTypeAnnotation::StructValue(Arc::new(record_struct));
+    // when called with a struct. See RFC 07-19-type-introspection-consistency.
+    let person_struct = CalcitStructDef::from_fields(EdnTag::new("Person"), vec![EdnTag::new("name")]);
+    let struct_type = CalcitTypeAnnotation::StructValue(Arc::new(person_struct));
     let map_type = CalcitTypeAnnotation::TypeRef(Arc::from("map"), Arc::new(vec![]));
 
     let mut bindings = TypeBindings::new();
-    assert!(record_type.matches_with_bindings(&map_type, &mut bindings));
-    assert!(map_type.matches_with_bindings(&record_type, &mut bindings));
+    assert!(struct_type.matches_with_bindings(&map_type, &mut bindings));
+    assert!(map_type.matches_with_bindings(&struct_type, &mut bindings));
 
-    // unrelated type-ref names still must not match a record structurally
+    // unrelated type-ref names still must not match a struct structurally
     let person_type = CalcitTypeAnnotation::TypeRef(Arc::from("SomeOtherName"), Arc::new(vec![]));
     let mut bindings2 = TypeBindings::new();
-    assert!(!record_type.matches_with_bindings(&person_type, &mut bindings2));
+    assert!(!struct_type.matches_with_bindings(&person_type, &mut bindings2));
   }
 
   #[test]
@@ -4490,21 +4493,21 @@ mod tests {
   }
 
   #[test]
-  fn named_enum_satisfies_dynamic_tuple_only_in_safe_direction() {
+  fn named_enum_satisfies_dynamic_enum_only_in_safe_direction() {
     let named = CalcitTypeAnnotation::Enum(
       generic_result_enum(),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
     );
-    let tuple = CalcitTypeAnnotation::AnonymousEnum;
+    let dynamic_enum = CalcitTypeAnnotation::AnonymousEnum;
 
-    assert!(named.matches_annotation(&tuple));
-    assert!(!tuple.matches_annotation(&named));
+    assert!(named.matches_annotation(&dynamic_enum));
+    assert!(!dynamic_enum.matches_annotation(&named));
 
     // A named reference must never be accepted in the reverse direction. The
     // forward, resolvable TypeRef path is covered by the same matcher arm as
     // the concrete enum assertion above.
     let named_ref = CalcitTypeAnnotation::TypeRef(Arc::from("tests/Result"), Arc::new(vec![]));
-    assert!(!tuple.matches_annotation(&named_ref));
+    assert!(!dynamic_enum.matches_annotation(&named_ref));
   }
 
   #[test]
@@ -5070,7 +5073,7 @@ impl CalcitFnTypeAnnotation {
 }
 
 /// Check if a runtime `Calcit` value matches the expected `CalcitTypeAnnotation`.
-/// Used for runtime type validation when creating records (`%{}`) and enum tuples (`%::`).
+/// Used for runtime type validation when creating structs (`%{}`) and enums (`%::`).
 /// Returns `true` if the value is compatible with the declared type.
 /// `Dynamic` types always match. `Nil` matches legacy Optional and JS-nullish boundary types.
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
@@ -5185,12 +5188,12 @@ fn infer_runtime_struct_applied_args(struct_def: &CalcitStructDef, values: &[Cal
     .collect()
 }
 
-fn infer_runtime_enum_applied_args(enum_def: &CalcitEnumDef, tuple: &CalcitEnumValue) -> Vec<Arc<CalcitTypeAnnotation>> {
+fn infer_runtime_enum_applied_args(enum_def: &CalcitEnumDef, enum_value: &CalcitEnumValue) -> Vec<Arc<CalcitTypeAnnotation>> {
   if enum_def.generics().is_empty() {
     return vec![];
   }
 
-  let Some(Calcit::Tag(tag)) = Some(tuple.tag.as_ref()) else {
+  let Some(Calcit::Tag(tag)) = Some(enum_value.tag.as_ref()) else {
     return enum_def.generics().iter().map(|_| crate::calcit::DYNAMIC_TYPE.clone()).collect();
   };
   let Some(variant) = enum_def.find_variant(tag) else {
@@ -5198,7 +5201,7 @@ fn infer_runtime_enum_applied_args(enum_def: &CalcitEnumDef, tuple: &CalcitEnumV
   };
 
   let mut bindings: TypeBindings = HashMap::new();
-  for (value, expected_type) in tuple.extra.iter().zip(variant.payload_types().iter()) {
+  for (value, expected_type) in enum_value.extra.iter().zip(variant.payload_types().iter()) {
     collect_runtime_type_bindings(value, expected_type.as_ref(), &mut bindings);
   }
 
@@ -5236,25 +5239,25 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
         ))
       })
       .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::DynFn)),
-    Calcit::Struct(record) => {
-      if record.struct_ref.generics.is_empty() {
-        Arc::new(CalcitTypeAnnotation::StructValue(record.struct_ref.clone()))
+    Calcit::Struct(struct_value) => {
+      if struct_value.struct_ref.generics.is_empty() {
+        Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone()))
       } else {
         Arc::new(CalcitTypeAnnotation::Struct(
-          record.struct_ref.clone(),
+          struct_value.struct_ref.clone(),
           Arc::new(infer_runtime_struct_applied_args(
-            record.struct_ref.as_ref(),
-            record.values.as_ref(),
+            struct_value.struct_ref.as_ref(),
+            struct_value.values.as_ref(),
           )),
         ))
       }
     }
     Calcit::StructDef(struct_def) => Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def.to_owned()))),
-    Calcit::Enum(tuple) => match &tuple.sum_type {
+    Calcit::Enum(enum_value) => match &enum_value.sum_type {
       Some(enum_def) if enum_def.generics().is_empty() => Arc::new(CalcitTypeAnnotation::EnumValue(enum_def.clone())),
       Some(enum_def) => Arc::new(CalcitTypeAnnotation::Enum(
         enum_def.clone(),
-        Arc::new(infer_runtime_enum_applied_args(enum_def.as_ref(), tuple)),
+        Arc::new(infer_runtime_enum_applied_args(enum_def.as_ref(), enum_value)),
       )),
       None => Arc::new(CalcitTypeAnnotation::AnonymousEnum),
     },

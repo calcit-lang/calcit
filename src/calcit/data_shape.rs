@@ -769,12 +769,14 @@ mod tests {
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), "tests.shape").expect("point shape");
     let impostor = Arc::new((*nominal).clone());
-    let record = Calcit::Struct(CalcitStructValue {
+    let struct_value = Calcit::Struct(CalcitStructValue {
       struct_ref: impostor,
       values: Arc::new(vec![]),
     });
 
-    let error = shape.validate_value(&record).expect_err("distinct struct declaration must fail");
+    let error = shape
+      .validate_value(&struct_value)
+      .expect_err("distinct struct declaration must fail");
     assert!(error.message.contains("expected nominal struct"), "unexpected error: {error}");
 
     let enum_prototype = || CalcitStructValue {
@@ -784,13 +786,13 @@ mod tests {
     let nominal = Arc::new(CalcitEnumDef::from_record(enum_prototype()).expect("outcome enum"));
     let shape = DataShapeGraph::build(&CalcitTypeAnnotation::Enum(nominal, Arc::new(vec![])), "tests.shape").expect("outcome shape");
     let impostor = Arc::new(CalcitEnumDef::from_record(enum_prototype()).expect("impostor outcome enum"));
-    let tuple = Calcit::Enum(CalcitEnumValue {
+    let enum_value = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::new("none"))),
       extra: vec![],
       sum_type: Some(impostor),
     });
 
-    let error = shape.validate_value(&tuple).expect_err("distinct enum declaration must fail");
+    let error = shape.validate_value(&enum_value).expect_err("distinct enum declaration must fail");
     assert!(error.message.contains("expected nominal enum"), "unexpected error: {error}");
   }
 

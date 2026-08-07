@@ -87,7 +87,7 @@ pub enum CalcitSyntax {
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
-  /// pattern matching on enum tuples with exhaustiveness detection
+  /// pattern matching on enums with exhaustiveness detection
   #[strum(serialize = "match")]
   Match,
 }

@@ -144,7 +144,7 @@ pub(super) fn build_wasm_module(
   });
   module.section(&tables);
 
-  // Memory section: 100 pages (6.4MB) for linear memory (records, tuples)
+  // Memory section: 100 pages (6.4MB) for linear memory (structs, enums)
   let mut memories = MemorySection::new();
   memories.memory(MemoryType {
     minimum: 100,

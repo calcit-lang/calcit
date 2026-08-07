@@ -143,12 +143,12 @@ pub(super) fn emit_bump_alloc_dynamic(ctx: &mut WasmGenCtx, size_local: u32, ptr
   ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
 }
 
-/// Allocate a nominal `Option` tuple using the same memory layout as `%::`.
+/// Allocate a nominal `Option` enum using the same memory layout as `%::`.
 ///
 /// `payload_local = None` emits `%none`; `Some(local)` emits `%some local`.
 /// Keeping this helper at the WASM boundary prevents optimized emitters from
 /// leaking their internal nil / numeric sentinel representation.
-pub(super) fn emit_option_tuple(ctx: &mut WasmGenCtx, payload_local: Option<u32>) -> Result<(), String> {
+pub(super) fn emit_option_enum(ctx: &mut WasmGenCtx, payload_local: Option<u32>) -> Result<(), String> {
   let tag_name = if payload_local.is_some() { "some" } else { "none" };
   let tag_id = *ctx
     .tag_index

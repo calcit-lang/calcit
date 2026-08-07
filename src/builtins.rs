@@ -376,15 +376,15 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     StructQuestion => meta::struct_question(args),
     FnQuestion => meta::fn_question(args),
     IsSpreadingMark => meta::is_spreading_mark(args),
-    // tuple
-    NativeTuple => meta::new_tuple(args), // unstable solution for the name
-    NativeEnumTupleNew => meta::new_enum_tuple_no_class(args),
-    NativeTupleNth => meta::tuple_nth(args),
+    // enums
+    NativeTuple => meta::new_enum_value(args), // unstable solution for the name
+    NativeEnumTupleNew => meta::new_named_enum_value(args),
+    NativeTupleNth => meta::enum_nth(args),
     NativeTupleAssoc => meta::assoc(args),
-    NativeTupleCount => meta::tuple_count(args),
-    NativeTupleImpls => meta::tuple_impls(args),
-    NativeTupleParams => meta::tuple_params(args),
-    NativeTupleEnum => meta::tuple_enum(args),
+    NativeTupleCount => meta::enum_count(args),
+    NativeTupleImpls => meta::enum_impls(args),
+    NativeTupleParams => meta::enum_params(args),
+    NativeTupleEnum => meta::enum_definition(args),
     NativeStructNew => structs::new_struct(args),
     NativeEnumNew => structs::new_enum(args),
     NativeTraitNew => meta::trait_new(args),
@@ -394,9 +394,9 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleImplTraits => meta::tuple_impl_traits(args),
     NativeStructImplTraits => meta::struct_impl_traits(args),
     NativeEnumImplTraits => meta::enum_impl_traits(args),
-    NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
-    NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
-    NativeTupleValidateEnum => meta::tuple_validate_enum(args),
+    NativeTupleEnumHasVariant => meta::enum_def_has_variant(args),
+    NativeTupleEnumVariantArity => meta::enum_def_variant_arity(args),
+    NativeTupleValidateEnum => meta::enum_validate(args),
     NativeImplGet => meta::impl_get(args),
     NativeImplNth => meta::impl_nth(args),
     // effects
@@ -564,7 +564,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     AtomDeref => refs::atom_deref(args),
     AddWatch => refs::add_watch(args),
     RemoveWatch => refs::remove_watch(args),
-    // records
+    // structs
     NativeLooseRecord => structs::call_loose_struct(args),
     NativeRecord => structs::call_struct(args),
     NativeRecordPartial => structs::call_struct_partial(args),

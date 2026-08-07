@@ -35,17 +35,17 @@ pub struct CalcitEnumDef {
 
 impl CalcitEnumDef {
   /// Create from a `CalcitStructValue` using the old-style enum definition format.
-  /// The record's fields are variant tags and values are payload type lists.
+  /// The struct's fields are variant tags and values are payload type lists.
   pub fn from_record(record: CalcitStructValue) -> Result<Self, String> {
     Self::from_arc(Arc::new(record))
   }
 
-  pub fn from_arc(record: Arc<CalcitStructValue>) -> Result<Self, String> {
-    let (variants, variant_index) = Self::collect_variants(&record)?;
-    let name = record.name().to_owned();
-    let generics = record.struct_ref.generics.clone();
-    let where_bounds = record.struct_ref.where_bounds.clone();
-    let impls = record.struct_ref.impls.clone();
+  pub fn from_arc(struct_value: Arc<CalcitStructValue>) -> Result<Self, String> {
+    let (variants, variant_index) = Self::collect_variants(&struct_value)?;
+    let name = struct_value.name().to_owned();
+    let generics = struct_value.struct_ref.generics.clone();
+    let where_bounds = struct_value.struct_ref.where_bounds.clone();
+    let impls = struct_value.struct_ref.impls.clone();
     Ok(Self {
       name,
       generics,
@@ -69,8 +69,8 @@ impl CalcitEnumDef {
   }
 
   /// Reconstruct a `CalcitStructValue` prototype from the enum's data.
-  /// Used for serialization and backwards-compatibility paths that expect a record.
-  pub fn to_record_prototype(&self) -> CalcitStructValue {
+  /// Used for serialization and backwards-compatibility paths that expect a struct.
+  pub fn to_struct_prototype(&self) -> CalcitStructValue {
     let fields: Vec<EdnTag> = self.variants.iter().map(|v| v.tag.clone()).collect();
     let values: Vec<Calcit> = self
       .variants
@@ -194,7 +194,7 @@ mod tests {
     Calcit::List(Arc::new(CalcitList::Vector(items)))
   }
 
-  fn sample_enum_record() -> CalcitStructValue {
+  fn sample_enum_struct() -> CalcitStructValue {
     CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::new("Result"),
@@ -206,8 +206,8 @@ mod tests {
 
   #[test]
   fn parses_enum_prototype() {
-    let record = sample_enum_record();
-    let enum_proto = CalcitEnumDef::from_record(record).expect("valid enum");
+    let struct_value = sample_enum_struct();
+    let enum_proto = CalcitEnumDef::from_record(struct_value).expect("valid enum");
 
     assert_eq!(enum_proto.name(), &EdnTag::new("Result"));
     let err_variant = enum_proto.find_variant_by_name("err").expect("err variant");
@@ -221,7 +221,7 @@ mod tests {
 
   #[test]
   fn parses_generic_enum_prototype() {
-    let record = CalcitStructValue {
+    let struct_value = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
         name: EdnTag::new("Result"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
@@ -233,7 +233,7 @@ mod tests {
       values: Arc::new(vec![list_from(vec![symbol("E")]), list_from(vec![symbol("T")])]),
     };
 
-    let enum_proto = CalcitEnumDef::from_record(record).expect("valid generic enum");
+    let enum_proto = CalcitEnumDef::from_record(struct_value).expect("valid generic enum");
     assert_eq!(enum_proto.generics(), &[Arc::from("T"), Arc::from("E")]);
     assert!(matches!(
       enum_proto.find_variant_by_name("ok").and_then(|v| v.payload_types().first()).map(|t| t.as_ref()),
@@ -253,12 +253,12 @@ mod tests {
       extra: vec![Calcit::tag("number"), Calcit::tag("string")],
       sum_type: None,
     });
-    let record = CalcitStructValue {
+    let struct_value = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Wrapped"), vec![EdnTag::new("pair")])),
       values: Arc::new(vec![list_from(vec![applied_pair])]),
     };
 
-    let err = CalcitEnumDef::from_record(record).expect_err("non-generic struct should reject type args in enum payloads");
+    let err = CalcitEnumDef::from_record(struct_value).expect_err("non-generic struct should reject type args in enum payloads");
     assert!(
       err.contains("enum variant `pair` has invalid payload type annotation")
         && err.contains("struct `Pair` is not generic but received 2 type argument(s)"),

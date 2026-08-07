@@ -1174,7 +1174,7 @@ mod tests {
   }
 
   #[test]
-  fn schema_rest_named_tuple_is_treated_as_type_only() {
+  fn schema_rest_named_enum_is_treated_as_type_only() {
     let schema = schema_with_rest(list(vec![leaf("::"), leaf("'ys"), leaf(":number")]));
     let (params, param_annotations, _, _) = type_coverage::extract_fn_schema_hints(&schema).expect("schema should parse");
 

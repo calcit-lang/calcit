@@ -140,16 +140,16 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef>
   })
 }
 
-/// Emit `&struct:nth record idx_literal tag_literal` — O(1) field access by index.
+/// Emit `&struct:nth struct_value idx_literal tag_literal` — O(1) field access by index.
 ///
 /// `idx` must be a compile-time Number constant.
 pub(super) fn emit_struct_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  // args: [record_expr, idx_expr, tag_expr]
+  // args: [struct_value_expr, idx_expr, tag_expr]
   if args.len() < 2 {
-    return Err("&struct:nth requires at least 2 args (record, index)".into());
+    return Err("&struct:nth requires at least 2 args (struct_value, index)".into());
   }
   // Layout: [count:f64][struct_tag:f64][field0:f64]...
-  // Field at byte offset (2 + idx) * 8 from the record pointer
+  // Field at byte offset (2 + idx) * 8 from the struct_value pointer
   match &args[1] {
     Calcit::Number(n) => {
       // Static index — compile-time constant offset
@@ -182,17 +182,17 @@ pub(super) fn emit_struct_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// Emit `&struct:get record :field_tag` — dynamic field access by tag name.
+/// Emit `&struct:get struct_value :field_tag` — dynamic field access by tag name.
 ///
 /// Performs a compile-time dispatch table: for each known struct type, scans
 /// field tags and returns the matching field value. A missing tag traps instead
 /// of silently returning the numeric representation of nil.
 pub(super) fn emit_struct_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&struct:get requires 2 args (record, tag)")?;
+  expect_arity(2, args, "&struct:get requires 2 args (struct_value, tag)")?;
 
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
-  // Load struct_tag from record at offset 8
+  // Load struct_tag from struct_value at offset 8
   let struct_tag_local = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(record_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -243,9 +243,9 @@ pub(super) fn emit_struct_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// Emit `&struct:count record` — returns the number of fields.
+/// Emit `&struct:count struct_value` — returns the number of fields.
 /// Layout: [count:f64][struct_tag:f64][fields...]
-/// Count is at offset 0 from the record pointer.
+/// Count is at offset 0 from the struct_value pointer.
 pub(super) fn emit_struct_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() {
     return Err("&struct:count requires 1 arg (record)".into());
@@ -387,17 +387,17 @@ pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// Emit `&struct:matches? a b` — check if two records have the same struct type.
+/// Emit `&struct:matches? a b` — check if two struct values have the same struct type.
 ///
-/// Record layout: [count: f64] [struct_tag: f64] [field0: f64] ...
-/// Compares the struct_tag (offset 0) of both records.
+/// Struct value layout: [count: f64] [struct_tag: f64] [field0: f64] ...
+/// Compares the struct_tag (offset 0) of both struct values.
 pub(super) fn emit_struct_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&struct:matches? expects 2 args")?;
-  // Load struct_tag of first record (at offset 8, after count)
+  // Load struct_tag of first struct_value (at offset 8, after count)
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  // Load struct_tag of second record (at offset 8, after count)
+  // Load struct_tag of second struct_value (at offset 8, after count)
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -413,15 +413,15 @@ pub(super) fn emit_struct_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
-/// Emit `&struct:contains? record key_tag` — check if a field tag exists in a record.
+/// Emit `&struct:contains? struct_value key_tag` — check if a field tag exists in a struct value.
 ///
 /// Layout: [count:f64][struct_tag:f64][field0:f64]...
 /// Field tags are compile-time known via ctx.struct_field_tags.
 pub(super) fn emit_struct_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&struct:contains? requires 2 args (record, key_tag)")?;
+  expect_arity(2, args, "&struct:contains? requires 2 args (struct_value, key_tag)")?;
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
 
-  // Load struct_tag from record at offset 8
+  // Load struct_tag from struct_value at offset 8
   let struct_tag_local = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(record_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -471,10 +471,10 @@ pub(super) fn emit_struct_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 }
 
 // ---------------------------------------------------------------------------
-// Tuple operations
+// Enum operations
 // ---------------------------------------------------------------------------
 
-/// Emit `:: tag val0 val1 ...` — allocate a Tuple in linear memory.
+/// Emit `:: tag val0 val1 ...` — allocate an enum value in linear memory.
 ///
 /// Memory layout: [count: f64] [tag_id: f64] [payload_0: f64] [payload_1: f64] ...
 /// count = number of payloads (excludes the tag itself).
@@ -491,7 +491,7 @@ pub(super) fn emit_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
       let tag_id = *ctx
         .tag_index
         .get(&tag_str)
-        .ok_or_else(|| format!("unknown tag in tuple constructor: {tag_str}"))?;
+        .ok_or_else(|| format!("unknown tag in enum constructor: {tag_str}"))?;
       tag_id as f64
     }
     Calcit::Bool(b) => {
@@ -552,7 +552,7 @@ pub(super) fn emit_named_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
       let tag_id = *ctx
         .tag_index
         .get(&tag_str)
-        .ok_or_else(|| format!("unknown tag in enum tuple constructor: {tag_str}"))?;
+        .ok_or_else(|| format!("unknown tag in enum constructor: {tag_str}"))?;
       tag_id as f64
     }
     other => return Err(format!("%:: expected tag as second arg, got: {other}")),
@@ -583,13 +583,13 @@ pub(super) fn emit_named_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
-/// Emit `&enum:nth tuple idx` — O(1) payload access by index.
+/// Emit `&enum:nth enum_value idx` — O(1) payload access by index.
 ///
-/// Tuple layout: [count:f64][tag:f64][payload0:f64]...
+/// Enum value layout: [count:f64][tag:f64][payload0:f64]...
 /// idx 0 returns tag, idx 1+ returns payloads.
 /// Offset = (1 + idx) * 8  (skip count slot).
 pub(super) fn emit_enum_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&enum:nth requires 2 args (tuple, index)")?;
+  expect_arity(2, args, "&enum:nth requires 2 args (enum_value, index)")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let idx_local = ctx.alloc_local_typed(ValType::I32);
   emit_expr(ctx, &args[1])?;
@@ -607,9 +607,9 @@ pub(super) fn emit_enum_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   Ok(())
 }
 
-/// Emit `&enum:count tuple` — matches interpreter semantics: payload count + 1 (includes tag).
+/// Emit `&enum:count enum_value` — matches interpreter semantics: payload count + 1 (includes tag).
 ///
-/// Tuple layout: [count:f64][tag:f64][payload0:f64]...
+/// Enum value layout: [count:f64][tag:f64][payload0:f64]...
 /// Stored count at offset 0 is the raw payload count; the interpreter returns `extra.len() + 1`.
 /// The +1 is required for `&tag-match-internal` which compares `(&list:count pattern)` (tag + bindings)
 /// against `(&enum:count value)`.
