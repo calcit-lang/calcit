@@ -20,7 +20,7 @@ use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
 };
-use cirru_edn::{Edn, EdnTag};
+use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnTag};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use md5::{Digest, Md5};
@@ -31,6 +31,8 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
+
+use calcit::util::string::strip_shebang;
 
 use super::atomic_write::stage_atomic_file;
 use super::common::{
@@ -1405,25 +1407,29 @@ fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
 fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let mut snapshot = load_snapshot(snapshot_file)?;
+  let snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
 
   let file_data = snapshot
     .files
-    .get_mut(namespace)
+    .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   let resolved_definition =
     resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
 
-  let code_entry = file_data
-    .defs
-    .get_mut(resolved_definition.as_str())
-    .expect("resolved definition exists");
+  let schema = if opts.clear {
+    DYNAMIC_TYPE.clone()
+  } else {
+    let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+    let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw)?);
+
+    snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?
+  };
+
+  save_schema_preserving_snapshot(snapshot_file, namespace, &resolved_definition, schema.as_ref())?;
 
   if opts.clear {
-    code_entry.schema = DYNAMIC_TYPE.clone();
-    save_snapshot(&snapshot, snapshot_file)?;
     println!(
       "{} Cleared schema for '{}' in namespace '{}'",
       "✓".green(),
@@ -1433,14 +1439,6 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     return Ok(());
   }
 
-  let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
-  let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw)?);
-
-  code_entry.schema =
-    snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
   println!(
     "{} Updated schema for '{}' in namespace '{}'",
     "✓".green(),
@@ -1449,6 +1447,68 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   );
 
   Ok(())
+}
+
+fn find_edn_map_value_mut<'a>(map: &'a mut EdnMapView, expected: &str) -> Option<&'a mut Edn> {
+  map
+    .0
+    .iter_mut()
+    .find_map(|(key, value)| edn_key_matches(key, expected).then_some(value))
+}
+
+fn find_edn_record_value_mut<'a>(record: &'a mut EdnRecordView, expected: &str) -> Option<&'a mut Edn> {
+  record
+    .pairs
+    .iter_mut()
+    .find_map(|(key, value)| (key.ref_str() == expected).then_some(value))
+}
+
+/// Save only one definition schema against the original EDN tree. Rendering the
+/// typed Snapshot would otherwise canonicalize unrelated legacy schemas.
+fn save_schema_preserving_snapshot(
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  schema: &calcit::calcit::CalcitTypeAnnotation,
+) -> Result<(), String> {
+  let original = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
+  let shebang = original.lines().next().filter(|line| line.starts_with("#!")).map(str::to_owned);
+  let mut content = original;
+  strip_shebang(&mut content);
+  let mut data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
+  let Edn::Map(root) = &mut data else {
+    return Err("Snapshot root must be an EDN map".to_owned());
+  };
+  let files_value = find_edn_map_value_mut(root, "files").ok_or_else(|| "Snapshot is missing :files".to_owned())?;
+  let Edn::Map(files) = files_value else {
+    return Err("Snapshot :files must be an EDN map".to_owned());
+  };
+  let file_value = find_edn_map_value_mut(files, namespace).ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let Edn::Record(file) = file_value else {
+    return Err(format!("Namespace '{namespace}' must be a FileEntry record"));
+  };
+  let defs_value = find_edn_record_value_mut(file, "defs").ok_or_else(|| format!("Namespace '{namespace}' is missing :defs"))?;
+  let Edn::Map(defs) = defs_value else {
+    return Err(format!("Namespace '{namespace}' :defs must be an EDN map"));
+  };
+  let definition_value =
+    find_edn_map_value_mut(defs, definition).ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
+  let Edn::Record(entry) = definition_value else {
+    return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry record"));
+  };
+  let schema_edn = snapshot::schema_annotation_to_edn(schema);
+  if let Some(value) = find_edn_record_value_mut(entry, "schema") {
+    *value = schema_edn;
+  } else {
+    entry.pairs.push((EdnTag::new("schema"), schema_edn));
+  }
+
+  let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
+  let output = match shebang {
+    Some(line) => format!("{line}\n{formatted}"),
+    None => formatted,
+  };
+  fs::write(snapshot_file, output).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))
 }
 
 fn parse_examples_input(raw: &str) -> Result<Vec<Cirru>, String> {
@@ -2589,7 +2649,8 @@ mod tests {
   use super::{
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
     count_legacy_inherent_impls, load_snapshot, parse_examples_input, parse_input_to_cirru, parse_schema_input,
-    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_snapshot,
+    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot,
+    save_snapshot,
   };
   use crate::cli_handlers::test_support::TestProject;
   use cirru_parser::Cirru;
@@ -2856,6 +2917,67 @@ mod tests {
     );
     let error = parse_schema_input(":: :ref :bool").expect_err("bare schema should fail");
     assert!(error.contains("Schema examples: `quote :string`"), "error: {error}");
+  }
+
+  #[test]
+  fn schema_edit_preserves_unrelated_legacy_schema_serialization() {
+    let fixture = TestSnapshot::from_fixture();
+    let source = r#"#! /usr/bin/env cr
+{} (:package |demo) (:version |0.0.1)
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :defs $ {}
+        |legacy $ %{} :CodeEntry
+          :code $ quote $ defn legacy (x) x
+          :schema $ :: :fn $ {} (:args $ [] $ :: :optional :string) (:return :any) (:features $ #{})
+        |target $ %{} :CodeEntry
+          :code $ quote $ defn target () nil
+          :schema :dynamic
+      :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
+"#;
+    fs::write(&fixture.path, source).expect("write snapshot");
+    let before = cirru_edn::parse(source.strip_prefix("#! /usr/bin/env cr\n").expect("shebang")).expect("parse source");
+    let schema = calcit::snapshot::parse_schema_annotation_for_write(&leaf(":string")).expect("parse schema");
+
+    save_schema_preserving_snapshot(&fixture.snapshot_string(), "app.main", "target", schema.as_ref()).expect("save target schema");
+
+    let output = fs::read_to_string(&fixture.path).expect("read snapshot");
+    assert!(output.starts_with("#! /usr/bin/env cr\n"));
+    let after = cirru_edn::parse(output.strip_prefix("#! /usr/bin/env cr\n").expect("shebang")).expect("parse output");
+    let schema_for = |snapshot: &cirru_edn::Edn, definition_name: &str| {
+      let cirru_edn::Edn::Map(root) = snapshot else { panic!("root") };
+      let cirru_edn::Edn::Map(files) = root.get_or_nil("files") else {
+        panic!("files")
+      };
+      let cirru_edn::Edn::Record(file) = files.get_or_nil("app.main") else {
+        panic!("namespace")
+      };
+      let cirru_edn::Edn::Map(defs) = file["defs"].clone() else {
+        panic!("defs")
+      };
+      let cirru_edn::Edn::Record(definition) = defs.get_or_nil(definition_name) else {
+        panic!("definition")
+      };
+      definition["schema"].clone()
+    };
+
+    assert_eq!(schema_for(&before, "legacy"), schema_for(&after, "legacy"));
+    assert_ne!(schema_for(&before, "target"), schema_for(&after, "target"));
+
+    save_schema_preserving_snapshot(
+      &fixture.snapshot_string(),
+      "app.main",
+      "target",
+      calcit::calcit::DYNAMIC_TYPE.as_ref(),
+    )
+    .expect("clear target schema");
+    let cleared_text = fs::read_to_string(&fixture.path).expect("read cleared snapshot");
+    let cleared = cirru_edn::parse(cleared_text.strip_prefix("#! /usr/bin/env cr\n").expect("shebang")).expect("parse cleared");
+    assert_eq!(schema_for(&before, "legacy"), schema_for(&cleared, "legacy"));
+    assert_eq!(
+      schema_for(&cleared, "target"),
+      calcit::snapshot::schema_annotation_to_edn(calcit::calcit::DYNAMIC_TYPE.as_ref())
+    );
   }
 
   #[test]
