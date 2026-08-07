@@ -255,6 +255,9 @@ pub struct CheckExamplesCommand {
   /// check only one definition in the namespace
   #[argh(option, long = "def")]
   pub definition: Option<String>,
+  /// run examples through JavaScript codegen and Node.js
+  #[argh(switch)]
+  pub js: bool,
 }
 
 /// analyze call tree structure from entry point
