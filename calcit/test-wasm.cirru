@@ -17,7 +17,7 @@
         :code $ quote (ns test-wasm.helper)
     |test-wasm.main $ %{} 'FileEntry
       :defs $ {}
-        |Point $ %{} 'CodeEntry (:doc "|Record definition for WASM test")
+        |Point $ %{} 'CodeEntry (:doc "|Struct definition for WASM test")
           :code $ quote (defrecord Point :x :y)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -237,6 +237,27 @@
         |test-display-by-hex $ %{} 'CodeEntry (:doc "|17 in hex = 0x11, length 4")
           :code $ quote
             defn test-display-by-hex () $ &str:count (&number:display-by 17 16)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-enum-assoc $ %{} 'CodeEntry (:doc "|Enum assoc updates payload by index")
+          :code $ quote
+            defn test-enum-assoc () $ &let
+              t $ &enum:assoc (:: :pair 10 20) 1 9
+              &+ (&enum:nth t 1) (&enum:nth t 2)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-enum-count $ %{} 'CodeEntry (:doc "|Enum count returns payload count")
+          :code $ quote
+            defn test-enum-count () $ &let
+              t $ :: :pair 10 20
+              &enum:count t
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-enum-sum $ %{} 'CodeEntry (:doc "|Enum create + nth access: idx 1 and 2 are payloads")
+          :code $ quote
+            defn test-enum-sum () $ &let
+              t $ :: :pair 10 20
+              &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-find-found $ %{} 'CodeEntry (:doc |)
@@ -707,7 +728,7 @@
                   _ 0
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-match-tag $ %{} 'CodeEntry (:doc "|Match on tuple tag")
+        |test-match-tag $ %{} 'CodeEntry (:doc "|Match on enum tag")
           :code $ quote
             defn test-match-tag (x y)
               &let
@@ -789,59 +810,6 @@
         |test-range-two-args $ %{} 'CodeEntry (:doc "|range 2 5 creates 3 elements")
           :code $ quote
             defn test-range-two-args () $ &list:count (range 2 5)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-record-field-tag $ %{} 'CodeEntry (:doc "|record field-tag resolves by index")
-          :code $ quote
-            defn test-record-field-tag () $ &let
-              point $ %{} Point (:x 1) (:y 2)
-              if
-                &= (&struct:field-tag point 0) :x
-                , 1 0
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-record-get-name $ %{} 'CodeEntry (:doc "|record get-name returns struct tag")
-          :code $ quote
-            defn test-record-get-name () $ &let
-              point $ %{} Point (:x 1) (:y 2)
-              if
-                &= (&struct:get-name point) :Point
-                , 1 0
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-record-matches-true $ %{} 'CodeEntry (:doc "|record:matches? returns true for same type")
-          :code $ quote
-            defn test-record-matches-true () $ &let
-              a $ %{} Point (:x 1) (:y 2)
-              &let
-                b $ %{} Point (:x 3) (:y 4)
-                if (&struct:matches? a b) 1 0
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-record-struct-eq $ %{} 'CodeEntry (:doc "|record struct equals source struct")
-          :code $ quote
-            defn test-record-struct-eq () $ &let
-              point $ %{} Point (:x 1) (:y 2)
-              if
-                &= (&struct:definition point) Point
-                , 1 0
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-record-sum $ %{} 'CodeEntry (:doc "|Record create + field access")
-          :code $ quote
-            defn test-record-sum (x y)
-              &let
-                p $ %{} Point (:x x) (:y y)
-                &+ (&struct:nth p 0 :x) (&struct:nth p 1 :y)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-record-to-map $ %{} 'CodeEntry (:doc "|record to-map exposes field values by tag")
-          :code $ quote
-            defn test-record-to-map () $ &let
-              point $ %{} Point (:x 1) (:y 2)
-              &let
-                m $ &struct:to-map point
-                &+ (&map:get m :x) (&map:get m :y)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-rem $ %{} 'CodeEntry (:doc |remainder)
@@ -1098,6 +1066,59 @@
             defn test-string-compare-method () $ .compare |abc |abd
           :examples $ []
           :schema $ :: 'Dynamic
+        |test-struct-eq $ %{} 'CodeEntry (:doc "|struct definition equals source struct")
+          :code $ quote
+            defn test-struct-eq () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              if
+                &= (&struct:definition point) Point
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-struct-field-tag $ %{} 'CodeEntry (:doc "|struct field-tag resolves by index")
+          :code $ quote
+            defn test-struct-field-tag () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              if
+                &= (&struct:field-tag point 0) :x
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-struct-get-name $ %{} 'CodeEntry (:doc "|struct get-name returns struct tag")
+          :code $ quote
+            defn test-struct-get-name () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              if
+                &= (&struct:get-name point) :Point
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-struct-matches-true $ %{} 'CodeEntry (:doc "|struct:matches? returns true for same type")
+          :code $ quote
+            defn test-struct-matches-true () $ &let
+              a $ %{} Point (:x 1) (:y 2)
+              &let
+                b $ %{} Point (:x 3) (:y 4)
+                if (&struct:matches? a b) 1 0
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-struct-sum $ %{} 'CodeEntry (:doc "|Struct create + field access")
+          :code $ quote
+            defn test-struct-sum (x y)
+              &let
+                p $ %{} Point (:x x) (:y y)
+                &+ (&struct:nth p 0 :x) (&struct:nth p 1 :y)
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-struct-to-map $ %{} 'CodeEntry (:doc "|struct to-map exposes field values by tag")
+          :code $ quote
+            defn test-struct-to-map () $ &let
+              point $ %{} Point (:x 1) (:y 2)
+              &let
+                m $ &struct:to-map point
+                &+ (&map:get m :x) (&map:get m :y)
+          :examples $ []
+          :schema $ :: 'Dynamic
         |test-tag-eq $ %{} 'CodeEntry (:doc "|Tag equality — same tags")
           :code $ quote
             defn test-tag-eq () $ if (&= :ok :ok) 1 0
@@ -1116,25 +1137,13 @@
                 &list:count $ &list:first ps
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-tuple-assoc $ %{} 'CodeEntry (:doc "|Tuple assoc updates payload by index")
+        |test-type-of-enum $ %{} 'CodeEntry (:doc "|type-of enum == :enum tag")
           :code $ quote
-            defn test-tuple-assoc () $ &let
-              t $ &enum:assoc (:: :pair 10 20) 1 9
-              &+ (&enum:nth t 1) (&enum:nth t 2)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-tuple-count $ %{} 'CodeEntry (:doc "|Tuple count returns payload count")
-          :code $ quote
-            defn test-tuple-count () $ &let
-              t $ :: :pair 10 20
-              &enum:count t
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-tuple-sum $ %{} 'CodeEntry (:doc "|Tuple create + nth access: idx 1 and 2 are payloads")
-          :code $ quote
-            defn test-tuple-sum () $ &let
-              t $ :: :pair 10 20
-              &+ (&enum:nth t 1) (&enum:nth t 2)
+            defn test-type-of-enum () $ if
+              &=
+                type-of $ :: :Pair 1 2
+                , :enum
+              , 1 0
           :examples $ []
           :schema $ :: 'Dynamic
         |test-type-of-list $ %{} 'CodeEntry (:doc "|type-of list == :list tag")
@@ -1168,15 +1177,6 @@
               &=
                 type-of $ #{} 1 2
                 , :set
-              , 1 0
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-type-of-tuple $ %{} 'CodeEntry (:doc "|type-of tuple == :tuple tag")
-          :code $ quote
-            defn test-type-of-tuple () $ if
-              &=
-                type-of $ :: :Pair 1 2
-                , :enum
               , 1 0
           :examples $ []
           :schema $ :: 'Dynamic

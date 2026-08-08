@@ -304,18 +304,18 @@ check("test-tag-eq()", 1, e["test-tag-eq"]);
 check("test-tag-neq()", 0, e["test-tag-neq"]);
 
 // --- Struct tests ---
-check("test-record-sum(3,4)", 7, e["test-record-sum"], 3, 4);
-check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
-check("test-record-matches-true()", 1, e["test-record-matches-true"]);
-check("test-record-field-tag()", 1, e["test-record-field-tag"]);
-check("test-record-get-name()", 1, e["test-record-get-name"]);
-check("test-record-struct-eq()", 1, e["test-record-struct-eq"]);
-check("test-record-to-map()", 3, e["test-record-to-map"]);
+check("test-struct-sum(3,4)", 7, e["test-struct-sum"], 3, 4);
+check("test-struct-sum(10,20)", 30, e["test-struct-sum"], 10, 20);
+check("test-struct-matches-true()", 1, e["test-struct-matches-true"]);
+check("test-struct-field-tag()", 1, e["test-struct-field-tag"]);
+check("test-struct-get-name()", 1, e["test-struct-get-name"]);
+check("test-struct-eq()", 1, e["test-struct-eq"]);
+check("test-struct-to-map()", 3, e["test-struct-to-map"]);
 check("test-call-spread-rest()", 15, e["test-call-spread-rest"]);
 
-// --- Tuple tests ---
-check("test-tuple-sum()", 30, e["test-tuple-sum"]);
-check("test-tuple-count()", 3, e["test-tuple-count"]);
+// --- Enum tests ---
+check("test-enum-sum()", 30, e["test-enum-sum"]);
+check("test-enum-count()", 3, e["test-enum-count"]);
 
 // --- Bitwise tests ---
 check("test-bit-and(0xFF,0x0F)", 0x0f, e["test-bit-and"], 0xff, 0x0f);
@@ -378,7 +378,7 @@ check("test-list-empty-method()", 0, e["test-list-empty-method"]);
 check("test-list-empty?-method()", 1, e["test-list-empty?-method"]);
 check("test-list-append()", 33, e["test-list-append"]); // count=3 + nth(2)=30
 check("test-list-prepend()", 5, e["test-list-prepend"]);
-check("test-tuple-assoc()", 29, e["test-tuple-assoc"]);
+check("test-enum-assoc()", 29, e["test-enum-assoc"]);
 check("test-list-butlast()", 2, e["test-list-butlast"]);
 check("test-list-butlast-empty()", 0, e["test-list-butlast-empty"]);
 check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
@@ -479,7 +479,7 @@ check("test-type-of-list", 1, e["test-type-of-list"]);
 check("test-type-of-map", 1, e["test-type-of-map"]);
 check("test-type-of-set", 1, e["test-type-of-set"]);
 check("test-type-of-number", 1, e["test-type-of-number"]);
-check("test-type-of-tuple", 1, e["test-type-of-tuple"]);
+check("test-type-of-enum", 1, e["test-type-of-enum"]);
 
 // --- derived predicates (list?, number?, map?) ---
 check("test-list?-true", 1, e["test-list?-true"]);

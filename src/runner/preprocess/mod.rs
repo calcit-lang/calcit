@@ -6856,7 +6856,7 @@ mod tests {
       Cirru::List(vec![Cirru::leaf("&struct:get"), Cirru::leaf("user"), Cirru::leaf(":name")]),
     ]);
 
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse cirru");
     let scope_defs: HashSet<Arc<str>> = HashSet::new();
     let mut scope_types: ScopeTypes = ScopeTypes::new();
 
@@ -6868,7 +6868,7 @@ mod tests {
 
     // This should not produce warnings since :name exists
     let _resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess should succeed");
 
     // Currently no warnings expected for valid field access
     // In future, we'll check warnings.borrow().is_empty()
@@ -6918,7 +6918,7 @@ mod tests {
   #[test]
   fn postfix_nominal_struct_access_uses_direct_field_lookup() {
     let expr = Cirru::List(vec![Cirru::leaf("person"), Cirru::leaf(":name")]);
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse postfix field access");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse postfix field access");
     let mut scope_defs = HashSet::new();
     scope_defs.insert(Arc::from("person"));
     let mut scope_types = ScopeTypes::new();
@@ -6935,7 +6935,7 @@ mod tests {
       &code,
       &scope_defs,
       &mut scope_types,
-      "tests.record",
+      "tests.struct",
       &warnings,
       &CallStackList::default(),
     )
@@ -6953,7 +6953,7 @@ mod tests {
   #[test]
   fn postfix_loose_struct_access_uses_required_struct_get() {
     let expr = Cirru::List(vec![Cirru::leaf("record"), Cirru::leaf(":name")]);
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse postfix field access");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse postfix field access");
     let mut scope_defs = HashSet::new();
     scope_defs.insert(Arc::from("record"));
     let mut scope_types = ScopeTypes::new();
@@ -6964,7 +6964,7 @@ mod tests {
       &code,
       &scope_defs,
       &mut scope_types,
-      "tests.record",
+      "tests.struct",
       &warnings,
       &CallStackList::default(),
     )
@@ -6995,7 +6995,7 @@ mod tests {
       Cirru::leaf("20"),
     ]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse struct ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7016,7 +7016,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess struct head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7055,7 +7055,7 @@ mod tests {
 
     let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":ok")]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse enum ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7076,7 +7076,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess enum head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7102,7 +7102,7 @@ mod tests {
 
     let expr = Cirru::List(vec![Cirru::leaf("Person"), Cirru::leaf(":name")]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse struct ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7123,7 +7123,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess struct head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7159,7 +7159,7 @@ mod tests {
       Cirru::leaf("20"),
     ]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse struct ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7180,7 +7180,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess struct head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7222,7 +7222,7 @@ mod tests {
       &Calcit::StructDef(person_struct.clone()),
       &duplicate_args,
       &scope_types,
-      "tests.record",
+      "tests.struct",
       "demo",
       &warnings,
       &stack,
@@ -7242,7 +7242,7 @@ mod tests {
       &Calcit::StructDef(person_struct),
       &missing_args,
       &scope_types,
-      "tests.record",
+      "tests.struct",
       "demo",
       &warnings,
       &stack,
@@ -7283,12 +7283,12 @@ mod tests {
     let stack = CallStackList::default();
 
     assert!(
-      try_rewrite_struct_enum_constructor_head_call(&person, &args, &scope_types, "tests.record", "demo", &warnings, &stack,)
+      try_rewrite_struct_enum_constructor_head_call(&person, &args, &scope_types, "tests.struct", "demo", &warnings, &stack,)
         .expect("record instance boundary")
         .is_none()
     );
     assert!(
-      try_rewrite_struct_enum_constructor_head_call(&enum_value, &args, &scope_types, "tests.record", "demo", &warnings, &stack,)
+      try_rewrite_struct_enum_constructor_head_call(&enum_value, &args, &scope_types, "tests.struct", "demo", &warnings, &stack,)
         .expect("enum instance boundary")
         .is_none()
     );
@@ -7307,7 +7307,7 @@ mod tests {
       &Calcit::StructDef(point_struct),
       &args,
       &ScopeTypes::new(),
-      "tests.record",
+      "tests.struct",
       "demo",
       &warnings,
       &CallStackList::default(),
@@ -7333,7 +7333,7 @@ mod tests {
       idx: CalcitLocal::track_sym(&Arc::from("box")),
       sym: Arc::from("box"),
       info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from("tests.record"),
+        at_ns: Arc::from("tests.struct"),
         at_def: Arc::from("demo"),
       }),
       location: None,
@@ -7349,7 +7349,7 @@ mod tests {
       &Calcit::Proc(CalcitProc::NativeStructAssoc),
       &args,
       &ScopeTypes::new(),
-      "tests.record",
+      "tests.struct",
       "demo",
       &warnings,
     );
@@ -7370,7 +7370,7 @@ mod tests {
     let cat_struct = CalcitStructDef::from_fields(EdnTag::from("Cat"), vec![EdnTag::from("name"), EdnTag::from("color")]);
 
     let expr = Cirru::List(vec![Cirru::leaf("kitty"), Cirru::leaf(".rename"), Cirru::leaf("|LagopusB")]);
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse struct method call");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse struct method call");
 
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
     scope_defs.insert(Arc::from("kitty"));
@@ -7385,7 +7385,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess struct method call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess struct method call");
 
     let nodes = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7424,7 +7424,7 @@ mod tests {
 
     let expr = Cirru::List(vec![Cirru::leaf("Result")]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse enum ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7445,7 +7445,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess enum head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7486,7 +7486,7 @@ mod tests {
 
     let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":bad")]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse enum ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7507,7 +7507,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess enum head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7548,7 +7548,7 @@ mod tests {
 
     let expr = Cirru::List(vec![Cirru::leaf("Mode"), Cirru::leaf("dark")]);
 
-    let parsed = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse enum ctor");
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse enum ctor");
     let Calcit::List(parsed_items) = parsed else {
       panic!("expected parsed call");
     };
@@ -7569,7 +7569,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let result =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess enum head call");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess enum head call");
 
     let items = match result {
       Calcit::List(xs) => xs.to_vec(),
@@ -7608,7 +7608,7 @@ mod tests {
       Cirru::leaf(":email"), // invalid field
     ]);
 
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse cirru");
 
     // Set up scope with user variable
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -7622,7 +7622,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let _resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess should succeed");
 
     // Should have a warning about invalid field
     let warnings_vec = warnings.borrow();
@@ -7710,7 +7710,7 @@ mod tests {
     // Test expression: (user.-name) - wrapped in a list to trigger method parsing
     let expr = Cirru::List(vec![Cirru::leaf("user.-name")]);
 
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse cirru");
 
     // Set up scope with user variable
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -7724,7 +7724,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let _resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess should succeed");
 
     // Should not have warnings for valid field
     let warnings_vec = warnings.borrow();
@@ -7934,7 +7934,7 @@ mod tests {
     // Test expression: (user.-email) - invalid field, wrapped in list
     let expr = Cirru::List(vec![Cirru::leaf("user.-email")]);
 
-    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+    let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse cirru");
 
     // Set up scope with user variable
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
@@ -7948,7 +7948,7 @@ mod tests {
     let stack = CallStackList::default();
 
     let _resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess should succeed");
 
     // Should have a warning about invalid field
     let warnings_vec = warnings.borrow();

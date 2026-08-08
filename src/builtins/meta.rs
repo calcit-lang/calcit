@@ -635,10 +635,10 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
       }
-      Calcit::Enum(tuple) => {
-        let tag = tuple.tag.to_owned();
-        let extra = tuple.extra.to_owned();
-        let sum_type = tuple.sum_type.to_owned();
+      Calcit::Enum(enum_value) => {
+        let tag = enum_value.tag.to_owned();
+        let extra = enum_value.extra.to_owned();
+        let sum_type = enum_value.sum_type.to_owned();
         Calcit::Enum(CalcitEnumValue { tag, extra, sum_type })
       }
       _ => form.to_owned(),
@@ -1092,8 +1092,8 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   use Calcit::*;
   match v0 {
     // user-defined values: impl-traits appends, so later impls override earlier ones
-    Enum(tuple) => {
-      let user_impls = tuple.impls();
+    Enum(enum_value) => {
+      let user_impls = enum_value.impls();
       let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
       if has_user_method {
         method_call_impls(user_impls, v0, name, method_args, call_stack, true)
