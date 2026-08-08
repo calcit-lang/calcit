@@ -9,13 +9,13 @@
 //! - `recur` (tail recursion via WASM loop)
 //! - Number literals, Bool literals, Nil (→ 0.0)
 //! - Tag values (compiled to f64 integer constants)
-//! - Record creation (`&%{}`) and field access (`&struct:nth`, `&struct:get`)
+//! - Struct creation (`&%{}`) and field access (`&struct:nth`, `&struct:get`)
 //! - Tuple creation (`::`) and field access (`&enum:nth`)
 //!
 //! All values are represented as f64 (matching Calcit's single numeric type).
 //! Booleans: true → 1.0, false/nil → 0.0.
 //! Tags: mapped to positive f64 integers at compile time.
-//! Record/Tuple pointers: i32 offsets into linear memory, converted to/from f64.
+//! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
 use std::collections::HashMap;
@@ -491,7 +491,7 @@ struct WasmGenCtx {
   runtime_fn_index: HashMap<String, u32>,
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
   tag_index: HashMap<String, u32>,
-  /// Record struct tag id → field tag ids in index order.
+  /// Struct tag id → field tag ids in index order.
   struct_field_tags: HashMap<u32, Vec<u32>>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
@@ -1057,8 +1057,8 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         .ok_or_else(|| format!("string literal not found in pool: {s}"))?;
       ctx.emit(f64_const(*ptr as f64));
     }
-    Calcit::Struct(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
-    Calcit::Enum(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Struct(_) => return Err("Struct literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Enum(_) => return Err("Enum literals not supported in WASM codegen (use constructor)".into()),
     // Function value (Fn with def_ref) — encode as f64 table slot index for call_indirect.
     Calcit::Fn { info, .. } => {
       if let Some(def_ref) = &info.def_ref {
@@ -1540,7 +1540,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       }
     }
     // Method spread call: e.g. `(.dissoc x & args)` — emit unreachable trap.
-    // In practice reached only for record/tuple methods not yet implemented in WASM.
+    // In practice reached only for struct/enum methods not yet implemented in WASM.
     // List/map cases are handled via their native procs before this point.
     Calcit::Method(_name, MethodKind::Invoke(_)) => {
       ctx.emit(Instruction::Unreachable);
@@ -1906,41 +1906,41 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       }
     }
 
-    // Record operations
-    CalcitProc::NativeRecord => emit_struct_new(ctx, args),
-    CalcitProc::NativeRecordNth => emit_struct_nth(ctx, args),
-    CalcitProc::NativeRecordGet => emit_struct_get(ctx, args),
-    CalcitProc::NativeRecordCount => emit_struct_count(ctx, args),
-    CalcitProc::NativeRecordFieldTag => emit_struct_field_tag(ctx, args),
-    CalcitProc::NativeRecordStruct => emit_struct_def(ctx, args),
-    CalcitProc::NativeRecordGetName => emit_struct_get_name(ctx, args),
-    CalcitProc::NativeRecordToMap => emit_struct_to_map(ctx, args),
-    CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
+    // Struct operations
+    CalcitProc::NativeStruct => emit_struct_new(ctx, args),
+    CalcitProc::NativeStructNth => emit_struct_nth(ctx, args),
+    CalcitProc::NativeStructGet => emit_struct_get(ctx, args),
+    CalcitProc::NativeStructCount => emit_struct_count(ctx, args),
+    CalcitProc::NativeStructFieldTag => emit_struct_field_tag(ctx, args),
+    CalcitProc::NativeStructDefinition => emit_struct_def(ctx, args),
+    CalcitProc::NativeStructGetName => emit_struct_get_name(ctx, args),
+    CalcitProc::NativeStructToMap => emit_struct_to_map(ctx, args),
+    CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWith => {
       Err(format!("{proc} not yet supported in WASM codegen"))
     }
-    CalcitProc::NativeRecordFromMap
-    | CalcitProc::NativeRecordExtendAs
-    | CalcitProc::NativeRecordPartial
-    | CalcitProc::NativeRecordImpls
-    | CalcitProc::NativeRecordWithAt
-    | CalcitProc::NativeLooseRecord => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeRecordContains => emit_struct_contains(ctx, args),
-    CalcitProc::NativeRecordMatches => emit_struct_matches(ctx, args),
+    CalcitProc::NativeStructFromMap
+    | CalcitProc::NativeStructExtendAs
+    | CalcitProc::NativeStructPartial
+    | CalcitProc::NativeStructImpls
+    | CalcitProc::NativeStructWithAt
+    | CalcitProc::NativeLooseStruct => Err(format!("Struct operation {proc} not yet supported in WASM codegen")),
+    CalcitProc::NativeStructContains => emit_struct_contains(ctx, args),
+    CalcitProc::NativeStructMatches => emit_struct_matches(ctx, args),
 
-    // Tuple operations
-    CalcitProc::NativeTuple => emit_enum_new(ctx, args),
-    CalcitProc::NativeTupleNth => emit_enum_nth(ctx, args),
-    CalcitProc::NativeTupleCount => emit_enum_count(ctx, args),
-    CalcitProc::NativeTupleValidateEnum => ctx.stub_proc(args), // no-op in WASM
+    // Enum operations
+    CalcitProc::NativeEnum => emit_enum_new(ctx, args),
+    CalcitProc::NativeEnumNth => emit_enum_nth(ctx, args),
+    CalcitProc::NativeEnumCount => emit_enum_count(ctx, args),
+    CalcitProc::NativeEnumValidate => ctx.stub_proc(args), // no-op in WASM
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
-    CalcitProc::NativeEnumTupleNew => emit_named_enum_new(ctx, args),
-    CalcitProc::NativeTupleImpls
-    | CalcitProc::NativeTupleParams
-    | CalcitProc::NativeTupleEnum
-    | CalcitProc::NativeTupleImplTraits
-    | CalcitProc::NativeTupleEnumHasVariant
-    | CalcitProc::NativeTupleEnumVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeTupleAssoc => emit_enum_assoc(ctx, args),
+    CalcitProc::NativeNamedEnumNew => emit_named_enum_new(ctx, args),
+    CalcitProc::NativeEnumImpls
+    | CalcitProc::NativeEnumParams
+    | CalcitProc::NativeEnumDefinition
+    | CalcitProc::NativeEnumValueImplTraits
+    | CalcitProc::NativeEnumDefHasVariant
+    | CalcitProc::NativeEnumDefVariantArity => Err(format!("Enum operation {proc} not yet supported in WASM codegen")),
+    CalcitProc::NativeEnumAssoc => emit_enum_assoc(ctx, args),
 
     // Bitwise operations — convert to i32, operate, convert back to f64
     CalcitProc::BitShl => emit_bitwise_binary(ctx, Instruction::I32Shl, args),
@@ -2887,11 +2887,11 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
   }
 }
 
-/// Emit WASM for `match` expression (pattern matching on enum tuples).
+/// Emit WASM for `match` expression (pattern matching on enums).
 ///
 /// Preprocessed form: [value_expr, (pattern body), (pattern body), ...]
 /// Each pattern is either `_` (wildcard) or `(:tag binding1 binding2 ...)`.
-/// The value must be a tuple — we read its tag_id at offset 0 and compare.
+/// The value must be an enum — we read its tag_id at offset 8 and compare.
 ///
 /// Compilation strategy: nested if/else chain comparing the tag_id.
 ///   evaluate value → store pointer in temp local
@@ -2904,7 +2904,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return Err("match requires a value and branches".into());
   }
 
-  // Evaluate the value expression (a tuple) and store its f64 pointer
+  // Evaluate the value expression (an enum) and store its f64 pointer
   emit_expr(ctx, &args[0])?;
   let ptr_f64 = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(ptr_f64));
@@ -3082,7 +3082,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 }
 
 // ---------------------------------------------------------------------------
-// Record operations
+// Struct operations
 // ---------------------------------------------------------------------------
 
 /// Build a string literal pool for WASM linear memory.
@@ -3172,14 +3172,14 @@ fn collect_struct_field_tags_from_program(
   result
 }
 
-/// If `expr` is a literal tuple constructor `(NativeTuple :tag val0 val1...)` with only
+/// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only
 /// literal args (Tag, Str, Number, Bool, Nil), return its lispy string representation.
 /// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
-pub(crate) fn try_format_tuple_literal(expr: &Calcit) -> Option<String> {
+pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
   if let Calcit::List(list) = expr
     && !list.is_empty()
     && let Calcit::Proc(p) = &list[0]
-    && *p == CalcitProc::NativeTuple
+    && *p == CalcitProc::NativeEnum
   {
     let mut s = String::from("(:: ");
     for (i, item) in list.iter().skip(1).enumerate() {
@@ -3223,9 +3223,9 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
         let s = crate::calcit::format_to_lisp(&inner[1]);
         strings.push(s);
       }
-      // Pre-intern lispy strings for literal tuple constructors (used by `str`/`turn-string`).
-      if let Some(tuple_str) = try_format_tuple_literal(expr) {
-        strings.push(tuple_str);
+      // Pre-intern lispy strings for literal enum constructors (used by `str`/`turn-string`).
+      if let Some(enum_str) = try_format_enum_literal(expr) {
+        strings.push(enum_str);
       }
       for x in xs.iter() {
         collect_strings_from_expr(x, strings);

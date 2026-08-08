@@ -1109,7 +1109,7 @@ mod type_query_tests {
     let person_type = runner::preprocess::infer_static_type_from_expr(&person_symbol).expect("Person type should infer statically");
     assert!(
       matches!(person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-struct.main/Person"),
-      "data definitions should remain named type refs rather than synthetic record instances: {person_type}"
+      "data definitions should remain named type refs rather than synthetic struct instances: {person_type}"
     );
     let (queried_person_type, source) =
       resolve_type_query_target(&snapshot, "test-struct.main/Person").expect("type query should infer defstruct type");
@@ -1129,8 +1129,8 @@ mod type_query_tests {
       panic!("field access should remain a call");
     };
     assert!(
-      matches!(field_access.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeRecordNth))),
-      "typed tag access should specialize to record nth, got {target}"
+      matches!(field_access.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeStructNth))),
+      "typed tag access should specialize to struct nth, got {target}"
     );
   }
 

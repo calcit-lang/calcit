@@ -391,10 +391,10 @@ pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "turn-string")?;
 
-  // Compile-time fast path: literal tuple constructor like `(:: :tag val0 val1 ...)`.
+  // Compile-time fast path: literal enum constructor like `(:: :tag val0 val1 ...)`.
   // Pre-compute the lispy string and emit it as a string-pool constant.
-  if let Some(tuple_str) = super::try_format_tuple_literal(&args[0])
-    && let Some(&ptr) = ctx.string_pool.get(&tuple_str)
+  if let Some(enum_str) = super::try_format_enum_literal(&args[0])
+    && let Some(&ptr) = ctx.string_pool.get(&enum_str)
   {
     ctx.emit(super::f64_const(ptr as f64));
     return Ok(());

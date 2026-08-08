@@ -84,13 +84,13 @@ impl TryFrom<Edn> for DetailCirru {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(struct_value) => {
         let mut at = 0u64;
         let mut by = String::new();
         let mut text = None;
         let mut data_map = HashMap::new();
 
-        for (key, value) in record.pairs.iter() {
+        for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
             "at" => {
               if let Edn::Number(timestamp) = value {
@@ -126,7 +126,7 @@ impl TryFrom<Edn> for DetailCirru {
           Ok(DetailCirru::List { data: data_map, at, by })
         }
       }
-      _ => Err("Expected record for DetailCirru".to_string()),
+      _ => Err("Expected struct for DetailCirru".to_string()),
     }
   }
 }
@@ -205,14 +205,14 @@ impl TryFrom<Edn> for DetailedCodeEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(struct_value) => {
         let mut doc = String::new();
         let mut examples = Vec::new();
         let mut tags = Vec::new();
         let mut code = None;
         let mut schema = None;
 
-        for (key, value) in record.pairs.iter() {
+        for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
             "doc" => {
               if let Edn::Str(doc_str) = value {
@@ -266,7 +266,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
           schema: schema_parsed,
         })
       }
-      _ => Err("Expected record for DetailedCodeEntry".to_string()),
+      _ => Err("Expected struct for DetailedCodeEntry".to_string()),
     }
   }
 }
@@ -299,11 +299,11 @@ impl TryFrom<Edn> for DetailedNsEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(struct_value) => {
         let mut doc = String::new();
         let mut code = None;
 
-        for (key, value) in record.pairs.iter() {
+        for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
             "doc" => {
               if let Edn::Str(doc_str) = value {
@@ -322,7 +322,7 @@ impl TryFrom<Edn> for DetailedNsEntry {
           code: code.ok_or("Missing code field")?,
         })
       }
-      _ => Err("Expected record for DetailedNsEntry".to_string()),
+      _ => Err("Expected struct for DetailedNsEntry".to_string()),
     }
   }
 }
@@ -354,11 +354,11 @@ impl TryFrom<Edn> for DetailedFileInSnapshot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(struct_value) => {
         let mut ns = None;
         let mut defs = HashMap::new();
 
-        for (key, value) in record.pairs.iter() {
+        for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
             "ns" => {
               ns = Some(value.to_owned().try_into()?);
@@ -379,7 +379,7 @@ impl TryFrom<Edn> for DetailedFileInSnapshot {
         let ns = ns.ok_or("Missing ns field")?;
         Ok(DetailedFileInSnapshot { ns, defs })
       }
-      _ => Err("Expected record for DetailedFileInSnapshot".to_string()),
+      _ => Err("Expected struct for DetailedFileInSnapshot".to_string()),
     }
   }
 }
@@ -399,14 +399,14 @@ impl TryFrom<Edn> for DetailedSnapshot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(struct_value) => {
         let mut package = String::new();
         let mut version = String::new();
         let mut entries: Edn = Edn::Nil;
         let mut files = HashMap::new();
         let mut users: Edn = Edn::Nil;
 
-        for (key, value) in record.pairs.iter() {
+        for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
             "package" => {
               if let Edn::Str(pkg_str) = value {

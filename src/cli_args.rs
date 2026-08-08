@@ -145,7 +145,7 @@ pub struct ExecCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, weak-types, js-escape)
+/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, weak-types, deprecated, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -168,6 +168,8 @@ pub enum AnalyzeSubcommand {
   CheckTypes(CheckTypesCommand),
   /// locate weakly-typed hotspots such as :dynamic schema usage and nil literals
   WeakTypes(WeakTypesCommand),
+  /// locate calls to definitions marked with the :deprecated tag
+  Deprecated(DeprecatedCommand),
   /// decompose entry into State / Transform / Effect graph
   EffectsGraph(EffectsGraphCommand),
   /// escape a Calcit symbol into JavaScript-safe identifier form
@@ -234,6 +236,27 @@ pub struct WeakTypesCommand {
   /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,declared-unit,declared-optional
   #[argh(option)]
   pub intent: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+  /// include dependency/core namespaces
+  #[argh(switch)]
+  pub deps: bool,
+  /// emit aggregate counts without per-definition details
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
+}
+
+/// locate calls to definitions marked with the :deprecated tag
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "deprecated")]
+pub struct DeprecatedCommand {
+  /// exact namespace to analyze
+  #[argh(option)]
+  pub ns: Option<String>,
+  /// namespace prefix scope filter
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
   /// output format: human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
@@ -1458,7 +1481,7 @@ pub struct EditNsDocCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "inc")]
-/// record incremental changes (defs and namespaces) for downstream tooling
+/// apply incremental changes (defs and namespaces) for downstream tooling
 pub struct EditIncCommand {
   /// namespaces whose entire file should be treated as newly added (e.g. "app.new")
   #[argh(option, long = "added-ns")]

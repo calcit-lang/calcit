@@ -119,22 +119,22 @@
                     :b $ [] 1 2
                     :a 1
                 , "|{} (:a 1) (:a1 0) (:c 2)\n  :b $ [] 1 2"
-              assert= "|:: :&core-list-methods $ [] 1 2 3" $ trim
+              assert= "|:: '&core-list-methods $ [] 1 2 3" $ trim
                 format-cirru-edn $ :: &core-list-methods ([] 1 2 3)
-              assert= "|:: :test" $ trim
+              assert= "|:: 'test" $ trim
                 format-cirru-edn $ :: :test
-              assert= "|:: :test :a :b" $ trim
+              assert= "|:: 'test :a :b" $ trim
                 format-cirru-edn $ :: :test :a :b
               let
                   enum-ok $ parse-cirru-edn "|%:: :DemoEnum :ok"
                     {} $ :DemoEnum DemoEnum
                 assert= :ok $ &enum:nth enum-ok 0
-                assert= "|%:: :DemoEnum :ok" $ trim (format-cirru-edn enum-ok)
+                assert= "|%:: 'DemoEnum 'ok" $ trim (format-cirru-edn enum-ok)
               let
                   enum-err $ parse-cirru-edn "|%:: :DemoEnum :err |oops"
                     {} $ :DemoEnum DemoEnum
                 assert= :err $ &enum:nth enum-err 0
-                assert= "|%:: :DemoEnum :err |oops" $ trim (format-cirru-edn enum-err)
+                assert= "|%:: 'DemoEnum 'err |oops" $ trim (format-cirru-edn enum-err)
               assert= "|do \"|a b\"" $ trim (format-cirru-edn "|a b")
               assert= "|do |hello" $ trim (format-cirru-edn |hello)
           :examples $ []

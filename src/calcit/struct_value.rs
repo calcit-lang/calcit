@@ -145,12 +145,12 @@ mod tests {
 
   #[test]
   fn extend_field_returns_err_on_duplicate_field() {
-    let record = CalcitStructValue {
+    let struct_value = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Person"), vec![EdnTag::new("age")])),
       values: Arc::new(vec![Calcit::Number(1.0)]),
     };
 
-    let result = record.extend_field(&EdnTag::new("age"), &Calcit::tag("Person2"), &Calcit::Number(2.0));
+    let result = struct_value.extend_field(&EdnTag::new("age"), &Calcit::tag("Person2"), &Calcit::Number(2.0));
     assert!(result.is_err());
   }
 }

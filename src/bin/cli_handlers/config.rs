@@ -520,11 +520,11 @@ mod tests {
       let Edn::Map(files) = root.get_or_nil("files") else {
         panic!("files")
       };
-      let Edn::Record(file) = files.get_or_nil("app.main") else {
+      let Edn::Struct(file) = files.get_or_nil("app.main") else {
         panic!("app.main")
       };
       let Edn::Map(defs) = file["defs"].clone() else { panic!("defs") };
-      let Edn::Record(definition) = defs.get_or_nil("f") else {
+      let Edn::Struct(definition) = defs.get_or_nil("f") else {
         panic!("f")
       };
       definition[field].clone()

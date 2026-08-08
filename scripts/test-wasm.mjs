@@ -303,7 +303,7 @@ check("gcd(48,18)", 6, e.gcd, 48, 18);
 check("test-tag-eq()", 1, e["test-tag-eq"]);
 check("test-tag-neq()", 0, e["test-tag-neq"]);
 
-// --- Record tests ---
+// --- Struct tests ---
 check("test-record-sum(3,4)", 7, e["test-record-sum"], 3, 4);
 check("test-record-sum(10,20)", 30, e["test-record-sum"], 10, 20);
 check("test-record-matches-true()", 1, e["test-record-matches-true"]);

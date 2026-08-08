@@ -315,7 +315,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let i = ctx.alloc_i32(0);
 
   let elem = ctx.alloc_local();
-  let tuple_ptr = ctx.alloc_local_typed(ValType::I32);
+  let enum_ptr = ctx.alloc_local_typed(ValType::I32);
 
   // Resolve callee (after allocating acc/elem so Proc variant has the right indices)
   let fn_call_kind = resolve_callee_kind(ctx, &args[3], acc, elem).map_err(|e| format!("foldl-shortcut: {e}"))?;
@@ -331,27 +331,27 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   emit_list_load_elem(ctx, list_ptr, i);
   ctx.emit(Instruction::LocalSet(elem));
 
-  // tuple_ptr = trunc(fn(acc, elem))
+  // enum_ptr = trunc(fn(acc, elem))
   emit_foldl_step(ctx, &fn_call_kind, acc, elem)?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(tuple_ptr));
+  ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(tuple_ptr + 8) — bool flag (1.0 = true → early exit)
-  ctx.emit(Instruction::LocalGet(tuple_ptr));
+  // tag = F64Load(enum_ptr + 8) — bool flag (1.0 = true → early exit)
+  ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::F64Eq); // → i32
 
   ctx.begin_block_if();
-  // Early exit: result = payload at tuple_ptr + 16
-  ctx.emit(Instruction::LocalGet(tuple_ptr));
+  // Early exit: result = payload at enum_ptr + 16
+  ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Br(2)); // break outer block (If=0, Loop=1, Block=2)
   ctx.emit(Instruction::End); // end if
 
   // else: acc = payload, continue
-  ctx.emit(Instruction::LocalGet(tuple_ptr));
+  ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
   ctx.emit(Instruction::LocalSet(acc));
 
@@ -388,7 +388,7 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let i = ctx.i32_offset(count, -1);
 
   let elem = ctx.alloc_local();
-  let tuple_ptr = ctx.alloc_local_typed(ValType::I32);
+  let enum_ptr = ctx.alloc_local_typed(ValType::I32);
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -400,26 +400,26 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   emit_list_load_elem(ctx, list_ptr, i);
   ctx.emit(Instruction::LocalSet(elem));
 
-  // tuple_ptr = trunc(fn(acc, elem))
+  // enum_ptr = trunc(fn(acc, elem))
   emit_foldl_step(ctx, &fn_call_kind, acc, elem)?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(tuple_ptr));
+  ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(tuple_ptr + 8) — bool flag
-  ctx.emit(Instruction::LocalGet(tuple_ptr));
+  // tag = F64Load(enum_ptr + 8) — bool flag
+  ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::F64Eq);
 
   ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(tuple_ptr));
+  ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Br(2)); // break outer block
   ctx.emit(Instruction::End); // end if
 
   // else: acc = payload, i--
-  ctx.emit(Instruction::LocalGet(tuple_ptr));
+  ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
   ctx.emit(Instruction::LocalSet(acc));
 
@@ -811,9 +811,9 @@ pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   emit_list_iter_end(ctx, i);
   ctx.emit(Instruction::LocalGet(found));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_option_tuple(ctx, Some(result))?;
+  emit_option_enum(ctx, Some(result))?;
   ctx.emit(Instruction::Else);
-  emit_option_tuple(ctx, None)?;
+  emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::End);
   Ok(())
 }
@@ -854,7 +854,7 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 }
 
 /// `update m k f` — return new map with `k` mapped to `f(m[k])`.
-/// Only supports map operand (not list/tuple).
+/// Only supports map operand (not list/enum).
 pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "update")?;
   // Evaluate map → i32 ptr
@@ -925,9 +925,9 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   emit_list_iter_end(ctx, i);
   ctx.emit(Instruction::LocalGet(found));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_option_tuple(ctx, Some(result))?;
+  emit_option_enum(ctx, Some(result))?;
   ctx.emit(Instruction::Else);
-  emit_option_tuple(ctx, None)?;
+  emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::End);
   Ok(())
 }

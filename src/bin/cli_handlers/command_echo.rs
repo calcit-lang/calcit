@@ -516,6 +516,16 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       }
       desc
     }
+    AnalyzeSubcommand::Deprecated(opts) => {
+      let mut desc = "locates calls to APIs marked deprecated".to_string();
+      if let Some(ns) = &opts.ns {
+        desc.push_str(&format!(" in namespace `{ns}`"));
+      }
+      if opts.summary_only {
+        desc.push_str(", returning aggregate counts only");
+      }
+      desc
+    }
     AnalyzeSubcommand::EffectsGraph(opts) => {
       let mut desc = "builds effects dependency graph".to_string();
       if let Some(root) = &opts.root {
@@ -786,6 +796,14 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
       opt "intent" => opts.intent.as_deref(); default "all",
+      value "format" => &opts.format; default "human",
+      switch "deps" => opts.deps,
+      switch "summary-only" => opts.summary_only
+    ),
+    AnalyzeSubcommand::Deprecated(opts) => echo_items!(
+      tokens,
+      opt "ns" => opts.ns.as_deref(); default "none",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,
       switch "summary-only" => opts.summary_only
@@ -1139,6 +1157,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
     AnalyzeSubcommand::WeakTypes(_) => "weak-types",
+    AnalyzeSubcommand::Deprecated(_) => "deprecated",
     AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
     AnalyzeSubcommand::JsUnescape(_) => "js-unescape",

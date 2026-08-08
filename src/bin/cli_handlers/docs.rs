@@ -1481,11 +1481,11 @@ fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<Str
 fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String> {
   use cirru_edn::Edn;
 
-  // Both old and new snapshot formats use a top-level Map or Record.
+  // Both old and new snapshot formats use a top-level Map or Struct.
   let get_field = |edn: &Edn, key: &str| -> Option<Edn> {
     match edn {
       Edn::Map(map) => map.tag_get(key).cloned(),
-      Edn::Record(record) => record.pairs.iter().find(|(k, _)| k.ref_str() == key).map(|(_, v)| v.clone()),
+      Edn::Struct(struct_value) => struct_value.pairs.iter().find(|(k, _)| k.ref_str() == key).map(|(_, v)| v.clone()),
       _ => None,
     }
   };

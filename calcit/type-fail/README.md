@@ -23,7 +23,7 @@
 - `schema-call-arg-type-mismatch.cirru` 会触发基于 schema 的函数参数类型告警，并在 `--check-only` 下被当作错误处理。
 - `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback。
 - `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
-- `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 record 实例后，`*slot` 参与调用点类型检查。
+- `type-slot-record-call-arg-type-mismatch.cirru` 会验证 `bind-type` 绑定 struct 实例后，`*slot` 参与调用点类型检查。
 - `type-slot-bind-unknown.cirru` 会验证未声明 slot 的 `bind-type` 会直接失败。
 - `type-slot-bind-duplicate.cirru` 会验证同一个 slot 重复绑定会直接失败。
 
@@ -52,4 +52,4 @@
 - `W_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
 - `W_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配
 - `W_GENERIC_WHERE_BOUND_MISMATCH`：泛型绑定后的实际类型不满足 `:where` trait 约束
-- type-slot fixture 额外覆盖：record 绑定、未知 slot 绑定、重复绑定、跨程序加载的 slot 状态清理
+- type-slot fixture 额外覆盖：struct 绑定、未知 slot 绑定、重复绑定、跨程序加载的 slot 状态清理

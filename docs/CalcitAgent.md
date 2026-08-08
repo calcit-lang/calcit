@@ -134,6 +134,10 @@ cr analyze check-examples --ns '<namespace>' --def '<definition>'
 
 最后运行当前仓库规定的测试和目标 codegen。只有项目目标是 JS 时，`cr js` 才是对应的编译检查；它不是所有 Calcit 项目的通用完成证明。
 
+### 废弃 API 清理
+
+迁移 API 时，先运行 `cr analyze deprecated --ns-prefix <package>` 查看调用路径和替换说明；清零前保留兼容 API 及其 `:deprecated` tag。CI 或迁移 gate 使用 `cr analyze deprecated --ns-prefix <package> --summary-only --format json`，仅当目标范围 `calls` 为 `0` 时再删除旧 API。
+
 对于唯一 leaf 的小改动，可以不用 cursor：
 
 ```bash

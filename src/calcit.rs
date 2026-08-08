@@ -55,7 +55,7 @@ pub use type_annotation::{
 
 use compare::{
   compare_any_ref_values, compare_calcit_enum_values, compare_calcit_impl_values, compare_calcit_struct_values,
-  compare_calcit_trait_values, compare_map_values, compare_record_values, compare_set_values,
+  compare_calcit_trait_values, compare_map_values, compare_set_values, compare_struct_values,
 };
 
 use crate::builtins::ValueAndListeners;
@@ -691,7 +691,7 @@ impl Ord for Calcit {
       (Map(_), _) => Less,
       (_, Map(_)) => Greater,
 
-      (Struct(a), Struct(b)) => compare_record_values(a, b),
+      (Struct(a), Struct(b)) => compare_struct_values(a, b),
       (Struct { .. }, _) => Less,
       (_, Struct { .. }) => Greater,
 
@@ -902,8 +902,8 @@ impl Calcit {
       }
       Thunk(_) => "**Calcit thunk** — a delayed-evaluation expression".to_string(),
       Ref(name, _) => format!("**Calcit atom/ref** (`{name}`) — a mutable state container"),
-      Enum(tuple) => {
-        format!("**Calcit enum value** (`{}`) — a tagged union variant", tuple.tag)
+      Enum(enum_value) => {
+        format!("**Calcit enum value** (`{}`) — a tagged union variant", enum_value.tag)
       }
       Buffer(buf) => format!("**Calcit buffer** ({} bytes) — binary data", buf.len()),
       BufList(items) => {
@@ -917,7 +917,7 @@ impl Calcit {
       List(xs) => format!("**Calcit list** ({} items) — vector/list", xs.len()),
       Set(xs) => format!("**Calcit set** ({} items) — unique values set", xs.size()),
       Map(xs) => format!("**Calcit map** ({} pairs) — key-value map", xs.size()),
-      Struct(record) => format!("**Calcit struct value** (`{}`)", record.name()),
+      Struct(struct_value) => format!("**Calcit struct value** (`{}`)", struct_value.name()),
       StructDef(strukt) => format!("**Calcit struct definition** (`{}`)", strukt.name),
       EnumDef(enm) => format!("**Calcit enum definition** (`{}`)", enm.name()),
       Trait(trt) => format!("**Calcit trait** (`{}`) — trait definition", trt.name),
@@ -1458,7 +1458,7 @@ mod tests {
   }
 
   #[test]
-  fn cmp_records_compares_values_when_same_name() {
+  fn cmp_structs_compares_values_when_same_name() {
     let struct_ref = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Person"), vec![EdnTag::new("age")]));
     let left = Calcit::Struct(CalcitStructValue {
       struct_ref: struct_ref.clone(),
@@ -1569,23 +1569,23 @@ mod tests {
     assert_ne!(struct_left, struct_right);
     assert_ne!(struct_left.cmp(&struct_right), Equal);
 
-    let enum_left_record = CalcitStructValue {
+    let enum_left_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Result"), vec![EdnTag::new("ok")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![])))]),
     };
-    let enum_right_record = CalcitStructValue {
+    let enum_right_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Result"), vec![EdnTag::new("ok")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")])))]),
     };
-    let enum_left = Calcit::EnumDef(CalcitEnumDef::from_record(enum_left_record).expect("valid enum"));
-    let enum_right = Calcit::EnumDef(CalcitEnumDef::from_record(enum_right_record).expect("valid enum"));
+    let enum_left = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_left_struct).expect("valid enum"));
+    let enum_right = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_right_struct).expect("valid enum"));
     assert_ne!(enum_left, enum_right);
     assert_ne!(enum_left.cmp(&enum_right), Equal);
   }
 
   #[test]
   fn enum_display_includes_variants() {
-    let enum_record = CalcitStructValue {
+    let enum_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::new("Result"),
         vec![EdnTag::new("ok"), EdnTag::new("err")],
@@ -1595,7 +1595,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")]))),
       ]),
     };
-    let enum_value = Calcit::EnumDef(CalcitEnumDef::from_record(enum_record).expect("valid enum"));
+    let enum_value = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_struct).expect("valid enum"));
     let text = enum_value.to_string();
     assert!(text.starts_with("(%enum-def 'Result"), "unexpected display: {text}");
     assert!(text.contains(":ok)"), "missing zero-payload variant: {text}");
@@ -1604,13 +1604,13 @@ mod tests {
 
   #[test]
   fn named_data_display_uses_symbol_name() {
-    let record = Calcit::Struct(CalcitStructValue {
+    let struct_value = Calcit::Struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("TodoState"), vec![EdnTag::new("draft")])),
       values: Arc::new(vec![Calcit::Str(Arc::from(""))]),
     });
     let struct_def = Calcit::StructDef(CalcitStructDef::from_fields(EdnTag::new("TodoState"), vec![EdnTag::new("draft")]));
 
-    assert_eq!(record.to_string(), "(%{} 'TodoState (:draft |))");
+    assert_eq!(struct_value.to_string(), "(%{} 'TodoState (:draft |))");
     assert!(struct_def.to_string().starts_with("(%struct-def 'TodoState"));
   }
 

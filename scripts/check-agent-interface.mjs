@@ -120,7 +120,7 @@ const scenarios = [
         throw new Error("query.type did not infer a source-backed defstruct");
       }
       if (!result.data.methods.some((method) => method.name === ".assoc")) {
-        throw new Error("source-backed record methods are missing");
+        throw new Error("source-backed struct methods are missing");
       }
     },
   },

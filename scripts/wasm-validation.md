@@ -22,7 +22,7 @@
 | 数学: `floor`, `ceil`, `round`, `sqrt` | ✅   | 直接映射 WASM 指令       |
 | `recur` (尾递归)                       | ✅   | 映射到 WASM loop + br    |
 | 函数调用                               | ✅   | 同模块内函数互调         |
-| Tag / Record / Tuple                   | ✅   | 线性内存 + f64 编码指针  |
+| Tag / Struct / Enum                    | ✅   | 线性内存 + f64 编码指针  |
 | List / Map / Set                       | ✅   | 线性内存 bump allocator  |
 | `println` / `echo` / IO               | ✅   | 通过 `io/log_value` host import |
 | 字符串字面量                           | ✅   | 编译期写入数据段         |

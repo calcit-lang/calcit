@@ -372,7 +372,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "&list:foldl-shortcut expected a value in the tuple",
+                  "&list:foldl-shortcut expected a value in the enum",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -412,7 +412,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "&list:foldl-shortcut expected a value in the tuple",
+                  "&list:foldl-shortcut expected a value in the enum",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -456,7 +456,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "&list:foldl-shortcut expected a value in the tuple",
+                  "&list:foldl-shortcut expected a value in the enum",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -525,7 +525,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "&list:foldr-shortcut expected a value in the tuple",
+                  "&list:foldr-shortcut expected a value in the enum",
                   call_stack,
                   x0.get_location(),
                 ))?;

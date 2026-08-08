@@ -49,21 +49,21 @@ pub enum CalcitProc {
   #[strum(serialize = "&cirru-nth")]
   NativeCirruNth,
   #[strum(serialize = "::")]
-  NativeTuple,
+  NativeEnum,
   #[strum(serialize = "%::")]
-  NativeEnumTupleNew,
+  NativeNamedEnumNew,
   #[strum(serialize = "&enum:nth")]
-  NativeTupleNth,
+  NativeEnumNth,
   #[strum(serialize = "&enum:assoc")]
-  NativeTupleAssoc,
+  NativeEnumAssoc,
   #[strum(serialize = "&enum:count")]
-  NativeTupleCount,
+  NativeEnumCount,
   #[strum(serialize = "&enum:impls")]
-  NativeTupleImpls,
+  NativeEnumImpls,
   #[strum(serialize = "&enum:params")]
-  NativeTupleParams,
+  NativeEnumParams,
   #[strum(serialize = "&enum:definition")]
-  NativeTupleEnum,
+  NativeEnumDefinition,
   #[strum(serialize = "&struct-def:new")]
   NativeStructNew,
   #[strum(serialize = "&enum-def:new")]
@@ -73,9 +73,9 @@ pub enum CalcitProc {
   #[strum(serialize = "&impl::new")]
   NativeImplNew,
   #[strum(serialize = "&struct:impl-traits")]
-  NativeRecordImplTraits,
+  NativeStructValueImplTraits,
   #[strum(serialize = "&enum:impl-traits")]
-  NativeTupleImplTraits,
+  NativeEnumValueImplTraits,
   #[strum(serialize = "&struct-def:impl-traits")]
   NativeStructImplTraits,
   #[strum(serialize = "&enum-def:impl-traits")]
@@ -87,11 +87,11 @@ pub enum CalcitProc {
   #[strum(serialize = "&impl:nth")]
   NativeImplNth,
   #[strum(serialize = "&enum-def:has-variant?")]
-  NativeTupleEnumHasVariant,
+  NativeEnumDefHasVariant,
   #[strum(serialize = "&enum-def:variant-arity")]
-  NativeTupleEnumVariantArity,
+  NativeEnumDefVariantArity,
   #[strum(serialize = "&enum:validate")]
-  NativeTupleValidateEnum,
+  NativeEnumValidate,
   #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
   #[strum(serialize = "&methods-of")]
@@ -438,43 +438,43 @@ pub enum CalcitProc {
   RemoveWatch,
   // records
   #[strum(serialize = "?{}")]
-  NativeLooseRecord,
+  NativeLooseStruct,
   #[strum(serialize = "&%{}")]
-  NativeRecord,
+  NativeStruct,
   #[strum(serialize = "&%{}?")]
-  NativeRecordPartial,
+  NativeStructPartial,
   #[strum(serialize = "&struct:with")]
-  NativeRecordWith,
+  NativeStructWith,
   #[strum(serialize = "&struct:impls")]
-  NativeRecordImpls,
+  NativeStructImpls,
   #[strum(serialize = "&struct:matches?")]
-  NativeRecordMatches,
+  NativeStructMatches,
   #[strum(serialize = "&struct:from-map")]
-  NativeRecordFromMap,
+  NativeStructFromMap,
   #[strum(serialize = "&struct:get-name")]
-  NativeRecordGetName,
+  NativeStructGetName,
   #[strum(serialize = "&struct:definition")]
-  NativeRecordStruct,
+  NativeStructDefinition,
   #[strum(serialize = "&struct:to-map")]
-  NativeRecordToMap,
+  NativeStructToMap,
   #[strum(serialize = "&struct:count")]
-  NativeRecordCount,
+  NativeStructCount,
   #[strum(serialize = "&struct:contains?")]
-  NativeRecordContains,
+  NativeStructContains,
   #[strum(serialize = "&struct:get")]
-  NativeRecordGet,
+  NativeStructGet,
   #[strum(serialize = "&struct:nth")]
-  NativeRecordNth,
+  NativeStructNth,
   #[strum(serialize = "&struct:field-tag")]
-  NativeRecordFieldTag,
+  NativeStructFieldTag,
   #[strum(serialize = "&struct:assoc")]
-  NativeRecordAssoc,
+  NativeStructAssoc,
   #[strum(serialize = "&struct:assoc-at")]
-  NativeRecordAssocAt,
+  NativeStructAssocAt,
   #[strum(serialize = "&struct:with-at")]
-  NativeRecordWithAt,
+  NativeStructWithAt,
   #[strum(serialize = "&struct:extend-as")]
-  NativeRecordExtendAs,
+  NativeStructExtendAs,
   // type slots
   #[strum(serialize = "deftype-slot")]
   DeftypeSlot,
@@ -1116,35 +1116,35 @@ impl CalcitProc {
       }),
 
       // === Enum value operations ===
-      NativeTuple => Some(ProcTypeSignature {
+      NativeEnum => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
       }),
-      NativeEnumTupleNew => Some(ProcTypeSignature {
+      NativeNamedEnumNew => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum-def"), some_tag("tag"), variadic_dynamic()],
       }),
-      NativeTupleNth => Some(ProcTypeSignature {
+      NativeEnumNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("enum"), some_tag("number")],
       }),
-      NativeTupleAssoc => Some(ProcTypeSignature {
+      NativeEnumAssoc => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum"), some_tag("number"), dynamic_tag()],
       }),
-      NativeTupleCount => Some(ProcTypeSignature {
+      NativeEnumCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("enum")],
       }),
-      NativeTupleImpls => Some(ProcTypeSignature {
+      NativeEnumImpls => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("enum")],
       }),
-      NativeTupleParams => Some(ProcTypeSignature {
+      NativeEnumParams => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("enum")],
       }),
-      NativeTupleEnum => Some(ProcTypeSignature {
+      NativeEnumDefinition => Some(ProcTypeSignature {
         return_type: optional_tag("enum-def"),
         arg_types: vec![some_tag("enum")],
       }),
@@ -1176,11 +1176,11 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("impl"), some_tag("number")],
       }),
-      NativeRecordImplTraits => Some(ProcTypeSignature {
+      NativeStructValueImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), variadic_dynamic()],
       }),
-      NativeTupleImplTraits => Some(ProcTypeSignature {
+      NativeEnumValueImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum"), variadic_dynamic()],
       }),
@@ -1192,47 +1192,47 @@ impl CalcitProc {
         return_type: some_tag("enum-def"),
         arg_types: vec![some_tag("enum-def"), variadic_dynamic()],
       }),
-      NativeTupleEnumHasVariant => Some(ProcTypeSignature {
+      NativeEnumDefHasVariant => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("enum-def"), some_tag("tag")],
       }),
-      NativeTupleEnumVariantArity => Some(ProcTypeSignature {
+      NativeEnumDefVariantArity => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("enum-def"), some_tag("tag")],
       }),
-      NativeTupleValidateEnum => Some(ProcTypeSignature {
+      NativeEnumValidate => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
         arg_types: vec![some_tag("enum"), some_tag("tag")],
       }),
 
       // === Struct value operations ===
-      NativeLooseRecord => Some(ProcTypeSignature {
+      NativeLooseStruct => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![variadic_dynamic()],
       }),
-      NativeRecord => Some(ProcTypeSignature {
+      NativeStruct => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),
-      NativeRecordPartial => Some(ProcTypeSignature {
+      NativeStructPartial => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),
-      NativeRecordWith => Some(ProcTypeSignature {
+      NativeStructWith => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
       }),
-      NativeRecordAssoc => Some(ProcTypeSignature {
+      NativeStructAssoc => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), dynamic_tag(), dynamic_tag()],
       }),
-      NativeRecordAssocAt => Some(ProcTypeSignature {
+      NativeStructAssocAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag"), dynamic_tag()],
       }),
-      NativeRecordWithAt => Some(ProcTypeSignature {
+      NativeStructWithAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
-        // (record, idx, tag, value, ...) — variadic triples after first arg
+        // (struct, idx, tag, value, ...) — variadic triples after first arg
         arg_types: vec![
           some_tag("struct"),
           some_tag("number"),
@@ -1241,51 +1241,51 @@ impl CalcitProc {
           variadic_dynamic(),
         ],
       }),
-      NativeRecordGet => Some(ProcTypeSignature {
+      NativeStructGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("struct"), some_tag("tag")],
       }),
-      NativeRecordNth => Some(ProcTypeSignature {
+      NativeStructNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag")],
       }),
-      NativeRecordFieldTag => Some(ProcTypeSignature {
+      NativeStructFieldTag => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
         arg_types: vec![some_tag("struct"), some_tag("number")],
       }),
-      NativeRecordCount => Some(ProcTypeSignature {
+      NativeStructCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("struct")],
       }),
-      NativeRecordContains => Some(ProcTypeSignature {
+      NativeStructContains => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("struct"), dynamic_tag()],
       }),
-      NativeRecordMatches => Some(ProcTypeSignature {
+      NativeStructMatches => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("struct"), dynamic_tag()],
       }),
-      NativeRecordToMap => Some(ProcTypeSignature {
+      NativeStructToMap => Some(ProcTypeSignature {
         return_type: map_of(some_tag("tag"), dynamic_tag()),
         arg_types: vec![some_tag("struct")],
       }),
-      NativeRecordFromMap => Some(ProcTypeSignature {
+      NativeStructFromMap => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), some_tag("map")],
       }),
-      NativeRecordGetName => Some(ProcTypeSignature {
+      NativeStructGetName => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
         arg_types: vec![some_tag("struct")],
       }),
-      NativeRecordStruct => Some(ProcTypeSignature {
+      NativeStructDefinition => Some(ProcTypeSignature {
         return_type: optional_tag("struct-def"),
         arg_types: vec![some_tag("struct")],
       }),
-      NativeRecordImpls => Some(ProcTypeSignature {
+      NativeStructImpls => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("struct")],
       }),
-      NativeRecordExtendAs => Some(ProcTypeSignature {
+      NativeStructExtendAs => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), some_tag("tag"), some_tag("tag"), dynamic_tag()],
       }),
@@ -1426,7 +1426,7 @@ impl CalcitProc {
     use CalcitProc::*;
     match self {
       GenerateId | Range | NativeListRange => 2,
-      NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeRecordNth
+      NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
       | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn => 1,
       _ => 0,
     }
@@ -1466,7 +1466,7 @@ mod tests {
       CalcitProc::Sort,
       CalcitProc::NativeListSort,
       CalcitProc::NativeListSlice,
-      CalcitProc::NativeRecordNth,
+      CalcitProc::NativeStructNth,
       CalcitProc::ReadDir,
       CalcitProc::GetEnv,
       CalcitProc::ParseCirruEdn,
@@ -1504,7 +1504,7 @@ mod tests {
       (CalcitProc::Sort, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::NativeListSort, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::NativeListSlice, ProcArity { min: 2, max: Some(3) }),
-      (CalcitProc::NativeRecordNth, ProcArity { min: 2, max: Some(3) }),
+      (CalcitProc::NativeStructNth, ProcArity { min: 2, max: Some(3) }),
       (CalcitProc::ReadDir, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::GetEnv, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::ParseCirruEdn, ProcArity { min: 1, max: Some(2) }),
@@ -1529,7 +1529,7 @@ mod tests {
       CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
     ));
 
-    let record_struct = CalcitProc::NativeRecordStruct
+    let record_struct = CalcitProc::NativeStructDefinition
       .get_type_signature()
       .expect("record-struct signature");
     assert_eq!(record_struct.return_type, optional_tag("struct-def"));
@@ -1539,8 +1539,8 @@ mod tests {
   fn nullable_primitives_do_not_shadow_their_typed_public_wrappers() {
     assert_eq!(CalcitProc::from_str("&parse-float"), Ok(CalcitProc::ParseFloat));
     assert_eq!(CalcitProc::from_str("&get-env"), Ok(CalcitProc::GetEnv));
-    assert_eq!(CalcitProc::from_str("&struct:nth"), Ok(CalcitProc::NativeRecordNth));
-    assert_eq!(CalcitProc::from_str("&enum:nth"), Ok(CalcitProc::NativeTupleNth));
+    assert_eq!(CalcitProc::from_str("&struct:nth"), Ok(CalcitProc::NativeStructNth));
+    assert_eq!(CalcitProc::from_str("&enum:nth"), Ok(CalcitProc::NativeEnumNth));
     assert!(CalcitProc::from_str("parse-float").is_err());
     assert!(CalcitProc::from_str("get-env").is_err());
   }

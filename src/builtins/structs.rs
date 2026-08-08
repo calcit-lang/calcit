@@ -230,8 +230,8 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
         }
       },
-      Calcit::Enum(tuple) => match (tuple.extra.first(), tuple.extra.get(1)) {
-        (Some(value), None) => (tuple.tag.as_ref(), value),
+      Calcit::Enum(enum_value) => match (enum_value.extra.first(), enum_value.extra.get(1)) {
+        (Some(value), None) => (enum_value.tag.as_ref(), value),
         _ => {
           let msg = format!("&impl::new expects (field value) pairs, but received: {item}");
           let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
@@ -483,12 +483,12 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   struct_ref.where_bounds = Arc::new(where_bounds);
   struct_ref.impls = vec![Arc::new(enum_prototype_marker())];
 
-  let record = CalcitStructValue {
+  let struct_value = CalcitStructValue {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
   };
 
-  match CalcitEnumDef::from_record(record) {
+  match CalcitEnumDef::from_struct(struct_value) {
     Ok(enum_def) => Ok(Calcit::EnumDef(enum_def)),
     Err(msg) => CalcitErr::err_str(CalcitErrKind::Type, format!("&enum-def:new failed to build enum: {msg}")),
   }
@@ -503,7 +503,7 @@ fn enum_prototype_marker() -> CalcitImpl {
   }
 }
 
-/// Partial record constructor — missing fields default to nil.
+/// Partial struct constructor — missing fields default to nil.
 /// Proto must be a `Calcit::StructDef` from `defstruct`.
 pub fn call_struct_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
@@ -593,8 +593,8 @@ pub fn call_struct_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }))
 }
 
-/// Create a loose record from key-value pairs: `?{} :field1 val1 :field2 val2`
-/// Fields are sorted alphabetically, mirroring struct-backed record behaviour.
+/// Create a loose struct from key-value pairs: `?{} :field1 val1 :field2 val2`
+/// Fields are sorted alphabetically, mirroring named struct behaviour.
 pub fn call_loose_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len().rem(2) != 0 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "?{} expected pairs of :field value, but received:", xs);
@@ -631,7 +631,7 @@ pub fn call_loose_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Struct(CalcitStructValue::from_anonymous_pairs(fields, values)))
 }
 
-/// Direct indexed access to a struct field: `&struct:nth record index`
+/// Direct indexed access to a struct field: `&struct:nth struct_value index`
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
 pub fn struct_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // Accept 2 or 3 args: (struct, idx) or (struct, idx, :field-tag)
@@ -667,7 +667,7 @@ pub fn struct_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// Get the field tag (name) at a given index: `&struct:field-tag record index`
+/// Get the field tag (name) at a given index: `&struct:field-tag struct_value index`
 pub fn struct_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:field-tag expected 2 arguments, but received:", xs);
@@ -700,7 +700,7 @@ pub fn struct_field_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// Direct indexed assoc on a struct field: `&struct:assoc-at record index :field value`
+/// Direct indexed assoc on a struct field: `&struct:assoc-at struct_value index :field value`
 /// This is the optimized path emitted by the preprocessor when the field index is known at compile time.
 pub fn struct_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   // 4 args: (struct, idx, :field-tag, value)
@@ -711,7 +711,7 @@ pub fn struct_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1], &xs[2]) {
     (Calcit::Struct(CalcitStructValue { struct_ref, values }), Calcit::Number(n), Calcit::Tag(field_tag)) => {
-      let idx = checked_record_index(*n, "&struct:assoc-at")?;
+      let idx = checked_struct_index(*n, "&struct:assoc-at")?;
       if idx < values.len() {
         let Some(expected_tag) = struct_ref.fields.get(idx) else {
           return CalcitErr::err_str(
@@ -777,7 +777,7 @@ pub fn struct_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let base = 1 + i * 3;
         match (&xs[base], &xs[base + 1]) {
           (Calcit::Number(n), Calcit::Tag(field_tag)) => {
-            let idx = checked_record_index(*n, "&struct:with-at")?;
+            let idx = checked_struct_index(*n, "&struct:with-at")?;
             if idx < new_values.len() {
               let Some(expected_tag) = struct_ref.fields.get(idx) else {
                 return CalcitErr::err_str(
@@ -831,7 +831,7 @@ pub fn struct_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-fn checked_record_index(value: f64, operation: &str) -> Result<usize, CalcitErr> {
+fn checked_struct_index(value: f64, operation: &str) -> Result<usize, CalcitErr> {
   if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > usize::MAX as f64 {
     return Err(CalcitErr::use_str(
       CalcitErrKind::Type,
@@ -848,11 +848,11 @@ pub fn call_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::StructDef(struct_def) => {
-      let record = CalcitStructValue {
+      let struct_value = CalcitStructValue {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
       };
-      call_struct_with_prototype(&record, xs)
+      call_struct_with_prototype(&struct_value, xs)
     }
     Calcit::Struct(_) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -863,15 +863,15 @@ pub fn call_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&%{{}} requires a struct as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStruct).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
 }
 
-fn call_struct_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+fn call_struct_with_prototype(struct_value: &CalcitStructValue, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
-  let CalcitStructValue { struct_ref, values: v0 } = record;
+  let CalcitStructValue { struct_ref, values: v0 } = struct_value;
   if (args_size - 1).rem(2) != 0 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs);
   }
@@ -894,7 +894,7 @@ fn call_struct_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Resu
     let k_idx = idx * 2 + 1;
     let v_idx = k_idx + 1;
     match &xs[k_idx] {
-      Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+      Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
         Some(pos) => {
           if seen_positions[pos] {
             return CalcitErr::err_str(CalcitErrKind::Type, format!("&%{{{{}}}} duplicate field: :{}", s.ref_str()));
@@ -927,7 +927,7 @@ fn call_struct_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Resu
           );
         }
       },
-      Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
+      Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match struct_value.index_of(s) {
         Some(pos) => {
           // Validate field value type against struct field_types
           if let Some(expected_type) = struct_ref.field_types.get(pos) {
@@ -961,7 +961,7 @@ fn call_struct_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Resu
           "&%{{}} requires field in string/tag, but received: {}",
           type_of(std::slice::from_ref(a))?.lisp_str()
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStruct).unwrap_or_default();
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
@@ -980,7 +980,7 @@ fn call_struct_with_prototype(record: &CalcitStructValue, xs: &[Calcit]) -> Resu
   }))
 }
 
-/// takes a record and pairs of key value(flatterned), and update the record. raise error if key not existed in the record
+/// Takes a struct value and flattened key-value pairs, updates the struct, and raises an error when a key does not exist.
 pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 3 {
@@ -991,7 +991,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     );
   }
   match &xs[0] {
-    Calcit::Struct(record @ CalcitStructValue { struct_ref, values: v0 }) => {
+    Calcit::Struct(struct_value @ CalcitStructValue { struct_ref, values: v0 }) => {
       if (args_size - 1).rem(2) == 0 {
         let size = (args_size - 1) / 2;
         let mut values: Vec<Calcit> = (**v0).to_owned();
@@ -1000,7 +1000,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           let k_idx = idx * 2 + 1;
           let v_idx = k_idx + 1;
           match &xs[k_idx] {
-            Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+            Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
               Some(pos) => {
                 // Validate field value type against struct field_types
                 if let Some(expected_type) = struct_ref.field_types.get(pos)
@@ -1027,7 +1027,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 );
               }
             },
-            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
+            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match struct_value.index_of(s) {
               Some(pos) => {
                 // Validate field value type against struct field_types
                 if let Some(expected_type) = struct_ref.field_types.get(pos)
@@ -1059,7 +1059,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 "&struct:with requires field in string/tag, but received: {}",
                 type_of(std::slice::from_ref(a))?.lisp_str()
               );
-              let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
+              let hint = format_proc_examples_hint(&CalcitProc::NativeStructWith).unwrap_or_default();
               return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
             }
           }
@@ -1078,7 +1078,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:with requires a struct value as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructWith).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1090,23 +1090,27 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:impls expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Struct(record) => Ok(Calcit::from(
-      record
+    Calcit::Struct(struct_value) => Ok(Calcit::from(
+      struct_value
         .struct_ref
         .impls
         .iter()
         .map(|x| Calcit::Impl((**x).to_owned()))
         .collect::<Vec<Calcit>>(),
     )),
-    Calcit::Enum(tuple) => Ok(Calcit::from(
-      tuple.impls().iter().map(|c| Calcit::Impl((**c).to_owned())).collect::<Vec<_>>(),
+    Calcit::Enum(enum_value) => Ok(Calcit::from(
+      enum_value
+        .impls()
+        .iter()
+        .map(|c| Calcit::Impl((**c).to_owned()))
+        .collect::<Vec<_>>(),
     )),
     a => {
       let msg = format!(
         "&struct:impls requires a struct value as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordImpls).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1124,7 +1128,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:from-map requires a struct as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructFromMap).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -1140,7 +1144,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               "&struct:from-map requires field in string/tag, but received: {}",
               type_of(std::slice::from_ref(a))?.lisp_str()
             );
-            let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+            let hint = format_proc_examples_hint(&CalcitProc::NativeStructFromMap).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
         };
@@ -1182,7 +1186,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:from-map requires a map as second argument, but received: {}",
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructFromMap).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1199,7 +1203,7 @@ pub fn get_struct_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:get-name requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGetName).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGetName).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1221,7 +1225,7 @@ pub fn get_struct_def(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:definition requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordStruct).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructDefinition).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1244,7 +1248,7 @@ pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:to-map requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordToMap).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructToMap).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1263,7 +1267,7 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:matches? second argument requires a struct value or struct, but received: {}",
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructMatches).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -1278,7 +1282,7 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:matches? first argument requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructMatches).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1295,7 +1299,7 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:count requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordCount).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1303,20 +1307,20 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Struct(record)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(record.index_of(k).is_some())),
-      Calcit::Tag(k) => Ok(Calcit::Bool(record.index_of(k.ref_str()).is_some())),
+    (Some(Calcit::Struct(struct_value)), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(struct_value.index_of(k).is_some())),
+      Calcit::Tag(k) => Ok(Calcit::Bool(struct_value.index_of(k.ref_str()).is_some())),
       a => {
         let msg = format!(
           "&struct:contains? requires a field in string/tag, but received: {}",
           type_of(std::slice::from_ref(a))?.lisp_str()
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
     (Some(_), None) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(
         CalcitErrKind::Arity,
         "&struct:contains? expected 2 arguments, but received:",
@@ -1329,11 +1333,11 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:contains? requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(
         CalcitErrKind::Arity,
         "&struct:contains? expected 2 arguments, but received:",
@@ -1346,7 +1350,7 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Struct(record @ CalcitStructValue { values, struct_ref })), Some(a)) => {
+    (Some(Calcit::Struct(struct_value @ CalcitStructValue { values, struct_ref })), Some(a)) => {
       let field_name = match a {
         Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => k.as_ref(),
         Calcit::Tag(k) => k.ref_str(),
@@ -1355,11 +1359,11 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             "&struct:get requires a field in string/tag, but received: {}",
             type_of(std::slice::from_ref(a))?.lisp_str()
           );
-          let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+          let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
           return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
         }
       };
-      match record.index_of(field_name) {
+      match struct_value.index_of(field_name) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => CalcitErr::err_str(
           CalcitErrKind::Type,
@@ -1368,7 +1372,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(_), None) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:get expected 2 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_)) => {
@@ -1376,11 +1380,11 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:get requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:get expected 2 arguments, but received:", xs, hint)
     }
   }
@@ -1388,8 +1392,8 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Struct(record @ CalcitStructValue { struct_ref, values })), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
+    (Some(Calcit::Struct(struct_value @ CalcitStructValue { struct_ref, values })), Some(a), Some(b)) => match a {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match struct_value.index_of(s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           b.clone_into(&mut new_values[pos]);
@@ -1403,7 +1407,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           format!("&struct:assoc invalid field `{s}` for struct: {:?}", struct_ref.fields),
         ),
       },
-      Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+      Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           b.clone_into(&mut new_values[pos]);
@@ -1423,12 +1427,12 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           type_of(std::slice::from_ref(a))?.lisp_str(),
           struct_ref.fields
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
     (Some(_), None, _) | (Some(_), Some(_), None) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:assoc expected 3 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_), Some(_)) => {
@@ -1436,11 +1440,11 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:assoc requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:assoc expected 3 arguments, but received:", xs, hint)
     }
   }
@@ -1451,18 +1455,18 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:extend-as expected 4 arguments, but received:", xs);
   }
   match (xs.first(), xs.get(1), xs.get(2), xs.get(3)) {
-    (Some(Calcit::Struct(record)), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
+    (Some(Calcit::Struct(struct_value)), Some(n), Some(a), Some(new_value)) => match a {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match struct_value.index_of(s) {
         Some(_pos) => CalcitErr::err_str(CalcitErrKind::Unexpected, format!("&struct:extend-as field `{s}` already existed")),
-        None => match record.extend_field(&EdnTag(s.to_owned()), n, new_value) {
-          Ok(new_record) => Ok(Calcit::Struct(new_record)),
+        None => match struct_value.extend_field(&EdnTag(s.to_owned()), n, new_value) {
+          Ok(new_struct) => Ok(Calcit::Struct(new_struct)),
           Err(e) => Err(CalcitErr::use_str(CalcitErrKind::Unexpected, e)),
         },
       },
-      Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+      Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
         Some(_pos) => CalcitErr::err_str(CalcitErrKind::Unexpected, format!("&struct:extend-as field `{s}` already existed")),
-        None => match record.extend_field(s, n, new_value) {
-          Ok(new_record) => Ok(Calcit::Struct(new_record)),
+        None => match struct_value.extend_field(s, n, new_value) {
+          Ok(new_struct) => Ok(Calcit::Struct(new_struct)),
           Err(e) => Err(CalcitErr::use_str(CalcitErrKind::Unexpected, e)),
         },
       },
@@ -1470,9 +1474,9 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let msg = format!(
           "&struct:extend-as requires a field in string/tag, but received: {} for struct: {:?}",
           type_of(std::slice::from_ref(a))?.lisp_str(),
-          record.struct_ref.fields
+          struct_value.struct_ref.fields
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStructExtendAs).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
@@ -1481,7 +1485,7 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:extend-as requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructExtendAs).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:extend-as expected 4 arguments, but received:", xs),
@@ -1509,7 +1513,7 @@ mod tests {
     Calcit::Proc(CalcitProc::NativeResetGenSymIndex)
   }
 
-  fn indexed_record_fixture() -> Calcit {
+  fn indexed_struct_fixture() -> Calcit {
     Calcit::Struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::new("Point"),
@@ -1540,37 +1544,37 @@ mod tests {
   }
 
   #[test]
-  fn record_get_rejects_missing_fields_instead_of_returning_nil() {
-    let record = indexed_record_fixture();
-    let err = get(&[record, Calcit::tag("missing")]).expect_err("missing struct field must not become nil");
+  fn struct_get_rejects_missing_fields_instead_of_returning_nil() {
+    let struct_value = indexed_struct_fixture();
+    let err = get(&[struct_value, Calcit::tag("missing")]).expect_err("missing struct field must not become nil");
 
     assert_eq!(err.kind, CalcitErrKind::Type);
     assert!(err.msg.contains("does not define field `:missing`"), "unexpected error: {err:?}");
   }
 
   #[test]
-  fn indexed_record_updates_reject_stale_field_tags() {
-    let record = indexed_record_fixture();
-    let assoc_error = struct_assoc_at(&[record.clone(), Calcit::Number(0.0), Calcit::tag("y"), Calcit::Number(3.0)])
+  fn indexed_struct_updates_reject_stale_field_tags() {
+    let struct_value = indexed_struct_fixture();
+    let assoc_error = struct_assoc_at(&[struct_value.clone(), Calcit::Number(0.0), Calcit::tag("y"), Calcit::Number(3.0)])
       .expect_err("stale assoc tag must fail");
     assert!(assoc_error.msg.contains("expects field `:x`"));
 
-    let with_error =
-      struct_with_at(&[record, Calcit::Number(1.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect_err("stale with tag must fail");
+    let with_error = struct_with_at(&[struct_value, Calcit::Number(1.0), Calcit::tag("x"), Calcit::Number(3.0)])
+      .expect_err("stale with tag must fail");
     assert!(with_error.msg.contains("expects field `:y`"));
   }
 
   #[test]
-  fn indexed_record_updates_validate_indices_and_apply_matching_tags() {
-    let record = indexed_record_fixture();
-    let invalid_index = struct_assoc_at(&[record.clone(), Calcit::Number(-1.0), Calcit::tag("x"), Calcit::Number(3.0)])
+  fn indexed_struct_updates_validate_indices_and_apply_matching_tags() {
+    let struct_value = indexed_struct_fixture();
+    let invalid_index = struct_assoc_at(&[struct_value.clone(), Calcit::Number(-1.0), Calcit::tag("x"), Calcit::Number(3.0)])
       .expect_err("negative index must fail");
     assert!(invalid_index.msg.contains("non-negative integer index"));
 
     let updated =
-      struct_assoc_at(&[record, Calcit::Number(0.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect("matching index/tag update");
+      struct_assoc_at(&[struct_value, Calcit::Number(0.0), Calcit::tag("x"), Calcit::Number(3.0)]).expect("matching index/tag update");
     let Calcit::Struct(updated) = updated else {
-      panic!("updated value must remain a record");
+      panic!("updated value must remain a struct");
     };
     assert_eq!(updated.values.as_ref(), &[Calcit::Number(3.0), Calcit::Number(2.0)]);
   }

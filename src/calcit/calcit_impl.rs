@@ -13,12 +13,12 @@ pub struct CalcitImpl {
 }
 
 impl CalcitImpl {
-  pub fn from_record(record: &crate::calcit::CalcitStructValue) -> Self {
+  pub fn from_struct(struct_value: &crate::calcit::CalcitStructValue) -> Self {
     CalcitImpl {
-      name: record.struct_ref.name.to_owned(),
+      name: struct_value.struct_ref.name.to_owned(),
       origin: None,
-      fields: record.struct_ref.fields.to_owned(),
-      values: record.values.to_owned(),
+      fields: struct_value.struct_ref.fields.to_owned(),
+      values: struct_value.values.to_owned(),
     }
   }
 
