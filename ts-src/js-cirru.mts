@@ -158,7 +158,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     }
     // placed literals first
     buffer.sort(recordFieldOrder);
-    (buffer as any[]).unshift(x.name.toString());
+    (buffer as any[]).unshift(new CalcitSymbol(x.name.value).toString());
     (buffer as any[]).unshift("%{}");
     return buffer;
   }
@@ -179,22 +179,22 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
     } else if (x.enumPrototype != null) {
-      let enumTag = unwrap_enum_prototype_local(x.enumPrototype).name.toString();
+      let enumTag = new CalcitSymbol(unwrap_enum_prototype_local(x.enumPrototype).name.value).toString();
       if (x.tag instanceof CalcitTag) {
-        return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
+        return ["%::", enumTag, new CalcitSymbol(x.tag.value).toString(), ...x.extra.map(to_cirru_edn)];
       } else if (x.tag instanceof CalcitStructValue) {
-        return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+        return ["%::", enumTag, new CalcitSymbol(x.tag.name.value).toString(), ...x.extra.map(to_cirru_edn)];
       } else if (x.tag instanceof CalcitImpl) {
-        return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+        return ["%::", enumTag, new CalcitSymbol(x.tag.name.value).toString(), ...x.extra.map(to_cirru_edn)];
       } else {
         throw new Error(`Unsupported tag for EDN: ${x.tag}`);
       }
     } else if (x.tag instanceof CalcitTag) {
-      return ["::", x.tag.toString(), ...x.extra.map(to_cirru_edn)];
+      return ["::", new CalcitSymbol(x.tag.value).toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitStructValue) {
-      return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+      return ["::", new CalcitSymbol(x.tag.name.value).toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitImpl) {
-      return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+      return ["::", new CalcitSymbol(x.tag.name.value).toString(), ...x.extra.map(to_cirru_edn)];
     } else {
       throw new Error(`Unsupported tag for EDN: ${x.tag}`);
     }
