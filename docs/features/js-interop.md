@@ -53,6 +53,16 @@ legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
 with `js-nullish->option` only after accepting the opaque payload contract;
 generic `optionally` does not accept `JsNullish<T>`.
 
+### Opt-in: flagging untyped access points
+
+`.-name`, `.!name`, `aget`, `aset`, `js-get`, and `js-set` against a bare
+`JsObject` receiver (no external-object trait attached) still work, but nothing
+about the field is checked. Running with `--warn-dyn-method` additionally
+reports `W_JS_FFI_UNTYPED_ACCESS` for these calls whenever the field key is a
+literal tag/string, since that is the case where declaring a trait for the
+receiver is directly actionable. A dynamic (non-literal) key, or a receiver
+that already carries trait or nullable evidence, does not trigger it.
+
 ## ES modules with typed adapters
 
 Import npm packages with the ordinary namespace rules, then keep the unchecked

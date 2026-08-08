@@ -552,7 +552,7 @@ fn gen_call_code(
             None => String::from("null"),
           };
           let err_var = js_gensym("err");
-          let ret = format!("let {err_var} = new Error({message});\n {err_var}.data = {data_code};\n throw {err_var};");
+          let ret = format!("let {err_var} = new Error({message});\n{err_var}.data = {data_code};\nthrow {err_var};");
           // println!("inside raise: {:?} {}", return_label, xs);
           match return_label {
             Some(_) => Ok(ret),
@@ -1407,7 +1407,7 @@ fn list_to_js_code(
     } else {
       let line = to_js_code(x, ns, &local_defs, file_imports, tags, Some(""))?;
       result.push_str("{\n");
-      result.push_str(&line);
+      result.push_str(&indent_block(&line, "  "));
       result.push_str(";\n}\n");
     }
   }
@@ -1609,14 +1609,21 @@ fn gen_js_func(
     };
     Ok(format!("{export_mark}{fn_def}\n"))
   } else {
+    let body_code = list_to_js_code(&body, passed_defs.ns, local_defs, "return ", passed_defs.file_imports, tags)?;
+    let header = format!("{check_args}{spreading_code}");
+    let full_body = if header.trim().is_empty() {
+      body_code
+    } else {
+      format!("{header}\n{body_code}")
+    };
+    // Cheap, line-based indentation only (no AST-aware pretty-printing) so
+    // generated code stays readable without adding real compile cost.
     let fn_definition = format!(
-      "{}function {}({}) {{ {}{}\n{}}}",
+      "{}function {}({}) {{\n{}\n}}",
       async_prefix,
       escape_var(name),
       args_code,
-      check_args,
-      spreading_code,
-      list_to_js_code(&body, passed_defs.ns, local_defs, "return ", passed_defs.file_imports, tags)?
+      indent_block(&full_body, "  ")
     );
     let export_mark = if exported { "export " } else { "" };
     Ok(format!("{export_mark}{fn_definition}\n"))
@@ -1797,6 +1804,10 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             local_defs: &def_names,
             file_imports: &file_imports,
           };
+          // Blank line between generated functions is a cheap, no-cost readability win.
+          if !defs_code.is_empty() {
+            defs_code.push('\n');
+          }
           defs_code.push_str(&gen_js_func(&def, &raw_args, &raw_body, &passed_defs, true, &collected_tags, ns)?);
           gen_stack::pop_call_stack();
         }
