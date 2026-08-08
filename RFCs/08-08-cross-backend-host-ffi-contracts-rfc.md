@@ -16,6 +16,8 @@ Calcit 应使用统一的逻辑契约模型描述 FFI 边界，同时允许 Java
 
 JavaScript 是首个完整使用宿主形状的后端，因为 DOM 和 JavaScript API 会暴露稳定属性及接收者方法。本 RFC 不尝试建模 TypeScript、JavaScript 原型、任意变异、重载解析、条件类型或完整的 DOM 类型层级。
 
+本 RFC 的核心目标不是精确描述外部类型，而是把 Calcit 已有的类型约束延伸到 FFI 边界。声明只覆盖应用真正依赖的稳定成员；未声明部分继续保持不透明。这样可以优先阻止最常见的错误，例如属性名拼错、可空值直接解引用、写入错误类型、方法参数不匹配，以及把宿主对象误当作普通 Calcit 数据。
+
 ## 2. 动机
 
 当前的边界机制已经体现了目标模型的一部分：
@@ -43,6 +45,7 @@ JavaScript 是首个完整使用宿主形状的后端，因为 DOM 和 JavaScrip
 5. 在不模拟 TypeScript 的前提下，使 DOM 和常规 JavaScript API 绑定切实可用。
 6. 允许原生和 WASM FFI 渐进采用同一契约。
 7. 默认保持原始/未验证宿主值的不透明性。
+8. 让宿主声明复用现有 Calcit 类型写法；高频浏览器绑定保持简短，少见的 ABI/所有权细节才使用完整形式。
 
 ## 4. 非目标
 
@@ -229,6 +232,132 @@ MVP 字段元数据包括：
 
 MVP 支持 `:opaque` 和 `:closed`。`:open` 延后至具体生态用例提出需求时实现。
 
+### 8.5 高频声明简写
+
+完整字段元数据适合生成器和少见边界，但手写 DOM 绑定不应被重复的 `:type`、`:presence`、`:access` 淹没。`defhost-type` 因此接受以下等价短写，并在预处理阶段规范化为 8.2 节的完整字段契约：
+
+```cirru.no-check
+:fields $ {}
+  |tagName 'String                 ; required + read
+  |value $ :rw 'String            ; required + read-write
+  |parentElement $ :? 'DomElement ; nullish + read
+  |dataset $ :ro 'DomStringMap    ; required + read
+```
+
+- `field Type`：必需、只读字段，是最常用的默认形式；
+- `field (:rw Type)`：必需、可读写字段；
+- `field (:? Type)`：可空、只读字段，JS 读取结果为 `JsNullish<Type>`；
+- `field (:?rw Type)`：可空、可读写字段；
+- `:ro` 是只读的显式写法，主要供生成器保持输出规整。
+
+方法短写直接复用 Calcit 函数 schema 的 `:args`/`:return` 关系，只省略重复的 map 键：
+
+```cirru.no-check
+:methods $ {}
+  |focus $ [] 'Unit
+  |matches $ [] 'String => 'Bool
+  |querySelector $ [] 'String => (:: 'JsNullish 'DomElement)
+```
+
+其中 `[] Return` 表示无参数方法，`[] Arg... => Return` 表示有参数方法。需要 `:effects`、泛型、回调或后端传输信息时，仍使用完整 schema。短写只是语法糖，不引入另一套类型系统。
+
+### 8.6 浏览器基础契约案例
+
+浏览器绑定应按应用需要声明小型名义接口，而不是复制整套 DOM 继承树。以下集合覆盖常见范式，并展示声明之间如何复用现有 Calcit 类型：
+
+```cirru.no-check
+defhost-type DomEvent $ {}
+  :backend :js
+  :fields $ {}
+    |type 'String
+    |target $ :? 'DomEventTarget
+    |currentTarget $ :? 'DomEventTarget
+  :methods $ {}
+    |preventDefault $ [] 'Unit
+
+defhost-type DomEventTarget $ {}
+  :backend :js
+  :methods $ {}
+    |addEventListener $ [] 'String (:: 'Fn $ {} (:args $ [] 'DomEvent) (:return 'Unit)) => 'Unit
+    |removeEventListener $ [] 'String (:: 'Fn $ {} (:args $ [] 'DomEvent) (:return 'Unit)) => 'Unit
+
+defhost-type DomElement $ {}
+  :backend :js
+  :fields $ {}
+    |id $ :rw 'String
+    |textContent $ :?rw 'String
+    |parentElement $ :? 'DomElement
+    |children 'DomElementList
+  :methods $ {}
+    |matches $ [] 'String => 'Bool
+    |querySelector $ [] 'String => (:: 'JsNullish 'DomElement)
+    |querySelectorAll $ [] 'String => 'DomElementList
+    |getAttribute $ [] 'String => (:: 'JsNullish 'String)
+    |setAttribute $ [] 'String 'String => 'Unit
+
+defhost-type DomInput $ {}
+  :backend :js
+  :fields $ {}
+    |value $ :rw 'String
+    |checked $ :rw 'Bool
+    |disabled $ :rw 'Bool
+    |form $ :? 'DomElement
+  :methods $ {}
+    |focus $ [] 'Unit
+
+defhost-type DomElementList $ {}
+  :backend :js
+  :fields $ {}
+    |length 'Number
+  :methods $ {}
+    |item $ [] 'Number => (:: 'JsNullish 'DomElement)
+```
+
+这些类型不声称精确等价于浏览器内建接口。例如 `DomInput` 不需要描述 `HTMLInputElement` 的全部继承成员；它只约束 Calcit 程序实际使用的字段和方法。不同模块可以声明不同粒度的接口，但同一个值不能因为成员名字相似而自动在接口之间转换。
+
+常见浏览器入口使用函数 schema 声明：
+
+```cirru.no-check
+:: 'Fn $ {}
+  :args $ [] 'String
+  :return $ :: 'JsNullish 'DomElement
+  :features $ #{} :js-ffi
+defn query-selector (selector)
+  .?!querySelector js/document selector
+
+:: 'Fn $ {}
+  :args $ [] 'Number (:: 'Fn $ {} (:args $ []) (:return 'Unit))
+  :return 'JsTimer
+  :features $ #{} :js-ffi
+defn set-timeout (delay task)
+  js/setTimeout task delay
+
+:: 'Fn $ {}
+  :args $ [] 'JsTimer
+  :return 'Unit
+  :features $ #{} :js-ffi
+defn clear-timeout (timer)
+  js/clearTimeout timer
+```
+
+`JsTimer` 应声明为 `:opaque` 宿主类型，避免把浏览器数字句柄或 Node.js 对象句柄错误地固定为 `Number`。类似地，`Promise<T>`、`Response`、`Storage`、`Location` 和 `CanvasRenderingContext2D` 都应按实际使用面声明，不追求平台定义的完整镜像。
+
+### 8.7 常见转换范式
+
+FFI 中转换很多，但大部分可归入少数明确边界：
+
+| 来源 | 目标 | 默认规则 |
+| --- | --- | --- |
+| `JsNullish<T>` | `T` | 通过 `js-present?`/`js-nullish?` 做存在性收窄 |
+| `JsObject` | `Host<T>` | 受检解码器或显式可信断言 |
+| `Host<T>` | `Host<U>` | 不按结构自动转换；使用已声明的宿主转换或可信断言 |
+| `Host<T>` | Calcit `Struct`/`Map` | 显式读取字段，或使用受检数据解码器 |
+| Calcit `Struct`/`Map` | `Host<T>` | 后端构造器/编码器，不因字段相同而自动转换 |
+| 回调参数 | `Host<T>` | 由声明的回调 schema 提供约束 |
+| `Promise<T>` | `T` | 通过 `js-await`，由 Promise 契约提供结果类型 |
+
+实现应优先保留这些边界，而不是增加隐式转换。类型约束的价值来自尽早暴露错误；若为了“方便”按字段结构自动兼容，FFI 又会退回到容易误用的动态状态。
+
 ## 9. 后端可调用项声明
 
 后端特定语法继续有效，但每项声明都必须规范化为 `HostCallableContract`。
@@ -387,6 +516,10 @@ JavaScript 是首个实现字段和方法投影的后端。
 - 现有应用所需的事件目标/值字段；
 - `Document.querySelector` 和少量常用元素方法；
 - 仅在稳定契约明确时提供存储和定时器 API。
+- 事件监听与回调参数约束；
+- DOM 查询、父子导航、类数组集合和可空查找结果；
+- 表单控件的字符串/布尔值读写；
+- Promise、Fetch、Storage、Location 与 Canvas 的小型按需接口。
 
 绑定可以位于模块中，而不必进入核心。核心类型系统提供宿主契约，无需附带完整的 Web 平台。
 
