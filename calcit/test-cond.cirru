@@ -5,14 +5,14 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-cond.main $ %{} :FileEntry
+    |test-cond.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) (test-field-match) true
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-and $ %{} :CodeEntry (:doc |)
+        |test-and $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing and")
               assert= (and 1) 1
@@ -34,7 +34,7 @@
                 , false
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-case $ %{} :CodeEntry (:doc |)
+        |test-case $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-case ()
               let
@@ -57,7 +57,7 @@
                 assert= (detect-x 2) |two
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-cond $ %{} :CodeEntry (:doc |)
+        |test-cond $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -72,7 +72,7 @@
               assert= (compare-x 4) |<=5
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-either $ %{} :CodeEntry (:doc |)
+        |test-either $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing either")
               assert= 1 $ either nil 1
@@ -82,7 +82,7 @@
               assert= 1 $ either (do nil) (do 1) (do nil)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-field-match $ %{} :CodeEntry (:doc |)
+        |test-field-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing field-match")
               &let
@@ -100,7 +100,7 @@
                 assert= :other $ match-ab (&{} :tag :c)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-or $ %{} :CodeEntry (:doc |)
+        |test-or $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing or")
               assert= (or 1) 1
@@ -123,7 +123,7 @@
                 , false
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-tag-match $ %{} :CodeEntry (:doc |)
+        |test-tag-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tag-match")
               ; println |EXPANDED $ format-to-cirru
@@ -158,7 +158,7 @@
                   [] "|no match"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-when $ %{} :CodeEntry (:doc |)
+        |test-when $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing when")
               assert= 1 $ when true 1
@@ -167,7 +167,7 @@
               assert= 1 $ when-not false 2 1
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-cond.main $ :require
             util.core :refer $ inside-eval: log-title

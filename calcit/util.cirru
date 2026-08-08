@@ -5,9 +5,9 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |util.core $ %{} :FileEntry
+    |util.core $ %{} 'FileEntry
       :defs $ {}
-        |inside-eval: $ %{} :CodeEntry (:doc |)
+        |inside-eval: $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro inside-eval: (& body)
               if
@@ -18,7 +18,7 @@
           :schema $ :: 'Macro
             {} (:rest 'Dynamic)
               :args $ [] 'Dynamic
-        |inside-js: $ %{} :CodeEntry (:doc |)
+        |inside-js: $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro inside-js: (& body)
               if
@@ -29,27 +29,27 @@
           :schema $ :: 'Macro
             {} (:rest 'Dynamic)
               :args $ [] 'Dynamic
-        |log-title $ %{} :CodeEntry (:doc |)
+        |log-title $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ :: 'Unit
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: 'Unit
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns util.core $ :require

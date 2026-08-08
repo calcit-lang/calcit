@@ -192,7 +192,7 @@ let
   ; get the definition used to construct the value
   println $ struct-definition p
   ; compare definitions directly for an origin check
-  println $ = (option:unwrap $ struct-definition p) Point
+  println $ = (struct-definition p) .unwrap Point
   ; => true
   ; struct-def? is the definition predicate
   println $ struct-def? Point
@@ -264,7 +264,7 @@ let
     Dog $ defstruct Dog (:name :string)
     v1 $ %{} Cat (:name |Mimi) (:color :white)
   if
-    = (option:unwrap $ struct-definition v1) Cat
+    = (struct-definition v1) .unwrap Cat
     println "|Handle Cat branch"
     println "|Not a Cat"
 ```

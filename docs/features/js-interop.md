@@ -53,10 +53,9 @@ legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
 with `js-nullish->option` only after accepting the opaque payload contract;
 generic `optionally` does not accept `JsNullish<T>`.
 
-A nominal `Option<T>` uses `option:some?`/`option:none?` (or `.some?`/`.none?`);
-preprocessing reports `W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are
-applied to an Option, so an API migration cannot silently preserve the wrong
-branch behavior.
+A nominal `Option<T>` uses `.some?`/`.none?`. Preprocessing reports
+`W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are applied to an Option,
+so an API migration cannot silently preserve the wrong branch behavior.
 
 ```cirru.no-run
 let

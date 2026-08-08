@@ -2349,7 +2349,7 @@
           :tags $ #{} :trait-impl
         |OptionMethods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def OptionMethods $ &impl::new :OptionMethods (:: .some? option:some?) (:: .none? option:none?) (:: .unwrap-or option:unwrap-or) (:: .and-then option:and-then)
+            def OptionMethods $ &impl::new :OptionMethods (:: .some? option:some?) (:: .none? option:none?) (:: .unwrap option:unwrap) (:: .unwrap-or option:unwrap-or) (:: .and-then option:and-then) (:: .fold option:fold)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -5103,6 +5103,7 @@
                   :return $ :: 'Option 'U
               :generics $ [] 'T 'U
               :return $ :: 'Option 'U
+          :tags $ #{} :internal
         |option:fold $ %{} 'CodeEntry (:doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload.")
           :code $ quote
             defn option:fold (opt on-none on-some)
@@ -5126,6 +5127,7 @@
                 :: 'Fn $ {} (:return 'U)
                   :args $ [] 'T
               :generics $ [] 'T 'U
+          :tags $ #{} :internal
         |option:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
@@ -5142,6 +5144,7 @@
                   :args $ [] 'T
               :generics $ [] 'T 'U
               :return $ :: 'Option 'U
+          :tags $ #{} :internal
         |option:none? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :none.")
           :code $ quote
             defn option:none? (opt)
@@ -5155,6 +5158,7 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Option 'T)
               :generics $ [] 'T
+          :tags $ #{} :internal
         |option:some? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :some.")
           :code $ quote
             defn option:some? (opt)
@@ -5168,6 +5172,7 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Option 'T)
               :generics $ [] 'T
+          :tags $ #{} :internal
         |option:unwrap $ %{} 'CodeEntry (:doc "|Return the payload of some; raise when the Option is none.")
           :code $ quote
             defn option:unwrap (opt)
@@ -5181,6 +5186,7 @@
             {} (:return 'T)
               :args $ [] (:: 'Option 'T)
               :generics $ [] 'T
+          :tags $ #{} :internal
         |option:unwrap-or $ %{} 'CodeEntry (:doc "|Returns the :some payload, or the fallback for :none.")
           :code $ quote
             defn option:unwrap-or (opt fallback)
@@ -5194,6 +5200,7 @@
             {} (:return 'T)
               :args $ [] (:: 'Option 'T) 'T
               :generics $ [] 'T
+          :tags $ #{} :internal
         |optionally $ %{} 'CodeEntry (:doc "|Convert a nullable Optional<T> value into nominal Option<T>.")
           :code $ quote
             defn optionally (s)
@@ -5494,6 +5501,7 @@
                   :return $ :: 'Result 'U 'E
               :generics $ [] 'T 'U 'E
               :return $ :: 'Result 'U 'E
+          :tags $ #{} :internal
         |result:err? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :err.")
           :code $ quote
             defn result:err? (res)
@@ -5507,6 +5515,7 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Result 'T 'E)
               :generics $ [] 'T 'E
+          :tags $ #{} :internal
         |result:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)
@@ -5523,6 +5532,7 @@
                   :args $ [] 'T
               :generics $ [] 'T 'U 'E
               :return $ :: 'Result 'U 'E
+          :tags $ #{} :internal
         |result:map-err $ %{} 'CodeEntry (:doc "|Maps the error payload of a Result while preserving :ok.")
           :code $ quote
             defn result:map-err (res f)
@@ -5542,6 +5552,7 @@
                   :args $ [] 'E
               :generics $ [] 'T 'E 'F
               :return $ :: 'Result 'T 'F
+          :tags $ #{} :internal
         |result:ok? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :ok.")
           :code $ quote
             defn result:ok? (res)
@@ -5555,6 +5566,7 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Result 'T 'E)
               :generics $ [] 'T 'E
+          :tags $ #{} :internal
         |result:unwrap-or $ %{} 'CodeEntry (:doc "|Returns the :ok payload, or the fallback for :err.")
           :code $ quote
             defn result:unwrap-or (res fallback)
@@ -5568,6 +5580,7 @@
             {} (:return 'T)
               :args $ [] (:: 'Result 'T 'E) 'T
               :generics $ [] 'T 'E
+          :tags $ #{} :internal
         |reverse $ %{} 'CodeEntry (:doc "|Reverse the order of elements in a list")
           :code $ quote
             defn reverse (x) (&list:reverse x)

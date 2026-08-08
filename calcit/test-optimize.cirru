@@ -5,36 +5,36 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-optimize.main $ %{} :FileEntry
+    |test-optimize.main $ %{} 'FileEntry
       :defs $ {}
-        |LocalPerson0 $ %{} :CodeEntry (:doc |)
+        |LocalPerson0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct LocalPerson0 $ :name 'String
           :examples $ []
           :schema $ :: 'Dynamic
-        |Person $ %{} :CodeEntry (:doc |)
+        |Person $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def Person $ impl-traits Person0 ShowImpl
           :examples $ []
           :schema $ :: 'Dynamic
-        |Person0 $ %{} :CodeEntry (:doc |)
+        |Person0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Person0 $ :name 'String
           :examples $ []
           :schema $ :: 'Dynamic
-        |ShowImpl $ %{} :CodeEntry (:doc |)
+        |ShowImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl ShowImpl ShowTrait $ .show
               fn (self)
                 str "|Person: " $ &struct:get self :name
           :examples $ []
           :schema $ :: 'Dynamic
-        |ShowTrait $ %{} :CodeEntry (:doc |)
+        |ShowTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait ShowTrait $ .show :fn
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ let
                 p $ %{} Person (:name |Jim)
@@ -64,6 +64,6 @@
                 println $ lp .show
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-optimize.main $ :require

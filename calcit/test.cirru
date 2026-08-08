@@ -5,9 +5,9 @@
       :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-struct.cirru |./test-fn.cirru |./test-anonymous-enum.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |%A $ %{} :CodeEntry (:doc |)
+        |%A $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl %A AtomDerefTrait $ .deref
               fn (self)
@@ -16,58 +16,58 @@
                   , x
           :examples $ []
           :schema $ :: 'Dynamic
-        |%r $ %{} :CodeEntry (:doc |)
+        |%r $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl %r DemoGetTrait $ .get
               fn (self) 1
           :examples $ []
           :schema $ :: 'Dynamic
-        |*ref-demo $ %{} :CodeEntry (:doc |)
+        |*ref-demo $ %{} 'CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
           :examples $ []
           :schema $ :: 'Ref 'Number
-        |AtomBox $ %{} :CodeEntry (:doc |)
+        |AtomBox $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def AtomBox $ impl-traits AtomBox0 %A
           :examples $ []
           :schema $ :: 'Dynamic
-        |AtomBox0 $ %{} :CodeEntry (:doc |)
+        |AtomBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum AtomBox $ :atom 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
-        |AtomDerefTrait $ %{} :CodeEntry (:doc |)
+        |AtomDerefTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait AtomDerefTrait $ .deref :fn
           :examples $ []
           :schema $ :: 'Trait
-        |Demo $ %{} :CodeEntry (:doc |)
+        |Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def Demo $ impl-traits Demo0 %r
           :examples $ []
           :schema $ :: 'Dynamic
-        |Demo0 $ %{} :CodeEntry (:doc |)
+        |Demo0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Demo $ :a 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
-        |DemoGetTrait $ %{} :CodeEntry (:doc |)
+        |DemoGetTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait DemoGetTrait $ .get :fn
           :examples $ []
           :schema $ :: 'Trait
-        |Deref $ %{} :CodeEntry (:doc |)
+        |Deref $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl Deref DerefTrait $ .deref
               fn (self) 2
           :examples $ []
           :schema $ :: 'Dynamic
-        |DerefTrait $ %{} :CodeEntry (:doc |)
+        |DerefTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait DerefTrait $ .deref :fn
           :examples $ []
           :schema $ :: 'Trait
-        |Num $ %{} :CodeEntry (:doc |)
+        |Num $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl Num NumTrait
               .inc $ fn (x) (update x 1 inc)
@@ -75,32 +75,32 @@
                 str $ &enum:nth x 1
           :examples $ []
           :schema $ :: 'Dynamic
-        |NumBox $ %{} :CodeEntry (:doc |)
+        |NumBox $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
           :examples $ []
           :schema $ :: 'Dynamic
-        |NumBox0 $ %{} :CodeEntry (:doc |)
+        |NumBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum NumBox $ :number 'Number
           :examples $ []
           :schema $ :: 'Dynamic
-        |NumTrait $ %{} :CodeEntry (:doc |)
+        |NumTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
           :schema $ :: 'Dynamic
-        |ValueBox $ %{} :CodeEntry (:doc |)
+        |ValueBox $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def ValueBox $ impl-traits ValueBox0 Deref
           :examples $ []
           :schema $ :: 'Dynamic
-        |ValueBox0 $ %{} :CodeEntry (:doc |)
+        |ValueBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum ValueBox $ :value 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (&init-builtin-impls!)
               println $ &get-os
@@ -153,14 +153,63 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: 'Unit
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-arguments $ %{} :CodeEntry (:doc |)
+        |test-anonymous-enum $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            fn () (log-title "|Testing tuple")
+              assert= :enum $ type-of (:: :a :b)
+              assert= (%some :a)
+                nth (:: :a :b) 0
+              assert= (%some :b)
+                nth (:: :a :b) 1
+              assert= (%some :c)
+                nth (:: :a :b :c) 2
+              assert= 2 $ count (:: :a :b)
+              assert= 3 $ count (:: :a :b :c)
+              assert= 4 $ count (:: :a :b :c :d)
+              assert= (%some :a)
+                get (:: :a :b) 0
+              assert= (%some :b)
+                get (:: :a :b) 1
+              assert= (%some :c)
+                get (:: :a :b :c) 2
+              assert= true $ contains? (:: :a :b :c) 2
+              assert= (:: 1 0)
+                update (:: 0 0) 0 inc
+              assert= (:: 0 1)
+                update (:: 0 0) 1 inc
+              assert= (:: 1 0 0)
+                update (:: 0 0 0) 0 inc
+              assert= (:: 0 1 0)
+                update (:: 0 0 0) 1 inc
+              assert= (:: 0 0 1)
+                update (:: 0 0 0) 2 inc
+              assert= 1 $ count (:: :none)
+              assert-detect enum? $ parse-cirru-edn "|:: :none"
+              assert= false $ = (:: :t 1) (:: :t 2)
+              assert= false $ = (:: :t 1) (:: :t 1 2)
+              let
+                  a $ :: :a 1
+                  b $ %:: Demo :a 1
+                assert= true $ any? (&enum:impls b)
+                  fn (impl)
+                    includes? (str impl) |DemoGetTrait
+                assert=
+                  &enum:params $ :: :a 1 2 3
+                  [] 1 2 3
+                assert= "|(%:: 'Demo :a 1)" $ str b
+              assert= "|(%:: _ :a :b :c)" $ str (:: :a :b :c)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ []
+        |test-arguments $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
               let
@@ -176,7 +225,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-atom $ %{} :CodeEntry (:doc |)
+        |test-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               let
@@ -190,7 +239,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-buffer $ %{} :CodeEntry (:doc |)
+        |test-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |Buffer)
               println "|buffer value:" $ &buffer 0x11 |11
@@ -198,7 +247,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-cirru-parser $ %{} :CodeEntry (:doc |)
+        |test-cirru-parser $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing Cirru parser")
               assert= (parse-cirru-list "|def f (a b) $ + a b")
@@ -228,7 +277,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-detects $ %{} :CodeEntry (:doc |)
+        |test-detects $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-detects ()
               assert-detect fn? $ fn () 1
@@ -281,14 +330,14 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-display-stack $ %{} :CodeEntry (:doc |)
+        |test-display-stack $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-effect $ %{} :CodeEntry (:doc |)
+        |test-effect $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing effect")
               println "|Env mode:" $ get-env |mode
@@ -298,7 +347,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-fn $ %{} :CodeEntry (:doc |)
+        |test-fn $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing fn")
               &let
@@ -312,7 +361,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-fn-eq $ %{} :CodeEntry (:doc |)
+        |test-fn-eq $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing equality of functions")
               let
@@ -325,7 +374,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-if $ %{} :CodeEntry (:doc |)
+        |test-if $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing if with nil")
               assert= (if false 1) (if nil 1)
@@ -334,7 +383,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-json $ %{} :CodeEntry (:doc |)
+        |test-json $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing JSON")
               let
@@ -358,7 +407,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-method $ %{} :CodeEntry (:doc |)
+        |test-method $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing method")
               let
@@ -384,7 +433,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-refs $ %{} :CodeEntry (:doc |)
+        |test-refs $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
               add-watch *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
@@ -412,7 +461,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-tag $ %{} :CodeEntry (:doc |)
+        |test-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-tag ()
               ; assert "|tag function" $ =
@@ -429,7 +478,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-try $ %{} :CodeEntry (:doc |)
+        |test-try $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-try ()
               assert= false $ try
@@ -446,56 +495,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-anonymous-enum $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing tuple")
-              assert= :enum $ type-of (:: :a :b)
-              assert= (%some :a)
-                nth (:: :a :b) 0
-              assert= (%some :b)
-                nth (:: :a :b) 1
-              assert= (%some :c)
-                nth (:: :a :b :c) 2
-              assert= 2 $ count (:: :a :b)
-              assert= 3 $ count (:: :a :b :c)
-              assert= 4 $ count (:: :a :b :c :d)
-              assert= (%some :a)
-                get (:: :a :b) 0
-              assert= (%some :b)
-                get (:: :a :b) 1
-              assert= (%some :c)
-                get (:: :a :b :c) 2
-              assert= true $ contains? (:: :a :b :c) 2
-              assert= (:: 1 0)
-                update (:: 0 0) 0 inc
-              assert= (:: 0 1)
-                update (:: 0 0) 1 inc
-              assert= (:: 1 0 0)
-                update (:: 0 0 0) 0 inc
-              assert= (:: 0 1 0)
-                update (:: 0 0 0) 1 inc
-              assert= (:: 0 0 1)
-                update (:: 0 0 0) 2 inc
-              assert= 1 $ count (:: :none)
-              assert-detect enum? $ parse-cirru-edn "|:: :none"
-              assert= false $ = (:: :t 1) (:: :t 2)
-              assert= false $ = (:: :t 1) (:: :t 1 2)
-              let
-                  a $ :: :a 1
-                  b $ %:: Demo :a 1
-                assert= true $ any? (&enum:impls b)
-                  fn (impl)
-                    includes? (str impl) |DemoGetTrait
-                assert=
-                  &enum:params $ :: :a 1 2 3
-                  [] 1 2 3
-                assert= "|(%:: 'Demo :a 1)" $ str b
-              assert= "|(%:: _ :a :b :c)" $ str (:: :a :b :c)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)
             util.core :refer $ log-title inside-eval: inside-js:

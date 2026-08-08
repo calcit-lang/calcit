@@ -5,9 +5,9 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Bundle indentation-based Calcit source files into a runnable snapshot.")
+        |main! $ %{} 'CodeEntry (:doc "|Bundle indentation-based Calcit source files into a runnable snapshot.")
           :code $ quote
             defn main! () $ let
                 CodeEntry $ defstruct CodeEntry (:doc 'String) (:code 'Dynamic) (:examples 'List)
@@ -61,10 +61,10 @@
               println $ str-spaced |wrote output-path |with (count files) |namespaces
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns app.main)

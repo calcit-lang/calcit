@@ -5,14 +5,14 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |check-args.main $ %{} :FileEntry
+    |check-args.main $ %{} 'FileEntry
       :defs $ {}
-        |f1 $ %{} :CodeEntry (:doc |)
+        |f1 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn f1 (a) (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
-        |f2 $ %{} :CodeEntry (:doc |)
+        |f2 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn f2 (a ? b)
               hint-fn $ {}
@@ -21,17 +21,17 @@
               :: :unit
           :examples $ []
           :schema $ :: 'Dynamic
-        |f3 $ %{} :CodeEntry (:doc |)
+        |f3 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn f3 (a & b) (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (; "bad case examples for args checking") (f1 1 4) (f2 1) (f2 1 2) (f2 1 2 4) (f2) (f3 1) (f3 1 2) (f3 1 2 3) (f3)
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns check-args.main $ :require
             [] util.core :refer $ [] log-title inside-eval:

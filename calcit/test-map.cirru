@@ -5,16 +5,16 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-map.main $ %{} :FileEntry
+    |test-map.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-diff $ %{} :CodeEntry (:doc |)
+        |test-diff $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing diff")
               assert=
@@ -59,7 +59,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-get $ %{} :CodeEntry (:doc |)
+        |test-get $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing get")
               assert= (%none)
@@ -83,7 +83,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-keys $ %{} :CodeEntry (:doc |)
+        |test-keys $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing keys")
               assert=
@@ -96,7 +96,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-map-comma $ %{} :CodeEntry (:doc |)
+        |test-map-comma $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing {,}")
               inside-eval: $ assert=
@@ -109,7 +109,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-maps $ %{} :CodeEntry (:doc |)
+        |test-maps $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-maps ()
               assert= 2 $ count
@@ -182,7 +182,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing map methods")
               assert= (&{} :a 1 :b 2)
@@ -303,7 +303,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-native-map-syntax $ %{} :CodeEntry (:doc |)
+        |test-native-map-syntax $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-native-map-syntax () $ inside-eval:
               assert=
@@ -314,7 +314,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-pairs $ %{} :CodeEntry (:doc |)
+        |test-pairs $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert=
@@ -353,7 +353,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-select $ %{} :CodeEntry (:doc |)
+        |test-select $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing select")
               assert=
@@ -380,7 +380,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-shorthand $ %{} :CodeEntry (:doc |)
+        |test-shorthand $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing shorthand")
               let
@@ -390,7 +390,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-map.main $ :require
             [] util.core :refer $ [] log-title inside-eval: inside-js:

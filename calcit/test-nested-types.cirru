@@ -5,26 +5,26 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |compute $ %{} :CodeEntry (:doc |)
+        |compute $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn compute (x) 'Number $ &+ x 10
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ println (test-nested-scope)
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |test-nested-scope $ %{} :CodeEntry (:doc |)
+        |test-nested-scope $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-nested-scope () (; "测试：外层定义的变量可以被内层使用，并保留类型信息")
               let
@@ -41,5 +41,5 @@
                     d
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns app.main)

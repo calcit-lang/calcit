@@ -5,9 +5,9 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |debug-overflow.main $ %{} :FileEntry
+    |debug-overflow.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println |TODO) (; rec 1 2 3 4 5 6 7 8 9)
               println $ my-cond
@@ -17,7 +17,7 @@
                 true 0
           :examples $ []
           :schema $ :: 'Dynamic
-        |my-cond $ %{} :CodeEntry (:doc |)
+        |my-cond $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro my-cond (pair & else)
               &let
@@ -31,7 +31,7 @@
                         ~@ $ rest else
           :examples $ []
           :schema $ :: 'Dynamic
-        |rec $ %{} :CodeEntry (:doc |)
+        |rec $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro rec (x0 & xs)
               quasiquote $ if (&> ~x0 10) "|Too large"
@@ -41,7 +41,7 @@
                     rec $ ~@ xs
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns debug-overflow.main $ :require
             [] util.core :refer $ [] log-title inside-eval:

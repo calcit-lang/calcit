@@ -5,16 +5,16 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-set.main $ %{} :FileEntry
+    |test-set.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing set") (test-set) (test-methods) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (#{} 1 2 3)
@@ -75,7 +75,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-set $ %{} :CodeEntry (:doc |)
+        |test-set $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-set ()
               assert= 4 $ count (#{} 1 2 3 4)
@@ -134,7 +134,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-set.main $ :require
             util.core :refer $ log-title

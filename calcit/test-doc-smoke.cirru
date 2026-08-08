@@ -5,41 +5,41 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-doc-smoke.main $ %{} :FileEntry
+    |test-doc-smoke.main $ %{} 'FileEntry
       :defs $ {}
-        |DocEnum0 $ %{} :CodeEntry (:doc "|Doc smoke enum")
+        |DocEnum0 $ %{} 'CodeEntry (:doc "|Doc smoke enum")
           :code $ quote
             defenum DocEnum $ :ok 'String
           :examples $ []
           :schema $ :: 'Dynamic
-        |DocPerson0 $ %{} :CodeEntry (:doc "|Doc smoke struct")
+        |DocPerson0 $ %{} 'CodeEntry (:doc "|Doc smoke struct")
           :code $ quote
             defstruct DocPerson $ :name 'String
           :examples $ []
           :schema $ :: 'Dynamic
-        |DocTrait $ %{} :CodeEntry (:doc "|Doc smoke trait")
+        |DocTrait $ %{} 'CodeEntry (:doc "|Doc smoke trait")
           :code $ quote
             deftrait DocTrait $ .label :fn
           :examples $ []
           :schema $ :: 'Dynamic
-        |DocTraitImpl $ %{} :CodeEntry (:doc "|Doc smoke impl")
+        |DocTraitImpl $ %{} 'CodeEntry (:doc "|Doc smoke impl")
           :code $ quote
             defimpl DocTraitImpl DocTrait $ .label
               fn (x)
                 str-spaced |doc $ &struct:get x :name
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc "|Run docs smoke cases")
+        |main! $ %{} 'CodeEntry (:doc "|Run docs smoke cases")
           :code $ quote
             defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-native-impl-new-dot-method) (test-assert-traits-local) (test-impl-traits-struct-enum-only) (println "|Doc smoke cases passed")
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
+        |reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () $ :: 'Unit
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-assert-traits-local $ %{} :CodeEntry (:doc "|assert-traits local first arg smoke")
+        |test-assert-traits-local $ %{} 'CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote
             defn test-assert-traits-local () $ let
                 DocPerson $ impl-traits DocPerson0 DocTraitImpl
@@ -48,12 +48,12 @@
               assert= "|doc Alice" $ p .label
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-defimpl-order $ %{} :CodeEntry (:doc "|defimpl arg order smoke")
+        |test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote
             defn test-defimpl-order () $ assert= (%some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-impl-traits-struct-enum-only $ %{} :CodeEntry (:doc "|impl-traits only accepts struct/enum definitions")
+        |test-impl-traits-struct-enum-only $ %{} 'CodeEntry (:doc "|impl-traits only accepts struct/enum definitions")
           :code $ quote
             defn test-impl-traits-struct-enum-only ()
               let
@@ -74,7 +74,7 @@
                   assert= true $ includes? msg |Fix:
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-native-impl-new-dot-method $ %{} :CodeEntry (:doc "|&impl::new accepts .method field keys")
+        |test-native-impl-new-dot-method $ %{} 'CodeEntry (:doc "|&impl::new accepts .method field keys")
           :code $ quote
             defn test-native-impl-new-dot-method () $ let
                 DotImpl $ &impl::new DocTrait
@@ -86,7 +86,7 @@
               assert= "|native-dot Bob" $ p .label
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-doc-smoke.main $ :require
             util.core :refer $ inside-eval:

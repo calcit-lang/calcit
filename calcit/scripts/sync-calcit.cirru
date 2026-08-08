@@ -5,9 +5,9 @@
       :modules $ [] |bisection-key/
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.")
+        |main! $ %{} 'CodeEntry (:doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot.")
           :code $ quote
             defn main! () $ let
                 Leaf $ defstruct Leaf (:at 'Number) (:by 'String) (:text 'String)
@@ -109,12 +109,12 @@
               println $ str-spaced |synced compact-path |to calcit-path
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require
             bisection-key.util :refer $ assoc-append val-nth

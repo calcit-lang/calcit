@@ -5,9 +5,9 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |type-fail-schema-call-arg-type.main $ %{} :FileEntry
+    |type-fail-schema-call-arg-type.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Entry for type-fail schema call-site arg type mismatch")
+        |main! $ %{} 'CodeEntry (:doc "|Entry for type-fail schema call-site arg type mismatch")
           :code $ quote
             defn main! () $ let
                 text |hello
@@ -19,19 +19,19 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |plus1 $ %{} :CodeEntry (:doc "|Schema expects :number, call-site passes :string")
+        |plus1 $ %{} 'CodeEntry (:doc "|Schema expects :number, call-site passes :string")
           :code $ quote
             defn plus1 (x) (&+ x 1)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
+        |reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc "|Namespace for schema call-site mismatch")
+      :ns $ %{} 'NsEntry (:doc "|Namespace for schema call-site mismatch")
         :code $ quote (ns type-fail-schema-call-arg-type.main)

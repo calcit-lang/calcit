@@ -5,15 +5,15 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-js.main $ %{} :FileEntry
+    |test-js.main $ %{} 'FileEntry
       :defs $ {}
-        |load-data-code $ %{} :CodeEntry (:doc |)
+        |load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro load-data-code (s)
               &data-to-code $ parse-cirru-edn s
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data) (test-data-gen) (test-regexp) (test-property) (test-tag-keys)
               when (> 1 2)
@@ -35,7 +35,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-async $ %{} :CodeEntry (:doc |)
+        |test-async $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () $ let
                 f1 $ fn ()
@@ -58,7 +58,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-async-in-data $ %{} :CodeEntry (:doc "|async fn inside data. if wrong, it will be a syntax error from await outside async")
+        |test-async-in-data $ %{} 'CodeEntry (:doc "|async fn inside data. if wrong, it will be a syntax error from await outside async")
           :code $ quote
             fn () $ let
                 timeout $ fn (ms)
@@ -78,7 +78,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-case-async $ %{} :CodeEntry (:doc "|case async")
+        |test-case-async $ %{} 'CodeEntry (:doc "|case async")
           :code $ quote
             fn ()
               hint-fn $ {} (:async true)
@@ -101,7 +101,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-collection $ %{} :CodeEntry (:doc |)
+        |test-collection $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing quick collection syntax")
               &let
@@ -140,7 +140,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-data-gen $ %{} :CodeEntry (:doc |)
+        |test-data-gen $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing code gen from Cirru Edn")
               assert=
@@ -148,7 +148,7 @@
                 load-data-code "|:: :code $ quote $ + 1 2"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-for-await $ %{} :CodeEntry (:doc "|for await")
+        |test-for-await $ %{} 'CodeEntry (:doc "|for await")
           :code $ quote
             fn ()
               hint-fn $ {} (:async true)
@@ -165,7 +165,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-js $ %{} :CodeEntry (:doc |)
+        |test-js $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               js/console.log $ js/Math.pow 4 4
@@ -230,7 +230,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-let-example $ %{} :CodeEntry (:doc |)
+        |test-let-example $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing code emitting of using let")
               let
@@ -251,7 +251,7 @@
                 assert= b -1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-property $ %{} :CodeEntry (:doc "|try property ops")
+        |test-property $ %{} 'CodeEntry (:doc "|try property ops")
           :code $ quote
             fn () $ let
                 a $ js-object
@@ -264,7 +264,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-regexp $ %{} :CodeEntry (:doc "|try raw code and regexp")
+        |test-regexp $ %{} 'CodeEntry (:doc "|try raw code and regexp")
           :code $ quote
             fn () $ let
                 pattern $ &raw-code |/^\d+$/
@@ -278,7 +278,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-return-raw-code $ %{} :CodeEntry (:doc "|return with &raw-code")
+        |test-return-raw-code $ %{} 'CodeEntry (:doc "|return with &raw-code")
           :code $ quote
             fn () $ let
                 a $ js-array 1 2
@@ -291,7 +291,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-tag-keys $ %{} :CodeEntry (:doc "|tag keys for js")
+        |test-tag-keys $ %{} 'CodeEntry (:doc "|tag keys for js")
           :code $ quote
             fn ()
               assert= |a_b $ turn-string :a_b
@@ -300,7 +300,7 @@
               assert= |ab! $ turn-string :ab!
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)
             util.core :refer $ log-title

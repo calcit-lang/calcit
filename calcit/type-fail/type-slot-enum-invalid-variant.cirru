@@ -5,19 +5,19 @@
       :modules $ []
       :type-slots $ {} (:dispatch-op |type-fail-type-slot-enum-invalid-variant.main/Action)
   :files $ {}
-    |type-fail-type-slot-enum-invalid-variant.main $ %{} :FileEntry
+    |type-fail-type-slot-enum-invalid-variant.main $ %{} 'FileEntry
       :defs $ {}
-        |Action $ %{} :CodeEntry (:doc "|Enum used for type-slot binding")
+        |Action $ %{} 'CodeEntry (:doc "|Enum used for type-slot binding")
           :code $ quote
             defenum Action (:add 'String) (:remove 'String) (:clear)
           :examples $ []
           :schema $ :: 'Dynamic
-        |legacy-main! $ %{} :CodeEntry (:doc |)
+        |legacy-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn legacy-main! () $ with-type-slot (:dispatch-op Action) 1 2
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc "|Entry testing enum auto-rewrite via type-slot with invalid variant")
+        |main! $ %{} 'CodeEntry (:doc "|Entry testing enum auto-rewrite via type-slot with invalid variant")
           :code $ quote
             defn main! ()
               takes-action $ :: :nonexistent |hello
@@ -26,19 +26,19 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
+        |reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |takes-action $ %{} :CodeEntry (:doc "|Function expecting a type-slot-bound enum value")
+        |takes-action $ %{} 'CodeEntry (:doc "|Function expecting a type-slot-bound enum value")
           :code $ quote
             defn takes-action (x) x
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] '*dispatch-op
-      :ns $ %{} :NsEntry (:doc "|Namespace for type-slot enum invalid variant detection")
+      :ns $ %{} 'NsEntry (:doc "|Namespace for type-slot enum invalid variant detection")
         :code $ quote (ns type-fail-type-slot-enum-invalid-variant.main)

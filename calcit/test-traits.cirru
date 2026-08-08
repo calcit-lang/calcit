@@ -5,89 +5,89 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-traits.main $ %{} :FileEntry
+    |test-traits.main $ %{} 'FileEntry
       :defs $ {}
-        |Demo0 $ %{} :CodeEntry (:doc "|Enum prototype for tuple trait tests")
+        |Demo0 $ %{} 'CodeEntry (:doc "|Enum prototype for tuple trait tests")
           :code $ quote
             defenum Demo $ :demo 'Dynamic
           :examples $ []
           :schema $ :: 'Enum
-        |DemoBar $ %{} :CodeEntry (:doc "|Enum with MyBar impls")
+        |DemoBar $ %{} 'CodeEntry (:doc "|Enum with MyBar impls")
           :code $ quote
             def DemoBar $ impl-traits Demo0 MyBarImpl MyBarImpl2
           :examples $ []
           :schema $ :: 'Impl
-        |DemoZap $ %{} :CodeEntry (:doc "|Enum with MyZapA/MyZapB")
+        |DemoZap $ %{} 'CodeEntry (:doc "|Enum with MyZapA/MyZapB")
           :code $ quote
             def DemoZap $ impl-traits Demo0 MyZapAImpl MyZapBImpl
           :examples $ []
           :schema $ :: 'Impl
-        |DemoZapA $ %{} :CodeEntry (:doc "|Enum with MyZapA then MyZapB")
+        |DemoZapA $ %{} 'CodeEntry (:doc "|Enum with MyZapA then MyZapB")
           :code $ quote
             def DemoZapA $ impl-traits Demo0 MyZapAImpl MyZapBImpl
           :examples $ []
           :schema $ :: 'Impl
-        |DemoZapB $ %{} :CodeEntry (:doc "|Enum with MyZapB then MyZapA")
+        |DemoZapB $ %{} 'CodeEntry (:doc "|Enum with MyZapB then MyZapA")
           :code $ quote
             def DemoZapB $ impl-traits Demo0 MyZapBImpl MyZapAImpl
           :examples $ []
           :schema $ :: 'Impl
-        |MyBar $ %{} :CodeEntry (:doc "|Trait for tuple override test")
+        |MyBar $ %{} 'CodeEntry (:doc "|Trait for tuple override test")
           :code $ quote
             deftrait MyBar $ .bar :fn
           :examples $ []
           :schema $ :: 'Trait
-        |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
+        |MyBarImpl $ %{} 'CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
             defimpl MyBarImpl MyBar $ .bar mybar:bar1
           :examples $ []
           :schema $ :: 'Impl
-        |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
+        |MyBarImpl2 $ %{} 'CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
             defimpl MyBarImpl2 MyBar $ .bar mybar:bar2
           :examples $ []
           :schema $ :: 'Impl
-        |MyFoo $ %{} :CodeEntry (:doc "|Trait for deftrait test")
+        |MyFoo $ %{} 'CodeEntry (:doc "|Trait for deftrait test")
           :code $ quote
             deftrait MyFoo $ .foo :fn
           :examples $ []
           :schema $ :: 'Trait
-        |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")
+        |MyFooImpl $ %{} 'CodeEntry (:doc "|Trait impl for deftrait test")
           :code $ quote
             defimpl MyFooImpl MyFoo $ .foo myfoo:foo
           :examples $ []
           :schema $ :: 'Impl
-        |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test")
+        |MyFooImpl2 $ %{} 'CodeEntry (:doc "|Trait impl for override test")
           :code $ quote
             defimpl MyFooImpl2 MyFoo $ .foo myfoo:foo2
           :examples $ []
           :schema $ :: 'Impl
-        |MyZapA $ %{} :CodeEntry (:doc "|Trait A for cross-trait method conflict test")
+        |MyZapA $ %{} 'CodeEntry (:doc "|Trait A for cross-trait method conflict test")
           :code $ quote
             deftrait MyZapA $ .zap :fn
           :examples $ []
           :schema $ :: 'Trait
-        |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")
+        |MyZapAImpl $ %{} 'CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")
           :code $ quote
             defimpl MyZapAImpl MyZapA $ .zap myzap:a
           :examples $ []
           :schema $ :: 'Impl
-        |MyZapB $ %{} :CodeEntry (:doc "|Trait B for cross-trait method conflict test")
+        |MyZapB $ %{} 'CodeEntry (:doc "|Trait B for cross-trait method conflict test")
           :code $ quote
             deftrait MyZapB $ .zap :fn
           :examples $ []
           :schema $ :: 'Trait
-        |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test")
+        |MyZapBImpl $ %{} 'CodeEntry (:doc "|Trait B impl for cross-trait method conflict test")
           :code $ quote
             defimpl MyZapBImpl MyZapB $ .zap myzap:b
           :examples $ []
           :schema $ :: 'Impl
-        |Person0 $ %{} :CodeEntry (:doc "|Struct used in trait tests")
+        |Person0 $ %{} 'CodeEntry (:doc "|Struct used in trait tests")
           :code $ quote
             defstruct Person0 $ :name 'String
           :examples $ []
           :schema $ :: 'Struct
-        |compare-with-trait $ %{} :CodeEntry (:doc |)
+        |compare-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn compare-with-trait (a b) (a .compare b)
           :examples $ []
@@ -96,7 +96,7 @@
               :args $ [] 'T 'T
               :generics $ [] 'T
               :where $ {} ('T 'Compare)
-        |contains-with-trait? $ %{} :CodeEntry (:doc |)
+        |contains-with-trait? $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn contains-with-trait? (x k) (x .contains? k)
           :examples $ []
@@ -105,7 +105,7 @@
               :args $ [] 'T 'K
               :generics $ [] 'T 'K
               :where $ {} ('T 'Contains)
-        |count-with-trait $ %{} :CodeEntry (:doc |)
+        |count-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn count-with-trait (x) (x .count)
           :examples $ []
@@ -114,28 +114,28 @@
               :args $ [] 'T
               :generics $ [] 'T
               :where $ {} ('T 'Countable)
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-show-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-enum-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |mybar:bar1 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
+        |mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote
             defn mybar:bar1 (_x) |bar1
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |mybar:bar2 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl2/:bar")
+        |mybar:bar2 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl2/:bar")
           :code $ quote
             defn mybar:bar2 (_x) |bar2
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |myfoo:foo $ %{} :CodeEntry (:doc "|method implementation for MyFoo/:foo")
+        |myfoo:foo $ %{} 'CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote
             defn myfoo:foo (p)
               str "|foo " $ &struct:get p :name
@@ -143,7 +143,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |myfoo:foo2 $ %{} :CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
+        |myfoo:foo2 $ %{} 'CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote
             defn myfoo:foo2 (p)
               str "|foo2 " $ &struct:get p :name
@@ -151,21 +151,21 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |myzap:a $ %{} :CodeEntry (:doc "|method implementation for MyZapA/:zap")
+        |myzap:a $ %{} 'CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote
             defn myzap:a (_x) |zapA
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |myzap:b $ %{} :CodeEntry (:doc "|method implementation for MyZapB/:zap")
+        |myzap:b $ %{} 'CodeEntry (:doc "|method implementation for MyZapB/:zap")
           :code $ quote
             defn myzap:b (_x) |zapB
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |test-add-trait $ %{} :CodeEntry (:doc "|Test Add trait")
+        |test-add-trait $ %{} 'CodeEntry (:doc "|Test Add trait")
           :code $ quote
             defn test-add-trait () (println "|Testing Add trait...") (; Number addition)
               assert= 3 $ + 1 2
@@ -184,7 +184,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-assert-trait $ %{} :CodeEntry (:doc "|Test assert-traits")
+        |test-assert-trait $ %{} 'CodeEntry (:doc "|Test assert-traits")
           :code $ quote
             defn test-assert-trait () (println "|Testing assert-traits...")
               let
@@ -232,7 +232,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-collection-traits $ %{} :CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
+        |test-collection-traits $ %{} 'CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
           :code $ quote
             defn test-collection-traits () (println "|Testing Collection traits (Len, Empty)...") (; Len trait)
               assert= 0 $ count ([])
@@ -292,7 +292,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-compare-trait $ %{} :CodeEntry (:doc "|Test Compare trait")
+        |test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote
             defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
               assert= true $ < 1 2
@@ -319,7 +319,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-cross-trait-method-conflict $ %{} :CodeEntry (:doc "|Test method conflict across traits")
+        |test-cross-trait-method-conflict $ %{} 'CodeEntry (:doc "|Test method conflict across traits")
           :code $ quote
             defn test-cross-trait-method-conflict () (println "|Testing cross-trait method conflict...")
               let
@@ -344,7 +344,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro")
+        |test-deftrait $ %{} 'CodeEntry (:doc "|Test deftrait macro")
           :code $ quote
             defn test-deftrait () (println "|Testing deftrait macro...")
               assert= :trait $ type-of MyFoo
@@ -357,7 +357,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-enum-impl-precedence-order $ %{} :CodeEntry (:doc "|Test enum impl precedence order")
+        |test-enum-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test enum impl precedence order")
           :code $ quote
             defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
               let
@@ -369,7 +369,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")
+        |test-eq-trait $ %{} 'CodeEntry (:doc "|Test Eq trait")
           :code $ quote
             defn test-eq-trait () (println "|Testing Eq trait...") (; Value equality)
               assert= true $ = 1 1
@@ -388,7 +388,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-explicit-trait-call $ %{} :CodeEntry (:doc "|Test explicit trait-call for disambiguation")
+        |test-explicit-trait-call $ %{} 'CodeEntry (:doc "|Test explicit trait-call for disambiguation")
           :code $ quote
             defn test-explicit-trait-call () (println "|Testing explicit trait-call...")
               let
@@ -424,7 +424,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-impl-precedence-order $ %{} :CodeEntry (:doc "|Test impl precedence order")
+        |test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote
             defn test-impl-precedence-order () (println "|Testing impl precedence order...")
               let
@@ -437,7 +437,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-method-introspection $ %{} :CodeEntry (:doc "|Test runtime method introspection helpers")
+        |test-method-introspection $ %{} 'CodeEntry (:doc "|Test runtime method introspection helpers")
           :code $ quote
             defn test-method-introspection () (println "|Testing method introspection...")
               let
@@ -467,7 +467,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-option-result-map $ %{} :CodeEntry (:doc "|Test Mappable trait for Option/Result")
+        |test-option-result-map $ %{} 'CodeEntry (:doc "|Test Mappable trait for Option/Result")
           :code $ quote
             defn test-option-result-map () (println "|Testing Option/Result Mappable...")
               let
@@ -524,7 +524,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-show-trait $ %{} :CodeEntry (:doc "|Test Show trait for built-in types")
+        |test-show-trait $ %{} 'CodeEntry (:doc "|Test Show trait for built-in types")
           :code $ quote
             defn test-show-trait () (println "|Testing Show trait...") (; All types should be showable)
               assert= |true $ str true
@@ -541,6 +541,6 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-traits.main $ :require
