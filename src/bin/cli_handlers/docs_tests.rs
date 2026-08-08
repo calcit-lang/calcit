@@ -1,8 +1,8 @@
 use super::{
-  GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
-  find_doc_by_query, format_markdown_cirru_blocks, handle_format_md, load_agents_document, load_entry_snapshot_for_check_md,
-  load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata, score_doc_query, score_doc_shape,
-  validate_doc_frontmatter,
+  CirruCheckMode, GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query,
+  collect_search_results, extract_cirru_blocks, find_doc_by_query, format_markdown_cirru_blocks, handle_check_md, handle_format_md,
+  load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter,
+  parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -18,6 +18,45 @@ fn write_file(path: &Path, content: &str) {
     fs::create_dir_all(parent).unwrap();
   }
   fs::write(path, content).unwrap();
+}
+
+#[test]
+fn cirru_edn_fence_is_extracted_and_validated_as_edn_data() {
+  let input = "# Demo\n\n```cirru.edn\n{}\n  :backend :js\n  :kind :function\n```\n";
+  let blocks = extract_cirru_blocks(input);
+
+  assert_eq!(blocks.len(), 1);
+  let (_, mode, code) = &blocks[0];
+  assert_eq!(*mode, CirruCheckMode::Edn);
+  assert!(run_edn_parse_only(code).is_ok());
+}
+
+#[test]
+fn cirru_edn_fence_reports_error_for_unparsable_edn() {
+  let broken = "(:a 1";
+  assert!(run_edn_parse_only(broken).is_err());
+}
+
+#[test]
+fn standalone_cirru_edn_check_does_not_require_a_calcit_entry() {
+  let root = unique_temp_dir("check-md-edn");
+  let doc = root.join("contract.md");
+  write_file(&doc, "```cirru.edn\n{} (:backend :js)\n```\n");
+
+  let result = handle_check_md(doc.to_str().unwrap(), "missing-entry.cirru", &[], true, true);
+  fs::remove_dir_all(root).unwrap();
+  assert!(result.is_ok(), "standalone cirru.edn block should not load an entry: {result:?}");
+}
+
+#[test]
+fn standalone_cirru_edn_check_reports_the_edn_mode() {
+  let root = unique_temp_dir("check-md-invalid-edn");
+  let doc = root.join("contract.md");
+  write_file(&doc, "```cirru.edn\n(:backend :js\n```\n");
+
+  let error = handle_check_md(doc.to_str().unwrap(), "missing-entry.cirru", &[], true, true).expect_err("invalid EDN should fail");
+  fs::remove_dir_all(root).unwrap();
+  assert!(error.contains("[edn]"), "error should identify the EDN fence: {error}");
 }
 
 #[test]
@@ -619,6 +658,16 @@ fn format_markdown_cirru_blocks_formats_only_supported_fences() {
       .changed_blocks,
     0
   );
+}
+
+#[test]
+fn format_markdown_cirru_blocks_preserves_edn_fences_verbatim() {
+  let input = "```cirru.edn\n{} (:backend :js)\n\n  :kind :external-object\n```\n";
+  let formatted = format_markdown_cirru_blocks(input).expect("EDN fence should not be parsed as Cirru code");
+
+  assert_eq!(formatted.total_blocks, 1);
+  assert_eq!(formatted.changed_blocks, 0);
+  assert_eq!(formatted.content, input);
 }
 
 #[test]

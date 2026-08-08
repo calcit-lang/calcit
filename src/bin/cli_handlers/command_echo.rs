@@ -264,6 +264,13 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
       }
       desc
     }
+    EditSubcommand::Ffi(opts) => {
+      let mut desc = format!("updates host FFI metadata for `{}`", opts.target);
+      if opts.clear {
+        desc.push_str(" (clears existing metadata)");
+      }
+      desc
+    }
     EditSubcommand::Examples(opts) => {
       let mut desc = format!("sets usage examples for `{}`", opts.target);
       if opts.clear {
@@ -842,6 +849,7 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
     EditSubcommand::RmDef(opts) => echo_items!(tokens, pos "target" => &opts.target),
     EditSubcommand::Doc(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "doc" => &opts.doc),
     EditSubcommand::Schema(opts) => echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "clear" => opts.clear),
+    EditSubcommand::Ffi(opts) => echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "clear" => opts.clear),
     EditSubcommand::Examples(opts) => echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "clear" => opts.clear),
     EditSubcommand::AddExample(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts)
@@ -1173,6 +1181,7 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::RmDef(_) => "rm-def",
     EditSubcommand::Doc(_) => "doc",
     EditSubcommand::Schema(_) => "schema",
+    EditSubcommand::Ffi(_) => "ffi",
     EditSubcommand::Examples(_) => "examples",
     EditSubcommand::AddExample(_) => "add-example",
     EditSubcommand::RmExample(_) => "rm-example",

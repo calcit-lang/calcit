@@ -175,6 +175,8 @@ pub struct DetailedCodeEntry {
   pub code: DetailCirru,
   #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
   pub schema: Arc<CalcitTypeAnnotation>,
+  #[serde(default)]
+  pub ffi: Option<Edn>,
 }
 
 impl From<CodeEntry> for DetailedCodeEntry {
@@ -185,6 +187,7 @@ impl From<CodeEntry> for DetailedCodeEntry {
       tags: entry.tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect(),
       code: entry.code.into(),
       schema: entry.schema,
+      ffi: entry.ffi,
     }
   }
 }
@@ -197,6 +200,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
       tags: detailed.tags.iter().map(|tag| EdnTag::new(tag.trim_start_matches(':'))).collect(),
       code: detailed.code.into(),
       schema: detailed.schema,
+      ffi: detailed.ffi,
     }
   }
 }
@@ -211,6 +215,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         let mut tags = Vec::new();
         let mut code = None;
         let mut schema = None;
+        let mut ffi = None;
 
         for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
@@ -247,6 +252,9 @@ impl TryFrom<Edn> for DetailedCodeEntry {
             "schema" if !matches!(value, Edn::Nil) => {
               schema = Some(value.to_owned());
             }
+            "ffi" if !matches!(value, Edn::Nil) => {
+              ffi = Some(value.to_owned());
+            }
             _ => {}
           }
         }
@@ -264,6 +272,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
           tags,
           code,
           schema: schema_parsed,
+          ffi,
         })
       }
       _ => Err("Expected struct for DetailedCodeEntry".to_string()),

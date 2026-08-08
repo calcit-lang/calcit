@@ -76,6 +76,71 @@ fn escape_ns(name: &str) -> String {
   format!("${}", escape_var(&piece))
 }
 
+fn external_js_property_name(type_hint: &Arc<calcit::CalcitTypeAnnotation>, name: &str) -> String {
+  let trait_defs: Vec<Arc<calcit::CalcitTrait>> = match type_hint.as_ref() {
+    calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
+    calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
+    calcit::CalcitTypeAnnotation::Optional(inner) => match inner.as_ref() {
+      calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
+      calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
+      _ => vec![],
+    },
+    _ => vec![],
+  };
+  for trait_def in trait_defs.iter().rev() {
+    let Some(def_ref) = trait_def.definition_ref.as_deref() else {
+      continue;
+    };
+    let Some((ns, def)) = def_ref.rsplit_once('/') else { continue };
+    let Some(ffi) = program::lookup_def_ffi(ns, def) else { continue };
+    let names = match ffi {
+      cirru_edn::Edn::Struct(value) => value
+        .pairs
+        .iter()
+        .find(|(key, _)| key.ref_str() == "names")
+        .map(|(_, value)| value.clone()),
+      cirru_edn::Edn::Map(value) => value.get(&cirru_edn::Edn::Tag(EdnTag::new("names"))).cloned(),
+      _ => None,
+    };
+    let Some(names) = names else { continue };
+    let mapped = match names {
+      cirru_edn::Edn::Map(value) => value.get(&cirru_edn::Edn::Tag(EdnTag::new(name))).cloned(),
+      _ => None,
+    };
+    if let Some(mapped) = mapped {
+      match mapped {
+        cirru_edn::Edn::Str(value) | cirru_edn::Edn::Symbol(value) => return value.to_string(),
+        cirru_edn::Edn::Tag(value) => return value.ref_str().to_owned(),
+        _ => {}
+      }
+    }
+  }
+  default_external_js_member_name(name)
+}
+
+/// Convert the common Calcit member spelling to the JavaScript convention.
+///
+/// `:names` in external-object FFI metadata always takes precedence. This
+/// fallback keeps ordinary `kebab-case`, predicates, and mutating method names
+/// ergonomic while retaining an exact escape hatch for APIs with unusual keys.
+fn default_external_js_member_name(name: &str) -> String {
+  let original_name = name;
+  let name = name.trim_end_matches(['?', '!']);
+  let mut output = String::with_capacity(name.len());
+  let mut upper_next = false;
+  for ch in name.chars() {
+    if ch == '-' {
+      upper_next = true;
+    } else if upper_next {
+      output.extend(ch.to_uppercase());
+      upper_next = false;
+    } else {
+      output.push(ch);
+    }
+  }
+  if output.is_empty() { original_name.to_owned() } else { output }
+}
+
 // code generated from calcit.core.cirru may not be faster enough,
 // possible way to use code from calcit.procs.ts
 fn is_preferred_js_proc(name: &str) -> bool {
@@ -155,6 +220,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
         MethodKind::InvokeNative => ".!",
         MethodKind::Invoke(_) => ".",
         MethodKind::TagAccess => ".:",
+        MethodKind::ExternalAccess(_) => ".:",
+        MethodKind::ExternalInvoke(_) => ".",
         MethodKind::AccessOptional => ".?-",
         MethodKind::InvokeNativeOptional => ".?!",
       };
@@ -734,6 +801,34 @@ fn gen_call_code(
           Ok(format!("{obj}.get({tag})"))
         } else {
           Err(format!("tag-accessor takes only 1 argument, {xs}"))
+        }
+      }
+      MethodKind::ExternalAccess(type_hint) => {
+        if body.len() == 1 {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          let property = external_js_property_name(type_hint, name.as_ref());
+          Ok(format!("{obj}[{}]", escape_cirru_str(&property)))
+        } else {
+          Err(format!("external-access takes only 1 argument, {xs}"))
+        }
+      }
+      MethodKind::ExternalInvoke(type_hint) => {
+        if !body.is_empty() {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          let (prelude, args_code) = gen_call_args_with_temps(
+            &body.skip(1).expect("get args"),
+            ns,
+            local_defs,
+            file_imports,
+            tags,
+            return_label.is_some(),
+            inline_all,
+          )?;
+          let property = external_js_property_name(type_hint, name.as_ref());
+          let call_code = format!("{obj}[{}]({args_code})", escape_cirru_str(&property));
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
+        } else {
+          Err(format!("external-invoke expected at least 1 object, {xs}"))
         }
       }
     },
@@ -1862,6 +1957,14 @@ mod tests {
     ])));
     let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
     assert!(!hinted_async(&hint));
+  }
+
+  #[test]
+  fn external_member_defaults_follow_calcit_naming_conventions() {
+    assert_eq!(default_external_js_member_name("text-content"), "textContent");
+    assert_eq!(default_external_js_member_name("matches?"), "matches");
+    assert_eq!(default_external_js_member_name("set-item!"), "setItem");
+    assert_eq!(default_external_js_member_name("!"), "!");
   }
 
   #[test]

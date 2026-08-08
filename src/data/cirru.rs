@@ -286,6 +286,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
         InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
         Invoke(_) => Ok(Cirru::leaf(format!(".{name}"))),
         TagAccess => Ok(Cirru::leaf(format!(".:{name}"))),
+        ExternalAccess(_) => Ok(Cirru::leaf(format!(".:{name}"))),
+        ExternalInvoke(_) => Ok(Cirru::leaf(format!(".{name}"))),
         AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
         InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
       }

@@ -7,8 +7,8 @@ use crate::{
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport,
     CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
-    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind, brief_type_of_value,
-    pop_type_slot_override, push_type_slot_override, register_type_slot,
+    CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SchemaKind,
+    brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -539,11 +539,19 @@ fn parse_trait_method_name_from_source(form: &Calcit) -> Option<EdnTag> {
   }
 }
 
-fn parse_trait_method_specs_from_source<'a>(
-  items: impl Iterator<Item = &'a Calcit>,
-) -> Option<(Vec<EdnTag>, Vec<Arc<CalcitTypeAnnotation>>)> {
+fn parse_trait_member_kind_from_source(form: &Calcit) -> CalcitTraitMemberKind {
+  match form {
+    Calcit::Tag(_) => CalcitTraitMemberKind::Field,
+    _ => CalcitTraitMemberKind::Method,
+  }
+}
+
+type TraitMemberSpecs = (Vec<EdnTag>, Vec<Arc<CalcitTypeAnnotation>>, Vec<CalcitTraitMemberKind>);
+
+fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calcit>) -> Option<TraitMemberSpecs> {
   let mut methods: Vec<EdnTag> = vec![];
   let mut method_types: Vec<Arc<CalcitTypeAnnotation>> = vec![];
+  let mut member_kinds: Vec<CalcitTraitMemberKind> = vec![];
 
   for item in items {
     let Calcit::List(entry) = item else {
@@ -560,9 +568,10 @@ fn parse_trait_method_specs_from_source<'a>(
     });
     methods.push(method_name);
     method_types.push(method_type);
+    member_kinds.push(parse_trait_member_kind_from_source(entry.first()?));
   }
 
-  Some((methods, method_types))
+  Some((methods, method_types, member_kinds))
 }
 
 fn parse_trait_new_source(items: &CalcitList) -> Option<CalcitTrait> {
@@ -571,14 +580,14 @@ fn parse_trait_new_source(items: &CalcitList) -> Option<CalcitTrait> {
     Calcit::List(list) => list,
     _ => return None,
   };
-  let (methods, method_types) = parse_trait_method_specs_from_source(method_specs.iter())?;
-  Some(CalcitTrait::new(name, methods, method_types))
+  let (methods, method_types, member_kinds) = parse_trait_method_specs_from_source(method_specs.iter())?;
+  Some(CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds)))
 }
 
 fn parse_deftrait_source(items: &CalcitList) -> Option<CalcitTrait> {
   let name = parse_trait_name_from_source(items.get(1)?)?;
-  let (methods, method_types) = parse_trait_method_specs_from_source(items.iter().skip(2))?;
-  Some(CalcitTrait::new(name, methods, method_types))
+  let (methods, method_types, member_kinds) = parse_trait_method_specs_from_source(items.iter().skip(2))?;
+  Some(CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds)))
 }
 
 fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, file_ns: &str) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1115,6 +1124,21 @@ fn preprocess_list_call(
     );
   }
 
+  // A typed `.:field receiver` is the prefix form of external-object field
+  // access. Preserve the source spelling while lowering it to a direct JS
+  // property operation later in codegen.
+  if let Calcit::Method(field_name, calcit::MethodKind::TagAccess) = &head_form
+    && args.len() == 1
+    && let Some(receiver_type) = resolve_type_value(&args[0], scope_types)
+    && let Some(traits) = trait_list_from_type(receiver_type.as_ref())
+    && traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref()))
+    && find_trait_field_type(&traits, field_name.as_ref()).is_some()
+  {
+    let typed_access = Calcit::Method(field_name.clone(), calcit::MethodKind::ExternalAccess(receiver_type));
+    let processed_receiver = preprocess_expr(&args[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    return Ok(Calcit::from(CalcitList::from(&[typed_access, processed_receiver])));
+  }
+
   // === Postfix struct field access / method call detection ===
   // Pattern: (expr :field) where expr has a known struct type → rewrite to (.-field expr)
   // Pattern: (expr .method args...) where expr has a known struct/enum/trait type → rewrite to (.method expr args...)
@@ -1130,6 +1154,16 @@ fn preprocess_list_call(
     match first_arg {
       Calcit::Tag(field_tag) if args.len() == 1 => {
         if let Some(type_info) = resolve_type_value(&head_form, scope_types) {
+          if let Some(traits) = trait_list_from_type(type_info.as_ref())
+            && traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref()))
+            && find_trait_field_type(&traits, field_tag.ref_str()).is_some()
+          {
+            let typed_access = Calcit::Method(
+              Arc::from(field_tag.ref_str()),
+              calcit::MethodKind::ExternalAccess(type_info.clone()),
+            );
+            return Ok(Calcit::from(CalcitList::from(&[typed_access, head_form])));
+          }
           if let Some(struct_def) = type_info.as_ref().resolve_to_struct()
             && let Some(idx) = struct_def.index_of(field_tag.ref_str())
           {
@@ -1185,7 +1219,14 @@ fn preprocess_list_call(
 
           if is_nominal_or_trait || has_known_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
-            let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_info.clone()));
+            let is_external = trait_list_from_type(type_info.as_ref())
+              .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
+            let method_kind = if is_external {
+              calcit::MethodKind::ExternalInvoke(type_info.clone())
+            } else {
+              calcit::MethodKind::Invoke(type_info.clone())
+            };
+            let typed_method = Calcit::Method(method_name.clone(), method_kind);
             let mut processed_args = CalcitList::new_inner_from(&[head_form]);
             for arg in args.iter().skip(1) {
               processed_args = processed_args.push(preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?);
@@ -1684,7 +1725,14 @@ fn preprocess_list_call(
           && let Some(type_value) = resolve_type_value(receiver, scope_types)
         {
           // Reconstruct the list with updated Method node carrying inferred type
-          let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_value));
+          let is_external = trait_list_from_type(type_value.as_ref())
+            .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
+          let method_kind = if is_external {
+            calcit::MethodKind::ExternalInvoke(type_value)
+          } else {
+            calcit::MethodKind::Invoke(type_value)
+          };
+          let typed_method = Calcit::Method(method_name.clone(), method_kind);
           ys = CalcitList::new_inner_from(&[typed_method]);
           for item in processed_args.iter() {
             ys = ys.push(item.to_owned());
@@ -2644,7 +2692,7 @@ fn check_struct_method_args(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // Only check Method(Invoke) calls
-  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) = head else {
     return;
   };
 
@@ -2897,7 +2945,7 @@ fn warn_on_dynamic_trait_call(
     return;
   }
 
-  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) = head else {
     return;
   };
 
@@ -3179,6 +3227,19 @@ fn warn_on_trait_impl_method_tag_syntax(
     return;
   }
 
+  // External-object traits intentionally use `:field` entries for typed
+  // property access. Their CodeEntry metadata opts them into this shape.
+  let trait_name = if macro_info.name.as_ref() == "deftrait" {
+    args.first().and_then(parse_trait_name_from_source).map(|name| name.to_string())
+  } else {
+    None
+  };
+  let source_name = trait_name.as_deref().unwrap_or(def_name);
+
+  if macro_name_is_external_object(macro_info, file_ns, source_name) {
+    return;
+  }
+
   let (macro_name, pair_start_idx) = match macro_info.name.as_ref() {
     "deftrait" => ("deftrait", 1),
     "defimpl" => ("defimpl", 2),
@@ -3195,7 +3256,7 @@ fn warn_on_trait_impl_method_tag_syntax(
     };
 
     let message = format!(
-      "[Warn] `{macro_name}` method key `:{method_name}` in {file_ns}/{def_name} uses legacy tag style; prefer dot method key `.{method_name}` for migration (`:{method_name}` remains compatible)"
+      "[Warn] `{macro_name}` method key `:{method_name}` in {file_ns}/{source_name} uses legacy tag style; prefer dot method key `.{method_name}` for migration (`:{method_name}` remains compatible)"
     );
 
     if let Some(loc) = entry.get_location() {
@@ -3204,6 +3265,27 @@ fn warn_on_trait_impl_method_tag_syntax(
       gen_check_warning(message, file_ns, check_warnings);
     }
   }
+}
+
+fn macro_name_is_external_object(macro_info: &crate::calcit::CalcitMacro, file_ns: &str, def_name: &str) -> bool {
+  if macro_info.name.as_ref() != "deftrait" {
+    return false;
+  }
+  let metadata_external = program::lookup_def_ffi(file_ns, def_name).is_some_and(|ffi| match ffi {
+    cirru_edn::Edn::Struct(value) => value
+      .pairs
+      .iter()
+      .find(|(key, _)| key.ref_str() == "kind")
+      .is_some_and(|(_, value)| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
+    cirru_edn::Edn::Map(value) => value
+      .get(&cirru_edn::Edn::Tag(EdnTag::new("kind")))
+      .is_some_and(|value| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
+    _ => false,
+  });
+  metadata_external
+    || program::lookup_def_code(file_ns, def_name)
+      .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .is_some_and(|trait_def| trait_def.member_kinds.contains(&CalcitTraitMemberKind::Field))
 }
 
 fn extract_hint_fn_legacy_clause_name(form: &Calcit) -> Option<&str> {
@@ -3240,7 +3322,7 @@ fn warn_on_method_name_conflict(
     return;
   }
 
-  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) = head else {
     return;
   };
 
@@ -3548,11 +3630,13 @@ fn validate_method_call(
 
   if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
     let method_str = method_name.as_ref();
-    if traits
-      .iter()
-      .rev()
-      .any(|trait_def| trait_def.methods.iter().any(|method| method.ref_str() == method_str))
-    {
+    if traits.iter().rev().any(|trait_def| {
+      trait_def
+        .methods
+        .iter()
+        .zip(trait_def.member_kinds.iter())
+        .any(|(method, kind)| *kind == CalcitTraitMemberKind::Method && method.ref_str() == method_str)
+    }) {
       return Ok(());
     }
 
@@ -3782,6 +3866,27 @@ fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Cal
   }
 }
 
+pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
+  let Some(def_ref) = trait_def.definition_ref.as_deref() else {
+    return false;
+  };
+  let Some((ns, def)) = def_ref.rsplit_once('/') else { return false };
+  let Some(ffi) = program::lookup_def_ffi(ns, def) else {
+    return false;
+  };
+  match ffi {
+    cirru_edn::Edn::Struct(value) => value
+      .pairs
+      .iter()
+      .find(|(key, _)| key.ref_str() == "kind")
+      .is_some_and(|(_, value)| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
+    cirru_edn::Edn::Map(value) => value
+      .get(&cirru_edn::Edn::Tag(EdnTag::new("kind")))
+      .is_some_and(|value| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
+    _ => false,
+  }
+}
+
 fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
     || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_trait_annotation(inner.as_ref()))
@@ -3831,11 +3936,28 @@ fn find_trait_method_type<'a>(
   None
 }
 
+pub(crate) fn find_trait_field_type<'a>(
+  traits: &'a [Arc<CalcitTrait>],
+  field_name: &str,
+) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
+  for trait_def in traits.iter().rev() {
+    if let Some(field_idx) = trait_def.field_index(field_name)
+      && let Some(field_type) = trait_def.method_types.get(field_idx)
+    {
+      return Some((trait_def.as_ref(), field_type));
+    }
+  }
+  None
+}
+
 fn collect_trait_method_names(traits: &[Arc<CalcitTrait>]) -> Vec<String> {
   let mut seen = std::collections::HashSet::new();
   let mut names = vec![];
   for trait_def in traits.iter().rev() {
-    for method in trait_def.methods.iter() {
+    for (method, kind) in trait_def.methods.iter().zip(trait_def.member_kinds.iter()) {
+      if *kind != CalcitTraitMemberKind::Method {
+        continue;
+      }
       let name = method.to_string();
       if seen.insert(name.clone()) {
         names.push(name);
@@ -3874,7 +3996,10 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
     let mut seen = HashSet::new();
     let mut methods = vec![];
     for trait_def in traits.iter().rev() {
-      for method in trait_def.methods.iter() {
+      for (method, kind) in trait_def.methods.iter().zip(trait_def.member_kinds.iter()) {
+        if *kind != CalcitTraitMemberKind::Method {
+          continue;
+        }
         let name = format!(".{}", method.ref_str());
         if seen.insert(name.clone()) {
           methods.push(StaticMethodDescriptor {
@@ -6071,6 +6196,7 @@ mod tests {
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
             examples: vec![],
+            ffi: None,
           },
         )]),
       },
@@ -6122,6 +6248,7 @@ mod tests {
             schema,
             doc: Arc::from(""),
             examples: vec![],
+            ffi: None,
           },
         )]),
       },
@@ -6254,6 +6381,7 @@ mod tests {
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
             examples: vec![],
+            ffi: None,
           },
         )]),
       },
@@ -6300,6 +6428,7 @@ mod tests {
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
             examples: vec![],
+            ffi: None,
           },
         )]),
       },

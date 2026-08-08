@@ -106,6 +106,7 @@ mod tests {
       tags: std::collections::HashSet::new(),
       code: Cirru::Leaf(Arc::from(code)),
       schema: Arc::new(schema),
+      ffi: None,
     }
   }
 

@@ -895,6 +895,7 @@ fn run_check_examples(
         } else {
           calcit::calcit::DYNAMIC_TYPE.clone()
         },
+        ffi: None,
       },
     );
   }
@@ -1239,6 +1240,7 @@ mod tests {
       tags: HashSet::new(),
       code,
       schema: Arc::new(schema),
+      ffi: None,
     }
   }
 
@@ -1584,6 +1586,7 @@ mod tests {
         features: Arc::new(HashSet::from([cirru_edn::EdnTag::new("js-ffi")])),
       }))
       .into(),
+      ffi: None,
     };
 
     let row = type_coverage::analyze_weak_types_entry("app.main", "ffi-wrapper", &entry, &type_coverage::WeakTypeKind::all())
@@ -1628,6 +1631,7 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))
       .into(),
+      ffi: None,
     };
     let mut snapshot = snapshot::Snapshot {
       package: "app".to_owned(),
@@ -1715,6 +1719,7 @@ mod tests {
         leaf("nil"),
       ]),
       schema: fn_schema_annotation(SchemaKind::Fn, 1, false).into(),
+      ffi: None,
     };
 
     let row = type_coverage::analyze_weak_types_entry("app.main", "demo", &entry, &type_coverage::WeakTypeKind::all())
@@ -1753,6 +1758,7 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))
       .into(),
+      ffi: None,
     };
 
     let row = type_coverage::analyze_weak_types_entry("app.main", "branchy", &entry, &type_coverage::WeakTypeKind::all())
@@ -1786,6 +1792,7 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))
       .into(),
+      ffi: None,
     };
     let unit_row = type_coverage::analyze_weak_types_entry(
       "app.main",
@@ -1812,6 +1819,7 @@ mod tests {
         list(vec![leaf("do"), leaf("nil")]),
       ]),
       schema: unit_entry.schema.clone(),
+      ffi: None,
     };
     let single_do_row = type_coverage::analyze_weak_types_entry(
       "app.main",
@@ -1832,6 +1840,7 @@ mod tests {
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("explicit-unit"), list(vec![]), list(vec![leaf(";nil")])]),
       schema: unit_entry.schema.clone(),
+      ffi: None,
     };
     let unit_macro_row = type_coverage::analyze_weak_types_entry(
       "app.main",
@@ -1849,6 +1858,7 @@ mod tests {
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("implicit-unit"), list(vec![])]),
       schema: unit_entry.schema.clone(),
+      ffi: None,
     };
     assert!(
       type_coverage::analyze_weak_types_entry(
@@ -1881,6 +1891,7 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))
       .into(),
+      ffi: None,
     };
     let optional_row = type_coverage::analyze_weak_types_entry(
       "app.main",
@@ -1922,6 +1933,7 @@ mod tests {
         features: Arc::new(HashSet::new()),
       }))
       .into(),
+      ffi: None,
     };
 
     let row = type_coverage::analyze_weak_types_entry("app.main", "nested", &entry, &type_coverage::WeakTypeKind::all())
@@ -1944,6 +1956,7 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::Tag),
         Arc::new(CalcitTypeAnnotation::List(calcit::calcit::DYNAMIC_TYPE.clone())),
       )),
+      ffi: None,
     };
 
     let row = type_coverage::analyze_weak_types_entry("app.main", "map-root", &entry, &type_coverage::WeakTypeKind::all())

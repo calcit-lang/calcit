@@ -1242,12 +1242,14 @@ mod tests;
 /// - `cirru.no-run`   → NoRun: parse + preprocess (type-check), skip eval
 /// - `cirru.no-cli`   → NoCli: parse + preprocess only
 /// - `cirru.no-check` → NoCheck: parse only (syntax validation)
+/// - `cirru.edn`      → Edn: parse as EDN data (e.g. schema/config snippets), not Calcit code
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CirruCheckMode {
   Run,
   NoRun,
   NoCli,
   NoCheck,
+  Edn,
 }
 
 fn cirru_fence_mode(fence: &str) -> Option<CirruCheckMode> {
@@ -1256,6 +1258,7 @@ fn cirru_fence_mode(fence: &str) -> Option<CirruCheckMode> {
     "```cirru.no-run" => Some(CirruCheckMode::NoRun),
     "```cirru.no-check" => Some(CirruCheckMode::NoCheck),
     "```cirru.cli" => Some(CirruCheckMode::NoCli),
+    "```cirru.edn" => Some(CirruCheckMode::Edn),
     _ => None,
   }
 }
@@ -1267,12 +1270,13 @@ impl std::fmt::Display for CirruCheckMode {
       CirruCheckMode::NoRun => write!(f, "no-run"),
       CirruCheckMode::NoCli => write!(f, "no-cli"),
       CirruCheckMode::NoCheck => write!(f, "no-check"),
+      CirruCheckMode::Edn => write!(f, "edn"),
     }
   }
 }
 
 /// Extract cirru code blocks from markdown content.
-/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-cli  ```cirru.no-check
+/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-cli  ```cirru.no-check  ```cirru.edn
 /// Returns (line_number, check_mode, code_content) triples.
 fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
   let mut blocks = Vec::new();
@@ -1304,6 +1308,11 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
         in_block = true;
         block_start_line = idx + 1;
         block_mode = CirruCheckMode::NoCli;
+        block_lines.clear();
+      } else if trimmed == "```cirru.edn" {
+        in_block = true;
+        block_start_line = idx + 1;
+        block_mode = CirruCheckMode::Edn;
         block_lines.clear();
       } else {
         in_non_cirru_block = true;
@@ -1338,9 +1347,11 @@ fn format_markdown_cirru_blocks(content: &str) -> Result<FormattedMarkdown, Stri
   let line_ending = if content.contains("\r\n") { "\r\n" } else { "\n" };
   let mut output = String::with_capacity(content.len());
   let mut in_cirru_block = false;
+  let mut format_cirru_block = false;
   let mut in_other_block = false;
   let mut block_start_line = 0;
   let mut code_lines: Vec<String> = Vec::new();
+  let mut raw_code_lines: Vec<String> = Vec::new();
   let mut total_blocks = 0;
   let mut changed_blocks = 0;
 
@@ -1350,10 +1361,12 @@ fn format_markdown_cirru_blocks(content: &str) -> Result<FormattedMarkdown, Stri
     let trimmed = line.trim();
 
     if !in_cirru_block && !in_other_block && trimmed.starts_with("```") {
-      if cirru_fence_mode(trimmed).is_some() {
+      if let Some(mode) = cirru_fence_mode(trimmed) {
         in_cirru_block = true;
+        format_cirru_block = mode != CirruCheckMode::Edn;
         block_start_line = line_index + 2;
         code_lines.clear();
+        raw_code_lines.clear();
       } else {
         in_other_block = true;
       }
@@ -1361,27 +1374,35 @@ fn format_markdown_cirru_blocks(content: &str) -> Result<FormattedMarkdown, Stri
     } else if (in_cirru_block || in_other_block) && trimmed == "```" {
       if in_cirru_block {
         total_blocks += 1;
-        let source = code_lines.join("\n");
-        let nodes = cirru_parser::parse(&source)
-          .map_err(|error| format!("Failed to parse Cirru block starting at line {block_start_line}: {error}"))?;
-        let formatted = cirru_parser::format(&nodes, true.into())
-          .map_err(|error| format!("Failed to format Cirru block starting at line {block_start_line}: {error}"))?;
-        let canonical = formatted.trim();
-        if source != canonical {
-          changed_blocks += 1;
-        }
-        if !canonical.is_empty() {
-          for formatted_line in canonical.split('\n') {
-            output.push_str(formatted_line);
-            output.push_str(line_ending);
+        if format_cirru_block {
+          let source = code_lines.join("\n");
+          let nodes = cirru_parser::parse(&source)
+            .map_err(|error| format!("Failed to parse Cirru block starting at line {block_start_line}: {error}"))?;
+          let formatted = cirru_parser::format(&nodes, true.into())
+            .map_err(|error| format!("Failed to format Cirru block starting at line {block_start_line}: {error}"))?;
+          let canonical = formatted.trim();
+          if source != canonical {
+            changed_blocks += 1;
+          }
+          if !canonical.is_empty() {
+            for formatted_line in canonical.split('\n') {
+              output.push_str(formatted_line);
+              output.push_str(line_ending);
+            }
+          }
+        } else {
+          for raw_code_line in &raw_code_lines {
+            output.push_str(raw_code_line);
           }
         }
       }
       in_cirru_block = false;
+      format_cirru_block = false;
       in_other_block = false;
       output.push_str(raw_line);
     } else if in_cirru_block {
       code_lines.push(line.to_string());
+      raw_code_lines.push(raw_line.to_string());
     } else {
       output.push_str(raw_line);
     }
@@ -1720,6 +1741,12 @@ fn run_parse_only_in_process(code: &str) -> Result<(), String> {
     .map_err(|e| format!("Error: Failed to parse code snippet: {e}"))
 }
 
+fn run_edn_parse_only(code: &str) -> Result<(), String> {
+  cirru_edn::parse(code)
+    .map(|_| ())
+    .map_err(|e| format!("Error: Failed to parse code snippet as EDN: {e}"))
+}
+
 struct QuietToolOutputGuard {
   previous: bool,
 }
@@ -1754,7 +1781,8 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
     return Ok(());
   }
 
-  if !Path::new(entry).exists() {
+  let requires_calcit_context = blocks.iter().any(|(_, mode, _)| *mode != CirruCheckMode::Edn);
+  if requires_calcit_context && !Path::new(entry).exists() {
     return Err(format!(
       "Entry file '{entry}' not found. Use --entry to specify a valid entry .cirru file."
     ));
@@ -1762,7 +1790,11 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
 
   // Always suppress tool output during check-md to avoid noise
   let _quiet_guard = QuietToolOutputGuard::new(true);
-  let shared_files = load_shared_files_for_check_md(entry, deps)?;
+  let shared_files = if requires_calcit_context {
+    load_shared_files_for_check_md(entry, deps)?
+  } else {
+    HashMap::new()
+  };
 
   let mut passed = 0;
   let mut failed = 0;
@@ -1771,6 +1803,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
   let _no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
   let _no_cli_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCli).count();
   let _no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
+  let _edn_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Edn).count();
   let mut failure_details = String::new();
 
   for (line_num, mode, code) in &blocks {
@@ -1786,6 +1819,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
       CirruCheckMode::NoRun => "[no-run] ",
       CirruCheckMode::NoCli => "[cli] ",
       CirruCheckMode::NoCheck => "[no-check] ",
+      CirruCheckMode::Edn => "[edn] ",
     };
 
     let check_result = match mode {
@@ -1794,6 +1828,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
         prepare_program_for_snippet(entry, &shared_files, code).and_then(|entries| run_check_only_in_process(&entries))
       }
       CirruCheckMode::NoCheck => run_parse_only_in_process(code),
+      CirruCheckMode::Edn => run_edn_parse_only(code),
     };
 
     if check_result.is_ok() {
@@ -1850,7 +1885,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
     if !quiet && !failures_only {
       println!("{}", summary.red().bold());
     }
-    Err(format!("check-md failed: {summary}"))
+    Err(format!("check-md failed: {summary}\n{failure_details}"))
   } else if quiet || failures_only {
     Ok(())
   } else {
