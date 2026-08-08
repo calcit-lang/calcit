@@ -1,4 +1,4 @@
-use cirru_edn::{Edn, EdnMapView, EdnRecordView, from_edn};
+use cirru_edn::{Edn, EdnMapView, EdnStructView, from_edn};
 use cirru_parser::Cirru;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -258,10 +258,7 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
       validate_schema_edn_no_legacy_quotes(&normalized, owner)?;
       return Ok(normalized);
     }
-    Edn::Tuple(view)
-      if matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
-        && matches!(view.extra.first(), Some(Edn::Map(_))) =>
-    {
+    Edn::Enum(view) if matches!(view.variant.as_ref(), "fn" | "macro") && matches!(view.extra.first(), Some(Edn::Map(_))) => {
       let Some(Edn::Map(map)) = view.extra.first() else {
         unreachable!();
       };
@@ -269,7 +266,7 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
         Edn::Map(map) => map,
         _ => unreachable!(),
       };
-      if normalized.tag_get("kind").is_none() && matches!(view.tag.as_ref(), Edn::Tag(tag) if tag.ref_str() == "macro") {
+      if normalized.tag_get("kind").is_none() && view.variant.as_ref() == "macro" {
         normalized.insert_key("kind", Edn::tag("macro"));
       }
       let normalized = Edn::Map(normalized);
@@ -326,10 +323,14 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn, owner: &str) -> Result<(), 
         }
         Ok(())
       }
-      Edn::Tuple(view) => {
-        path.push(".tag".to_owned());
-        walk(view.tag.as_ref(), owner, path)?;
-        path.pop();
+      Edn::Enum(view) => {
+        if view.variant.starts_with('\'') {
+          return Err(format!(
+            "{owner}: invalid schema enum symbol `{}` at {}",
+            view.variant,
+            schema_path_label(path)
+          ));
+        }
         for (idx, item) in view.extra.iter().enumerate() {
           path.push(format!("[{idx}]"));
           walk(item, owner, path)?;
@@ -345,7 +346,7 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn, owner: &str) -> Result<(), 
         }
         Ok(())
       }
-      Edn::Record(_) => Ok(()),
+      Edn::Struct(_) => Ok(()),
       _ => Ok(()),
     }
   }
@@ -381,8 +382,8 @@ fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> 
 }
 
 fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
-  let record: EdnRecordView = match edn {
-    Edn::Record(r) => r,
+  let record: EdnStructView = match edn {
+    Edn::Struct(r) => r,
     other => return Err(format!("{owner}: expected CodeEntry record, got {}", format_edn_preview(&other))),
   };
   let mut doc = String::new();
@@ -412,8 +413,8 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
 }
 
 fn parse_ns_entry(edn: Edn, owner: &str) -> Result<NsEntry, String> {
-  let record: EdnRecordView = match edn {
-    Edn::Record(r) => r,
+  let record: EdnStructView = match edn {
+    Edn::Struct(r) => r,
     other => {
       return Err(format!(
         "{owner}: expected NsEntry/CodeEntry record, got {}",
@@ -437,8 +438,8 @@ fn parse_ns_entry(edn: Edn, owner: &str) -> Result<NsEntry, String> {
 }
 
 fn parse_file_in_snapshot(edn: Edn, file_name: &str) -> Result<FileInSnapShot, String> {
-  let record: EdnRecordView = match edn {
-    Edn::Record(r) => r,
+  let record: EdnStructView = match edn {
+    Edn::Struct(r) => r,
     other => {
       return Err(format!(
         "{file_name}: expected FileEntry record, got {}",

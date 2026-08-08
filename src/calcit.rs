@@ -1577,8 +1577,8 @@ mod tests {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Result"), vec![EdnTag::new("ok")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")])))]),
     };
-    let enum_left = Calcit::EnumDef(CalcitEnumDef::from_record(enum_left_struct).expect("valid enum"));
-    let enum_right = Calcit::EnumDef(CalcitEnumDef::from_record(enum_right_struct).expect("valid enum"));
+    let enum_left = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_left_struct).expect("valid enum"));
+    let enum_right = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_right_struct).expect("valid enum"));
     assert_ne!(enum_left, enum_right);
     assert_ne!(enum_left.cmp(&enum_right), Equal);
   }
@@ -1595,7 +1595,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")]))),
       ]),
     };
-    let enum_value = Calcit::EnumDef(CalcitEnumDef::from_record(enum_struct).expect("valid enum"));
+    let enum_value = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_struct).expect("valid enum"));
     let text = enum_value.to_string();
     assert!(text.starts_with("(%enum-def 'Result"), "unexpected display: {text}");
     assert!(text.contains(":ok)"), "missing zero-payload variant: {text}");

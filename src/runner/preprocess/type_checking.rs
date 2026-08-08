@@ -287,21 +287,21 @@ pub(crate) fn check_proc_arg_types(
 
   if matches!(
     proc,
-    CalcitProc::NativeRecord
-      | CalcitProc::NativeRecordPartial
-      | CalcitProc::NativeRecordGet
-      | CalcitProc::NativeRecordNth
-      | CalcitProc::NativeLooseRecord
+    CalcitProc::NativeStruct
+      | CalcitProc::NativeStructPartial
+      | CalcitProc::NativeStructGet
+      | CalcitProc::NativeStructNth
+      | CalcitProc::NativeLooseStruct
   ) {
     return;
   }
 
-  if matches!(proc, CalcitProc::NativeEnumTupleNew) {
+  if matches!(proc, CalcitProc::NativeNamedEnumNew) {
     check_enum_construction(args, scope_types, file_ns, def_name, check_warnings);
     return;
   }
 
-  if matches!(proc, CalcitProc::NativeTupleNth) {
+  if matches!(proc, CalcitProc::NativeEnumNth) {
     check_enum_nth_bounds(args, scope_types, file_ns, def_name, check_warnings);
     return;
   }

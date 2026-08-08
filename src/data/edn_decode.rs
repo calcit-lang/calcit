@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 
-use cirru_edn::{Edn, EdnRecordView, EdnTupleView};
+use cirru_edn::{Edn, EdnEnumView, EdnStructView};
 
 use crate::builtins::quick_build_atom;
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
@@ -150,11 +150,11 @@ impl Decoder<'_> {
         _ => Err(kind_mismatch(path, "atom", input)),
       },
       DataShapeNode::Struct { nominal, fields, .. } => match input {
-        Edn::Record(EdnRecordView { tag, pairs }) => {
-          if tag != &nominal.name {
+        Edn::Struct(EdnStructView { name, pairs }) => {
+          if name.as_ref() != nominal.name.ref_str() {
             return Err(EdnDecodeError::at(
               path,
-              format!("expected record :{}, got record :{tag}", nominal.name),
+              format!("expected struct {}, got struct {name}", nominal.name),
             ));
           }
 
@@ -197,8 +197,8 @@ impl Decoder<'_> {
         _ => Err(kind_mismatch(path, &format!("record :{}", nominal.name), input)),
       },
       DataShapeNode::Enum { nominal, variants, .. } => match input {
-        Edn::Tuple(EdnTupleView { tag, enum_tag, extra }) => {
-          let Some(actual_enum_name) = enum_tag.as_deref().and_then(edn_name) else {
+        Edn::Enum(EdnEnumView { variant, type_name, extra }) => {
+          let Some(actual_enum_name) = type_name.as_deref() else {
             return Err(EdnDecodeError::at(
               path,
               format!("expected enum :{}, got ordinary tuple", nominal.name()),
@@ -210,9 +210,7 @@ impl Decoder<'_> {
               format!("expected enum :{}, got enum :{actual_enum_name}", nominal.name()),
             ));
           }
-          let Some(actual_tag) = edn_name(tag) else {
-            return Err(EdnDecodeError::at(path, format!("enum :{} variant must be a tag", nominal.name())));
-          };
+          let actual_tag = variant.as_ref();
           let Some((variant_tag, payload_nodes)) = variants.iter().find(|(candidate, _)| candidate.ref_str() == actual_tag) else {
             return Err(EdnDecodeError::at(
               path,
@@ -247,14 +245,6 @@ impl Decoder<'_> {
   }
 }
 
-fn edn_name(value: &Edn) -> Option<&str> {
-  match value {
-    Edn::Tag(value) => Some(value.ref_str()),
-    Edn::Symbol(value) | Edn::Str(value) => Some(value.as_ref()),
-    _ => None,
-  }
-}
-
 fn edn_kind(value: &Edn) -> &'static str {
   match value {
     Edn::Nil => "nil",
@@ -264,12 +254,12 @@ fn edn_kind(value: &Edn) -> &'static str {
     Edn::Tag(_) => "tag",
     Edn::Str(_) => "string",
     Edn::Quote(_) => "cirru-quote",
-    Edn::Tuple(tuple) if tuple.enum_tag.is_some() => "enum",
-    Edn::Tuple(_) => "tuple",
+    Edn::Enum(tuple) if tuple.type_name.is_some() => "enum",
+    Edn::Enum(_) => "tuple",
     Edn::List(_) => "list",
     Edn::Set(_) => "set",
     Edn::Map(_) => "map",
-    Edn::Record(_) => "record",
+    Edn::Struct(_) => "record",
     Edn::Buffer(_) => "buffer",
     Edn::AnyRef(_) => "any-ref",
     Edn::Atom(_) => "atom",
@@ -416,7 +406,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::Vector(vec![]))),
       ]),
     };
-    let enum_def = Arc::new(CalcitEnumDef::from_record(prototype).expect("enum prototype"));
+    let enum_def = Arc::new(CalcitEnumDef::from_struct(prototype).expect("enum prototype"));
     assert!(matches!(enum_def.variants(), [EnumVariant { .. }, EnumVariant { .. }]));
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])), "tests.edn").expect("derive enum shape");

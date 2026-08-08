@@ -1230,8 +1230,8 @@ impl CalcitTypeAnnotation {
         }
         Calcit::Map(ys)
       }
-      Edn::Tuple(view) => Calcit::Enum(CalcitEnumValue {
-        tag: Arc::new(Self::edn_type_to_calcit(view.tag.as_ref())),
+      Edn::Enum(view) => Calcit::Enum(CalcitEnumValue {
+        tag: Arc::new(Self::edn_type_to_calcit(&Edn::Symbol(view.variant.clone()))),
         extra: view.extra.iter().map(Self::edn_type_to_calcit).collect(),
         sum_type: None,
       }),
@@ -1258,13 +1258,9 @@ impl CalcitTypeAnnotation {
     let mut wrapped_kind: Option<SchemaKind> = None;
     let map = match schema {
       Edn::Map(map) => map,
-      Edn::Tuple(view)
-        if matches!(view.tag.as_ref(), Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
-          || matches!(view.tag.as_ref(), Edn::Symbol(name) if matches!(name.as_ref(), "Fn" | "Macro")) =>
-      {
-        wrapped_kind = match view.tag.as_ref() {
-          Edn::Tag(tag) if tag.ref_str() == "macro" => Some(SchemaKind::Macro),
-          Edn::Symbol(name) if name.as_ref() == "Macro" => Some(SchemaKind::Macro),
+      Edn::Enum(view) if matches!(view.variant.as_ref(), "fn" | "macro" | "Fn" | "Macro") => {
+        wrapped_kind = match view.variant.as_ref() {
+          "macro" | "Macro" => Some(SchemaKind::Macro),
           _ => Some(SchemaKind::Fn),
         };
         match view.extra.first() {
@@ -1926,7 +1922,7 @@ impl CalcitTypeAnnotation {
       }
 
       let is_enum_constructor = match xs.first() {
-        Some(Calcit::Proc(CalcitProc::NativeTuple)) => true,
+        Some(Calcit::Proc(CalcitProc::NativeEnum)) => true,
         Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::" => true,
         _ => false,
       };
@@ -2972,10 +2968,7 @@ impl CalcitTypeAnnotation {
         if args.is_empty() {
           Edn::Symbol(Arc::from(name.trim_start_matches('\'')))
         } else {
-          Edn::tuple(
-            Edn::Symbol(Arc::from(name.trim_start_matches('\''))),
-            args.iter().map(|arg| arg.to_type_edn()).collect(),
-          )
+          Edn::enum_value(name.trim_start_matches('\''), args.iter().map(|arg| arg.to_type_edn()).collect())
         }
       }
       // Parameterized builtins – keep inner type if non-dynamic
@@ -2983,34 +2976,34 @@ impl CalcitTypeAnnotation {
         if matches!(inner.as_ref(), Self::Dynamic) {
           Edn::Symbol(Arc::from("List"))
         } else {
-          Edn::tuple(Edn::Symbol(Arc::from("List")), vec![inner.to_type_edn()])
+          Edn::enum_value("List", vec![inner.to_type_edn()])
         }
       }
       Self::Map(k, v) => {
         if matches!(k.as_ref(), Self::Dynamic) && matches!(v.as_ref(), Self::Dynamic) {
           Edn::Symbol(Arc::from("Map"))
         } else {
-          Edn::tuple(Edn::Symbol(Arc::from("Map")), vec![k.to_type_edn(), v.to_type_edn()])
+          Edn::enum_value("Map", vec![k.to_type_edn(), v.to_type_edn()])
         }
       }
       Self::Set(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
           Edn::Symbol(Arc::from("Set"))
         } else {
-          Edn::tuple(Edn::Symbol(Arc::from("Set")), vec![inner.to_type_edn()])
+          Edn::enum_value("Set", vec![inner.to_type_edn()])
         }
       }
       Self::Ref(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
           Edn::Symbol(Arc::from("Ref"))
         } else {
-          Edn::tuple(Edn::Symbol(Arc::from("Ref")), vec![inner.to_type_edn()])
+          Edn::enum_value("Ref", vec![inner.to_type_edn()])
         }
       }
-      Self::Optional(inner) => Edn::tuple(Edn::Symbol(Arc::from("Optional")), vec![inner.to_type_edn()]),
-      Self::JsNullish(inner) => Edn::tuple(Edn::Symbol(Arc::from("JsNullish")), vec![inner.to_type_edn()]),
-      Self::Variadic(inner) => Edn::tuple(Edn::Symbol(Arc::from("Variadic")), vec![inner.to_type_edn()]),
-      Self::Fn(fn_annot) => Edn::tuple(Edn::Symbol(Arc::from("Fn")), vec![fn_annot.to_inline_type_schema_edn()]),
+      Self::Optional(inner) => Edn::enum_value("Optional", vec![inner.to_type_edn()]),
+      Self::JsNullish(inner) => Edn::enum_value("JsNullish", vec![inner.to_type_edn()]),
+      Self::Variadic(inner) => Edn::enum_value("Variadic", vec![inner.to_type_edn()]),
+      Self::Fn(fn_annot) => Edn::enum_value("Fn", vec![fn_annot.to_inline_type_schema_edn()]),
       Self::Struct(s, args) => {
         if args.is_empty() {
           Edn::Symbol(Arc::from(s.name.ref_str()))
@@ -3251,10 +3244,10 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
   lookup_runtime_ready_registered(ns, def)
     .and_then(|value| match &value {
       Calcit::EnumDef(e) => Some(e.to_owned()),
-      Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value.to_owned()).ok(),
+      Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value.to_owned()).ok(),
       _ => resolve_type_def_from_code(&value).and_then(|resolved| match resolved {
         Calcit::EnumDef(e) => Some(e),
-        Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value).ok(),
+        Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value).ok(),
         _ => None,
       }),
     })
@@ -3262,7 +3255,7 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
       lookup_def_code_registered(ns, def).and_then(|code| {
         resolve_type_def_from_code(&code).and_then(|resolved| match resolved {
           Calcit::EnumDef(e) => Some(e),
-          Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value).ok(),
+          Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value).ok(),
           _ => None,
         })
       })
@@ -3272,10 +3265,10 @@ fn resolve_enum_from_program(ns: &str, def: &str) -> Option<CalcitEnumDef> {
 fn resolve_enum_def(form: &Calcit) -> Option<CalcitEnumDef> {
   match form {
     Calcit::EnumDef(enum_def) => Some(enum_def.to_owned()),
-    Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value.to_owned()).ok(),
+    Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value.to_owned()).ok(),
     _ => resolve_calcit_value(form).and_then(|value| match value {
       Calcit::EnumDef(enum_def) => Some(enum_def),
-      Calcit::Struct(struct_value) => CalcitEnumDef::from_record(struct_value).ok(),
+      Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value).ok(),
       _ => None,
     }),
   }
@@ -3299,8 +3292,12 @@ fn calcit_type_to_edn(form: &Calcit) -> Edn {
     Calcit::Tag(t) => Edn::Tag(t.clone()),
     Calcit::Symbol { sym, .. } => Edn::Symbol(sym.clone()),
     Calcit::List(xs) => Edn::List(EdnListView(xs.iter().map(calcit_type_to_edn).collect())),
-    Calcit::Enum(enum_value) => Edn::tuple(
-      calcit_type_to_edn(enum_value.tag.as_ref()),
+    Calcit::Enum(enum_value) => Edn::enum_value(
+      match enum_value.tag.as_ref() {
+        Calcit::Tag(tag) => tag.ref_str(),
+        Calcit::Symbol { sym, .. } => sym.as_ref(),
+        _ => return Edn::Nil,
+      },
       enum_value.extra.iter().map(calcit_type_to_edn).collect(),
     ),
     _ => Edn::Nil,
@@ -3512,7 +3509,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
   };
-  CalcitEnumDef::from_record(struct_value).ok()
+  CalcitEnumDef::from_struct(struct_value).ok()
 }
 
 fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
@@ -3655,7 +3652,7 @@ mod tests {
       }),
       location: None,
     };
-    let optional_node = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeTuple), symbol("Optional"), self_symbol]);
+    let optional_node = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEnum), symbol("Optional"), self_symbol]);
 
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&optional_node, &[]);
     assert!(
@@ -3670,7 +3667,7 @@ mod tests {
 
   fn generic_result_enum() -> Arc<CalcitEnumDef> {
     Arc::new(
-      CalcitEnumDef::from_record(CalcitStructValue {
+      CalcitEnumDef::from_struct(CalcitStructValue {
         struct_ref: Arc::new(CalcitStructDef {
           name: EdnTag::new("Result"),
           fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
@@ -3938,10 +3935,10 @@ mod tests {
     }));
 
     let edn = annotation.to_type_edn();
-    let Edn::Tuple(view) = &edn else {
+    let Edn::Enum(view) = &edn else {
       panic!("fn annotation should serialize as tuple, got {edn:?}");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Fn"));
+    assert_eq!(view.variant.as_ref(), "Fn");
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("fn payload should be schema map: {edn:?}");
     };
@@ -4036,7 +4033,7 @@ mod tests {
     }));
 
     let edn = annotation.to_type_edn();
-    let Edn::Tuple(view) = &edn else {
+    let Edn::Enum(view) = &edn else {
       panic!("fn annotation should serialize as tuple, got {edn:?}");
     };
     let Some(Edn::Map(map)) = view.extra.first() else {
@@ -4062,8 +4059,8 @@ mod tests {
 
   #[test]
   fn parse_wrapped_top_level_fn_schema_from_edn() {
-    let schema = Edn::tuple(
-      Edn::tag("fn"),
+    let schema = Edn::enum_value(
+      "fn",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("number")]))),
         (Edn::tag("return"), Edn::tag("string")),
@@ -4077,8 +4074,8 @@ mod tests {
 
   #[test]
   fn parse_wrapped_top_level_fn_schema_from_edn_keeps_where_bounds() {
-    let schema = Edn::tuple(
-      Edn::tag("fn"),
+    let schema = Edn::enum_value(
+      "fn",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("C"))]))),
         (Edn::tag("generics"), Edn::List(EdnListView(vec![Edn::Symbol(Arc::from("C"))]))),
@@ -4177,7 +4174,7 @@ mod tests {
     };
 
     let edn = schema.to_wrapped_schema_edn();
-    let Edn::Tuple(view) = edn else {
+    let Edn::Enum(view) = edn else {
       panic!("wrapped schema should serialize as tuple");
     };
     let Some(Edn::Map(map)) = view.extra.first() else {
@@ -4216,7 +4213,7 @@ mod tests {
     };
 
     let edn = schema.to_wrapped_schema_edn();
-    let Edn::Tuple(view) = edn else {
+    let Edn::Enum(view) = edn else {
       panic!("wrapped schema should serialize as tuple");
     };
     let Some(Edn::Map(map)) = view.extra.first() else {
@@ -4250,8 +4247,8 @@ mod tests {
 
   #[test]
   fn parse_wrapped_top_level_macro_schema_from_edn() {
-    let schema = Edn::tuple(
-      Edn::tag("macro"),
+    let schema = Edn::enum_value(
+      "macro",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("dynamic")]))),
         (Edn::tag("return"), Edn::tag("dynamic")),
@@ -4276,7 +4273,7 @@ mod tests {
     };
 
     let edn = schema.to_wrapped_schema_edn();
-    let Edn::Tuple(view) = edn else {
+    let Edn::Enum(view) = edn else {
       panic!("wrapped schema should serialize as tuple");
     };
     let Some(Edn::Map(map)) = view.extra.first() else {
@@ -4299,10 +4296,10 @@ mod tests {
     };
 
     let edn = schema.to_wrapped_schema_edn();
-    let Edn::Tuple(view) = edn else {
+    let Edn::Enum(view) = edn else {
       panic!("wrapped schema should serialize as tuple");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Macro"));
+    assert_eq!(view.variant.as_ref(), "Macro");
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
@@ -4327,7 +4324,7 @@ mod tests {
     };
 
     let edn = schema.to_wrapped_schema_edn();
-    let Edn::Tuple(view) = edn else {
+    let Edn::Enum(view) = edn else {
       panic!("wrapped schema should serialize as tuple");
     };
     let Some(Edn::Map(map)) = view.extra.first() else {
@@ -4360,15 +4357,13 @@ mod tests {
 
   #[test]
   fn canonical_symbol_schema_types_parse_like_legacy_tags() {
-    let legacy = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::tuple(Edn::tag("list"), vec![Edn::tag("string")]));
-    let canonical = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::tuple(
-      Edn::Symbol(Arc::from("List")),
-      vec![Edn::Symbol(Arc::from("String"))],
-    ));
+    let legacy = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::enum_value("list", vec![Edn::tag("string")]));
+    let canonical =
+      CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::enum_value("List", vec![Edn::Symbol(Arc::from("String"))]));
     assert_eq!(canonical, legacy);
     assert_eq!(
       canonical.to_type_edn(),
-      Edn::tuple(Edn::Symbol(Arc::from("List")), vec![Edn::Symbol(Arc::from("String"))])
+      Edn::enum_value("List", vec![Edn::Symbol(Arc::from("String"))])
     );
     assert!(matches!(
       CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from("Dynamic"))).as_ref(),
@@ -4591,10 +4586,7 @@ mod tests {
     assert!(!optional.matches_annotation(&js_nullish));
     assert!(CalcitTypeAnnotation::Number.matches_annotation(&js_nullish));
     assert!(CalcitTypeAnnotation::Unit.matches_annotation(&js_nullish));
-    assert_eq!(
-      js_nullish.to_type_edn(),
-      Edn::tuple(Edn::Symbol(Arc::from("JsNullish")), vec![number.to_type_edn()])
-    );
+    assert_eq!(js_nullish.to_type_edn(), Edn::enum_value("JsNullish", vec![number.to_type_edn()]));
   }
 
   #[test]
@@ -4971,12 +4963,12 @@ impl CalcitFnTypeAnnotation {
       map.insert_key("features", features);
     }
 
-    let wrapped_tag = match self.fn_kind {
-      SchemaKind::Fn => Edn::Symbol(Arc::from("Fn")),
-      SchemaKind::Macro => Edn::Symbol(Arc::from("Macro")),
+    let wrapped_variant = match self.fn_kind {
+      SchemaKind::Fn => "Fn",
+      SchemaKind::Macro => "Macro",
     };
 
-    Edn::tuple(wrapped_tag, vec![Edn::Map(map)])
+    Edn::enum_value(wrapped_variant, vec![Edn::Map(map)])
   }
 
   pub fn describe(&self) -> String {

@@ -783,9 +783,9 @@ mod tests {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Outcome"), vec![EdnTag::new("none")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
     };
-    let nominal = Arc::new(CalcitEnumDef::from_record(enum_prototype()).expect("outcome enum"));
+    let nominal = Arc::new(CalcitEnumDef::from_struct(enum_prototype()).expect("outcome enum"));
     let shape = DataShapeGraph::build(&CalcitTypeAnnotation::Enum(nominal, Arc::new(vec![])), "tests.shape").expect("outcome shape");
-    let impostor = Arc::new(CalcitEnumDef::from_record(enum_prototype()).expect("impostor outcome enum"));
+    let impostor = Arc::new(CalcitEnumDef::from_struct(enum_prototype()).expect("impostor outcome enum"));
     let enum_value = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::new("none"))),
       extra: vec![],

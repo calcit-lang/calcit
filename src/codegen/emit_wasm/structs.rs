@@ -536,7 +536,7 @@ pub(super) fn emit_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 
 /// Emit `%:: enum_class tag payload...` — enum variant constructor.
 ///
-/// Unlike `::` (NativeTuple), `%::` carries an enum class as first arg which is
+/// Unlike `::` (NativeEnum), `%::` carries an enum class as first arg which is
 /// ignored in WASM (used for type-checking only). Layout is identical to `::`.
 /// args: [enum_class, tag, payload...]
 pub(super) fn emit_named_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {

@@ -488,7 +488,7 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     values: Arc::new(values),
   };
 
-  match CalcitEnumDef::from_record(struct_value) {
+  match CalcitEnumDef::from_struct(struct_value) {
     Ok(enum_def) => Ok(Calcit::EnumDef(enum_def)),
     Err(msg) => CalcitErr::err_str(CalcitErrKind::Type, format!("&enum-def:new failed to build enum: {msg}")),
   }
@@ -863,7 +863,7 @@ pub fn call_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&%{{}} requires a struct as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStruct).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -961,7 +961,7 @@ fn call_struct_with_prototype(struct_value: &CalcitStructValue, xs: &[Calcit]) -
           "&%{{}} requires field in string/tag, but received: {}",
           type_of(std::slice::from_ref(a))?.lisp_str()
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStruct).unwrap_or_default();
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
@@ -1059,7 +1059,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 "&struct:with requires field in string/tag, but received: {}",
                 type_of(std::slice::from_ref(a))?.lisp_str()
               );
-              let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
+              let hint = format_proc_examples_hint(&CalcitProc::NativeStructWith).unwrap_or_default();
               return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
             }
           }
@@ -1078,7 +1078,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:with requires a struct value as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructWith).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1110,7 +1110,7 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:impls requires a struct value as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordImpls).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1128,7 +1128,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:from-map requires a struct as prototype, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructFromMap).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -1144,7 +1144,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               "&struct:from-map requires field in string/tag, but received: {}",
               type_of(std::slice::from_ref(a))?.lisp_str()
             );
-            let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+            let hint = format_proc_examples_hint(&CalcitProc::NativeStructFromMap).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
         };
@@ -1186,7 +1186,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:from-map requires a map as second argument, but received: {}",
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructFromMap).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1203,7 +1203,7 @@ pub fn get_struct_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:get-name requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGetName).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGetName).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1225,7 +1225,7 @@ pub fn get_struct_def(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:definition requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordStruct).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructDefinition).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1248,7 +1248,7 @@ pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:to-map requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordToMap).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructToMap).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1267,7 +1267,7 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:matches? second argument requires a struct value or struct, but received: {}",
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructMatches).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -1282,7 +1282,7 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:matches? first argument requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructMatches).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1299,7 +1299,7 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:count requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordCount).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1315,12 +1315,12 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           "&struct:contains? requires a field in string/tag, but received: {}",
           type_of(std::slice::from_ref(a))?.lisp_str()
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
     (Some(_), None) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(
         CalcitErrKind::Arity,
         "&struct:contains? expected 2 arguments, but received:",
@@ -1333,11 +1333,11 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:contains? requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructContains).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(
         CalcitErrKind::Arity,
         "&struct:contains? expected 2 arguments, but received:",
@@ -1359,7 +1359,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             "&struct:get requires a field in string/tag, but received: {}",
             type_of(std::slice::from_ref(a))?.lisp_str()
           );
-          let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+          let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
           return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
         }
       };
@@ -1372,7 +1372,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(_), None) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:get expected 2 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_)) => {
@@ -1380,11 +1380,11 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:get requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructGet).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:get expected 2 arguments, but received:", xs, hint)
     }
   }
@@ -1427,12 +1427,12 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           type_of(std::slice::from_ref(a))?.lisp_str(),
           struct_ref.fields
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
     (Some(_), None, _) | (Some(_), Some(_), None) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:assoc expected 3 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_), Some(_)) => {
@@ -1440,11 +1440,11 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:assoc requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => {
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructAssoc).unwrap_or_default();
       CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct:assoc expected 3 arguments, but received:", xs, hint)
     }
   }
@@ -1476,7 +1476,7 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           type_of(std::slice::from_ref(a))?.lisp_str(),
           struct_value.struct_ref.fields
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeStructExtendAs).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
@@ -1485,7 +1485,7 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&struct:extend-as requires a struct value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStructExtendAs).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:extend-as expected 4 arguments, but received:", xs),

@@ -523,16 +523,13 @@ mod tests {
     let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String));
     assert_eq!(
       dump_type_annotation(&list_type),
-      Edn::tuple(Edn::Symbol(Arc::from("List")), vec![Edn::Symbol(Arc::from("String"))])
+      Edn::enum_value("List", vec![Edn::Symbol(Arc::from("String"))])
     );
 
     let map_type = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number));
     assert_eq!(
       dump_type_annotation(&map_type),
-      Edn::tuple(
-        Edn::Symbol(Arc::from("Map")),
-        vec![Edn::Symbol(Arc::from("String")), Edn::Symbol(Arc::from("Number"))],
-      )
+      Edn::enum_value("Map", vec![Edn::Symbol(Arc::from("String")), Edn::Symbol(Arc::from("Number"))],)
     );
 
     let fn_type = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
@@ -546,8 +543,8 @@ mod tests {
     }));
     assert_eq!(
       dump_type_annotation(&fn_type),
-      Edn::tuple(
-        Edn::Symbol(Arc::from("Fn")),
+      Edn::enum_value(
+        "Fn",
         vec![Edn::map_from_iter([
           (
             Edn::tag("args"),

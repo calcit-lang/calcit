@@ -449,7 +449,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     let enum_value = xs[0].to_owned();
     match enum_value {
       Calcit::Struct(enum_struct) => {
-        let enum_proto = match CalcitEnumDef::from_record(enum_struct.clone()) {
+        let enum_proto = match CalcitEnumDef::from_struct(enum_struct.clone()) {
           Ok(proto) => proto,
           Err(msg) => {
             return CalcitErr::err_str(CalcitErrKind::Type, format!("%:: expected a valid enum prototype, but {msg}"));
@@ -464,7 +464,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               "%:: requires a tag, but received: {}",
               type_of(std::slice::from_ref(other))?.lisp_str()
             );
-            let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
+            let hint = format_proc_examples_hint(&CalcitProc::NativeNamedEnumNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
         };
@@ -533,7 +533,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               "%:: requires a tag, but received: {}",
               type_of(std::slice::from_ref(other))?.lisp_str()
             );
-            let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
+            let hint = format_proc_examples_hint(&CalcitProc::NativeNamedEnumNew).unwrap_or_default();
             return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
         };
@@ -614,7 +614,7 @@ pub fn enum_definition(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&enum:definition requires an enum value, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleEnum).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeEnumDefinition).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -756,7 +756,7 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Trait(CalcitTrait::new_runtime(name, methods, method_types)))
 }
 
-fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+fn collect_trait_impls(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   let mut traits: Vec<Arc<CalcitImpl>> = Vec::with_capacity(xs.len());
   for item in xs {
     match item {
@@ -779,7 +779,7 @@ pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Struct(struct_value) => {
       let mut impls = struct_value.struct_ref.impls.clone();
-      impls.extend(collect_trait_records(&xs[1..], "&struct:impl-traits")?);
+      impls.extend(collect_trait_impls(&xs[1..], "&struct:impl-traits")?);
       let mut next_struct = (*struct_value.struct_ref).clone();
       next_struct.impls = impls;
 
@@ -814,7 +814,7 @@ pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               &vec![Calcit::tag("any"); enum_value.extra.len()][..],
             )))]),
           };
-          CalcitEnumDef::from_record(struct_value).map_err(|msg| {
+          CalcitEnumDef::from_struct(struct_value).map_err(|msg| {
             CalcitErr::use_msg_stack_location(
               CalcitErrKind::Type,
               format!("failed to create anonymous enum, {msg}"),
@@ -824,7 +824,7 @@ pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           })?
         }
       };
-      next_sum_type.impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
+      next_sum_type.impls.extend(collect_trait_impls(&xs[1..], "&enum:impl-traits")?);
       Ok(Calcit::Enum(CalcitEnumValue {
         tag: enum_value.tag.to_owned(),
         extra: enum_value.extra.to_owned(),
@@ -850,7 +850,7 @@ pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::StructDef(struct_def) => {
       let mut next = struct_def.to_owned();
       let mut next_impls = next.impls.clone();
-      next_impls.extend(collect_trait_records(&xs[1..], "&struct-def:impl-traits")?);
+      next_impls.extend(collect_trait_impls(&xs[1..], "&struct-def:impl-traits")?);
       next.impls = next_impls;
       Ok(Calcit::StructDef(next))
     }
@@ -872,7 +872,7 @@ pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::EnumDef(enum_def) => {
       let mut next = enum_def.to_owned();
-      next.impls.extend(collect_trait_records(&xs[1..], "&enum-def:impl-traits")?);
+      next.impls.extend(collect_trait_impls(&xs[1..], "&enum-def:impl-traits")?);
       Ok(Calcit::EnumDef(next))
     }
     other => CalcitErr::err_str(
@@ -952,7 +952,7 @@ pub fn impl_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 fn parse_enum_struct(enum_struct: &CalcitStructValue, proc_name: &str) -> Result<CalcitEnumDef, CalcitErr> {
-  match CalcitEnumDef::from_record(enum_struct.to_owned()) {
+  match CalcitEnumDef::from_struct(enum_struct.to_owned()) {
     Ok(proto) => Ok(proto),
     Err(msg) => Err(CalcitErr::use_str(
       CalcitErrKind::Type,
@@ -1147,7 +1147,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   }
 }
 
-fn collect_impl_records_from_value(impls_value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+fn collect_impls_from_value(impls_value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match impls_value {
     Calcit::Impl(imp) => Ok(vec![Arc::new(imp.to_owned())]),
     Calcit::List(list) => {
@@ -1182,7 +1182,7 @@ fn method_call(
   method_args: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let impls = collect_impl_records_from_value(impls_value, call_stack)?;
+  let impls = collect_impls_from_value(impls_value, call_stack)?;
   // builtin impl lists are ordered by priority in calcit-core
   method_call_impls(&impls, v0, name, method_args, call_stack, false)
 }
@@ -1205,13 +1205,13 @@ fn method_call_impls(
   if last_wins {
     for imp in impls.iter().rev() {
       if imp.get(name).is_some() {
-        return method_record(imp, v0, name, method_args, call_stack);
+        return invoke_impl_method(imp, v0, name, method_args, call_stack);
       }
     }
   } else {
     for imp in impls.iter() {
       if imp.get(name).is_some() {
-        return method_record(imp, v0, name, method_args, call_stack);
+        return invoke_impl_method(imp, v0, name, method_args, call_stack);
       }
     }
   }
@@ -1229,14 +1229,14 @@ fn method_call_impls(
   ))
 }
 
-fn method_record(
-  impl_record: &CalcitImpl,
+fn invoke_impl_method(
+  impl_value: &CalcitImpl,
   v0: &Calcit,
   name: &str,
   method_args: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  match impl_record.get(name) {
+  match impl_value.get(name) {
     Some(v) => {
       match v {
         // dirty copy...
@@ -1256,7 +1256,7 @@ fn method_record(
       }
     }
     None => {
-      let content = impl_record.fields().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
+      let content = impl_value.fields().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
       Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
         format!("unknown method `.{name}` for {v0}. Available methods: {content}"),
@@ -1303,7 +1303,7 @@ pub fn enum_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         type_of(std::slice::from_ref(a))?.lisp_str(),
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleNth).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeEnumNth).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1345,7 +1345,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         type_of(std::slice::from_ref(a))?.lisp_str(),
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleAssoc).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeEnumAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1362,7 +1362,7 @@ pub fn enum_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&enum:count requires an enum value, but received: {}",
         type_of(std::slice::from_ref(x))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleCount).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeEnumCount).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1385,7 +1385,7 @@ pub fn enum_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&enum:impls requires an enum value, but received: {}",
         type_of(std::slice::from_ref(x))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleImpls).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeEnumImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1409,15 +1409,15 @@ pub fn enum_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "&enum:params requires an enum value, but received: {}",
         type_of(std::slice::from_ref(x))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleParams).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeEnumParams).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
 }
 
-fn collect_optional_core_impl_records(name: &str, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+fn collect_optional_core_impls(name: &str, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match runner::evaluate_symbol_from_program(name, calcit::CORE_NS, None, call_stack) {
-    Ok(value) => collect_impl_records_from_value(&value, call_stack),
+    Ok(value) => collect_impls_from_value(&value, call_stack),
     // Unit tests and embedding users can construct a named value before the
     // core program is loaded. Attached impls must remain usable in that state.
     Err(err) if err.kind == CalcitErrKind::Var => Ok(vec![]),
@@ -1425,15 +1425,15 @@ fn collect_optional_core_impl_records(name: &str, call_stack: &CallStackList) ->
   }
 }
 
-fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match value {
     Calcit::Enum(enum_value) => {
-      let mut impls = collect_optional_core_impl_records("&core-enum-impls", call_stack)?;
+      let mut impls = collect_optional_core_impls("&core-enum-impls", call_stack)?;
       impls.extend(enum_value.impls().iter().cloned());
       Ok(impls)
     }
     Calcit::Struct(struct_value) => {
-      let mut impls = collect_optional_core_impl_records("&core-struct-impls", call_stack)?;
+      let mut impls = collect_optional_core_impls("&core-struct-impls", call_stack)?;
       impls.extend(struct_value.struct_ref.impls.iter().cloned());
       Ok(impls)
     }
@@ -1441,23 +1441,23 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
     // so introspection tools like `&methods-of` can answer "what methods will
     // instances of this type have" without needing a concrete instance first.
     Calcit::StructDef(struct_def) => {
-      let mut impls = collect_optional_core_impl_records("&core-struct-impls", call_stack)?;
+      let mut impls = collect_optional_core_impls("&core-struct-impls", call_stack)?;
       impls.extend(struct_def.impls.iter().cloned());
       Ok(impls)
     }
     Calcit::EnumDef(enum_def) => {
-      let mut impls = collect_optional_core_impl_records("&core-enum-impls", call_stack)?;
+      let mut impls = collect_optional_core_impls("&core-enum-impls", call_stack)?;
       impls.extend(enum_def.impls().iter().cloned());
       Ok(impls)
     }
-    Calcit::List(..) => collect_optional_core_impl_records("&core-list-impls", call_stack),
-    Calcit::Map(..) => collect_optional_core_impl_records("&core-map-impls", call_stack),
-    Calcit::Number(..) => collect_optional_core_impl_records("&core-number-impls", call_stack),
-    Calcit::Str(..) => collect_optional_core_impl_records("&core-string-impls", call_stack),
-    Calcit::Set(..) => collect_optional_core_impl_records("&core-set-impls", call_stack),
-    Calcit::Fn { .. } | Calcit::Proc(..) => collect_optional_core_impl_records("&core-fn-impls", call_stack),
+    Calcit::List(..) => collect_optional_core_impls("&core-list-impls", call_stack),
+    Calcit::Map(..) => collect_optional_core_impls("&core-map-impls", call_stack),
+    Calcit::Number(..) => collect_optional_core_impls("&core-number-impls", call_stack),
+    Calcit::Str(..) => collect_optional_core_impls("&core-string-impls", call_stack),
+    Calcit::Set(..) => collect_optional_core_impls("&core-set-impls", call_stack),
+    Calcit::Fn { .. } | Calcit::Proc(..) => collect_optional_core_impls("&core-fn-impls", call_stack),
     Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } | Calcit::CirruQuote(..) => {
-      collect_optional_core_impl_records("&core-scalar-impls", call_stack)
+      collect_optional_core_impls("&core-scalar-impls", call_stack)
     }
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -1559,7 +1559,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   }
 
   let receiver = &xs[2];
-  let impls = collect_impl_records_for_value(receiver, call_stack)?;
+  let impls = collect_impls_for_value(receiver, call_stack)?;
 
   let mut selected_impl: Option<&Arc<CalcitImpl>> = None;
   for imp in iter_impls_in_precedence_order(receiver, &impls) {
@@ -1573,8 +1573,8 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   method_args.push(receiver.to_owned());
   method_args.extend_from_slice(&xs[3..]);
 
-  if let Some(impl_record) = selected_impl {
-    return method_record(impl_record.as_ref(), receiver, &method_name, &method_args, call_stack);
+  if let Some(impl_value) = selected_impl {
+    return invoke_impl_method(impl_value.as_ref(), receiver, &method_name, &method_args, call_stack);
   }
 
   if let Some(default_impl) = trait_def.get_default(&method_name) {
@@ -1594,7 +1594,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
 
 /// Method names declared directly on a bare trait definition (with leading dot).
 /// Traits declare methods directly rather than through attached impls, so this
-/// is handled separately from `collect_impl_records_for_value`.
+/// is handled separately from `collect_impls_for_value`.
 fn trait_dot_method_names(trait_def: &CalcitTrait) -> Vec<String> {
   trait_def.methods.iter().map(|m| format!(".{}", m.ref_str())).collect()
 }
@@ -1610,7 +1610,7 @@ pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   let methods = if let Calcit::Trait(trait_def) = value {
     trait_dot_method_names(trait_def)
   } else {
-    let impls = collect_impl_records_for_value(value, call_stack)?;
+    let impls = collect_impls_for_value(value, call_stack)?;
     collect_method_names(value, &impls)
   };
   Ok(Calcit::from(
@@ -1660,7 +1660,7 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
     eprintln!("\nTrait methods declared directly (no impls): {}", names.len());
     names
   } else {
-    let impls = collect_impl_records_for_value(value, call_stack)?;
+    let impls = collect_impls_for_value(value, call_stack)?;
     eprintln!("\nImpl records (high → low precedence): {}", impls.len());
     for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
       let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
@@ -1694,7 +1694,7 @@ pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit
     }
   };
 
-  let impls = collect_impl_records_for_value(value, call_stack)?;
+  let impls = collect_impls_for_value(value, call_stack)?;
   let selected_impl = iter_impls_in_precedence_order(value, &impls).find(|imp| imp.implements_trait(&trait_def));
 
   let Some(selected_impl) = selected_impl else {
@@ -2110,7 +2110,7 @@ mod tests {
   }
 
   fn shown_maybe_enum(show_trait: Arc<CalcitTrait>) -> CalcitEnumDef {
-    CalcitEnumDef::from_record(CalcitStructValue {
+    CalcitEnumDef::from_struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
         name: EdnTag::new("ShownMaybe"),
         fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),
@@ -2174,7 +2174,7 @@ mod tests {
 
   #[test]
   fn optional_core_impl_lookup_allows_embedding_without_core_entries() {
-    let impls = collect_optional_core_impl_records("&missing-test-core-impls", &CallStackList::default())
+    let impls = collect_optional_core_impls("&missing-test-core-impls", &CallStackList::default())
       .expect("missing core impl list should be treated as unavailable");
     assert!(impls.is_empty());
   }

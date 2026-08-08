@@ -1039,8 +1039,8 @@ fn struct_fields_from_calcit(struct_value: &crate::calcit::CalcitStructValue) ->
 
 fn is_struct_literal_head(head: Option<&Calcit>) -> bool {
   match head {
-    Some(Calcit::Proc(CalcitProc::NativeLooseRecord)) => true,
-    Some(Calcit::Proc(CalcitProc::NativeTuple)) => true,
+    Some(Calcit::Proc(CalcitProc::NativeLooseStruct)) => true,
+    Some(Calcit::Proc(CalcitProc::NativeEnum)) => true,
     Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "{}" | "?{}" | "::"),
     _ => false,
   }
@@ -2344,7 +2344,7 @@ mod tests {
   }
 
   #[test]
-  fn schema_hint_parses_record_to_edn() {
+  fn schema_hint_parses_segment_to_edn() {
     let hint = "{ :records :list [], :base :nil, :stopped? :bool }";
     let edn = parse_schema_segment(hint).expect("parse record");
     let lines = format_schema_edn_lines(&edn);

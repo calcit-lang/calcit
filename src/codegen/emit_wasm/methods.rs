@@ -800,7 +800,7 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Resu
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
   let string_tag = get_type_tag(ctx, "string");
-  let enum_tag = get_type_tag(ctx, "enum");
+  let type_name = get_type_tag(ctx, "enum");
   let struct_tag = get_type_tag(ctx, "struct");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -813,7 +813,7 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Resu
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::Else);
 
-  for tag in [list_tag, map_tag, set_tag, string_tag, enum_tag, struct_tag] {
+  for tag in [list_tag, map_tag, set_tag, string_tag, type_name, struct_tag] {
     ctx.emit(Instruction::LocalGet(type_local));
     ctx.emit(f64_const(tag));
     ctx.emit(Instruction::F64Eq);
@@ -1061,7 +1061,7 @@ fn emit_enum_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
 fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, val_local: u32) -> Result<(), String> {
   let list_tag = super::get_type_tag(ctx, "list");
   let map_tag = super::get_type_tag(ctx, "map");
-  let enum_tag = super::get_type_tag(ctx, "enum");
+  let type_name = super::get_type_tag(ctx, "enum");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -1079,7 +1079,7 @@ fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, 
   emit_map_assoc_from_local(ctx, receiver_local, key_local, val_local);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
-  ctx.emit(f64_const(enum_tag));
+  ctx.emit(f64_const(type_name));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_enum_assoc_from_local(ctx, receiver_local, key_local, val_local);
@@ -1098,7 +1098,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
   let string_tag = get_type_tag(ctx, "string");
-  let enum_tag = get_type_tag(ctx, "enum");
+  let type_name = get_type_tag(ctx, "enum");
   let struct_tag = get_type_tag(ctx, "struct");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -1111,7 +1111,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::Else);
 
-  for tag in [list_tag, map_tag, set_tag, string_tag, enum_tag, struct_tag] {
+  for tag in [list_tag, map_tag, set_tag, string_tag, type_name, struct_tag] {
     ctx.emit(Instruction::LocalGet(type_local));
     ctx.emit(f64_const(tag));
     ctx.emit(Instruction::F64Eq);
@@ -1130,7 +1130,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
 
 fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
-  let enum_tag = get_type_tag(ctx, "enum");
+  let type_name = get_type_tag(ctx, "enum");
   let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -1143,7 +1143,7 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
   emit_list_nth_from_local(ctx, receiver_local, index_local);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
-  ctx.emit(f64_const(enum_tag));
+  ctx.emit(f64_const(type_name));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_enum_nth_from_local(ctx, receiver_local, index_local);
@@ -1163,7 +1163,7 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
 
 fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
-  let enum_tag = get_type_tag(ctx, "enum");
+  let type_name = get_type_tag(ctx, "enum");
   let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -1176,7 +1176,7 @@ fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   emit_list_first_from_local(ctx, receiver_local);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
-  ctx.emit(f64_const(enum_tag));
+  ctx.emit(f64_const(type_name));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   let zero = ctx.alloc_local();
@@ -1217,7 +1217,7 @@ fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Str
 fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) -> Result<(), String> {
   let map_tag = get_type_tag(ctx, "map");
   let list_tag = get_type_tag(ctx, "list");
-  let enum_tag = get_type_tag(ctx, "enum");
+  let type_name = get_type_tag(ctx, "enum");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -1235,7 +1235,7 @@ fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) ->
   emit_list_nth_from_local(ctx, receiver_local, key_local);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
-  ctx.emit(f64_const(enum_tag));
+  ctx.emit(f64_const(type_name));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_enum_nth_from_local(ctx, receiver_local, key_local);

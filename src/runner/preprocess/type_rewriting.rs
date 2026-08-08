@@ -183,7 +183,7 @@ fn try_rewrite_single_map_to_struct(
   // Build the rewritten struct literal with ALL struct fields in order.
   // Fields not provided in the map get nil.
   let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
-  struct_items.push(Calcit::Proc(CalcitProc::NativeRecord));
+  struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
   struct_items.push(struct_ref_node);
   for field in struct_def.fields.iter() {
     struct_items.push(Calcit::Tag(field.to_owned()));
@@ -207,16 +207,16 @@ fn try_rewrite_single_loose_struct_to_struct(
   arg_idx: usize,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Option<Calcit> {
-  // Only handle loose struct literals (lists starting with Proc(NativeLooseRecord))
+  // Only handle loose struct literals (lists starting with Proc(NativeLooseStruct))
   let Calcit::List(arg_list) = arg else { return None };
-  let Some(Calcit::Proc(CalcitProc::NativeLooseRecord)) = arg_list.first() else {
+  let Some(Calcit::Proc(CalcitProc::NativeLooseStruct)) = arg_list.first() else {
     return None;
   };
 
   // Resolve the expected type to a struct definition + optional ns/def path
   let (struct_def, ns_def_path) = expected_type.resolve_to_struct_with_ref()?;
 
-  // Validate: the loose struct literal has flat key-value pairs after the NativeLooseRecord head
+  // Validate: the loose struct literal has flat key-value pairs after the NativeLooseStruct head
   let items: Vec<&Calcit> = arg_list.iter().skip(1).collect();
   if !items.len().is_multiple_of(2) {
     return None; // malformed, skip
@@ -257,7 +257,7 @@ fn try_rewrite_single_loose_struct_to_struct(
 
   // Build the rewritten struct literal with ALL struct fields in order.
   let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
-  struct_items.push(Calcit::Proc(CalcitProc::NativeRecord));
+  struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
   struct_items.push(struct_ref_node);
   for field in struct_def.fields.iter() {
     struct_items.push(Calcit::Tag(field.to_owned()));
@@ -282,9 +282,9 @@ fn try_rewrite_single_enum_to_named_enum(
   arg_idx: usize,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Option<Calcit> {
-  // Only handle untyped enum literals (lists starting with Proc(NativeTuple))
+  // Only handle untyped enum literals (lists starting with Proc(NativeEnum))
   let Calcit::List(arg_list) = arg else { return None };
-  let Some(Calcit::Proc(CalcitProc::NativeTuple)) = arg_list.first() else {
+  let Some(Calcit::Proc(CalcitProc::NativeEnum)) = arg_list.first() else {
     return None;
   };
 
@@ -323,11 +323,11 @@ fn try_rewrite_single_enum_to_named_enum(
 
   let enum_ref_node = build_enum_ref_node(enum_def, ns_def_path, file_ns, def_name);
 
-  // Build rewritten: [NativeEnumTupleNew, enum_ref, tag, ...payloads]
+  // Build rewritten: [NativeNamedEnumNew, enum_ref, tag, ...payloads]
   let mut items: Vec<Calcit> = Vec::with_capacity(arg_list.len() + 1);
-  items.push(Calcit::Proc(CalcitProc::NativeEnumTupleNew));
+  items.push(Calcit::Proc(CalcitProc::NativeNamedEnumNew));
   items.push(enum_ref_node);
-  // Copy tag and payloads from the original enum literal (skip NativeTuple head)
+  // Copy tag and payloads from the original enum literal (skip NativeEnum head)
   for item in arg_list.iter().skip(1) {
     items.push(item.to_owned());
   }

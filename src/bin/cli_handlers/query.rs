@@ -1129,7 +1129,7 @@ mod type_query_tests {
       panic!("field access should remain a call");
     };
     assert!(
-      matches!(field_access.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeRecordNth))),
+      matches!(field_access.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeStructNth))),
       "typed tag access should specialize to record nth, got {target}"
     );
   }

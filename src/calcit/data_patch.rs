@@ -411,7 +411,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::from([CalcitTypeAnnotation::Number.to_calcit()].as_slice()))),
       ]),
     };
-    let nominal = Arc::new(CalcitEnumDef::from_record(enum_struct).expect("outcome enum"));
+    let nominal = Arc::new(CalcitEnumDef::from_struct(enum_struct).expect("outcome enum"));
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![])), "tests.patch").expect("outcome shape");
     let DataShapeNode::Enum { variants, .. } = &shape.nodes[shape.root] else {

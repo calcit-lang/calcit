@@ -1073,7 +1073,7 @@ fn preprocess_list_call(
   // constructor. Lower it before macro arguments are preprocessed so `_`
   // cannot be mistaken for a normal unresolved symbol.
   if has_anonymous_definition_marker && is_constructor_named("%{}") {
-    let mut items = vec![Calcit::Proc(CalcitProc::NativeLooseRecord)];
+    let mut items = vec![Calcit::Proc(CalcitProc::NativeLooseStruct)];
     for entry in args.iter().skip(1) {
       let Calcit::List(pair) = entry else {
         return CalcitErr::err_str(
@@ -1101,9 +1101,9 @@ fn preprocess_list_call(
 
   // `%:: _ :variant ...` is the canonical anonymous-enum constructor.
   if has_anonymous_definition_marker
-    && (matches!(&head_form, Calcit::Proc(CalcitProc::NativeEnumTupleNew)) || is_constructor_named("%::"))
+    && (matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew)) || is_constructor_named("%::"))
   {
-    let mut items = vec![Calcit::Proc(CalcitProc::NativeTuple)];
+    let mut items = vec![Calcit::Proc(CalcitProc::NativeEnum)];
     items.extend(args.iter().skip(1).cloned());
     return preprocess_expr(
       &Calcit::from(CalcitList::from(items.as_slice())),
@@ -1138,7 +1138,7 @@ fn preprocess_list_call(
             // A nominal struct has a fixed field set, so this returns the field
             // directly rather than wrapping it in Option.
             let items: Vec<Calcit> = vec![
-              Calcit::Proc(CalcitProc::NativeRecordNth),
+              Calcit::Proc(CalcitProc::NativeStructNth),
               head_form,
               Calcit::Number(idx as f64),
               Calcit::Tag(field_tag.to_owned()),
@@ -1152,7 +1152,7 @@ fn preprocess_list_call(
           // required struct lookup and report a normal error when absent.
           if type_info.as_ref().resolve_to_struct().is_some() || is_anonymous_struct_type(type_info.as_ref()) {
             return Ok(Calcit::from(CalcitList::from(&[
-              Calcit::Proc(CalcitProc::NativeRecordGet),
+              Calcit::Proc(CalcitProc::NativeStructGet),
               head_form,
               first_arg.to_owned(),
             ])));
@@ -1394,7 +1394,7 @@ fn preprocess_list_call(
             // Emit (&struct:nth processed_arg idx :field-tag)
             // The 3rd arg (field tag) is used by JS codegen where field order differs from Rust
             let items: Vec<Calcit> = vec![
-              Calcit::Proc(CalcitProc::NativeRecordNth),
+              Calcit::Proc(CalcitProc::NativeStructNth),
               processed_arg,
               Calcit::Number(idx as f64),
               Calcit::Tag(tag.to_owned()),
@@ -1406,7 +1406,7 @@ fn preprocess_list_call(
             && (type_info.as_ref().resolve_to_struct().is_some() || is_anonymous_struct_type(type_info.as_ref()))
           {
             return Ok(Calcit::from(CalcitList::from(&[
-              Calcit::Proc(CalcitProc::NativeRecordGet),
+              Calcit::Proc(CalcitProc::NativeStructGet),
               processed_arg,
               head.to_owned(),
             ])));
@@ -1601,7 +1601,7 @@ fn preprocess_list_call(
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
 
         // Optimize &struct:get to &struct:nth when field index can be resolved at compile time
-        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordGet))
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructGet))
           && processed_args.len() == 2
           && let (Some(struct_arg), Some(Calcit::Tag(field_tag))) = (processed_args.first(), processed_args.get(1))
           && let Some(type_info) = resolve_type_value(struct_arg, scope_types)
@@ -1609,7 +1609,7 @@ fn preprocess_list_call(
           && let Some(idx) = struct_def.index_of(field_tag.ref_str())
         {
           ys = CalcitList::new_inner_from(&[
-            Calcit::Proc(CalcitProc::NativeRecordNth),
+            Calcit::Proc(CalcitProc::NativeStructNth),
             struct_arg.to_owned(),
             Calcit::Number(idx as f64),
             Calcit::Tag(field_tag.to_owned()),
@@ -1617,7 +1617,7 @@ fn preprocess_list_call(
         }
 
         // Optimize &struct:assoc to &struct:assoc-at when field index can be resolved at compile time
-        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordAssoc))
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructAssoc))
           && processed_args.len() == 3
           && let (Some(struct_arg), Some(Calcit::Tag(field_tag)), Some(value_arg)) =
             (processed_args.first(), processed_args.get(1), processed_args.get(2))
@@ -1626,7 +1626,7 @@ fn preprocess_list_call(
           && let Some(idx) = struct_def.index_of(field_tag.ref_str())
         {
           ys = CalcitList::new_inner_from(&[
-            Calcit::Proc(CalcitProc::NativeRecordAssocAt),
+            Calcit::Proc(CalcitProc::NativeStructAssocAt),
             struct_arg.to_owned(),
             Calcit::Number(idx as f64),
             Calcit::Tag(field_tag.to_owned()),
@@ -1635,7 +1635,7 @@ fn preprocess_list_call(
         }
 
         // Optimize &struct:with to &struct:with-at when all field indices can be resolved at compile time
-        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeRecordWith))
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructWith))
           && processed_args.len() >= 3
           && (processed_args.len() - 1) % 2 == 0
           && let Some(struct_arg) = processed_args.first()
@@ -1672,7 +1672,7 @@ fn preprocess_list_call(
 
           if all_resolved {
             let mut items: Vec<Calcit> = Vec::with_capacity(1 + new_args.len());
-            items.push(Calcit::Proc(CalcitProc::NativeRecordWithAt));
+            items.push(Calcit::Proc(CalcitProc::NativeStructWithAt));
             items.extend(new_args);
             ys = CalcitList::new_inner_from(&items);
           }
@@ -1988,7 +1988,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
 
     let struct_ref_node = build_struct_ref_node(&struct_def, ns_def_path, file_ns, def_name);
     let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
-    struct_items.push(Calcit::Proc(CalcitProc::NativeRecord));
+    struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
     struct_items.push(struct_ref_node);
     for field in struct_def.fields.iter() {
       struct_items.push(Calcit::Tag(field.to_owned()));
@@ -2056,7 +2056,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
 
     let enum_ref_node = build_enum_ref_node(enum_def, ns_def_path, file_ns, def_name);
     let mut items: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
-    items.push(Calcit::Proc(CalcitProc::NativeEnumTupleNew));
+    items.push(Calcit::Proc(CalcitProc::NativeNamedEnumNew));
     items.push(enum_ref_node);
     items.extend(args.to_vec());
 
@@ -2387,7 +2387,7 @@ fn check_struct_field_access(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // Check if this is a call to &struct:get
-  if let Calcit::Proc(CalcitProc::NativeRecordGet) = head {
+  if let Calcit::Proc(CalcitProc::NativeStructGet) = head {
     // &struct:get takes 2 args: (struct_value, field)
     if args.len() >= 2
       && let (Some(struct_arg), Some(field_arg)) = (args.first(), args.get(1))
@@ -2427,19 +2427,19 @@ fn check_struct_update_fields(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   let pairs: Vec<(&Calcit, &Calcit)> = match head {
-    Calcit::Proc(CalcitProc::NativeRecordAssoc) if args.len() == 3 => match (args.get(1), args.get(2)) {
+    Calcit::Proc(CalcitProc::NativeStructAssoc) if args.len() == 3 => match (args.get(1), args.get(2)) {
       (Some(field), Some(value)) => vec![(field, value)],
       _ => return,
     },
-    Calcit::Proc(CalcitProc::NativeRecordAssocAt) if args.len() == 4 => match (args.get(2), args.get(3)) {
+    Calcit::Proc(CalcitProc::NativeStructAssocAt) if args.len() == 4 => match (args.get(2), args.get(3)) {
       (Some(field), Some(value)) => vec![(field, value)],
       _ => return,
     },
-    Calcit::Proc(CalcitProc::NativeRecordWith) if args.len() >= 3 && (args.len() - 1).is_multiple_of(2) => {
+    Calcit::Proc(CalcitProc::NativeStructWith) if args.len() >= 3 && (args.len() - 1).is_multiple_of(2) => {
       let items = args.iter().skip(1).collect::<Vec<_>>();
       items.chunks_exact(2).map(|pair| (pair[0], pair[1])).collect()
     }
-    Calcit::Proc(CalcitProc::NativeRecordWithAt) if args.len() >= 4 && (args.len() - 1).is_multiple_of(3) => {
+    Calcit::Proc(CalcitProc::NativeStructWithAt) if args.len() >= 4 && (args.len() - 1).is_multiple_of(3) => {
       let items = args.iter().skip(1).collect::<Vec<_>>();
       items.chunks_exact(3).map(|triple| (triple[1], triple[2])).collect()
     }
@@ -2716,13 +2716,13 @@ fn check_struct_method_args(
   }
 
   // Get impl records for the type
-  let Some(impl_records) = get_impl_records_from_type(&type_value) else {
+  let Some(impl_values) = get_impls_from_type(&type_value) else {
     return; // No impl record, skip check
   };
 
   // Get method entry from impl records
   let method_str = method_name.as_ref();
-  let Some(method_entry) = find_method_entry_for_type(type_value.as_ref(), &impl_records, method_str) else {
+  let Some(method_entry) = find_method_entry_for_type(type_value.as_ref(), &impl_values, method_str) else {
     return; // Method not found (will be caught by validate_method_call)
   };
 
@@ -3252,23 +3252,23 @@ fn warn_on_method_name_conflict(
     return;
   };
 
-  let Some(impl_records) = get_impl_records_from_type(type_value.as_ref()) else {
+  let Some(impl_values) = get_impls_from_type(type_value.as_ref()) else {
     return;
   };
 
-  if impl_records.len() < 2 {
+  if impl_values.len() < 2 {
     return;
   }
 
   let last_wins = core_impl_list_symbol_from_type_annotation(type_value.as_ref()).is_none();
   let matched_impls: Vec<&Arc<CalcitImpl>> = if last_wins {
-    impl_records
+    impl_values
       .iter()
       .rev()
       .filter(|imp| imp.get(method_name.as_ref()).is_some() && imp.origin().is_some())
       .collect()
   } else {
-    impl_records
+    impl_values
       .iter()
       .filter(|imp| imp.get(method_name.as_ref()).is_some() && imp.origin().is_some())
       .collect()
@@ -3411,8 +3411,8 @@ fn try_specialize_polymorphic_call(
     ("count", T::Map(_, _)) => NativeMapCount,
     ("count", T::Set(_)) => NativeSetCount,
     ("count", T::String) => NativeStrCount,
-    ("count", T::EnumValue(_) | T::AnonymousEnum) => NativeTupleCount,
-    ("count", T::StructValue(_)) => NativeRecordCount,
+    ("count", T::EnumValue(_) | T::AnonymousEnum) => NativeEnumCount,
+    ("count", T::StructValue(_)) => NativeStructCount,
     // empty?
     ("empty?", T::List(_)) => NativeListEmpty,
     ("empty?", T::Map(_, _)) => NativeMapEmpty,
@@ -3423,14 +3423,14 @@ fn try_specialize_polymorphic_call(
     ("contains?", T::Map(_, _)) => NativeMapContains,
     ("contains?", T::Set(_)) => NativeSetIncludes,
     ("contains?", T::String) => NativeStrContains,
-    ("contains?", T::StructValue(_)) => NativeRecordContains,
+    ("contains?", T::StructValue(_)) => NativeStructContains,
     // rest
     ("rest", T::List(_)) => NativeListRest,
     // assoc
     ("assoc", T::List(_)) => NativeListAssoc,
     ("assoc", T::Map(_, _)) => NativeMapAssoc,
-    ("assoc", T::EnumValue(_) | T::AnonymousEnum) => NativeTupleAssoc,
-    ("assoc", T::StructValue(_)) => NativeRecordAssoc,
+    ("assoc", T::EnumValue(_) | T::AnonymousEnum) => NativeEnumAssoc,
+    ("assoc", T::StructValue(_)) => NativeStructAssoc,
     // includes?
     ("includes?", T::List(_)) => NativeListIncludes,
     ("includes?", T::Map(_, _)) => NativeMapIncludes,
@@ -3465,8 +3465,8 @@ fn try_inline_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeT
         return None;
       }
       let type_ref = resolved_type.as_ref();
-      let impl_records = get_impl_records_from_type(type_ref)?;
-      let (_impl_index, _impl_record, method_entry) = find_method_entry_with_impl(type_ref, &impl_records, method_name.as_ref())?;
+      let impl_values = get_impls_from_type(type_ref)?;
+      let (_impl_index, _impl_value, method_entry) = find_method_entry_with_impl(type_ref, &impl_values, method_name.as_ref())?;
 
       if let Some(callable_head) = pick_callable_from_method_entry(method_entry, file_ns) {
         return Some(build_inlined_call(callable_head, args));
@@ -3567,13 +3567,13 @@ fn validate_method_call(
   }
 
   // Get impl records for the type
-  let Some(impl_records) = get_impl_records_from_type(&type_value) else {
+  let Some(impl_values) = get_impls_from_type(&type_value) else {
     return Ok(()); // No impl record, skip validation
   };
 
   // Check if method exists in the impls
   let method_str = method_name.as_ref();
-  if impl_records
+  if impl_values
     .iter()
     .any(|record| record.fields().iter().any(|field| field.ref_str() == method_str))
   {
@@ -3582,7 +3582,7 @@ fn validate_method_call(
 
   // Method not found, generate error
   let mut methods = vec![];
-  for record in impl_records.iter() {
+  for record in impl_values.iter() {
     for field in record.fields().iter() {
       methods.push(field.to_string());
     }
@@ -3680,7 +3680,7 @@ fn check_callable_type(
 /// - If type_value is already a Struct, use it directly
 /// - If type_value is a Tag, map to corresponding core impl list
 /// - Otherwise return None
-fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>>> {
+fn collect_impls_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>>> {
   let resolve_impl = |value: &Calcit| -> Option<CalcitImpl> {
     match value {
       Calcit::Impl(imp) => Some(imp.to_owned()),
@@ -3710,10 +3710,10 @@ fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>
   }
 }
 
-fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
+fn get_impls_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitImpl>>> {
   if let Some(struct_def) = type_value.resolve_to_struct() {
     // Prepend core struct impls; user impls come after and win (last_wins=true)
-    let mut impls = resolve_core_impl_records("&core-struct-impls").unwrap_or_default();
+    let mut impls = resolve_core_impls("&core-struct-impls").unwrap_or_default();
     impls.extend(struct_def.impls.iter().cloned());
     return Some(impls);
   }
@@ -3724,21 +3724,21 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
 
   if let Some(enum_def) = type_value.resolve_to_enum() {
     // Prepend core enum impls; user impls come after and win (last_wins=true)
-    let mut impls = resolve_core_impl_records("&core-enum-impls").unwrap_or_default();
+    let mut impls = resolve_core_impls("&core-enum-impls").unwrap_or_default();
     impls.extend(enum_def.impls.iter().cloned());
     return Some(impls);
   }
 
   if let CalcitTypeAnnotation::AnonymousEnum = type_value {
     // Untyped enum: only core impls
-    if let Some(core_impls) = resolve_core_impl_records("&core-enum-impls") {
+    if let Some(core_impls) = resolve_core_impls("&core-enum-impls") {
       return Some(core_impls);
     }
   }
 
   if let Some(class_symbol) = core_impl_list_symbol_from_type_annotation(type_value) {
     return match resolve_program_value_for_preprocess(calcit::CORE_NS, class_symbol, None) {
-      Some(value) => collect_impl_records_from_value(&value),
+      Some(value) => collect_impls_from_value(&value),
       None => None,
     };
   }
@@ -3747,7 +3747,7 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
     match value.as_ref() {
       Calcit::Import(import) => {
         return match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
-          Some(value) => collect_impl_records_from_value(&value),
+          Some(value) => collect_impls_from_value(&value),
           None => None,
         };
       }
@@ -3757,7 +3757,7 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
           None => (info.at_ns.to_owned(), sym.to_owned()),
         };
         return match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
-          Some(value) => collect_impl_records_from_value(&value),
+          Some(value) => collect_impls_from_value(&value),
           None => None,
         };
       }
@@ -3769,8 +3769,8 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<A
 }
 
 /// Resolve core impl records from a symbol name in calcit.core
-fn resolve_core_impl_records(symbol: &str) -> Option<Vec<Arc<CalcitImpl>>> {
-  resolve_program_value_for_preprocess(calcit::CORE_NS, symbol, None).and_then(|v| collect_impl_records_from_value(&v))
+fn resolve_core_impls(symbol: &str) -> Option<Vec<Arc<CalcitImpl>>> {
+  resolve_program_value_for_preprocess(calcit::CORE_NS, symbol, None).and_then(|v| collect_impls_from_value(&v))
 }
 
 fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitTrait>>> {
@@ -3887,7 +3887,7 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
     return Some(methods);
   }
 
-  if let Some(impls) = get_impl_records_from_type(type_value) {
+  if let Some(impls) = get_impls_from_type(type_value) {
     let last_wins = core_impl_list_symbol_from_type_annotation(type_value).is_none();
     let ordered_impls: Box<dyn Iterator<Item = &Arc<CalcitImpl>>> = if last_wins {
       Box::new(impls.iter().rev())
@@ -4185,7 +4185,7 @@ fn resolve_enum_type_for_match(
   };
   match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
     Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
-    Some(Calcit::Struct(struct_value)) => calcit::CalcitEnumDef::from_record(struct_value).ok(),
+    Some(Calcit::Struct(struct_value)) => calcit::CalcitEnumDef::from_struct(struct_value).ok(),
     _ => None,
   }
 }
@@ -5483,7 +5483,7 @@ mod tests {
   }
 
   #[test]
-  fn nominal_options_warn_on_legacy_nil_and_tuple_operations() {
+  fn nominal_options_warn_on_legacy_nil_and_enum_operations() {
     let core_head = |operation: &str| {
       Calcit::Import(CalcitImport {
         ns: Arc::from(calcit::CORE_NS),
@@ -6426,7 +6426,7 @@ mod tests {
       panic!("expected specialized field access call");
     };
     assert!(
-      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecordNth))),
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructNth))),
       "nominal field access should bypass Option-producing get: {items}"
     );
   }
@@ -6455,7 +6455,7 @@ mod tests {
       panic!("expected required record get call");
     };
     assert!(
-      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecordGet))),
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructGet))),
       "loose record access should never use Option-producing get: {items}"
     );
   }
@@ -6504,7 +6504,7 @@ mod tests {
       other => panic!("expected list form, got {other}"),
     };
 
-    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))));
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))));
     match items.get(1) {
       Some(Calcit::StructDef(struct_def)) => assert_eq!(struct_def.name, person_struct.name),
       other => panic!("expected struct prototype at position 1, got {other:?}"),
@@ -6532,7 +6532,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let result_enum = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid result enum");
+    let result_enum = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid result enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":ok")]);
 
@@ -6564,7 +6564,7 @@ mod tests {
       other => panic!("expected list form, got {other}"),
     };
 
-    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))));
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))));
     match items.get(1) {
       Some(Calcit::Struct(enum_struct)) => assert_eq!(enum_struct.struct_ref.name, *result_enum.name()),
       other => panic!("expected enum prototype at position 1, got {other:?}"),
@@ -6612,7 +6612,7 @@ mod tests {
     };
 
     assert!(
-      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))),
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))),
       "should not rewrite when struct constructor args are odd"
     );
 
@@ -6669,7 +6669,7 @@ mod tests {
     };
 
     assert!(
-      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))),
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))),
       "should not rewrite when key not in struct fields"
     );
 
@@ -6752,7 +6752,7 @@ mod tests {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("Result"), vec![EdnTag::from("ok")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
     };
-    let result_enum = CalcitEnumDef::from_record(enum_struct).expect("valid enum");
+    let result_enum = CalcitEnumDef::from_struct(enum_struct).expect("valid enum");
     let enum_value = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::from("ok"))),
       extra: vec![],
@@ -6827,7 +6827,7 @@ mod tests {
     let warnings = RefCell::new(vec![]);
 
     check_struct_update_fields(
-      &Calcit::Proc(CalcitProc::NativeRecordAssoc),
+      &Calcit::Proc(CalcitProc::NativeStructAssoc),
       &args,
       &ScopeTypes::new(),
       "tests.record",
@@ -6874,7 +6874,7 @@ mod tests {
     };
 
     assert!(
-      !matches!(nodes.first(), Some(Calcit::Proc(CalcitProc::NativeRecord))),
+      !matches!(nodes.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))),
       "method-call path should not be rewritten as a struct constructor"
     );
     assert!(
@@ -6901,7 +6901,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let result_enum = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid result enum");
+    let result_enum = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid result enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Result")]);
 
@@ -6934,7 +6934,7 @@ mod tests {
     };
 
     assert!(
-      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))),
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))),
       "should not rewrite when enum constructor lacks variant tag"
     );
 
@@ -6963,7 +6963,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let result_enum = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid result enum");
+    let result_enum = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid result enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Result"), Cirru::leaf(":bad")]);
 
@@ -6996,7 +6996,7 @@ mod tests {
     };
 
     assert!(
-      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))),
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))),
       "should not rewrite when enum variant is not valid"
     );
 
@@ -7025,7 +7025,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::default())),
       ]),
     };
-    let mode_enum = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid mode enum");
+    let mode_enum = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid mode enum");
 
     let expr = Cirru::List(vec![Cirru::leaf("Mode"), Cirru::leaf("dark")]);
 
@@ -7058,7 +7058,7 @@ mod tests {
     };
 
     assert!(
-      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeEnumTupleNew))),
+      !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))),
       "should not rewrite when enum variant prefix is not a tag"
     );
 
@@ -8081,7 +8081,7 @@ mod tests {
         Calcit::from(CalcitList::default()),       // :ok payload types (empty)
       ]),
     };
-    let enum_proto = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid enum");
 
     // Test: create enum value with invalid variant :invalid
     let args = CalcitList::from(
@@ -8125,7 +8125,7 @@ mod tests {
         Calcit::from(CalcitList::default()),       // :ok expects 0 payloads
       ]),
     };
-    let enum_proto = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid enum");
 
     // Test: create :err enum without the required payload
     let args = CalcitList::from(
@@ -8170,7 +8170,7 @@ mod tests {
         Calcit::from(CalcitList::default()),       // :ok expects no payloads
       ]),
     };
-    let enum_proto = CalcitEnumDef::from_record(enum_struct.clone()).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_struct(enum_struct.clone()).expect("valid enum");
 
     // Test: create :err enum with number instead of string
     let args = CalcitList::from(

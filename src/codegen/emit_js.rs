@@ -499,7 +499,7 @@ fn gen_call_code(
     // &struct:nth: with 3 args (record, idx, :field-tag), use record.getRequired(tag) for JS
     // because JS CalcitStructValue fields are sorted by tag.idx (registration order), not alphabetically.
     // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).
-    Calcit::Proc(CalcitProc::NativeRecordNth) => {
+    Calcit::Proc(CalcitProc::NativeStructNth) => {
       if body.len() == 3 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
@@ -514,7 +514,7 @@ fn gen_call_code(
     }
     // &struct:assoc-at: optimized assoc with pre-resolved index.
     // JS uses record.assoc(tag, value) since JS field ordering differs from Rust.
-    Calcit::Proc(CalcitProc::NativeRecordAssocAt) => {
+    Calcit::Proc(CalcitProc::NativeStructAssocAt) => {
       if body.len() == 4 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let tag_code = to_js_code(&body[2], ns, local_defs, file_imports, tags, None)?;
@@ -526,7 +526,7 @@ fn gen_call_code(
     }
     // &struct:with-at: optimized with pre-resolved indices.
     // JS ignores indices and calls the same _$n_record_$o_with(proto, tag, val, ...) function.
-    Calcit::Proc(CalcitProc::NativeRecordWithAt) => {
+    Calcit::Proc(CalcitProc::NativeStructWithAt) => {
       if body.len() >= 3 && (body.len() - 1).is_multiple_of(3) {
         let proc_prefix = get_proc_prefix(ns);
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;

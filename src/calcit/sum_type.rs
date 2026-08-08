@@ -36,7 +36,7 @@ pub struct CalcitEnumDef {
 impl CalcitEnumDef {
   /// Create from a `CalcitStructValue` using the old-style enum definition format.
   /// The struct's fields are variant tags and values are payload type lists.
-  pub fn from_record(record: CalcitStructValue) -> Result<Self, String> {
+  pub fn from_struct(record: CalcitStructValue) -> Result<Self, String> {
     Self::from_arc(Arc::new(record))
   }
 
@@ -207,7 +207,7 @@ mod tests {
   #[test]
   fn parses_enum_prototype() {
     let struct_value = sample_enum_struct();
-    let enum_proto = CalcitEnumDef::from_record(struct_value).expect("valid enum");
+    let enum_proto = CalcitEnumDef::from_struct(struct_value).expect("valid enum");
 
     assert_eq!(enum_proto.name(), &EdnTag::new("Result"));
     let err_variant = enum_proto.find_variant_by_name("err").expect("err variant");
@@ -233,7 +233,7 @@ mod tests {
       values: Arc::new(vec![list_from(vec![symbol("E")]), list_from(vec![symbol("T")])]),
     };
 
-    let enum_proto = CalcitEnumDef::from_record(struct_value).expect("valid generic enum");
+    let enum_proto = CalcitEnumDef::from_struct(struct_value).expect("valid generic enum");
     assert_eq!(enum_proto.generics(), &[Arc::from("T"), Arc::from("E")]);
     assert!(matches!(
       enum_proto.find_variant_by_name("ok").and_then(|v| v.payload_types().first()).map(|t| t.as_ref()),
@@ -258,7 +258,7 @@ mod tests {
       values: Arc::new(vec![list_from(vec![applied_pair])]),
     };
 
-    let err = CalcitEnumDef::from_record(struct_value).expect_err("non-generic struct should reject type args in enum payloads");
+    let err = CalcitEnumDef::from_struct(struct_value).expect_err("non-generic struct should reject type args in enum payloads");
     assert!(
       err.contains("enum variant `pair` has invalid payload type annotation")
         && err.contains("struct `Pair` is not generic but received 2 type argument(s)"),

@@ -84,7 +84,7 @@ impl TryFrom<Edn> for DetailCirru {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let mut at = 0u64;
         let mut by = String::new();
         let mut text = None;
@@ -205,7 +205,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let mut doc = String::new();
         let mut examples = Vec::new();
         let mut tags = Vec::new();
@@ -299,7 +299,7 @@ impl TryFrom<Edn> for DetailedNsEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let mut doc = String::new();
         let mut code = None;
 
@@ -354,7 +354,7 @@ impl TryFrom<Edn> for DetailedFileInSnapshot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let mut ns = None;
         let mut defs = HashMap::new();
 
@@ -399,7 +399,7 @@ impl TryFrom<Edn> for DetailedSnapshot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let mut package = String::new();
         let mut version = String::new();
         let mut entries: Edn = Edn::Nil;

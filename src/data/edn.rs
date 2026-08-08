@@ -8,7 +8,7 @@ use crate::calcit::{self, CalcitEnumDef, CalcitEnumValue, CalcitImpl, CalcitImpo
 use crate::calcit::{Calcit, CalcitStructValue};
 use crate::{calcit::MethodKind, data::cirru};
 
-use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag, EdnTupleView};
+use cirru_edn::{Edn, EdnEnumView, EdnListView, EdnMapView, EdnSetView, EdnStructView, EdnTag};
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -46,7 +46,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(ys.into())
     }
     Struct(CalcitStructValue { struct_ref, values, .. }) => {
-      let mut entries = EdnRecordView::new(struct_ref.name.to_owned());
+      let mut entries = EdnStructView::new(struct_ref.name.arc_str());
       for idx in 0..struct_ref.fields.len() {
         entries.insert(struct_ref.fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
       }
@@ -63,7 +63,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
     Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
     Enum(CalcitEnumValue { tag, extra, sum_type, .. }) => {
-      let enum_tag = sum_type.as_ref().map(|enum_def| Edn::Tag(enum_def.name().to_owned()));
+      let type_name = sum_type.as_ref().map(|enum_def| enum_def.name().arc_str());
       match &**tag {
         Symbol { sym, .. } => {
           if &**sym == "quote" {
@@ -81,10 +81,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          let tag_value = Edn::Tag(struct_ref.name.to_owned());
-          Ok(match enum_tag.clone() {
-            Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
-            None => Edn::tuple(tag_value, extra_values),
+          let variant = struct_ref.name.arc_str();
+          Ok(match type_name.clone() {
+            Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
+            None => Edn::enum_value(variant, extra_values),
           })
         }
         Impl(CalcitImpl { name, .. }) => {
@@ -92,10 +92,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          let tag_value = Edn::Tag(name.to_owned());
-          Ok(match enum_tag.clone() {
-            Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
-            None => Edn::tuple(tag_value, extra_values),
+          let variant = name.arc_str();
+          Ok(match type_name.clone() {
+            Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
+            None => Edn::enum_value(variant, extra_values),
           })
         }
         Tag(tag) => {
@@ -103,14 +103,14 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          let tag_value = Edn::Tag(tag.to_owned());
-          Ok(match enum_tag.clone() {
-            Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
-            None => Edn::tuple(tag_value, extra_values),
+          let variant = tag.arc_str();
+          Ok(match type_name.clone() {
+            Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
+            None => Edn::enum_value(variant, extra_values),
           })
         }
         v => {
-          Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
+          Err(format!("EDN enum expected a quote or struct tag, got: {v}"))
           // TODO more types to handle
         }
       }
@@ -152,7 +152,7 @@ fn truncate_chars(raw: &str, limit: usize) -> String {
 fn legacy_snapshot_edn_to_cirru(edn: Edn) -> Result<Cirru, String> {
   match edn {
     Edn::Quote(code) => Ok(code),
-    Edn::Record(record) => {
+    Edn::Struct(record) => {
       let mut text = None;
       let mut data_map: HashMap<String, Cirru> = HashMap::new();
 
@@ -195,7 +195,7 @@ fn legacy_snapshot_edn_to_cirru(edn: Edn) -> Result<Cirru, String> {
 fn unwrap_snapshot_code_edn(value: &Edn) -> Option<&Edn> {
   match value {
     Edn::Quote(_) => Some(value),
-    Edn::Record(EdnRecordView { tag, pairs }) => match tag.ref_str() {
+    Edn::Struct(EdnStructView { name, pairs }) => match name.as_ref() {
       "Expr" | "Leaf" => Some(value),
       "CodeEntry" => pairs.iter().find(|(k, _)| k.ref_str() == "code").map(|(_, v)| v),
       _ => None,
@@ -212,23 +212,23 @@ fn try_format_snapshot_code_edn(value: &Edn) -> Option<String> {
   Some(truncate_chars(formatted.trim(), SNAPSHOT_CODE_DISPLAY_CHAR_LIMIT))
 }
 
-fn legacy_snapshot_record_summary(tag: &EdnTag, pairs: &[(EdnTag, Edn)]) -> Option<Edn> {
-  if matches!(tag.ref_str(), "Expr" | "Leaf") {
-    return try_format_snapshot_code_edn(&Edn::Record(EdnRecordView {
-      tag: tag.to_owned(),
+fn legacy_snapshot_struct_summary(name: &str, pairs: &[(EdnTag, Edn)]) -> Option<Edn> {
+  if matches!(name, "Expr" | "Leaf") {
+    return try_format_snapshot_code_edn(&Edn::Struct(EdnStructView {
+      name: Arc::from(name),
       pairs: pairs.to_owned(),
     }))
     .map(Edn::str);
   }
-  if tag.ref_str() == "CodeEntry" {
-    let record = Edn::Record(EdnRecordView {
-      tag: tag.to_owned(),
+  if name == "CodeEntry" {
+    let record = Edn::Struct(EdnStructView {
+      name: Arc::from(name),
       pairs: pairs.to_owned(),
     });
     return try_format_snapshot_code_edn(&record).map(Edn::str);
   }
-  if tag.ref_str() == "FileEntry" || tag.ref_str() == "FileChangeInfo" {
-    return Some(Edn::str(format!("|%{} legacy>", tag.ref_str())));
+  if name == "FileEntry" || name == "FileChangeInfo" {
+    return Some(Edn::str(format!("|%{name} legacy>")));
   }
   None
 }
@@ -318,16 +318,16 @@ pub fn compact_edn_for_display(e: &Edn, depth: usize) -> Edn {
       }
       ys.into()
     }
-    Edn::Tuple(EdnTupleView { tag, extra, enum_tag }) => Edn::Tuple(EdnTupleView {
-      tag: Arc::new(compact_edn_for_display(tag, depth + 1)),
+    Edn::Enum(EdnEnumView { variant, extra, type_name }) => Edn::Enum(EdnEnumView {
+      variant: variant.clone(),
       extra: extra.iter().map(|x| compact_edn_for_display(x, depth + 1)).collect(),
-      enum_tag: enum_tag.as_ref().map(|x| Arc::new(compact_edn_for_display(x, depth + 1))),
+      type_name: type_name.clone(),
     }),
-    Edn::Record(EdnRecordView { tag, pairs }) => {
-      if let Some(summary) = legacy_snapshot_record_summary(tag, pairs) {
+    Edn::Struct(EdnStructView { name, pairs }) => {
+      if let Some(summary) = legacy_snapshot_struct_summary(name, pairs) {
         return summary;
       }
-      let mut ys = EdnRecordView::new(tag.to_owned());
+      let mut ys = EdnStructView::new(name.clone());
       for (idx, (k, v)) in pairs.iter().enumerate() {
         if idx >= EDN_DISPLAY_MAX_COLLECTION {
           ys.insert(EdnTag::from("|…more"), Edn::str("|…"));
@@ -381,13 +381,13 @@ pub fn sanitize_edn_for_format(e: &Edn) -> Edn {
       }
       ys.into()
     }
-    Edn::Tuple(EdnTupleView { tag, extra, enum_tag }) => Edn::Tuple(EdnTupleView {
-      tag: Arc::new(sanitize_edn_for_format(tag)),
+    Edn::Enum(EdnEnumView { variant, extra, type_name }) => Edn::Enum(EdnEnumView {
+      variant: variant.clone(),
       extra: extra.iter().map(sanitize_edn_for_format).collect(),
-      enum_tag: enum_tag.as_ref().map(|x| Arc::new(sanitize_edn_for_format(x))),
+      type_name: type_name.clone(),
     }),
-    Edn::Record(EdnRecordView { tag, pairs }) => {
-      let mut ys = EdnRecordView::new(tag.to_owned());
+    Edn::Struct(EdnStructView { name, pairs }) => {
+      let mut ys = EdnStructView::new(name.clone());
       for (k, v) in pairs.iter() {
         ys.insert(k.to_owned(), sanitize_edn_for_format(v));
       }
@@ -414,10 +414,10 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(EdnTupleView { tag, enum_tag, extra }) => {
-      let sum_type = enum_tag.as_ref().and_then(|enum_tag| resolve_enum_tag(enum_tag, options));
+    Edn::Enum(EdnEnumView { variant, type_name, extra }) => {
+      let sum_type = type_name.as_ref().and_then(|type_name| resolve_type_name(type_name, options));
       Calcit::Enum(CalcitEnumValue {
-        tag: Arc::new(edn_to_calcit(tag, options)),
+        tag: Arc::new(Calcit::Tag(EdnTag::new(variant.as_ref()))),
         extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
         sum_type,
       })
@@ -443,7 +443,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       }
       Calcit::Map(ys)
     }
-    Edn::Record(EdnRecordView { tag: name, pairs: entries }) => {
+    Edn::Struct(EdnStructView { name, pairs: entries }) => {
       let mut fields: Vec<EdnTag> = Vec::with_capacity(entries.len());
       let mut values: Vec<Calcit> = Vec::with_capacity(entries.len());
       let mut sorted = entries.to_owned();
@@ -453,9 +453,9 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values.push(edn_to_calcit(&v.1, options));
       }
 
-      let struct_ref = match find_record_in_options(&name.arc_str(), options) {
+      let struct_ref = match find_struct_in_options(name.as_ref(), options) {
         Some(Calcit::Struct(struct_value)) if fields == *struct_value.struct_ref.fields => Arc::clone(&struct_value.struct_ref),
-        _ => Arc::new(CalcitStructDef::from_fields(name.to_owned(), fields)),
+        _ => Arc::new(CalcitStructDef::from_fields(EdnTag::new(name.as_ref()), fields)),
       };
       Calcit::Struct(CalcitStructValue {
         struct_ref,
@@ -467,8 +467,8 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Atom(a) => crate::builtins::quick_build_atom(edn_to_calcit(a, options)),
   }
 }
-/// find a record field in options
-fn find_record_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calcit> {
+/// Find a struct prototype in EDN decoding options.
+fn find_struct_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calcit> {
   match options {
     Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())),
     _ => None,
@@ -482,14 +482,8 @@ fn find_enum_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calci
   }
 }
 
-fn resolve_enum_tag(enum_tag: &Edn, options: &Calcit) -> Option<Arc<CalcitEnumDef>> {
-  let enum_name = match enum_tag {
-    Edn::Tag(tag) => tag.ref_str(),
-    Edn::Symbol(sym) => sym.as_ref(),
-    Edn::Str(s) => s.as_ref(),
-    _ => return None,
-  };
-  match find_enum_in_options(enum_name, options) {
+fn resolve_type_name(type_name: &str, options: &Calcit) -> Option<Arc<CalcitEnumDef>> {
+  match find_enum_in_options(type_name, options) {
     Some(Calcit::EnumDef(enum_def)) => Some(Arc::new(enum_def.to_owned())),
     _ => None,
   }
@@ -501,17 +495,17 @@ mod tests {
 
   #[test]
   fn simplify_deserialize_error_strips_debug_record() {
-    let msg = r#"Cannot deserialize Edn type: Record(EdnRecordView { tag: EdnTag("Expr"), pairs: [] })"#;
+    let msg = r#"Cannot deserialize Edn type: Record(EdnStructView { name: EdnTag("Expr"), pairs: [] })"#;
     let out = simplify_deserialize_error_message(msg);
     assert!(out.contains("record `Expr`"), "out={out}");
-    assert!(!out.contains("EdnRecordView"));
+    assert!(!out.contains("EdnStructView"));
   }
 
   #[test]
   fn format_edn_display_shows_legacy_leaf_as_cirru() {
-    let mut leaf = EdnRecordView::new(EdnTag::from("Leaf"));
+    let mut leaf = EdnStructView::new("Leaf");
     leaf.insert(EdnTag::from("text"), Edn::str("ns respo.core"));
-    let out = format_edn_display(&Edn::Record(leaf));
+    let out = format_edn_display(&Edn::Struct(leaf));
     assert!(out.contains("ns respo.core"), "out={out}");
   }
 
@@ -525,22 +519,22 @@ mod tests {
 
   #[test]
   fn format_deserialize_error_shows_legacy_expr_as_cirru() {
-    let mut leaf0 = EdnRecordView::new(EdnTag::from("Leaf"));
+    let mut leaf0 = EdnStructView::new("Leaf");
     leaf0.insert(EdnTag::from("text"), Edn::str("ns"));
-    let mut leaf1 = EdnRecordView::new(EdnTag::from("Leaf"));
+    let mut leaf1 = EdnStructView::new("Leaf");
     leaf1.insert(EdnTag::from("text"), Edn::str("app.demo"));
     let mut data = EdnMapView::default();
-    data.insert(Edn::str("0"), Edn::Record(leaf0));
-    data.insert(Edn::str("1"), Edn::Record(leaf1));
-    let mut expr = EdnRecordView::new(EdnTag::from("Expr"));
+    data.insert(Edn::str("0"), Edn::Struct(leaf0));
+    data.insert(Edn::str("1"), Edn::Struct(leaf1));
+    let mut expr = EdnStructView::new("Expr");
     expr.insert(EdnTag::from("data"), data.into());
-    let err_msg = format_deserialize_error("Cannot deserialize Edn type: record `Expr`", &Edn::Record(expr));
+    let err_msg = format_deserialize_error("Cannot deserialize Edn type: record `Expr`", &Edn::Struct(expr));
     assert!(err_msg.contains("ns app.demo"), "err={err_msg}");
     assert!(!err_msg.contains("legacy-expr"), "err={err_msg}");
   }
 
   #[test]
-  fn dynamic_record_options_do_not_panic_on_field_mismatch() {
+  fn dynamic_struct_options_do_not_panic_on_field_mismatch() {
     let declared = Arc::new(CalcitStructDef::from_fields(
       EdnTag::new("Person"),
       vec![EdnTag::new("age"), EdnTag::new("name")],
@@ -552,9 +546,9 @@ mod tests {
     let mut options = rpds::HashTrieMap::new_sync();
     options.insert_mut(Calcit::tag("Person"), prototype);
 
-    let mut input = EdnRecordView::new(EdnTag::new("Person"));
+    let mut input = EdnStructView::new("Person");
     input.insert(EdnTag::new("name"), Edn::str("Ada"));
-    let decoded = edn_to_calcit(&Edn::Record(input), &Calcit::Map(options));
+    let decoded = edn_to_calcit(&Edn::Struct(input), &Calcit::Map(options));
     let Calcit::Struct(struct_value) = decoded else {
       panic!("expected struct");
     };

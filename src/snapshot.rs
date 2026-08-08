@@ -1,4 +1,4 @@
-use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnSetView, EdnTag, from_edn};
+use cirru_edn::{Edn, EdnMapView, EdnSetView, EdnStructView, EdnTag, from_edn};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -59,13 +59,12 @@ fn canonical_schema_kind_name(text: &str) -> Option<&'static str> {
   }
 }
 
-fn is_callable_schema_wrapper_tag(value: &Edn) -> bool {
-  matches!(value, Edn::Tag(tag) if matches!(tag.ref_str(), "fn" | "macro"))
-    || matches!(value, Edn::Symbol(name) if matches!(name.as_ref(), "Fn" | "Macro"))
+fn is_callable_schema_wrapper_variant(value: &str) -> bool {
+  matches!(value, "fn" | "macro" | "Fn" | "Macro")
 }
 
-fn is_macro_schema_wrapper_tag(value: &Edn) -> bool {
-  matches!(value, Edn::Tag(tag) if tag.ref_str() == "macro") || matches!(value, Edn::Symbol(name) if name.as_ref() == "Macro")
+fn is_macro_schema_wrapper_variant(value: &str) -> bool {
+  matches!(value, "macro" | "Macro")
 }
 
 fn normalize_schema_map(map: &EdnMapView) -> EdnMapView {
@@ -219,8 +218,8 @@ impl From<&FileInSnapShot> for Edn {
     for (k, v) in &data.defs {
       defs_map.insert(Edn::str(k.as_str()), Edn::from(v));
     }
-    Edn::Record(EdnRecordView {
-      tag: EdnTag::new("FileEntry"),
+    Edn::Struct(EdnStructView {
+      name: Arc::from("FileEntry"),
       pairs: vec![("defs".into(), Edn::from(defs_map)), ("ns".into(), Edn::from(&data.ns))], // TODO
     })
   }
@@ -234,7 +233,7 @@ impl TryFrom<Edn> for FileInSnapShot {
         let preview = data.clone();
         from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {}", format_deserialize_error(&e, &preview)))
       }
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let mut ns = None;
         let mut defs = None;
 
@@ -279,7 +278,7 @@ impl TryFrom<Edn> for NsEntry {
     let mut code: Option<Cirru> = None;
 
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         for (key, value) in &record.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
@@ -324,17 +323,14 @@ impl TryFrom<Edn> for NsEntry {
 
 impl From<NsEntry> for Edn {
   fn from(data: NsEntry) -> Self {
-    Edn::record_from_pairs(
-      "NsEntry".into(),
-      &[("doc".into(), data.doc.into()), ("code".into(), data.code.into())],
-    )
+    Edn::struct_from_pairs("NsEntry", &[("doc".into(), data.doc.into()), ("code".into(), data.code.into())])
   }
 }
 
 impl From<&NsEntry> for Edn {
   fn from(data: &NsEntry) -> Self {
-    Edn::record_from_pairs(
-      "NsEntry".into(),
+    Edn::struct_from_pairs(
+      "NsEntry",
       &[
         ("doc".into(), data.doc.to_owned().into()),
         ("code".into(), data.code.to_owned().into()),
@@ -415,8 +411,7 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
     }
   }
 
-  if matches!(value, Edn::Tuple(view) if matches!(view.tag.as_ref(), Edn::Symbol(symbol) if symbol.as_ref() == "Dynamic") && view.extra.is_empty())
-  {
+  if matches!(value, Edn::Enum(view) if view.variant.as_ref() == "Dynamic" && view.extra.is_empty()) {
     return Ok(DYNAMIC_TYPE.clone());
   }
 
@@ -527,7 +522,7 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
   // as a zero-argument type expression so Snapshot serialization remains
   // structurally unambiguous while rendering source-level `:: 'String`.
   match expression {
-    Edn::Symbol(name) => Edn::tuple(Edn::Symbol(name), vec![]),
+    Edn::Symbol(name) => Edn::enum_value(name, vec![]),
     other => other,
   }
 }
@@ -610,7 +605,7 @@ impl TryFrom<Edn> for CodeEntry {
     let mut schema: Arc<CalcitTypeAnnotation> = DYNAMIC_TYPE.clone();
 
     match data {
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         for (key, value) in &record.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
@@ -694,12 +689,12 @@ fn normalize_schema_edn(value: &Edn) -> Result<Edn, String> {
     return Ok(normalized);
   }
 
-  if let Edn::Tuple(view) = value
-    && is_callable_schema_wrapper_tag(view.tag.as_ref())
+  if let Edn::Enum(view) = value
+    && is_callable_schema_wrapper_variant(view.variant.as_ref())
     && let Some(Edn::Map(map)) = view.extra.first()
   {
     let mut normalized_map = normalize_schema_map(map);
-    if normalized_map.tag_get("kind").is_none() && is_macro_schema_wrapper_tag(view.tag.as_ref()) {
+    if normalized_map.tag_get("kind").is_none() && is_macro_schema_wrapper_variant(view.variant.as_ref()) {
       normalized_map.insert_key("kind", Edn::tag("macro"));
     }
     let normalized = Edn::Map(normalized_map);
@@ -742,10 +737,7 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
         }
         Ok(())
       }
-      Edn::Tuple(view) => {
-        path.push(".tag".to_owned());
-        walk(view.tag.as_ref(), path)?;
-        path.pop();
+      Edn::Enum(view) => {
         for (idx, item) in view.extra.iter().enumerate() {
           path.push(format!("[{idx}]"));
           walk(item, path)?;
@@ -761,7 +753,7 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
         }
         Ok(())
       }
-      Edn::Record(record) => {
+      Edn::Struct(record) => {
         let _ = record;
         Ok(())
       }
@@ -880,14 +872,13 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
         }
         Some(Cirru::Leaf(head)) if head.as_ref() == "::" && items.len() >= 2 => {
           let tag = cirru_schema_to_edn(&items[1])?;
+          let variant = match tag {
+            Edn::Tag(tag) => tag.arc_str(),
+            Edn::Symbol(symbol) => symbol,
+            _ => return None,
+          };
           let extra: Option<Vec<Edn>> = items.iter().skip(2).map(cirru_schema_to_edn).collect();
-          extra.map(|xs| {
-            Edn::Tuple(cirru_edn::EdnTupleView {
-              tag: Arc::new(tag),
-              enum_tag: None,
-              extra: xs,
-            })
-          })
+          extra.map(|xs| Edn::enum_value(variant, xs))
         }
         _ => {
           let values: Option<Vec<Edn>> = items.iter().map(cirru_schema_to_edn).collect();
@@ -1429,7 +1420,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
 impl From<CodeEntry> for Edn {
   fn from(data: CodeEntry) -> Self {
-    Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(&data))
+    Edn::struct_from_pairs("CodeEntry", &code_entry_edn_pairs(&data))
   }
 }
 
@@ -1452,7 +1443,7 @@ pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTyp
 
 impl From<&CodeEntry> for Edn {
   fn from(data: &CodeEntry) -> Self {
-    Edn::record_from_pairs("CodeEntry".into(), &code_entry_edn_pairs(data))
+    Edn::struct_from_pairs("CodeEntry", &code_entry_edn_pairs(data))
   }
 }
 
@@ -1777,7 +1768,7 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
 
       Ok(FileInSnapShot { ns, defs })
     }
-    Edn::Record(record) => {
+    Edn::Struct(record) => {
       let mut ns: Option<NsEntry> = None;
       let mut defs = HashMap::new();
 
@@ -2535,8 +2526,8 @@ mod tests {
 
   #[test]
   fn test_code_entry_tags_field_defaults_and_round_trip() {
-    let entry_edn = Edn::record_from_pairs(
-      "CodeEntry".into(),
+    let entry_edn = Edn::struct_from_pairs(
+      "CodeEntry",
       &[
         ("doc".into(), Edn::str("tagged def")),
         ("examples".into(), Edn::List(EdnListView(vec![]))),
@@ -2552,7 +2543,7 @@ mod tests {
     tagged.tags.insert(EdnTag::new("doc"));
 
     let serialized = Edn::from(&tagged);
-    let Edn::Record(record) = &serialized else {
+    let Edn::Struct(record) = &serialized else {
       panic!("expected CodeEntry record");
     };
     assert!(record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
@@ -2561,7 +2552,7 @@ mod tests {
     assert_eq!(reloaded.tags, tagged.tags);
 
     let empty_serialized = Edn::from(&parsed);
-    let Edn::Record(empty_record) = &empty_serialized else {
+    let Edn::Struct(empty_record) = &empty_serialized else {
       panic!("expected CodeEntry record");
     };
     assert!(!empty_record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
@@ -2736,7 +2727,7 @@ mod tests {
 
   #[test]
   fn standalone_value_schema_round_trips_without_becoming_dynamic() {
-    let schema_edn = Edn::tuple(Edn::tag("ref"), vec![Edn::tag("bool")]);
+    let schema_edn = Edn::enum_value("ref", vec![Edn::tag("bool")]);
     let annotation = parse_loaded_schema_annotation(&schema_edn, "tests/*flag").expect("ref<bool> should load");
 
     assert!(matches!(
@@ -2745,7 +2736,7 @@ mod tests {
     ));
     assert_eq!(
       schema_annotation_to_edn(annotation.as_ref()),
-      Edn::tuple(Edn::Symbol(Arc::from("Ref")), vec![Edn::Symbol(Arc::from("Bool"))])
+      Edn::enum_value("Ref", vec![Edn::Symbol(Arc::from("Bool"))])
     );
 
     let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
@@ -2764,7 +2755,7 @@ mod tests {
       CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
     ));
     let stored_nominal = schema_annotation_to_edn(nominal.as_ref());
-    assert_eq!(stored_nominal, Edn::tuple(Edn::Symbol(Arc::from("app.schema/Store")), vec![]));
+    assert_eq!(stored_nominal, Edn::enum_value("app.schema/Store", vec![]));
     let reloaded = parse_loaded_schema_annotation(&stored_nominal, "app.schema/store").expect("stored nominal schema should reload");
     assert!(matches!(
       reloaded.as_ref(),
@@ -2981,8 +2972,8 @@ mod tests {
 
   #[test]
   fn test_normalize_schema_unwraps_wrapped_fn_enum() {
-    let wrapped = Edn::tuple(
-      Edn::tag("fn"),
+    let wrapped = Edn::enum_value(
+      "fn",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::tag("kind"), Edn::tag("fn")),
         (Edn::tag("args"), Edn::List(EdnListView(vec![]))),
@@ -2999,8 +2990,8 @@ mod tests {
 
   #[test]
   fn test_normalize_schema_unwraps_wrapped_macro_enum() {
-    let wrapped = Edn::tuple(
-      Edn::tag("macro"),
+    let wrapped = Edn::enum_value(
+      "macro",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::tag("args"), Edn::List(EdnListView(vec![]))),
         (Edn::tag("return"), Edn::tag("dynamic")),
@@ -3016,8 +3007,8 @@ mod tests {
 
   #[test]
   fn test_normalize_schema_canonicalizes_string_keys_and_kind_values() {
-    let wrapped = Edn::tuple(
-      Edn::tag("fn"),
+    let wrapped = Edn::enum_value(
+      "fn",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::Str(Arc::from(":args")), Edn::List(EdnListView(vec![Edn::tag("set")]))),
         (Edn::Str(Arc::from(":return")), Edn::tag("bool")),
@@ -3120,7 +3111,7 @@ mod tests {
 
     let entry_edn: Edn = Edn::from(&entry);
     let schema = match entry_edn {
-      Edn::Record(record) => record
+      Edn::Struct(record) => record
         .pairs
         .iter()
         .find(|(k, _)| k.arc_str().as_ref() == "schema")
@@ -3129,10 +3120,10 @@ mod tests {
       _ => panic!("expected record edn"),
     };
 
-    let Edn::Tuple(view) = schema else {
+    let Edn::Enum(view) = schema else {
       panic!("top-level schema should serialize as wrapped fn tuple");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Fn"));
+    assert_eq!(view.variant.as_ref(), "Fn");
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
@@ -3164,7 +3155,7 @@ mod tests {
 
     let entry_edn: Edn = Edn::from(&entry);
     let schema = match entry_edn {
-      Edn::Record(record) => record
+      Edn::Struct(record) => record
         .pairs
         .iter()
         .find(|(k, _)| k.arc_str().as_ref() == "schema")
@@ -3173,10 +3164,10 @@ mod tests {
       _ => panic!("expected record edn"),
     };
 
-    let Edn::Tuple(view) = schema else {
+    let Edn::Enum(view) = schema else {
       panic!("top-level schema should serialize as wrapped macro tuple");
     };
-    assert!(matches!(view.tag.as_ref(), Edn::Symbol(name) if name.as_ref() == "Macro"));
+    assert_eq!(view.variant.as_ref(), "Macro");
     let Some(Edn::Map(map)) = view.extra.first() else {
       panic!("wrapped schema payload should be a map");
     };
@@ -3212,7 +3203,7 @@ mod tests {
 
     let entry_edn: Edn = Edn::from(&entry);
     let schema = match entry_edn {
-      Edn::Record(record) => record
+      Edn::Struct(record) => record
         .pairs
         .iter()
         .find(|(k, _)| k.arc_str().as_ref() == "schema")
@@ -3221,7 +3212,7 @@ mod tests {
       _ => panic!("expected record edn"),
     };
 
-    let Edn::Tuple(view) = schema else {
+    let Edn::Enum(view) = schema else {
       panic!("top-level schema should serialize as wrapped macro tuple");
     };
     let Some(Edn::Map(map)) = view.extra.first() else {
@@ -3237,16 +3228,16 @@ mod tests {
       .into_iter()
       .next()
       .expect("should have one node");
-    let schema = Edn::tuple(
-      Edn::tag("fn"),
+    let schema = Edn::enum_value(
+      "fn",
       vec![Edn::Map(EdnMapView::from(HashMap::from([
         (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("dynamic")]))),
         (Edn::tag("return"), Edn::tag("dynamic")),
       ])))],
     );
 
-    let entry = Edn::record_from_pairs(
-      "CodeEntry".into(),
+    let entry = Edn::struct_from_pairs(
+      "CodeEntry",
       &[
         ("doc".into(), Edn::Str(Arc::from(""))),
         ("examples".into(), Edn::List(EdnListView(vec![]))),
@@ -3443,12 +3434,7 @@ mod tests {
       let edn = schema_annotation_to_edn(&schema);
       assert_eq!(
         edn,
-        Edn::tuple(
-          Edn::Symbol(Arc::from(
-            CalcitTypeAnnotation::canonical_type_symbol_name(kind).expect("known kind")
-          )),
-          vec![],
-        ),
+        Edn::enum_value(CalcitTypeAnnotation::canonical_type_symbol_name(kind).expect("known kind"), vec![]),
         "schema kind `:{kind}` must round-trip as a canonical symbol, not degrade to dynamic"
       );
     }

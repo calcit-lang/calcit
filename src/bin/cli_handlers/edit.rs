@@ -20,7 +20,7 @@ use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
   self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
 };
-use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnTag};
+use cirru_edn::{Edn, EdnMapView, EdnStructView, EdnTag};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use md5::{Digest, Md5};
@@ -357,7 +357,7 @@ fn count_legacy_any_schema_fields(value: &Edn) -> usize {
         }
       })
       .sum(),
-    Edn::Record(record) => record
+    Edn::Struct(record) => record
       .pairs
       .iter()
       .map(|(key, value)| {
@@ -370,15 +370,7 @@ fn count_legacy_any_schema_fields(value: &Edn) -> usize {
       .sum(),
     Edn::List(items) => items.0.iter().map(count_legacy_any_schema_fields).sum(),
     Edn::Set(items) => items.0.iter().map(count_legacy_any_schema_fields).sum(),
-    Edn::Tuple(tuple) => {
-      count_legacy_any_schema_fields(tuple.tag.as_ref())
-        + tuple
-          .enum_tag
-          .as_ref()
-          .map(|tag| count_legacy_any_schema_fields(tag.as_ref()))
-          .unwrap_or(0)
-        + tuple.extra.iter().map(count_legacy_any_schema_fields).sum::<usize>()
-    }
+    Edn::Enum(tuple) => tuple.extra.iter().map(count_legacy_any_schema_fields).sum(),
     Edn::Atom(inner) => count_legacy_any_schema_fields(inner),
     _ => 0,
   }
@@ -395,16 +387,8 @@ fn count_legacy_any_in_value(value: &Edn) -> usize {
       .iter()
       .map(|(key, value)| count_legacy_any_in_value(key) + count_legacy_any_in_value(value))
       .sum(),
-    Edn::Record(record) => record.pairs.iter().map(|(_, value)| count_legacy_any_in_value(value)).sum(),
-    Edn::Tuple(tuple) => {
-      count_legacy_any_in_value(tuple.tag.as_ref())
-        + tuple
-          .enum_tag
-          .as_ref()
-          .map(|tag| count_legacy_any_in_value(tag.as_ref()))
-          .unwrap_or(0)
-        + tuple.extra.iter().map(count_legacy_any_in_value).sum::<usize>()
-    }
+    Edn::Struct(record) => record.pairs.iter().map(|(_, value)| count_legacy_any_in_value(value)).sum(),
+    Edn::Enum(tuple) => tuple.extra.iter().map(count_legacy_any_in_value).sum(),
     Edn::Atom(inner) => count_legacy_any_in_value(inner),
     _ => 0,
   }
@@ -1456,7 +1440,7 @@ fn find_edn_map_value_mut<'a>(map: &'a mut EdnMapView, expected: &str) -> Option
     .find_map(|(key, value)| edn_key_matches(key, expected).then_some(value))
 }
 
-fn find_edn_record_value_mut<'a>(record: &'a mut EdnRecordView, expected: &str) -> Option<&'a mut Edn> {
+fn find_edn_record_value_mut<'a>(record: &'a mut EdnStructView, expected: &str) -> Option<&'a mut Edn> {
   record
     .pairs
     .iter_mut()
@@ -1484,7 +1468,7 @@ fn save_schema_preserving_snapshot(
     return Err("Snapshot :files must be an EDN map".to_owned());
   };
   let file_value = find_edn_map_value_mut(files, namespace).ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-  let Edn::Record(file) = file_value else {
+  let Edn::Struct(file) = file_value else {
     return Err(format!("Namespace '{namespace}' must be a FileEntry record"));
   };
   let defs_value = find_edn_record_value_mut(file, "defs").ok_or_else(|| format!("Namespace '{namespace}' is missing :defs"))?;
@@ -1493,7 +1477,7 @@ fn save_schema_preserving_snapshot(
   };
   let definition_value =
     find_edn_map_value_mut(defs, definition).ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
-  let Edn::Record(entry) = definition_value else {
+  let Edn::Struct(entry) = definition_value else {
     return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry record"));
   };
   let schema_edn = snapshot::schema_annotation_to_edn(schema);
@@ -2949,13 +2933,13 @@ mod tests {
       let cirru_edn::Edn::Map(files) = root.get_or_nil("files") else {
         panic!("files")
       };
-      let cirru_edn::Edn::Record(file) = files.get_or_nil("app.main") else {
+      let cirru_edn::Edn::Struct(file) = files.get_or_nil("app.main") else {
         panic!("namespace")
       };
       let cirru_edn::Edn::Map(defs) = file["defs"].clone() else {
         panic!("defs")
       };
-      let cirru_edn::Edn::Record(definition) = defs.get_or_nil(definition_name) else {
+      let cirru_edn::Edn::Struct(definition) = defs.get_or_nil(definition_name) else {
         panic!("definition")
       };
       definition["schema"].clone()

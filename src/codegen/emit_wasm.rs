@@ -1907,40 +1907,40 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Record operations
-    CalcitProc::NativeRecord => emit_struct_new(ctx, args),
-    CalcitProc::NativeRecordNth => emit_struct_nth(ctx, args),
-    CalcitProc::NativeRecordGet => emit_struct_get(ctx, args),
-    CalcitProc::NativeRecordCount => emit_struct_count(ctx, args),
-    CalcitProc::NativeRecordFieldTag => emit_struct_field_tag(ctx, args),
-    CalcitProc::NativeRecordStruct => emit_struct_def(ctx, args),
-    CalcitProc::NativeRecordGetName => emit_struct_get_name(ctx, args),
-    CalcitProc::NativeRecordToMap => emit_struct_to_map(ctx, args),
-    CalcitProc::NativeRecordAssoc | CalcitProc::NativeRecordAssocAt | CalcitProc::NativeRecordWith => {
+    CalcitProc::NativeStruct => emit_struct_new(ctx, args),
+    CalcitProc::NativeStructNth => emit_struct_nth(ctx, args),
+    CalcitProc::NativeStructGet => emit_struct_get(ctx, args),
+    CalcitProc::NativeStructCount => emit_struct_count(ctx, args),
+    CalcitProc::NativeStructFieldTag => emit_struct_field_tag(ctx, args),
+    CalcitProc::NativeStructDefinition => emit_struct_def(ctx, args),
+    CalcitProc::NativeStructGetName => emit_struct_get_name(ctx, args),
+    CalcitProc::NativeStructToMap => emit_struct_to_map(ctx, args),
+    CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWith => {
       Err(format!("{proc} not yet supported in WASM codegen"))
     }
-    CalcitProc::NativeRecordFromMap
-    | CalcitProc::NativeRecordExtendAs
-    | CalcitProc::NativeRecordPartial
-    | CalcitProc::NativeRecordImpls
-    | CalcitProc::NativeRecordWithAt
-    | CalcitProc::NativeLooseRecord => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeRecordContains => emit_struct_contains(ctx, args),
-    CalcitProc::NativeRecordMatches => emit_struct_matches(ctx, args),
+    CalcitProc::NativeStructFromMap
+    | CalcitProc::NativeStructExtendAs
+    | CalcitProc::NativeStructPartial
+    | CalcitProc::NativeStructImpls
+    | CalcitProc::NativeStructWithAt
+    | CalcitProc::NativeLooseStruct => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
+    CalcitProc::NativeStructContains => emit_struct_contains(ctx, args),
+    CalcitProc::NativeStructMatches => emit_struct_matches(ctx, args),
 
     // Enum operations
-    CalcitProc::NativeTuple => emit_enum_new(ctx, args),
-    CalcitProc::NativeTupleNth => emit_enum_nth(ctx, args),
-    CalcitProc::NativeTupleCount => emit_enum_count(ctx, args),
-    CalcitProc::NativeTupleValidateEnum => ctx.stub_proc(args), // no-op in WASM
+    CalcitProc::NativeEnum => emit_enum_new(ctx, args),
+    CalcitProc::NativeEnumNth => emit_enum_nth(ctx, args),
+    CalcitProc::NativeEnumCount => emit_enum_count(ctx, args),
+    CalcitProc::NativeEnumValidate => ctx.stub_proc(args), // no-op in WASM
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
-    CalcitProc::NativeEnumTupleNew => emit_named_enum_new(ctx, args),
-    CalcitProc::NativeTupleImpls
-    | CalcitProc::NativeTupleParams
-    | CalcitProc::NativeTupleEnum
-    | CalcitProc::NativeTupleImplTraits
-    | CalcitProc::NativeTupleEnumHasVariant
-    | CalcitProc::NativeTupleEnumVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
-    CalcitProc::NativeTupleAssoc => emit_enum_assoc(ctx, args),
+    CalcitProc::NativeNamedEnumNew => emit_named_enum_new(ctx, args),
+    CalcitProc::NativeEnumImpls
+    | CalcitProc::NativeEnumParams
+    | CalcitProc::NativeEnumDefinition
+    | CalcitProc::NativeEnumValueImplTraits
+    | CalcitProc::NativeEnumDefHasVariant
+    | CalcitProc::NativeEnumDefVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
+    CalcitProc::NativeEnumAssoc => emit_enum_assoc(ctx, args),
 
     // Bitwise operations — convert to i32, operate, convert back to f64
     CalcitProc::BitShl => emit_bitwise_binary(ctx, Instruction::I32Shl, args),
@@ -3172,14 +3172,14 @@ fn collect_struct_field_tags_from_program(
   result
 }
 
-/// If `expr` is a literal enum constructor `(NativeTuple :tag val0 val1...)` with only
+/// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only
 /// literal args (Tag, Str, Number, Bool, Nil), return its lispy string representation.
 /// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
 pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
   if let Calcit::List(list) = expr
     && !list.is_empty()
     && let Calcit::Proc(p) = &list[0]
-    && *p == CalcitProc::NativeTuple
+    && *p == CalcitProc::NativeEnum
   {
     let mut s = String::from("(:: ");
     for (i, item) in list.iter().skip(1).enumerate() {

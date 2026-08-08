@@ -1485,7 +1485,7 @@ fn extract_modules_from_edn(data: &cirru_edn::Edn) -> Result<Vec<String>, String
   let get_field = |edn: &Edn, key: &str| -> Option<Edn> {
     match edn {
       Edn::Map(map) => map.tag_get(key).cloned(),
-      Edn::Record(record) => record.pairs.iter().find(|(k, _)| k.ref_str() == key).map(|(_, v)| v.clone()),
+      Edn::Struct(record) => record.pairs.iter().find(|(k, _)| k.ref_str() == key).map(|(_, v)| v.clone()),
       _ => None,
     }
   };
