@@ -390,7 +390,7 @@ pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 /// Emit `&struct:matches? a b` — check if two struct values have the same struct type.
 ///
 /// Struct value layout: [count: f64] [struct_tag: f64] [field0: f64] ...
-/// Compares the struct_tag (offset 0) of both struct values.
+/// Compares the struct_tag (offset 8) of both struct values.
 pub(super) fn emit_struct_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&struct:matches? expects 2 args")?;
   // Load struct_tag of first struct_value (at offset 8, after count)

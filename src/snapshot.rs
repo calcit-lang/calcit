@@ -3413,11 +3413,11 @@ mod tests {
     let _ = fs::remove_file(&temp_path);
 
     assert!(
-      saved.contains("|&+ $ %{} :CodeEntry") && saved.contains(":schema $ :: 'Fn"),
+      saved.contains("|&+ $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Fn"),
       "saved snapshot should retain wrapped fn schemas"
     );
     assert!(
-      saved.contains("|%{} $ %{} :CodeEntry") && saved.contains(":schema $ :: 'Macro"),
+      saved.contains("|%{} $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Macro"),
       "saved snapshot should retain wrapped macro schemas"
     );
   }

@@ -331,19 +331,19 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   emit_list_load_elem(ctx, list_ptr, i);
   ctx.emit(Instruction::LocalSet(elem));
 
-  // tuple_ptr = trunc(fn(acc, elem))
+  // enum_ptr = trunc(fn(acc, elem))
   emit_foldl_step(ctx, &fn_call_kind, acc, elem)?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(tuple_ptr + 8) — bool flag (1.0 = true → early exit)
+  // tag = F64Load(enum_ptr + 8) — bool flag (1.0 = true → early exit)
   ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::F64Eq); // → i32
 
   ctx.begin_block_if();
-  // Early exit: result = payload at tuple_ptr + 16
+  // Early exit: result = payload at enum_ptr + 16
   ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
   ctx.emit(Instruction::LocalSet(result));
@@ -400,12 +400,12 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   emit_list_load_elem(ctx, list_ptr, i);
   ctx.emit(Instruction::LocalSet(elem));
 
-  // tuple_ptr = trunc(fn(acc, elem))
+  // enum_ptr = trunc(fn(acc, elem))
   emit_foldl_step(ctx, &fn_call_kind, acc, elem)?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(tuple_ptr + 8) — bool flag
+  // tag = F64Load(enum_ptr + 8) — bool flag
   ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(f64_const(1.0));

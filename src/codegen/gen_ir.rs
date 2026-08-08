@@ -365,7 +365,7 @@ fn dump_enum_value_code(enum_value: &CalcitEnumValue) -> Edn {
 
 fn enum_value_metadata_entries(enum_value: &CalcitEnumValue) -> Vec<(Edn, Edn)> {
   let mut entries = vec![
-    (Edn::tag("kind"), Edn::tag("enum")),
+    (Edn::tag("kind"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(enum_value.tag.to_string().into())),
   ];
   if let Some(sum_type) = &enum_value.sum_type {
@@ -468,7 +468,7 @@ fn dump_enum_code(enum_def: &CalcitEnumDef) -> Edn {
 
 fn struct_value_metadata(struct_value: &CalcitStructValue) -> Vec<(Edn, Edn)> {
   let entries = vec![
-    (Edn::tag("kind"), Edn::tag("struct")),
+    (Edn::tag("kind"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(struct_value.name().ref_str().into())),
   ];
   entries

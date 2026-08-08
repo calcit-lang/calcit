@@ -35,7 +35,7 @@
 ### 注释 / 诊断字符串
 
 - `mod.rs`、`builtins/*`、`codegen/emit_wasm/*`、`data/cirru.rs`、`calcit/syntax_name.rs` 等 60+ 处注释与 doc 措辞同步
-- 用户可见错误/警告串：`[Warn] record update field` → `struct update field`、`map-to-record` → `map-to-struct`、`loose-record-to-struct` → `loose-struct-to-struct`、`tuple-to-enum` → `enum-to-named-enum`、`record `{}` does not define field` → `struct`、`&list:foldl-shortcut expected a value in the tuple` → `in the enum`
+- 用户可见错误/警告串：`[Warn] record update field` → `struct update field`、`map-to-record` → `map-to-struct`、`loose-record-to-struct` → `loose-struct-to-struct`、`tuple-to-enum` → `enum-to-named-enum`、`record {} does not define field` → `struct`、`&list:foldl-shortcut expected a value in the tuple` → `in the enum`
 
 ## 有意保留（附理由）
 

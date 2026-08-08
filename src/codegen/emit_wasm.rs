@@ -2891,7 +2891,7 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
 ///
 /// Preprocessed form: [value_expr, (pattern body), (pattern body), ...]
 /// Each pattern is either `_` (wildcard) or `(:tag binding1 binding2 ...)`.
-/// The value must be an enum — we read its tag_id at offset 0 and compare.
+/// The value must be an enum — we read its tag_id at offset 8 and compare.
 ///
 /// Compilation strategy: nested if/else chain comparing the tag_id.
 ///   evaluate value → store pointer in temp local
@@ -2904,7 +2904,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return Err("match requires a value and branches".into());
   }
 
-  // Evaluate the value expression (a tuple) and store its f64 pointer
+  // Evaluate the value expression (an enum) and store its f64 pointer
   emit_expr(ctx, &args[0])?;
   let ptr_f64 = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(ptr_f64));

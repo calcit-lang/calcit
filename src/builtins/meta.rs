@@ -1291,7 +1291,7 @@ pub fn enum_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           let size = extra.len() + 1;
           CalcitErr::err_str(
             CalcitErrKind::Arity,
-            format!("&enum:nth index out of range. Tuple has {size} elements, but trying to index with {m}"),
+            format!("&enum:nth index out of range. Enum has {size} elements, but trying to index with {m}"),
           )
         }
       }

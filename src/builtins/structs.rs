@@ -980,7 +980,7 @@ fn call_struct_with_prototype(struct_value: &CalcitStructValue, xs: &[Calcit]) -
   }))
 }
 
-/// takes a struct value and pairs of key value (flattened), and updates the struct. raise error if key not existed in the struct
+/// Takes a struct value and flattened key-value pairs, updates the struct, and raises an error when a key does not exist.
 pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 3 {
