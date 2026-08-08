@@ -130,7 +130,7 @@
                     :b $ [] 2 3
                     :c 4
                     :d 5
-                assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim (format-cirru-edn data)
+                assert= "|%{} 'Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim (format-cirru-edn data)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

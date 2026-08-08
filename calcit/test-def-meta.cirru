@@ -31,7 +31,7 @@
                   doc $ &get-def-doc |calcit.core/map
                   schema $ &get-def-schema |calcit.core/map
                 assert= true $ includes? doc |map
-                assert= 'Fn $ &enum:nth schema 0
+                assert= :Fn $ &enum:nth schema 0
                 assert= true $ option:some?
                   get (&enum:nth schema 1) :args
           :examples $ []
@@ -43,7 +43,7 @@
                   doc $ &get-def-doc |test-def-meta.main/MetaSample
                   schema $ &get-def-schema |test-def-meta.main/MetaSample
                 assert= "|Sample definition for def metadata lookup tests" doc
-                assert= 'Fn $ &enum:nth schema 0
+                assert= :Fn $ &enum:nth schema 0
                 assert= (%some 'Number)
                   get (&enum:nth schema 1) :return
           :examples $ []
