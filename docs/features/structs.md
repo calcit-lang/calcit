@@ -4,7 +4,7 @@ scope: "core"
 kind: "reference"
 category: "features"
 aliases:
-  - "record type"
+  - "struct type"
   - "field access"
   - "struct fields"
 id: core/features/structs

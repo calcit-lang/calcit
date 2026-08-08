@@ -1232,7 +1232,7 @@ impl CalcitProc {
       }),
       NativeStructWithAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
-        // (record, idx, tag, value, ...) — variadic triples after first arg
+        // (struct, idx, tag, value, ...) — variadic triples after first arg
         arg_types: vec![
           some_tag("struct"),
           some_tag("number"),

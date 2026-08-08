@@ -9,7 +9,7 @@
 //! - `recur` (tail recursion via WASM loop)
 //! - Number literals, Bool literals, Nil (→ 0.0)
 //! - Tag values (compiled to f64 integer constants)
-//! - Record creation (`&%{}`) and field access (`&struct:nth`, `&struct:get`)
+//! - Struct creation (`&%{}`) and field access (`&struct:nth`, `&struct:get`)
 //! - Tuple creation (`::`) and field access (`&enum:nth`)
 //!
 //! All values are represented as f64 (matching Calcit's single numeric type).
@@ -491,7 +491,7 @@ struct WasmGenCtx {
   runtime_fn_index: HashMap<String, u32>,
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
   tag_index: HashMap<String, u32>,
-  /// Record struct tag id → field tag ids in index order.
+  /// Struct tag id → field tag ids in index order.
   struct_field_tags: HashMap<u32, Vec<u32>>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
@@ -1057,7 +1057,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         .ok_or_else(|| format!("string literal not found in pool: {s}"))?;
       ctx.emit(f64_const(*ptr as f64));
     }
-    Calcit::Struct(_) => return Err("Record literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Struct(_) => return Err("Struct literals not supported in WASM codegen (use constructor)".into()),
     Calcit::Enum(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
     // Function value (Fn with def_ref) — encode as f64 table slot index for call_indirect.
     Calcit::Fn { info, .. } => {
@@ -1906,7 +1906,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       }
     }
 
-    // Record operations
+    // Struct operations
     CalcitProc::NativeStruct => emit_struct_new(ctx, args),
     CalcitProc::NativeStructNth => emit_struct_nth(ctx, args),
     CalcitProc::NativeStructGet => emit_struct_get(ctx, args),
@@ -1923,7 +1923,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     | CalcitProc::NativeStructPartial
     | CalcitProc::NativeStructImpls
     | CalcitProc::NativeStructWithAt
-    | CalcitProc::NativeLooseStruct => Err(format!("Record operation {proc} not yet supported in WASM codegen")),
+    | CalcitProc::NativeLooseStruct => Err(format!("Struct operation {proc} not yet supported in WASM codegen")),
     CalcitProc::NativeStructContains => emit_struct_contains(ctx, args),
     CalcitProc::NativeStructMatches => emit_struct_matches(ctx, args),
 
@@ -3082,7 +3082,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 }
 
 // ---------------------------------------------------------------------------
-// Record operations
+// Struct operations
 // ---------------------------------------------------------------------------
 
 /// Build a string literal pool for WASM linear memory.

@@ -164,7 +164,7 @@ impl Decoder<'_> {
             let duplicates = sorted_duplicate_names(pairs.iter().map(|(field, _)| field.ref_str()));
             return Err(EdnDecodeError::at(
               path,
-              format!("record :{} has duplicate fields [{}]", nominal.name, duplicates.join(", ")),
+              format!("struct :{} has duplicate fields [{}]", nominal.name, duplicates.join(", ")),
             ));
           }
           if expected_names != actual_names {
@@ -173,7 +173,7 @@ impl Decoder<'_> {
             return Err(EdnDecodeError::at(
               path,
               format!(
-                "record :{} fields mismatch; missing [{}], unknown [{}]",
+                "struct :{} fields mismatch; missing [{}], unknown [{}]",
                 nominal.name,
                 missing.join(", "),
                 unknown.join(", ")
@@ -186,7 +186,7 @@ impl Decoder<'_> {
             let (_, raw_value) = pairs
               .iter()
               .find(|(candidate, _)| candidate == field)
-              .expect("record field sets were checked");
+              .expect("struct field sets were checked");
             values.push(self.decode_node(*field_node, raw_value, &format!("{path}.{}", field.ref_str()), depth + 1)?);
           }
           Ok(Calcit::Struct(CalcitStructValue {
@@ -194,14 +194,14 @@ impl Decoder<'_> {
             values: Arc::new(values),
           }))
         }
-        _ => Err(kind_mismatch(path, &format!("record :{}", nominal.name), input)),
+        _ => Err(kind_mismatch(path, &format!("struct :{}", nominal.name), input)),
       },
       DataShapeNode::Enum { nominal, variants, .. } => match input {
         Edn::Enum(EdnEnumView { variant, type_name, extra }) => {
           let Some(actual_enum_name) = type_name.as_deref() else {
             return Err(EdnDecodeError::at(
               path,
-              format!("expected enum :{}, got ordinary tuple", nominal.name()),
+              format!("expected enum :{}, got anonymous enum", nominal.name()),
             ));
           };
           if actual_enum_name != nominal.name().ref_str() {
@@ -254,12 +254,12 @@ fn edn_kind(value: &Edn) -> &'static str {
     Edn::Tag(_) => "tag",
     Edn::Str(_) => "string",
     Edn::Quote(_) => "cirru-quote",
-    Edn::Enum(tuple) if tuple.type_name.is_some() => "enum",
-    Edn::Enum(_) => "tuple",
+    Edn::Enum(enum_value) if enum_value.type_name.is_some() => "enum",
+    Edn::Enum(_) => "anonymous-enum",
     Edn::List(_) => "list",
     Edn::Set(_) => "set",
     Edn::Map(_) => "map",
-    Edn::Struct(_) => "record",
+    Edn::Struct(_) => "struct",
     Edn::Buffer(_) => "buffer",
     Edn::AnyRef(_) => "any-ref",
     Edn::Atom(_) => "atom",

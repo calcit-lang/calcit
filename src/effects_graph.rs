@@ -2337,7 +2337,7 @@ mod tests {
 
     let code = lookup_def_code(&resolved.0, &resolved.1).expect("lookup store code");
     let template = find_best_struct_template(&code);
-    assert!(template.is_some(), "record template not found in code: {code:?}");
+    assert!(template.is_some(), "struct template not found in code: {code:?}");
 
     let expanded = expand_type_ref_path("schema/store", "app.main", MAX_SCHEMA_DEPTH).expect("expand schema/store");
     assert!(expanded.contains(":states"), "expected store fields, got: {expanded}");
@@ -2346,7 +2346,7 @@ mod tests {
   #[test]
   fn schema_hint_parses_segment_to_edn() {
     let hint = "{ :records :list [], :base :nil, :stopped? :bool }";
-    let edn = parse_schema_segment(hint).expect("parse record");
+    let edn = parse_schema_segment(hint).expect("parse struct");
     let lines = format_schema_edn_lines(&edn);
     let joined = lines.join("\n");
     assert!(joined.contains(":records"));
@@ -2357,7 +2357,7 @@ mod tests {
   #[test]
   fn schema_edn_preserves_indentation() {
     let hint = "{ :base { :cursor :list [], :count :number }, :store :nil }";
-    let edn = parse_schema_segment(hint).expect("parse nested record");
+    let edn = parse_schema_segment(hint).expect("parse nested struct");
     let raw = cirru_edn::format(&edn, true).expect("format edn");
     assert!(
       raw.lines().any(|line| line.starts_with(' ') || line.starts_with('\t')),

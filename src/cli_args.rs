@@ -1458,7 +1458,7 @@ pub struct EditNsDocCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "inc")]
-/// record incremental changes (defs and namespaces) for downstream tooling
+/// apply incremental changes (defs and namespaces) for downstream tooling
 pub struct EditIncCommand {
   /// namespaces whose entire file should be treated as newly added (e.g. "app.new")
   #[argh(option, long = "added-ns")]

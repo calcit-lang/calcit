@@ -357,7 +357,7 @@ fn count_legacy_any_schema_fields(value: &Edn) -> usize {
         }
       })
       .sum(),
-    Edn::Struct(record) => record
+    Edn::Struct(struct_value) => struct_value
       .pairs
       .iter()
       .map(|(key, value)| {
@@ -387,7 +387,7 @@ fn count_legacy_any_in_value(value: &Edn) -> usize {
       .iter()
       .map(|(key, value)| count_legacy_any_in_value(key) + count_legacy_any_in_value(value))
       .sum(),
-    Edn::Struct(record) => record.pairs.iter().map(|(_, value)| count_legacy_any_in_value(value)).sum(),
+    Edn::Struct(struct_value) => struct_value.pairs.iter().map(|(_, value)| count_legacy_any_in_value(value)).sum(),
     Edn::Enum(tuple) => tuple.extra.iter().map(count_legacy_any_in_value).sum(),
     Edn::Atom(inner) => count_legacy_any_in_value(inner),
     _ => 0,
@@ -1440,8 +1440,8 @@ fn find_edn_map_value_mut<'a>(map: &'a mut EdnMapView, expected: &str) -> Option
     .find_map(|(key, value)| edn_key_matches(key, expected).then_some(value))
 }
 
-fn find_edn_record_value_mut<'a>(record: &'a mut EdnStructView, expected: &str) -> Option<&'a mut Edn> {
-  record
+fn find_edn_struct_value_mut<'a>(struct_value: &'a mut EdnStructView, expected: &str) -> Option<&'a mut Edn> {
+  struct_value
     .pairs
     .iter_mut()
     .find_map(|(key, value)| (key.ref_str() == expected).then_some(value))
@@ -1469,19 +1469,19 @@ fn save_schema_preserving_snapshot(
   };
   let file_value = find_edn_map_value_mut(files, namespace).ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
   let Edn::Struct(file) = file_value else {
-    return Err(format!("Namespace '{namespace}' must be a FileEntry record"));
+    return Err(format!("Namespace '{namespace}' must be a FileEntry struct"));
   };
-  let defs_value = find_edn_record_value_mut(file, "defs").ok_or_else(|| format!("Namespace '{namespace}' is missing :defs"))?;
+  let defs_value = find_edn_struct_value_mut(file, "defs").ok_or_else(|| format!("Namespace '{namespace}' is missing :defs"))?;
   let Edn::Map(defs) = defs_value else {
     return Err(format!("Namespace '{namespace}' :defs must be an EDN map"));
   };
   let definition_value =
-    find_edn_map_value_mut(defs, definition).ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
+    find_edn_map_value_mut(&mut *defs, definition).ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
   let Edn::Struct(entry) = definition_value else {
-    return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry record"));
+    return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry struct"));
   };
   let schema_edn = snapshot::schema_annotation_to_edn(schema);
-  if let Some(value) = find_edn_record_value_mut(entry, "schema") {
+  if let Some(value) = find_edn_struct_value_mut(entry, "schema") {
     *value = schema_edn;
   } else {
     entry.pairs.push((EdnTag::new("schema"), schema_edn));

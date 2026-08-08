@@ -152,11 +152,11 @@ fn truncate_chars(raw: &str, limit: usize) -> String {
 fn legacy_snapshot_edn_to_cirru(edn: Edn) -> Result<Cirru, String> {
   match edn {
     Edn::Quote(code) => Ok(code),
-    Edn::Struct(record) => {
+    Edn::Struct(struct_value) => {
       let mut text = None;
       let mut data_map: HashMap<String, Cirru> = HashMap::new();
 
-      for (key, value) in record.pairs.iter() {
+      for (key, value) in struct_value.pairs.iter() {
         match key.ref_str() {
           "text" => {
             if let Edn::Str(content) = value {
@@ -221,11 +221,11 @@ fn legacy_snapshot_struct_summary(name: &str, pairs: &[(EdnTag, Edn)]) -> Option
     .map(Edn::str);
   }
   if name == "CodeEntry" {
-    let record = Edn::Struct(EdnStructView {
+    let struct_value = Edn::Struct(EdnStructView {
       name: Arc::from(name),
       pairs: pairs.to_owned(),
     });
-    return try_format_snapshot_code_edn(&record).map(Edn::str);
+    return try_format_snapshot_code_edn(&struct_value).map(Edn::str);
   }
   if name == "FileEntry" || name == "FileChangeInfo" {
     return Some(Edn::str(format!("|%{name} legacy>")));
@@ -236,9 +236,9 @@ fn legacy_snapshot_struct_summary(name: &str, pairs: &[(EdnTag, Edn)]) -> Option
 fn summarize_edn_debug_type(rest: &str) -> String {
   if rest.starts_with("Record(") {
     if let Some(tag) = extract_edn_tag_name(rest) {
-      return format!("record `{tag}`");
+      return format!("struct `{tag}`");
     }
-    return "record (legacy snapshot)".to_string();
+    return "struct (legacy snapshot)".to_string();
   }
   if rest.starts_with("List(") {
     return "list".to_string();
@@ -494,10 +494,10 @@ mod tests {
   use super::*;
 
   #[test]
-  fn simplify_deserialize_error_strips_debug_record() {
+  fn simplify_deserialize_error_strips_debug_struct() {
     let msg = r#"Cannot deserialize Edn type: Record(EdnStructView { name: EdnTag("Expr"), pairs: [] })"#;
     let out = simplify_deserialize_error_message(msg);
-    assert!(out.contains("record `Expr`"), "out={out}");
+    assert!(out.contains("struct `Expr`"), "out={out}");
     assert!(!out.contains("EdnStructView"));
   }
 
@@ -528,7 +528,7 @@ mod tests {
     data.insert(Edn::str("1"), Edn::Struct(leaf1));
     let mut expr = EdnStructView::new("Expr");
     expr.insert(EdnTag::from("data"), data.into());
-    let err_msg = format_deserialize_error("Cannot deserialize Edn type: record `Expr`", &Edn::Struct(expr));
+    let err_msg = format_deserialize_error("Cannot deserialize Edn type: struct `Expr`", &Edn::Struct(expr));
     assert!(err_msg.contains("ns app.demo"), "err={err_msg}");
     assert!(!err_msg.contains("legacy-expr"), "err={err_msg}");
   }

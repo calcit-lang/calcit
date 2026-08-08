@@ -496,9 +496,9 @@ fn gen_call_code(
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),
-    // &struct:nth: with 3 args (record, idx, :field-tag), use record.getRequired(tag) for JS
+    // &struct:nth: with 3 args (struct, idx, :field-tag), use struct.getRequired(tag) for JS
     // because JS CalcitStructValue fields are sorted by tag.idx (registration order), not alphabetically.
-    // With 2 args (record, idx), fall back to record.values[idx] (only valid when index matches).
+    // With 2 args (struct, idx), fall back to struct.values[idx] (only valid when index matches).
     Calcit::Proc(CalcitProc::NativeStructNth) => {
       if body.len() == 3 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
@@ -513,7 +513,7 @@ fn gen_call_code(
       }
     }
     // &struct:assoc-at: optimized assoc with pre-resolved index.
-    // JS uses record.assoc(tag, value) since JS field ordering differs from Rust.
+    // JS uses struct.assoc(tag, value) since JS field ordering differs from Rust.
     Calcit::Proc(CalcitProc::NativeStructAssocAt) => {
       if body.len() == 4 {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
@@ -547,7 +547,7 @@ fn gen_call_code(
         ))
       } else {
         Err(format!(
-          "&struct:with-at expected (record, idx, tag, val, ...) triples, got: {body}"
+          "&struct:with-at expected (struct, idx, tag, val, ...) triples, got: {body}"
         ))
       }
     }

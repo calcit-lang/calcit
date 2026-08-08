@@ -341,7 +341,7 @@ pub fn call_expr(
           }),
           _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
-            format!("expected a hashmap or record, got: {v}"),
+            format!("expected a hashmap or struct, got: {v}"),
             call_stack,
             v.get_location(),
           )),

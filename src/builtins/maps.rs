@@ -101,11 +101,11 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (Calcit::Struct(record @ CalcitStructValue { struct_ref, values }), Calcit::Map(ys)) => {
+      (Calcit::Struct(struct_value @ CalcitStructValue { struct_ref, values }), Calcit::Map(ys)) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
-            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
+            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match struct_value.index_of(s) {
               Some(pos) => v.clone_into(&mut new_values[pos]),
               None => {
                 return CalcitErr::err_str(
@@ -114,7 +114,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 );
               }
             },
-            Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+            Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
               Some(pos) => v.clone_into(&mut new_values[pos]),
               None => {
                 return CalcitErr::err_str(
@@ -127,7 +127,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         }
         Ok(Calcit::Struct(CalcitStructValue {
-          struct_ref: record.struct_ref.to_owned(),
+          struct_ref: struct_value.struct_ref.to_owned(),
           values: Arc::new(new_values),
         }))
       }

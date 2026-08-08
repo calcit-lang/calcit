@@ -233,11 +233,11 @@ impl TryFrom<Edn> for FileInSnapShot {
         let preview = data.clone();
         from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {}", format_deserialize_error(&e, &preview)))
       }
-      Edn::Struct(record) => {
+      Edn::Struct(struct_value) => {
         let mut ns = None;
         let mut defs = None;
 
-        for (key, value) in record.pairs.iter() {
+        for (key, value) in struct_value.pairs.iter() {
           match key.arc_str().as_ref() {
             "ns" => {
               ns = Some(value.to_owned().try_into().map_err(|e| format!("failed to parse ns: {e}"))?);
@@ -254,7 +254,7 @@ impl TryFrom<Edn> for FileInSnapShot {
         Ok(FileInSnapShot { ns, defs })
       }
       _ => Err(format!(
-        "Expected FileInSnapShot map or record, but got: {}",
+        "Expected FileInSnapShot map or struct, but got: {}",
         format_edn_display(&data)
       )),
     }
@@ -278,8 +278,8 @@ impl TryFrom<Edn> for NsEntry {
     let mut code: Option<Cirru> = None;
 
     match data {
-      Edn::Struct(record) => {
-        for (key, value) in &record.pairs {
+      Edn::Struct(struct_value) => {
+        for (key, value) in &struct_value.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
               doc = from_edn(value.to_owned())
@@ -308,7 +308,7 @@ impl TryFrom<Edn> for NsEntry {
       }
       other => {
         return Err(format!(
-          "failed to parse NsEntry: expected record/map, got: {}",
+          "failed to parse NsEntry: expected struct/map, got: {}",
           format_edn_display(&other)
         ));
       }
@@ -518,7 +518,7 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
     CalcitTypeAnnotation::Trait(_) => Edn::Symbol(Arc::from("Trait")),
     other => other.to_type_edn(),
   };
-  // A lone EDN symbol in a record field is parsed as a Cirru quote. Wrap it
+  // A lone EDN symbol in a struct field is parsed as a Cirru quote. Wrap it
   // as a zero-argument type expression so Snapshot serialization remains
   // structurally unambiguous while rendering source-level `:: 'String`.
   match expression {
@@ -605,8 +605,8 @@ impl TryFrom<Edn> for CodeEntry {
     let mut schema: Arc<CalcitTypeAnnotation> = DYNAMIC_TYPE.clone();
 
     match data {
-      Edn::Struct(record) => {
-        for (key, value) in &record.pairs {
+      Edn::Struct(struct_value) => {
+        for (key, value) in &struct_value.pairs {
           match key.arc_str().as_ref() {
             "doc" => {
               doc = from_edn(value.to_owned())
@@ -658,7 +658,7 @@ impl TryFrom<Edn> for CodeEntry {
       }
       other => {
         return Err(format!(
-          "failed to parse CodeEntry: expected record/map, got: {}",
+          "failed to parse CodeEntry: expected struct/map, got: {}",
           format_edn_display(&other)
         ));
       }
@@ -753,8 +753,8 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn) -> Result<(), String> {
         }
         Ok(())
       }
-      Edn::Struct(record) => {
-        let _ = record;
+      Edn::Struct(struct_value) => {
+        let _ = struct_value;
         Ok(())
       }
       _ => Ok(()),
@@ -1768,11 +1768,11 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
 
       Ok(FileInSnapShot { ns, defs })
     }
-    Edn::Struct(record) => {
+    Edn::Struct(struct_value) => {
       let mut ns: Option<NsEntry> = None;
       let mut defs = HashMap::new();
 
-      for (key, value) in record.pairs.iter() {
+      for (key, value) in struct_value.pairs.iter() {
         match key.arc_str().as_ref() {
           "ns" => {
             ns = Some(value.to_owned().try_into().map_err(|e: String| format!("{file_name}/:ns: {e}"))?);
@@ -1801,7 +1801,7 @@ fn parse_file_in_snapshot_with_context(data: Edn, file_name: &str) -> Result<Fil
       })
     }
     other => Err(format!(
-      "{file_name}: expected FileEntry map/record, got {}",
+      "{file_name}: expected FileEntry map/struct, got {}",
       format_edn_preview(&other)
     )),
   }
@@ -2543,19 +2543,19 @@ mod tests {
     tagged.tags.insert(EdnTag::new("doc"));
 
     let serialized = Edn::from(&tagged);
-    let Edn::Struct(record) = &serialized else {
-      panic!("expected CodeEntry record");
+    let Edn::Struct(struct_value) = &serialized else {
+      panic!("expected CodeEntry struct");
     };
-    assert!(record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
+    assert!(struct_value.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
 
     let reloaded: CodeEntry = serialized.try_into().expect("tags should round-trip");
     assert_eq!(reloaded.tags, tagged.tags);
 
     let empty_serialized = Edn::from(&parsed);
-    let Edn::Struct(empty_record) = &empty_serialized else {
-      panic!("expected CodeEntry record");
+    let Edn::Struct(empty_struct) = &empty_serialized else {
+      panic!("expected CodeEntry struct");
     };
-    assert!(!empty_record.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
+    assert!(!empty_struct.pairs.iter().any(|(k, _)| k.ref_str() == "tags"));
   }
 
   #[test]
@@ -3111,13 +3111,13 @@ mod tests {
 
     let entry_edn: Edn = Edn::from(&entry);
     let schema = match entry_edn {
-      Edn::Struct(record) => record
+      Edn::Struct(struct_value) => struct_value
         .pairs
         .iter()
         .find(|(k, _)| k.arc_str().as_ref() == "schema")
         .map(|(_, v)| v.to_owned())
         .expect("schema field should exist"),
-      _ => panic!("expected record edn"),
+      _ => panic!("expected struct edn"),
     };
 
     let Edn::Enum(view) = schema else {
@@ -3155,13 +3155,13 @@ mod tests {
 
     let entry_edn: Edn = Edn::from(&entry);
     let schema = match entry_edn {
-      Edn::Struct(record) => record
+      Edn::Struct(struct_value) => struct_value
         .pairs
         .iter()
         .find(|(k, _)| k.arc_str().as_ref() == "schema")
         .map(|(_, v)| v.to_owned())
         .expect("schema field should exist"),
-      _ => panic!("expected record edn"),
+      _ => panic!("expected struct edn"),
     };
 
     let Edn::Enum(view) = schema else {
@@ -3203,13 +3203,13 @@ mod tests {
 
     let entry_edn: Edn = Edn::from(&entry);
     let schema = match entry_edn {
-      Edn::Struct(record) => record
+      Edn::Struct(struct_value) => struct_value
         .pairs
         .iter()
         .find(|(k, _)| k.arc_str().as_ref() == "schema")
         .map(|(_, v)| v.to_owned())
         .expect("schema field should exist"),
-      _ => panic!("expected record edn"),
+      _ => panic!("expected struct edn"),
     };
 
     let Edn::Enum(view) = schema else {

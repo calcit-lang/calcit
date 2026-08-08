@@ -248,7 +248,7 @@ pub(super) fn emit_struct_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// Count is at offset 0 from the struct_value pointer.
 pub(super) fn emit_struct_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() {
-    return Err("&struct:count requires 1 arg (record)".into());
+    return Err("&struct:count requires 1 arg (struct)".into());
   }
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -257,7 +257,7 @@ pub(super) fn emit_struct_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 }
 
 pub(super) fn emit_struct_field_tag(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "&struct:field-tag requires 2 args (record, index)")?;
+  expect_arity(2, args, "&struct:field-tag requires 2 args (struct, index)")?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -321,7 +321,7 @@ pub(super) fn emit_struct_field_tag(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 }
 
 pub(super) fn emit_struct_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&struct:get-name requires 1 arg (record)")?;
+  expect_arity(1, args, "&struct:get-name requires 1 arg (struct)")?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -330,7 +330,7 @@ pub(super) fn emit_struct_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 }
 
 pub(super) fn emit_struct_def(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&struct:definition requires 1 arg (record)")?;
+  expect_arity(1, args, "&struct:definition requires 1 arg (struct)")?;
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -339,7 +339,7 @@ pub(super) fn emit_struct_def(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 }
 
 pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "&struct:to-map requires 1 arg (record)")?;
+  expect_arity(1, args, "&struct:to-map requires 1 arg (struct)")?;
 
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let struct_tag_local = ctx.alloc_local();

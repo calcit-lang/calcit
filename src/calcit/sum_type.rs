@@ -36,8 +36,8 @@ pub struct CalcitEnumDef {
 impl CalcitEnumDef {
   /// Create from a `CalcitStructValue` using the old-style enum definition format.
   /// The struct's fields are variant tags and values are payload type lists.
-  pub fn from_struct(record: CalcitStructValue) -> Result<Self, String> {
-    Self::from_arc(Arc::new(record))
+  pub fn from_struct(struct_value: CalcitStructValue) -> Result<Self, String> {
+    Self::from_arc(Arc::new(struct_value))
   }
 
   pub fn from_arc(struct_value: Arc<CalcitStructValue>) -> Result<Self, String> {
@@ -118,24 +118,27 @@ impl CalcitEnumDef {
     self.variant_index.get(name).map(|idx| &self.variants[*idx])
   }
 
-  fn collect_variants(record: &CalcitStructValue) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
-    let mut variants: Vec<EnumVariant> = Vec::with_capacity(record.fields().len());
-    let mut index: HashMap<String, usize> = HashMap::with_capacity(record.fields().len());
-    let generics = record.struct_ref.generics.as_ref();
+  fn collect_variants(struct_value: &CalcitStructValue) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
+    let mut variants: Vec<EnumVariant> = Vec::with_capacity(struct_value.fields().len());
+    let mut index: HashMap<String, usize> = HashMap::with_capacity(struct_value.fields().len());
+    let generics = struct_value.struct_ref.generics.as_ref();
 
-    for (idx, tag) in record.fields().iter().enumerate() {
+    for (idx, tag) in struct_value.fields().iter().enumerate() {
       let payloads = Self::parse_payloads(
-        record
-          .values
-          .get(idx)
-          .ok_or_else(|| format!("enum `{}` is missing payload description for variant `{}`", record.name(), tag))?,
+        struct_value.values.get(idx).ok_or_else(|| {
+          format!(
+            "enum `{}` is missing payload description for variant `{}`",
+            struct_value.name(),
+            tag
+          )
+        })?,
         tag,
         generics,
       )?;
 
       let key = tag.ref_str().to_owned();
       if index.contains_key(&key) {
-        return Err(format!("duplicated enum variant `{}` in `{}`", tag, record.name()));
+        return Err(format!("duplicated enum variant `{}` in `{}`", tag, struct_value.name()));
       }
 
       let variant = EnumVariant {

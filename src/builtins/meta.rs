@@ -1102,8 +1102,8 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
         method_call(&impls_value, v0, name, method_args, call_stack)
       }
     }
-    Struct(record) => {
-      let user_impls = &record.struct_ref.impls;
+    Struct(struct_value) => {
+      let user_impls = &struct_value.struct_ref.impls;
       let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
       if has_user_method {
         method_call_impls(user_impls, v0, name, method_args, call_stack, true)
@@ -1512,7 +1512,7 @@ fn trait_method_names(trait_def: &CalcitTrait) -> String {
 /// Usage: (&trait-call Trait :method receiver & args)
 ///
 /// Notes:
-/// - It selects the impl record by matching `impl.origin` with the target trait.
+/// - It selects the impl struct by matching `impl.origin` with the target trait.
 /// - It still applies the same precedence rule as `.method` within the impl list.
 pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {

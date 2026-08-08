@@ -382,16 +382,16 @@ fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> 
 }
 
 fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
-  let record: EdnStructView = match edn {
+  let struct_value: EdnStructView = match edn {
     Edn::Struct(r) => r,
-    other => return Err(format!("{owner}: expected CodeEntry record, got {}", format_edn_preview(&other))),
+    other => return Err(format!("{owner}: expected CodeEntry struct, got {}", format_edn_preview(&other))),
   };
   let mut doc = String::new();
   let mut examples: Vec<Cirru> = vec![];
   let mut tags: Vec<String> = Vec::new();
   let mut code: Option<Cirru> = None;
   let mut schema: Option<Edn> = None;
-  for (key, value) in &record.pairs {
+  for (key, value) in &struct_value.pairs {
     match key.arc_str().as_ref() {
       "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
       "examples" => examples = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:examples`: {e}"))?,
@@ -413,18 +413,18 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
 }
 
 fn parse_ns_entry(edn: Edn, owner: &str) -> Result<NsEntry, String> {
-  let record: EdnStructView = match edn {
+  let struct_value: EdnStructView = match edn {
     Edn::Struct(r) => r,
     other => {
       return Err(format!(
-        "{owner}: expected NsEntry/CodeEntry record, got {}",
+        "{owner}: expected NsEntry/CodeEntry struct, got {}",
         format_edn_preview(&other)
       ));
     }
   };
   let mut doc = String::new();
   let mut code: Option<Cirru> = None;
-  for (key, value) in &record.pairs {
+  for (key, value) in &struct_value.pairs {
     match key.arc_str().as_ref() {
       "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
       "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
@@ -438,18 +438,18 @@ fn parse_ns_entry(edn: Edn, owner: &str) -> Result<NsEntry, String> {
 }
 
 fn parse_file_in_snapshot(edn: Edn, file_name: &str) -> Result<FileInSnapShot, String> {
-  let record: EdnStructView = match edn {
+  let struct_value: EdnStructView = match edn {
     Edn::Struct(r) => r,
     other => {
       return Err(format!(
-        "{file_name}: expected FileEntry record, got {}",
+        "{file_name}: expected FileEntry struct, got {}",
         format_edn_preview(&other)
       ));
     }
   };
   let mut ns: Option<NsEntry> = None;
   let mut defs: HashMap<String, CodeEntry> = HashMap::new();
-  for (key, value) in &record.pairs {
+  for (key, value) in &struct_value.pairs {
     match key.arc_str().as_ref() {
       "ns" => ns = Some(parse_ns_entry(value.clone(), &format!("{file_name}/:ns"))?),
       "defs" => {
