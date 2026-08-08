@@ -12,7 +12,7 @@ Calcit 的 FFI 类型声明应继续使用 Snapshot 已有的 schema 体系，�
 1. `CodeEntry :schema` 描述 Calcit 看见的类型。函数仍使用 `:: 'Fn`，trait、impl、struct 等定义仍使用 `:: 'Trait`、`:: 'Impl`、`:: 'Struct`。
 2. `CodeEntry :ffi` 描述后端如何实现这个定义，例如 JavaScript 宿主路径、属性读写、native method call、原生注册符号或 WASM module/field。它是 lowering 元数据，不参与普通类型匹配。
 
-JavaScript 宿主对象不建立一套类似 TypeScript 的结构化类型系统。稳定成员以 Calcit trait 描述：trait 方法签名负责参数和返回类型，简短的 `:ffi :members` 映射负责把 trait 调用生成成 JavaScript 属性读取、属性写入或方法调用。
+JavaScript 宿主对象不建立一套类似 TypeScript 的结构化类型系统。稳定成员以 Calcit trait 描述：tag member 声明属性类型，method member 声明调用签名；JS codegen 根据 receiver 的 external trait 类型，把现有 tag access 降为属性读取，把现有 method invoke 降为保留 receiver 的 JavaScript 方法调用。
 
 这一模型只要求契约足以指导生成正确的目标代码，不追求精确复制 JavaScript 的原型、重载、可选属性、联合类型和完整 DOM 层级。
 
@@ -201,42 +201,24 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
 
 逻辑签名仍从该 definition 的 `:: 'Fn` schema 读取。`:transport` 只供 WASM adapter 检查和 lowering，不参与普通 Calcit 类型匹配。
 
-## 6. 用 trait 描述宿主能力
+## 6. 用 trait 描述 external object
 
-### 6.1 基本模型
+### 6.1 tag member 与 method member
 
-一个宿主 trait 由两部分组成：
+`deftrait` 已经接受 tag 或 method 作为成员键。本 RFC 沿用这个语法差异表达两类 external member：
 
-- `deftrait` 中的方法 schema：供现有类型检查、泛型绑定和返回类型推断使用；
-- `:ffi :members` 中的方法映射：供目标后端生成宿主操作。
+- `:field Type`：字段能力，通过 tag access 读取；
+- `.method FnSchema`：方法能力，通过 method invoke 调用。
 
-属性也表示成方法能力。这样无需另外设计 field schema、读写权限 enum、receiver schema 或 method schema。
+这只需要在 trait 的内部 member descriptor 中保留来源种类。当前 `CalcitTrait` 会把 tag 与 method 都收敛成 `EdnTag`；实现 external object 前，应将其扩展成类似 `{name, kind, type}` 的描述，而不是再维护一份平行的 field/method schema。
 
 ```cirru.edn
 {}
   |DomElement $ %{} 'CodeEntry (:doc "|Small stable capability set for DOM elements")
     :code $ quote
       deftrait DomElement
-        .id $ :: 'Fn
-          {}
-            :generics $ [] 'T
-            :args $ [] 'T
-            :return 'String
-        .set-id! $ :: 'Fn
-          {}
-            :generics $ [] 'T
-            :args $ [] 'T 'String
-            :return 'Unit
-        .text-content $ :: 'Fn
-          {}
-            :generics $ [] 'T
-            :args $ [] 'T
-            :return $ :: 'JsNullish 'String
-        .set-text-content! $ :: 'Fn
-          {}
-            :generics $ [] 'T
-            :args $ [] 'T $ :: 'JsNullish 'String
-            :return 'Unit
+        :id 'String
+        :text-content $ :: 'JsNullish 'String
         .matches? $ :: 'Fn
           {}
             :generics $ [] 'T
@@ -252,42 +234,43 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
     :tags $ #{} :ffi :js-host
     :ffi $ {}
       :backend :js
-      :kind :host-trait
-      :members $ {}
-        :id $ [] :get |id
-        :set-id! $ [] :set |id
-        :text-content $ [] :get |textContent
-        :set-text-content! $ [] :set |textContent
-        :matches? $ [] :call |matches
-        :query-selector $ [] :call |querySelector
+      :kind :external-object
+      :names $ {}
+        :text-content |textContent
+        :query-selector |querySelector
 ```
 
-每个 trait method schema 都把 receiver 放在 `:args` 的第一个位置，这与 Calcit 当前 trait method 检查一致。`'T` 只用于让 receiver 类型参与现有泛型绑定；它不表示 JavaScript 的结构泛型。
+每个 method schema 仍把 receiver 放在 `:args` 的第一个位置，这与 Calcit 当前 trait method 检查一致。`'T` 只用于让 receiver 类型参与已有泛型绑定。
 
-### 6.2 成员映射
+`:names` 是可选的名称覆盖。没有覆盖时，字段或方法名直接作为宿主成员名；codegen 根据名称是否为合法 JavaScript identifier 选择 dot access 或 bracket access。它不重复保存成员种类和类型。
 
-MVP 的成员映射只有三种：
+### 6.2 统一的访问语法
 
-| 映射 | Calcit 调用 | JavaScript lowering |
+对于静态类型为 `DomElement` 的 `element`：
+
+| Calcit 源码 | 预处理语义 | JavaScript lowering |
 | --- | --- | --- |
-| `[] :get |name` | `(.name x)` | `x.name` |
-| `[] :set |name` | `(.set-name! x v)` | `x.name = v` |
-| `[] :call |name` | `(.method x a)` | `x.name(a)` |
+| `element :id` | typed tag access | `element.id` |
+| `element :text-content` | typed tag access | `element.textContent` |
+| `element .matches? selector` | typed method invoke | `element.matches(selector)` |
+| `element .query-selector selector` | typed method invoke | `element.querySelector(selector)` |
 
-对于不是合法 JavaScript identifier 的字段名，codegen 自动改用 bracket access。binding 作者无需在类型层描述这一差异。
+tag access 的显式内部形式是 `.:id element`。普通源码优先使用与 Struct 一致的 postfix `element :id`；预处理器根据 receiver 类型决定它是 Struct 字段读取还是 external property read。
 
-setter 的 schema 必须是两个参数：receiver 与写入值。`:return` 应为 `'Unit`。`:set` lowering 返回的 JavaScript assignment value 不进入 Calcit 逻辑类型。
+method invoke 同样复用现有 postfix/prefix 规则。普通 Calcit trait 继续生成 `invoke_method`；只有 receiver 被静态证明为 `:kind :external-object` 时，JS codegen 才直接生成 receiver method call。
+
+属性写入不应复用 `assoc`，因为 Calcit `assoc` 表示持久化更新，而 JavaScript assignment 是宿主变异。MVP 可以继续使用显式 FFI setter；后续若增加 typed `set!`，必须通过单独的 `:writable` 声明限制可写字段。
 
 ### 6.3 trait 约束
 
-普通函数通过现有 `:where` 使用宿主能力：
+普通函数通过现有 `:where` 使用 external object 能力：
 
 ```cirru.edn
 {}
   |read-element-id $ %{} 'CodeEntry (:doc "|Read id from any value with DomElement capability")
     :code $ quote
       defn read-element-id (element)
-        .id element
+        element :id
     :examples $ []
     :schema $ :: 'Fn
       {}
@@ -298,9 +281,9 @@ setter 的 schema 必须是两个参数：receiver 与写入值。`:return` 应�
           'T 'respo.dom/DomElement
 ```
 
-这里完全沿用现有泛型与 trait bound 语义。codegen 在解析 `.id` 时得到 `DomElement` trait，再从该 trait definition 的 `:ffi :members` 选择 JS lowering。
+这里完全沿用现有泛型与 trait bound 语义。预处理器根据 `DomElement` 中的 `:id 'String` 推断结果为 `String`，JS codegen 再根据该 trait 的 `:ffi` 标记选择 property lowering。
 
-宿主 trait 不通过运行时 `impl-traits` 附加到 JavaScript 对象。它由可信 binding 的返回 schema、受检转换或显式 unsafe 边界提供静态证据。若没有这些证据，原始值仍是 `JsObject`。
+External trait 不通过运行时 `impl-traits` 附加到 JavaScript 对象。它由可信 binding 的返回 schema、受检转换或显式 unsafe 边界提供静态证据。若没有这些证据，原始值仍是 `JsObject`。
 
 ### 6.4 小型浏览器契约
 
@@ -308,26 +291,9 @@ setter 的 schema 必须是两个参数：receiver 与写入值。`:return` 应�
 
 ```cirru.no-check
 deftrait DomInput
-  .value $ :: 'Fn
-    {}
-      :generics $ [] 'T
-      :args $ [] 'T
-      :return 'String
-  .set-value! $ :: 'Fn
-    {}
-      :generics $ [] 'T
-      :args $ [] 'T 'String
-      :return 'Unit
-  .checked? $ :: 'Fn
-    {}
-      :generics $ [] 'T
-      :args $ [] 'T
-      :return 'Bool
-  .set-checked! $ :: 'Fn
-    {}
-      :generics $ [] 'T
-      :args $ [] 'T 'Bool
-      :return 'Unit
+  :value 'String
+  :checked 'Bool
+  :disabled 'Bool
   .focus! $ :: 'Fn
     {}
       :generics $ [] 'T
@@ -335,19 +301,18 @@ deftrait DomInput
       :return 'Unit
 ```
 
-对应映射只需要：
+其 `:ffi` metadata 只需声明后端、external object 身份和必要的名称覆盖：
 
 ```cirru.edn
 {}
-  :members $ {}
-    :value $ [] :get |value
-    :set-value! $ [] :set |value
-    :checked? $ [] :get |checked
-    :set-checked! $ [] :set |checked
-    :focus! $ [] :call |focus
+  :ffi $ {}
+    :backend :js
+    :kind :external-object
+    :names $ {}
+      :focus! |focus
 ```
 
-`DomInput` 不必声明 `HTMLInputElement` 的所有父接口。需要 `form`、`disabled` 或 selection API 时再按真实使用补充。
+`DomInput` 不必声明 `HTMLInputElement` 的所有父接口。需要 `form`、selection API 或 typed property write 时再按真实使用补充。
 
 ## 7. 不透明性、可空性与信任
 
