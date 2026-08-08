@@ -1135,7 +1135,8 @@ fn preprocess_list_call(
     && find_trait_field_type(&traits, field_name.as_ref()).is_some()
   {
     let typed_access = Calcit::Method(field_name.clone(), calcit::MethodKind::ExternalAccess(receiver_type));
-    return Ok(Calcit::from(CalcitList::from(&[typed_access, args[0].to_owned()])));
+    let processed_receiver = preprocess_expr(&args[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    return Ok(Calcit::from(CalcitList::from(&[typed_access, processed_receiver])));
   }
 
   // === Postfix struct field access / method call detection ===
@@ -3228,7 +3229,14 @@ fn warn_on_trait_impl_method_tag_syntax(
 
   // External-object traits intentionally use `:field` entries for typed
   // property access. Their CodeEntry metadata opts them into this shape.
-  if macro_name_is_external_object(macro_info, file_ns, def_name) {
+  let trait_name = if macro_info.name.as_ref() == "deftrait" {
+    args.first().and_then(parse_trait_name_from_source).map(|name| name.to_string())
+  } else {
+    None
+  };
+  let source_name = trait_name.as_deref().unwrap_or(def_name);
+
+  if macro_name_is_external_object(macro_info, file_ns, source_name) {
     return;
   }
 
@@ -3248,7 +3256,7 @@ fn warn_on_trait_impl_method_tag_syntax(
     };
 
     let message = format!(
-      "[Warn] `{macro_name}` method key `:{method_name}` in {file_ns}/{def_name} uses legacy tag style; prefer dot method key `.{method_name}` for migration (`:{method_name}` remains compatible)"
+      "[Warn] `{macro_name}` method key `:{method_name}` in {file_ns}/{source_name} uses legacy tag style; prefer dot method key `.{method_name}` for migration (`:{method_name}` remains compatible)"
     );
 
     if let Some(loc) = entry.get_location() {

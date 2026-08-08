@@ -125,7 +125,7 @@ pub struct CodeEntry {
 }
 ```
 
-`:ffi` 必须在 Snapshot load/save、definition revision、diff 和 query JSON 中原样保留。解析器可以按 `:backend` 建立缓存，但 EDN 是持久化事实来源。
+`:ffi` 必须在 Snapshot load/save、definition revision 和 diff 中原样保留。解析器可以按 `:backend` 建立缓存，但 EDN 是持久化事实来源。JSON 查询不得把 EDN 直接投影为普通 JSON：需要暴露时使用 `ffi_edn` 字段，值为 canonical Cirru EDN 文本；读取方必须按 Cirru EDN 解析该字符串。这样 string、symbol、tag、map 与 set 可以无损区分，且 canonical formatter 负责稳定的 map/set 输出顺序。
 
 `:ffi` 不改变 `:schema` 的含义，也不复制函数参数和返回类型。若后端需要参数个数，应从 `Fn` schema 推导。
 
@@ -194,12 +194,13 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
   :ffi $ {}
     :backend :wasm
     :kind :import
+    :direction :import
     :module |host
     :symbol |string-upcase
     :transport :string-handle
 ```
 
-逻辑签名仍从该 definition 的 `:: 'Fn` schema 读取。`:transport` 只供 WASM adapter 检查和 lowering，不参与普通 Calcit 类型匹配。
+逻辑签名仍从该 definition 的 `:: 'Fn` schema 读取。`:transport` 只供 WASM adapter 检查和 lowering，不参与普通 Calcit 类型匹配。`defwasm-export` 使用相同的规范化视图，但 `:direction :export`；它同样必须有 `:module`、`:symbol` 与 `:transport`，以便 query 与 adapter 验证不会混淆 import/export。
 
 ## 6. 用 trait 描述 external object
 
@@ -512,10 +513,13 @@ JS codegen 测试：
 4. `:ffi` 是可选、可查询、无损保存的 EDN metadata。
 5. MVP 只增加 external property read、external method invoke 与少量 import invocation；property write 暂不与 `assoc` 混用。
 
+已确定的 MVP 决策：
+
+- `ffi: Option<Edn>` 直接保存在 `CodeEntry`、`DetailedCodeEntry` 与 `ProgramDefEntry`，而非平行扩展字段；
+- external trait 是 codegen-only 的静态证据，不通过 runtime `impl-traits` 附加到 JavaScript 对象。
+
 仍需在实现前确认：
 
-- `:ffi` 是否直接加入 `CodeEntry`，还是加入一个通用但同样无损的扩展元数据字段；
-- external trait 是否允许普通 runtime impl，还是明确标记为 codegen-only；
 - binding 返回 external trait 时，运行时是否需要轻量 host identity，还是首阶段只依赖可信 definition 边界；
 - unsafe external trait 断言的公开名称与审计输出格式；
 - typed property write 是否使用带 `:writable` 校验的 `set!`，还是始终保留为显式 binding。
@@ -532,4 +536,4 @@ JS codegen 测试：
 - `RFCs/08-05-systematic-nil-reduction-rfc.md`
 - `docs/features/js-interop.md`
 - `docs/features/polymorphism.md`
-- `calcit/scripts/wasm-validation.md`
+- `scripts/wasm-validation.md`

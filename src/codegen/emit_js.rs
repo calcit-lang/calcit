@@ -82,6 +82,7 @@ fn external_js_property_name(type_hint: &Arc<calcit::CalcitTypeAnnotation>, name
     calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
     calcit::CalcitTypeAnnotation::Optional(inner) => match inner.as_ref() {
       calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
+      calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
       _ => vec![],
     },
     _ => vec![],
