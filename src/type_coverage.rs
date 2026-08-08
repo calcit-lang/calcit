@@ -2032,7 +2032,7 @@ fn infer_data_type(node: &Cirru) -> Option<String> {
   }
 }
 
-fn analysis_revision(snapshot: &snapshot::Snapshot, definitions: &[(String, String)]) -> Result<String, String> {
+pub(crate) fn analysis_revision(snapshot: &snapshot::Snapshot, definitions: &[(String, String)]) -> Result<String, String> {
   let mut ids = definitions.to_vec();
   ids.sort();
   ids.dedup();

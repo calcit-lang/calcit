@@ -1058,7 +1058,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       ctx.emit(f64_const(*ptr as f64));
     }
     Calcit::Struct(_) => return Err("Struct literals not supported in WASM codegen (use constructor)".into()),
-    Calcit::Enum(_) => return Err("Tuple literals not supported in WASM codegen (use constructor)".into()),
+    Calcit::Enum(_) => return Err("Enum literals not supported in WASM codegen (use constructor)".into()),
     // Function value (Fn with def_ref) — encode as f64 table slot index for call_indirect.
     Calcit::Fn { info, .. } => {
       if let Some(def_ref) = &info.def_ref {
@@ -1939,7 +1939,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     | CalcitProc::NativeEnumDefinition
     | CalcitProc::NativeEnumValueImplTraits
     | CalcitProc::NativeEnumDefHasVariant
-    | CalcitProc::NativeEnumDefVariantArity => Err(format!("Tuple operation {proc} not yet supported in WASM codegen")),
+    | CalcitProc::NativeEnumDefVariantArity => Err(format!("Enum operation {proc} not yet supported in WASM codegen")),
     CalcitProc::NativeEnumAssoc => emit_enum_assoc(ctx, args),
 
     // Bitwise operations — convert to i32, operate, convert back to f64

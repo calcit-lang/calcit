@@ -1,6 +1,6 @@
 //! Deprecated API usage analysis for `cr analyze deprecated`.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
 use calcit::calcit::Calcit;
@@ -86,6 +86,7 @@ fn collect_uses(
   node: &Calcit,
   current_namespace: &str,
   targets: &HashMap<(String, String), DeprecatedTarget>,
+  definitions: &HashSet<(String, String)>,
   path: &mut Vec<usize>,
   uses: &mut Vec<DeprecatedApiUse>,
 ) {
@@ -101,16 +102,18 @@ fn collect_uses(
           push_use(uses, targets, namespace, definition, path);
         } else {
           push_use(uses, targets, current_namespace, sym.as_ref(), path);
-          push_use(uses, targets, calcit::calcit::CORE_NS, sym.as_ref(), path);
+          if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
+            push_use(uses, targets, calcit::calcit::CORE_NS, sym.as_ref(), path);
+          }
         }
       }
       _ => {}
     }
   }
 
-  for (index, item) in items.iter().enumerate().skip(1) {
+  for (index, item) in items.iter().enumerate() {
     path.push(index);
-    collect_uses(item, current_namespace, targets, path, uses);
+    collect_uses(item, current_namespace, targets, definitions, path, uses);
     path.pop();
   }
 }
@@ -129,6 +132,15 @@ pub fn collect_deprecated_api_rows(
 ) -> Result<Vec<DeprecatedApiRow>, String> {
   let targets = deprecated_targets(snapshot);
   let program_data = program::extract_program_data(snapshot)?;
+  let definitions = program_data
+    .iter()
+    .flat_map(|(namespace, file)| {
+      file
+        .defs
+        .keys()
+        .map(move |definition| (namespace.to_string(), definition.to_string()))
+    })
+    .collect::<HashSet<_>>();
   let mut rows = vec![];
 
   for (namespace, file) in &program_data {
@@ -137,7 +149,7 @@ pub fn collect_deprecated_api_rows(
     }
     for (definition, entry) in &file.defs {
       let mut uses = vec![];
-      collect_uses(&entry.code, namespace, &targets, &mut vec![], &mut uses);
+      collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
       uses.sort_by(|left, right| {
         left
           .path
@@ -239,6 +251,10 @@ pub fn format_deprecated_api_json(options: &DeprecatedCommand, snapshot: &snapsh
   let envelope = serde_json::json!({
     "schema_version": 1,
     "command": "analyze.deprecated",
+    "revision": crate::type_coverage::analysis_revision(
+      snapshot,
+      &rows.iter().map(|row| (row.namespace.clone(), row.definition.clone())).collect::<Vec<_>>(),
+    )?,
     "data": {
       "filters": {
         "namespace": options.ns,
@@ -280,11 +296,55 @@ mod tests {
     )]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &mut vec![], &mut uses);
+    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].path, "code@3");
     assert_eq!(uses[0].target_namespace, calcit::calcit::CORE_NS);
+    assert_eq!(uses[0].target_name, "record?");
+  }
+
+  #[test]
+  fn ignores_core_deprecated_call_shadowed_by_local_definition() {
+    let expression = cirru_parser::parse("defn demo () $ record? nil")
+      .expect("parse expression")
+      .into_iter()
+      .next()
+      .expect("one expression");
+    let code = code_to_calcit(&expression, "app.main", "demo", vec![]).expect("convert expression");
+    let targets = HashMap::from([(
+      (calcit::calcit::CORE_NS.to_owned(), "record?".to_owned()),
+      DeprecatedTarget {
+        doc: "Replace with struct?.".to_owned(),
+      },
+    )]);
+    let definitions = HashSet::from([("app.main".to_owned(), "record?".to_owned())]);
+    let mut uses = vec![];
+
+    collect_uses(&code, "app.main", &targets, &definitions, &mut vec![], &mut uses);
+
+    assert!(uses.is_empty());
+  }
+
+  #[test]
+  fn finds_deprecated_call_inside_list_valued_callee() {
+    let expression = cirru_parser::parse("defn demo () $ (record? nil)")
+      .expect("parse expression")
+      .into_iter()
+      .next()
+      .expect("one expression");
+    let code = code_to_calcit(&expression, "app.main", "demo", vec![]).expect("convert expression");
+    let targets = HashMap::from([(
+      (calcit::calcit::CORE_NS.to_owned(), "record?".to_owned()),
+      DeprecatedTarget {
+        doc: "Replace with struct?.".to_owned(),
+      },
+    )]);
+    let mut uses = vec![];
+
+    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+
+    assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].target_name, "record?");
   }
 }
