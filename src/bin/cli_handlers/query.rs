@@ -1102,7 +1102,7 @@ mod type_query_tests {
     assert!(result_type.resolve_to_enum().is_some(), "source-backed Result0 should resolve");
     assert!(
       result_type.matches_annotation(&CalcitTypeAnnotation::AnonymousEnum),
-      "a source-backed enum reference should satisfy tuple operations"
+      "a source-backed enum reference should satisfy enum operations"
     );
     let person_symbol =
       code_to_calcit(&Cirru::Leaf(Arc::from("Person")), "test-struct.main", "test-struct", vec![]).expect("Person symbol should parse");

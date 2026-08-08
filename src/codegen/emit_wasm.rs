@@ -2980,7 +2980,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
     ctx.block_depth += 1;
 
-    // Bind payload variables from tuple fields
+    // Bind payload variables from enum fields
     let binding_count = pat_xs.len() - 1;
     for bind_idx in 0..binding_count {
       let binding = &pat_xs[1 + bind_idx];
@@ -2989,7 +2989,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
         Calcit::Symbol { sym, .. } => sym.to_string(),
         other => return Err(format!("match binding expected symbol, got: {other}")),
       };
-      // Payload at offset (2 + bind_idx) * 8 from tuple pointer (skip count + tag)
+      // Payload at offset (2 + bind_idx) * 8 from enum pointer (skip count + tag)
       let offset = ((2 + bind_idx) * 8) as u64;
       ctx.emit(Instruction::LocalGet(ptr_f64));
       ctx.emit(Instruction::I32TruncF64U);
