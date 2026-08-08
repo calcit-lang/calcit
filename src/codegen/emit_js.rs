@@ -269,6 +269,17 @@ fn indent_block(body: &str, indent: &str) -> String {
     .join("\n")
 }
 
+/// Detects verbatim `&raw-code` segments anywhere in an expression tree. These
+/// are emitted byte-for-byte, so line-based indentation must not touch them
+/// (a multiline template literal would otherwise change value).
+fn contains_raw_code(x: &Calcit) -> bool {
+  match x {
+    Calcit::RawCode(..) => true,
+    Calcit::List(xs) => xs.iter().any(contains_raw_code),
+    _ => false,
+  }
+}
+
 fn raw_syntax_codegen_error(syntax: &CalcitSyntax) -> String {
   format!(
     "invalid JS codegen: raw syntax node `{syntax}` cannot be emitted as a standalone JS value. LLM hint: special forms must start an expression, for example `(if cond a b)`, or appear at the beginning of a line / after `$`, instead of being left as a separate argument node."
@@ -1407,7 +1418,11 @@ fn list_to_js_code(
     } else {
       let line = to_js_code(x, ns, &local_defs, file_imports, tags, Some(""))?;
       result.push_str("{\n");
-      result.push_str(&indent_block(&line, "  "));
+      if contains_raw_code(x) {
+        result.push_str(&line);
+      } else {
+        result.push_str(&indent_block(&line, "  "));
+      }
       result.push_str(";\n}\n");
     }
   }
@@ -1610,21 +1625,31 @@ fn gen_js_func(
     Ok(format!("{export_mark}{fn_def}\n"))
   } else {
     let body_code = list_to_js_code(&body, passed_defs.ns, local_defs, "return ", passed_defs.file_imports, tags)?;
-    let header = format!("{check_args}{spreading_code}");
-    let full_body = if header.trim().is_empty() {
+    // `check_args` and `spreading_code` both contribute to the prologue; keep
+    // each on its own line without leaving a leading blank line.
+    let mut header_parts: Vec<&str> = vec![];
+    if !check_args.trim().is_empty() {
+      header_parts.push(check_args.trim());
+    }
+    if !spreading_code.trim().is_empty() {
+      header_parts.push(spreading_code.trim());
+    }
+    let header = header_parts.join("\n");
+    let full_body = if header.is_empty() {
       body_code
     } else {
       format!("{header}\n{body_code}")
     };
-    // Cheap, line-based indentation only (no AST-aware pretty-printing) so
-    // generated code stays readable without adding real compile cost.
-    let fn_definition = format!(
-      "{}function {}({}) {{\n{}\n}}",
-      async_prefix,
-      escape_var(name),
-      args_code,
+    let body_code = if raw_body.iter().any(contains_raw_code) {
+      // Raw-code segments are emitted verbatim; indenting them could change
+      // multiline template literals, so keep the body unindented.
+      full_body
+    } else {
+      // Cheap, line-based indentation only (no AST-aware pretty-printing) so
+      // generated code stays readable without adding real compile cost.
       indent_block(&full_body, "  ")
-    );
+    };
+    let fn_definition = format!("{}function {}({}) {{\n{}\n}}", async_prefix, escape_var(name), args_code, body_code);
     let export_mark = if exported { "export " } else { "" };
     Ok(format!("{export_mark}{fn_definition}\n"))
   }
@@ -2061,6 +2086,60 @@ mod tests {
     assert_eq!(
       to_js_code(&set_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external set should compile"),
       "(element[\"textContent\"] = \"ready\")"
+    );
+  }
+
+  #[test]
+  fn raw_code_body_is_kept_verbatim() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let passed_defs = PassedDefs {
+      ns: "tests.emit-js",
+      local_defs: &local_defs,
+      file_imports: &file_imports,
+    };
+    let args = CalcitFnArgs::Args(vec![]);
+    let raw_body = vec![Calcit::RawCode(calcit::RawCodeType::Js, Arc::from("let t = `line1\nline2`;"))];
+
+    let code = gen_js_func("demo", &args, &raw_body, &passed_defs, true, &tags, "tests.emit-js").expect("raw-code body should compile");
+    // Multiline raw-code must stay byte-for-byte: the second line is not indented.
+    assert!(code.contains("let t = `line1\nline2`;"), "raw-code changed:\n{code}");
+    assert!(code.contains("\nline2`;"), "raw-code newline content indented:\n{code}");
+  }
+
+  #[test]
+  fn spreading_prologue_has_no_leading_blank_line() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let passed_defs = PassedDefs {
+      ns: "tests.emit-js",
+      local_defs: &local_defs,
+      file_imports: &file_imports,
+    };
+    let sym: Arc<str> = Arc::from("xs");
+    let idx = CalcitLocal::track_sym(&sym);
+    let args = CalcitFnArgs::MarkedArgs(vec![CalcitArgLabel::RestMark, CalcitArgLabel::Idx(idx)]);
+    let raw_body = vec![Calcit::Symbol {
+      sym: sym.clone(),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.emit-js"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    }];
+
+    let prev = crate::codegen::skip_arity_check();
+    crate::codegen::set_code_gen_skip_arity_check(true);
+    let code =
+      gen_js_func("demo", &args, &raw_body, &passed_defs, true, &tags, "tests.emit-js").expect("spreading body should compile");
+    crate::codegen::set_code_gen_skip_arity_check(prev);
+
+    assert!(!code.contains("{\n\n"), "no leading blank line expected:\n{code}");
+    assert!(
+      code.contains("{\n  xs = $clt.arrayToList(xs);"),
+      "spreading should be the first indented line:\n{code}"
     );
   }
 

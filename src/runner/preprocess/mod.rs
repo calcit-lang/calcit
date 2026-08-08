@@ -6541,6 +6541,7 @@ mod tests {
 
   #[test]
   fn warns_on_untyped_js_ffi_field_access_when_enabled() {
+    let _lock = lock_preprocess_test_state();
     let _warn_guard = WarnDynMethodGuard::new(true);
     let receiver = untyped_js_ffi_test_receiver();
     let head = Calcit::Method(Arc::from("value"), calcit::MethodKind::Access);
@@ -6560,6 +6561,7 @@ mod tests {
 
   #[test]
   fn untyped_js_ffi_field_access_warning_is_opt_in_and_scoped() {
+    let _lock = lock_preprocess_test_state();
     let receiver = untyped_js_ffi_test_receiver();
     let head = Calcit::Method(Arc::from("value"), calcit::MethodKind::Access);
 
