@@ -54,6 +54,7 @@ cr docs agents --full
 - **`foldl` 初始空集合语法**：`foldl xs [] $ fn ...` 中，`[]` 会因 `$` 右结合被解析为 `([] (fn ...))` 而非空列表。正确写法是先绑定 `init $ []`，再传 `init`；或对空 map 同理使用 `init $ {}`。
 - **告警会使 eval 失败**：有类型告警时，`cr eval` 会以错误退出（这是预期行为，便于阻断不安全用法）。
   - 例：`cargo run --bin cr -- calcit/test.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
+- **JS FFI 动态访问告警（opt-in）**：传 `--warn-dyn-method` 时，裸 `JsObject` 上的 `.-`/`.!`/`aget`/`aset`/`js-get`/`js-set`（静态字面量 key）会额外报告 `W_JS_FFI_UNTYPED_ACCESS`，提示声明 external-object trait 提升类型覆盖度；不传 flag 时静默。
 - **assert-type 仅做检查**：`assert-type` 在预处理阶段生效，不会改变运行值。
   - 例：`cargo run --bin cr -- calcit/test.cirru eval 'let ((x 1)) (assert-type x :list) x'` 依然返回 `1`，并在检查阶段报告类型不匹配。
 - **常用排错方式**：遇到报错先看 `.calcit/error.cirru`，它会提供更完整的栈信息。
@@ -126,6 +127,10 @@ npm view @calcit/procs version
 
 - **高频分配规约**：在 Preprocessing 阶段，严禁在循环内调用 `Arc::new(CalcitTypeAnnotation::Dynamic)`。应始终 clone 单例 `crate::calcit::DYNAMIC_TYPE`。
 - **验证手段**：对于大规模 Cirru 项目的预处理，可通过 `repeat 10 { time ./target/release/cr ... }` 观察耗时抖动。若抖动剧烈，通常预示着堆内存申请频率过高或冷热数据加载策略存在问题。
+
+### JS 代码生成可读性
+
+- JS codegen 采用**行级缩进**（复用 `indent_block`，O(n) 单遍处理），不做 AST 级美化：函数体与嵌套语句块缩进一级，顶层函数间插入空行。改动 codegen 时保持这一低成本风格即可，不要引入完整格式化器。
 
 ## 项目结构概览
 

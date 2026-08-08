@@ -1747,6 +1747,7 @@ fn preprocess_list_call(
           // Recompute processed_args from ys after optimization rewrites (e.g. struct:get→nth, assoc→assoc-at)
           let processed_args = CalcitList::from(ys.drop_left());
           warn_on_nullable_js_ffi_dereference(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          warn_on_untyped_js_ffi_field_access(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_nominal_enum_legacy_absence_use(head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_legacy_js_nullish_predicate(head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
@@ -3128,6 +3129,67 @@ fn check_typed_js_field_operation(
       check_warnings,
     );
   }
+}
+
+/// Raw `.-`/`.!`/`aget`/`aset`/`js-get`/`js-set` on a bare `JsObject` receiver
+/// (no external-object trait attached) has nothing left to check statically.
+/// This is opt-in (behind `--warn-dyn-method`) since it fires on any untyped
+/// FFI touch point, including code that intentionally stays dynamic.
+fn warn_on_untyped_js_ffi_field_access(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+
+  if !warn_dyn_method_enabled() {
+    return;
+  }
+
+  let (operation, field_name) = match head {
+    Calcit::Method(name, calcit::MethodKind::Access) => (format!(".-{name}"), name.to_string()),
+    Calcit::Method(name, calcit::MethodKind::InvokeNative) => (format!(".!{name}"), name.to_string()),
+    Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "aget" | "js-get" | "aset" | "js-set") => {
+      let Some(field_name) = args.get(1).and_then(static_js_field_name) else {
+        // A dynamic (non-literal) key cannot be described by a trait field
+        // either, so there is no actionable next step to suggest here.
+        return;
+      };
+      (sym.to_string(), field_name.to_owned())
+    }
+    _ => return,
+  };
+
+  let Some(receiver) = args.first() else {
+    return;
+  };
+  let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
+    return;
+  };
+  // Only the bare, non-nullable `JsObject` case is targeted here: it already
+  // proves the value is a raw host object, and the key is a literal the
+  // developer already knows, so declaring a trait is directly actionable.
+  // Nullable receivers and declared traits are covered by other diagnostics.
+  if !matches!(receiver_type.as_ref(), CalcitTypeAnnotation::JsObject) {
+    return;
+  }
+
+  let message = format!(
+    "[Warn] `{operation}` accesses untyped JS field `:{field_name}` in {file_ns}/{def_name}; still permitted, but declaring an external-object trait (`deftrait ... :ffi {{:kind :external-object ...}}`) for the receiver unlocks static field/method checking and `:names` mapping"
+  );
+
+  gen_check_warning_code_at(
+    message,
+    "W_JS_FFI_UNTYPED_ACCESS",
+    file_ns,
+    head.get_location().or_else(|| receiver.get_location()),
+    check_warnings,
+  );
 }
 
 fn warn_on_legacy_js_nullish_predicate(
@@ -6461,6 +6523,86 @@ mod tests {
       &mismatch_warnings,
     );
     assert_eq!(mismatch_warnings.borrow()[0].code(), Some("W_JS_FFI_FIELD_TYPE_MISMATCH"));
+  }
+
+  fn untyped_js_ffi_test_receiver() -> Calcit {
+    let sym: Arc<str> = Arc::from("host");
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.untyped-ffi"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::JsObject),
+    })
+  }
+
+  #[test]
+  fn warns_on_untyped_js_ffi_field_access_when_enabled() {
+    let _lock = lock_preprocess_test_state();
+    let _warn_guard = WarnDynMethodGuard::new(true);
+    let receiver = untyped_js_ffi_test_receiver();
+    let head = Calcit::Method(Arc::from("value"), calcit::MethodKind::Access);
+    let warnings = RefCell::new(vec![]);
+
+    warn_on_untyped_js_ffi_field_access(
+      &head,
+      &CalcitList::from(std::slice::from_ref(&receiver)),
+      &ScopeTypes::new(),
+      "tests.untyped-ffi",
+      "demo",
+      &warnings,
+    );
+
+    assert_eq!(warnings.borrow()[0].code(), Some("W_JS_FFI_UNTYPED_ACCESS"));
+  }
+
+  #[test]
+  fn untyped_js_ffi_field_access_warning_is_opt_in_and_scoped() {
+    let _lock = lock_preprocess_test_state();
+    let receiver = untyped_js_ffi_test_receiver();
+    let head = Calcit::Method(Arc::from("value"), calcit::MethodKind::Access);
+
+    // Disabled by default: the flag must be explicitly turned on.
+    let disabled_warnings = RefCell::new(vec![]);
+    warn_on_untyped_js_ffi_field_access(
+      &head,
+      &CalcitList::from(std::slice::from_ref(&receiver)),
+      &ScopeTypes::new(),
+      "tests.untyped-ffi",
+      "demo",
+      &disabled_warnings,
+    );
+    assert!(disabled_warnings.borrow().is_empty());
+
+    let _warn_guard = WarnDynMethodGuard::new(true);
+
+    // A dynamic (non-literal) key gives no actionable static field to suggest.
+    let dynamic_key_warnings = RefCell::new(vec![]);
+    warn_on_untyped_js_ffi_field_access(
+      &external_field_test_symbol("aget"),
+      &CalcitList::from(&[receiver.clone(), external_field_test_symbol("k")]),
+      &ScopeTypes::new(),
+      "tests.untyped-ffi",
+      "demo",
+      &dynamic_key_warnings,
+    );
+    assert!(dynamic_key_warnings.borrow().is_empty());
+
+    // Already-typed external-object receivers are covered by other diagnostics.
+    let typed_receiver = external_field_test_receiver(seed_external_field_trait());
+    let typed_warnings = RefCell::new(vec![]);
+    warn_on_untyped_js_ffi_field_access(
+      &external_field_test_symbol("aget"),
+      &CalcitList::from(&[typed_receiver, Calcit::Tag(EdnTag::new("value"))]),
+      &ScopeTypes::new(),
+      "tests.untyped-ffi",
+      "demo",
+      &typed_warnings,
+    );
+    assert!(typed_warnings.borrow().is_empty());
   }
 
   #[test]
