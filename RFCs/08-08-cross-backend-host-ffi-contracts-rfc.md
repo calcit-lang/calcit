@@ -248,7 +248,20 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
 
 每个 method schema 仍把 receiver 放在 `:args` 的第一个位置，这与 Calcit 当前 trait method 检查一致。`'T` 只用于让 receiver 类型参与已有泛型绑定。
 
-`:names` 是可选的名称覆盖。没有覆盖时，字段或方法名直接作为宿主成员名；codegen 根据名称是否为合法 JavaScript identifier 选择 dot access 或 bracket access。它不重复保存成员种类和类型。
+`:names` 是 external trait 的逐成员 JavaScript 名称覆盖，也是所有特殊命名的唯一入口；它不重复保存成员种类和类型。没有覆盖时，JS backend 使用稳定默认转换：`kebab-case` 转为 `camelCase`，尾部 `?` 与 `!` 去除（例如 `:text-content → textContent`、`.matches? → matches`、`.set-item! → setItem`）。其余字符保持原样，codegen 以 bracket access 发射属性名。
+
+如果宿主 API 的真实名称不遵循该规则（包括连字符本身就是键名、缩写、保留标点、vendor API），必须用 `:names` 显式覆写：
+
+```cirru.edn
+{}
+  :backend :js
+  :kind :external-object
+  :names $ {}
+    :data-id |data-id
+    :read-u-r-l! |readURL
+```
+
+覆盖值是 JavaScript property key，不要求它是 Calcit symbol 或合法 JS identifier；codegen 会进行字符串转义并使用 `receiver["key"]`，因此不会与 Calcit 自身定义名的 `escape_var` 规则混淆。
 
 ### 6.2 统一的访问语法
 
@@ -321,6 +334,38 @@ deftrait DomInput
 ```
 
 `DomInput` 不必声明 `HTMLInputElement` 的所有父接口。需要 `form`、selection API 或 typed property write 时再按真实使用补充。
+
+### 6.5 ES module 适配层
+
+ES module import 保持现有 `ns :require` 语法：字符串 namespace 表示 package specifier，`:default` 导入默认 export，`:refer` 导入 named export。导入值首先是 opaque `JsObject`；不能仅因为 npm 文档声明了 shape 就自动成为 external trait。
+
+```cirru.no-check
+ns app.npm.markdown $ :require
+  |remark :default remark
+  |nanoid :refer $ nanoid
+
+deftrait RemarkModule
+  .create-processor $ :: 'Fn
+    {}
+      :generics $ [] 'T
+      :args $ [] 'T
+      :return 'app.npm.markdown/RemarkProcessor
+
+defn create-processor ()
+  let
+      module $ unsafe-coerce remark 'app.npm.markdown/RemarkModule
+    module .create-processor
+
+defn make-id (size)
+  let
+      generate $ unsafe-coerce nanoid $ :: 'Fn
+        {}
+          :args $ [] 'Number
+          :return 'String
+    generate size
+```
+
+`unsafe-coerce` 是封装模块边界的显式、零运行时成本断言：它在 JS codegen 中保留原值，但将声明的 `Fn` 或 external trait 证据交给后续静态检查和 lowering。业务 namespace 只调用 `create-processor`、`make-id` 等带普通 schema 的 Calcit wrapper，不直接传播 npm 的 `JsObject`。需要运行时验证时，wrapper 应优先使用 decoder；无法验证而又信任上游 API 时才使用 `unsafe-coerce`，并将该调用集中在 adapter namespace。
 
 ## 7. 不透明性、可空性与信任
 

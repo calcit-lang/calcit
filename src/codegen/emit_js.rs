@@ -115,7 +115,30 @@ fn external_js_property_name(type_hint: &Arc<calcit::CalcitTypeAnnotation>, name
       }
     }
   }
-  name.to_owned()
+  default_external_js_member_name(name)
+}
+
+/// Convert the common Calcit member spelling to the JavaScript convention.
+///
+/// `:names` in external-object FFI metadata always takes precedence. This
+/// fallback keeps ordinary `kebab-case`, predicates, and mutating method names
+/// ergonomic while retaining an exact escape hatch for APIs with unusual keys.
+fn default_external_js_member_name(name: &str) -> String {
+  let original_name = name;
+  let name = name.trim_end_matches(['?', '!']);
+  let mut output = String::with_capacity(name.len());
+  let mut upper_next = false;
+  for ch in name.chars() {
+    if ch == '-' {
+      upper_next = true;
+    } else if upper_next {
+      output.extend(ch.to_uppercase());
+      upper_next = false;
+    } else {
+      output.push(ch);
+    }
+  }
+  if output.is_empty() { original_name.to_owned() } else { output }
 }
 
 // code generated from calcit.core.cirru may not be faster enough,
@@ -1934,6 +1957,14 @@ mod tests {
     ])));
     let hint = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema]);
     assert!(!hinted_async(&hint));
+  }
+
+  #[test]
+  fn external_member_defaults_follow_calcit_naming_conventions() {
+    assert_eq!(default_external_js_member_name("text-content"), "textContent");
+    assert_eq!(default_external_js_member_name("matches?"), "matches");
+    assert_eq!(default_external_js_member_name("set-item!"), "setItem");
+    assert_eq!(default_external_js_member_name("!"), "!");
   }
 
   #[test]

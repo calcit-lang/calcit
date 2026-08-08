@@ -53,6 +53,38 @@ legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
 with `js-nullish->option` only after accepting the opaque payload contract;
 generic `optionally` does not accept `JsNullish<T>`.
 
+## ES modules with typed adapters
+
+Import npm packages with the ordinary namespace rules, then keep the unchecked
+host boundary in one small adapter namespace. A default export uses `:default`;
+named exports use `:refer`:
+
+```cirru.no-check
+ns app.npm.ids $ :require
+  |nanoid :refer $ nanoid
+
+defn make-id (size)
+  let
+      generate $ unsafe-coerce nanoid $ :: 'Fn
+        {}
+          :args $ [] 'Number
+          :return 'String
+    generate size
+```
+
+For a module object, declare only the methods or fields your adapter needs as
+an external trait, then coerce the raw import once. `unsafe-coerce` emits the
+original JS value; its declared type is static evidence for subsequent Calcit
+method calls and JavaScript lowering. Keep that assertion at the adapter
+boundary. Application namespaces should call ordinary schema-typed wrappers,
+not pass npm `JsObject` values around.
+
+External trait members translate common Calcit names by default:
+`text-content → textContent`, `matches? → matches`, and `set-item! → setItem`.
+For any exception, declare the exact JavaScript key in the trait's `:ffi
+:names` map. The override is emitted with bracket access, so keys containing
+punctuation are supported.
+
 A nominal `Option<T>` uses `.some?`/`.none?`. Preprocessing reports
 `W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are applied to an Option,
 so an API migration cannot silently preserve the wrong branch behavior.
