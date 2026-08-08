@@ -388,12 +388,30 @@ fn js_nullish_host_value_type() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::JsNullish(js_host_value_type()))
 }
 
+fn infer_external_field_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
+  let field_name = key_arg.and_then(extract_field_name)?;
+  let traits = trait_list_from_type(base_type)?;
+  let (trait_def, field_type) = find_trait_field_type(&traits, field_name)?;
+  trait_is_external_object(trait_def).then(|| field_type.clone())
+}
+
 fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match name {
     // JavaScript indexed/property reads may yield `undefined` or `null`. Keep
     // the raw host value opaque as well as nullable so a nil check alone does
     // not silently prove that it is a Calcit Number/String/etc.
-    "aget" | "js-get" => Some(js_nullish_host_value_type()),
+    "js-get" => {
+      let field_type = call_expr
+        .get(1)
+        .and_then(|base| resolve_type_value(base, scope_types))
+        .and_then(|base_type| infer_external_field_type(base_type.as_ref(), call_expr.get(2)));
+      Some(
+        field_type
+          .map(|field_type| Arc::new(CalcitTypeAnnotation::JsNullish(field_type)))
+          .unwrap_or_else(js_nullish_host_value_type),
+      )
+    }
+    "aget" => Some(js_nullish_host_value_type()),
     // Assignment expressions evaluate to the assigned value in JavaScript.
     "aset" | "js-set" => call_expr
       .get(3)
@@ -624,7 +642,10 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // Method access: infer struct field type when available
         Calcit::Method(
           field_name,
-          calcit::MethodKind::Access | calcit::MethodKind::TagAccess | calcit::MethodKind::ExternalAccess(_),
+          calcit::MethodKind::Access
+          | calcit::MethodKind::TagAccess
+          | calcit::MethodKind::ExternalAccess(_)
+          | calcit::MethodKind::ExternalGet(_),
         ) => {
           if let Some(receiver) = xs.get(1)
             && let Some(field_type) = infer_struct_field_type(receiver, field_name.as_ref(), scope_types)
@@ -637,13 +658,18 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
             && let Some((trait_def, field_type)) = find_trait_field_type(&traits, field_name.as_ref())
             && trait_is_external_object(trait_def)
           {
-            return Some(field_type.clone());
+            return Some(if matches!(head, Calcit::Method(_, calcit::MethodKind::ExternalGet(_))) {
+              Arc::new(CalcitTypeAnnotation::JsNullish(field_type.clone()))
+            } else {
+              field_type.clone()
+            });
           }
           match head {
             Calcit::Method(_, calcit::MethodKind::Access) => Some(js_nullish_host_value_type()),
             _ => None,
           }
         }
+        Calcit::Method(_, calcit::MethodKind::ExternalSet(_)) => xs.get(2).and_then(|value| resolve_type_value(value, scope_types)),
 
         // Native JavaScript access/calls remain explicit JsNullish boundary values,
         // not legacy Optional or nominal Option values. The opaque JsObject payload

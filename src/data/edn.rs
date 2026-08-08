@@ -123,6 +123,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       MethodKind::Invoke(_) => Ok(Edn::Symbol(format!(".{name}").into())),
       MethodKind::TagAccess => Ok(Edn::Symbol(format!(".:{name}").into())),
       MethodKind::ExternalAccess(_) => Ok(Edn::Symbol(format!(".:{name}").into())),
+      MethodKind::ExternalGet(_) => Ok(Edn::Symbol(format!("js-get:{name}").into())),
+      MethodKind::ExternalSet(_) => Ok(Edn::Symbol(format!("js-set:{name}").into())),
       MethodKind::ExternalInvoke(_) => Ok(Edn::Symbol(format!(".{name}").into())),
       MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),

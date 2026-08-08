@@ -28,8 +28,8 @@ Calcit keeps JS interop syntax intentionally small. This page covers the existin
 ## Typed FFI boundary
 
 Raw JavaScript values are not ordinary `Dynamic` Calcit values. Property reads,
-native method calls, `aget`/`js-get`, and `js/...` calls are conservatively
-inferred as `JsNullish<JsObject>`:
+native method calls, `aget`, untyped `js-get`, and `js/...` calls are
+conservatively inferred as `JsNullish<JsObject>`:
 
 - `JsNullish` is reserved for the actual JavaScript `null`/`undefined` boundary;
   it is deliberately distinct from legacy `Optional` and nominal `Option`.
@@ -84,6 +84,23 @@ External trait members translate common Calcit names by default:
 For any exception, declare the exact JavaScript key in the trait's `:ffi
 :names` map. The override is emitted with bracket access, so keys containing
 punctuation are supported.
+
+`js-get` and `js-set` also use external trait field declarations when both the
+receiver type and key are static. A tag or string literal key is checked against
+the trait: `js-get` returns `JsNullish<FieldType>`, while `js-set` checks the
+assigned value and emits the mapped JavaScript property name. Unknown fields
+report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
+`W_JS_FFI_FIELD_TYPE_MISMATCH`.
+
+```cirru.no-check
+defn clear-input (element)
+  js-set element :value |
+```
+
+Dynamic keys retain raw JavaScript semantics. Use `aget`/`aset` when bypassing
+the external trait contract is intentional. When a trusted raw receiver needs
+typed field access, establish that evidence once with `unsafe-coerce` at the
+adapter boundary rather than coercing each field value.
 
 A nominal `Option<T>` uses `.some?`/`.none?`. Preprocessing reports
 `W_NOMINAL_ENUM_LEGACY_USE` when old nullable checks are applied to an Option,
