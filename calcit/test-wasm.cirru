@@ -17,7 +17,7 @@
         :code $ quote (ns test-wasm.helper)
     |test-wasm.main $ %{} 'FileEntry
       :defs $ {}
-        |Point $ %{} 'CodeEntry (:doc "|Struct definition for WASM test")
+        |Point $ %{} 'CodeEntry (:doc "|Struct definition (via legacy defrecord) for WASM test")
           :code $ quote (defrecord Point :x :y)
           :examples $ []
           :schema $ :: 'Dynamic
