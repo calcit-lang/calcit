@@ -8,6 +8,14 @@ use super::{CalcitFn, CalcitTypeAnnotation};
 
 static NEXT_TRAIT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Source member shape retained for traits. Ordinary traits use method
+/// members; external-object traits may additionally expose typed fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CalcitTraitMemberKind {
+  Method,
+  Field,
+}
+
 fn defaults_eq(left: &Option<Arc<CalcitFn>>, right: &Option<Arc<CalcitFn>>) -> bool {
   match (left, right) {
     (None, None) => true,
@@ -79,6 +87,8 @@ pub struct CalcitTrait {
   pub defaults: Arc<Vec<Option<Arc<CalcitFn>>>>,
   /// Type annotations for method signatures
   pub method_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  /// Source shape for each member, parallel to `methods` and `method_types`.
+  pub member_kinds: Arc<Vec<CalcitTraitMemberKind>>,
   /// Required traits (trait inheritance/composition)
   pub requires: Arc<Vec<Arc<CalcitTrait>>>,
 }
@@ -104,6 +114,7 @@ impl CalcitTrait {
       && self.name == other.name
       && self.methods == other.methods
       && self.method_types == other.method_types
+      && self.member_kinds == other.member_kinds
       && self.requires == other.requires
       && self.defaults.len() == other.defaults.len()
       && self
@@ -115,10 +126,24 @@ impl CalcitTrait {
 
   /// Create a new trait with the given name and methods
   pub fn new(name: EdnTag, methods: Vec<EdnTag>, method_types: Vec<Arc<CalcitTypeAnnotation>>) -> Self {
+    Self::new_with_member_kinds(name, methods, method_types, None)
+  }
+
+  pub fn new_with_member_kinds(
+    name: EdnTag,
+    methods: Vec<EdnTag>,
+    method_types: Vec<Arc<CalcitTypeAnnotation>>,
+    member_kinds: Option<Vec<CalcitTraitMemberKind>>,
+  ) -> Self {
     let defaults = vec![None; methods.len()];
     assert!(
       methods.len() == method_types.len(),
       "CalcitTrait::new expects method_types to match methods length"
+    );
+    let member_kinds = member_kinds.unwrap_or_else(|| vec![CalcitTraitMemberKind::Method; methods.len()]);
+    assert!(
+      methods.len() == member_kinds.len(),
+      "CalcitTrait::new expects member_kinds to match methods length"
     );
     CalcitTrait {
       runtime_id: None,
@@ -127,6 +152,7 @@ impl CalcitTrait {
       methods: Arc::new(methods),
       defaults: Arc::new(defaults),
       method_types: Arc::new(method_types),
+      member_kinds: Arc::new(member_kinds),
       requires: Arc::new(vec![]),
     }
   }
@@ -180,12 +206,28 @@ impl CalcitTrait {
 
   /// Check if this trait has a method with the given name
   pub fn has_method(&self, name: &str) -> bool {
-    self.methods.iter().any(|m| m.ref_str() == name)
+    self
+      .methods
+      .iter()
+      .zip(self.member_kinds.iter())
+      .any(|(m, kind)| *kind == CalcitTraitMemberKind::Method && m.ref_str() == name)
   }
 
   /// Get the index of a method by name
   pub fn method_index(&self, name: &str) -> Option<usize> {
-    self.methods.iter().position(|m| m.ref_str() == name)
+    self
+      .methods
+      .iter()
+      .zip(self.member_kinds.iter())
+      .position(|(m, kind)| *kind == CalcitTraitMemberKind::Method && m.ref_str() == name)
+  }
+
+  pub fn field_index(&self, name: &str) -> Option<usize> {
+    self
+      .methods
+      .iter()
+      .zip(self.member_kinds.iter())
+      .position(|(m, kind)| *kind == CalcitTraitMemberKind::Field && m.ref_str() == name)
   }
 
   /// Get the default implementation for a method
@@ -206,6 +248,7 @@ impl Hash for CalcitTrait {
     self.name.hash(state);
     self.methods.hash(state);
     self.method_types.hash(state);
+    self.member_kinds.hash(state);
     self.requires.hash(state);
     self.defaults.len().hash(state);
     for default_impl in self.defaults.iter() {
@@ -261,6 +304,7 @@ mod tests {
       methods: Arc::new(vec![EdnTag::new("foo")]),
       defaults: Arc::new(vec![default_impl]),
       method_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]),
+      member_kinds: Arc::new(vec![CalcitTraitMemberKind::Method]),
       requires: Arc::new(vec![]),
     }
   }

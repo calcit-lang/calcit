@@ -489,6 +489,11 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
         diff_string("doc", Some(old.doc.as_str()), Some(new.doc.as_str())),
         diff_string("schema", Some(&old.schema.to_string()), Some(&new.schema.to_string())),
         diff_tag_set("tags", &old.tags, &new.tags),
+        diff_optional_string(
+          "ffi",
+          old.ffi.as_ref().map(|value| value.to_string()).as_deref(),
+          new.ffi.as_ref().map(|value| value.to_string()).as_deref(),
+        ),
         diff_cirru_list("examples", &old.examples, &new.examples),
         diff_cirru("code", Some(&old.code), Some(&new.code), "0"),
       ];
@@ -681,6 +686,7 @@ fn build_code_entry_tree(label: &str, value: &CodeEntry, status: DiffStatus) -> 
     DiffNode::new("doc", status).with_detail(render_text(&value.doc)),
     DiffNode::new("schema", status).with_detail(render_text(&value.schema.to_string())),
     build_string_list_tree("tags", &tags, status),
+    DiffNode::new("ffi", status).with_detail(value.ffi.as_ref().map_or_else(|| "(none)".to_owned(), ToString::to_string)),
     DiffNode::new("examples", status).with_children(examples),
     build_cirru_tree("code", &value.code, status, "0"),
   ])

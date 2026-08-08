@@ -36,7 +36,7 @@ use im_ternary_tree::TernaryTreeList;
 
 pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStructDef;
-pub use calcit_trait::CalcitTrait;
+pub use calcit_trait::{CalcitTrait, CalcitTraitMemberKind};
 pub use enum_value::CalcitEnumValue;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
@@ -357,6 +357,8 @@ impl fmt::Display for Calcit {
         MethodKind::Access => f.write_str(&format!(".-{name}")),
         MethodKind::InvokeNative => f.write_str(&format!(".!{name}")),
         MethodKind::TagAccess => f.write_str(&format!(".:{name}")),
+        MethodKind::ExternalAccess(_) => f.write_str(&format!(".:{name}")),
+        MethodKind::ExternalInvoke(_) => f.write_str(&format!(".{name}")),
         MethodKind::AccessOptional => f.write_str(&format!(".?-{name}")),
         MethodKind::InvokeNativeOptional => f.write_str(&format!(".?!{name}")),
       },
@@ -830,6 +832,8 @@ impl Calcit {
         MethodKind::Access => format!(".-{name}"),
         MethodKind::InvokeNative => format!(".!{name}"),
         MethodKind::TagAccess => format!(".:{name}"),
+        MethodKind::ExternalAccess(_) => format!(".:{name}"),
+        MethodKind::ExternalInvoke(_) => format!(".{name}"),
         MethodKind::AccessOptional => format!(".?-{name}"),
         MethodKind::InvokeNativeOptional => format!(".?!{name}"),
       },
@@ -932,6 +936,8 @@ impl Calcit {
           crate::calcit::MethodKind::InvokeNative => "native method call",
           crate::calcit::MethodKind::Invoke(_) => "method call",
           crate::calcit::MethodKind::TagAccess => "tag attribute access",
+          crate::calcit::MethodKind::ExternalAccess(_) => "external object field access",
+          crate::calcit::MethodKind::ExternalInvoke(_) => "external object method call",
           crate::calcit::MethodKind::AccessOptional => "optional attribute access",
           crate::calcit::MethodKind::InvokeNativeOptional => "optional native method call",
         };
@@ -1323,6 +1329,10 @@ pub enum MethodKind {
   InvokeNativeOptional,
   /// (.:k a)
   TagAccess,
+  /// Typed access to a field on an external host object.
+  ExternalAccess(Arc<CalcitTypeAnnotation>),
+  /// Typed method invocation on an external host object.
+  ExternalInvoke(Arc<CalcitTypeAnnotation>),
   /// (.-p a)
   Access,
   /// (.?-p a)
@@ -1336,6 +1346,8 @@ impl fmt::Display for MethodKind {
       MethodKind::InvokeNative => write!(f, "invoke-native"),
       MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
       MethodKind::TagAccess => write!(f, "tag-access"),
+      MethodKind::ExternalAccess(_) => write!(f, "external-access"),
+      MethodKind::ExternalInvoke(_) => write!(f, "external-invoke"),
       MethodKind::Access => write!(f, "access"),
       MethodKind::AccessOptional => write!(f, "access-optional"),
     }

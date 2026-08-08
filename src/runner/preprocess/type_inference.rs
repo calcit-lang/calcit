@@ -27,7 +27,8 @@ use crate::{
 use cirru_edn::EdnTag;
 
 use super::{
-  ScopeTypes, find_method_entry_for_type, find_trait_method_type, get_impls_from_type, tag_annotation, trait_list_from_type,
+  ScopeTypes, find_method_entry_for_type, find_trait_field_type, find_trait_method_type, get_impls_from_type,
+  resolve_trait_def_from_source_code, tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -40,18 +41,44 @@ pub(crate) fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> O
       // First check if the local has inline type_info, then fall back to scope_types
       if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
         let scoped = scope_types.get(&local.sym).cloned();
-        scoped.map(normalize_variadic_as_list)
+        scoped.map(resolve_trait_type_ref)
       } else {
-        Some(normalize_variadic_as_list(local.type_info.clone()))
+        Some(resolve_trait_type_ref(local.type_info.clone()))
       }
     }
     Calcit::Symbol { sym, .. } => scope_types
       .get(sym)
       .cloned()
-      .map(normalize_variadic_as_list)
+      .map(resolve_trait_type_ref)
       .or_else(|| infer_type_from_expr(target, scope_types)),
     _ => infer_type_from_expr(target, scope_types),
   }
+}
+
+fn resolve_trait_type_ref(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let CalcitTypeAnnotation::TypeRef(name, args) = value.as_ref() else {
+    return normalize_variadic_as_list(value);
+  };
+  if !args.is_empty() {
+    return value;
+  }
+  let Some((ns, def)) = name.rsplit_once('/') else {
+    return value;
+  };
+  if let Some(code) = program::lookup_def_code(ns, def)
+    && let Some(trait_def) = resolve_trait_def_from_source_code(&code)
+  {
+    return Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def))));
+  }
+  if let Some(resolved) = infer_definition_value_type(ns, def)
+    && matches!(
+      resolved.as_ref(),
+      CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_)
+    )
+  {
+    return resolved;
+  }
+  value
 }
 
 /// Treat variadic locals as list values when resolving expression types.
@@ -567,7 +594,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
         // Typed method invocation: resolve the selected trait signature and
         // substitute receiver/argument types into its generic return type.
-        Calcit::Method(method_name, calcit::MethodKind::Invoke(receiver_hint)) => {
+        Calcit::Method(method_name, calcit::MethodKind::Invoke(receiver_hint) | calcit::MethodKind::ExternalInvoke(receiver_hint)) => {
           let receiver_type = xs
             .get(1)
             .and_then(|receiver| resolve_type_value(receiver, scope_types))
@@ -592,11 +619,22 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         }
 
         // Method access: infer struct field type when available
-        Calcit::Method(field_name, calcit::MethodKind::Access | calcit::MethodKind::TagAccess) => {
+        Calcit::Method(
+          field_name,
+          calcit::MethodKind::Access | calcit::MethodKind::TagAccess | calcit::MethodKind::ExternalAccess(_),
+        ) => {
           if let Some(receiver) = xs.get(1)
             && let Some(field_type) = infer_struct_field_type(receiver, field_name.as_ref(), scope_types)
           {
             return Some(field_type);
+          }
+          if let Some(receiver) = xs.get(1)
+            && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+            && let Some(traits) = trait_list_from_type(receiver_type.as_ref())
+            && let Some((trait_def, field_type)) = find_trait_field_type(&traits, field_name.as_ref())
+            && trait_is_external_object(trait_def)
+          {
+            return Some(field_type.clone());
           }
           match head {
             Calcit::Method(_, calcit::MethodKind::Access) => Some(js_nullish_host_value_type()),

@@ -11,8 +11,8 @@
 use calcit::calcit::DYNAMIC_TYPE;
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
-  EditExamplesCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand,
-  EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
+  EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand,
+  EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
   EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
 };
 use calcit::program::validate_import_rules;
@@ -92,6 +92,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::SplitDef(opts) => handle_split_def(opts, snapshot_file),
     EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
     EditSubcommand::Schema(opts) => handle_schema(opts, snapshot_file),
+    EditSubcommand::Ffi(opts) => handle_ffi(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
     EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
@@ -115,6 +116,7 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     EditSubcommand::RmDef(opts) => Some(&mut opts.target),
     EditSubcommand::Doc(opts) => Some(&mut opts.target),
     EditSubcommand::Schema(opts) => Some(&mut opts.target),
+    EditSubcommand::Ffi(opts) => Some(&mut opts.target),
     EditSubcommand::Examples(opts) => Some(&mut opts.target),
     EditSubcommand::AddExample(opts) => Some(&mut opts.target),
     EditSubcommand::RmExample(opts) => Some(&mut opts.target),
@@ -210,6 +212,7 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
     }
     EditSubcommand::Doc(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
     EditSubcommand::Schema(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
+    EditSubcommand::Ffi(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
     EditSubcommand::Examples(opts) => {
       maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
     }
@@ -1388,6 +1391,47 @@ fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
   }
 }
 
+fn handle_ffi(opts: &EditFfiCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let resolved_definition =
+    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
+
+  let ffi = if opts.clear {
+    None
+  } else {
+    let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+    let value = cirru_edn::parse(&raw).map_err(|error| format!("FFI metadata must be valid Cirru EDN: {error}"))?;
+    if !matches!(value, Edn::Map(_) | Edn::Struct(_)) {
+      return Err("FFI metadata must be an EDN map (for example `{}` with :backend/:kind entries)".to_owned());
+    }
+    Some(value)
+  };
+
+  save_ffi_preserving_snapshot(snapshot_file, namespace, &resolved_definition, ffi)?;
+  if opts.clear {
+    println!(
+      "{} Cleared FFI metadata for '{}' in namespace '{}'",
+      "✓".green(),
+      resolved_definition.cyan(),
+      namespace
+    );
+  } else {
+    println!(
+      "{} Updated FFI metadata for '{}' in namespace '{}'",
+      "✓".green(),
+      resolved_definition.cyan(),
+      namespace
+    );
+  }
+  Ok(())
+}
+
 fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
@@ -1485,6 +1529,50 @@ fn save_schema_preserving_snapshot(
     *value = schema_edn;
   } else {
     entry.pairs.push((EdnTag::new("schema"), schema_edn));
+  }
+
+  let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
+  let output = match shebang {
+    Some(line) => format!("{line}\n{formatted}"),
+    None => formatted,
+  };
+  fs::write(snapshot_file, output).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))
+}
+
+fn save_ffi_preserving_snapshot(snapshot_file: &str, namespace: &str, definition: &str, ffi: Option<Edn>) -> Result<(), String> {
+  let original = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
+  let shebang = original.lines().next().filter(|line| line.starts_with("#!")).map(str::to_owned);
+  let mut content = original;
+  strip_shebang(&mut content);
+  let mut data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
+  let Edn::Map(root) = &mut data else {
+    return Err("Snapshot root must be an EDN map".to_owned());
+  };
+  let files_value = find_edn_map_value_mut(root, "files").ok_or_else(|| "Snapshot is missing :files".to_owned())?;
+  let Edn::Map(files) = files_value else {
+    return Err("Snapshot :files must be an EDN map".to_owned());
+  };
+  let file_value = find_edn_map_value_mut(files, namespace).ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let Edn::Struct(file) = file_value else {
+    return Err(format!("Namespace '{namespace}' must be a FileEntry struct"));
+  };
+  let defs_value = find_edn_struct_value_mut(file, "defs").ok_or_else(|| format!("Namespace '{namespace}' is missing :defs"))?;
+  let Edn::Map(defs) = defs_value else {
+    return Err(format!("Namespace '{namespace}' :defs must be an EDN map"));
+  };
+  let definition_value =
+    find_edn_map_value_mut(&mut *defs, definition).ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
+  let Edn::Struct(entry) = definition_value else {
+    return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry struct"));
+  };
+  if let Some(value) = ffi {
+    if let Some(existing) = find_edn_struct_value_mut(entry, "ffi") {
+      *existing = value;
+    } else {
+      entry.pairs.push((EdnTag::new("ffi"), value));
+    }
+  } else {
+    entry.pairs.retain(|(key, _)| key.ref_str() != "ffi");
   }
 
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;

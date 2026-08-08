@@ -1207,6 +1207,8 @@ pub enum EditSubcommand {
   Doc(EditDocCommand),
   /// update definition schema payload (inside quote)
   Schema(EditSchemaCommand),
+  /// set or clear host FFI metadata on a definition
+  Ffi(EditFfiCommand),
   /// set definition examples
   Examples(EditExamplesCommand),
   /// add a single example to definition
@@ -1332,6 +1334,24 @@ pub struct EditSchemaCommand {
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// clear schema field
+  #[argh(switch, long = "clear")]
+  pub clear: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "ffi")]
+/// update optional host FFI metadata stored on a CodeEntry
+pub struct EditFfiCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// read a Cirru EDN map from file
+  #[argh(option)]
+  pub file: Option<String>,
+  /// FFI metadata as Cirru EDN map
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// clear FFI metadata
   #[argh(switch, long = "clear")]
   pub clear: bool,
 }

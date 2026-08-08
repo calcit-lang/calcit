@@ -151,6 +151,7 @@ pub struct ProgramDefEntry {
   pub schema: Arc<CalcitTypeAnnotation>,
   pub doc: Arc<str>,
   pub examples: Vec<Cirru>,
+  pub ffi: Option<cirru_edn::Edn>,
 }
 
 /// information extracted from snapshot
@@ -812,6 +813,7 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
         schema,
         doc,
         examples: entry.examples.clone(),
+        ffi: entry.ffi.clone(),
       },
     );
   }
@@ -912,6 +914,13 @@ pub fn lookup_def_examples(ns: &str, def: &str) -> Option<Vec<Cirru>> {
   } else {
     Some(entry.examples.clone())
   }
+}
+
+/// Lookup optional host/FFI metadata attached to a definition's CodeEntry.
+pub fn lookup_def_ffi(ns: &str, def: &str) -> Option<cirru_edn::Edn> {
+  let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
+  let file = program_code.get(ns)?;
+  file.defs.get(def)?.ffi.clone()
 }
 
 pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
@@ -1085,6 +1094,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
         schema: DYNAMIC_TYPE.clone(),
         doc: Arc::from(""), // No doc info in changes, use empty string
         examples: vec![],   // No examples info in changes, use empty vector
+        ffi: None,
       };
       file.defs.insert(def.to_owned().into(), entry);
     }
@@ -1100,9 +1110,14 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       clear_runtime_value(def_id);
       remove_compiled_def(ns, def);
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-      let (schema, doc, examples) = match file.defs.get(def.as_str()) {
-        Some(existing) => (existing.schema.clone(), existing.doc.clone(), existing.examples.clone()),
-        None => (DYNAMIC_TYPE.clone(), Arc::from(""), Vec::new()),
+      let (schema, doc, examples, ffi) = match file.defs.get(def.as_str()) {
+        Some(existing) => (
+          existing.schema.clone(),
+          existing.doc.clone(),
+          existing.examples.clone(),
+          existing.ffi.clone(),
+        ),
+        None => (DYNAMIC_TYPE.clone(), Arc::from(""), Vec::new(), None),
       };
       file.defs.insert(
         def.to_owned().into(),
@@ -1111,6 +1126,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
           schema,
           doc,
           examples,
+          ffi,
         },
       );
     }

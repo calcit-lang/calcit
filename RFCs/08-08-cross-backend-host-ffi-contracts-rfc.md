@@ -210,7 +210,11 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
 - `:field Type`：字段能力，通过 tag access 读取；
 - `.method FnSchema`：方法能力，通过 method invoke 调用。
 
+成员种类由键的语法决定，而不是由值类型猜测。tag member 即使声明为 `'Fn` 也只是读取一个函数值，不自动绑定 JavaScript `this`；method member 则必须声明为完整 `Fn` schema，并按 receiver call 生成。
+
 这只需要在 trait 的内部 member descriptor 中保留来源种类。当前 `CalcitTrait` 会把 tag 与 method 都收敛成 `EdnTag`；实现 external object 前，应将其扩展成类似 `{name, kind, type}` 的描述，而不是再维护一份平行的 field/method schema。
+
+当前预处理器会把 `deftrait` 的 tag key 视为旧式 method key 并产生迁移告警。该告警应改成上下文相关：普通 trait 继续要求 `.method`，只有带 `:kind :external-object` 的 trait 接受 `:field` 并把它记录为 field member。
 
 ```cirru.edn
 {}
@@ -237,6 +241,7 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
       :kind :external-object
       :names $ {}
         :text-content |textContent
+        :matches? |matches
         :query-selector |querySelector
 ```
 
@@ -258,6 +263,8 @@ WASM import/export 仍由现有专用语法声明；预处理后可暴露等价�
 tag access 的显式内部形式是 `.:id element`。普通源码优先使用与 Struct 一致的 postfix `element :id`；预处理器根据 receiver 类型决定它是 Struct 字段读取还是 external property read。
 
 method invoke 同样复用现有 postfix/prefix 规则。普通 Calcit trait 继续生成 `invoke_method`；只有 receiver 被静态证明为 `:kind :external-object` 时，JS codegen 才直接生成 receiver method call。
+
+这样 `.-field` 与 `.!method` 可以继续保留给原始、未建立契约的 JavaScript interop；已经具有 external trait 类型的代码统一使用 Calcit 的 tag access 与 method invoke。
 
 属性写入不应复用 `assoc`，因为 Calcit `assoc` 表示持久化更新，而 JavaScript assignment 是宿主变异。MVP 可以继续使用显式 FFI setter；后续若增加 typed `set!`，必须通过单独的 `:writable` 声明限制可写字段。
 
@@ -322,8 +329,8 @@ deftrait DomInput
 
 - 原始 `js/...`、`aget`、`.-field` 和 `.!method` 的未知结果仍推断为 `JsNullish<JsObject>`；
 - `js-present?` 只消除外层 `JsNullish`，结果仍是 `JsObject`；
-- 属性名称相同不能证明某个宿主 trait；
-- `JsObject` 不能自动匹配 Calcit `Struct`、`Map`、`String` 或宿主 trait。
+- 属性名称相同不能证明某个 external trait；
+- `JsObject` 不能自动匹配 Calcit `Struct`、`Map`、`String` 或 external trait。
 
 ### 7.2 更强契约的来源
 
@@ -338,42 +345,47 @@ deftrait DomInput
 
 ### 7.3 可空性
 
-JavaScript 的 `null`/`undefined` 继续使用 `JsNullish<T>`。宿主 trait 不自行携带 optional/nullable 标记：
+JavaScript 的 `null`/`undefined` 继续使用 `JsNullish<T>`。External trait 不自行携带 optional/nullable 标记：
 
 ```cirru.edn
 :: 'JsNullish 'respo.dom/DomElement
 ```
 
-在调用 `.id`、`.focus!` 等 trait method 前，接收者必须已经通过 `js-present?` 等路径收窄。存在性检查只证明值存在，不重新验证成员。
+在执行 `element :id` 或 `element .focus!` 前，接收者必须已经通过 `js-present?` 等路径收窄。存在性检查只证明值存在，不重新验证成员。
 
 业务缺失继续使用 `Option<T>`，可恢复失败继续使用 `Result<T,E>`，无业务返回值使用 `Unit`。这些类型不能与 `JsNullish<T>` 静默互换。
 
 ## 8. JavaScript codegen 规则
 
-当 trait definition 带有 `:ffi {:backend :js, :kind :host-trait}` 时，JS codegen 对该 trait 的静态调用执行专用 lowering：
+当 trait definition 带有 `:ffi {:backend :js, :kind :external-object}` 时，JS codegen 对该 trait 的静态访问执行专用 lowering：
 
 ```text
-(.id element)
+element :id
 => element.id
 
-(.set-id! element next-id)
-=> element.id = nextId
+element :text-content
+=> element.textContent
 
-(.matches? element selector)
+element .matches? selector
 => element.matches(selector)
 ```
 
-该 lowering 必须在 trait 已静态解析且成员映射唯一时发生。以下情况应拒绝生成：
+该 lowering 必须在 external trait 已静态解析且成员唯一时发生。以下情况应拒绝生成：
 
-- trait method 没有对应成员映射；
-- 成员映射与 method arity 不一致；
-- `:get` 带有 receiver 之外的参数；
-- `:set` 不是 receiver 加一个值；
+- tag access 指向未声明的 tag member；
+- method invoke 指向未声明的 method member；
+- 用 tag access 读取 method，或用 method invoke 调用 field；
+- method schema 不是 `Fn`，或参数个数不匹配；
+- `:names` 引用了不存在的成员；
 - 当前后端与 `:ffi :backend` 不一致；
 - receiver 仍为 `JsNullish<T>`；
-- 同一个 method 在多个 trait 中产生无法消解的宿主 lowering。
+- 同名成员在多个 trait 中产生无法消解的 external lowering。
 
-Native codegen 不应尝试解释 JS host trait。反过来，JS codegen 也不应把 native handle trait 当作 JavaScript 属性访问。
+现有 JS codegen 对普通 `TagAccess` 生成 Calcit map/struct lookup，对普通 `MethodKind::Invoke` 生成 `invoke_method`。只有 static receiver type 指向 JS external trait 时才切换到 direct property/method lowering，因此不会改变普通 Calcit 数据和 trait dispatch。
+
+当前 `MethodKind::Invoke` 已携带 receiver type hint，而 `MethodKind::TagAccess` 没有。实现 external property lowering 时，应让预处理后的 tag access 同样携带已解析 receiver type，或改写成专用 typed access IR；JS emitter 不应仅凭字段名猜测它是不是 external property。
+
+Native codegen 不应尝试解释 JS external trait。反过来，JS codegen 也不应把 native handle trait 当作 JavaScript 属性访问。
 
 ## 9. 跨后端共享边界
 
@@ -402,9 +414,10 @@ Native codegen 不应尝试解释 JS host trait。反过来，JS codegen 也不�
 MVP 建议使用少量稳定诊断：
 
 - `E_FFI_METADATA`：`:ffi` 缺字段、字段类型错误或 kind 不一致；
-- `E_FFI_BACKEND_MISMATCH`：binding/host trait 不适用于当前后端；
-- `E_FFI_MEMBER_UNKNOWN`：host trait method 没有 lowering 映射；
-- `E_FFI_MEMBER_ARITY`：trait method schema 与 `:get`/`:set`/`:call` 不兼容；
+- `E_FFI_BACKEND_MISMATCH`：binding/external trait 不适用于当前后端；
+- `E_FFI_MEMBER_UNKNOWN`：external trait 没有声明该字段或方法；
+- `E_FFI_MEMBER_KIND`：tag access 与 method invoke 使用了错误的成员种类；
+- `E_FFI_MEMBER_ARITY`：external method schema 的参数个数不匹配；
 - `E_FFI_OPAQUE_VALUE`：原始 `JsObject` 被当作更强宿主 trait；
 - `E_FFI_NULLABLE_DEREF`：`JsNullish<T>` 未收窄即调用宿主能力；
 - `E_FFI_ABI_UNSUPPORTED`：逻辑类型无法由目标 adapter 传输。
@@ -436,19 +449,22 @@ MVP 建议使用少量稳定诊断：
 - 要求 JS binding schema 带 `:features #{:js-ffi}`；
 - 在 `cr query context` 和机器 JSON 中暴露 `schema` 与 `ffi`，但不把二者合并。
 
-### 阶段 2：JS host trait
+### 阶段 2：JS external trait
 
-- 识别 `:kind :host-trait`；
-- 校验 `deftrait` methods 与 `:members` 一一对应；
-- 实现 `:get`、`:set`、`:call` lowering；
-- 复用 trait method 推断、泛型绑定和 `:where`；
+- 让 trait member descriptor 保留 tag member 与 method member 的区别；
+- 识别 `:kind :external-object`；
+- 仅在 external trait 上把 tag key 解释为 field，并调整旧式 trait method 告警；
+- 从 tag member 推断 typed tag access，从 method member 检查 typed method invoke；
+- 让预处理后的 tag access 保留 receiver type hint，避免 emitter 重新猜类型；
+- JS codegen 对 external receiver 实现 direct property/method lowering；
+- 复用泛型绑定和 `:where`；
 - 增加原始 `JsObject`、nullable receiver 和多 trait 冲突测试。
 
 ### 阶段 3：其他 adapter
 
 - registered proc 从同一个 `Fn` schema 推导 arity；
 - WASM 可表示性检查读取逻辑 schema 与独立 transport metadata；
-- 只有真实用例需要时才为 native handle 增加 host trait lowering；
+- 只有真实用例需要时才为 native handle 增加 external trait lowering；
 - WASI 保持独立 adapter，不与通用 WASM 混为同一个 backend。
 
 ## 13. 验证策略
@@ -462,25 +478,27 @@ Snapshot/EDN 测试：
 
 类型测试：
 
+- trait tag member 能作为字段类型参与推断；
 - trait method receiver 是 schema 的第一个参数；
-- `:where` 能解析 host trait 并推断 method 返回类型；
-- raw `JsObject` 不满足 host trait；
-- `JsNullish<HostTrait>` 收窄前不能调用 method；
-- setter 写入值类型错误时使用现有参数类型诊断。
+- `:where` 能解析 external trait 并推断字段/方法返回类型；
+- raw `JsObject` 不满足 external trait；
+- `JsNullish<ExternalTrait>` 收窄前不能访问字段或调用方法；
+- tag/member kind 使用错误时产生稳定诊断。
 
 JS codegen 测试：
 
-- `:get` 生成 dot/bracket property read；
-- `:set` 生成 assignment 并保持逻辑返回 `Unit`；
-- `:call` 保留 receiver；
+- external tag access 生成 dot/bracket property read；
+- external method invoke 保留 receiver；
+- 普通 map/Struct tag access 和普通 trait invoke 保持原有 lowering；
+- `:names` 覆盖 kebab-case 与 camelCase 差异；
 - `document.querySelector` binding 不丢失 `this`；
-- host trait method 缺映射或后端不匹配时在发射前失败。
+- external member 未声明或后端不匹配时在发射前失败。
 
 跨后端测试：
 
 - native registered proc 与 schema arity 不一致时注册失败；
 - WASM 不支持的逻辑类型在 adapter 阶段失败；
-- JS 专属 host trait 不影响 native/WASM 普通类型匹配。
+- JS 专属 external trait 不影响 native/WASM 普通类型匹配。
 
 仓库级验证继续执行 `cargo fmt`、`cargo clippy -- -D warnings`、`cargo test`、`yarn compile`、`yarn check-all` 和 `yarn check-agent-interface`。只改 RFC 时至少应完成 Markdown/Cirru 示例解析和相关文档检查。
 
@@ -489,17 +507,18 @@ JS codegen 测试：
 本 RFC 建议先确定以下决策：
 
 1. `:schema` 只使用现有 schema kind，FFI lowering 永远不包装函数类型。
-2. JS 宿主成员用 trait method 表达，不增加结构化 host shape 类型系统。
-3. property get/set 也通过逻辑方法暴露，以复用 trait method schema。
+2. JS 宿主字段使用 trait tag member，宿主方法使用 trait method member，不增加结构化 host shape 类型系统。
+3. typed tag access 直接对应 external property read，typed method invoke 直接对应 external receiver call。
 4. `:ffi` 是可选、可查询、无损保存的 EDN metadata。
-5. MVP 只支持足以生成正确 JS 的 `:get`、`:set`、`:call` 与少量 import invocation。
+5. MVP 只增加 external property read、external method invoke 与少量 import invocation；property write 暂不与 `assoc` 混用。
 
 仍需在实现前确认：
 
 - `:ffi` 是否直接加入 `CodeEntry`，还是加入一个通用但同样无损的扩展元数据字段；
-- host trait 是否允许普通 runtime impl，还是明确标记为 codegen-only；
-- binding 返回 host trait 时，运行时是否需要轻量 host identity，还是首阶段只依赖可信 definition 边界；
-- unsafe host trait 断言的公开名称与审计输出格式。
+- external trait 是否允许普通 runtime impl，还是明确标记为 codegen-only；
+- binding 返回 external trait 时，运行时是否需要轻量 host identity，还是首阶段只依赖可信 definition 边界；
+- unsafe external trait 断言的公开名称与审计输出格式；
+- typed property write 是否使用带 `:writable` 校验的 `set!`，还是始终保留为显式 binding。
 
 这些问题不影响 schema 边界：无论最终选择如何，函数类型仍是 `:: 'Fn`，宿主能力定义仍是 `:: 'Trait`，后端实现信息仍不属于类型表达式。
 

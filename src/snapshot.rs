@@ -151,6 +151,8 @@ struct RawCodeEntry {
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
+  #[serde(default)]
+  pub ffi: Option<Edn>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,6 +184,7 @@ impl RawCodeEntry {
       tags: tags_vec_to_set(self.tags),
       code: self.code,
       schema,
+      ffi: self.ffi,
     })
   }
 }
@@ -539,6 +542,9 @@ fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
   if !data.tags.is_empty() {
     pairs.insert(2, ("tags".into(), tags_to_edn(&data.tags)));
   }
+  if let Some(ffi) = &data.ffi {
+    pairs.push(("ffi".into(), ffi.clone()));
+  }
   pairs
 }
 
@@ -552,6 +558,8 @@ pub struct CodeEntry {
   pub code: Cirru,
   #[serde(default = "schema_serde::default_schema", with = "schema_serde")]
   pub schema: Arc<CalcitTypeAnnotation>,
+  #[serde(default)]
+  pub ffi: Option<Edn>,
 }
 
 /// Return an opaque, deterministic revision for one definition.
@@ -592,6 +600,12 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
     update_part(&mut hasher, "example", rendered.as_bytes());
   }
 
+  if let Some(ffi) = &entry.ffi {
+    let rendered =
+      cirru_edn::format(ffi, true).map_err(|error| format!("Failed to format definition FFI metadata for revision: {error}"))?;
+    update_part(&mut hasher, "ffi", rendered.as_bytes());
+  }
+
   Ok(format!("md5:{:x}", hasher.finalize()))
 }
 
@@ -603,6 +617,7 @@ impl TryFrom<Edn> for CodeEntry {
     let mut tags: HashSet<EdnTag> = HashSet::new();
     let mut code: Option<Cirru> = None;
     let mut schema: Arc<CalcitTypeAnnotation> = DYNAMIC_TYPE.clone();
+    let mut ffi: Option<Edn> = None;
 
     match data {
       Edn::Struct(struct_value) => {
@@ -627,6 +642,9 @@ impl TryFrom<Edn> for CodeEntry {
             }
             "schema" if !matches!(value, Edn::Nil) => {
               schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
+            }
+            "ffi" if !matches!(value, Edn::Nil) => {
+              ffi = Some(value.to_owned());
             }
             _ => {}
           }
@@ -655,6 +673,11 @@ impl TryFrom<Edn> for CodeEntry {
         {
           schema = parse_loaded_schema_annotation(value, "CodeEntry.schema")?;
         }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("ffi")))
+          && !matches!(value, Edn::Nil)
+        {
+          ffi = Some(value.to_owned());
+        }
       }
       other => {
         return Err(format!(
@@ -673,6 +696,7 @@ impl TryFrom<Edn> for CodeEntry {
       tags,
       code,
       schema,
+      ffi,
     })
   }
 }
@@ -1455,6 +1479,7 @@ impl CodeEntry {
       tags: HashSet::new(),
       code,
       schema: DYNAMIC_TYPE.clone(),
+      ffi: None,
     }
   }
 }
@@ -2351,6 +2376,7 @@ mod tests {
       tags: tags.iter().map(|tag| EdnTag::new(*tag)).collect(),
       code: Cirru::List(vec![Cirru::leaf("def"), Cirru::leaf("answer"), Cirru::leaf("42")]),
       schema: Arc::new(CalcitTypeAnnotation::Number),
+      ffi: None,
     }
   }
 
@@ -2494,6 +2520,7 @@ mod tests {
           .map(|s| std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(s))))
           .unwrap_or_else(|| DYNAMIC_TYPE.clone())
       },
+      ffi: None,
     };
 
     // 验证 examples 字段
@@ -2550,6 +2577,15 @@ mod tests {
 
     let reloaded: CodeEntry = serialized.try_into().expect("tags should round-trip");
     assert_eq!(reloaded.tags, tagged.tags);
+
+    let mut external = tagged.clone();
+    external.ffi = Some(Edn::map_from_iter([
+      (Edn::tag("backend"), Edn::tag("js")),
+      (Edn::tag("kind"), Edn::tag("external-object")),
+    ]));
+    let external_serialized = Edn::from(&external);
+    let external_reloaded: CodeEntry = external_serialized.try_into().expect("ffi metadata should round-trip");
+    assert_eq!(external_reloaded.ffi, external.ffi);
 
     let empty_serialized = Edn::from(&parsed);
     let Edn::Struct(empty_struct) = &empty_serialized else {
@@ -3055,6 +3091,7 @@ mod tests {
       tags: HashSet::new(),
       code: vec!["defmacro", "test-fn", "(a b)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(fn_schema))),
+      ffi: None,
     };
 
     // Serialize to Edn (as From<&CodeEntry> for Edn does)
@@ -3107,6 +3144,7 @@ mod tests {
         rest_type: None,
         features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
+      ffi: None,
     };
 
     let entry_edn: Edn = Edn::from(&entry);
@@ -3151,6 +3189,7 @@ mod tests {
         rest_type: Some(crate::calcit::DYNAMIC_TYPE.clone()),
         features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
+      ffi: None,
     };
 
     let entry_edn: Edn = Edn::from(&entry);
@@ -3199,6 +3238,7 @@ mod tests {
         rest_type: None,
         features: std::sync::Arc::new(std::collections::HashSet::new()),
       }))),
+      ffi: None,
     };
 
     let entry_edn: Edn = Edn::from(&entry);
