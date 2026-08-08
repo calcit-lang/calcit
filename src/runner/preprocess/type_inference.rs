@@ -521,7 +521,10 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           Some(infer_preprocessed_function_type(xs))
         }
 
-        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs.get(2).map(CalcitTypeAnnotation::parse_type_annotation_form),
+        // Coercion type expressions have no local generics, so names are concrete refs.
+        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs
+          .get(2)
+          .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
 
         Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _) => xs
           .get(2)
