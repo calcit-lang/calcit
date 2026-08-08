@@ -80,7 +80,7 @@ let
 
 `get-in` returns `Option<Dynamic>` (`%some` for a resolved value and `%none`
 for a missing path or a `nil` encountered while traversing). Use
-`option:unwrap-or` or `tag-match` before consuming the payload.
+`.unwrap-or` or `tag-match` before consuming the payload.
 
 ## Modifying Maps
 
@@ -190,7 +190,7 @@ let
 let
     m $ {} (:a :one) (:b :two)
     val $ get m :missing
-  option:unwrap-or val :default
+  val .unwrap-or :default
   ; => :default
 ```
 
@@ -203,7 +203,9 @@ let
     freq $ foldl words init $ fn (acc w)
       let
           cur $ get acc w
-          n $ option:unwrap-or cur 0
+          n $ tag-match cur
+            (:some value) , value
+            (:none) 0
         assoc acc w (inc n)
   println freq
   ; ({} (:a 3) (:b 2) (:c 1))

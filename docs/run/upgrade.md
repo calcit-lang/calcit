@@ -92,11 +92,11 @@ cr calcit.cirru --check-only
 Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field` 和
 `.field` 直接返回字段声明类型，不再自动包装 `Option<T>`。不存在的字段会在
 静态检查阶段报告，运行期也会抛出普通错误；升级业务代码时应删除这类访问后的
-`option:unwrap`。Map 等动态容器的访问仍返回 `Option<T>`，`get-in` 也继续保留
+`.unwrap`。Map 等动态容器的访问仍返回 `Option<T>`，`get-in` 也继续保留
 可失败路径语义，不能批量删除其 unwrap。
 
 推荐先执行 `cr calcit.cirru --check-only`，按诊断逐项替换，再运行完整 JS
-回归。不要先全局删除 `option:unwrap`；只处理接收者已被推断为 Struct 且字段在
+回归。不要先全局删除 `.unwrap`；只处理接收者已被推断为 Struct 且字段在
 `defstruct` 中声明的访问。
 
 下面流程按“先确认版本，再对齐工具链，再更新依赖，最后按 CI 链路验证”的顺序执行。

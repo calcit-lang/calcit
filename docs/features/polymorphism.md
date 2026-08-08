@@ -230,10 +230,15 @@ do
 
 ## Option and Result helpers
 
-`Option T` and `Result T E` are generic core enums. Their constructors remain `%some`/`%none` and `%ok`/`%err`; the following helpers make normal pipelines explicit without losing type relationships:
+`Option T` and `Result T E` are generic core enums. Their constructors remain `%some`/`%none` and `%ok`/`%err`; use inferred methods for normal pipelines without losing type relationships:
 
-- Option: `option:some?`, `option:none?`, `option:map`, `option:unwrap-or`, `option:and-then`
-- Result: `result:ok?`, `result:err?`, `result:map`, `result:map-err`, `result:unwrap-or`, `result:and-then`
+- Option: `.some?`, `.none?`, `.map`, `.unwrap`, `.unwrap-or`, `.and-then`, `.fold`
+- Result: `.ok?`, `.err?`, `.map`, `.map-err`, `.unwrap-or`, `.and-then`
+
+For a statically known receiver, preprocessing resolves these methods and lowers
+them to their internal direct implementations. Direct names such as
+`option:unwrap-or` and `result:unwrap-or` are core implementation details, not
+the public call style.
 
 `optionally` exists only for legacy core/internal `Optional<T>` compatibility. Public function schemas reject `Optional<T>`; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
 
@@ -243,7 +248,7 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - `get-in` returns `Option<Dynamic>` while preserving a more precise payload type for literal paths when inference can resolve it.
 - List/set `max` and `min` return `Option<Number>` so empty collections are explicit.
 - String `.find-index` and `str-find-index` return `Option<Number>`; the internal `&str:find-index` primitive retains its `-1` ABI sentinel.
-- `get-env` returns `Option<String>`; use `option:unwrap-or` for a default.
+- `get-env` returns `Option<String>`; use `.unwrap-or` for a default.
 - `parse-float` returns `Result<Number,String>`, with the invalid source in `:err`.
 - Reflection uses `enum-definition: Enum -> Option<EnumDef>`, `struct-definition: Struct -> Option<StructDef>`, and `impl-origin: Impl -> Option<Trait>`.
 - `destruct-list`, `destruct-map`, `destruct-set`, and `destruct-str` return named `*Destruct` enums, preserving the familiar `:some`/`:none` branches with checked payloads.
@@ -252,7 +257,7 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 
 Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `some?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
-When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional enum access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods, `option:unwrap-or`, or `tag-match`.
+When a generic payload cannot be inferred, Calcit keeps the nominal wrapper and uses `Dynamic` only for the unknown payload—for example, `find` over a dynamically typed list is still `Option<Dynamic>`, not plain `Dynamic`. This makes migration mistakes visible. Using nullable predicates (`some?`/`nil?`), positional enum access, or raw comparison on that Option reports `W_NOMINAL_ENUM_LEGACY_USE`; switch to Option methods or `tag-match`.
 
 The same operations are available as methods on enum values:
 
@@ -262,7 +267,7 @@ do
   assert= (%none) $ optionally nil
   assert= (%some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
   assert= (%ok 1.5) $ parse-float |1.5
-  assert= |fallback $ option:unwrap-or (get-env |__MISSING_ENV__) |fallback
+  assert= |fallback $ (get-env |__MISSING_ENV__) .unwrap-or |fallback
   assert= 0 $
     %none
     , .unwrap-or 0

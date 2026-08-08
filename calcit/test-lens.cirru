@@ -5,14 +5,14 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-lens.main $ %{} :FileEntry
+    |test-lens.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing lens") (test-lens) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-lens $ %{} :CodeEntry (:doc |)
+        |test-lens $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-lens ()
               assert=
@@ -36,7 +36,7 @@
                       {} $ :c 2
                   [] :a :b :c
                   fn (value)
-                    inc $ option:unwrap value
+                    inc $ value .unwrap
                 {} $ :a
                   {} $ :b
                     {} $ :c 3
@@ -45,19 +45,19 @@
                   {} $ :a ([] 1 2 3)
                   [] :a 1
                   fn (value)
-                    inc $ option:unwrap value
+                    inc $ value .unwrap
                 {} $ :a ([] 1 3 3)
               assert=
                 update-in
                   {} $ :a (:: 'quote 1)
                   [] :a 1
                   fn (value)
-                    inc $ option:unwrap value
+                    inc $ value .unwrap
                 {} $ :a (:: 'quote 2)
               assert=
                 update-in ({}) ([] :a :b)
                   fn (value)
-                    if (option:none? value) 1 $ raise |expected-missing-value
+                    if (value .none?) 1 $ raise |expected-missing-value
                 {} $ :a
                   {} $ :b 1
               assert=
@@ -116,7 +116,7 @@
                 [] 2 2
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-lens.main $ :require
             util.core :refer $ log-title

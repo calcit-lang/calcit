@@ -111,7 +111,7 @@ let
     result2 $ assoc-in data ([] :a :b :c) 100
     result3 $ update-in data ([] :a :b :c)
       fn (current)
-        inc $ option:unwrap current
+        inc $ current .unwrap
   println result1
   ; => (%some 1)
   println result2
@@ -121,9 +121,9 @@ let
 ```
 
 `update-in` passes `Option<T>` to its updater. Existing values arrive as
-`%some value`; a missing leaf arrives as `%none`. Use `option:unwrap` only when
-the path is known to exist, or use `option:fold`/`option:unwrap-or` to define
-the creation behavior explicitly. An empty path updates `%some data`.
+`%some value`; a missing leaf arrives as `%none`. Use `.unwrap` only when the
+path is known to exist, or use `.fold`/`.unwrap-or` to define the creation
+behavior explicitly. An empty path updates `%some data`.
 
 ### Merging Maps
 
@@ -396,10 +396,18 @@ let
 let
     items $ [] ({} (:value 1)) ({} (:value 2)) ({} (:value 3))
     result1 $ reduce items 0 $ fn (acc item)
-      + acc $ option:unwrap $ get item :value
+      let
+          value $ get item :value
+        tag-match value
+          (:some number) (+ acc number)
+          (:none) , acc
     result2 $ apply +
       map items $ fn (item)
-        option:unwrap $ get item :value
+        let
+            value $ get item :value
+          tag-match value
+            (:some number) , number
+            (:none) 0
   println result1
   ; => 6
   println result2
