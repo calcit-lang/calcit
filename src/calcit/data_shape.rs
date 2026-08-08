@@ -445,7 +445,6 @@ impl GraphBuilder {
       }
       CalcitTypeAnnotation::JsObject => Err(unsupported_type("JsObject is an opaque host value")),
       CalcitTypeAnnotation::JsNullish(_) => Err(unsupported_type("JsNullish is an opaque JavaScript boundary value")),
-      CalcitTypeAnnotation::Host(_) => Err(unsupported_type("Host is an opaque FFI boundary value")),
       CalcitTypeAnnotation::Custom(value) => Err(unsupported_type(&format!("custom type `{value}` has no data shape"))),
       CalcitTypeAnnotation::Variadic(_) => Err(unsupported_type("Variadic is a function parameter constraint")),
     }

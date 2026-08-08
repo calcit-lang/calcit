@@ -1242,12 +1242,14 @@ mod tests;
 /// - `cirru.no-run`   → NoRun: parse + preprocess (type-check), skip eval
 /// - `cirru.no-cli`   → NoCli: parse + preprocess only
 /// - `cirru.no-check` → NoCheck: parse only (syntax validation)
+/// - `cirru.edn`      → Edn: parse as EDN data (e.g. schema/config snippets), not Calcit code
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CirruCheckMode {
   Run,
   NoRun,
   NoCli,
   NoCheck,
+  Edn,
 }
 
 fn cirru_fence_mode(fence: &str) -> Option<CirruCheckMode> {
@@ -1256,6 +1258,7 @@ fn cirru_fence_mode(fence: &str) -> Option<CirruCheckMode> {
     "```cirru.no-run" => Some(CirruCheckMode::NoRun),
     "```cirru.no-check" => Some(CirruCheckMode::NoCheck),
     "```cirru.cli" => Some(CirruCheckMode::NoCli),
+    "```cirru.edn" => Some(CirruCheckMode::Edn),
     _ => None,
   }
 }
@@ -1267,12 +1270,13 @@ impl std::fmt::Display for CirruCheckMode {
       CirruCheckMode::NoRun => write!(f, "no-run"),
       CirruCheckMode::NoCli => write!(f, "no-cli"),
       CirruCheckMode::NoCheck => write!(f, "no-check"),
+      CirruCheckMode::Edn => write!(f, "edn"),
     }
   }
 }
 
 /// Extract cirru code blocks from markdown content.
-/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-cli  ```cirru.no-check
+/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-cli  ```cirru.no-check  ```cirru.edn
 /// Returns (line_number, check_mode, code_content) triples.
 fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
   let mut blocks = Vec::new();
@@ -1304,6 +1308,11 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
         in_block = true;
         block_start_line = idx + 1;
         block_mode = CirruCheckMode::NoCli;
+        block_lines.clear();
+      } else if trimmed == "```cirru.edn" {
+        in_block = true;
+        block_start_line = idx + 1;
+        block_mode = CirruCheckMode::Edn;
         block_lines.clear();
       } else {
         in_non_cirru_block = true;
@@ -1720,6 +1729,12 @@ fn run_parse_only_in_process(code: &str) -> Result<(), String> {
     .map_err(|e| format!("Error: Failed to parse code snippet: {e}"))
 }
 
+fn run_edn_parse_only(code: &str) -> Result<(), String> {
+  cirru_edn::parse(code)
+    .map(|_| ())
+    .map_err(|e| format!("Error: Failed to parse code snippet as EDN: {e}"))
+}
+
 struct QuietToolOutputGuard {
   previous: bool,
 }
@@ -1771,6 +1786,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
   let _no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
   let _no_cli_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCli).count();
   let _no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
+  let _edn_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Edn).count();
   let mut failure_details = String::new();
 
   for (line_num, mode, code) in &blocks {
@@ -1786,6 +1802,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
       CirruCheckMode::NoRun => "[no-run] ",
       CirruCheckMode::NoCli => "[cli] ",
       CirruCheckMode::NoCheck => "[no-check] ",
+      CirruCheckMode::Edn => "[edn] ",
     };
 
     let check_result = match mode {
@@ -1794,6 +1811,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
         prepare_program_for_snippet(entry, &shared_files, code).and_then(|entries| run_check_only_in_process(&entries))
       }
       CirruCheckMode::NoCheck => run_parse_only_in_process(code),
+      CirruCheckMode::Edn => run_edn_parse_only(code),
     };
 
     if check_result.is_ok() {

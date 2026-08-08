@@ -49,8 +49,6 @@ fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
     message.push_str(
       "; JS FFI values stay opaque after JsNullish checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary",
     );
-  } else if actual_type.contains("host<") {
-    message.push_str("; Host FFI values remain nominal after nullability checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary");
   }
   message
 }

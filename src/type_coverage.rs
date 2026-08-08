@@ -314,8 +314,7 @@ fn scan_schema_dynamic_annotation(
     | CalcitTypeAnnotation::Ref(inner)
     | CalcitTypeAnnotation::Variadic(inner)
     | CalcitTypeAnnotation::Optional(inner)
-    | CalcitTypeAnnotation::JsNullish(inner)
-    | CalcitTypeAnnotation::Host(inner) => {
+    | CalcitTypeAnnotation::JsNullish(inner) => {
       let segment = match annotation {
         CalcitTypeAnnotation::List(_) => "list-item",
         CalcitTypeAnnotation::Set(_) => "set-item",
@@ -323,13 +322,12 @@ fn scan_schema_dynamic_annotation(
         CalcitTypeAnnotation::Variadic(_) => "variadic-item",
         CalcitTypeAnnotation::Optional(_) => "optional-item",
         CalcitTypeAnnotation::JsNullish(_) => "js-nullish-item",
-        CalcitTypeAnnotation::Host(_) => "host-item",
         _ => unreachable!("composite item annotation should be covered by the match arm"),
       };
       let nested_detail = extend_schema_dynamic_detail(detail, segment);
       let occurrence_start = occurrences.len();
       scan_schema_dynamic_annotation(inner, &format!("{path}.item"), &nested_detail, occurrences);
-      if matches!(annotation, CalcitTypeAnnotation::JsNullish(_) | CalcitTypeAnnotation::Host(_)) {
+      if matches!(annotation, CalcitTypeAnnotation::JsNullish(_)) {
         for occurrence in &mut occurrences[occurrence_start..] {
           occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
         }

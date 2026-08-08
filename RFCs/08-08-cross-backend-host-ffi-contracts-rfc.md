@@ -1,710 +1,544 @@
-# RFC：跨后端宿主/FFI 契约与稳定宿主形状
+# RFC：跨后端宿主/FFI 契约与稳定宿主能力
 
 状态：草案
 日期：2026-08-08
 
 ## 1. 摘要
 
-Calcit 应使用统一的逻辑契约模型描述 FFI 边界，同时允许 JavaScript、原生、WASM 及未来的后端保留适合各自运行时的语法和 ABI 规则。
+Calcit 的 FFI 类型声明应继续使用 Snapshot 已有的 schema 体系，而不是再发明一层包住函数 schema 的 `Ffi` 类型。
 
-共享模型包含两个相互独立的层次：
+本 RFC 将 FFI 声明拆成两个正交部分：
 
-1. **宿主契约**：可调用签名、稳定的宿主值标识、字段/方法、可空性、效应、所有权和信任级别。
-2. **后端传输**：JavaScript 属性访问、原生 registered-proc/句柄约定、WASM 标量或线性内存 ABI，以及后端特定的符号绑定。
+1. `CodeEntry :schema` 描述 Calcit 看见的类型。函数仍使用 `:: 'Fn`，trait、impl、struct 等定义仍使用 `:: 'Trait`、`:: 'Impl`、`:: 'Struct`。
+2. `CodeEntry :ffi` 描述后端如何实现这个定义，例如 JavaScript 宿主路径、属性读写、native method call、原生注册符号或 WASM module/field。它是 lowering 元数据，不参与普通类型匹配。
 
-后端声明会被规范化为 `HostCallableContract`。共享预处理负责验证源码层类型和能力；随后由后端适配器验证每种边界类型是否具有 ABI 表示。
+JavaScript 宿主对象不建立一套类似 TypeScript 的结构化类型系统。稳定成员以 Calcit trait 描述：trait 方法签名负责参数和返回类型，简短的 `:ffi :members` 映射负责把 trait 调用生成成 JavaScript 属性读取、属性写入或方法调用。
 
-JavaScript 是首个完整使用宿主形状的后端，因为 DOM 和 JavaScript API 会暴露稳定属性及接收者方法。本 RFC 不尝试建模 TypeScript、JavaScript 原型、任意变异、重载解析、条件类型或完整的 DOM 类型层级。
+这一模型只要求契约足以指导生成正确的目标代码，不追求精确复制 JavaScript 的原型、重载、可选属性、联合类型和完整 DOM 层级。
 
-本 RFC 的核心目标不是精确描述外部类型，而是把 Calcit 已有的类型约束延伸到 FFI 边界。声明只覆盖应用真正依赖的稳定成员；未声明部分继续保持不透明。这样可以优先阻止最常见的错误，例如属性名拼错、可空值直接解引用、写入错误类型、方法参数不匹配，以及把宿主对象误当作普通 Calcit 数据。
+## 2. 修订原则
 
-## 2. 动机
+本 RFC 明确放弃以下设计：
 
-当前的边界机制已经体现了目标模型的一部分：
+- 不引入 `(:: 'Ffi {...})` schema wrapper；
+- 不在 `:schema` payload 中保存 `:backend`、`:implementation`、`:transport` 或成员表；
+- 不把普通 EDN map 伪装成新的类型表达式；
+- 不为宿主字段另建复杂的 shape/type/member AST；
+- 不把 JavaScript `this`、原型继承、getter 效应或 TypeScript 重载完整搬入 Calcit；
+- 不让 `JsObject` 因属性名称相同而自动获得更强类型。
 
-- 函数 schema 携带参数/返回类型、泛型、`:where`、剩余参数，以及 `:js-ffi` 等 `:features`。
-- JavaScript 原始值以 `JsNullish<JsObject>` 保守表示。
-- 原生注册过程具有描述参数个数、平台、稳定性、回调位置和效应标签的描述符。
-- `defwasm-import` 和 `defwasm-export` 声明宿主符号，并使用定义 schema 进行 `Number`/`String` ABI 验证。
+修订后的设计遵循三个已有事实：
 
-这些机制虽有用，却彼此割裂：
+- Snapshot 的 `:schema` 是 Cirru EDN 类型数据，不是源码 AST，也不需要额外 `quote`；
+- 函数 schema 的规范形式是 `:: 'Fn`，类型名使用 quoted symbol，例如 `'String`、`'Number`、`'JsObject`；
+- Calcit 已有 trait、trait method schema、泛型与 `:where`，宿主能力应尽量复用这些机制。
 
-- JS 推断了解宿主可空性，却不了解稳定的属性类型。
-- registered-proc 描述符了解可用性和参数个数，却不共享完整的函数 schema 检查器。
-- WASM 在代码生成内部验证 ABI 可表示性，而不是通过可复用的宿主契约阶段验证。
-- 即使底层错误相同，诊断仍使用后端特定的表述：未声明的能力、不完整的签名、不可表示的类型、不安全的宿主值流或无效的边界转换。
+## 3. 目标与非目标
 
-目标不是统一语法，而是在语义相同之处统一逻辑。
+### 3.1 目标
 
-## 3. 目标
+1. 让 JS、原生 registered proc、WASM import/export 共享现有函数 schema 检查。
+2. 用现有 trait 体系描述少量稳定宿主操作。
+3. 让 codegen 能从声明确定应生成属性读取、属性写入还是宿主方法调用。
+4. 保留 `JsObject` 与 `JsNullish<T>` 的不透明边界语义。
+5. 让 Snapshot 中的声明可由 `cr query`、生成器和静态分析直接读取。
+6. 保持声明足够小，使绑定模块只描述应用实际使用的 API。
 
-1. 为导入/导出的宿主可调用项定义统一的内部契约。
-2. 定义具名、稳定的宿主值类型，但不将其等同于 Calcit `Struct` 或 `Map`。
-3. 跨后端复用参数、返回值、泛型绑定、回调、能力和诊断检查。
-4. 保留后端特定的 ABI、所有权、可空性和符号绑定规则。
-5. 在不模拟 TypeScript 的前提下，使 DOM 和常规 JavaScript API 绑定切实可用。
-6. 允许原生和 WASM FFI 渐进采用同一契约。
-7. 默认保持原始/未验证宿主值的不透明性。
-8. 让宿主声明复用现有 Calcit 类型写法；高频浏览器绑定保持简短，少见的 ABI/所有权细节才使用完整形式。
+### 3.2 非目标
 
-## 4. 非目标
+- 导入或完整解释 `.d.ts`；
+- TypeScript 结构化类型、联合/交叉类型、条件类型和重载解析；
+- 完整 DOM 继承树；
+- JavaScript 原型变异、Proxy 或动态属性创建；
+- 跨后端统一 ABI、内存布局或所有权模型；
+- 让宿主对象自动成为 Calcit `Struct`、`Map` 或可序列化数据；
+- 在本 RFC 中公开仓库内部的 WASM 验证后端。
 
-- 导入或求值任意 TypeScript 声明文件。
-- TypeScript 结构化类型、条件/映射类型、声明合并、重载排序或环境模块。
-- 建模任意 JavaScript 原型变异、具有隐藏效应的 getter、代理或动态属性创建。
-- 使 Calcit 结构体与 JavaScript 对象、原生结构体或 WASM 内存记录二进制兼容。
-- 为所有后端提供统一的源码语法。
-- 提供通用序列化格式或零拷贝保证。
-- 以宿主可空性或宿主错误取代名义类型 `Option`/`Result`。
-- 在本 RFC 中将内部 WASM 验证后端作为公开目标。
+## 4. Snapshot 中的规范类型写法
 
-## 5. 术语
+### 4.1 函数定义
 
-- **宿主**：普通 Calcit 值与调用之外的执行环境。
-- **宿主值**：其表示或行为由宿主运行时所有的值。
-- **宿主类型**：描述 Calcit 可以在宿主值上安全执行哪些操作的具名契约。
-- **宿主形状**：宿主类型的字段/方法投影。宿主类型可以是不透明的，因而没有形状。
-- **宿主可调用项**：FFI 边界处导入或导出的函数。
-- **逻辑类型**：静态检查所使用、Calcit 可见的类型关系。
-- **传输类型**：逻辑类型的后端 ABI 表示。
-- **解码器**：从不可信宿主值到更强契约或普通 Calcit 数据的受检转换。
-- **可信断言**：由外部契约证明合理的显式未检查转换。
+函数的 `:schema` 继续直接保存 `Fn` schema：
 
-## 6. 设计原则
+```cirru.edn
+{}
+  |read-text $ %{} 'CodeEntry (:doc "|Read text through a host binding")
+    :code $ quote &runtime-implementation
+    :examples $ []
+    :schema $ :: 'Fn
+      {}
+        :args $ [] 'String
+        :return 'String
+        :features $ #{} :js-ffi
+    :tags $ #{} :ffi
+```
 
-### 6.1 逻辑契约与 ABI 传输相互独立
+这里没有 `:callable`，也没有 `Ffi` wrapper。`CodeEntry.schema` 解析后仍然是现有的 `CalcitTypeAnnotation::Fn`。
 
-一个 `String -> String` 宿主可调用项只有一个逻辑签名。JavaScript 可以直接传递宿主字符串，原生代码可能使用由 ABI 管理的字符串，而 WASM 当前传递编码为 `f64` 的逻辑指针。这些传输细节不得泄漏到普通函数类型匹配中。
+### 4.2 trait、impl 与数据定义
 
-### 6.2 宿主类型不是 Calcit 结构体
+定义种类沿用当前 Snapshot 表示：
 
-Calcit `Struct` 具有 Calcit 的构造、字段、相等性、序列化和后端表示语义，JavaScript DOM 节点或原生文件句柄则不具备这些语义。因此，即便宿主类型暴露稳定的具名字段，它仍拥有独立的名义标识。
+```cirru.edn
+:: 'Trait
+```
 
-### 6.3 原始边界保持不透明
+```cirru.edn
+:: 'Impl
+```
 
-未声明的 `js/...`、`aget`、原生方法调用、动态加载的符号及未知宿主结果仍会产生不透明宿主值。增加形状语法后，也不得仅根据属性拼写推断可信形状。
+```cirru.edn
+:: 'Struct
+```
 
-### 6.4 更强类型需要证据
+宿主能力声明使用 `Trait`。它不是普通 Calcit 数据结构，也不需要新增 `Shape` schema kind。
 
-值只能通过以下方式之一获得具名宿主类型：
+### 4.3 类型引用
 
-- 声明的宿主可调用项返回类型；
-- 受检解码器；
-- 后端提供且标识匹配的描述符；
-- unsafe/互操作边界中的显式可信断言。
+类型位置统一使用 quoted symbol 和现有 enum-tuple 形式。下面用一个 EDN list 并列展示这些形式：
 
-空值/存在性检查只收窄可空性，并不能证明载荷形状。
+```cirru.edn
+[] 'String 'respo.dom/DomElement
+  :: 'JsNullish 'respo.dom/DomElement
+  :: 'List 'String
+  :: 'Fn $ {}
+    :args $ [] 'String
+    :return 'Bool
+```
 
-### 6.5 共享检查先于后端 lowering
+`:string`、`:fn`、`:js-object` 等旧 tag 形式可以作为兼容输入，但新文档和生成器应输出规范的 quoted-symbol 形式。
 
-调用参数个数、参数/返回值匹配、泛型绑定、回调签名、能力要求、可空性和宿主标识属于语言检查。ABI 可表示性、符号命名、内存布局、所有权转移和接收者调用约定属于适配器检查。
+## 5. `CodeEntry :ffi` lowering 元数据
 
-## 7. 共享内部模型
+### 5.1 字段边界
 
-以下名称仅用于示意 Rust 结构，并非已承诺的公开 API。
+本 RFC 建议给 `CodeEntry` 增加可选的原始 EDN 字段：
 
 ```rust
-pub struct HostCallableContract {
-  pub backend: HostBackend,
-  pub direction: HostDirection,
-  pub source_name: Arc<str>,
-  pub host_symbol: HostSymbol,
-  pub fn_type: Arc<CalcitFnTypeAnnotation>,
-  pub required_features: Arc<HashSet<EdnTag>>,
-  pub effects: Arc<HashSet<EdnTag>>,
-  pub stability: HostStability,
-  pub transport: HostTransportSpec,
-}
-
-pub enum HostDirection {
-  Import,
-  Export,
-}
-
-pub enum HostBackend {
-  Js,
-  Native,
-  Wasm,
-  Wasi,
-  Named(Arc<str>),
-}
-
-pub struct HostTypeDef {
-  pub name: EdnTag,
-  pub backend: HostBackend,
-  pub fields: Arc<Vec<HostField>>,
-  pub methods: Arc<Vec<HostMethod>>,
-  pub openness: HostShapeOpenness,
-  pub transport: HostTransportSpec,
+pub struct CodeEntry {
+  pub doc: String,
+  pub examples: Vec<Cirru>,
+  pub tags: HashSet<EdnTag>,
+  pub code: Cirru,
+  pub schema: Arc<CalcitTypeAnnotation>,
+  pub ffi: Option<Edn>,
 }
 ```
 
-`HostTransportSpec` 是由后端定义并持有的元数据。共享检查器将其视为适配器输入，而非源码层类型关系。
+`:ffi` 必须在 Snapshot load/save、definition revision、diff 和 query JSON 中原样保留。解析器可以按 `:backend` 建立缓存，但 EDN 是持久化事实来源。
 
-类型注解层增加名义宿主引用：
+`:ffi` 不改变 `:schema` 的含义，也不复制函数参数和返回类型。若后端需要参数个数，应从 `Fn` schema 推导。
 
-```rust
-CalcitTypeAnnotation::Host(Arc<HostTypeDef>)
+### 5.2 JavaScript 可调用项
+
+```cirru.edn
+{}
+  |query-selector $ %{} 'CodeEntry (:doc "|Typed binding for document.querySelector")
+    :code $ quote &runtime-implementation
+    :examples $ []
+    :schema $ :: 'Fn
+      {}
+        :args $ [] 'String
+        :return $ :: 'JsNullish 'respo.dom/DomElement
+        :features $ #{} :js-ffi
+    :tags $ #{} :ffi
+    :ffi $ {}
+      :backend :js
+      :kind :import
+      :target $ [] |document |querySelector
+      :invoke :method
 ```
 
-迁移期间，现有 `JsObject` 仍是 JavaScript 的不透明顶层类型。现有 `JsNullish<T>` 仍是 JavaScript 的 null/undefined 包装器，既可包装 `JsObject`，也可包装具名 JS 宿主类型。
+`target` 是字符串路径。`:invoke :method` 表示最后一段必须保留接收者调用语义，生成：
 
-## 8. 源码层宿主类型声明
-
-本 RFC 提议将 `defhost-type` 作为稳定宿主值标识的通用声明形式。后端调用声明可以继续采用专用形式。
-
-```cirru.no-check
-defhost-type DomInput $ {}
-  :backend :js
-  :openness :closed
-  :fields $ {}
-    |value $ {} (:type 'String) (:presence :required) (:access :read-write)
-    |checked $ {} (:type 'Bool) (:presence :required) (:access :read-write)
-    |form $ {} (:type 'DomForm) (:presence :nullish) (:access :read)
-  :methods $ {}
-    |focus $ {}
-      :args $ []
-      :return 'Unit
-      :effects $ #{} :dom
+```js
+document.querySelector(selector)
 ```
 
-原生不透明资源可以使用相同的无字段标识形式：
+而不是先取出 `document.querySelector` 再作为无接收者函数调用。
 
-```cirru.no-check
-defhost-type FileHandle $ {}
-  :backend :native
-  :openness :opaque
-  :transport $ {} (:kind :handle) (:ownership :owned)
+MVP 只需要三种 JavaScript import 调用方式：
+
+| `:invoke` | 生成语义 |
+| --- | --- |
+| `:function` | 调用路径指向的函数 |
+| `:method` | 以前缀路径为 receiver 调用最后一段 |
+| `:value` | 只读取路径指向的值 |
+
+构造器可在实际用例出现时增加 `:constructor`，不必预先设计完整 JavaScript invocation model。
+
+### 5.3 原生与 WASM 可调用项
+
+原生 registered proc 使用相同的函数 schema，只把符号信息放在 `:ffi`：
+
+```cirru.edn
+{}
+  |read-file $ %{} 'CodeEntry (:doc "|Registered native procedure")
+    :code $ quote &runtime-implementation
+    :examples $ []
+    :schema $ :: 'Fn
+      {}
+        :args $ [] 'String
+        :return $ :: 'Result 'String 'String
+    :tags $ #{} :ffi
+    :ffi $ {}
+      :backend :native
+      :kind :registered-proc
+      :symbol |read-file
 ```
 
-WASM 可见的内存记录最终可以使用：
+WASM import/export 仍由现有专用语法声明；预处理后可暴露等价的 binding 元数据：
 
-```cirru.no-check
-defhost-type PixelBuffer $ {}
-  :backend :wasm
-  :openness :opaque
-  :transport $ {}
-    :kind :linear-memory
-    :codec 'app.ffi/PixelBufferCodec
+```cirru.edn
+{}
+  :ffi $ {}
+    :backend :wasm
+    :kind :import
+    :module |host
+    :symbol |string-upcase
+    :transport :string-handle
 ```
 
-WASM 声明并不意味着可以访问属性。值如何跨越线性内存由编解码器/布局适配器决定。
+逻辑签名仍从该 definition 的 `:: 'Fn` schema 读取。`:transport` 只供 WASM adapter 检查和 lowering，不参与普通 Calcit 类型匹配。
 
-### 8.1 规范宿主类型引用
+## 6. 用 trait 描述宿主能力
 
-具名宿主类型使用普通的具名 schema 引用：
+### 6.1 基本模型
 
-```cirru.no-check
-:: 'Fn $ {}
-  :args $ [] 'DomInput
-  :return $ :: 'JsNullish 'DomForm
-  :features $ #{} :js-ffi
+一个宿主 trait 由两部分组成：
+
+- `deftrait` 中的方法 schema：供现有类型检查、泛型绑定和返回类型推断使用；
+- `:ffi :members` 中的方法映射：供目标后端生成宿主操作。
+
+属性也表示成方法能力。这样无需另外设计 field schema、读写权限 enum、receiver schema 或 method schema。
+
+```cirru.edn
+{}
+  |DomElement $ %{} 'CodeEntry (:doc "|Small stable capability set for DOM elements")
+    :code $ quote
+      deftrait DomElement
+        .id $ :: 'Fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T
+            :return 'String
+        .set-id! $ :: 'Fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T 'String
+            :return 'Unit
+        .text-content $ :: 'Fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T
+            :return $ :: 'JsNullish 'String
+        .set-text-content! $ :: 'Fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T $ :: 'JsNullish 'String
+            :return 'Unit
+        .matches? $ :: 'Fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T 'String
+            :return 'Bool
+        .query-selector $ :: 'Fn
+          {}
+            :generics $ [] 'T
+            :args $ [] 'T 'String
+            :return $ :: 'JsNullish 'respo.dom/DomElement
+    :examples $ []
+    :schema $ :: 'Trait
+    :tags $ #{} :ffi :js-host
+    :ffi $ {}
+      :backend :js
+      :kind :host-trait
+      :members $ {}
+        :id $ [] :get |id
+        :set-id! $ [] :set |id
+        :text-content $ [] :get |textContent
+        :set-text-content! $ [] :set |textContent
+        :matches? $ [] :call |matches
+        :query-selector $ [] :call |querySelector
 ```
 
-`TypeRef` 在当前解析具名结构体/枚举的同一阶段解析为 `Host`。这样既可保持函数 schema 的名义性，也避免引入第二套引用语法。
+每个 trait method schema 都把 receiver 放在 `:args` 的第一个位置，这与 Calcit 当前 trait method 检查一致。`'T` 只用于让 receiver 类型参与现有泛型绑定；它不表示 JavaScript 的结构泛型。
 
-### 8.2 字段契约
+### 6.2 成员映射
 
-MVP 字段元数据包括：
+MVP 的成员映射只有三种：
 
-- `:type`：逻辑字段类型；
-- `:presence`：`:required` 或 `:nullish`；
-- `:access`：`:read`、`:write` 或 `:read-write`。
-
-`required` 表示绑定契约保证值存在，而不是根据观察到的对象推断得出。`nullish` 表示读取会产生后端的可空性包装器；对 JavaScript 而言即 `JsNullish<T>`。
-
-### 8.3 方法契约
-
-方法显式保留接收者语义：
-
-- 参数不包含接收者；
-- 后端适配器执行接收者调用；
-- 返回值可空性独立声明；
-- 每个方法均可附加效应/能力。
-
-宿主方法不会仅因读取属性就转换为普通 Calcit `Fn`。这可避免丢失 JavaScript `this`、原生 vtable/句柄上下文或 WASM 资源标识。
-
-### 8.4 开放、封闭与不透明形状
-
-- `:opaque`：静态情况下没有可用的字段或方法投影。
-- `:closed`：访问未声明的属性/方法会产生诊断。
-- `:open`：检查已声明成员；未声明成员回退为后端不透明宿主类型，并产生显式的低置信度诊断。
-
-MVP 支持 `:opaque` 和 `:closed`。`:open` 延后至具体生态用例提出需求时实现。
-
-### 8.5 高频声明简写
-
-完整字段元数据适合生成器和少见边界，但手写 DOM 绑定不应被重复的 `:type`、`:presence`、`:access` 淹没。`defhost-type` 因此接受以下等价短写，并在预处理阶段规范化为 8.2 节的完整字段契约：
-
-```cirru.no-check
-:fields $ {}
-  |tagName 'String                 ; required + read
-  |value $ :rw 'String            ; required + read-write
-  |parentElement $ :? 'DomElement ; nullish + read
-  |dataset $ :ro 'DomStringMap    ; required + read
-```
-
-- `field Type`：必需、只读字段，是最常用的默认形式；
-- `field (:rw Type)`：必需、可读写字段；
-- `field (:? Type)`：可空、只读字段，JS 读取结果为 `JsNullish<Type>`；
-- `field (:?rw Type)`：可空、可读写字段；
-- `:ro` 是只读的显式写法，主要供生成器保持输出规整。
-
-方法短写直接复用 Calcit 函数 schema 的 `:args`/`:return` 关系，只省略重复的 map 键：
-
-```cirru.no-check
-:methods $ {}
-  |focus $ [] 'Unit
-  |matches $ [] 'String => 'Bool
-  |querySelector $ [] 'String => (:: 'JsNullish 'DomElement)
-```
-
-其中 `[] Return` 表示无参数方法，`[] Arg... => Return` 表示有参数方法。需要 `:effects`、泛型、回调或后端传输信息时，仍使用完整 schema。短写只是语法糖，不引入另一套类型系统。
-
-### 8.6 浏览器基础契约案例
-
-浏览器绑定应按应用需要声明小型名义接口，而不是复制整套 DOM 继承树。以下集合覆盖常见范式，并展示声明之间如何复用现有 Calcit 类型：
-
-```cirru.no-check
-defhost-type DomEvent $ {}
-  :backend :js
-  :fields $ {}
-    |type 'String
-    |target $ :? 'DomEventTarget
-    |currentTarget $ :? 'DomEventTarget
-  :methods $ {}
-    |preventDefault $ [] 'Unit
-
-defhost-type DomEventTarget $ {}
-  :backend :js
-  :methods $ {}
-    |addEventListener $ [] 'String (:: 'Fn $ {} (:args $ [] 'DomEvent) (:return 'Unit)) => 'Unit
-    |removeEventListener $ [] 'String (:: 'Fn $ {} (:args $ [] 'DomEvent) (:return 'Unit)) => 'Unit
-
-defhost-type DomElement $ {}
-  :backend :js
-  :fields $ {}
-    |id $ :rw 'String
-    |textContent $ :?rw 'String
-    |parentElement $ :? 'DomElement
-    |children 'DomElementList
-  :methods $ {}
-    |matches $ [] 'String => 'Bool
-    |querySelector $ [] 'String => (:: 'JsNullish 'DomElement)
-    |querySelectorAll $ [] 'String => 'DomElementList
-    |getAttribute $ [] 'String => (:: 'JsNullish 'String)
-    |setAttribute $ [] 'String 'String => 'Unit
-
-defhost-type DomInput $ {}
-  :backend :js
-  :fields $ {}
-    |value $ :rw 'String
-    |checked $ :rw 'Bool
-    |disabled $ :rw 'Bool
-    |form $ :? 'DomElement
-  :methods $ {}
-    |focus $ [] 'Unit
-
-defhost-type DomElementList $ {}
-  :backend :js
-  :fields $ {}
-    |length 'Number
-  :methods $ {}
-    |item $ [] 'Number => (:: 'JsNullish 'DomElement)
-```
-
-这些类型不声称精确等价于浏览器内建接口。例如 `DomInput` 不需要描述 `HTMLInputElement` 的全部继承成员；它只约束 Calcit 程序实际使用的字段和方法。不同模块可以声明不同粒度的接口，但同一个值不能因为成员名字相似而自动在接口之间转换。
-
-常见浏览器入口使用函数 schema 声明：
-
-```cirru.no-check
-:: 'Fn $ {}
-  :args $ [] 'String
-  :return $ :: 'JsNullish 'DomElement
-  :features $ #{} :js-ffi
-defn query-selector (selector)
-  .?!querySelector js/document selector
-
-:: 'Fn $ {}
-  :args $ [] 'Number (:: 'Fn $ {} (:args $ []) (:return 'Unit))
-  :return 'JsTimer
-  :features $ #{} :js-ffi
-defn set-timeout (delay task)
-  js/setTimeout task delay
-
-:: 'Fn $ {}
-  :args $ [] 'JsTimer
-  :return 'Unit
-  :features $ #{} :js-ffi
-defn clear-timeout (timer)
-  js/clearTimeout timer
-```
-
-`JsTimer` 应声明为 `:opaque` 宿主类型，避免把浏览器数字句柄或 Node.js 对象句柄错误地固定为 `Number`。类似地，`Promise<T>`、`Response`、`Storage`、`Location` 和 `CanvasRenderingContext2D` 都应按实际使用面声明，不追求平台定义的完整镜像。
-
-### 8.7 常见转换范式
-
-FFI 中转换很多，但大部分可归入少数明确边界：
-
-| 来源 | 目标 | 默认规则 |
+| 映射 | Calcit 调用 | JavaScript lowering |
 | --- | --- | --- |
-| `JsNullish<T>` | `T` | 通过 `js-present?`/`js-nullish?` 做存在性收窄 |
-| `JsObject` | `Host<T>` | 受检解码器或显式可信断言 |
-| `Host<T>` | `Host<U>` | 不按结构自动转换；使用已声明的宿主转换或可信断言 |
-| `Host<T>` | Calcit `Struct`/`Map` | 显式读取字段，或使用受检数据解码器 |
-| Calcit `Struct`/`Map` | `Host<T>` | 后端构造器/编码器，不因字段相同而自动转换 |
-| 回调参数 | `Host<T>` | 由声明的回调 schema 提供约束 |
-| `Promise<T>` | `T` | 通过 `js-await`，由 Promise 契约提供结果类型 |
+| `[] :get |name` | `(.name x)` | `x.name` |
+| `[] :set |name` | `(.set-name! x v)` | `x.name = v` |
+| `[] :call |name` | `(.method x a)` | `x.name(a)` |
 
-实现应优先保留这些边界，而不是增加隐式转换。类型约束的价值来自尽早暴露错误；若为了“方便”按字段结构自动兼容，FFI 又会退回到容易误用的动态状态。
+对于不是合法 JavaScript identifier 的字段名，codegen 自动改用 bracket access。binding 作者无需在类型层描述这一差异。
 
-## 9. 后端可调用项声明
+setter 的 schema 必须是两个参数：receiver 与写入值。`:return` 应为 `'Unit`。`:set` lowering 返回的 JavaScript assignment value 不进入 Calcit 逻辑类型。
 
-后端特定语法继续有效，但每项声明都必须规范化为 `HostCallableContract`。
+### 6.3 trait 约束
 
-### 9.1 JavaScript
+普通函数通过现有 `:where` 使用宿主能力：
 
-JavaScript 绑定可以是带有强 schema 和 `:js-ffi` 的普通定义，也可以采用未来用于绑定模块/全局符号的声明形式。现有原始语法仍然可用且保持不透明。
+```cirru.edn
+{}
+  |read-element-id $ %{} 'CodeEntry (:doc "|Read id from any value with DomElement capability")
+    :code $ quote
+      defn read-element-id (element)
+        .id element
+    :examples $ []
+    :schema $ :: 'Fn
+      {}
+        :generics $ [] 'T
+        :args $ [] 'T
+        :return 'String
+        :where $ {}
+          'T 'respo.dom/DomElement
+```
+
+这里完全沿用现有泛型与 trait bound 语义。codegen 在解析 `.id` 时得到 `DomElement` trait，再从该 trait definition 的 `:ffi :members` 选择 JS lowering。
+
+宿主 trait 不通过运行时 `impl-traits` 附加到 JavaScript 对象。它由可信 binding 的返回 schema、受检转换或显式 unsafe 边界提供静态证据。若没有这些证据，原始值仍是 `JsObject`。
+
+### 6.4 小型浏览器契约
+
+绑定模块应定义少量面向用途的 trait，不复制 DOM 继承层级。例如输入控件可以单独定义：
 
 ```cirru.no-check
-defn query-input (selector)
-  .?!querySelector js/document selector
+deftrait DomInput
+  .value $ :: 'Fn
+    {}
+      :generics $ [] 'T
+      :args $ [] 'T
+      :return 'String
+  .set-value! $ :: 'Fn
+    {}
+      :generics $ [] 'T
+      :args $ [] 'T 'String
+      :return 'Unit
+  .checked? $ :: 'Fn
+    {}
+      :generics $ [] 'T
+      :args $ [] 'T
+      :return 'Bool
+  .set-checked! $ :: 'Fn
+    {}
+      :generics $ [] 'T
+      :args $ [] 'T 'Bool
+      :return 'Unit
+  .focus! $ :: 'Fn
+    {}
+      :generics $ [] 'T
+      :args $ [] 'T
+      :return 'Unit
 ```
 
-Schema：
+对应映射只需要：
 
-```cirru.no-check
-:: 'Fn $ {}
-  :args $ [] 'String
-  :return $ :: 'JsNullish 'DomInput
-  :features $ #{} :js-ffi
+```cirru.edn
+{}
+  :members $ {}
+    :value $ [] :get |value
+    :set-value! $ [] :set |value
+    :checked? $ [] :get |checked
+    :set-checked! $ [] :set |checked
+    :focus! $ [] :call |focus
 ```
 
-该 schema 之所以可信，仅因为此函数是显式 FFI 绑定。若无解码器或可信断言，普通函数不能将任意 `JsObject` 表达式注解为 `DomInput`。
+`DomInput` 不必声明 `HTMLInputElement` 的所有父接口。需要 `form`、`disabled` 或 selection API 时再按真实使用补充。
 
-### 9.2 原生注册过程
+## 7. 不透明性、可空性与信任
 
-`RegisteredProcDescriptor` 应演进为引用或嵌入源码定义所使用的同一套完整函数 schema：
+### 7.1 原始值保持不透明
 
-```rust
-pub struct RegisteredProcDescriptor {
-  pub fn_type: Option<Arc<CalcitFnTypeAnnotation>>,
-  // 现有的平台、稳定性、文档、回调及标签元数据
-}
+现有规则保持不变：
+
+- 原始 `js/...`、`aget`、`.-field` 和 `.!method` 的未知结果仍推断为 `JsNullish<JsObject>`；
+- `js-present?` 只消除外层 `JsNullish`，结果仍是 `JsObject`；
+- 属性名称相同不能证明某个宿主 trait；
+- `JsObject` 不能自动匹配 Calcit `Struct`、`Map`、`String` 或宿主 trait。
+
+### 7.2 更强契约的来源
+
+宿主值只能通过以下路径获得 trait 契约：
+
+1. 带 `:ffi` 的可信 binding 在 `Fn` schema 中声明返回该 trait；
+2. 受检 decoder 验证必要条件后返回该 trait 或普通 Calcit 数据；
+3. 后端注册描述符提供匹配的宿主类型标识；
+4. 显式 unsafe/FFI 断言，并记录目标 trait 与源码位置。
+
+普通函数不能只靠 `assert-type` 把任意 `JsObject` 变成 `DomElement`。`assert-type` 只检查，不改变运行值，也不构成宿主契约证据。
+
+### 7.3 可空性
+
+JavaScript 的 `null`/`undefined` 继续使用 `JsNullish<T>`。宿主 trait 不自行携带 optional/nullable 标记：
+
+```cirru.edn
+:: 'JsNullish 'respo.dom/DomElement
 ```
 
-迁移期间仍接受参数个数元数据。当 `fn_type` 存在时，参数个数由其推导，不一致会成为注册错误。平台/稳定性/标签直接映射到共享可调用项契约。
+在调用 `.id`、`.focus!` 等 trait method 前，接收者必须已经通过 `js-present?` 等路径收窄。存在性检查只证明值存在，不重新验证成员。
 
-原生不透明句柄使用具名宿主类型。运行时注册负责维护从 `Calcit` 宿主值表示到该名义标识的映射；普通 Calcit 代码无法构造这种值。
+业务缺失继续使用 `Option<T>`，可恢复失败继续使用 `Result<T,E>`，无业务返回值使用 `Unit`。这些类型不能与 `JsNullish<T>` 静默互换。
 
-### 9.3 WASM 导入与导出
+## 8. JavaScript codegen 规则
 
-现有语法保持不变：
+当 trait definition 带有 `:ffi {:backend :js, :kind :host-trait}` 时，JS codegen 对该 trait 的静态调用执行专用 lowering：
 
-```cirru.no-check
-defwasm-import host-string-upcase (text) |host |string-upcase
+```text
+(.id element)
+=> element.id
 
-defwasm-export wasm-ffi-upcase (text)
-  host-string-upcase text
+(.set-id! element next-id)
+=> element.id = nextId
+
+(.matches? element selector)
+=> element.matches(selector)
 ```
 
-定义 schema 成为 `HostCallableContract` 中的逻辑签名。WASM 适配器检查可表示性，并将各类型降低为当前 ABI 表示。
+该 lowering 必须在 trait 已静态解析且成员映射唯一时发生。以下情况应拒绝生成：
 
-初期支持的逻辑类型仍限于已实现的 `Number`、`String` 和 `Unit`。只有当宿主类型的 `:transport` 具有受支持的 WASM 编解码器/布局时，才会接受该宿主类型。这样可使形状检查与 ABI 支持独立演进。
+- trait method 没有对应成员映射；
+- 成员映射与 method arity 不一致；
+- `:get` 带有 receiver 之外的参数；
+- `:set` 不是 receiver 加一个值；
+- 当前后端与 `:ffi :backend` 不一致；
+- receiver 仍为 `JsNullish<T>`；
+- 同一个 method 在多个 trait 中产生无法消解的宿主 lowering。
 
-### 9.4 WASI
+Native codegen 不应尝试解释 JS host trait。反过来，JS codegen 也不应把 native handle trait 当作 JavaScript 属性访问。
 
-WASI 使用共享的可调用项/类型契约及独立适配器。不能将其视为通用 WASM 的同义词：WASI 的能力、资源、字符串/列表约定和错误模型均不同于由 JavaScript 托管的内部 WASM 模块。
+## 9. 跨后端共享边界
 
-## 10. 共享验证管线
+共享层只负责 Calcit 逻辑契约：
 
-```mermaid
-flowchart LR
-  A[后端声明或注册描述符] --> B[规范化 HostCallableContract]
-  B --> C[共享契约验证]
-  C --> D{逻辑契约有效？}
-  D -->|否| E[统一诊断]
-  D -->|是| F[后端 ABI 适配器]
-  F --> G{可表示且受支持？}
-  G -->|否| H[后端特定 ABI 诊断]
-  G -->|是| I[已预处理/降低的宿主调用]
-```
+- `Fn` 参数、返回值、rest 参数与泛型；
+- `:where` trait bound；
+- 回调的嵌套 `Fn` schema；
+- `JsNullish`、`Option`、`Result` 与 `Unit` 的逻辑区别；
+- definition kind 与 `:ffi :kind` 的基本一致性；
+- `:features` 能力要求。
 
-### 10.1 共享检查
+后端 adapter 负责：
 
-共享验证器负责：
+- 宿主符号和路径解析；
+- JavaScript receiver/method 调用；
+- native 注册表和句柄表示；
+- WASM ABI、线性内存和 codec；
+- 异常、trap、panic 与异步机制；
+- 所有权和生命周期。
 
-- 可调用项种类和完整函数 schema；
-- 必需/固定/剩余参数个数；
-- 参数和返回类型匹配；
-- 泛型绑定和 `:where` 约束；
-- 回调签名和位置；
-- 宿主类型标识和后端兼容性；
-- 可空性包装器兼容性；
-- 必需的函数/方法能力；
-- 导入/导出方向规则；
-- 稳定性和效应元数据规范化；
-- 受检边界转换与可信边界转换之分。
+这些后端事实不进入普通 `CalcitTypeAnnotation::matches_with_bindings`。
 
-这些检查应复用现有的 `CalcitFnTypeAnnotation`、`matches_with_bindings`、调用参数检查、返回值检查和结构化诊断。
+## 10. 诊断
 
-### 10.2 后端适配器检查
+MVP 建议使用少量稳定诊断：
 
-适配器负责：
+- `E_FFI_METADATA`：`:ffi` 缺字段、字段类型错误或 kind 不一致；
+- `E_FFI_BACKEND_MISMATCH`：binding/host trait 不适用于当前后端；
+- `E_FFI_MEMBER_UNKNOWN`：host trait method 没有 lowering 映射；
+- `E_FFI_MEMBER_ARITY`：trait method schema 与 `:get`/`:set`/`:call` 不兼容；
+- `E_FFI_OPAQUE_VALUE`：原始 `JsObject` 被当作更强宿主 trait；
+- `E_FFI_NULLABLE_DEREF`：`JsNullish<T>` 未收窄即调用宿主能力；
+- `E_FFI_ABI_UNSUPPORTED`：逻辑类型无法由目标 adapter 传输。
 
-- 符号/模块命名；
-- 从逻辑类型到传输类型的映射；
-- 接收者调用约定；
-- 所有权/借用/生命周期规则；
-- 回调跳板支持；
-- 同步/异步限制；
-- 内存布局和编解码器可用性；
-- 错误/陷阱/异常转换；
-- 后端可用性。
+参数或返回值不匹配继续使用现有类型诊断，不需要再造一套 `HOST_TYPE_MISMATCH`。
 
-### 10.3 诊断
+## 11. 兼容性与迁移
 
-共享诊断代码应尽可能与后端无关：
+1. 没有 `:ffi` 的现有定义行为不变。
+2. `JsObject`、`JsNullish<JsObject>` 和 `:features #{:js-ffi}` 保持现有语义。
+3. 现有手写 JS binding 可以继续使用普通 `defn`；只有需要生成或查询宿主绑定时才增加 `:ffi`。
+4. `defwasm-import`、`defwasm-export` 与 registered proc 先只在 query 中暴露规范化 metadata，不立即改变运行时。
+5. 旧的 `:string`、`:: :fn` 等 schema 输入仍可读取；重新保存和新生成内容使用 quoted-symbol 形式。
+6. Snapshot loader 在正式写入 `:ffi` 前必须先做到未知字段无损保留，或明确实现 `CodeEntry.ffi`；不能让一次 `cr edit` 静默删除 binding 元数据。
 
-- `E_HOST_CONTRACT_SCHEMA`：可调用项 schema 缺失或不一致；
-- `E_HOST_TYPE_MISMATCH`：参数/返回值/字段不满足逻辑契约；
-- `E_HOST_CAPABILITY_REQUIRED`：声明或调用缺少必需特性；
-- `E_HOST_BACKEND_MISMATCH`：宿主类型属于其他后端；
-- `E_HOST_MEMBER_UNKNOWN`：封闭宿主形状中没有已声明的该成员；
-- `E_HOST_MEMBER_ACCESS`：违反字段可变性/访问规则；
-- `E_HOST_UNCHECKED_NARROWING`：在没有证据的情况下将不透明值视为具名宿主类型；
-- `E_HOST_ABI_UNSUPPORTED`：逻辑类型没有适配器表示；
-- `E_HOST_OWNERSHIP`：无法满足所有权/生命周期契约。
+## 12. 实施阶段
 
-消息可附加后端细节，但不改变语义代码，例如：`E_HOST_ABI_UNSUPPORTED backend=wasm logical=PixelBuffer reason=missing codec`。
+### 阶段 0：修正数据边界
 
-## 11. JavaScript 稳定形状语义
+- 为 `CodeEntry`、detailed snapshot、revision、diff 和 query 增加 `ffi: Option<Edn>`；
+- 定义并测试 `:ffi` 的 Cirru EDN 解析与无损 round-trip；
+- 明确 `:schema` 只保存现有类型，不接受 `Ffi` wrapper；
+- 从现有 WASM/registered proc 信息生成只读的规范化 binding view。
 
-JavaScript 是首个实现字段和方法投影的后端。
+### 阶段 1：可调用项
 
-### 11.1 属性读取
+- 支持 JS `:kind :import` 的 `:function`、`:method`、`:value`；
+- 从 definition 的 `Fn` schema 检查 arity、参数和返回值；
+- 要求 JS binding schema 带 `:features #{:js-ffi}`；
+- 在 `cr query context` 和机器 JSON 中暴露 `schema` 与 `ffi`，但不把二者合并。
 
-对于接收者类型 `Host<DomInput>`：
+### 阶段 2：JS host trait
 
-- 通过 `.-value` 读取必需字段 `value: String` 时推断为 `String`；
-- 可空字段 `form: DomForm` 推断为 `JsNullish<Host<DomForm>>`；
-- 可选访问 `.?-value` 始终保留 JS 可空语义；
-- 访问封闭形状上的未知成员会报告 `E_HOST_MEMBER_UNKNOWN`；
-- 原始 `JsObject` 访问仍为 `JsNullish<JsObject>`。
+- 识别 `:kind :host-trait`；
+- 校验 `deftrait` methods 与 `:members` 一一对应；
+- 实现 `:get`、`:set`、`:call` lowering；
+- 复用 trait method 推断、泛型绑定和 `:where`；
+- 增加原始 `JsObject`、nullable receiver 和多 trait 冲突测试。
 
-对于接收者类型 `JsNullish<Host<DomInput>>`，普通解引用保留现有的可空解引用诊断。存在性收窄仅移除外层 `JsNullish`。
+### 阶段 3：其他 adapter
 
-### 11.2 属性写入
+- registered proc 从同一个 `Fn` schema 推导 arity；
+- WASM 可表示性检查读取逻辑 schema 与独立 transport metadata；
+- 只有真实用例需要时才为 native handle 增加 host trait lowering；
+- WASI 保持独立 adapter，不与通用 WASM 混为同一个 backend。
 
-写入需要满足：
+## 13. 验证策略
 
-- 字段已声明为 `:write` 或 `:read-write`；
-- 赋入值匹配逻辑字段类型；
-- 接收者不可空；
-- 具备 `:js-ffi` 能力。
+Snapshot/EDN 测试：
 
-本 RFC 不提议流敏感的别名分析。外部变异可能使运行时值失效，但不会改写已声明的契约。
+- `Fn`、`Trait` 与 named type reference 按规范形式 round-trip；
+- `:ffi` 未知扩展字段无损保存；
+- Cirru EDN 中 map、list、set、string、symbol 和 tag 不混淆；
+- `cr edit schema` 只更新 `:schema`，不删除或改写 `:ffi`。
 
-### 11.3 方法
+类型测试：
 
-对于具名封闭形状，原生 JS 调用（`.!focus`、`.?!focus`）只解析已声明的宿主方法。方法契约负责验证参数和返回类型。普通 Calcit 方法分派（`.focus`）继续与其分离。
+- trait method receiver 是 schema 的第一个参数；
+- `:where` 能解析 host trait 并推断 method 返回类型；
+- raw `JsObject` 不满足 host trait；
+- `JsNullish<HostTrait>` 收窄前不能调用 method；
+- setter 写入值类型错误时使用现有参数类型诊断。
 
-### 11.4 DOM 范围
+JS codegen 测试：
 
-初始 DOM 层应经过精选并保持精简：
+- `:get` 生成 dot/bracket property read；
+- `:set` 生成 assignment 并保持逻辑返回 `Unit`；
+- `:call` 保留 receiver；
+- `document.querySelector` binding 不丢失 `this`；
+- host trait method 缺映射或后端不匹配时在发射前失败。
 
-- 现有应用所需的事件目标/值字段；
-- `Document.querySelector` 和少量常用元素方法；
-- 仅在稳定契约明确时提供存储和定时器 API。
-- 事件监听与回调参数约束；
-- DOM 查询、父子导航、类数组集合和可空查找结果；
-- 表单控件的字符串/布尔值读写；
-- Promise、Fetch、Storage、Location 与 Canvas 的小型按需接口。
+跨后端测试：
 
-绑定可以位于模块中，而不必进入核心。核心类型系统提供宿主契约，无需附带完整的 Web 平台。
+- native registered proc 与 schema arity 不一致时注册失败；
+- WASM 不支持的逻辑类型在 adapter 阶段失败；
+- JS 专属 host trait 不影响 native/WASM 普通类型匹配。
 
-### 11.5 明确不支持的 JavaScript 行为
+仓库级验证继续执行 `cargo fmt`、`cargo clippy -- -D warnings`、`cargo test`、`yarn compile`、`yarn check-all` 和 `yarn check-agent-interface`。只改 RFC 时至少应完成 Markdown/Cirru 示例解析和相关文档检查。
 
-MVP 不建模：
+## 14. 决策与开放问题
 
-- 重载集合；
-- 字符串/数值索引签名；
-- 原型继承或声明合并；
-- 在效应不可忽略时将 getter/setter 视为透明字段；
-- 将可调用对象或构造器视为形状；
-- 任意联合类型/交叉类型；
-- 条件类型、映射类型、模板字面量类型或 `keyof` 类型；
-- 自动导入 `.d.ts`。
+本 RFC 建议先确定以下决策：
 
-后续 `.d.ts` 工具可以生成受支持的少量契约子集，但生成的声明必须经过同一验证器，不支持的特性会成为错误，而不是被擦除为 `Dynamic`。
+1. `:schema` 只使用现有 schema kind，FFI lowering 永远不包装函数类型。
+2. JS 宿主成员用 trait method 表达，不增加结构化 host shape 类型系统。
+3. property get/set 也通过逻辑方法暴露，以复用 trait method schema。
+4. `:ffi` 是可选、可查询、无损保存的 EDN metadata。
+5. MVP 只支持足以生成正确 JS 的 `:get`、`:set`、`:call` 与少量 import invocation。
 
-## 12. 转换与信任模型
+仍需在实现前确认：
 
-以下三种操作必须保持区分：
+- `:ffi` 是否直接加入 `CodeEntry`，还是加入一个通用但同样无损的扩展元数据字段；
+- host trait 是否允许普通 runtime impl，还是明确标记为 codegen-only；
+- binding 返回 host trait 时，运行时是否需要轻量 host identity，还是首阶段只依赖可信 definition 边界；
+- unsafe host trait 断言的公开名称与审计输出格式。
 
-1. **存在性收窄**：在已证明的分支内将 `JsNullish<T> -> T`。它不验证 `T`。
-2. **受检解码**：将 `HostOpaque -> Result<Host<T>, HostDecodeError>`，或转换为普通 Calcit 数据。它根据解码器策略验证必需成员/值种类。
-3. **可信断言**：不经过运行时检查，将 `HostOpaque -> Host<T>`。它需要 unsafe/互操作能力，并产生可审计元数据。
+这些问题不影响 schema 边界：无论最终选择如何，函数类型仍是 `:: 'Fn`，宿主能力定义仍是 `:: 'Trait`，后端实现信息仍不属于类型表达式。
 
-确切的公开名称延后决定。实现不得静默复用通用 `unsafe-coerce`，而不记录目标宿主标识和源码位置。
-
-宿主形状是互操作行为的契约，而非封闭数据 schema。除非显式编解码器将其转换为普通 Calcit 数据，否则 `data-shape`、EDN 编码、相等性、哈希和持久化操作都拒绝它们。
-
-## 13. 所有权与生命周期
-
-共享模型定义术语，适配器负责实施语义：
-
-- `:borrowed`：仅在宿主调用或回调期间有效；
-- `:shared`：由宿主管理的共享引用；
-- `:owned`：所有权转移给 Calcit 侧包装器/资源；
-- `:copy`：按值传输；
-- `:static`：宿主保证其具有进程/模块生命周期。
-
-JavaScript GC 引用通常映射到 `:shared`。原生句柄可以是 `:owned` 或 `:borrowed`。WASM 指针需要内存所有者，不能仅因其数值表示可复制就默认为 `:shared`。
-
-MVP 仅为不透明宿主类型记录所有权，并在生命周期范围已知时验证明显的逃逸错误。完整借用检查不在范围内。
-
-## 14. 错误与异步契约
-
-FFI 失败应在逻辑层显式表达：
-
-- 预期的领域失败使用 `Result<T,E>`；
-- 一般的值缺失使用 `Option<T>`；
-- JavaScript `null`/`undefined` 在原始宿主边界仍表示为 `JsNullish<T>`；
-- 后端陷阱/异常/panic 转换属于适配器策略，不得伪装为一般的值缺失。
-
-异步行为同样由适配器决定，但在共享元数据中声明。宿主可调用项可以要求 `:async`；JavaScript 将其映射到 Promise/`js-await`，原生后端可以使用回调/future 注册，而 WASM/WASI 在适配器存在之前可以拒绝它。
-
-## 15. 兼容性与迁移
-
-1. `JsObject` 和 `JsNullish<JsObject>` 仍是有效的不透明边界。
-2. 在没有声明时，现有 JS 语法不会获得推断出的具名形状。
-3. 现有 `RegisteredProcDescriptor` 参数个数/平台字段继续有效。
-4. 现有 `defwasm-import`/`defwasm-export` 语法保持不变。
-5. 注册过程缺少完整元数据时，初期仅产生分析输出；现有运行时调用不会立即被拒绝。
-6. 具名宿主类型采用显式启用方式，初期仅限具有 FFI 特性的函数。
-7. 仅升级编译器无需迁移源码。
-
-## 16. 实施阶段
-
-### 阶段 0：契约提取
-
-- 引入后端无关的 `HostCallableContract` 和 `HostAbiAdapter` 接口。
-- 在不改变行为的情况下，将 WASM 声明和 registered-proc 描述符规范化为契约。
-- 复用统一的参数个数/schema/能力诊断路径。
-- 在 `cr query context`、`query host-procs` 和 JSON 协议输出中暴露契约。
-
-### 阶段 1：名义不透明宿主类型
-
-- 添加 `HostTypeDef` 和 `CalcitTypeAnnotation::Host`。
-- 添加解析/序列化/显示/类型引用解析/泛型替换/类型覆盖支持。
-- 为原生句柄和 JS 可信绑定支持 `:opaque` 宿主类型。
-- 在封闭数据/data-shape 操作中拒绝宿主类型。
-
-### 阶段 2：JavaScript 封闭形状
-
-- 为 `:backend :js` 添加 `defhost-type` 字段/方法。
-- 实现精确的属性读写和原生方法推断。
-- 独立于形状标识保留 `JsNullish`。
-- 添加受检解码器和可审计的可信断言。
-- 发布精简的外部 DOM 绑定模块。
-
-### 阶段 3：原生 schema 集成
-
-- 允许 registered-proc 描述符提供完整的 `CalcitFnTypeAnnotation` 和宿主类型引用。
-- 从函数 schema 推导参数个数/回调检查。
-- 添加不透明句柄所有权元数据和运行时标识检查。
-
-### 阶段 4：WASM 传输适配器
-
-- 将现有 Number/String 可表示性检查移到 `HostAbiAdapter` 之后。
-- 为选定的宿主类型和线性内存记录添加显式编解码器。
-- 除非确实存在逻辑宿主对象 API，否则保持禁用属性投影。
-- 将 WASI 视为独立适配器，与其他适配器共享同一逻辑契约层。
-
-### 阶段 5：工具支持
-
-- 添加 `cr query host-type`、`cr query host-callable` 和契约诊断。
-- 添加生成绑定验证，并提供稳定的机器可读封装格式。
-- 可选地从精选元数据或受限 `.d.ts` 子集生成受支持的宿主声明。
-
-## 17. 验证策略
-
-共享契约测试：
-
-- JS/原生/WASM 声明间一致的参数/返回值不匹配诊断；
-- 复用泛型和回调绑定；
-- 后端不匹配和能力错误；
-- 宿主类型标识和可空性不匹配；
-- 契约 JSON 稳定性。
-
-JavaScript 测试：
-
-- 类 DOM 的必需/可空字段；
-- 未知/只读字段诊断；
-- 方法接收者和返回值推断；
-- 不透明值不能静默变为具名形状；
-- 存在性收窄不验证形状。
-
-原生测试：
-
-- 描述符/schema 参数个数一致性；
-- 平台和稳定性元数据；
-- 不透明句柄标识和所有权错误；
-- 已注册回调签名检查。
-
-WASM 测试：
-
-- 现有 Number/String 导入与导出保持二进制兼容；
-- 不支持的逻辑类型在进入发射器内部之前失败；
-- 由编解码器支持的宿主类型确定性地映射到 ABI 类型；
-- 导入/导出诊断使用共享代码并附加 WASM 细节。
-
-仓库门禁仍包括 `cargo test`、对受影响 crate 执行严格 clippy、`yarn compile`、`yarn check-agent-interface`，以及后端特定的集成测试套件。
-
-## 18. 风险
-
-### 契约复杂性进入核心
-
-缓解措施：保持共享模型小于任何单个后端的模型。后端专属事实仍作为适配器元数据，不能参与普通类型匹配。
-
-### 形状意外演变为 TypeScript 克隆
-
-缓解措施：MVP 仅包含名义宿主类型、必需/可空字段、访问模式和接收者方法。不支持的 TypeScript 特性会显式失败。
-
-### 已声明的 JS 形状过时
-
-缓解措施：形状获取必须显式进行；不可信输入使用受检解码器。精选 DOM 绑定是有版本的模块，而非编译器假设。
-
-### 原生/WASM 所有权定义不足
-
-缓解措施：从不透明句柄及现有标量/字符串传输开始。在适配器声明所有权和编解码器/布局之前，不接受类似指针的形状。
-
-### 真相来源重复
-
-缓解措施：函数 schema 就是逻辑签名。描述符和后端声明引用它；推导出的参数个数或 ABI 元数据必须接受一致性检查，而不是独立维护。
-
-## 19. 开放问题
-
-1. `defhost-type` 应作为核心语法、生成元数据的宏，还是仅在预处理期间消费的带标签数据声明？
-2. JS 绑定函数是否应自动信任其声明的宿主返回类型，还是要求使用区别于普通 `defn :js-ffi` 的专用声明/标签？
-3. 受检形状解码是否只验证成员存在性和基础值类型，还是应从首个版本起就支持用户提供的验证器？
-4. 如何在运行时表示原生注册值的宿主类型标识，同时又不强制每个嵌入方将值包装到同一种通用容器中？
-5. 所有权元数据应出现在源码 schema 中，还是完全保留在后端传输声明中？
-6. 当 WASM 成为公开目标时，其编解码器声明应是源码定义、构建配置，还是生成的元数据？
-
-## 20. 决策门槛
-
-只有就以下各点达成一致后，才能开始实施：
-
-- 宿主逻辑类型与 Calcit `Struct` 不同；
-- 共享契约验证与 ABI 降低相互分离；
-- 原始值保持不透明，更强的形状需要证据；
-- JS MVP 有意保持低于 TypeScript 的复杂度；
-- 原生和 WASM 可以使用不同声明，但会规范化为同一个内部契约；
-- 阶段 0 期间保留现有 WASM ABI 和 registered-proc 兼容性。
-
-## 21. 相关文档
+## 15. 相关文档
 
 - `RFCs/07-08-ffi-features-and-js-object-type-rfc.md`
 - `RFCs/02-17-register-platform-api-rfc.md`
@@ -713,4 +547,5 @@ WASM 测试：
 - `RFCs/07-31-unsafe-coerce-driven-static-type-boundary-plan.md`
 - `RFCs/08-05-systematic-nil-reduction-rfc.md`
 - `docs/features/js-interop.md`
+- `docs/features/polymorphism.md`
 - `calcit/scripts/wasm-validation.md`

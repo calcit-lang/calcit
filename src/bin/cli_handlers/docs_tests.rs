@@ -1,8 +1,8 @@
 use super::{
-  GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query, collect_search_results,
-  find_doc_by_query, format_markdown_cirru_blocks, handle_format_md, load_agents_document, load_entry_snapshot_for_check_md,
-  load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata, score_doc_query, score_doc_shape,
-  validate_doc_frontmatter,
+  CirruCheckMode, GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query,
+  collect_search_results, extract_cirru_blocks, find_doc_by_query, format_markdown_cirru_blocks, handle_format_md,
+  load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter,
+  parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -18,6 +18,23 @@ fn write_file(path: &Path, content: &str) {
     fs::create_dir_all(parent).unwrap();
   }
   fs::write(path, content).unwrap();
+}
+
+#[test]
+fn cirru_edn_fence_is_extracted_and_validated_as_edn_data() {
+  let input = "# Demo\n\n```cirru.edn\n{}\n  :backend :js\n  :kind :function\n```\n";
+  let blocks = extract_cirru_blocks(input);
+
+  assert_eq!(blocks.len(), 1);
+  let (_, mode, code) = &blocks[0];
+  assert_eq!(*mode, CirruCheckMode::Edn);
+  assert!(run_edn_parse_only(code).is_ok());
+}
+
+#[test]
+fn cirru_edn_fence_reports_error_for_unparsable_edn() {
+  let broken = "(:a 1";
+  assert!(run_edn_parse_only(broken).is_err());
 }
 
 #[test]
