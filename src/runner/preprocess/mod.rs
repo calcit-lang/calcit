@@ -2715,9 +2715,9 @@ fn check_struct_method_args(
     return;
   }
 
-  // Get impl records for the type
+  // Get impl structs for the type
   let Some(impl_values) = get_impls_from_type(&type_value) else {
-    return; // No impl record, skip check
+    return; // No impl struct, skip check
   };
 
   // Get method entry from impl records
@@ -3566,24 +3566,24 @@ fn validate_method_call(
     ));
   }
 
-  // Get impl records for the type
+  // Get impl structs for the type
   let Some(impl_values) = get_impls_from_type(&type_value) else {
-    return Ok(()); // No impl record, skip validation
+    return Ok(()); // No impl struct, skip validation
   };
 
   // Check if method exists in the impls
   let method_str = method_name.as_ref();
   if impl_values
     .iter()
-    .any(|record| record.fields().iter().any(|field| field.ref_str() == method_str))
+    .any(|struct_def| struct_def.fields().iter().any(|field| field.ref_str() == method_str))
   {
     return Ok(()); // Method found, validation passed
   }
 
   // Method not found, generate error
   let mut methods = vec![];
-  for record in impl_values.iter() {
-    for field in record.fields().iter() {
+  for struct_def in impl_values.iter() {
+    for field in struct_def.fields().iter() {
       methods.push(field.to_string());
     }
   }

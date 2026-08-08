@@ -213,7 +213,7 @@
                 assert= s $ assert-traits s calcit.core/Show calcit.core/Eq
                 assert= opt $ assert-traits opt calcit.core/Mappable
                 assert= p $ assert-traits p MyFoo
-                ; Records satisfy the built-in Show trait through the shared record impls.
+                ; Structs satisfy the built-in Show trait through the shared struct impls.
                 assert= p $ assert-traits p calcit.core/Show
                 ; Person has no implementation of the unrelated MyBar trait.
                 assert= :true $ try
@@ -267,26 +267,26 @@
                   m $ {} (:a 1)
                   s $ #{} 1 2
                   text |abc
-                  tuple $ :: :demo 1
-                  record $ %{} Person0 (:name |A)
+                  enum_value $ :: :demo 1
+                  struct_value $ %{} Person0 (:name |A)
                 assert= 3 $ count-with-trait xs
                 assert= 1 $ count-with-trait m
                 assert= 2 $ count-with-trait s
                 assert= 3 $ count-with-trait text
-                assert= 2 $ count-with-trait tuple
-                assert= 1 $ count-with-trait record
+                assert= 2 $ count-with-trait enum_value
+                assert= 1 $ count-with-trait struct_value
                 assert= true $ contains-with-trait? xs 1
                 assert= true $ contains-with-trait? m :a
                 assert= true $ contains-with-trait? s 2
                 assert= true $ contains-with-trait? text 1
-                assert= true $ contains-with-trait? tuple 1
-                assert= true $ contains-with-trait? record :name
+                assert= true $ contains-with-trait? enum_value 1
+                assert= true $ contains-with-trait? struct_value :name
                 assert-traits xs Countable Contains
                 assert-traits m Countable Contains
                 assert-traits s Countable Contains
                 assert-traits text Countable Contains
-                assert-traits tuple Countable Contains
-                assert-traits record Countable Contains
+                assert-traits enum_value Countable Contains
+                assert-traits struct_value Countable Contains
               println "|  Collection traits: ✓"
           :examples $ []
           :schema $ :: 'Fn
@@ -454,7 +454,7 @@
                   p $ %{} Person (:name |Alice)
                   ms2 $ &methods-of p
                 assert= true $ includes? ms2 .foo
-                assert= p $ &inspect-methods p |record
+                assert= p $ &inspect-methods p |struct
               let
                   ms3 $ &methods-of (impl-traits Person0 MyFooImpl)
                   ms4 $ &methods-of DemoBar

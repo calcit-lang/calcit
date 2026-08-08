@@ -117,9 +117,9 @@
               ; test-method-type-errors ; Disabled - contains intentional errors
               ; test-proc-type-warnings
               println |Done!
-              ; Note: Record field validation requires explicit type annotations
-              ; in unit tests via assert-type with Record instances.
-              ; Currently not supported for runtime Record literals.
+              ; Note: Struct field validation requires explicit type annotations
+              ; in unit tests via assert-type with Struct instances.
+              ; Currently not supported for runtime Struct literals.
           :examples $ []
           :schema $ :: 'Dynamic
         |process-string $ %{} :CodeEntry (:doc |)
@@ -333,7 +333,7 @@
                     greeting $ alice .greet
                   println |greeting: greeting
                   assert= "|Hello, I'm Alice" greeting
-              , "|Record method checks passed"
+              , "|Struct method checks passed"
           :examples $ []
           :schema $ :: 'Dynamic
         |test-string-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed string objects")

@@ -13,6 +13,7 @@ entry_for:
   - "assert-type"
   - "cr analyze check-types"
   - "cr analyze weak-types"
+  - "cr analyze deprecated"
 id: core/features/static-analysis
 related:
   - core/run/library-quality
@@ -54,6 +55,9 @@ cr analyze check-types --ns app.main
 # All weak type locations
 cr analyze weak-types --ns app.main
 
+# Deprecated API calls, including the source definition and exact code path
+cr analyze deprecated --ns app.main
+
 # Focus only on unresolved type debt
 cr analyze weak-types --ns app.main --intent unresolved
 
@@ -66,6 +70,7 @@ cr analyze weak-types --ns app.main --intent intentional-js-ffi
 # Machine-readable definition rows and Snapshot paths
 cr analyze check-types --ns app.main --format json
 cr analyze weak-types --ns app.main --intent unresolved --format json
+cr analyze deprecated --ns app.main --format json
 
 # Keep aggregate counts but omit definition rows (especially useful for agents)
 cr analyze check-types --ns app.main --summary-only --format json
@@ -91,7 +96,9 @@ For one definition, `cr query context '<ns/def>' --format json` embeds the same 
 
 For one expression, `cr query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
-Both analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
+These analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
+
+`analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
 `analyze.weak-types` uses protocol `schema_version: 2` because nil intent classes and `W_NIL_TYPE_DEBT` extend previously closed machine-readable enums. Consumers should reject v1 when they require the nil-contract fields rather than accepting the old version and failing on new intent values.
 
