@@ -221,6 +221,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
         MethodKind::Invoke(_) => ".",
         MethodKind::TagAccess => ".:",
         MethodKind::ExternalAccess(_) => ".:",
+        MethodKind::ExternalGet(_) => "js-get:",
+        MethodKind::ExternalSet(_) => "js-set:",
         MethodKind::ExternalInvoke(_) => ".",
         MethodKind::AccessOptional => ".?-",
         MethodKind::InvokeNativeOptional => ".?!",
@@ -810,6 +812,25 @@ fn gen_call_code(
           Ok(format!("{obj}[{}]", escape_cirru_str(&property)))
         } else {
           Err(format!("external-access takes only 1 argument, {xs}"))
+        }
+      }
+      MethodKind::ExternalGet(type_hint) => {
+        if body.len() == 1 {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          let property = external_js_property_name(type_hint, name.as_ref());
+          Ok(format!("{return_code}{obj}[{}]", escape_cirru_str(&property)))
+        } else {
+          Err(format!("external-get takes only 1 argument, {xs}"))
+        }
+      }
+      MethodKind::ExternalSet(type_hint) => {
+        if body.len() == 2 {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          let value = to_js_code(&body[1], ns, local_defs, file_imports, tags, None)?;
+          let property = external_js_property_name(type_hint, name.as_ref());
+          Ok(format!("{return_code}({obj}[{}] = {value})", escape_cirru_str(&property)))
+        } else {
+          Err(format!("external-set takes 2 arguments, {xs}"))
         }
       }
       MethodKind::ExternalInvoke(type_hint) => {
@@ -1898,6 +1919,45 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
+  use std::collections::HashMap;
+
+  fn external_trait_with_names() -> Arc<calcit::CalcitTrait> {
+    let ns = "tests.emit-js-external";
+    let def = "HostElement";
+    program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from(def),
+          program::ProgramDefEntry {
+            code: Calcit::Nil,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: Some(cirru_edn::Edn::map_from_iter([
+              (cirru_edn::Edn::tag("backend"), cirru_edn::Edn::tag("js")),
+              (cirru_edn::Edn::tag("kind"), cirru_edn::Edn::tag("external-object")),
+              (
+                cirru_edn::Edn::tag("names"),
+                cirru_edn::Edn::map_from_iter([(cirru_edn::Edn::tag("inner-text"), cirru_edn::Edn::str("textContent"))]),
+              ),
+            ])),
+          },
+        )]),
+      },
+    );
+    Arc::new(calcit::CalcitTrait {
+      runtime_id: None,
+      definition_ref: Some(Arc::from(format!("{ns}/{def}"))),
+      name: EdnTag::new(def),
+      methods: Arc::new(vec![]),
+      defaults: Arc::new(vec![]),
+      method_types: Arc::new(vec![]),
+      member_kinds: Arc::new(vec![]),
+      requires: Arc::new(vec![]),
+    })
+  }
 
   fn runtime_placeholder_quote() -> Calcit {
     Calcit::List(Arc::new(CalcitList::from(&[
@@ -1965,6 +2025,32 @@ mod tests {
     assert_eq!(default_external_js_member_name("matches?"), "matches");
     assert_eq!(default_external_js_member_name("set-item!"), "setItem");
     assert_eq!(default_external_js_member_name("!"), "!");
+  }
+
+  #[test]
+  fn typed_external_field_codegen_uses_ffi_name_overrides() {
+    let type_hint = Arc::new(calcit::CalcitTypeAnnotation::Trait(external_trait_with_names()));
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let get_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Method(Arc::from("inner-text"), MethodKind::ExternalGet(type_hint.clone())),
+      symbol("element"),
+    ])));
+    let set_form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Method(Arc::from("inner-text"), MethodKind::ExternalSet(type_hint)),
+      symbol("element"),
+      Calcit::Str(Arc::from("ready")),
+    ])));
+
+    assert_eq!(
+      to_js_code(&get_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external get should compile"),
+      "element[\"textContent\"]"
+    );
+    assert_eq!(
+      to_js_code(&set_form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("external set should compile"),
+      "(element[\"textContent\"] = \"ready\")"
+    );
   }
 
   #[test]

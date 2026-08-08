@@ -287,6 +287,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
         Invoke(_) => Ok(Cirru::leaf(format!(".{name}"))),
         TagAccess => Ok(Cirru::leaf(format!(".:{name}"))),
         ExternalAccess(_) => Ok(Cirru::leaf(format!(".:{name}"))),
+        ExternalGet(_) => Ok(Cirru::leaf(format!("js-get:{name}"))),
+        ExternalSet(_) => Ok(Cirru::leaf(format!("js-set:{name}"))),
         ExternalInvoke(_) => Ok(Cirru::leaf(format!(".{name}"))),
         AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
         InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),

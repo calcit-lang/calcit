@@ -358,6 +358,8 @@ impl fmt::Display for Calcit {
         MethodKind::InvokeNative => f.write_str(&format!(".!{name}")),
         MethodKind::TagAccess => f.write_str(&format!(".:{name}")),
         MethodKind::ExternalAccess(_) => f.write_str(&format!(".:{name}")),
+        MethodKind::ExternalGet(_) => f.write_str(&format!("(js-get :{name})")),
+        MethodKind::ExternalSet(_) => f.write_str(&format!("(js-set :{name})")),
         MethodKind::ExternalInvoke(_) => f.write_str(&format!(".{name}")),
         MethodKind::AccessOptional => f.write_str(&format!(".?-{name}")),
         MethodKind::InvokeNativeOptional => f.write_str(&format!(".?!{name}")),
@@ -833,6 +835,8 @@ impl Calcit {
         MethodKind::InvokeNative => format!(".!{name}"),
         MethodKind::TagAccess => format!(".:{name}"),
         MethodKind::ExternalAccess(_) => format!(".:{name}"),
+        MethodKind::ExternalGet(_) => format!("js-get:{name}"),
+        MethodKind::ExternalSet(_) => format!("js-set:{name}"),
         MethodKind::ExternalInvoke(_) => format!(".{name}"),
         MethodKind::AccessOptional => format!(".?-{name}"),
         MethodKind::InvokeNativeOptional => format!(".?!{name}"),
@@ -937,6 +941,8 @@ impl Calcit {
           crate::calcit::MethodKind::Invoke(_) => "method call",
           crate::calcit::MethodKind::TagAccess => "tag attribute access",
           crate::calcit::MethodKind::ExternalAccess(_) => "external object field access",
+          crate::calcit::MethodKind::ExternalGet(_) => "nullable external object field access",
+          crate::calcit::MethodKind::ExternalSet(_) => "external object field assignment",
           crate::calcit::MethodKind::ExternalInvoke(_) => "external object method call",
           crate::calcit::MethodKind::AccessOptional => "optional attribute access",
           crate::calcit::MethodKind::InvokeNativeOptional => "optional native method call",
@@ -1331,6 +1337,10 @@ pub enum MethodKind {
   TagAccess,
   /// Typed access to a field on an external host object.
   ExternalAccess(Arc<CalcitTypeAnnotation>),
+  /// Nullable field read produced by a typed `js-get` call.
+  ExternalGet(Arc<CalcitTypeAnnotation>),
+  /// Field assignment produced by a typed `js-set` call.
+  ExternalSet(Arc<CalcitTypeAnnotation>),
   /// Typed method invocation on an external host object.
   ExternalInvoke(Arc<CalcitTypeAnnotation>),
   /// (.-p a)
@@ -1347,6 +1357,8 @@ impl fmt::Display for MethodKind {
       MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
       MethodKind::TagAccess => write!(f, "tag-access"),
       MethodKind::ExternalAccess(_) => write!(f, "external-access"),
+      MethodKind::ExternalGet(_) => write!(f, "external-get"),
+      MethodKind::ExternalSet(_) => write!(f, "external-set"),
       MethodKind::ExternalInvoke(_) => write!(f, "external-invoke"),
       MethodKind::Access => write!(f, "access"),
       MethodKind::AccessOptional => write!(f, "access-optional"),

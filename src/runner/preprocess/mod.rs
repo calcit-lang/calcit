@@ -1640,6 +1640,10 @@ fn preprocess_list_call(
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        check_typed_js_field_operation(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        if let Some(rewritten) = rewrite_typed_js_field_operation(&head_form, &processed_args, scope_types) {
+          return Ok(rewritten);
+        }
 
         // Optimize &struct:get to &struct:nth when field index can be resolved at compile time
         if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructGet))
@@ -3023,6 +3027,106 @@ fn warn_on_nullable_js_ffi_dereference(
     gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_DEREF", location, check_warnings);
   } else {
     gen_check_warning_code(message, "W_JS_FFI_NULLABLE_DEREF", file_ns, check_warnings);
+  }
+}
+
+fn static_js_field_name(form: &Calcit) -> Option<&str> {
+  match form {
+    Calcit::Tag(tag) => Some(tag.ref_str()),
+    Calcit::Str(name) => Some(name.as_ref()),
+    _ => None,
+  }
+}
+
+fn rewrite_typed_js_field_operation(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Calcit> {
+  let operation = match head {
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "js-get" => "get",
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "js-set" => "set",
+    _ => return None,
+  };
+  let receiver = args.first()?;
+  let field_name = static_js_field_name(args.get(1)?)?;
+  let receiver_type = resolve_type_value(receiver, scope_types)?;
+  let traits = trait_list_from_type(receiver_type.as_ref())?;
+  let (trait_def, _) = find_trait_field_type(&traits, field_name)?;
+  if !trait_is_external_object(trait_def) {
+    return None;
+  }
+  let kind = if operation == "get" {
+    calcit::MethodKind::ExternalGet(receiver_type)
+  } else {
+    calcit::MethodKind::ExternalSet(receiver_type)
+  };
+  let mut rewritten = vec![Calcit::Method(Arc::from(field_name), kind), receiver.clone()];
+  if operation == "set" {
+    rewritten.push(args.get(2)?.clone());
+  }
+  Some(Calcit::from(rewritten))
+}
+
+fn check_typed_js_field_operation(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let operation = match head {
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "js-get" => "js-get",
+    Calcit::Symbol { sym, .. } if sym.as_ref() == "js-set" => "js-set",
+    _ => return,
+  };
+  let (Some(receiver), Some(key)) = (args.first(), args.get(1)) else {
+    return;
+  };
+  let Some(field_name) = static_js_field_name(key) else {
+    return;
+  };
+  let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
+    return;
+  };
+  let Some(traits) = trait_list_from_type(receiver_type.as_ref()) else {
+    return;
+  };
+  let external_traits = traits
+    .iter()
+    .filter(|trait_def| trait_is_external_object(trait_def.as_ref()))
+    .cloned()
+    .collect::<Vec<_>>();
+  if external_traits.is_empty() {
+    return;
+  }
+  let Some((_, field_type)) = find_trait_field_type(&external_traits, field_name) else {
+    let message = format!(
+      "[Warn] `{operation}` cannot access undeclared external-object field `:{field_name}` in {file_ns}/{def_name}; declare the field on the external trait, use a dynamic key, or use raw `aget`/`aset`"
+    );
+    gen_check_warning_code_at(
+      message,
+      "W_JS_FFI_UNKNOWN_FIELD",
+      file_ns,
+      key.get_location().or_else(|| head.get_location()),
+      check_warnings,
+    );
+    return;
+  };
+  if operation == "js-set"
+    && let Some(value) = args.get(2)
+    && let Some(value_type) = resolve_type_value(value, scope_types)
+    && !value_type.as_ref().matches_annotation(field_type.as_ref())
+  {
+    let message = format!(
+      "[Warn] `js-set` field `:{field_name}` expects {}, got {} in {file_ns}/{def_name}",
+      field_type.to_brief_string(),
+      value_type.to_brief_string()
+    );
+    gen_check_warning_code_at(
+      message,
+      "W_JS_FFI_FIELD_TYPE_MISMATCH",
+      file_ns,
+      value.get_location().or_else(|| head.get_location()),
+      check_warnings,
+    );
   }
 }
 
@@ -6213,6 +6317,150 @@ mod tests {
     assert_eq!(trait_def.name.ref_str(), "MySourceTrait");
     assert_eq!(trait_def.definition_ref.as_deref(), Some("tests.source-trait/MySourceTrait"));
     assert!(trait_def.has_method("show"));
+  }
+
+  fn seed_external_field_trait() -> Arc<CalcitTrait> {
+    let ns = "tests.external-field";
+    let def = "HostElement";
+    let trait_code = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("deftrait"),
+        Cirru::leaf(def),
+        Cirru::List(vec![Cirru::leaf(":value"), Cirru::leaf("'String")]),
+      ]),
+      ns,
+      def,
+      vec![],
+    )
+    .expect("parse external trait");
+    let trait_def = resolve_trait_def_from_source_code(&trait_code)
+      .expect("resolve external trait")
+      .with_definition_ref(ns, def);
+    program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from(def),
+          program::ProgramDefEntry {
+            code: trait_code,
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: Some(cirru_edn::Edn::map_from_iter([
+              (cirru_edn::Edn::tag("backend"), cirru_edn::Edn::tag("js")),
+              (cirru_edn::Edn::tag("kind"), cirru_edn::Edn::tag("external-object")),
+            ])),
+          },
+        )]),
+      },
+    );
+    Arc::new(trait_def)
+  }
+
+  fn external_field_test_symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.external-field"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    }
+  }
+
+  fn external_field_test_receiver(trait_def: Arc<CalcitTrait>) -> Calcit {
+    let sym: Arc<str> = Arc::from("element");
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.external-field"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Trait(trait_def)),
+    })
+  }
+
+  #[test]
+  fn js_get_infers_external_trait_field_payload() {
+    let _guard = lock_preprocess_test_state();
+    let receiver = external_field_test_receiver(seed_external_field_trait());
+    let expression = Calcit::from(vec![
+      external_field_test_symbol("js-get"),
+      receiver,
+      Calcit::Tag(EdnTag::new("value")),
+    ]);
+
+    assert!(matches!(
+      infer_static_type_from_expr(&expression).as_deref(),
+      Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
+    ));
+
+    let receiver = external_field_test_receiver(seed_external_field_trait());
+    let rewritten = rewrite_typed_js_field_operation(
+      &external_field_test_symbol("js-get"),
+      &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value"))]),
+      &ScopeTypes::new(),
+    )
+    .expect("typed js-get should rewrite");
+    assert!(matches!(
+      rewritten,
+      Calcit::List(items)
+        if matches!(items.first(), Some(Calcit::Method(name, calcit::MethodKind::ExternalGet(_))) if name.as_ref() == "value")
+    ));
+  }
+
+  #[test]
+  fn js_set_checks_external_trait_static_fields() {
+    let _guard = lock_preprocess_test_state();
+    let receiver = external_field_test_receiver(seed_external_field_trait());
+    let head = external_field_test_symbol("js-set");
+
+    let valid_warnings = RefCell::new(vec![]);
+    check_typed_js_field_operation(
+      &head,
+      &CalcitList::from(&[receiver.clone(), Calcit::Tag(EdnTag::new("value")), Calcit::Str(Arc::from("ok"))]),
+      &ScopeTypes::new(),
+      "tests.external-field",
+      "valid",
+      &valid_warnings,
+    );
+    assert!(valid_warnings.borrow().is_empty());
+    let rewritten = rewrite_typed_js_field_operation(
+      &head,
+      &CalcitList::from(&[receiver.clone(), Calcit::Tag(EdnTag::new("value")), Calcit::Str(Arc::from("ok"))]),
+      &ScopeTypes::new(),
+    )
+    .expect("typed js-set should rewrite");
+    assert!(matches!(
+      rewritten,
+      Calcit::List(items)
+        if matches!(items.first(), Some(Calcit::Method(name, calcit::MethodKind::ExternalSet(_))) if name.as_ref() == "value")
+    ));
+
+    let unknown_warnings = RefCell::new(vec![]);
+    check_typed_js_field_operation(
+      &head,
+      &CalcitList::from(&[receiver.clone(), Calcit::Tag(EdnTag::new("missing")), Calcit::Str(Arc::from("x"))]),
+      &ScopeTypes::new(),
+      "tests.external-field",
+      "unknown",
+      &unknown_warnings,
+    );
+    assert_eq!(unknown_warnings.borrow()[0].code(), Some("W_JS_FFI_UNKNOWN_FIELD"));
+
+    let mismatch_warnings = RefCell::new(vec![]);
+    check_typed_js_field_operation(
+      &head,
+      &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value")), Calcit::Number(1.0)]),
+      &ScopeTypes::new(),
+      "tests.external-field",
+      "mismatch",
+      &mismatch_warnings,
+    );
+    assert_eq!(mismatch_warnings.borrow()[0].code(), Some("W_JS_FFI_FIELD_TYPE_MISMATCH"));
   }
 
   #[test]
