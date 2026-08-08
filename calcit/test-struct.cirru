@@ -5,24 +5,24 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-struct.main $ %{} :FileEntry
+    |test-struct.main $ %{} 'FileEntry
       :defs $ {}
-        |A $ %{} :CodeEntry (:doc |)
+        |A $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct A $ :a 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
-        |A0 $ %{} :CodeEntry (:doc |)
+        |A0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct A0 $ :name 'String
           :examples $ []
           :schema $ :: 'Dynamic
-        |B $ %{} :CodeEntry (:doc |)
+        |B $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct B $ :b 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
-        |BirdImpl $ %{} :CodeEntry (:doc |)
+        |BirdImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl BirdImpl BirdTrait
               .show $ fn (self)
@@ -30,47 +30,47 @@
               .rename $ fn (self name) (assoc self :name name)
           :examples $ []
           :schema $ :: 'Dynamic
-        |BirdShape $ %{} :CodeEntry (:doc |)
+        |BirdShape $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct BirdShape (:show 'Fn) (:rename 'Fn)
           :examples $ []
           :schema $ :: 'Dynamic
-        |BirdTrait $ %{} :CodeEntry (:doc |)
+        |BirdTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait BirdTrait (.show :fn) (.rename :fn)
           :examples $ []
           :schema $ :: 'Dynamic
-        |C $ %{} :CodeEntry (:doc |)
+        |C $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct C $ :c 'Dynamic
           :examples $ []
           :schema $ :: 'Dynamic
-        |Cat $ %{} :CodeEntry (:doc |)
+        |Cat $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Cat (:name 'String) (:color 'Tag)
           :examples $ []
           :schema $ :: 'Dynamic
-        |City $ %{} :CodeEntry (:doc |)
+        |City $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct City (:name 'String) (:province 'String)
           :examples $ []
           :schema $ :: 'Dynamic
-        |Demo $ %{} :CodeEntry (:doc |)
+        |Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Demo (:a 'Dynamic) (:b 'Dynamic) (:c 'Dynamic) (:d 'Dynamic)
           :examples $ []
           :schema $ :: 'Dynamic
-        |Lagopus $ %{} :CodeEntry (:doc |)
+        |Lagopus $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def Lagopus $ impl-traits Lagopus0 BirdImpl
           :examples $ []
           :schema $ :: 'Dynamic
-        |Lagopus0 $ %{} :CodeEntry (:doc |)
+        |Lagopus0 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Lagopus0 $ :name (:: 'Optional 'String)
           :examples $ []
           :schema $ :: 'Dynamic
-        |Person $ %{} :CodeEntry (:doc |)
+        |Person $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Person
               :name $ :: 'Optional 'String
@@ -78,31 +78,31 @@
               :position $ :: 'Optional 'Tag
           :examples $ []
           :schema $ :: 'Dynamic
-        |Point2D $ %{} :CodeEntry (:doc |)
+        |Point2D $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Point2D (:x 'Number) (:y 'Number)
           :examples $ []
           :schema $ :: 'Dynamic
-        |check-point-type $ %{} :CodeEntry (:doc |)
+        |check-point-type $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn check-point-type (p) (struct? p)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'test-struct.main/Point2D
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-partial-struct) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ println |reloaded
           :examples $ []
           :schema $ :: 'Dynamic
-        |sum-point $ %{} :CodeEntry (:doc |)
+        |sum-point $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn sum-point (p)
               &+ (:x p) (:y p)
@@ -110,7 +110,7 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'test-struct.main/Point2D
-        |test-edn $ %{} :CodeEntry (:doc |)
+        |test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               let
@@ -135,14 +135,14 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-loose-struct-rewrite $ %{} :CodeEntry (:doc |)
+        |test-loose-struct-rewrite $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing loose-to-struct rewrite")
               assert= 30 $ sum-point (?{} :x 10 :y 20)
               assert= true $ check-point-type (?{} :x 10 :y 20)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-map-to-struct $ %{} :CodeEntry (:doc |)
+        |test-map-to-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing map-to-struct rewrite")
               assert= 30 $ sum-point
@@ -151,7 +151,7 @@
                 {} (:x 10) (:y 20)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-match $ %{} :CodeEntry (:doc |)
+        |test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing struct match")
               let
@@ -174,7 +174,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing struct methods")
               &let
@@ -211,7 +211,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-partial-struct $ %{} :CodeEntry (:doc |)
+        |test-partial-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing partial struct")
               let
@@ -229,7 +229,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-polymorphism $ %{} :CodeEntry (:doc |)
+        |test-polymorphism $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test struct polymorphism") (println Lagopus)
               let
@@ -251,7 +251,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-postfix $ %{} :CodeEntry (:doc "|test postfix syntax")
+        |test-postfix $ %{} 'CodeEntry (:doc "|test postfix syntax")
           :code $ quote
             fn () (log-title "|Testing postfix syntax")
               let
@@ -273,7 +273,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-struct $ %{} :CodeEntry (:doc |)
+        |test-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing struct")
               let
@@ -328,7 +328,7 @@
             {} (:return 'Dynamic)
               :args $ []
               :features $ #{} :js-ffi
-        |test-struct-with $ %{} :CodeEntry (:doc "|test struct-with")
+        |test-struct-with $ %{} 'CodeEntry (:doc "|test struct-with")
           :code $ quote
             fn () (log-title "|Testing struct-with")
               let
@@ -344,7 +344,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-struct.main $ :require
             util.core :refer $ log-title inside-js:

@@ -5,20 +5,20 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-tag-match-validation.main $ %{} :FileEntry
+    |test-tag-match-validation.main $ %{} 'FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |)
+        |Result $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Result (:err 'String 'String) (:ok)
           :examples $ []
           :schema $ :: 'Dynamic
-        |ResultImpl $ %{} :CodeEntry (:doc |)
+        |ResultImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy
               fn $ _x
           :examples $ []
           :schema $ :: 'Dynamic
-        |ResultTrait $ %{} :CodeEntry (:doc |)
+        |ResultTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait $ .dummy
               :: :fn $ {}
@@ -27,19 +27,19 @@
                 :return 'Unit
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing tag-match enum validation...") (test-valid-matches) (test-invalid-tag) (test-wrong-arity) (println "|All tag-match validation tests passed!")
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |test-invalid-tag $ %{} :CodeEntry (:doc |)
+        |test-invalid-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-tag () (println "|  Testing invalid tag detection...") (; Create a valid enum tuple then corrupt its tag)
               let
@@ -54,7 +54,7 @@
                       raise $ str "|Unexpected error:" e
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-valid-matches $ %{} :CodeEntry (:doc |)
+        |test-valid-matches $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-valid-matches () (println "|  Testing valid tag-match patterns...")
               let
@@ -72,7 +72,7 @@
               println "|  ✓ Valid matches work correctly"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-wrong-arity $ %{} :CodeEntry (:doc |)
+        |test-wrong-arity $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-wrong-arity () (println "|  Testing wrong arity detection...")
               let
@@ -93,5 +93,5 @@
                         raise $ str "|Unexpected error:" e
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns test-tag-match-validation.main)

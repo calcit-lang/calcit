@@ -5,26 +5,26 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |get-number $ %{} :CodeEntry (:doc |)
+        |get-number $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn get-number () 'Number $ do 123
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ test-type-info
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |test-type-info $ %{} :CodeEntry (:doc |)
+        |test-type-info $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-type-info () $ let
                 x 123
@@ -51,5 +51,5 @@
                 println nested
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns app.main)

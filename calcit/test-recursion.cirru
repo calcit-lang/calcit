@@ -5,13 +5,13 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-recursion.main $ %{} :FileEntry
+    |test-recursion.main $ %{} 'FileEntry
       :defs $ {}
-        |*count-effects $ %{} :CodeEntry (:doc |)
+        |*count-effects $ %{} 'CodeEntry (:doc |)
           :code $ quote (defatom *count-effects 0)
           :examples $ []
           :schema $ :: 'Dynamic
-        |hole-series $ %{} :CodeEntry (:doc |)
+        |hole-series $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn hole-series (x) (assert-type x 'Number)
               if (&<= x 0) (raise "|unexpected small number")
@@ -37,7 +37,7 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
               ; println $ hole-series 100
@@ -46,7 +46,7 @@
               do true
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-hole-series $ %{} :CodeEntry (:doc |)
+        |test-hole-series $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-hole-series () $ assert "|hole series numbers"
               =
@@ -54,7 +54,7 @@
                 [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-loop $ %{} :CodeEntry (:doc |)
+        |test-loop $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= 55 $ apply
@@ -75,7 +75,7 @@
               assert= 6 @*count-effects
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-recursion.main $ :require
             util.core :refer $ log-title

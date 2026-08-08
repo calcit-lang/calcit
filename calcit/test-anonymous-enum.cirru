@@ -5,14 +5,14 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-anonymous-enum.main $ %{} :FileEntry
+    |test-anonymous-enum.main $ %{} 'FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |)
+        |Result $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing anonymous enum")
               assert= (:: :parts |1 |23)
@@ -76,7 +76,7 @@
                 assert= (%none) (enum-definition plain)
           :examples $ []
           :schema $ :: 'Dynamic
-        |try-size $ %{} :CodeEntry (:doc |)
+        |try-size $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)
               tag-match x
@@ -89,7 +89,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-anonymous-enum.main $ :require
             util.core :refer $ log-title

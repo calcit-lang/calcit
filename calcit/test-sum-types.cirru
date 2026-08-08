@@ -5,9 +5,9 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-sum-types.main $ %{} :FileEntry
+    |test-sum-types.main $ %{} 'FileEntry
       :defs $ {}
-        |ActionImpl $ %{} :CodeEntry (:doc |)
+        |ActionImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             let
                 ActionTrait $ deftrait ActionTrait (.describe :fn)
@@ -18,17 +18,17 @@
                     (:err message) (str "|Action err -> " message)
           :examples $ []
           :schema $ :: 'Dynamic
-        |ActionResult $ %{} :CodeEntry (:doc |)
+        |ActionResult $ %{} 'CodeEntry (:doc |)
           :code $ quote
             def ActionResult $ impl-traits Result ActionImpl
           :examples $ []
           :schema $ :: 'Dynamic
-        |Result $ %{} :CodeEntry (:doc |)
+        |Result $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing sum types...")
               let
@@ -46,28 +46,28 @@
               println |Done!
           :examples $ []
           :schema $ :: 'Dynamic
-        |make-err $ %{} :CodeEntry (:doc |)
+        |make-err $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn make-err (message) (%:: ActionResult :err message)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |make-ok $ %{} :CodeEntry (:doc |)
+        |make-ok $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value) (%:: ActionResult :ok value)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |summarize $ %{} :CodeEntry (:doc |)
+        |summarize $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
               tag-match action
@@ -77,5 +77,5 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns test-sum-types.main)

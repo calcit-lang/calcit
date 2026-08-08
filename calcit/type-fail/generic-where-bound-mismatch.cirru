@@ -5,23 +5,23 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |type-fail-generic-where-bound.main $ %{} :FileEntry
+    |type-fail-generic-where-bound.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Entry for generic where-bound mismatch")
+        |main! $ %{} 'CodeEntry (:doc "|Entry for generic where-bound mismatch")
           :code $ quote
             defn main! () (require-mappable 1) nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
+        |reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |require-mappable $ %{} :CodeEntry (:doc "|Requires the argument type to satisfy Mappable")
+        |require-mappable $ %{} 'CodeEntry (:doc "|Requires the argument type to satisfy Mappable")
           :code $ quote
             defn require-mappable (x) x
           :examples $ []
@@ -30,5 +30,5 @@
               :args $ [] 'T
               :generics $ [] 'T
               :where $ {} ('T 'Mappable)
-      :ns $ %{} :NsEntry (:doc "|Namespace for generic where-bound mismatch")
+      :ns $ %{} 'NsEntry (:doc "|Namespace for generic where-bound mismatch")
         :code $ quote (ns type-fail-generic-where-bound.main)

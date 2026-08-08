@@ -5,9 +5,9 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-hygienic.lib $ %{} :FileEntry
+    |test-hygienic.lib $ %{} 'FileEntry
       :defs $ {}
-        |add-11 $ %{} :CodeEntry (:doc |)
+        |add-11 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro add-11 (a b)
               let
@@ -18,7 +18,7 @@
           :examples $ []
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
-        |add-11-safe $ %{} :CodeEntry (:doc |)
+        |add-11-safe $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro add-11-safe (a b)
               with-gensyms (c)
@@ -28,25 +28,25 @@
           :examples $ []
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic 'Dynamic)
-        |add-2 $ %{} :CodeEntry (:doc |)
+        |add-2 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn add-2 (x) (&+ x 2)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (:ns test-hygienic.lib)
-    |test-hygienic.main $ %{} :FileEntry
+    |test-hygienic.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ try-hygienic
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ []
-        |try-hygienic $ %{} :CodeEntry (:doc |)
+        |try-hygienic $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn try-hygienic () (println "|Testing hygienic")
               let
@@ -58,7 +58,7 @@
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-hygienic.main $ :require
             test-hygienic.lib :refer $ add-11 add-11-safe

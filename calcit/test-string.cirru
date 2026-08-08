@@ -5,14 +5,14 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-string.main $ %{} :FileEntry
+    |test-string.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-bitwise $ %{} :CodeEntry (:doc |)
+        |test-bitwise $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (bit-and 15 7) 7
@@ -28,7 +28,7 @@
               assert= |0x11 $ &number:display-by 17 16
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-char $ %{} :CodeEntry (:doc |)
+        |test-char $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test char")
               assert= 97 $ .get-char-code |a
@@ -42,7 +42,7 @@
               assert= (%none) (last |)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-format $ %{} :CodeEntry (:doc |)
+        |test-format $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing format")
               assert= |1.2346 $ .format 1.23456789 4
@@ -67,7 +67,7 @@
               println |hashing: $ &hash 1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-includes $ %{} :CodeEntry (:doc |)
+        |test-includes $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing includes")
               assert= true $ includes? |abc |abc
@@ -91,7 +91,7 @@
               assert= |abc0 $ strip-suffix |abc0 |bc
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-lisp-style $ %{} :CodeEntry (:doc |)
+        |test-lisp-style $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test lisp style")
               assert=
@@ -127,7 +127,7 @@
                 , "|+ 1 2"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-methods () (log-title "|Testing string methods")
               assert= true $ .blank? |
@@ -175,7 +175,7 @@
               assert= |a12312 $ .pad-right |a 6 |123
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-parse $ %{} :CodeEntry (:doc |)
+        |test-parse $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (%ok 0) (parse-float |0)
@@ -183,7 +183,7 @@
               assert= (%err |1e) (parse-float |1e)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-str $ %{} :CodeEntry (:doc |)
+        |test-str $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-str ()
               assert= (&str:concat |a |b) |ab
@@ -215,7 +215,7 @@
               assert= 0 $ &compare |a |a
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-trim $ %{} :CodeEntry (:doc |)
+        |test-trim $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= | $ trim "|    "
@@ -225,7 +225,7 @@
               assert= |1 $ trim |__1__ |_
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-whitespace $ %{} :CodeEntry (:doc |)
+        |test-whitespace $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test blank?")
               assert-detect identity $ blank? |
@@ -239,7 +239,7 @@
               assert-detect not $ blank? "|1 "
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-string.main $ :require
             util.core :refer $ inside-eval: log-title

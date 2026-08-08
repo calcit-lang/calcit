@@ -5,52 +5,52 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-types-inference.main $ %{} :FileEntry
+    |test-types-inference.main $ %{} 'FileEntry
       :defs $ {}
-        |Address $ %{} :CodeEntry (:doc |)
+        |Address $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Address $ :city 'String
           :examples $ []
           :schema $ :: 'Dynamic
-        |Job $ %{} :CodeEntry (:doc |)
+        |Job $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Job (:title 'String) (:status Status)
           :examples $ []
           :schema $ :: 'Dynamic
-        |Outcome $ %{} :CodeEntry (:doc |)
+        |Outcome $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Outcome (:status Status) (:none)
           :examples $ []
           :schema $ :: 'Dynamic
-        |Person $ %{} :CodeEntry (:doc |)
+        |Person $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Person (:name 'String) (:age 'Number)
               :address $ :: Address
           :examples $ []
           :schema $ :: 'Dynamic
-        |PersonWrap $ %{} :CodeEntry (:doc |)
+        |PersonWrap $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum PersonWrap
               :person $ :: Person
               :none
           :examples $ []
           :schema $ :: 'Dynamic
-        |Status $ %{} :CodeEntry (:doc |)
+        |Status $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity)
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: 'Unit
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-count-inference $ %{} :CodeEntry (:doc |)
+        |test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-count-inference ()
               assert-type
@@ -59,7 +59,7 @@
               assert-type (count |abc) 'Number
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-fn-inference $ %{} :CodeEntry (:doc |)
+        |test-fn-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-fn-inference () $ let
                 f $ fn (x) (+ x 1)
@@ -70,7 +70,7 @@
               &inspect-type f
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-generics-identity $ %{} :CodeEntry (:doc |)
+        |test-generics-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-generics-identity () $ let
                 n $ identity 42
@@ -81,7 +81,7 @@
               &inspect-type s
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-list-inference $ %{} :CodeEntry (:doc |)
+        |test-list-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-list-inference () $ let
                 nested $ [] ([] 1 2) ([] 3)
@@ -102,7 +102,7 @@
                 &inspect-type rest-xs
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-map-inference $ %{} :CodeEntry (:doc |)
+        |test-map-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-map-inference () $ let
                 m $ {}
@@ -120,7 +120,7 @@
                 &inspect-type m5
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-optional-inference $ %{} :CodeEntry (:doc |)
+        |test-optional-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-optional-inference ()
               let
@@ -277,7 +277,30 @@
                 &inspect-type nil-nested
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-struct-inference $ %{} :CodeEntry (:doc |)
+        |test-ref-inference $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-ref-inference () $ let
+                r $ atom 1
+              assert-type r $ :: 'Ref 'Number
+              let
+                  x $ &atom:deref r
+                assert-type x 'Number
+                &inspect-type r
+                &inspect-type x
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-set-inference $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-set-inference () $ let
+                s $ #{}
+              assert-type s $ :: 'Set 'Number
+              let
+                  xs $ &set:to-list s
+                &inspect-type s
+                &inspect-type xs
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-struct-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-struct-inference () $ let
                 addr $ %{} Address (:city |sh)
@@ -297,30 +320,7 @@
                 &inspect-type city-v
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-ref-inference $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn test-ref-inference () $ let
-                r $ atom 1
-              assert-type r $ :: 'Ref 'Number
-              let
-                  x $ &atom:deref r
-                assert-type x 'Number
-                &inspect-type r
-                &inspect-type x
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-set-inference $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn test-set-inference () $ let
-                s $ #{}
-              assert-type s $ :: 'Set 'Number
-              let
-                  xs $ &set:to-list s
-                &inspect-type s
-                &inspect-type xs
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-type-ref-combos $ %{} :CodeEntry (:doc |)
+        |test-type-ref-combos $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-type-ref-combos () $ let
                 addr $ %{} Address (:city |sh)
@@ -340,5 +340,5 @@
                 &inspect-type outcome
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns test-types-inference.main)

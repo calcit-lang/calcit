@@ -5,30 +5,30 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |macro-ns.lib $ %{} :FileEntry
+    |macro-ns.lib $ %{} 'FileEntry
       :defs $ {}
-        |expand-1 $ %{} :CodeEntry (:doc |)
+        |expand-1 $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro expand-1 (n) (println "|local data" v)
               quasiquote $ println ~n ~v
           :examples $ []
           :schema $ :: 'Dynamic
-        |v $ %{} :CodeEntry (:doc |)
+        |v $ %{} 'CodeEntry (:doc |)
           :code $ quote (def v 100)
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns macro-ns.lib $ :require
             [] util.core :refer $ [] log-title inside-eval:
-    |macro-ns.main $ %{} :FileEntry
+    |macro-ns.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ expand-1 1
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns macro-ns.main $ :require
             macro-ns.lib :refer $ expand-1

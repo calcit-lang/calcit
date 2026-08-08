@@ -5,13 +5,13 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ + 1 2
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require

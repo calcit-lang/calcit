@@ -5,14 +5,14 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-math.main $ %{} :FileEntry
+    |test-math.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing numbers") (test-numbers) (log-title "|Testing math") (test-math) (log-title "|Testing compare") (test-compare) (test-hex) (test-integer) (test-methods) (test-bit-math) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-bit-math $ %{} :CodeEntry (:doc |)
+        |test-bit-math $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|testing bit math")
               assert= 0 $ bit-shr 1 1
@@ -23,7 +23,7 @@
               assert= 16 $ bit-shl 4 2
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-compare $ %{} :CodeEntry (:doc |)
+        |test-compare $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-compare ()
               assert= (%some 4)
@@ -51,19 +51,19 @@
                 , -1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-hex $ %{} :CodeEntry (:doc |)
+        |test-hex $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing hex") (assert= 16 0x10) (assert= 15 0xf)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-integer $ %{} :CodeEntry (:doc |)
+        |test-integer $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing integer")
               assert= true $ round? 1
               assert= false $ round? 1.1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-math $ %{} :CodeEntry (:doc |)
+        |test-math $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-math ()
               println "|sin 1" $ sin 1
@@ -86,7 +86,7 @@
               assert= (negate -4) (abs -4)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing number methods")
               assert= 1 $ .floor 1.1
@@ -103,7 +103,7 @@
               ; "has problem in comparing float numbers" $ assert= 0.1 (.fract 1.1)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-numbers $ %{} :CodeEntry (:doc |)
+        |test-numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-numbers ()
               assert= 3 $ + 1 2
@@ -119,7 +119,7 @@
               do true
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-math.main $ :require
             util.core :refer $ log-title

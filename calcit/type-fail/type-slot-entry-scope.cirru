@@ -8,26 +8,26 @@
       :modules $ []
       :type-slots $ {} (:dispatch-op |type-fail-type-slot-entry-scope.main/ServerOp)
   :files $ {}
-    |type-fail-type-slot-entry-scope.main $ %{} :FileEntry
+    |type-fail-type-slot-entry-scope.main $ %{} 'FileEntry
       :defs $ {}
-        |ClientOp $ %{} :CodeEntry (:doc "|Client entry enum")
+        |ClientOp $ %{} 'CodeEntry (:doc "|Client entry enum")
           :code $ quote
             defenum ClientOp $ :client/ping
           :examples $ []
           :schema $ :: 'Dynamic
-        |ServerOp $ %{} :CodeEntry (:doc "|Server entry enum")
+        |ServerOp $ %{} 'CodeEntry (:doc "|Server entry enum")
           :code $ quote
             defenum ServerOp $ :server/ping
           :examples $ []
           :schema $ :: 'Dynamic
-        |accept-op $ %{} :CodeEntry (:doc "|Schema depends on the entry-bound type slot")
+        |accept-op $ %{} 'CodeEntry (:doc "|Schema depends on the entry-bound type slot")
           :code $ quote
             defn accept-op (op) op
           :examples $ []
           :schema $ :: 'Fn
             {} (:return '*dispatch-op)
               :args $ [] '*dispatch-op
-        |client-main! $ %{} :CodeEntry (:doc "|Client entry binds dispatch-op for client enums")
+        |client-main! $ %{} 'CodeEntry (:doc "|Client entry binds dispatch-op for client enums")
           :code $ quote
             defn client-main! ()
               accept-op $ :: :client/ping
@@ -36,14 +36,14 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
+        |reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |server-main! $ %{} :CodeEntry (:doc "|Server entry binds the same slot name independently")
+        |server-main! $ %{} 'CodeEntry (:doc "|Server entry binds the same slot name independently")
           :code $ quote
             defn server-main! ()
               accept-op $ :: :server/ping
@@ -52,5 +52,5 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc "|Fixture for entry-scoped with-type-slot preprocessing")
+      :ns $ %{} 'NsEntry (:doc "|Fixture for entry-scoped with-type-slot preprocessing")
         :code $ quote (ns type-fail-type-slot-entry-scope.main)

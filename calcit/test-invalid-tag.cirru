@@ -5,20 +5,20 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |test-invalid-tag.main $ %{} :FileEntry
+    |test-invalid-tag.main $ %{} 'FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |)
+        |Result $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defenum Result (:err 'String) (:ok)
           :examples $ []
           :schema $ :: 'Dynamic
-        |ResultImpl $ %{} :CodeEntry (:doc |)
+        |ResultImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait $ .dummy
               fn $ _x
           :examples $ []
           :schema $ :: 'Dynamic
-        |ResultTrait $ %{} :CodeEntry (:doc |)
+        |ResultTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait $ .dummy
               :: :fn $ {}
@@ -27,7 +27,7 @@
                 :return 'Unit
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "|Testing %:: call") (println |Result: Result)
               println |ResultImpl: ResultImpl (; Direct call to %:: to see if function is invoked) (println "|Calling %:: ...")
@@ -36,12 +36,12 @@
                 println "|Should not reach here:" result
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns test-invalid-tag.main)

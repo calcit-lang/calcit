@@ -5,20 +5,20 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-list.main $ %{} :FileEntry
+    |test-list.main $ %{} 'FileEntry
       :defs $ {}
-        |*counted $ %{} :CodeEntry (:doc |)
+        |*counted $ %{} 'CodeEntry (:doc |)
           :code $ quote (defatom *counted 0)
           :examples $ []
           :schema $ :: 'Dynamic
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-alias $ %{} :CodeEntry (:doc |)
+        |test-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
@@ -26,7 +26,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-apply $ %{} :CodeEntry (:doc |)
+        |test-apply $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-apply ()
               assert= 10 $ apply + ([] 1 2 3 4)
@@ -35,14 +35,14 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-comma $ %{} :CodeEntry (:doc |)
+        |test-comma $ %{} 'CodeEntry (:doc |)
           :code $ quote
             assert= ([] 1 2 3 4) ([,] 1 2 3 4)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-doseq $ %{} :CodeEntry (:doc |)
+        |test-doseq $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing doseq")
               inside-eval: $ =
@@ -68,7 +68,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-every $ %{} :CodeEntry (:doc |)
+        |test-every $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-every ()
               let
@@ -87,7 +87,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-foldl $ %{} :CodeEntry (:doc |)
+        |test-foldl $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-foldl ()
               assert= (%some 1)
@@ -113,7 +113,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-groups $ %{} :CodeEntry (:doc |)
+        |test-groups $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-groups ()
               assert=
@@ -139,7 +139,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-join $ %{} :CodeEntry (:doc |)
+        |test-join $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= |1-2-3-4 $ join-str ([] 1 2 3 4) |-
@@ -153,7 +153,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-let[] $ %{} :CodeEntry (:doc |)
+        |test-let[] $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing let[]")
               inside-eval: $ println
@@ -165,7 +165,7 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-list $ %{} :CodeEntry (:doc |)
+        |test-list $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-list () $ let
                 a $ [] 1 2 3
@@ -324,7 +324,7 @@
                   , 0
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-match $ %{} :CodeEntry (:doc |)
+        |test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing list match")
               assert= :empty $ list-match ([])
@@ -348,7 +348,7 @@
                   (l0 ls) (println "|...effect in match") ([] l0 ls)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-methods $ %{} :CodeEntry (:doc |)
+        |test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing list methods")
               assert= true $ .any? ([] 1 2 3 4)
@@ -506,7 +506,7 @@
                 distinct $ [] 1 2 3 1 2
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-methods-shorthand $ %{} :CodeEntry (:doc "|test shorthand")
+        |test-methods-shorthand $ %{} 'CodeEntry (:doc "|test shorthand")
           :code $ quote
             fn () $ &let
               xs $ [] 1 2 3 4
@@ -515,7 +515,7 @@
                 fn (x) (&> x 3)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-pair $ %{} :CodeEntry (:doc |)
+        |test-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert=
@@ -531,7 +531,7 @@
                   fn (k n) (> n 10)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-repeat $ %{} :CodeEntry (:doc |)
+        |test-repeat $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (repeat :a 5) ([] :a :a :a :a :a)
@@ -542,7 +542,7 @@
                 interleave ([] :a :b :c :d) ([] 1 2 3 4)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-sort $ %{} :CodeEntry (:doc |)
+        |test-sort $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert=
@@ -553,7 +553,7 @@
                 [] 1 2 3 4
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-list.main $ :require
             util.core :refer $ log-title inside-eval:

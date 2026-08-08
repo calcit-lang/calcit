@@ -5,21 +5,21 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-valid-list-methods) (; test-invalid-list-method ; "会导致" preprocess "错误") (; test-invalid-string-method ; "会导致" preprocess "错误") (test-invalid-map-method ; "测试" map "方法验证") (println |All tests passed)
           :examples $ []
           :schema $ :: 'Dynamic
-        |reload! $ %{} :CodeEntry (:doc |)
+        |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! $
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Unit)
               :args $ []
-        |test-invalid-list-method $ %{} :CodeEntry (:doc |)
+        |test-invalid-list-method $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-list-method () $ let
                 xs $ [] 1 2 3
@@ -28,7 +28,7 @@
               .invalid-method xs
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-invalid-map-method $ %{} :CodeEntry (:doc |)
+        |test-invalid-map-method $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-map-method () $ let
                 m $ {} (:a 1)
@@ -37,7 +37,7 @@
               .invalid-map-method m
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-invalid-string-method $ %{} :CodeEntry (:doc |)
+        |test-invalid-string-method $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-invalid-string-method () $ let
                 text |hello
@@ -46,7 +46,7 @@
               .invalid-string-method text
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-valid-list-methods $ %{} :CodeEntry (:doc |)
+        |test-valid-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-valid-list-methods () $ let
                 xs $ [] 1 2 3
@@ -55,5 +55,5 @@
               .first xs
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote (ns app.main)

@@ -5,15 +5,15 @@
       :modules $ [] |./check-args.cirru
       :type-slots $ {}
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |app.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () $ let
                 f1 "|local function"
               println check/f1
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns app.main $ :require ([] check-args.main :as check)

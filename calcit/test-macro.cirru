@@ -5,21 +5,21 @@
       :modules $ [] |./util.cirru
       :type-slots $ {}
   :files $ {}
-    |test-macro.main $ %{} :FileEntry
+    |test-macro.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc |)
+        |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (test-or-linear-expansion) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-assert $ %{} :CodeEntry (:doc |)
+        |test-assert $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Assert in different order")
               assert (= 1 1) |string
               assert |string $ = 1 1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-case $ %{} :CodeEntry (:doc |)
+        |test-case $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-case () (log-title "|Testing case")
               let
@@ -54,7 +54,7 @@
                     &case v__2 nil (2 |two) (3 |three)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-detector $ %{} :CodeEntry (:doc |)
+        |test-detector $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Detector function")
               inside-eval: (&reset-gensym-index!)
@@ -75,7 +75,7 @@
                         raise "|Not satisfied in assertion!"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-expr-in-case $ %{} :CodeEntry (:doc |)
+        |test-expr-in-case $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-expr-in-case () $ assert= |5
               case (+ 1 4)
@@ -86,7 +86,7 @@
                 (+ 2 4) |6
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-extract $ %{} :CodeEntry (:doc |)
+        |test-extract $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Extract map via tags")
               inside-eval: (&reset-gensym-index!)
@@ -148,7 +148,7 @@
                   [] a b c d
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-flipped $ %{} :CodeEntry (:doc |)
+        |test-flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |flipped)
               assert=
@@ -156,14 +156,14 @@
                 [] 7 2 1
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-gensym $ %{} :CodeEntry (:doc |)
+        |test-gensym $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () $ inside-eval: (log-title "|Testing gensym") (&reset-gensym-index!)
               assert= (gensym) 'G__1
               assert= (gensym |a) 'a__2
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-if-let $ %{} :CodeEntry (:doc |)
+        |test-if-let $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|if let")
               assert= 6 $ if-let
@@ -185,7 +185,7 @@
                   , 1 2
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-lambda $ %{} :CodeEntry (:doc |)
+        |test-lambda $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing lambda macro")
               inside-eval:
@@ -245,19 +245,19 @@
                 , 3
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-misc $ %{} :CodeEntry (:doc |)
+        |test-misc $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |misc)
               assert= (noted nothing 1) 1
               inside-eval: $ println (&extract-code-into-edn 'code)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-or-linear-expansion $ %{} :CodeEntry (:doc |)
+        |test-or-linear-expansion $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-or-linear-expansion () $ assert= |done (or false false false false false false false false false false false false false false false false false false false false |done)
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-thread-macros $ %{} :CodeEntry (:doc |)
+        |test-thread-macros $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-thread-macros () (log-title "|Testing thread macros")
               inside-eval:
@@ -337,7 +337,7 @@
               assert= 18 $ %<- (+ % %) (* % %) 3
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-w-log $ %{} :CodeEntry (:doc |)
+        |test-w-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing w-log") (&reset-gensym-index!)
               inside-eval: $ assert=
@@ -381,7 +381,7 @@
                 assert= 7 $ f3 3 4
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-with-cpu-time $ %{} :CodeEntry (:doc |)
+        |test-with-cpu-time $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing with-cpu-time")
               inside-eval: (&reset-gensym-index!)
@@ -407,7 +407,7 @@
                 , 3
           :examples $ []
           :schema $ :: 'Dynamic
-      :ns $ %{} :NsEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-macro.main $ :require
             [] util.core :refer $ [] log-title inside-eval:

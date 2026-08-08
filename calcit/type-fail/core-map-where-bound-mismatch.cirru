@@ -5,21 +5,21 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
-    |type-fail-map-where-bound.main $ %{} :FileEntry
+    |type-fail-map-where-bound.main $ %{} 'FileEntry
       :defs $ {}
-        |main! $ %{} :CodeEntry (:doc "|Entry for core map where-bound mismatch")
+        |main! $ %{} 'CodeEntry (:doc "|Entry for core map where-bound mismatch")
           :code $ quote
             defn main! () $ map 1 inc
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |reload! $ %{} :CodeEntry (:doc "|Reload handler")
+        |reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote
             defn reload! () nil
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-      :ns $ %{} :NsEntry (:doc "|Namespace for core map where-bound mismatch")
+      :ns $ %{} 'NsEntry (:doc "|Namespace for core map where-bound mismatch")
         :code $ quote (ns type-fail-map-where-bound.main)
