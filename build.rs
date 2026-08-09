@@ -79,10 +79,20 @@ pub struct CodeEntry {
   #[serde(default)]
   pub examples: Vec<Cirru>,
   #[serde(default)]
+  pub tests: Vec<TestEntry>,
+  #[serde(default)]
   pub tags: Vec<String>,
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestEntry {
+  pub name: String,
+  pub code: Cirru,
+  #[serde(default)]
+  pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -355,7 +365,7 @@ fn validate_schema_edn_no_legacy_quotes(value: &Edn, owner: &str) -> Result<(), 
   walk(value, owner, &mut path)
 }
 
-fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> {
+fn parse_tags_from_edn(value: &Edn, owner: &str, field: &str) -> Result<Vec<String>, String> {
   match value {
     Edn::Set(set) => {
       let mut tags = Vec::with_capacity(set.0.len());
@@ -363,10 +373,7 @@ fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> 
         match item {
           Edn::Tag(tag) => tags.push(format!(":{}", tag.ref_str())),
           other => {
-            return Err(format!(
-              "{owner}: CodeEntry.tags expects tag items, got {}",
-              format_edn_preview(other)
-            ));
+            return Err(format!("{owner}: {field} expects tag items, got {}", format_edn_preview(other)));
           }
         }
       }
@@ -374,10 +381,7 @@ fn parse_tags_from_edn(value: &Edn, owner: &str) -> Result<Vec<String>, String> 
       tags.dedup();
       Ok(tags)
     }
-    other => Err(format!(
-      "{owner}: CodeEntry.tags expects a hashset, got {}",
-      format_edn_preview(other)
-    )),
+    other => Err(format!("{owner}: {field} expects a hashset, got {}", format_edn_preview(other))),
   }
 }
 
@@ -388,6 +392,7 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   };
   let mut doc = String::new();
   let mut examples: Vec<Cirru> = vec![];
+  let mut tests: Vec<TestEntry> = vec![];
   let mut tags: Vec<String> = Vec::new();
   let mut code: Option<Cirru> = None;
   let mut schema: Option<Edn> = None;
@@ -395,7 +400,24 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
     match key.arc_str().as_ref() {
       "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
       "examples" => examples = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:examples`: {e}"))?,
-      "tags" => tags = parse_tags_from_edn(value, owner)?,
+      "tests" => {
+        let Edn::List(items) = value else {
+          return Err(format!("{owner}: `:tests` expects a list, got {}", format_edn_preview(value)));
+        };
+        tests = items
+          .0
+          .iter()
+          .cloned()
+          .map(|item| parse_test_entry(item, owner))
+          .collect::<Result<Vec<_>, _>>()?;
+        let mut names = std::collections::HashSet::new();
+        for test in &tests {
+          if !names.insert(test.name.as_str()) {
+            return Err(format!("{owner}: duplicate test name `{}`", test.name));
+          }
+        }
+      }
+      "tags" => tags = parse_tags_from_edn(value, owner, "CodeEntry.tags")?,
       "code" => code = Some(from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:code`: {e}"))?),
       "schema" if !matches!(value, Edn::Nil) => {
         schema = Some(parse_schema_from_edn(value, owner).map_err(|e| format!("{owner}: invalid `:schema`: {e}"))?);
@@ -406,9 +428,37 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   Ok(CodeEntry {
     doc,
     examples,
+    tests,
     tags,
     code: code.ok_or_else(|| format!("{owner}: missing `:code` field in CodeEntry"))?,
     schema,
+  })
+}
+
+fn parse_test_entry(edn: Edn, owner: &str) -> Result<TestEntry, String> {
+  let struct_value = match edn {
+    Edn::Struct(value) => value,
+    other => return Err(format!("{owner}: expected TestEntry struct, got {}", format_edn_preview(&other))),
+  };
+  let mut name = None;
+  let mut code = None;
+  let mut tags = Vec::new();
+  for (key, value) in &struct_value.pairs {
+    match key.ref_str() {
+      "name" => name = Some(from_edn(value.clone()).map_err(|error| format!("{owner}: invalid test `:name`: {error}"))?),
+      "code" => code = Some(from_edn(value.clone()).map_err(|error| format!("{owner}: invalid test `:code`: {error}"))?),
+      "tags" => tags = parse_tags_from_edn(value, owner, "TestEntry.tags")?,
+      _ => {}
+    }
+  }
+  let name: String = name.ok_or_else(|| format!("{owner}: test is missing `:name`"))?;
+  if name.trim().is_empty() {
+    return Err(format!("{owner}: test name must not be empty"));
+  }
+  Ok(TestEntry {
+    name,
+    code: code.ok_or_else(|| format!("{owner}: test is missing `:code`"))?,
+    tags,
   })
 }
 

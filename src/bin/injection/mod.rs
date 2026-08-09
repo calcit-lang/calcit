@@ -30,6 +30,7 @@ type EdnFfiFn = fn(
 /// lazily cache dylibs, in case Linux drops memory of libraries
 static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 static TRACE_FFI: AtomicBool = AtomicBool::new(false);
+static STDOUT_TO_STDERR: AtomicBool = AtomicBool::new(false);
 static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
 static TRACE_FFI_STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 
@@ -52,6 +53,11 @@ pub fn set_trace_ffi(v: bool) {
       ),
     );
   }
+}
+
+#[allow(dead_code)]
+pub fn set_stdout_to_stderr(v: bool) {
+  STDOUT_TO_STDERR.store(v, Ordering::Relaxed);
 }
 
 fn should_trace_ffi() -> bool {
@@ -308,7 +314,11 @@ pub fn stdout_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     }
     s.push_str(&x.turn_string());
   }
-  println!("{s}");
+  if STDOUT_TO_STDERR.load(Ordering::Relaxed) {
+    eprintln!("{s}");
+  } else {
+    println!("{s}");
+  }
   Ok(Calcit::Nil)
 }
 

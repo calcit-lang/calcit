@@ -58,6 +58,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Config(_))
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
+      | Some(CalcitCommand::Test(_))
   )
 }
 
@@ -91,6 +92,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Config(cmd) => format!("cr config {}", config_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("cr analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("cr cirru {}", cirru_name(&cmd.subcommand)),
+    CalcitCommand::Test(_) => "cr test".to_owned(),
     _ => return None,
   }];
 
@@ -104,6 +106,17 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Config(cmd) => push_config(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
     CalcitCommand::Cirru(cmd) => push_cirru(&mut tokens, cmd),
+    CalcitCommand::Test(opts) => {
+      if let Some(target) = &opts.target {
+        push_positional(&mut tokens, "target", target);
+      }
+      push_optional(&mut tokens, "name", opts.name.as_deref(), "none");
+      push_list(&mut tokens, "tag", &opts.tag);
+      push_list(&mut tokens, "affected", &opts.affected);
+      push_switch(&mut tokens, "list", opts.list);
+      push_switch(&mut tokens, "fail-fast", opts.fail_fast);
+      push_value(&mut tokens, "format", &opts.format, Some("human"));
+    }
     _ => return None,
   }
 
@@ -120,6 +133,7 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Docs(cmd) => render_docs_explanation(cmd),
     CalcitCommand::Analyze(cmd) => render_analyze_explanation(cmd),
     CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
+    CalcitCommand::Test(_) => Some("discovers and runs definition-attached tests".to_owned()),
     _ => None,
   }
 }
@@ -193,6 +207,7 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
     }
     QuerySubcommand::Peek(opts) => format!("previews definition `{}`", opts.target),
     QuerySubcommand::Examples(opts) => format!("shows usage examples for `{}`", opts.target),
+    QuerySubcommand::Tests(opts) => format!("shows definition-attached tests for `{}`", opts.target),
     QuerySubcommand::Schema(opts) => format!("shows type schema for `{}`", opts.target),
     QuerySubcommand::Type(opts) => format!("lists statically available methods for type `{}`", opts.target),
     QuerySubcommand::TypeAt(opts) => format!("inspects static type evidence for `{}` at `{}`", opts.target, opts.path),
@@ -284,6 +299,8 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
       opts.at.as_ref().map_or(String::new(), |at| format!(" at position `{at}`"))
     ),
     EditSubcommand::RmExample(opts) => format!("removes example at index {} from `{}`", opts.index, opts.target),
+    EditSubcommand::AddTest(opts) => format!("adds named test `{}` to `{}`", opts.name, opts.target),
+    EditSubcommand::RmTest(opts) => format!("removes named test `{}` from `{}`", opts.name, opts.target),
     EditSubcommand::Tags(opts) => {
       let mut desc = format!("views/updates tags for `{}`", opts.target);
       if let Some(tags) = &opts.tags {
@@ -572,7 +589,8 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       switch "deps" => opts.deps,
       value "dependency-limit" => opts.dependency_limit; default "12",
       value "usage-limit" => opts.usage_limit; default "8",
-      value "example-limit" => opts.example_limit; default "3"
+      value "example-limit" => opts.example_limit; default "3",
+      value "test-limit" => opts.test_limit; default "3"
     ),
     QuerySubcommand::Ns(opts) => {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
@@ -597,6 +615,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
     ),
     QuerySubcommand::Peek(opts) => echo_items!(tokens, pos "target" => &opts.target),
     QuerySubcommand::Examples(opts) => echo_items!(tokens, pos "target" => &opts.target),
+    QuerySubcommand::Tests(opts) => echo_items!(tokens, pos "target" => &opts.target),
     QuerySubcommand::Find(opts) => echo_items!(
       tokens,
       pos "symbol" => &opts.symbol,
@@ -855,6 +874,10 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts)
     }
     EditSubcommand::RmExample(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "index" => &opts.index.to_string()),
+    EditSubcommand::AddTest(opts) => {
+      echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name, opt "tags" => opts.tags.as_deref(); default "none", code_input opts, switch "overwrite" => opts.overwrite)
+    }
+    EditSubcommand::RmTest(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name),
     EditSubcommand::Tags(opts) => {
       echo_items!(
         tokens,
@@ -1107,6 +1130,7 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Def(_) => "def",
     QuerySubcommand::Peek(_) => "peek",
     QuerySubcommand::Examples(_) => "examples",
+    QuerySubcommand::Tests(_) => "tests",
     QuerySubcommand::Find(_) => "find",
     QuerySubcommand::Usages(_) => "usages",
     QuerySubcommand::Search(_) => "search",
@@ -1185,6 +1209,8 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::Examples(_) => "examples",
     EditSubcommand::AddExample(_) => "add-example",
     EditSubcommand::RmExample(_) => "rm-example",
+    EditSubcommand::AddTest(_) => "add-test",
+    EditSubcommand::RmTest(_) => "rm-test",
     EditSubcommand::Tags(_) => "tags",
     EditSubcommand::AddNs(_) => "add-ns",
     EditSubcommand::RmNs(_) => "rm-ns",

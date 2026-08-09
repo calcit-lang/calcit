@@ -288,7 +288,7 @@ pub fn call_expr(
       }
     }
     Calcit::Macro { info, .. } => {
-      println!(
+      eprintln!(
         "[Warn] macro should already be handled during preprocessing: {}",
         Calcit::from(xs.to_owned()).lisp_str()
       );

@@ -103,14 +103,14 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(v) => {
         let has_default = xs.len() == 2;
         if has_default {
-          println!("(get-env {s}): {v}");
+          eprintln!("(get-env {s}): {v}");
         }
         Ok(Calcit::Str(v.into()))
       }
       Err(e) => match xs.get(1) {
         Some(v0) => Ok(v0.to_owned()),
         None => {
-          println!("(get-env {s}): {e}");
+          eprintln!("(get-env {s}): {e}");
           Ok(Calcit::Nil)
         }
       },

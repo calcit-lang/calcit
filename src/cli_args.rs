@@ -75,6 +75,8 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
+  /// discover and run definition-attached tests
+  Test(TestCommand),
   /// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, def-diff, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
@@ -95,6 +97,33 @@ pub enum CalcitCommand {
   Cursor(CursorCommand),
   /// manage project configuration (show, set, modules, add-module, rm-module)
   Config(ConfigCommand),
+}
+
+/// discover and run definition-attached tests
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "test")]
+pub struct TestCommand {
+  /// optional namespace or namespace/definition scope
+  #[argh(positional)]
+  pub target: Option<String>,
+  /// run only a test with this exact name
+  #[argh(option)]
+  pub name: Option<String>,
+  /// run tests tagged with this tag; repeat to require multiple tags
+  #[argh(option)]
+  pub tag: Vec<String>,
+  /// select tests that statically depend on this namespace/definition; repeat for multiple changed definitions
+  #[argh(option)]
+  pub affected: Vec<String>,
+  /// list selected tests without running them
+  #[argh(switch)]
+  pub list: bool,
+  /// stop after the first failed test
+  #[argh(switch)]
+  pub fail_fast: bool,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 /// emit JavaScript rather than interpreting
@@ -426,6 +455,8 @@ pub enum QuerySubcommand {
   Peek(QueryPeekCommand),
   /// read examples of a definition
   Examples(QueryExamplesCommand),
+  /// read definition-attached tests
+  Tests(QueryTestsCommand),
   /// find symbol across namespaces
   Find(QueryFindCommand),
   /// find usages of a definition
@@ -518,6 +549,9 @@ pub struct QueryContextCommand {
   /// maximum number of examples to include
   #[argh(option, default = "3")]
   pub example_limit: usize,
+  /// maximum number of definition-attached tests to include
+  #[argh(option, default = "3")]
+  pub test_limit: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -612,6 +646,15 @@ pub struct QueryPeekCommand {
 #[argh(subcommand, name = "examples")]
 /// read examples of a definition or builtin helper
 pub struct QueryExamplesCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "tests")]
+/// read definition-attached tests
+pub struct QueryTestsCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -1215,6 +1258,10 @@ pub enum EditSubcommand {
   AddExample(EditAddExampleCommand),
   /// remove an example from definition by index
   RmExample(EditRmExampleCommand),
+  /// add a named test to a definition
+  AddTest(EditAddTestCommand),
+  /// remove a named test from a definition
+  RmTest(EditRmTestCommand),
   /// view or update definition tags
   Tags(EditTagsCommand),
   /// add a new namespace
@@ -1402,6 +1449,42 @@ pub struct EditRmExampleCommand {
   /// index of example to remove (0-based)
   #[argh(positional)]
   pub index: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-test")]
+/// add a named test to a definition (input via --file, --code, or pipe via stdin)
+pub struct EditAddTestCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// stable test name, unique within the definition
+  #[argh(positional)]
+  pub name: String,
+  /// comma-separated test tags
+  #[argh(option)]
+  pub tags: Option<String>,
+  /// read test expression from file
+  #[argh(option)]
+  pub file: Option<String>,
+  /// test expression as inline text
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// replace an existing test with the same name
+  #[argh(switch, long = "overwrite")]
+  pub overwrite: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rm-test")]
+/// remove a named test from a definition
+pub struct EditRmTestCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// exact test name to remove
+  #[argh(positional)]
+  pub name: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

@@ -1061,6 +1061,15 @@ pub fn clone_compiled_program_snapshot() -> Result<CompiledProgram, String> {
   Ok(compiled)
 }
 
+/// Clone only definitions that have already been preprocessed.
+///
+/// Unlike `clone_compiled_program_snapshot`, this does not materialize every
+/// source definition. It is intended for read-only dependency queries after
+/// callers have explicitly compiled their roots.
+pub fn clone_existing_compiled_program() -> CompiledProgram {
+  PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").clone()
+}
+
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
   let mut program_code = PROGRAM_CODE_DATA.write().expect("open program code");
   let coord0 = vec![];

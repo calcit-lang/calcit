@@ -128,6 +128,7 @@ cr cursor apply replace --code 'quote <replacement-leaf>'
 cr tree show @cursor --path @cursor
 cr query type-at @cursor --path @cursor --format json
 cr analyze check-examples --ns '<namespace>' --def '<definition>'
+cr test '<namespace>/<definition>'
 ```
 
 `type-at --format json` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。
@@ -317,10 +318,12 @@ cr cirru show-guide
 
 1. 结构：`cursor show` 或 `tree show`，确认实际 subtree。
 2. 语义：`query type-at ... --format json`，运行 `analyze check-types --summary-only`；看到 `W_TYPE_COVERAGE_GAPS` 后继续执行 `analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`，再对命中范围去掉 `--summary-only` 查看 path、impact 与 suggestion。
-3. definition：`analyze check-examples --ns <ns> --def <def>`。
-4. 项目：运行仓库规定的 entry 和测试；只有项目目标是 JavaScript 时才运行对应的 `cr js` codegen。
+3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `cr test <ns>/<def>`。
+4. 项目：运行 `cr test` 及仓库规定的 entry 和测试；变更范围明确时可先用 `cr test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。只有项目目标是 JavaScript 时才运行对应的 `cr js` codegen。
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
+
+`cr query tests <ns>/<def>` 查询 definition-attached tests；`cr edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`cr edit rm-test <ns>/<def> <name>` 按名称删除。`cr test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试，静态分析失败的测试会保守执行，不会静默漏测。
 
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `cr edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 

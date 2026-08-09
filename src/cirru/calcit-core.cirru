@@ -6722,3 +6722,109 @@
       :ns $ %{} 'NsEntry (:doc "|internal function and macros for `calcit.core`")
         :code $ quote
           ns calcit.internal $ :require
+    |calcit.test $ %{} 'FileEntry
+      :defs $ {}
+        |fail $ %{} 'CodeEntry (:doc "|Fail a test immediately with a message.")
+          :code $ quote
+            defn fail (message) (raise message)
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'String
+          :tags $ #{} :control :test
+          :tests $ []
+            %{} 'TestEntry (:name |raises-errors)
+              :code $ quote
+                is $ throws? (fail |boom)
+              :tags $ #{} :unit
+        |is $ %{} 'CodeEntry (:doc "|Assert that a test expression is truthy.")
+          :code $ quote
+            defmacro is (expr)
+              quasiquote $ assert |Expected-truthy-expression: ~expr
+          :examples $ []
+          :schema $ :: 'Macro
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic
+          :tags $ #{} :control :macro :test
+          :tests $ []
+            %{} 'TestEntry (:name |accepts-truthy)
+              :code $ quote (is true)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |rejects-falsey)
+              :code $ quote
+                is-throws $ is false
+              :tags $ #{} :unit
+        |is-not= $ %{} 'CodeEntry (:doc "|Assert that two values differ.")
+          :code $ quote
+            defmacro is-not= (left right)
+              quasiquote $ assert |Expected-values-to-differ: (not= ~left ~right)
+          :examples $ []
+          :schema $ :: 'Macro
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic 'Dynamic
+          :tags $ #{} :control :macro :test
+          :tests $ []
+            %{} 'TestEntry (:name |accepts-different-values)
+              :code $ quote (is-not= 1 2)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |rejects-equal-values)
+              :code $ quote
+                is-throws $ is-not= 1 1
+              :tags $ #{} :unit
+        |is-throws $ %{} 'CodeEntry (:doc "|Assert that evaluating an expression raises an error.")
+          :code $ quote
+            defmacro is-throws (body)
+              quasiquote $ assert |Expected-expression-to-raise:
+                try
+                  &let () ~body false
+                  fn (error) true
+          :examples $ []
+          :schema $ :: 'Macro
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic
+          :tags $ #{} :control :macro :test
+          :tests $ []
+            %{} 'TestEntry (:name |accepts-raised-errors)
+              :code $ quote
+                is-throws $ raise |boom
+              :tags $ #{} :unit
+        |is= $ %{} 'CodeEntry (:doc "|Assert that expected and actual values are equal.")
+          :code $ quote
+            defmacro is= (expected actual)
+              quasiquote $ assert= ~expected ~actual
+          :examples $ []
+          :schema $ :: 'Macro
+            {} (:return 'Unit)
+              :args $ [] 'Dynamic 'Dynamic
+          :tags $ #{} :control :macro :test
+          :tests $ []
+            %{} 'TestEntry (:name |compares-values)
+              :code $ quote
+                is= ([] 1 2) ([] 1 2)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |rejects-different-values)
+              :code $ quote
+                is-throws $ is= 1 2
+              :tags $ #{} :unit
+        |throws? $ %{} 'CodeEntry (:doc "|Return true when evaluating an expression raises an error.")
+          :code $ quote
+            defmacro throws? (body)
+              quasiquote $ try
+                &let () ~body false
+                fn (error) true
+          :examples $ []
+          :schema $ :: 'Macro
+            {} (:return 'Bool)
+              :args $ [] 'Dynamic
+          :tags $ #{} :control :macro :test
+          :tests $ []
+            %{} 'TestEntry (:name |detects-raised-errors)
+              :code $ quote
+                assert= true $ throws? (raise |boom)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |detects-success)
+              :code $ quote
+                is= false $ throws? true
+              :tags $ #{} :unit
+      :ns $ %{} 'NsEntry (:doc "|Built-in assertions for definition-attached tests run by `cr test`.")
+        :code $ quote (ns calcit.test)

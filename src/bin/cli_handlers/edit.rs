@@ -10,15 +10,16 @@
 
 use calcit::calcit::DYNAMIC_TYPE;
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditCommand, EditCpCommand, EditDefCommand, EditDocCommand,
-  EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand,
-  EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand, EditSchemaCommand,
-  EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
+  EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditAddTestCommand, EditCommand, EditCpCommand, EditDefCommand,
+  EditDocCommand, EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
+  EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand,
+  EditRmTestCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
 };
 use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
 use calcit::snapshot::{
-  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, render_snapshot_content, save_snapshot_to_file,
+  self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, NsEntry, Snapshot, TestEntry, render_snapshot_content,
+  save_snapshot_to_file,
 };
 use cirru_edn::{Edn, EdnMapView, EdnStructView, EdnTag};
 use cirru_parser::Cirru;
@@ -96,6 +97,8 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
     EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
+    EditSubcommand::AddTest(opts) => handle_add_test(opts, snapshot_file),
+    EditSubcommand::RmTest(opts) => handle_rm_test(opts, snapshot_file),
     EditSubcommand::Tags(opts) => handle_tags(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
@@ -120,6 +123,8 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     EditSubcommand::Examples(opts) => Some(&mut opts.target),
     EditSubcommand::AddExample(opts) => Some(&mut opts.target),
     EditSubcommand::RmExample(opts) => Some(&mut opts.target),
+    EditSubcommand::AddTest(opts) => Some(&mut opts.target),
+    EditSubcommand::RmTest(opts) => Some(&mut opts.target),
     EditSubcommand::Tags(opts) => Some(&mut opts.target),
     EditSubcommand::Cp(opts) => Some(&mut opts.target),
     EditSubcommand::Mv(opts) => Some(&mut opts.target),
@@ -222,6 +227,8 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
     EditSubcommand::RmExample(opts) => {
       maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
     }
+    EditSubcommand::AddTest(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
+    EditSubcommand::RmTest(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
     EditSubcommand::Tags(opts) if opts.tags.is_some() => {
       maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
     }
@@ -523,6 +530,8 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "examples"
           | "add-example"
           | "rm-example"
+          | "add-test"
+          | "rm-test"
           | "tags"
           | "add-ns"
           | "rm-ns"
@@ -1865,6 +1874,76 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
+fn handle_add_test(opts: &EditAddTestCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  if opts.name.trim().is_empty() {
+    return Err("Test name must not be empty".to_owned());
+  }
+  let code_input = read_code_input(&opts.file, &opts.code)?;
+  let raw = code_input
+    .as_deref()
+    .ok_or("Test input required: use --file, --code, or pipe via stdin")?;
+  let code = parse_input_to_cirru(raw)?;
+  let tags = parse_tags_csv(opts.tags.as_deref().unwrap_or(""))?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  let (resolved_definition, entry) = get_code_entry_mut(&mut snapshot, namespace, definition)?;
+  let new_test = TestEntry {
+    name: opts.name.clone(),
+    code,
+    tags,
+  };
+  if let Some(index) = entry.tests.iter().position(|test| test.name == opts.name) {
+    if !opts.overwrite {
+      return Err(format!(
+        "Test `{}` already exists on `{namespace}/{resolved_definition}`; pass --overwrite to replace it explicitly",
+        opts.name
+      ));
+    }
+    entry.tests[index] = new_test;
+  } else {
+    entry.tests.push(new_test);
+  }
+  save_snapshot(&snapshot, snapshot_file)?;
+  println!(
+    "{} Added test '{}' to '{}/{}'",
+    "✓".green(),
+    opts.name.cyan(),
+    namespace,
+    resolved_definition
+  );
+  Ok(())
+}
+
+fn handle_rm_test(opts: &EditRmTestCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  let (resolved_definition, entry) = get_code_entry_mut(&mut snapshot, namespace, definition)?;
+  let Some(index) = entry.tests.iter().position(|test| test.name == opts.name) else {
+    let mut available = entry.tests.iter().map(|test| test.name.as_str()).collect::<Vec<_>>();
+    available.sort_unstable();
+    return Err(format!(
+      "Test `{}` not found on `{namespace}/{resolved_definition}`{}",
+      opts.name,
+      if available.is_empty() {
+        String::new()
+      } else {
+        format!("; available tests: {}", available.join(", "))
+      }
+    ));
+  };
+  entry.tests.remove(index);
+  save_snapshot(&snapshot, snapshot_file)?;
+  println!(
+    "{} Removed test '{}' from '{}/{}'",
+    "✓".green(),
+    opts.name.cyan(),
+    namespace,
+    resolved_definition
+  );
+  Ok(())
+}
+
 pub(crate) fn apply_operation_at_path(
   code: &Cirru,
   path: &[usize],
@@ -2720,11 +2799,11 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 mod tests {
   use super::{
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
-    count_legacy_inherent_impls, handle_add_import, handle_imports, load_snapshot, parse_examples_input, parse_input_to_cirru,
-    parse_schema_input, parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with,
-    save_schema_preserving_snapshot, save_snapshot,
+    count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_imports, handle_rm_test, load_snapshot,
+    parse_examples_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations, rename_definition_declaration,
+    run_staged_transaction_with, save_schema_preserving_snapshot, save_snapshot,
   };
-  use crate::cli_args::{EditAddImportCommand, EditImportsCommand};
+  use crate::cli_args::{EditAddImportCommand, EditAddTestCommand, EditImportsCommand, EditRmTestCommand};
   use crate::cli_handlers::test_support::TestProject;
   use cirru_parser::Cirru;
   use std::fs;
@@ -3009,6 +3088,46 @@ mod tests {
     let examples = parse_examples_input("quote $ inc 1\nquote |literal").expect("examples should parse");
 
     assert_eq!(examples, vec![list(vec![leaf("inc"), leaf("1")]), leaf("|literal")]);
+  }
+
+  #[test]
+  fn named_tests_can_be_added_and_removed_without_indexing() {
+    let fixture = TestSnapshot::from_fixture();
+    let path = fixture.snapshot_string();
+    let add = EditAddTestCommand {
+      target: "app.main/test-fn".to_owned(),
+      name: "empty-call".to_owned(),
+      tags: Some("unit,fast".to_owned()),
+      file: None,
+      code: Some("quote $ assert= nil (fn)".to_owned()),
+      overwrite: false,
+    };
+    handle_add_test(&add, &path).expect("named test should be added");
+    let snapshot = load_snapshot(&path).expect("edited snapshot should load");
+    let test = &snapshot.files["app.main"].defs["test-fn"].tests[0];
+    assert_eq!(test.name, "empty-call");
+    assert_eq!(test.tags.len(), 2);
+
+    let duplicate = handle_add_test(&add, &path).expect_err("duplicate test name should fail");
+    assert!(duplicate.contains("already exists"), "unexpected error: {duplicate}");
+
+    let mut replacement = add.clone();
+    replacement.overwrite = true;
+    replacement.code = Some("quote $ assert= true true".to_owned());
+    handle_add_test(&replacement, &path).expect("explicit overwrite should replace named test");
+    let snapshot = load_snapshot(&path).expect("overwritten snapshot should load");
+    assert_ne!(snapshot.files["app.main"].defs["test-fn"].tests[0].code, test.code);
+
+    handle_rm_test(
+      &EditRmTestCommand {
+        target: add.target,
+        name: add.name,
+      },
+      &path,
+    )
+    .expect("named test should be removed");
+    let snapshot = load_snapshot(&path).expect("edited snapshot should load");
+    assert!(snapshot.files["app.main"].defs["test-fn"].tests.is_empty());
   }
 
   #[test]
