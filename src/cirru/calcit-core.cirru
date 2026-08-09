@@ -3434,6 +3434,13 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |evaluates-zero-and-half-turn)
+              :code $ quote
+                do
+                  assert= 1 $ cos 0
+                  assert= -1 $ round (cos 3.141592653589793)
+              :tags $ #{} :core :unit
         |count $ %{} 'CodeEntry (:doc "|Count items in a collection or string. Nil is rejected instead of being treated as empty.")
           :code $ quote
             defn count (x)
@@ -6582,6 +6589,14 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |evaluates-zero-and-quarter-turn)
+              :code $ quote
+                do
+                  assert= 0 $ sin 0
+                  assert= 1 $ round
+                    sin $ / 3.141592653589793 2
+              :tags $ #{} :core :unit
         |slice $ %{} 'CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
             defn slice (xs n ? m)

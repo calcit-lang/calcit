@@ -39,6 +39,8 @@ jobs:
       - run: cargo test
         env:
           RUST_MIN_STACK: "16777216"
+      - name: "run definition-attached core tests"
+        run: cargo run --bin cr -- src/cirru/calcit-core.cirru test --tag unit
       - run: cargo run --bin cr calcit/test.cirru
 
       - name: "verify WASM exports and FFI"

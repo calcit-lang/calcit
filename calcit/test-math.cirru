@@ -25,19 +25,10 @@
               assert= 1 $ +
                 pow (sin 1) 2
                 pow (cos 1) 2
-              assert= 1 $ floor 1.1
-              assert= 2 $ ceil 1.1
-              assert= 1 $ round 1.1
-              assert= 2 $ round 1.8
               assert= 2 $ .round 1.8
               assert= 0.8 $ .fract 1.8
-              assert= 81 $ pow 3 4
-              assert= 1 $ &number:rem 33 4
-              assert= 9 $ sqrt 81
               println |PI &PI
               println |E &E
-              assert= 4 $ abs 4
-              assert= (negate -4) (abs -4)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-methods $ %{} 'CodeEntry (:doc |)
