@@ -26,7 +26,7 @@ Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`.
 
 To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename: `compact.cirru`):
 
-```cirru
+```cirru-edn
 :entries $ {}
   :default $ {}
     :modules $ [] |memof/calcit.cirru |lilac/

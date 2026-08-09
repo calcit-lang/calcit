@@ -19,7 +19,7 @@ Packages are managed with `caps` command, which wraps `git clone` and `git pull`
 
 Configurations inside runtime snapshot files (`calcit.cirru`, legacy `compact.cirru`):
 
-```cirru
+```cirru-edn
 :entries $ {}
   :default $ {}
     :modules $ [] |memof/calcit.cirru |lilac/

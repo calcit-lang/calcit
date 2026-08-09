@@ -397,14 +397,14 @@ let
     items $ [] ({} (:value 1)) ({} (:value 2)) ({} (:value 3))
     result1 $ reduce items 0 $ fn (acc item)
       let
-          value $ option:unwrap $ get item :value
+          value $ get item :value
         tag-match value
           (:some number) (+ acc number)
           (:none) , acc
     result2 $ apply +
       map items $ fn (item)
         let
-            value $ option:unwrap $ get item :value
+            value $ get item :value
           tag-match value
             (:some number) , number
             (:none) 0

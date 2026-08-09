@@ -49,7 +49,7 @@ let
         :generics $ [] 'T
         :args $ [] (:: 'Box 'T)
         :return 'T
-      :value box
+      &struct:get box :value
     b $ %{} Box (:value 1)
   assert-type b $ :: 'Box :number
   assert= 1 $ keep b
@@ -67,7 +67,7 @@ let
       {} $ 'T Show
       :value 'T
     box $ %{} ShownBox (:value 1)
-    item $ :value box
+    item $ &struct:get box :value
   assert-type box $ :: 'ShownBox 'Number
   assert= |1 $ item .show
 ```
@@ -310,7 +310,7 @@ let
   b .show
   let
       b2 $ b .rename |Eagle
-    println $ :name b2
+    println $ &struct:get b2 :name
 ```
 
 ## Common Use Cases
@@ -396,12 +396,14 @@ Fields are automatically sorted alphabetically, matching the field ordering of n
 
 ### Accessing Fields
 
-Anonymous structs still have a fixed field set, so access is direct and missing fields are errors:
+Anonymous structs still have a fixed field set, but they do not carry a named
+type declaration. Use the explicit low-level accessor until the value has been
+rewritten to an expected named Struct:
 
 ```cirru
 let
     r $ %{} _ (:x 10) (:y 20)
-  println $ :x r
+  println $ &struct:get r :x
   ; => 10
   println $ type-of r
   ; => :struct
