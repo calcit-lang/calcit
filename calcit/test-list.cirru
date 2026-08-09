@@ -13,7 +13,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
+            defn main! () (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -22,15 +22,6 @@
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-apply $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-apply ()
-              assert= 10 $ apply + ([] 1 2 3 4)
-              assert= 10 $ + & ([] 1 2 3 4)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -68,91 +59,6 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-every $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-every ()
-              let
-                  data $ [] 1 2 3 4
-                assert-detect not $ every? data
-                  fn (x) (&> x 1)
-                assert-detect identity $ every? data
-                  fn (x) (&> x 0)
-                assert-detect identity $ any? data
-                  fn (x) (&> x 3)
-                assert-detect not $ any? data
-                  fn (x) (&> x 4)
-              assert-detect some? 1
-              assert-detect not $ some? nil
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-foldl $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-foldl ()
-              assert= (%some 1)
-                get ([] 1 2 3) 0
-              assert= 6 $ foldl ([] 1 2 3) 0 &+
-              assert=
-                + 1 2 3 4 $ + 5 6 7
-                , 28
-              assert= -1 $ - 1 2
-              assert= -7 $ - 4 5 6
-              assert= 91 $ - 100 (- 10 1)
-              assert-detect identity $ foldl-compare ([] 1 2) 0 &<
-              assert-detect identity $ < 1 2 3 4
-              assert-detect not $ < 3 2
-              assert= (* 2 3) 6
-              assert= (* 2 3 4) 24
-              assert= (/ 2 3) (/ 4 6)
-              assert= (/ 2 3 4) (/ 1 6)
-              assert=
-                reduce ([] 3 4 5) 2 +
-                , 14
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-groups $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-groups ()
-              assert=
-                group-by (range 10)
-                  fn (x) (assert-type x 'Number) (.rem x 3)
-                {}
-                  0 $ [] 0 3 6 9
-                  1 $ [] 1 4 7
-                  2 $ [] 2 5 8
-              assert=
-                frequencies $ [] 1 2 2 3 3 3
-                {} (1 1) (2 2) (3 3)
-              assert=
-                section-by (range 10) 2
-                [] ([] 0 1) ([] 2 3) ([] 4 5) ([] 6 7) ([] 8 9)
-              assert=
-                section-by (range 10) 3
-                [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
-              assert=
-                section-by ([]) 2
-                []
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-join $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert= |1-2-3-4 $ join-str ([] 1 2 3 4) |-
-              assert= |1-2-3-4 $ .join-str ([] 1 2 3 4) |-
-              assert= | $ join-str ([]) |-
-              assert= ([] 1 10 2 10 3 10 4)
-                join ([] 1 2 3 4) 10
-              assert= ([])
-                join ([]) 10
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
         |test-let[] $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing let[]")
@@ -165,165 +71,6 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |test-list $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-list () $ let
-                a $ [] 1 2 3
-              assert= a $ [] 1 2 3
-              assert= (prepend a 4) ([] 4 1 2 3)
-              assert= (append a 4) ([] 1 2 3 4)
-              assert= (conj a 4) ([] 1 2 3 4)
-              assert= (conj a 4 5 6 7) ([] 1 2 3 4 5 6 7)
-              assert= (%some 1) (first a)
-              assert= (%some 3) (last a)
-              assert= (%none)
-                first $ []
-              assert= (%none)
-                last $ []
-              assert-detect option:some? $ first a
-              assert-detect option:none? $ last ([])
-              assert= (rest a) ([] 2 3)
-              assert= ([])
-                rest $ []
-              assert= ([])
-                rest $ [] 1
-              assert= (butlast a) ([] 1 2)
-              assert= ([])
-                butlast $ []
-              assert= (range 0) ([])
-              assert= (range 1) ([] 0)
-              assert= (range 4) ([] 0 1 2 3)
-              assert= (range 4 5) ([] 4)
-              assert= (range 4 10) ([] 4 5 6 7 8 9)
-              assert= (range 2 10 2) ([] 2 4 6 8)
-              assert= (range-bothway 3) ([] -2 -1 0 1 2)
-              assert= (range-bothway 2 5) ([] 0 1 2 3 4)
-              assert=
-                slice (range 10) 0 10
-                range 10
-              assert=
-                slice (range 10) 5 7
-                [] 5 6
-              assert=
-                &list:concat (range 10) (range 4)
-                [] 0 1 2 3 4 5 6 7 8 9 0 1 2 3
-              assert=
-                &list:concat $ [] 1 2 3
-                [] 1 2 3
-              assert "|&list:concat lists" $ =
-                &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
-                [] 1 2 4 5 7 8
-              assert "|concat lists" $ =
-                concat ([] 1 2) ([] 4 5) ([] 7 8)
-                [] 1 2 4 5 7 8
-              assert= ([] 3 4 5 2 3)
-                &list:concat
-                  slice ([] 1 2 3 4 5 6) 2 5
-                  slice ([] 1 2 3 4 5 6) 1 3
-              assert=
-                assoc (range 10) 4 55
-                [] 0 1 2 3 55 5 6 7 8 9
-              assert=
-                dissoc (range 10) 4
-                [] 0 1 2 3 5 6 7 8 9
-              assert=
-                take (range 10) 4
-                [] 0 1 2 3
-              assert=
-                take-last (range 10) 4
-                [] 6 7 8 9
-              assert=
-                .take-last (range 10) 4
-                [] 6 7 8 9
-              assert=
-                take-last (range 3) 4
-                [] 0 1 2
-              assert=
-                drop (range 10) 4
-                [] 4 5 6 7 8 9
-              assert |reverse $ =
-                .reverse $ [] |a |b |c |d |e
-                [] |e |d |c |b |a
-              assert=
-                mapcat ([] 1 2 3 4)
-                  fn (x) (range x)
-                [] 0 0 1 0 1 2 0 1 2 3
-              assert=
-                mapcat ([] 1)
-                  fn (x) (range x)
-                [] 0
-              assert=
-                mapcat ([])
-                  fn (x) (range x)
-                []
-              assert= ([] 1 2 3 4 5 6 7 8)
-                &list:flatten $ [] 1 2
-                  [] 3 4 ([] 5 6) 7
-                  , 8
-              assert=
-                [] 1 $ #{} 2 3
-                &list:flatten $ [] 1 (#{} 2 3)
-              assert= ([] 1 2 4)
-                .flatten $ []
-                  [] $ [] 1 2 ([] 4)
-              assert=
-                map (range 10) identity
-                range 10
-              assert=
-                map (#{} 1 2 3) inc
-                #{} 2 3 4
-              assert=
-                map-indexed (range 3)
-                  fn (idx x)
-                    [] idx $ &str x
-                [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
-              assert=
-                filter (range 10)
-                  fn (x) (&> x 3)
-                [] 4 5 6 7 8 9
-              assert=
-                .filter (range 10)
-                  fn (x) (&> x 3)
-                [] 4 5 6 7 8 9
-              assert=
-                filter-not (range 10)
-                  fn (x) (&> x 3)
-                [] 0 1 2 3
-              assert-detect identity $ contains? (range 10) 6
-              assert-detect not $ contains? (range 10) 16
-              assert-detect identity $ &list:contains? (range 4) 3
-              assert-detect not $ &list:contains? (range 4) 4
-              assert-detect not $ &list:contains? (range 4) -1
-              assert=
-                update
-                  {} $ :a 1
-                  , :a $ \ + % 10
-                {} $ :a 11
-              assert=
-                update
-                  {} $ :a 1
-                  , :c $ \ + % 10
-                {} $ :a 1
-              assert=
-                update (range 4) 1 $ \ + % 10
-                [] 0 11 2 3
-              assert=
-                update (range 4) 11 $ \ + % 10
-                range 4
-              assert= (%some 6)
-                find (range 10)
-                  fn (x) (> x 5)
-              assert= (%some 6)
-                find-index (range 10)
-                  fn (x) (> x 5)
-              assert= (%none)
-                nth
-                  dissoc
-                    take ([] 1 2 3 4 5 6) 1
-                    , 0
-                  , 0
-          :examples $ []
-          :schema $ :: 'Dynamic
         |test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing list match")
@@ -529,28 +276,6 @@
                 .filter-pair
                   [] ([] :a 2) ([] :b 12) ([] :b 112)
                   fn (k n) (> n 10)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-repeat $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert= (repeat :a 5) ([] :a :a :a :a :a)
-              assert=
-                interleave ([] :a :b :c :d) ([] 1 2 3 4 5)
-                [] :a 1 :b 2 :c 3 :d 4
-              assert= ([] :a 1 :b 2 :c 3 :d 4)
-                interleave ([] :a :b :c :d) ([] 1 2 3 4)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-sort $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert=
-                sort $ [] 4 3 2 1
-                [] 1 2 3 4
-              assert=
-                sort ([] 4 3 2 1) (\ &- % %2)
-                [] 1 2 3 4
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)

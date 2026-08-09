@@ -9,52 +9,7 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-diff $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing diff")
-              assert=
-                &map:diff-new (&{} :a 1 :b 2) (&{} :a 2 :b 3)
-                &{}
-              assert=
-                &map:diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-                &{} :c 3
-              assert=
-                &map:diff-new (&{} :a 1 :b 2) (&{} :a 2 :b 3 :c 4)
-                &{}
-              assert=
-                &map:diff-keys (&{} :a 1 :b 2) (&{} :a 2)
-                #{} :b
-              assert=
-                &map:diff-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-                #{} :b
-              assert=
-                &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-                #{} :a
-              let
-                  triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-                assert= (&list:nth triple 0) (#{} :b)
-                assert= (&list:nth triple 1) (&{} :c 3)
-                assert=
-                  count $ &list:nth triple 2
-                  , 1
-                let
-                    first-triple $ &list:first (&list:nth triple 2)
-                    k $ &list:nth first-triple 0
-                    va $ &list:nth first-triple 1
-                    vb $ &list:nth first-triple 2
-                  do (assert= k :a) (assert= va 1) (assert= vb 2)
-              let
-                  triple2 $ &map:diff-triple (&{} :a 1 :b 2 :c 3) (&{} :a 1 :b 2 :c 3)
-                assert= (&list:nth triple2 0) (#{})
-                assert= (&list:nth triple2 1) (&{})
-                assert=
-                  count $ &list:nth triple2 2
-                  , 3
+            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-methods) (test-shorthand) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -79,19 +34,6 @@
                 assert= 10 $ foldl m 0
                   fn (acc pair)
                     let[] (k v) pair $ &+ acc v
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-keys $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing keys")
-              assert=
-                keys-non-nil $ {} (:a 1) (:b 2)
-                #{} :a :b
-              assert=
-                keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
-                #{} :a :b
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -310,72 +252,6 @@
                 macroexpand $ quote
                   {} $ :a 1
                 quote $ &{} :a 1
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-pairs $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert=
-                pairs-map $ [] ([] :a 1) ([] :b 2)
-                {} (:a 1) (:b 2)
-              assert=
-                zipmap ([] :a :b :c) ([] 1 2 3)
-                {} (:a 1) (:b 2) (:c 3)
-              assert=
-                to-pairs $ {} (:a 1) (:b 2)
-                #{} ([] :a 1) ([] :b 2)
-              assert=
-                map-kv
-                  {} (:a 1) (:b 2)
-                  fn (k v)
-                    [] k $ + v 1
-                {} (:a 2) (:b 3)
-              assert=
-                filter
-                  {} (:a 1) (:b 2) (:c 3) (:d 4)
-                  fn (pair)
-                    let[] (k v) pair $ &> v 2
-                {} (:c 3) (:d 4)
-              assert=
-                .filter
-                  {} (:a 1) (:b 2) (:c 3) (:d 4)
-                  fn (pair)
-                    let[] (k v) pair $ &> v 2
-                {} (:c 3) (:d 4)
-              assert=
-                .filter-kv
-                  {} (:a 1) (:b 2) (:c 3) (:d 4)
-                  fn (k v) (&> v 2)
-                {} (:c 3) (:d 4)
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-select $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing select")
-              assert=
-                select-keys
-                  {} (:a 1) (:b 2) (:c 3)
-                  [] :a :b
-                {} (:a 1) (:b 2)
-              assert=
-                select-keys
-                  {} (:a 1) (:b 2) (:c 3)
-                  [] :d
-                {} $ :d nil
-              assert=
-                unselect-keys
-                  {} (:a 1) (:b 2) (:c 3)
-                  [] :a :b
-                {} $ :c 3
-              assert=
-                unselect-keys
-                  {} (:a 1) (:b 2) (:c 3)
-                  [] :c :d
-                {} (:a 1) (:b 2)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

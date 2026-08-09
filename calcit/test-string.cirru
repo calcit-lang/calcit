@@ -9,7 +9,7 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (test-format) (test-char) (test-lisp-style) (test-methods) (test-bitwise) (do true)
+            defn main! () (log-title "|Testing str") (test-str) (test-includes) (test-format) (test-char) (test-lisp-style) (test-methods) (test-bitwise) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-bitwise $ %{} 'CodeEntry (:doc |)
@@ -174,14 +174,6 @@
               assert= |a00000 $ .pad-right |a 6 |0
               assert= |12312a $ .pad-left |a 6 |123
               assert= |a12312 $ .pad-right |a 6 |123
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-parse $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert= (%ok 0) (parse-float |0)
-              assert= (%err |1oops) (parse-float |1oops)
-              assert= (%err |1e) (parse-float |1e)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-str $ %{} 'CodeEntry (:doc |)

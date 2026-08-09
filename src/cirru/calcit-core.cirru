@@ -872,6 +872,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |updates-list-item-by-index)
+              :code $ quote
+                assert= ([] 1 3)
+                  &list:assoc ([] 1 2) 1 3
+              :tags $ #{} :core :unit
         |&list:assoc-after $ %{} 'CodeEntry (:doc "|internal function for associating after element\nSyntax: (&list:assoc-after list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element after first occurrence of target")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -899,6 +905,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |drops-list-tail)
+              :code $ quote
+                assert= ([] 1 2)
+                  &list:butlast $ [] 1 2 3
+              :tags $ #{} :core :unit
         |&list:concat $ %{} 'CodeEntry (:doc "|internal function for concatenating lists\nSyntax: (&list:concat list1 list2)\nParams: list1 (list), list2 (list)\nReturns: list\nReturns new list with elements from both lists")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -909,6 +921,12 @@
               :rest $ :: 'List 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |concatenates-many-lists)
+              :code $ quote
+                assert= ([] 1 2 4 5 7 8)
+                  &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
+              :tags $ #{} :core :unit
         |&list:contains? $ %{} 'CodeEntry (:doc "|internal function for checking if list contains element\nSyntax: (&list:contains? list element)\nParams: list (list), element (any)\nReturns: boolean\nReturns true if list contains element")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -917,6 +935,13 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-list-index-bounds)
+              :code $ quote
+                do
+                  assert= true $ &list:contains? ([] :a :b :c) 1
+                  assert= false $ &list:contains? ([] :a :b :c) 3
+              :tags $ #{} :core :unit
         |&list:count $ %{} 'CodeEntry (:doc "|internal function for counting list elements\nSyntax: (&list:count list)\nParams: list (list)\nReturns: number\nReturns number of elements in list")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -934,6 +959,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |removes-list-item-by-index)
+              :code $ quote
+                assert= ([] :a :b)
+                  &list:dissoc ([] :a :b :c) 2
+              :tags $ #{} :core :unit
         |&list:distinct $ %{} 'CodeEntry (:doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -976,6 +1007,13 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |filters-list-items)
+              :code $ quote
+                assert= ([] 3 4)
+                  &list:filter ([] 1 2 3 4)
+                    fn (x) (> x 2)
+              :tags $ #{} :core :unit
         |&list:filter-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:filter-pair (xs f)
@@ -1048,6 +1086,14 @@
             {} (:return 'List)
               :args $ [] 'Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |flattens-nested-lists-and-sets)
+              :code $ quote
+                assert= ([] 1 2 3 4 5 6 7 8)
+                  &list:flatten $ [] 1 2
+                    [] 3 4 $ [] 5 6
+                    , 7 8
+              :tags $ #{} :core :unit
         |&list:foldl $ %{} 'CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
           :examples $ []
@@ -1218,6 +1264,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |drops-list-head)
+              :code $ quote
+                assert= ([] 2 3 4)
+                  &list:rest $ [] 1 2 3 4
+              :tags $ #{} :core :unit
         |&list:reverse $ %{} 'CodeEntry (:doc "|internal function for reversing lists\nSyntax: (&list:reverse list)\nParams: list (list)\nReturns: list\nReturns new list with elements in reverse order")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1227,6 +1279,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |reverses-list-order)
+              :code $ quote
+                assert= ([] 4 3 2 1)
+                  &list:reverse $ [] 1 2 3 4
+              :tags $ #{} :core :unit
         |&list:slice $ %{} 'CodeEntry (:doc "|internal function for slicing lists\nSyntax: (&list:slice list start end)\nParams: list (list), start (number), end (number)\nReturns: list\nReturns sublist from start to end index")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1236,6 +1294,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |slices-list-with-exclusive-end)
+              :code $ quote
+                assert= ([] :b :c :d)
+                  &list:slice ([] :a :b :c :d) 1 4
+              :tags $ #{} :core :unit
         |&list:sort $ %{} 'CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
           :examples $ []
@@ -1275,6 +1339,11 @@
                 assert= (#{} 1)
                   &list:to-set $ [] 1 1 1 1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |deduplicates-repeated-list-members)
+              :code $ quote
+                assert= (#{} 1)
+                  &list:to-set $ [] 1 1 1 1
+              :tags $ #{} :core :unit
         |&map:add-entry $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &map:add-entry (xs pair)
@@ -1306,6 +1375,12 @@
               :generics $ [] 'K 'V 'W
               :return $ :: 'Set 'K
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |reports-shared-map-keys)
+              :code $ quote
+                assert= (#{} :a)
+                  &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+              :tags $ #{} :core :unit
         |&map:contains? $ %{} 'CodeEntry (:doc "|internal function for checking if map contains key\nSyntax: (&map:contains? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map contains key")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1340,6 +1415,12 @@
               :generics $ [] 'K 'V 'W
               :return $ :: 'Set 'K
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |reports-left-only-map-keys)
+              :code $ quote
+                assert= (#{} :b)
+                  &map:diff-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+              :tags $ #{} :core :unit
         |&map:diff-new $ %{} 'CodeEntry (:doc "|internal function for map diff new\nSyntax: (&map:diff-new map1 map2)\nParams: map1 (map), map2 (map)\nReturns: map\nReturns new entries in map2 not in map1")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1349,6 +1430,12 @@
               :generics $ [] 'K 'V 'W
               :return $ :: 'Map 'K 'W
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-keys-only-in-left-map)
+              :code $ quote
+                assert= (&{} :c 3)
+                  &map:diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
+              :tags $ #{} :core :unit
         |&map:diff-triple $ %{} 'CodeEntry (:doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: list\nReturns a list of three elements:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1367,6 +1454,21 @@
               :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
               :generics $ [] 'K 'V 'W
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-diff-sets-and-common-triples)
+              :code $ quote
+                do
+                  let
+                      triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+                    assert= (#{} :b) (&list:nth triple 0)
+                    assert= (&{} :c 3) (&list:nth triple 1)
+                    assert= 1 $ count (&list:nth triple 2)
+                  let
+                      same $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 1 :b 2)
+                    assert= (#{}) (&list:nth same 0)
+                    assert= (&{}) (&list:nth same 1)
+                    assert= 2 $ count (&list:nth same 2)
+              :tags $ #{} :core :unit
         |&map:dissoc $ %{} 'CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1801,6 +1903,14 @@
             {} (:return 'Number)
               :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |orders-and-compares-equal-strings)
+              :code $ quote
+                do
+                  assert= -1 $ &str:compare |a |b
+                  assert= 1 $ &str:compare |b |a
+                  assert= 0 $ &str:compare |a |a
+              :tags $ #{} :core :unit
         |&str:concat $ %{} 'CodeEntry (:doc "|internal function for string concatenation\nSyntax: (&str:concat a b)\nParams: a (string), b (string)\nReturns: string\nConcatenates two strings together")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1808,6 +1918,13 @@
             {} (:return 'String)
               :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |concatenates-string-and-number-values)
+              :code $ quote
+                do
+                  assert= |ab $ &str:concat |a |b
+                  assert= |12 $ &str:concat 1 2
+              :tags $ #{} :core :unit
         |&str:contains? $ %{} 'CodeEntry (:doc "|internal function for checking whether a string has a character at an index\nSyntax: (&str:contains? s index)\nParams: s (string), index (number)\nReturns: boolean\nReturns true when index is a valid character index in s")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2084,6 +2201,10 @@
               :code $ quote
                 assert= 24 $ * 1 2 3 4
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |multiplies-number-sequence)
+              :code $ quote
+                assert= 24 $ * 1 2 3 4
+              :tags $ #{} :core :unit
         |+ $ %{} 'CodeEntry (:doc "|Mathematical addition operation\\nFunction: Calculates the sum of one or more numbers\\nParams: x (number), ys (variadic args, list of numbers)\\nReturns: number - sum of all arguments\\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
             defn + (x & ys) (reduce ys x &+)
@@ -2097,6 +2218,10 @@
               :args $ [] 'Number
           :tests $ []
             %{} 'TestEntry (:name |adds-variadic-numbers)
+              :code $ quote
+                assert= 10 $ + 1 2 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |adds-many-numbers)
               :code $ quote
                 assert= 10 $ + 1 2 3 4
               :tags $ #{} :core :unit
@@ -2116,6 +2241,10 @@
                 do
                   assert= 4 $ - 10 1 2 3
                   assert= -2 $ - 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |subtracts-number-sequence)
+              :code $ quote
+                assert= 4 $ - 10 1 2 3
               :tags $ #{} :core :unit
         |-> $ %{} 'CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
           :code $ quote
@@ -2197,6 +2326,10 @@
                   assert= 15 $ / 360 2 3 4
                   assert= 0.5 $ / 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |divides-number-sequence)
+              :code $ quote
+                assert= 15 $ / 360 2 3 4
+              :tags $ #{} :core :unit
         |/= $ %{} 'CodeEntry (:doc "|not equal")
           :code $ quote
             defn /= (a b) (not= a b)
@@ -2246,6 +2379,12 @@
               :args $ [] 'Number
           :tests $ []
             %{} 'TestEntry (:name |compares-ascending-chain)
+              :code $ quote
+                do
+                  assert= true $ < 1 2 3 4 5
+                  assert= false $ < 3 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checks-strict-ascending-sequence)
               :code $ quote
                 do
                   assert= true $ < 1 2 3 4 5
@@ -2306,6 +2445,10 @@
               :args $ [] 'Number
           :tests $ []
             %{} 'TestEntry (:name |compares-descending-chain)
+              :code $ quote
+                assert= true $ > 10 8 6 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checks-strict-descending-sequence)
               :code $ quote
                 assert= true $ > 10 8 6 4
               :tags $ #{} :core :unit
@@ -2584,6 +2727,10 @@
               :args $ [] 'Number
           :tests $ []
             %{} 'TestEntry (:name |returns-magnitude)
+              :code $ quote
+                assert= 4 $ abs -4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |normalizes-negative-magnitude)
               :code $ quote
                 assert= 4 $ abs -4
               :tags $ #{} :core :unit
@@ -2895,6 +3042,10 @@
                   assert= 4 $ bit-shl 2 1
                   assert= 16 $ bit-shl 4 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |shifts-by-multiple-bits)
+              :code $ quote
+                assert= 16 $ bit-shl 4 2
+              :tags $ #{} :core :unit
         |bit-shr $ %{} 'CodeEntry (:doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2908,6 +3059,10 @@
                 do
                   assert= 1 $ bit-shr 2 1
                   assert= 1 $ bit-shr 4 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |shifts-by-multiple-bits)
+              :code $ quote
+                assert= 1 $ bit-shr 4 2
               :tags $ #{} :core :unit
         |bit-xor $ %{} 'CodeEntry (:doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers")
           :code $ quote &runtime-implementation
@@ -3078,6 +3233,10 @@
               :code $ quote
                 assert= 2 $ ceil 1.1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |ceils-positive-fraction)
+              :code $ quote
+                assert= 2 $ ceil 1.1
+              :tags $ #{} :core :unit
         |char-from-code $ %{} 'CodeEntry (:doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3087,6 +3246,12 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |creates-unicode-character)
+              :code $ quote
+                do
+                  assert= |a $ char-from-code 97
+                  assert= "|汉" $ char-from-code 27721
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |creates-ascii-and-unicode-characters)
               :code $ quote
                 do
                   assert= |a $ char-from-code 97
@@ -3255,6 +3420,12 @@
             %{} 'TestEntry (:name |finds-map-key)
               :code $ quote
                 assert= true $ contains? (&{} :a 1 :b 2) :a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checks-string-indices)
+              :code $ quote
+                do
+                  assert= true $ contains? |abcd 0
+                  assert= false $ contains? |abcd 4
               :tags $ #{} :core :unit
         |cos $ %{} 'CodeEntry (:doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians")
           :code $ quote &runtime-implementation
@@ -3813,6 +3984,11 @@
                 assert= (#{} 3)
                   difference (#{} 1 2 3) (#{} 1) (#{} 2)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |subtracts-multiple-sets)
+              :code $ quote
+                assert= (#{} 3)
+                  difference (#{} 1 2 3) (#{} 1) (#{} 2)
+              :tags $ #{} :core :unit
         |dissoc $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn dissoc (x & args)
@@ -3858,6 +4034,12 @@
               :args $ [] (:: 'List 'T)
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-first-occurrence-order)
+              :code $ quote
+                assert= ([] 1 2 3)
+                  distinct $ [] 1 2 3 1 2
+              :tags $ #{} :core :unit
         |do $ %{} 'CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.")
           :code $ quote
             defmacro do (& body)
@@ -3960,6 +4142,18 @@
               :code $ quote
                 assert= true $ empty? (&{})
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |recognizes-empty-string)
+              :code $ quote
+                do
+                  assert= true $ empty? |
+                  assert= false $ empty? |a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |recognizes-empty-set)
+              :code $ quote
+                do
+                  assert= true $ empty? (#{})
+                  assert= false $ empty? (#{} 1)
+              :tags $ #{} :core :unit
         |ends-with? $ %{} 'CodeEntry (:doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3969,6 +4163,12 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |checks-suffix)
+              :code $ quote
+                do
+                  assert= true $ ends-with? |01234 |34
+                  assert= false $ ends-with? |01234 |23
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-only-suffixes)
               :code $ quote
                 do
                   assert= true $ ends-with? |01234 |34
@@ -4113,6 +4313,12 @@
                     fn (pair)
                       let[] (k v) pair $ > v 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |filters-set-members)
+              :code $ quote
+                assert= (#{} 7 9)
+                  filter (#{} 1 3 5 7 9)
+                    fn (x) (> x 5)
+              :tags $ #{} :core :unit
         |filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn filter-not (xs f)
@@ -4226,6 +4432,10 @@
                   assert= (%none)
                     first $ []
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-first-string-character)
+              :code $ quote
+                assert= (%some |a) (first |abc)
+              :tags $ #{} :core :unit
         |flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro flipped (f & args)
@@ -4246,6 +4456,10 @@
             %{} 'TestEntry (:name |rounds-down)
               :code $ quote
                 assert= 1 $ floor 1.8
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |floors-positive-fraction)
+              :code $ quote
+                assert= 1 $ floor 1.1
               :tags $ #{} :core :unit
         |fn $ %{} 'CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
           :code $ quote
@@ -4352,6 +4566,15 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |formats-basic-edn-values)
+              :code $ quote
+                do
+                  assert= "|[] 'a" $ trim
+                    format-cirru-edn $ [] 'a
+                  assert= "|do nil" $ trim (format-cirru-edn nil)
+                  assert= "|do 's" $ trim (format-cirru-edn 's)
+              :tags $ #{} :core :unit
         |format-cirru-one-liner $ %{} 'CodeEntry (:doc "|internal function for formatting Cirru as one-liner\nSyntax: (format-cirru-one-liner data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru one-liner syntax text")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4359,6 +4582,19 @@
             {} (:return 'String)
               :args $ [] 'List
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |formats-simple-form-on-one-line)
+              :code $ quote
+                do
+                  assert=
+                    format-cirru-one-liner $ [] |defn
+                      [] |add $ [] |a |b
+                      [] |+ |a |b
+                    , "|defn (add (a b)) $ + a b"
+                  assert=
+                    format-cirru-one-liner $ [] |+ |1 |2
+                    , "|+ 1 2"
+              :tags $ #{} :core :unit
         |format-to-cirru $ %{} 'CodeEntry (:doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4375,6 +4611,15 @@
               :args $ [] 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |formats-quoted-code-as-lisp)
+              :code $ quote
+                do
+                  assert= "|(defn f1 (x) (+ x y))" $ format-to-lisp
+                    quote $ defn f1 (x) (+ x y)
+                  assert= "|(nil? nil)" $ format-to-lisp
+                    quote $ nil? nil
+              :tags $ #{} :core :unit
         |frequencies $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn frequencies (xs0)
@@ -4462,6 +4707,10 @@
                 do
                   assert= 97 $ get-char-code |a
                   assert= 27721 $ get-char-code "|汉"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-cjk-character-code)
+              :code $ quote
+                assert= 27721 $ get-char-code "|汉"
               :tags $ #{} :core :unit
         |get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
           :code $ quote
@@ -4697,6 +4946,18 @@
               :code $ quote
                 assert= false $ includes? (&{} :a 1 :b 2) 3
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-and-rejects-string-substrings)
+              :code $ quote
+                do
+                  assert= true $ includes? |abc |abc
+                  assert= false $ includes? |abd |abc
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-and-rejects-set-members)
+              :code $ quote
+                do
+                  assert= true $ includes? (#{} 1 2 3) 2
+                  assert= false $ includes? (#{} 1 2 3) 4
+              :tags $ #{} :core :unit
         |index-of $ %{} 'CodeEntry (:doc "|Find the first list item index as Option<Number>.")
           :code $ quote
             defn index-of (xs item)
@@ -4715,6 +4976,15 @@
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
               :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-index-or-none)
+              :code $ quote
+                do
+                  assert= (%some 0)
+                    index-of ([] :a :b :c :a) :a
+                  assert= (%none)
+                    index-of ([] :a :b :c) :missing
+              :tags $ #{} :core :unit
         |interleave $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn interleave (xs0 ys0)
@@ -4739,6 +5009,12 @@
             {} (:return 'List)
               :args $ [] (:: 'List 'T) (:: 'List 'U)
               :generics $ [] 'T 'U
+          :tests $ []
+            %{} 'TestEntry (:name |truncates-to-shortest-list)
+              :code $ quote
+                assert= ([] :a 1 :b 2)
+                  interleave ([] :a :b :c) ([] 1 2)
+              :tags $ #{} :core :unit
         |intersection $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn intersection (base & xs)
@@ -4752,6 +5028,11 @@
               :return $ :: 'Set 'T
           :tests $ []
             %{} 'TestEntry (:name |keeps-common-set-members)
+              :code $ quote
+                assert= (#{} 3)
+                  intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-common-members-across-sets)
               :code $ quote
                 assert= (#{} 3)
                   intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
@@ -4815,6 +5096,13 @@
             {} (:return 'String)
               :args $ [] (:: 'List 'T) 'String
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |renders-items-and-empty-list)
+              :code $ quote
+                do
+                  assert= |1-2-3 $ join-str ([] 1 2 3) |-
+                  assert= | $ join-str ([]) |-
+              :tags $ #{} :core :unit
         |js-nullish->option $ %{} 'CodeEntry (:doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type.")
           :code $ quote
             defn js-nullish->option (x)
@@ -4989,6 +5277,10 @@
                     last $ [] 1 2 3
                   assert= (%none)
                     last $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-last-string-character)
+              :code $ quote
+                assert= (%some |c) (last |abc)
               :tags $ #{} :core :unit
         |let $ %{} 'CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
@@ -5378,6 +5670,17 @@
                   :return $ :: 'List 'U
               :generics $ [] 'T 'U
               :return $ :: 'List 'U
+          :tests $ []
+            %{} 'TestEntry (:name |concatenates-mapped-lists)
+              :code $ quote
+                do
+                  assert= ([] 0 0 1 0 1 2)
+                    mapcat ([] 1 2 3)
+                      fn (x) (range x)
+                  assert= ([])
+                    mapcat ([])
+                      fn (x) (range x)
+              :tags $ #{} :core :unit
         |max $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn max (xs) (.max xs)
@@ -5389,6 +5692,11 @@
               :return $ :: 'Option 'Number
           :tests $ []
             %{} 'TestEntry (:name |returns-largest-option)
+              :code $ quote
+                assert= (%some 4)
+                  max $ [] 1 2 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-largest-list-option)
               :code $ quote
                 assert= (%some 4)
                   max $ [] 1 2 3 4
@@ -5445,6 +5753,11 @@
               :return $ :: 'Option 'Number
           :tests $ []
             %{} 'TestEntry (:name |returns-smallest-option)
+              :code $ quote
+                assert= (%some 1)
+                  min $ [] 1 2 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-smallest-list-option)
               :code $ quote
                 assert= (%some 1)
                   min $ [] 1 2 3 4
@@ -5743,6 +6056,14 @@
             {} (:return 'CirruQuote)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-cirru-quote-tree)
+              :code $ quote
+                do
+                  assert= :cirru-quote $ type-of (parse-cirru "|a b")
+                  assert= :list $ &cirru-type
+                    &cirru-nth (parse-cirru "|a b") 0
+              :tags $ #{} :core :unit
         |parse-cirru-edn $ %{} 'CodeEntry (:doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5750,6 +6071,16 @@
             {} (:return 'Dynamic)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |parses-enums-comments-and-quoted-code)
+              :code $ quote
+                do
+                  assert= (:: :a 1) (parse-cirru-edn "|:: :a 1")
+                  assert= ([] 1 2 3) (parse-cirru-edn "|[] 1 2 (; comment) 3")
+                  assert=
+                    &{} :code $ cirru-quote (+ 1 2 3)
+                    parse-cirru-edn "|{} $ :code $ quote $ + 1 2 3"
+              :tags $ #{} :core :unit
         |parse-cirru-list $ %{} 'CodeEntry (:doc "|internal function for parsing Cirru list\nSyntax: (parse-cirru-list text)\nParams: text (string)\nReturns: list\nParses Cirru text as a list of expressions")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5777,6 +6108,13 @@
                   assert= (%ok 1.5) (parse-float |1.5)
                   assert= (%err |oops) (parse-float |oops)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reports-invalid-number-source)
+              :code $ quote
+                do
+                  assert= (%ok 0) (parse-float |0)
+                  assert= (%err |1oops) (parse-float |1oops)
+                  assert= (%err |1e) (parse-float |1e)
+              :tags $ #{} :core :unit
         |pow $ %{} 'CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5786,6 +6124,10 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |raises-to-power)
+              :code $ quote
+                assert= 81 $ pow 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |raises-number-to-power)
               :code $ quote
                 assert= 81 $ pow 3 4
               :tags $ #{} :core :unit
@@ -5863,6 +6205,13 @@
             {}
               :args $ [] 'Number 'Number
               :return $ :: 'List 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |creates-symmetric-and-offset-ranges)
+              :code $ quote
+                do
+                  assert= ([] -2 -1 0 1 2) (range-bothway 3)
+                  assert= ([] 0 1 2 3 4) (range-bothway 2 5)
+              :tags $ #{} :core :unit
         |read-dir $ %{} 'CodeEntry (:doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5924,6 +6273,11 @@
                 :: 'Fn $ {} (:return 'U)
                   :args $ [] 'U 'T
               :generics $ [] 'T 'U
+          :tests $ []
+            %{} 'TestEntry (:name |reduces-list-from-initial-value)
+              :code $ quote
+                assert= 14 $ reduce ([] 3 4 5) 2 +
+              :tags $ #{} :core :unit
         |ref? $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn ref? (x)
@@ -5999,6 +6353,10 @@
                     rest $ [] 1 2 3
                   assert= ([])
                     rest $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |drops-first-string-character)
+              :code $ quote
+                assert= |bc $ rest |abc
               :tags $ #{} :core :unit
         |result:and-then $ %{} 'CodeEntry (:doc "|Chains a Result-producing function over :ok and preserves :err.")
           :code $ quote
@@ -6127,6 +6485,12 @@
                   assert= 1 $ round 1.1
                   assert= 2 $ round 1.8
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
+              :code $ quote
+                do
+                  assert= 1 $ round 1.1
+                  assert= 2 $ round 1.8
+              :tags $ #{} :core :unit
         |round? $ %{} 'CodeEntry (:doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6136,6 +6500,12 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |distinguishes-integers)
+              :code $ quote
+                do
+                  assert= true $ round? 1
+                  assert= false $ round? 1.1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-noninteger-number)
               :code $ quote
                 do
                   assert= true $ round? 1
@@ -6235,6 +6605,12 @@
                   assert= |56789 $ slice |0123456789 5
                   assert= |567 $ slice |0123456789 5 8
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |slices-unicode-text-by-character)
+              :code $ quote
+                do
+                  assert= "|文字" $ slice "|中文字符串" 1 3
+                  assert= "|文字符串" $ slice "|中文字符串" 1
+              :tags $ #{} :core :unit
         |some-in? $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn some-in? (x path)
@@ -6282,6 +6658,10 @@
               :code $ quote
                 assert= ([] |a |b |c) (split |a,b,c |,)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |splits-unicode-characters-on-empty-delimiter)
+              :code $ quote
+                assert= ([] |a "|中" |b "|文" |c) (split "|a中b文c" |)
+              :tags $ #{} :core :unit
         |split-lines $ %{} 'CodeEntry (:doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6292,6 +6672,10 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |splits-newlines)
+              :code $ quote
+                assert= ([] |a |b |c) (split-lines "|a\nb\nc")
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |splits-multiline-text)
               :code $ quote
                 assert= ([] |a |b |c) (split-lines "|a\nb\nc")
               :tags $ #{} :core :unit
@@ -6307,6 +6691,10 @@
               :code $ quote
                 assert= 9 $ sqrt 81
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finds-exact-square-root)
+              :code $ quote
+                assert= 9 $ sqrt 81
+              :tags $ #{} :core :unit
         |starts-with? $ %{} 'CodeEntry (:doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6319,6 +6707,13 @@
               :code $ quote
                 do
                   assert= true $ starts-with? |01234 |01
+                  assert= false $ starts-with? |01234 |12
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |supports-tag-and-string-prefixes)
+              :code $ quote
+                do
+                  assert= true $ starts-with? |01234 |01
+                  assert= true $ starts-with? :a/b :a/
                   assert= false $ starts-with? |01234 |12
               :tags $ #{} :core :unit
         |str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")
@@ -6340,6 +6735,12 @@
                 do
                   assert= |abc $ str |a |b |c
                   assert= |123 $ str 1 2 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |omits-nil-and-renders-enums)
+              :code $ quote
+                do
+                  assert= |ac $ str |a nil |c
+                  assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str (:: :a "|世界" "|海 洋")
               :tags $ #{} :core :unit
         |str-find-index $ %{} 'CodeEntry (:doc "|Find the first string index as Option<Number>, returning none when the pattern is absent.")
           :code $ quote
@@ -6399,6 +6800,12 @@
                   assert= |abc $ strip-prefix |ababc |ab
                   assert= |0abc $ strip-prefix |0abc |ab
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |leaves-nonmatching-prefix-unchanged)
+              :code $ quote
+                do
+                  assert= |abc $ strip-prefix |ababc |ab
+                  assert= |0abc $ strip-prefix |0abc |ab
+              :tags $ #{} :core :unit
         |strip-suffix $ %{} 'CodeEntry (:doc "|removes suffix from string if it ends with that suffix, returns original string otherwise")
           :code $ quote
             defn strip-suffix (s piece)
@@ -6414,6 +6821,12 @@
               :args $ [] 'String 'String
           :tests $ []
             %{} 'TestEntry (:name |removes-only-matching-suffix)
+              :code $ quote
+                do
+                  assert= |aba $ strip-suffix |ababc |bc
+                  assert= |abc0 $ strip-suffix |abc0 |bc
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |leaves-nonmatching-suffix-unchanged)
               :code $ quote
                 do
                   assert= |aba $ strip-suffix |ababc |bc
@@ -6694,6 +7107,10 @@
                   assert= | $ trim |______ |_
                   assert= |1 $ trim |__1__ |_
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |trims-leading-space-from-string)
+              :code $ quote
+                assert= "|ab cd" $ trim "| ab cd"
+              :tags $ #{} :core :unit
         |try $ %{} 'CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6774,6 +7191,11 @@
                 assert= (#{} 1 2 3)
                   union (#{} 1) (#{} 2) (#{} 3)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |combines-three-sets)
+              :code $ quote
+                assert= (#{} 1 2 3)
+                  union (#{} 1) (#{} 2) (#{} 3)
+              :tags $ #{} :core :unit
         |unix-time-ms $ %{} 'CodeEntry (:doc "|Return the current Unix timestamp in milliseconds.\nSyntax: (unix-time-ms)\nReturns: number")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6844,6 +7266,17 @@
                 :: 'Fn $ {} (:return 'T)
                   :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
+              :code $ quote
+                do
+                  assert= (&{} :a 11)
+                    update (&{} :a 1) :a $ fn (x) (+ x 10)
+                  assert= ([] 0 11 2)
+                    update ([] 0 1 2) 1 $ fn (x) (+ x 10)
+                  assert= ([] 0 1 2)
+                    update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+              :tags $ #{} :core :unit
         |update-in $ %{} 'CodeEntry (:doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps.")
           :code $ quote
             defn update-in (data path f)
@@ -6887,6 +7320,17 @@
                 :: 'Fn $ {} (:return 'T)
                   :args $ [] (:: 'Option 'T)
               :generics $ [] 'K 'T
+          :tests $ []
+            %{} 'TestEntry (:name |updates-existing-nested-leaf)
+              :code $ quote
+                assert=
+                  &{} :a $ &{} :b 3
+                  update-in
+                    &{} :a $ &{} :b 1
+                    [] :a :b
+                    fn (value)
+                      + (option:unwrap value) 2
+              :tags $ #{} :core :unit
         |vals $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn vals (x)

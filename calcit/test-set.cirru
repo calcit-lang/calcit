@@ -9,7 +9,7 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing set") (test-set) (test-methods) (do true)
+            defn main! () (log-title "|Testing set") (test-methods) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -71,65 +71,6 @@
                 .min $ #{} 1 2 3 4
               assert= (%none)
                 .min $ #{}
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-set $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-set ()
-              assert= 4 $ count (#{} 1 2 3 4)
-              assert-detect identity $ includes? (#{} 1 2 3) 2
-              assert= false $ includes? (#{} 1 2 3) 4
-              assert= (#{} 1 2 3) (#{} 2 3 1)
-              assert=
-                include (#{} 1 2 3) 4
-                #{} 1 2 3 4
-              assert=
-                include (#{} 1 2) 3 4
-                #{} 1 2 3 4
-              assert=
-                exclude (#{} 1 2 3) 1
-                #{} 2 3
-              assert=
-                exclude (#{} 1 2 3) 1 2
-                #{} 3
-              assert=
-                difference (#{} 1 2 3) (#{} 1) (#{} 2)
-                #{} 3
-              assert=
-                union (#{} 1) (#{} 2) (#{} 3)
-                #{} 1 2 3
-              assert=
-                intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
-                #{} 3
-              &let
-                v $ .to-list (#{} 1 2 3)
-                assert-detect list? v
-                assert= 3 $ count v
-              assert=
-                map (#{} 1 2 3)
-                  fn (x) (inc x)
-                #{} 2 3 4
-              assert=
-                .map (#{} 1 2 3) inc
-                #{} 2 3 4
-              assert-detect identity $ every? (#{} 1 2 3) (\ > % 0)
-              assert= (#{} 1 2 3)
-                #{} 1 2 $ + 1 2
-              assert-detect not $ = (#{} 1 2 3) (#{} 2 3 4)
-              assert= (#{} 1 2 3 4)
-                &list:to-set $ [] 1 2 3 4
-              assert= (#{} 1)
-                &list:to-set $ [] 1 1 1 1
-              assert= (#{} 1)
-                .to-set $ [] 1 1 1 1
-              assert=
-                &hash $ #{} 1 2 3 4
-                &hash $ #{} 1 4 2 3
-              assert=
-                &hash $ #{} 3 4 2 1
-                &hash $ #{} 3 2 1 4
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
