@@ -2640,6 +2640,12 @@
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'Dynamic 'Fn
+          :tests $ []
+            %{} 'TestEntry (:name |shortlists-list-members)
+              :code $ quote
+                assert= true $ any? ([] 1 2 3 4)
+                  fn (x) (> x 3)
+              :tags $ #{} :core :unit
         |append $ %{} 'CodeEntry (:doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2669,6 +2675,11 @@
             {} (:return 'Dynamic)
               :args $ [] 'Fn (:: 'List 'A)
               :generics $ [] 'A
+          :tests $ []
+            %{} 'TestEntry (:name |spreads-list-arguments)
+              :code $ quote
+                assert= 10 $ apply + ([] 1 2 3 4)
+              :tags $ #{} :core :unit
         |apply-args $ %{} 'CodeEntry (:doc "|macro that applies a function to arguments, handles empty argument list specially")
           :code $ quote
             defmacro apply-args (args f)
@@ -2780,6 +2791,17 @@
             {} (:return 'T)
               :args $ [] 'T 'K 'V
               :generics $ [] 'T 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |replaces-map-value)
+              :code $ quote
+                assert= (&{} :a 3 :b 2)
+                  assoc (&{} :a 1 :b 2) :a 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |adds-map-key)
+              :code $ quote
+                assert= (&{} :a 1 :b 2 :c 3)
+                  assoc (&{} :a 1 :b 2) :c 3
+              :tags $ #{} :core :unit
         |assoc-in $ %{} 'CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
@@ -3229,6 +3251,11 @@
             {} (:return 'Bool)
               :args $ [] 'T 'K
               :generics $ [] 'T 'K
+          :tests $ []
+            %{} 'TestEntry (:name |finds-map-key)
+              :code $ quote
+                assert= true $ contains? (&{} :a 1 :b 2) :a
+              :tags $ #{} :core :unit
         |cos $ %{} 'CodeEntry (:doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3796,6 +3823,17 @@
             {} (:rest 'K) (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T 'K
+          :tests $ []
+            %{} 'TestEntry (:name |removes-multiple-map-keys)
+              :code $ quote
+                assert= (&{} :d 5)
+                  dissoc (&{} :a 1 :b 2 :c 3 :d 5) :a :b :c
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |ignores-missing-map-key)
+              :code $ quote
+                assert= (&{} :a 1)
+                  dissoc (&{} :a 1) :missing
+              :tags $ #{} :core :unit
         |dissoc-in $ %{} 'CodeEntry (:doc "|Remove a nested key or index. An empty path leaves the input unchanged.")
           :code $ quote
             defn dissoc-in (data path)
@@ -3917,6 +3955,11 @@
             {} (:return 'Bool)
               :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |recognizes-empty-map)
+              :code $ quote
+                assert= true $ empty? (&{})
+              :tags $ #{} :core :unit
         |ends-with? $ %{} 'CodeEntry (:doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4006,6 +4049,11 @@
               :code $ quote
                 assert= true $ every? (#{} 1 2 3) (\ > % 0)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checks-every-list-member)
+              :code $ quote
+                assert= true $ every? ([] 1 2 3 4)
+                  fn (x) (> x 0)
+              :tags $ #{} :core :unit
         |exclude $ %{} 'CodeEntry (:doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item.")
           :code $ quote
             defn exclude (base & xs)
@@ -4057,6 +4105,14 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic 'Fn
+          :tests $ []
+            %{} 'TestEntry (:name |filters-map-pairs)
+              :code $ quote
+                assert= (&{} :c 3 :d 4)
+                  filter (&{} :a 1 :b 2 :c 3 :d 4)
+                    fn (pair)
+                      let[] (k v) pair $ > v 2
+              :tags $ #{} :core :unit
         |filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn filter-not (xs f)
@@ -4070,6 +4126,13 @@
                   :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |filters-matching-list-members)
+              :code $ quote
+                assert= ([] 0 1 2 3)
+                  filter-not (range 10)
+                    fn (x) (> x 3)
+              :tags $ #{} :core :unit
         |find $ %{} 'CodeEntry (:doc "|Find the first matching list item as Option<T>.")
           :code $ quote
             defn find (xs f)
@@ -4092,6 +4155,13 @@
                   :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'Option 'T
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-matching-list-member)
+              :code $ quote
+                assert= (%some 6)
+                  find (range 10)
+                    fn (x) (> x 5)
+              :tags $ #{} :core :unit
         |find-index $ %{} 'CodeEntry (:doc "|Find the first matching list index as Option<Number>.")
           :code $ quote
             defn find-index (xs f)
@@ -4114,6 +4184,13 @@
                   :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-matching-list-index)
+              :code $ quote
+                assert= (%some 6)
+                  find-index (range 10)
+                    fn (x) (> x 5)
+              :tags $ #{} :core :unit
         |first $ %{} 'CodeEntry (:doc "|Return the first item as Option<T>; empty collections produce none.")
           :code $ quote
             defn first (x)
@@ -4208,6 +4285,11 @@
                   :args $ [] 'U 'T
               :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |reduces-list-from-left)
+              :code $ quote
+                assert= 6 $ foldl ([] 1 2 3) 0 &+
+              :tags $ #{} :core :unit
         |foldl' $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn foldl' (xs acc f)
@@ -4315,6 +4397,12 @@
               :args $ [] (:: 'List 'T)
               :generics $ [] 'T
               :return $ :: 'Map 'T 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |counts-repeated-list-members)
+              :code $ quote
+                assert= (&{} 1 1 2 2 3 3)
+                  frequencies $ [] 1 2 2 3 3 3
+              :tags $ #{} :core :unit
         |generate-id! $ %{} 'CodeEntry (:doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4355,6 +4443,12 @@
             {}
               :args $ [] 'Dynamic 'Dynamic
               :return $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |returns-some-or-none-for-map)
+              :code $ quote
+                assert= (%none)
+                  get (&{}) :missing
+              :tags $ #{} :core :unit
         |get-char-code $ %{} 'CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4412,6 +4506,14 @@
               :args $ [] 'Dynamic (:: 'List 'K)
               :generics $ [] 'K
               :return $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |returns-nested-map-value)
+              :code $ quote
+                assert= (%some 2)
+                  get-in
+                    &{} :a $ &{} :b 2
+                    [] :a :b
+              :tags $ #{} :core :unit
         |group-by $ %{} 'CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
             defn group-by (xs0 f)
@@ -4442,6 +4544,14 @@
                   :args $ [] 'T
               :generics $ [] 'T 'K
               :return $ :: 'Map 'K (:: 'List 'T)
+          :tests $ []
+            %{} 'TestEntry (:name |groups-list-by-derived-key)
+              :code $ quote
+                assert=
+                  &{} 0 ([] 0 3 6 9) 1 ([] 1 4 7) 2 $ [] 2 5 8
+                  group-by (range 10)
+                    fn (x) (.rem x 3)
+              :tags $ #{} :core :unit
         |hint-fn $ %{} 'CodeEntry (:doc "|internal syntax for function hints (used for async and function schema metadata)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (schema map or keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and schema metadata such as :args, :return, :generics, and :where")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4582,6 +4692,11 @@
           :schema $ :: 'Fn
             {} (:return 'Bool)
               :args $ [] 'Dynamic 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |finds-map-value)
+              :code $ quote
+                assert= false $ includes? (&{} :a 1 :b 2) 3
+              :tags $ #{} :core :unit
         |index-of $ %{} 'CodeEntry (:doc "|Find the first list item index as Option<Number>.")
           :code $ quote
             defn index-of (xs item)
@@ -4673,6 +4788,12 @@
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |inserts-separators-between-list-items)
+              :code $ quote
+                assert= ([] 1 10 2 10 3 10 4)
+                  join ([] 1 2 3 4) 10
+              :tags $ #{} :core :unit
         |join-str $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn join-str (xs0 sep)
@@ -4791,6 +4912,12 @@
           :schema $ :: 'Fn
             {} (:return 'Set)
               :args $ [] 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |returns-map-tags)
+              :code $ quote
+                assert= (#{} :a :b)
+                  keys $ &{} :a 1 :b 2
+              :tags $ #{} :core :unit
         |keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote
             defn keys-non-nil (x)
@@ -5144,6 +5271,14 @@
                 assert= (#{} 2 3 4)
                   map (#{} 1 2 3) inc
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |maps-map-pairs)
+              :code $ quote
+                assert= (&{} :a 11 :b 12)
+                  map (&{} :a 1 :b 2)
+                    fn (pair)
+                      [] (&list:first pair)
+                        + 10 $ &list:last pair
+              :tags $ #{} :core :unit
         |map-indexed $ %{} 'CodeEntry (:doc "|Map over a collection with index, f takes index and value")
           :code $ quote
             defn map-indexed (xs f)
@@ -5167,6 +5302,15 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic 'Fn
+          :tests $ []
+            %{} 'TestEntry (:name |passes-index-and-value)
+              :code $ quote
+                assert=
+                  [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
+                  map-indexed (range 3)
+                    fn (idx x)
+                      [] idx $ &str x
+              :tags $ #{} :core :unit
         |map-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn map-kv (xs f)
@@ -5192,6 +5336,23 @@
                   :args $ [] 'K 'V
               :generics $ [] 'K 'V 'Q 'R 'S
               :return $ :: 'Map 'R 'S
+          :tests $ []
+            %{} 'TestEntry (:name |transforms-each-entry)
+              :code $ quote
+                assert= (&{} :a 11 :b 12)
+                  map-kv (&{} :a 1 :b 2)
+                    fn (k v)
+                      [] k $ + v 10
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |skips-nil-results)
+              :code $ quote
+                assert= (&{} :a 11 :b 12)
+                  map-kv (&{} :a 1 :b 2 :c 13)
+                    fn (k v)
+                      if (< v 10)
+                        [] k $ + v 10
+                        :: :none
+              :tags $ #{} :core :unit
         |map? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a map")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5569,6 +5730,12 @@
               :args $ [] (:: 'List 'P)
               :generics $ [] 'P 'K 'V
               :return $ :: 'Map 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |converts-list-pairs)
+              :code $ quote
+                assert= (&{} :a 1 :b 2)
+                  pairs-map $ [] ([] :a 1) ([] :b 2)
+              :tags $ #{} :core :unit
         |parse-cirru $ %{} 'CodeEntry (:doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5795,6 +5962,11 @@
               :args $ [] 'T 'Number
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |repeats-value-fixed-times)
+              :code $ quote
+                assert= ([] :a :a :a :a :a) (repeat :a 5)
+              :tags $ #{} :core :unit
         |reset! $ %{} 'CodeEntry (:doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5990,6 +6162,13 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
               :return $ :: 'List (:: 'List 'T)
+          :tests $ []
+            %{} 'TestEntry (:name |splits-list-into-fixed-sections)
+              :code $ quote
+                assert=
+                  [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
+                  section-by (range 10) 3
+              :tags $ #{} :core :unit
         |select-keys $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn select-keys (m xs)
@@ -6006,6 +6185,12 @@
               :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-requested-and-missing-keys)
+              :code $ quote
+                assert= (&{} :a 1 :missing nil)
+                  select-keys (&{} :a 1 :b 2 :c 3) ([] :a :missing)
+              :tags $ #{} :core :unit
         |set? $ %{} 'CodeEntry (:doc "|Check if a value is a set")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6078,6 +6263,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |orders-list-with-default-comparator)
+              :code $ quote
+                assert= ([] 1 2 3 4)
+                  sort $ [] 4 3 2 1
+              :tags $ #{} :core :unit
         |split $ %{} 'CodeEntry (:doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6479,6 +6670,13 @@
               :generics $ [] 'K 'V
               :return $ :: 'Set 'Enum
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unordered-entry-set)
+              :code $ quote
+                assert=
+                  #{} ([] :a 1) ([] :b 2)
+                  to-pairs $ &{} :a 1 :b 2
+              :tags $ #{} :core :unit
         |trim $ %{} 'CodeEntry (:doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6603,6 +6801,12 @@
               :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |removes-existing-keys)
+              :code $ quote
+                assert= (&{} :c 3)
+                  unselect-keys (&{} :a 1 :b 2 :c 3) ([] :a :b)
+              :tags $ #{} :core :unit
         |update $ %{} 'CodeEntry (:doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot.")
           :code $ quote
             defn update (x k f)
@@ -6697,6 +6901,12 @@
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
               :return $ :: 'Set 'V
+          :tests $ []
+            %{} 'TestEntry (:name |deduplicates-map-values)
+              :code $ quote
+                assert= (#{} 1 2)
+                  vals $ &{} :a 1 :b 2 :c 2
+              :tags $ #{} :core :unit
         |w-js-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro w-js-log (x)
@@ -6882,6 +7092,12 @@
               :args $ [] (:: 'List 'K) (:: 'List 'V)
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |pairs-equally-sized-lists)
+              :code $ quote
+                assert= (&{} :a 1 :b 2 :c 3)
+                  zipmap ([] :a :b :c) ([] 1 2 3)
+              :tags $ #{} :core :unit
         |{,} $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro {,} (& body)
