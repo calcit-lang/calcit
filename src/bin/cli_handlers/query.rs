@@ -3354,6 +3354,12 @@ fn handle_tests(input_path: &str, namespace: &str, definition: &str) -> Result<(
     .files
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  if !file.defs.contains_key(definition) && lookup_special_builtin_query_meta(namespace, definition)?.is_some() {
+    let mut out = String::new();
+    let _ = writeln!(&mut out, "\n{}", "(no tests)".dimmed());
+    emit_cli_output(&out, false);
+    return Ok(());
+  }
   let lookup = resolve_definition_lookup(namespace, definition, file.defs.keys().map(|name| name.as_str()), true)?;
   let render_to_stderr = lookup.warning.is_some();
   if let Some(warning) = lookup.warning.as_deref() {

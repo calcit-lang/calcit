@@ -1876,9 +1876,7 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
 
 fn handle_add_test(opts: &EditAddTestCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
-  if opts.name.trim().is_empty() {
-    return Err("Test name must not be empty".to_owned());
-  }
+  snapshot::validate_test_names([opts.name.as_str()], "Test")?;
   let code_input = read_code_input(&opts.file, &opts.code)?;
   let raw = code_input
     .as_deref()

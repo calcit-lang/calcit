@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
-use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, TestEntry, gen_meta_ns};
+use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, TestEntry, gen_meta_ns, validate_test_names};
 
 /// Detailed Cirru structure with metadata for tracking changes
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -304,12 +304,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         }
 
         let code = code.ok_or("Missing code field")?;
-        let mut test_names = std::collections::HashSet::with_capacity(tests.len());
-        for test in &tests {
-          if !test_names.insert(test.name.as_str()) {
-            return Err(format!("DetailedCodeEntry.tests contains duplicate test name `{}`", test.name));
-          }
-        }
+        validate_test_names(tests.iter().map(|test| test.name.as_str()), "DetailedCodeEntry.tests")?;
         let schema_parsed: Arc<CalcitTypeAnnotation> = match schema {
           None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
           Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
@@ -362,9 +357,7 @@ fn parse_detailed_test_entry(value: &Edn) -> Result<DetailedTestEntry, String> {
     }
   }
   let name = name.ok_or_else(|| "Detailed TestEntry is missing name".to_owned())?;
-  if name.trim().is_empty() {
-    return Err("Detailed TestEntry name must not be empty".to_owned());
-  }
+  validate_test_names([name.as_str()], "Detailed TestEntry")?;
   let code = code.ok_or_else(|| "Detailed TestEntry is missing code".to_owned())?;
   Ok(DetailedTestEntry { name, code, tags })
 }
@@ -606,10 +599,10 @@ pub fn load_detailed_snapshot_data(data: &Edn, path: &str) -> Result<DetailedSna
 
 #[cfg(test)]
 mod tests {
-  use super::DetailedCodeEntry;
+  use super::{DetailedCodeEntry, parse_detailed_test_entry};
   use crate::calcit::DYNAMIC_TYPE;
   use crate::snapshot::{CodeEntry, TestEntry};
-  use cirru_edn::EdnTag;
+  use cirru_edn::{Edn, EdnTag};
   use cirru_parser::Cirru;
   use std::collections::HashSet;
 
@@ -631,5 +624,12 @@ mod tests {
 
     let restored: CodeEntry = DetailedCodeEntry::from(entry.clone()).into();
     assert_eq!(restored.tests, entry.tests);
+  }
+
+  #[test]
+  fn detailed_test_entry_rejects_surrounding_whitespace() {
+    let test = Edn::struct_from_pairs("TestEntry", &[(EdnTag::new("name"), Edn::Str(" test-name ".into()))]);
+    let error = parse_detailed_test_entry(&test).expect_err("whitespace must be rejected");
+    assert!(error.contains("leading or trailing whitespace"), "unexpected error: {error}");
   }
 }

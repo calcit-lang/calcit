@@ -567,12 +567,13 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     return Ok(());
   }
   if tests.is_empty() {
+    if json_mode {
+      print_test_json(if options.list { "list" } else { "run" }, &tests, 0, 0, 0.0, vec![]);
+    }
     if let Some(name) = &options.name {
       return Err(format!("Test named `{name}` was not found in the selected scope"));
     }
-    if json_mode {
-      print_test_json(if options.list { "list" } else { "run" }, &tests, 0, 0, 0.0, vec![]);
-    } else {
+    if !json_mode {
       println!("No tests matched.");
     }
     return Ok(());

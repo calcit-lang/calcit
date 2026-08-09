@@ -323,7 +323,7 @@ cr cirru show-guide
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 
-`cr query tests <ns>/<def>` 查询 definition-attached tests；`cr edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`cr edit rm-test <ns>/<def> <name>` 按名称删除。`cr test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试，静态分析失败的测试会保守执行，不会静默漏测。
+`cr query tests <ns>/<def>` 查询 definition-attached tests；`cr edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`cr edit rm-test <ns>/<def> <name>` 按名称删除。`cr test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
 
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `cr edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 

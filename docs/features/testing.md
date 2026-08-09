@@ -45,7 +45,7 @@ cr edit add-test app.main/add adds-two-numbers --overwrite --code 'quote $ is= 5
 cr edit rm-test app.main/add adds-two-numbers
 ```
 
-Test names must be non-empty and unique within one definition. Replacing one requires explicit `--overwrite`; removal uses the stable name rather than an array index.
+Test names must be non-empty, have no surrounding whitespace, and be unique within one definition. Replacing one requires explicit `--overwrite`; removal uses the stable name rather than an array index.
 
 The persisted shape is equivalent to:
 
@@ -53,8 +53,8 @@ The persisted shape is equivalent to:
 :tests $ []
   %{} 'TestEntry
     :name |adds-two-numbers
-    :tags $ #{} :unit :fast
     :code $ quote $ is= 3 (add 1 2)
+    :tags $ #{} :unit :fast
 ```
 
 Snapshots written before this field existed load with an empty test list.
@@ -94,7 +94,7 @@ cr test --affected app.math/add --affected app.math/subtract
 cr test --affected app.math/add --list
 ```
 
-For affected selection, Calcit preprocesses every candidate test and follows the compiled `DefId` dependency graph transitively. It always includes tests attached directly to a changed definition. If dependency analysis for a test fails, that test is conservatively selected so a static-analysis problem cannot silently hide a failing guardrail.
+For affected selection, Calcit preprocesses every candidate test and follows the compiled `DefId` dependency graph transitively. It always includes tests attached directly to a changed definition. If dependency analysis for a test fails, that test is conservatively selected and reported as failed, so a static-analysis problem cannot silently hide a failing guardrail.
 
 Normal `cr` execution does not run tests implicitly. CI and coding agents should invoke `cr test` explicitly.
 

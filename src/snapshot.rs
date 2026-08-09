@@ -584,17 +584,24 @@ pub struct TestEntry {
   pub tags: HashSet<EdnTag>,
 }
 
-fn validate_test_entries(tests: &[TestEntry], owner: &str) -> Result<(), String> {
-  let mut names = HashSet::with_capacity(tests.len());
-  for test in tests {
-    if test.name.trim().is_empty() {
+pub fn validate_test_names<'a>(names: impl IntoIterator<Item = &'a str>, owner: &str) -> Result<(), String> {
+  let mut seen = HashSet::new();
+  for name in names {
+    if name.trim().is_empty() {
       return Err(format!("{owner}: test name must not be empty"));
     }
-    if !names.insert(test.name.as_str()) {
-      return Err(format!("{owner}: duplicate test name `{}`", test.name));
+    if name != name.trim() {
+      return Err(format!("{owner}: test name must not have leading or trailing whitespace: `{name}`"));
+    }
+    if !seen.insert(name) {
+      return Err(format!("{owner}: duplicate test name `{name}`"));
     }
   }
   Ok(())
+}
+
+fn validate_test_entries(tests: &[TestEntry], owner: &str) -> Result<(), String> {
+  validate_test_names(tests.iter().map(|test| test.name.as_str()), owner)
 }
 
 impl TryFrom<Edn> for TestEntry {
@@ -637,9 +644,7 @@ impl TryFrom<Edn> for TestEntry {
     }
 
     let name: String = name.ok_or_else(|| "failed to parse TestEntry: missing name field".to_owned())?;
-    if name.trim().is_empty() {
-      return Err("failed to parse TestEntry: name must not be empty".to_owned());
-    }
+    validate_test_names([name.as_str()], "TestEntry").map_err(|error| format!("failed to parse {error}"))?;
     let code = code.ok_or_else(|| "failed to parse TestEntry: missing code field".to_owned())?;
     Ok(TestEntry { name, code, tags })
   }
@@ -2585,6 +2590,12 @@ mod tests {
     );
     let error = CodeEntry::try_from(edn).expect_err("duplicate test names should be rejected");
     assert!(error.contains("duplicate test name `duplicate`"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn test_names_reject_surrounding_whitespace() {
+    let error = validate_test_names([" stable-name "], "CodeEntry.tests").expect_err("whitespace must be rejected");
+    assert!(error.contains("leading or trailing whitespace"), "unexpected error: {error}");
   }
 
   use std::fs;
