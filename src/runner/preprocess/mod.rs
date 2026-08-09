@@ -42,6 +42,10 @@ pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
 
+fn format_inspect_type_coord(coord: &[u16]) -> String {
+  format!("@{}", coord.iter().map(u16::to_string).collect::<Vec<_>>().join("."))
+}
+
 thread_local! {
   static PREPROCESS_COMPILE_GUARD: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
   /// When set, `preprocess_defn` for anonymous `fn` will use this as the expected
@@ -1831,12 +1835,11 @@ fn preprocess_list_call(
 
             let loc = head.get_location().or_else(|| first_arg.get_location());
             if let Some(l) = loc {
-              let coord_repr = format!("@{}", l.coord.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("."));
               eprintln!(
-                "[&inspect-type] in {}/{} [{}]\n  {} => {}",
+                "[&inspect-type] in {}/{} {}\n  {} => {}",
                 l.ns,
                 l.def,
-                coord_repr,
+                format_inspect_type_coord(&l.coord),
                 first_arg,
                 type_info.describe()
               );
@@ -5990,6 +5993,11 @@ mod tests {
     if let Some(type_val) = scope_types.get("x") {
       assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::DynFn), "type should be fn");
     }
+  }
+
+  #[test]
+  fn inspect_type_locations_use_at_paths_without_brackets() {
+    assert_eq!(format_inspect_type_coord(&[3, 5, 1]), "@3.5.1");
   }
 
   #[test]
