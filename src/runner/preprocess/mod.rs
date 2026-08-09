@@ -1036,7 +1036,7 @@ pub fn preprocess_expr(
     Calcit::Syntax(..) => Ok(expr.to_owned()),
     Calcit::Import { .. } => Ok(expr.to_owned()),
     _ => {
-      println!("unknown expr: {expr}");
+      eprintln!("unknown expr: {expr}");
       gen_check_warning(
         format!("[Warn] unexpected data during preprocess: {expr:?}"),
         file_ns,

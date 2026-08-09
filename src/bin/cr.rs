@@ -33,7 +33,7 @@ use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarnin
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, EffectsGraphCommand,
-  ToplevelCalcit, WeakTypesCommand,
+  TestCommand, ToplevelCalcit, WeakTypesCommand,
 };
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
@@ -74,6 +74,12 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
     other => return Err(format!("Unknown deprecated output format `{other}`. Expected `human` or `json`.")),
   }
   Ok(())
+}
+
+fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapshot: snapshot::Snapshot) {
+  for (namespace, file) in core_snapshot.files {
+    snapshot.files.entry(namespace).or_insert(file);
+  }
 }
 
 fn main() -> Result<(), String> {
@@ -175,6 +181,7 @@ fn main() -> Result<(), String> {
   let core_snapshot = calcit::load_core_snapshot()?;
 
   let mut snapshot = snapshot::Snapshot::default(); // placeholder data
+  let mut project_namespaces: HashSet<String> = HashSet::new();
 
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
@@ -250,6 +257,7 @@ fn main() -> Result<(), String> {
     })?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, &input_path_str)?;
+    project_namespaces.extend(snapshot.files.keys().cloned());
 
     snapshot.select_entry(cli_args.entry.as_deref())?;
     if cli_args.entry.is_some() && !calcit::quiet_tool_output() {
@@ -285,10 +293,10 @@ fn main() -> Result<(), String> {
     reload_def: reload_def.into(),
   };
 
-  // attach core
-  for (k, v) in core_snapshot.files {
-    snapshot.files.insert(k.to_owned(), v.to_owned());
-  }
+  // Attach built-in core namespaces without replacing a source Snapshot's own
+  // calcit.core entries. This matters when developing and testing calcit-core.cirru
+  // with an older globally installed `cr` binary.
+  attach_missing_core_namespaces(&mut snapshot, core_snapshot);
 
   // now global states
   {
@@ -322,6 +330,9 @@ fn main() -> Result<(), String> {
 
   let task = if check_only {
     run_check_only(&entries)
+  } else if let Some(CalcitCommand::Test(test_options)) = &cli_args.subcommand {
+    eval_once = true;
+    run_tests(test_options, &snapshot, &project_namespaces)
   } else if use_configured_js_mode || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(_))) {
     let watch = match &cli_args.subcommand {
       Some(CalcitCommand::EmitJs(options)) => options.watch,
@@ -398,6 +409,480 @@ fn main() -> Result<(), String> {
   }
   runner::track::exit_when_cleared();
   Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct RunnableTest {
+  namespace: String,
+  definition: String,
+  name: String,
+  synthetic_definition: String,
+  code: Cirru,
+}
+
+impl RunnableTest {
+  fn id(&self) -> String {
+    format!("{}/{}#{}", self.namespace, self.definition, self.name)
+  }
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TestReportRow {
+  id: String,
+  status: &'static str,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  duration_ms: Option<f64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  error: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TestReport {
+  schema_version: u32,
+  command: &'static str,
+  mode: &'static str,
+  detail: &'static str,
+  selected: usize,
+  executed: usize,
+  passed: usize,
+  failed: usize,
+  duration_ms: f64,
+  tests: Vec<TestReportRow>,
+}
+
+struct TestOutputGuard {
+  redirect_stdout: bool,
+  silence_program_output: bool,
+}
+
+impl TestOutputGuard {
+  fn new(redirect_stdout: bool, silence_program_output: bool) -> Self {
+    if redirect_stdout {
+      injection::set_stdout_to_stderr(true);
+    }
+    if silence_program_output {
+      injection::set_program_output_silenced(true);
+    }
+    Self {
+      redirect_stdout,
+      silence_program_output,
+    }
+  }
+}
+
+impl Drop for TestOutputGuard {
+  fn drop(&mut self) {
+    if self.redirect_stdout {
+      injection::set_stdout_to_stderr(false);
+    }
+    if self.silence_program_output {
+      injection::set_program_output_silenced(false);
+    }
+  }
+}
+
+fn print_test_json(
+  mode: &'static str,
+  tests: &[RunnableTest],
+  passed: usize,
+  failed: usize,
+  duration_ms: f64,
+  summary_only: bool,
+  rows: Vec<TestReportRow>,
+) {
+  let report = make_test_report(mode, tests, passed, failed, duration_ms, summary_only, rows);
+  println!("{}", serde_json::to_string(&report).expect("test report should serialize"));
+}
+
+fn make_test_report(
+  mode: &'static str,
+  tests: &[RunnableTest],
+  passed: usize,
+  failed: usize,
+  duration_ms: f64,
+  summary_only: bool,
+  rows: Vec<TestReportRow>,
+) -> TestReport {
+  TestReport {
+    schema_version: 1,
+    command: "test",
+    mode,
+    detail: if summary_only { "summary" } else { "full" },
+    selected: tests.len(),
+    executed: passed + failed,
+    passed,
+    failed,
+    duration_ms,
+    tests: rows,
+  }
+}
+
+fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Result<(), String> {
+  let json_mode = match options.format.as_str() {
+    "human" | "text" => false,
+    "json" => true,
+    other => return Err(format!("Unknown test output format `{other}`. Expected `human` or `json`.")),
+  };
+  let _output_guard = TestOutputGuard::new(json_mode, options.summary_only);
+  let scope = options.target.as_deref().map(parse_test_scope).transpose()?;
+  if let Some((namespace, definition)) = &scope {
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Test namespace `{namespace}` not found"))?;
+    if let Some(definition) = definition
+      && !file.defs.contains_key(definition)
+    {
+      return Err(format!("Test definition `{namespace}/{definition}` not found"));
+    }
+  }
+  let affected_ids = if options.affected.is_empty() {
+    None
+  } else {
+    Some(resolve_affected_definition_ids(&options.affected, snapshot)?)
+  };
+  let required_tags = options.tag.iter().map(|tag| tag.trim_start_matches(':')).collect::<HashSet<_>>();
+  let excluded_tags = options
+    .exclude_tag
+    .iter()
+    .map(|tag| tag.trim_start_matches(':'))
+    .collect::<HashSet<_>>();
+  let mut tests = Vec::new();
+
+  let mut namespaces = snapshot.files.keys().collect::<Vec<_>>();
+  namespaces.sort();
+  for namespace in namespaces {
+    if scope.is_none() && !project_namespaces.contains(namespace) {
+      continue;
+    }
+    if let Some((scope_ns, _)) = &scope
+      && namespace != scope_ns
+    {
+      continue;
+    }
+    let file = snapshot.files.get(namespace).expect("namespace key should exist");
+    let mut definitions = file.defs.keys().collect::<Vec<_>>();
+    definitions.sort();
+    for definition in definitions {
+      if let Some((_, Some(scope_def))) = &scope
+        && definition != scope_def
+      {
+        continue;
+      }
+      let entry = file.defs.get(definition).expect("definition key should exist");
+      for test in &entry.tests {
+        if options.name.as_ref().is_some_and(|name| name != &test.name) {
+          continue;
+        }
+        if !required_tags.iter().all(|tag| test.tags.iter().any(|item| item.ref_str() == *tag)) {
+          continue;
+        }
+        if excluded_tags.iter().any(|tag| test.tags.iter().any(|item| item.ref_str() == *tag)) {
+          continue;
+        }
+        tests.push(RunnableTest {
+          namespace: namespace.clone(),
+          definition: definition.clone(),
+          name: test.name.clone(),
+          synthetic_definition: String::new(),
+          code: test.code.clone(),
+        });
+      }
+    }
+  }
+
+  tests.sort_by_key(RunnableTest::id);
+  if options.list && options.affected.is_empty() {
+    if json_mode {
+      let rows = if options.summary_only {
+        vec![]
+      } else {
+        tests
+          .iter()
+          .map(|test| TestReportRow {
+            id: test.id(),
+            status: "selected",
+            duration_ms: None,
+            error: None,
+          })
+          .collect()
+      };
+      print_test_json("list", &tests, 0, 0, 0.0, options.summary_only, rows);
+    } else if !options.summary_only {
+      for test in &tests {
+        println!("{}", test.id());
+      }
+      println!("{} test(s)", tests.len());
+    }
+    return Ok(());
+  }
+  if tests.is_empty() {
+    if json_mode {
+      print_test_json(
+        if options.list { "list" } else { "run" },
+        &tests,
+        0,
+        0,
+        0.0,
+        options.summary_only,
+        vec![],
+      );
+    }
+    if let Some(error) = no_tests_matched_error(options) {
+      return Err(error);
+    }
+    if !json_mode {
+      println!("No tests matched.");
+    }
+    return Ok(());
+  }
+
+  let mut temp_snapshot = snapshot.clone();
+  for (index, test) in tests.iter_mut().enumerate() {
+    let file = temp_snapshot
+      .files
+      .get_mut(&test.namespace)
+      .expect("test namespace should exist in temporary snapshot");
+    let mut synthetic = format!("&calcit:test:{index}");
+    while file.defs.contains_key(&synthetic) {
+      synthetic.push('_');
+    }
+    let code = Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::Leaf(Arc::from(synthetic.as_str())),
+      Cirru::List(vec![]),
+      test.code.clone(),
+    ]);
+    file.defs.insert(synthetic.clone(), snapshot::CodeEntry::from_code(code));
+    test.synthetic_definition = synthetic;
+  }
+
+  {
+    let mut program_data = program::PROGRAM_CODE_DATA.write().expect("open program data");
+    *program_data = program::extract_program_data(&temp_snapshot)?;
+  }
+
+  let mut compile_errors = std::collections::HashMap::new();
+  if let Some(affected_ids) = &affected_ids {
+    // `--affected` needs every candidate's static dependency graph. Ordinary
+    // test runs compile lazily through `run_program_with_docs` below, so a
+    // fail-fast run does not preprocess tests it will never execute.
+    for test in &tests {
+      let warnings = RefCell::new(Vec::new());
+      if let Err(failure) =
+        runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default())
+      {
+        compile_errors.insert(test.id(), failure.headline());
+      } else if !warnings.borrow().is_empty() {
+        let warnings = warnings.borrow();
+        compile_errors.insert(
+          test.id(),
+          format!(
+            "Found {} warnings, test blocked: {}",
+            warnings.len(),
+            warnings.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
+          ),
+        );
+      }
+    }
+    let compiled = program::clone_existing_compiled_program();
+    let compiled_by_id = compiled
+      .values()
+      .flat_map(|file| file.defs.values())
+      .map(|definition| (definition.def_id, definition))
+      .collect::<std::collections::HashMap<_, _>>();
+    tests.retain(|test| {
+      compile_errors.contains_key(&test.id())
+        || options
+          .affected
+          .iter()
+          .any(|target| target == &format!("{}/{}", test.namespace, test.definition))
+        || compiled_test_depends_on(&compiled, &compiled_by_id, test, affected_ids)
+    });
+  }
+
+  if tests.is_empty() {
+    if json_mode {
+      print_test_json(
+        if options.list { "list" } else { "run" },
+        &tests,
+        0,
+        0,
+        0.0,
+        options.summary_only,
+        vec![],
+      );
+    }
+    if let Some(error) = no_tests_matched_error(options) {
+      return Err(error);
+    } else if !json_mode {
+      println!("No tests are affected.");
+    }
+    return Ok(());
+  }
+
+  if options.list {
+    if json_mode {
+      let rows = if options.summary_only {
+        vec![]
+      } else {
+        tests
+          .iter()
+          .map(|test| TestReportRow {
+            id: test.id(),
+            status: "selected",
+            duration_ms: None,
+            error: None,
+          })
+          .collect()
+      };
+      print_test_json("list", &tests, 0, 0, 0.0, options.summary_only, rows);
+    } else if !options.summary_only {
+      for test in &tests {
+        println!("{}", test.id());
+      }
+      println!("{} test(s)", tests.len());
+    }
+    return Ok(());
+  }
+
+  if !json_mode {
+    println!("Running {} test(s)...", tests.len());
+  }
+  let started = Instant::now();
+  let mut passed = 0usize;
+  let mut failures = Vec::new();
+  let mut rows = Vec::new();
+  for test in &tests {
+    let id = test.id();
+    let test_started = Instant::now();
+    let result = if let Some(error) = compile_errors.remove(&id) {
+      Err(error)
+    } else {
+      calcit::run_program_with_docs(
+        Arc::from(test.namespace.as_str()),
+        Arc::from(test.synthetic_definition.as_str()),
+        &[],
+      )
+      .map(|_| ())
+      .map_err(|failure| {
+        LocatedWarning::print_list(&failure.warnings);
+        failure.msg
+      })
+    };
+    match result {
+      Ok(()) => {
+        passed += 1;
+        if !json_mode && !options.summary_only {
+          println!("  {} {id}", "PASS".green());
+        }
+        if !options.summary_only {
+          rows.push(TestReportRow {
+            id,
+            status: "passed",
+            duration_ms: Some(test_started.elapsed().as_secs_f64() * 1000.0),
+            error: None,
+          });
+        }
+      }
+      Err(error) => {
+        if !json_mode {
+          println!("  {} {id}: {error}", "FAIL".red());
+        }
+        failures.push((id.clone(), error.clone()));
+        if !options.summary_only {
+          rows.push(TestReportRow {
+            id,
+            status: "failed",
+            duration_ms: Some(test_started.elapsed().as_secs_f64() * 1000.0),
+            error: Some(error),
+          });
+        }
+        if options.fail_fast {
+          break;
+        }
+      }
+    }
+  }
+
+  let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
+  if json_mode {
+    print_test_json("run", &tests, passed, failures.len(), duration_ms, options.summary_only, rows);
+  } else {
+    println!(
+      "Test result: {} passed; {} failed; {:.2}ms",
+      passed.to_string().green(),
+      failures.len().to_string().red(),
+      duration_ms
+    );
+  }
+  if failures.is_empty() {
+    Ok(())
+  } else {
+    Err(format!("{} test(s) failed", failures.len()))
+  }
+}
+
+fn no_tests_matched_error(options: &TestCommand) -> Option<String> {
+  options
+    .name
+    .as_ref()
+    .map(|name| format!("Test named `{name}` was not found in the selected scope"))
+    .or_else(|| options.require_match.then(|| "No tests matched the requested selection".to_owned()))
+}
+
+fn parse_test_scope(target: &str) -> Result<(String, Option<String>), String> {
+  if target.contains('/') {
+    let (namespace, definition) = util::string::extract_ns_def(target)?;
+    Ok((namespace, Some(definition)))
+  } else if target.trim().is_empty() {
+    Err("Test scope must be a namespace or namespace/definition".to_owned())
+  } else {
+    Ok((target.to_owned(), None))
+  }
+}
+
+fn resolve_affected_definition_ids(targets: &[String], snapshot: &snapshot::Snapshot) -> Result<HashSet<program::DefId>, String> {
+  let mut ids = HashSet::with_capacity(targets.len());
+  for target in targets {
+    let (namespace, definition) = util::string::extract_ns_def(target)?;
+    if !snapshot
+      .files
+      .get(&namespace)
+      .is_some_and(|file| file.defs.contains_key(&definition))
+    {
+      return Err(format!("Affected definition `{target}` not found"));
+    }
+    ids.insert(program::ensure_def_id(&namespace, &definition));
+  }
+  Ok(ids)
+}
+
+fn compiled_test_depends_on(
+  compiled: &program::CompiledProgram,
+  compiled_by_id: &std::collections::HashMap<program::DefId, &program::CompiledDef>,
+  test: &RunnableTest,
+  affected_ids: &HashSet<program::DefId>,
+) -> bool {
+  let Some(root) = compiled
+    .get(test.namespace.as_str())
+    .and_then(|file| file.get(&test.synthetic_definition))
+  else {
+    return true;
+  };
+  let mut pending = root.deps.clone();
+  let mut visited = HashSet::new();
+  while let Some(def_id) = pending.pop() {
+    if affected_ids.contains(&def_id) {
+      return true;
+    }
+    if visited.insert(def_id)
+      && let Some(definition) = compiled_by_id.get(&def_id)
+    {
+      pending.extend(definition.deps.iter().copied());
+    }
+  }
+  false
 }
 
 fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snapshot::SnapshotRunMode) -> bool {
@@ -888,6 +1373,7 @@ fn run_check_examples(
       snapshot::CodeEntry {
         doc: "Generated function to check all examples in this namespace".to_string(),
         examples: Vec::new(),
+        tests: Vec::new(),
         tags: std::collections::HashSet::new(),
         code: check_function_code,
         schema: if js_mode {
@@ -1123,6 +1609,27 @@ mod tests {
   use std::fs;
 
   #[test]
+  fn attaching_core_preserves_source_namespaces_and_fills_missing_ones() {
+    let mut project = snapshot::Snapshot::default();
+    let mut local_core = snapshot::gen_meta_ns("calcit.core", "source");
+    local_core.ns.doc = "source core".to_owned();
+    project.files.insert("calcit.core".to_owned(), local_core);
+
+    let mut embedded = snapshot::Snapshot::default();
+    let mut embedded_core = snapshot::gen_meta_ns("calcit.core", "embedded");
+    embedded_core.ns.doc = "embedded core".to_owned();
+    embedded.files.insert("calcit.core".to_owned(), embedded_core);
+    embedded
+      .files
+      .insert("calcit.internal".to_owned(), snapshot::gen_meta_ns("calcit.internal", "embedded"));
+
+    attach_missing_core_namespaces(&mut project, embedded);
+
+    assert_eq!(project.files["calcit.core"].ns.doc, "source core");
+    assert!(project.files.contains_key("calcit.internal"));
+  }
+
+  #[test]
   fn configured_js_entry_controls_bare_invocation() {
     assert!(should_emit_js(&None, snapshot::SnapshotRunMode::Js));
     assert!(!should_emit_js(&None, snapshot::SnapshotRunMode::Native));
@@ -1237,6 +1744,7 @@ mod tests {
     snapshot::CodeEntry {
       doc: String::new(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code,
       schema: Arc::new(schema),
@@ -1568,6 +2076,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![
         leaf("defn"),
@@ -1619,6 +2128,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "demo".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("demo"), list(vec![leaf("value")]), leaf("nil")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
@@ -1710,6 +2220,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: std::collections::HashSet::new(),
       code: list(vec![
         leaf("defn"),
@@ -1741,6 +2252,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: std::collections::HashSet::new(),
       code: list(vec![
         leaf("defn"),
@@ -1775,6 +2287,7 @@ mod tests {
     let unit_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![
         leaf("defn"),
@@ -1811,6 +2324,7 @@ mod tests {
     let single_do_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![
         leaf("defn"),
@@ -1837,6 +2351,7 @@ mod tests {
     let unit_macro_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("explicit-unit"), list(vec![]), list(vec![leaf(";nil")])]),
       schema: unit_entry.schema.clone(),
@@ -1855,6 +2370,7 @@ mod tests {
     let empty_unit_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("implicit-unit"), list(vec![])]),
       schema: unit_entry.schema.clone(),
@@ -1874,6 +2390,7 @@ mod tests {
     let optional_entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: list(vec![
         leaf("defn"),
@@ -1908,6 +2425,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: std::collections::HashSet::new(),
       code: list(vec![leaf("defn"), leaf("nested"), list(vec![]), leaf("x")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
@@ -1950,6 +2468,7 @@ mod tests {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: std::collections::HashSet::new(),
       code: leaf("demo"),
       schema: Arc::new(CalcitTypeAnnotation::Map(
@@ -2009,5 +2528,212 @@ mod tests {
       Some("map".to_owned())
     );
     assert_eq!(type_coverage::extract_schema_dynamic_family("schema-dynamic:return"), None);
+  }
+
+  #[test]
+  fn affected_test_selection_uses_transitive_compiled_dependencies() {
+    let _guard = GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    builtins::effects::init_effects_states();
+    injection::inject_platform_apis();
+
+    let namespace = format!("app.test-metadata-{}", std::process::id());
+    let snippet = format!("ns {namespace}\n\ndefn add (a b)\n  + a b\n\ndefn consumer ()\n  add 1 2\n\ndefn unrelated () nil");
+    let mut project = snapshot::Snapshot::default();
+    project.files.insert(
+      namespace.clone(),
+      snapshot::create_file_from_snippet(&snippet).expect("test project should parse"),
+    );
+    let file = project.files.get_mut(&namespace).expect("test namespace should exist");
+    file.defs.get_mut("add").expect("add should exist").tests.push(snapshot::TestEntry {
+      name: "direct".to_owned(),
+      code: list(vec![leaf("assert="), leaf("3"), list(vec![leaf("add"), leaf("1"), leaf("2")])]),
+      tags: HashSet::new(),
+    });
+    file
+      .defs
+      .get_mut("consumer")
+      .expect("consumer should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "transitive".to_owned(),
+        code: list(vec![leaf("assert="), leaf("3"), list(vec![leaf("consumer")])]),
+        tags: HashSet::new(),
+      });
+    file
+      .defs
+      .get_mut("unrelated")
+      .expect("unrelated should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "must-not-run".to_owned(),
+        code: list(vec![leaf("raise"), leaf("|unrelated-test-ran")]),
+        tags: HashSet::new(),
+      });
+    for (core_ns, core_file) in calcit::load_core_snapshot().expect("core snapshot should load").files {
+      project.files.insert(core_ns, core_file);
+    }
+
+    let options = TestCommand {
+      target: None,
+      name: None,
+      tag: vec![],
+      exclude_tag: vec![],
+      affected: vec![format!("{namespace}/add")],
+      list: false,
+      fail_fast: false,
+      require_match: false,
+      summary_only: false,
+      format: "human".to_owned(),
+    };
+    let project_namespaces = HashSet::from([namespace]);
+    run_tests(&options, &project, &project_namespaces).expect("only direct and transitive tests should run");
+  }
+
+  #[test]
+  fn default_test_scope_excludes_core_and_dependency_namespaces() {
+    let _guard = GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    builtins::effects::init_effects_states();
+    injection::inject_platform_apis();
+
+    let namespace = format!("app.default-test-scope-{}", std::process::id());
+    let snippet = format!("ns {namespace}\n\ndefn local () nil");
+    let mut project = snapshot::Snapshot::default();
+    project.files.insert(
+      namespace.clone(),
+      snapshot::create_file_from_snippet(&snippet).expect("test project should parse"),
+    );
+    project
+      .files
+      .get_mut(&namespace)
+      .expect("project namespace should exist")
+      .defs
+      .get_mut("local")
+      .expect("local should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "project-test".to_owned(),
+        code: leaf("true"),
+        tags: HashSet::new(),
+      });
+
+    let mut core = calcit::load_core_snapshot().expect("core snapshot should load");
+    core
+      .files
+      .get_mut("calcit.core")
+      .expect("calcit.core should exist")
+      .defs
+      .get_mut("assert")
+      .expect("calcit.core/assert should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "must-not-run-by-default".to_owned(),
+        code: list(vec![leaf("raise"), leaf("|core-test-ran")]),
+        tags: HashSet::new(),
+      });
+    for (core_ns, core_file) in core.files {
+      project.files.insert(core_ns, core_file);
+    }
+
+    let default_options = TestCommand {
+      target: None,
+      name: None,
+      tag: vec![],
+      exclude_tag: vec![],
+      affected: vec![],
+      list: false,
+      fail_fast: false,
+      require_match: false,
+      summary_only: false,
+      format: "human".to_owned(),
+    };
+    let project_namespaces = HashSet::from([namespace]);
+    run_tests(&default_options, &project, &project_namespaces).expect("default scope should run only the project test");
+
+    let explicit_core_options = TestCommand {
+      target: Some("calcit.core/assert".to_owned()),
+      name: Some("must-not-run-by-default".to_owned()),
+      ..default_options
+    };
+    let error =
+      run_tests(&explicit_core_options, &project, &project_namespaces).expect_err("an explicitly scoped core test should still run");
+    assert!(error.contains("1 test(s) failed"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn test_filters_can_exclude_tags_and_require_a_match() {
+    let _guard = GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    builtins::effects::init_effects_states();
+    injection::inject_platform_apis();
+
+    let namespace = format!("app.test-filter-{}", std::process::id());
+    let snippet = format!("ns {namespace}\n\ndefn fast () true\n\ndefn slow () true");
+    let mut project = snapshot::Snapshot::default();
+    project.files.insert(
+      namespace.clone(),
+      snapshot::create_file_from_snippet(&snippet).expect("test project should parse"),
+    );
+    let file = project.files.get_mut(&namespace).expect("test namespace should exist");
+    file
+      .defs
+      .get_mut("fast")
+      .expect("fast should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "fast-guard".to_owned(),
+        code: leaf("true"),
+        tags: HashSet::from([EdnTag::new("fast")]),
+      });
+    file
+      .defs
+      .get_mut("slow")
+      .expect("slow should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "slow-guard".to_owned(),
+        code: list(vec![leaf("raise"), leaf("|slow-test-ran")]),
+        tags: HashSet::from([EdnTag::new("slow")]),
+      });
+    for (core_ns, core_file) in calcit::load_core_snapshot().expect("core snapshot should load").files {
+      project.files.insert(core_ns, core_file);
+    }
+
+    let options = TestCommand {
+      target: None,
+      name: None,
+      tag: vec![],
+      exclude_tag: vec!["slow".to_owned()],
+      affected: vec![],
+      list: false,
+      fail_fast: false,
+      require_match: false,
+      summary_only: false,
+      format: "human".to_owned(),
+    };
+    let project_namespaces = HashSet::from([namespace]);
+    run_tests(&options, &project, &project_namespaces).expect("excluded slow test should not run");
+
+    let missing_options = TestCommand {
+      tag: vec!["missing".to_owned()],
+      require_match: true,
+      ..options
+    };
+    let error = run_tests(&missing_options, &project, &project_namespaces).expect_err("missing selection should fail when required");
+    assert_eq!(error, "No tests matched the requested selection");
+  }
+
+  #[test]
+  fn summary_test_report_omits_rows_and_tracks_executed_count() {
+    let tests = vec![RunnableTest {
+      namespace: "app.main".to_owned(),
+      definition: "demo".to_owned(),
+      name: "guard".to_owned(),
+      synthetic_definition: "&calcit:test:0".to_owned(),
+      code: leaf("true"),
+    }];
+    let report = make_test_report("run", &tests, 1, 0, 1.5, true, vec![]);
+    assert_eq!(report.detail, "summary");
+    assert_eq!(report.selected, 1);
+    assert_eq!(report.executed, 1);
+    assert!(report.tests.is_empty());
   }
 }

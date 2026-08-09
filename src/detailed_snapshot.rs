@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
-use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, gen_meta_ns};
+use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, TestEntry, gen_meta_ns, validate_test_names};
 
 /// Detailed Cirru structure with metadata for tracking changes
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,10 +166,42 @@ mod schema_serde {
 
 /// Detailed code entry with metadata
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetailedTestEntry {
+  pub name: String,
+  pub code: DetailCirru,
+  #[serde(default)]
+  pub tags: Vec<String>,
+}
+
+impl From<TestEntry> for DetailedTestEntry {
+  fn from(test: TestEntry) -> Self {
+    let mut tags = test.tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect::<Vec<_>>();
+    tags.sort();
+    DetailedTestEntry {
+      name: test.name,
+      code: test.code.into(),
+      tags,
+    }
+  }
+}
+
+impl From<DetailedTestEntry> for TestEntry {
+  fn from(test: DetailedTestEntry) -> Self {
+    TestEntry {
+      name: test.name,
+      code: test.code.into(),
+      tags: test.tags.iter().map(|tag| EdnTag::new(tag.trim_start_matches(':'))).collect(),
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetailedCodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<DetailCirru>,
+  #[serde(default)]
+  pub tests: Vec<DetailedTestEntry>,
   #[serde(default)]
   pub tags: Vec<String>,
   pub code: DetailCirru,
@@ -184,6 +216,7 @@ impl From<CodeEntry> for DetailedCodeEntry {
     DetailedCodeEntry {
       doc: entry.doc,
       examples: entry.examples.into_iter().map(|e| e.into()).collect(),
+      tests: entry.tests.into_iter().map(Into::into).collect(),
       tags: entry.tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect(),
       code: entry.code.into(),
       schema: entry.schema,
@@ -197,6 +230,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
     CodeEntry {
       doc: detailed.doc,
       examples: detailed.examples.into_iter().map(|e| e.into()).collect(),
+      tests: detailed.tests.into_iter().map(Into::into).collect(),
       tags: detailed.tags.iter().map(|tag| EdnTag::new(tag.trim_start_matches(':'))).collect(),
       code: detailed.code.into(),
       schema: detailed.schema,
@@ -212,6 +246,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
       Edn::Struct(struct_value) => {
         let mut doc = String::new();
         let mut examples = Vec::new();
+        let mut tests = Vec::new();
         let mut tags = Vec::new();
         let mut code = None;
         let mut schema = None;
@@ -229,6 +264,15 @@ impl TryFrom<Edn> for DetailedCodeEntry {
                 for item in list.iter() {
                   examples.push(item.to_owned().try_into()?);
                 }
+              }
+            }
+            "tests" => {
+              if let Edn::List(list) = value {
+                for item in list.iter() {
+                  tests.push(parse_detailed_test_entry(item)?);
+                }
+              } else {
+                return Err(format!("DetailedCodeEntry.tests expects a list, got: {value}"));
               }
             }
             "tags" => {
@@ -260,6 +304,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         }
 
         let code = code.ok_or("Missing code field")?;
+        validate_test_names(tests.iter().map(|test| test.name.as_str()), "DetailedCodeEntry.tests")?;
         let schema_parsed: Arc<CalcitTypeAnnotation> = match schema {
           None | Some(Edn::Nil) => DYNAMIC_TYPE.clone(),
           Some(v) => CalcitTypeAnnotation::parse_fn_schema_from_edn(&v)
@@ -269,6 +314,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         Ok(DetailedCodeEntry {
           doc,
           examples,
+          tests,
           tags,
           code,
           schema: schema_parsed,
@@ -278,6 +324,42 @@ impl TryFrom<Edn> for DetailedCodeEntry {
       _ => Err("Expected struct for DetailedCodeEntry".to_string()),
     }
   }
+}
+
+fn parse_detailed_test_entry(value: &Edn) -> Result<DetailedTestEntry, String> {
+  let Edn::Struct(test) = value else {
+    return Err(format!("DetailedCodeEntry.tests expects TestEntry structs, got: {value}"));
+  };
+  let mut name = None;
+  let mut code = None;
+  let mut tags = Vec::new();
+  for (key, value) in &test.pairs {
+    match key.ref_str() {
+      "name" => match value {
+        Edn::Str(value) => name = Some(value.to_string()),
+        _ => return Err(format!("Detailed TestEntry.name expects a string, got: {value}")),
+      },
+      "code" => code = Some(value.clone().try_into()?),
+      "tags" => match value {
+        Edn::Set(items) => {
+          for item in &items.0 {
+            let Edn::Tag(tag) = item else {
+              return Err(format!("Detailed TestEntry.tags expects tag items, got: {item}"));
+            };
+            tags.push(format!(":{}", tag.ref_str()));
+          }
+          tags.sort();
+          tags.dedup();
+        }
+        _ => return Err(format!("Detailed TestEntry.tags expects a hashset, got: {value}")),
+      },
+      _ => {}
+    }
+  }
+  let name = name.ok_or_else(|| "Detailed TestEntry is missing name".to_owned())?;
+  validate_test_names([name.as_str()], "Detailed TestEntry")?;
+  let code = code.ok_or_else(|| "Detailed TestEntry is missing code".to_owned())?;
+  Ok(DetailedTestEntry { name, code, tags })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -513,4 +595,41 @@ pub fn load_detailed_snapshot_data(data: &Edn, path: &str) -> Result<DetailedSna
     users: data.get_or_nil("users"),
   };
   Ok(s)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{DetailedCodeEntry, parse_detailed_test_entry};
+  use crate::calcit::DYNAMIC_TYPE;
+  use crate::snapshot::{CodeEntry, TestEntry};
+  use cirru_edn::{Edn, EdnTag};
+  use cirru_parser::Cirru;
+  use std::collections::HashSet;
+
+  #[test]
+  fn detailed_code_entry_preserves_attached_tests() {
+    let entry = CodeEntry {
+      doc: "demo".to_owned(),
+      examples: vec![],
+      tests: vec![TestEntry {
+        name: "returns-value".to_owned(),
+        code: Cirru::List(vec![Cirru::leaf("assert="), Cirru::leaf("1"), Cirru::leaf("1")]),
+        tags: HashSet::from([EdnTag::new("unit")]),
+      }],
+      tags: HashSet::new(),
+      code: Cirru::leaf("nil"),
+      schema: DYNAMIC_TYPE.clone(),
+      ffi: None,
+    };
+
+    let restored: CodeEntry = DetailedCodeEntry::from(entry.clone()).into();
+    assert_eq!(restored.tests, entry.tests);
+  }
+
+  #[test]
+  fn detailed_test_entry_rejects_surrounding_whitespace() {
+    let test = Edn::struct_from_pairs("TestEntry", &[(EdnTag::new("name"), Edn::Str(" test-name ".into()))]);
+    let error = parse_detailed_test_entry(&test).expect_err("whitespace must be rejected");
+    assert!(error.contains("leading or trailing whitespace"), "unexpected error: {error}");
+  }
 }

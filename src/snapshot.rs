@@ -1,4 +1,4 @@
-use cirru_edn::{Edn, EdnMapView, EdnSetView, EdnStructView, EdnTag, from_edn};
+use cirru_edn::{Edn, EdnListView, EdnMapView, EdnSetView, EdnStructView, EdnTag, from_edn};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -147,12 +147,22 @@ struct RawCodeEntry {
   #[serde(default)]
   pub examples: Vec<Cirru>,
   #[serde(default)]
+  pub tests: Vec<RawTestEntry>,
+  #[serde(default)]
   pub tags: Vec<String>,
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
   #[serde(default)]
   pub ffi: Option<Edn>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RawTestEntry {
+  pub name: String,
+  pub code: Cirru,
+  #[serde(default)]
+  pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,9 +188,21 @@ impl RawCodeEntry {
       Some(value) => with_type_annotation_warning_context(owner.to_owned(), || parse_loaded_schema_annotation(&value, owner))?,
     };
 
+    let tests = self
+      .tests
+      .into_iter()
+      .map(|test| TestEntry {
+        name: test.name,
+        code: test.code,
+        tags: tags_vec_to_set(test.tags),
+      })
+      .collect::<Vec<_>>();
+    validate_test_entries(&tests, owner)?;
+
     Ok(CodeEntry {
       doc: self.doc,
       examples: self.examples,
+      tests,
       tags: tags_vec_to_set(self.tags),
       code: self.code,
       schema,
@@ -539,6 +561,12 @@ fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
     ("code".into(), data.code.to_owned().into()),
     ("schema".into(), schema_edn),
   ];
+  if !data.tests.is_empty() {
+    pairs.insert(
+      2,
+      ("tests".into(), Edn::List(EdnListView(data.tests.iter().map(Edn::from).collect()))),
+    );
+  }
   if !data.tags.is_empty() {
     pairs.insert(2, ("tags".into(), tags_to_edn(&data.tags)));
   }
@@ -549,10 +577,99 @@ fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestEntry {
+  pub name: String,
+  pub code: Cirru,
+  #[serde(default, with = "tags_serde")]
+  pub tags: HashSet<EdnTag>,
+}
+
+pub fn validate_test_names<'a>(names: impl IntoIterator<Item = &'a str>, owner: &str) -> Result<(), String> {
+  let mut seen = HashSet::new();
+  for name in names {
+    if name.trim().is_empty() {
+      return Err(format!("{owner}: test name must not be empty"));
+    }
+    if name != name.trim() {
+      return Err(format!("{owner}: test name must not have leading or trailing whitespace: `{name}`"));
+    }
+    if !seen.insert(name) {
+      return Err(format!("{owner}: duplicate test name `{name}`"));
+    }
+  }
+  Ok(())
+}
+
+fn validate_test_entries(tests: &[TestEntry], owner: &str) -> Result<(), String> {
+  validate_test_names(tests.iter().map(|test| test.name.as_str()), owner)
+}
+
+impl TryFrom<Edn> for TestEntry {
+  type Error = String;
+
+  fn try_from(data: Edn) -> Result<Self, Self::Error> {
+    let mut name = None;
+    let mut code = None;
+    let mut tags = HashSet::new();
+    let pairs = match data {
+      Edn::Struct(value) => value.pairs,
+      Edn::Map(value) => value
+        .0
+        .into_iter()
+        .map(|(key, value)| match key {
+          Edn::Tag(key) => Ok((key, value)),
+          other => Err(format!("TestEntry field must use a tag key, got: {other}")),
+        })
+        .collect::<Result<Vec<_>, _>>()?,
+      other => return Err(format!("failed to parse TestEntry: expected struct/map, got: {other}")),
+    };
+
+    for (key, value) in pairs {
+      match key.ref_str() {
+        "name" => {
+          name = Some(
+            from_edn(value.to_owned())
+              .map_err(|error| format!("failed to parse TestEntry.name: {}", format_deserialize_error(&error, &value)))?,
+          );
+        }
+        "code" => {
+          code = Some(
+            from_edn(value.to_owned())
+              .map_err(|error| format!("failed to parse TestEntry.code: {}", format_deserialize_error(&error, &value)))?,
+          );
+        }
+        "tags" => tags = parse_code_entry_tags_from_edn(&value)?,
+        _ => {}
+      }
+    }
+
+    let name: String = name.ok_or_else(|| "failed to parse TestEntry: missing name field".to_owned())?;
+    validate_test_names([name.as_str()], "TestEntry").map_err(|error| format!("failed to parse {error}"))?;
+    let code = code.ok_or_else(|| "failed to parse TestEntry: missing code field".to_owned())?;
+    Ok(TestEntry { name, code, tags })
+  }
+}
+
+impl From<&TestEntry> for Edn {
+  fn from(data: &TestEntry) -> Self {
+    let mut pairs = vec![
+      (EdnTag::new("name"), Edn::Str(data.name.clone().into())),
+      (EdnTag::new("code"), data.code.clone().into()),
+    ];
+    if !data.tags.is_empty() {
+      pairs.push((EdnTag::new("tags"), tags_to_edn(&data.tags)));
+    }
+    Edn::struct_from_pairs("TestEntry", &pairs)
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeEntry {
   pub doc: String,
   #[serde(default)]
   pub examples: Vec<Cirru>,
+  #[serde(default)]
+  pub tests: Vec<TestEntry>,
   #[serde(default, with = "tags_serde")]
   pub tags: HashSet<EdnTag>,
   pub code: Cirru,
@@ -600,6 +717,18 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
     update_part(&mut hasher, "example", rendered.as_bytes());
   }
 
+  for test in &entry.tests {
+    update_part(&mut hasher, "test-name", test.name.as_bytes());
+    let mut tags = test.tags.iter().map(|tag| tag.ref_str()).collect::<Vec<_>>();
+    tags.sort_unstable();
+    for tag in tags {
+      update_part(&mut hasher, "test-tag", tag.as_bytes());
+    }
+    let rendered = cirru_parser::format(std::slice::from_ref(&test.code), true.into())
+      .map_err(|error| format!("Failed to format definition test for revision: {error}"))?;
+    update_part(&mut hasher, "test-code", rendered.as_bytes());
+  }
+
   if let Some(ffi) = &entry.ffi {
     let rendered =
       cirru_edn::format(ffi, true).map_err(|error| format!("Failed to format definition FFI metadata for revision: {error}"))?;
@@ -614,6 +743,7 @@ impl TryFrom<Edn> for CodeEntry {
   fn try_from(data: Edn) -> Result<Self, String> {
     let mut doc = String::new();
     let mut examples: Vec<Cirru> = vec![];
+    let mut tests: Vec<TestEntry> = vec![];
     let mut tags: HashSet<EdnTag> = HashSet::new();
     let mut code: Option<Cirru> = None;
     let mut schema: Arc<CalcitTypeAnnotation> = DYNAMIC_TYPE.clone();
@@ -630,6 +760,12 @@ impl TryFrom<Edn> for CodeEntry {
             "examples" => {
               examples = from_edn(value.to_owned())
                 .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
+            }
+            "tests" => {
+              let Edn::List(items) = value else {
+                return Err(format!("failed to parse CodeEntry.tests: expected list, got: {value}"));
+              };
+              tests = items.0.iter().cloned().map(TestEntry::try_from).collect::<Result<Vec<_>, _>>()?;
             }
             "tags" => {
               tags = parse_code_entry_tags_from_edn(value)?;
@@ -658,6 +794,12 @@ impl TryFrom<Edn> for CodeEntry {
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("examples"))) {
           examples = from_edn(value.to_owned())
             .map_err(|e| format!("failed to parse CodeEntry.examples: {}", format_deserialize_error(&e, value)))?;
+        }
+        if let Some(value) = map.get(&Edn::Tag(EdnTag::new("tests"))) {
+          let Edn::List(items) = value else {
+            return Err(format!("failed to parse CodeEntry.tests: expected list, got: {value}"));
+          };
+          tests = items.0.iter().cloned().map(TestEntry::try_from).collect::<Result<Vec<_>, _>>()?;
         }
         if let Some(value) = map.get(&Edn::Tag(EdnTag::new("tags"))) {
           tags = parse_code_entry_tags_from_edn(value)?;
@@ -688,11 +830,13 @@ impl TryFrom<Edn> for CodeEntry {
     }
 
     let code = code.ok_or_else(|| "failed to parse CodeEntry: missing code field".to_owned())?;
+    validate_test_entries(&tests, "CodeEntry.tests")?;
     let schema = normalize_schema_for_code(&code, &schema);
 
     Ok(CodeEntry {
       doc,
       examples,
+      tests,
       tags,
       code,
       schema,
@@ -1476,6 +1620,7 @@ impl CodeEntry {
     CodeEntry {
       doc: "".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code,
       schema: DYNAMIC_TYPE.clone(),
@@ -2373,6 +2518,11 @@ mod tests {
     CodeEntry {
       doc: "revision test".to_owned(),
       examples: vec![Cirru::List(vec![Cirru::leaf("inc"), Cirru::leaf("1")])],
+      tests: vec![TestEntry {
+        name: "returns-answer".to_owned(),
+        code: Cirru::List(vec![Cirru::leaf("assert="), Cirru::leaf("42"), Cirru::leaf("answer")]),
+        tags: [EdnTag::new("unit")].into_iter().collect(),
+      }],
       tags: tags.iter().map(|tag| EdnTag::new(*tag)).collect(),
       code: Cirru::List(vec![Cirru::leaf("def"), Cirru::leaf("answer"), Cirru::leaf("42")]),
       schema: Arc::new(CalcitTypeAnnotation::Number),
@@ -2402,6 +2552,50 @@ mod tests {
       revision,
       definition_revision(&changed).expect("changed code revision should render")
     );
+
+    let mut changed = entry.clone();
+    changed.tests[0].code = Cirru::List(vec![Cirru::leaf("assert="), Cirru::leaf("43"), Cirru::leaf("answer")]);
+    assert_ne!(
+      revision,
+      definition_revision(&changed).expect("changed test revision should render")
+    );
+  }
+
+  #[test]
+  fn code_entry_tests_round_trip_through_edn() {
+    let entry = revision_test_entry(&["public"]);
+    let edn = Edn::from(&entry);
+    let decoded = CodeEntry::try_from(edn).expect("CodeEntry tests should deserialize");
+    assert_eq!(decoded.tests, entry.tests);
+  }
+
+  #[test]
+  fn code_entry_rejects_duplicate_test_names() {
+    let test = TestEntry {
+      name: "duplicate".to_owned(),
+      code: Cirru::leaf("nil"),
+      tags: HashSet::new(),
+    };
+    let edn = Edn::struct_from_pairs(
+      "CodeEntry",
+      &[
+        (EdnTag::new("doc"), Edn::Str(Arc::from(""))),
+        (EdnTag::new("examples"), Edn::List(EdnListView(vec![]))),
+        (
+          EdnTag::new("tests"),
+          Edn::List(EdnListView(vec![Edn::from(&test), Edn::from(&test)])),
+        ),
+        (EdnTag::new("code"), Cirru::leaf("nil").into()),
+      ],
+    );
+    let error = CodeEntry::try_from(edn).expect_err("duplicate test names should be rejected");
+    assert!(error.contains("duplicate test name `duplicate`"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn test_names_reject_surrounding_whitespace() {
+    let error = validate_test_names([" stable-name "], "CodeEntry.tests").expect_err("whitespace must be rejected");
+    assert!(error.contains("leading or trailing whitespace"), "unexpected error: {error}");
   }
 
   use std::fs;
@@ -2507,6 +2701,7 @@ mod tests {
         Cirru::List(vec![Cirru::leaf("+"), Cirru::leaf("a"), Cirru::leaf("b")]),
       ]),
       examples,
+      tests: vec![],
       tags: HashSet::new(),
       schema: {
         let schema_edn = schema_cirru_to_edn(Cirru::List(vec![
@@ -3088,6 +3283,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "test fn".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: vec!["defmacro", "test-fn", "(a b)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(fn_schema))),
@@ -3133,6 +3329,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped schema".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
@@ -3178,6 +3375,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped macro schema".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: vec!["defmacro", "wrapped", "(& body)", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
@@ -3225,6 +3423,7 @@ mod tests {
     let entry = CodeEntry {
       doc: "wrapped macro schema".to_owned(),
       examples: vec![],
+      tests: vec![],
       tags: HashSet::new(),
       code: vec!["defmacro", "wrapped", "(x)", "x"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {

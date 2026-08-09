@@ -495,6 +495,7 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
           new.ffi.as_ref().map(|value| value.to_string()).as_deref(),
         ),
         diff_cirru_list("examples", &old.examples, &new.examples),
+        diff_tests("tests", &old.tests, &new.tests),
         diff_cirru("code", Some(&old.code), Some(&new.code), "0"),
       ];
       DiffNode::new(label, aggregate_status(&children)).with_children(children)
@@ -503,6 +504,32 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
     (Some(value), None) => build_code_entry_tree(label, value, DiffStatus::Removed),
     (None, None) => DiffNode::new(label, DiffStatus::Unchanged),
   }
+}
+
+fn diff_tests(label: &str, old: &[crate::snapshot::TestEntry], new: &[crate::snapshot::TestEntry]) -> DiffNode {
+  let mut names = BTreeSet::new();
+  names.extend(old.iter().map(|test| test.name.as_str()));
+  names.extend(new.iter().map(|test| test.name.as_str()));
+  let children = names
+    .into_iter()
+    .map(|name| {
+      let old_test = old.iter().find(|test| test.name == name);
+      let new_test = new.iter().find(|test| test.name == name);
+      match (old_test, new_test) {
+        (Some(old_test), Some(new_test)) => {
+          let children = vec![
+            diff_tag_set("tags", &old_test.tags, &new_test.tags),
+            diff_cirru("code", Some(&old_test.code), Some(&new_test.code), name),
+          ];
+          DiffNode::new(name, aggregate_status(&children)).with_children(children)
+        }
+        (None, Some(test)) => build_test_entry_tree(test, DiffStatus::Added),
+        (Some(test), None) => build_test_entry_tree(test, DiffStatus::Removed),
+        (None, None) => unreachable!(),
+      }
+    })
+    .collect::<Vec<_>>();
+  DiffNode::new(label, aggregate_status(&children)).with_children(children)
 }
 
 fn diff_string(label: &str, old: Option<&str>, new: Option<&str>) -> DiffNode {
@@ -688,7 +715,17 @@ fn build_code_entry_tree(label: &str, value: &CodeEntry, status: DiffStatus) -> 
     build_string_list_tree("tags", &tags, status),
     DiffNode::new("ffi", status).with_detail(value.ffi.as_ref().map_or_else(|| "(none)".to_owned(), ToString::to_string)),
     DiffNode::new("examples", status).with_children(examples),
+    DiffNode::new("tests", status).with_children(value.tests.iter().map(|test| build_test_entry_tree(test, status)).collect()),
     build_cirru_tree("code", &value.code, status, "0"),
+  ])
+}
+
+fn build_test_entry_tree(test: &crate::snapshot::TestEntry, status: DiffStatus) -> DiffNode {
+  let mut tags = test.tags.iter().map(|tag| tag.ref_str().to_owned()).collect::<Vec<_>>();
+  tags.sort();
+  DiffNode::new(&test.name, status).with_children(vec![
+    build_string_list_tree("tags", &tags, status),
+    build_cirru_tree("code", &test.code, status, &test.name),
   ])
 }
 
@@ -1257,11 +1294,13 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 mod tests {
   use super::{
     CirruEditStrategy, DiffNode, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, build_entry_tree, cirru_similarity,
-    diff_cirru, diff_entries, diff_entry, render_cirru_diff, render_text,
+    diff_cirru, diff_code_entry, diff_entries, diff_entry, render_cirru_diff, render_text,
   };
-  use crate::snapshot::{SnapshotEntry, SnapshotRunMode};
+  use crate::calcit::DYNAMIC_TYPE;
+  use crate::snapshot::{CodeEntry, SnapshotEntry, SnapshotRunMode, TestEntry};
+  use cirru_edn::EdnTag;
   use cirru_parser::Cirru;
-  use std::collections::HashMap;
+  use std::collections::{HashMap, HashSet};
 
   fn leaf(text: &str) -> Cirru {
     Cirru::Leaf(text.into())
@@ -1346,6 +1385,32 @@ mod tests {
     let type_slots = child(&diff, "type-slots");
     assert_eq!(type_slots.status, DiffStatus::Added);
     assert_eq!(child(type_slots, ":dispatch-op").status, DiffStatus::Added);
+  }
+
+  #[test]
+  fn diffs_named_test_code_and_tags() {
+    let old = CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![TestEntry {
+        name: "identity".to_owned(),
+        code: leaf("true"),
+        tags: HashSet::from([EdnTag::new("unit")]),
+      }],
+      tags: HashSet::new(),
+      code: leaf("nil"),
+      schema: DYNAMIC_TYPE.clone(),
+      ffi: None,
+    };
+    let mut new = old.clone();
+    new.tests[0].code = leaf("false");
+    new.tests[0].tags.insert(EdnTag::new("fast"));
+
+    let diff = diff_code_entry("demo", Some(&old), Some(&new));
+    let test = child(child(&diff, "tests"), "identity");
+    assert_eq!(test.status, DiffStatus::Modified);
+    assert_eq!(child(test, "tags").status, DiffStatus::Modified);
+    assert_eq!(child(test, "code").status, DiffStatus::Modified);
   }
 
   #[test]

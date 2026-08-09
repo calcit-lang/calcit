@@ -185,6 +185,15 @@ struct ContextExample {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ContextTest {
+  name: String,
+  tags: Vec<String>,
+  cirru: String,
+  tree: Option<serde_json::Value>,
+  truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ContextDependency {
   id: String,
   source: String,
@@ -230,6 +239,7 @@ struct DefinitionContextData {
   features: Vec<String>,
   code: ContextCode,
   examples: ContextCollection<ContextExample>,
+  tests: ContextCollection<ContextTest>,
   dependencies: ContextCollection<ContextDependency>,
   usages: ContextCollection<ContextUsage>,
   docs: ContextCollection<ContextDocLink>,
@@ -590,6 +600,7 @@ fn resolve_query_cursor_references(cmd: &mut QueryCommand, input_path: &str) -> 
     QuerySubcommand::Def(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
     QuerySubcommand::Peek(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
     QuerySubcommand::Examples(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
+    QuerySubcommand::Tests(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
     QuerySubcommand::Usages(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
     QuerySubcommand::Search(opts) => {
       resolve_search_cursor_references(input_path, &mut opts.filter, &mut opts.start_path)?;
@@ -645,6 +656,10 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Examples(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
       handle_examples(input_path, ns, def)
+    }
+    QuerySubcommand::Tests(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_tests(input_path, ns, def)
     }
     QuerySubcommand::Find(opts) => {
       if opts.exact {
@@ -1017,6 +1032,7 @@ mod type_query_tests {
       dependency_limit: 12,
       usage_limit: 8,
       example_limit: 3,
+      test_limit: 3,
     }
   }
 
@@ -1988,6 +2004,35 @@ fn build_context_examples(examples: &[Cirru], limit: usize, budget: usize) -> Re
   Ok(ContextCollection::new(examples.len(), items))
 }
 
+fn build_context_tests(tests: &[snapshot::TestEntry], limit: usize, budget: usize) -> Result<ContextCollection<ContextTest>, String> {
+  let returned_count = tests.len().min(limit);
+  let per_test_budget = budget
+    .checked_div(returned_count)
+    .map(|value| value.clamp(120, 1200))
+    .unwrap_or_default();
+  let mut items = Vec::with_capacity(returned_count);
+  for test in tests.iter().take(returned_count) {
+    let nodes = count_cirru_nodes(&test.code);
+    let rendered = cirru_parser::format(std::slice::from_ref(&test.code), true.into())
+      .map_err(|error| format!("Failed to format definition test `{}`: {error}", test.name))?;
+    let (cirru, truncated) = truncate_chars(rendered.trim(), per_test_budget);
+    let mut tags = test.tags.iter().map(|tag| tag.ref_str().to_owned()).collect::<Vec<_>>();
+    tags.sort();
+    items.push(ContextTest {
+      name: test.name.clone(),
+      tags,
+      cirru,
+      tree: if !truncated && nodes <= 100 {
+        Some(cirru_to_json(&test.code))
+      } else {
+        None
+      },
+      truncated,
+    });
+  }
+  Ok(ContextCollection::new(tests.len(), items))
+}
+
 fn collect_direct_dependencies(
   snapshot: &snapshot::Snapshot,
   namespace: &str,
@@ -2213,6 +2258,7 @@ fn build_regular_context(
   };
   let code = build_context_code(&entry.code, (opts.budget / 3).clamp(320, 2600))?;
   let examples = build_context_examples(&entry.examples, opts.example_limit, opts.budget / 4)?;
+  let tests = build_context_tests(&entry.tests, opts.test_limit, opts.budget / 4)?;
   let usages = context_usages(snapshot, namespace, definition, opts.deps, opts.usage_limit);
   let id = format!("{namespace}/{definition}");
   let docs = context_docs(&id, &mut diagnostics);
@@ -2240,6 +2286,7 @@ fn build_regular_context(
     features: context_features(entry.schema.as_ref()),
     code,
     examples,
+    tests,
     dependencies: ContextCollection::new(dependency_total, dependency_items),
     usages,
     docs,
@@ -2255,6 +2302,9 @@ fn build_regular_context(
   }
   if data.examples.truncated {
     next.push(format!("cr query examples {namespace}/{definition}"));
+  }
+  if data.tests.truncated {
+    next.push(format!("cr query tests {namespace}/{definition}"));
   }
   if data.usages.truncated {
     next.push(format!("cr query usages {namespace}/{definition}"));
@@ -2319,6 +2369,7 @@ fn build_special_builtin_context(
       truncated: false,
     },
     examples,
+    tests: ContextCollection::new(0, vec![]),
     dependencies: ContextCollection::new(0, vec![]),
     usages,
     docs,
@@ -2430,6 +2481,31 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
       if example.truncated { " (truncated)" } else { "" }
     );
     for line in example.cirru.lines() {
+      let _ = writeln!(&mut out, "    {line}");
+    }
+  }
+
+  let _ = writeln!(
+    &mut out,
+    "\nTests: {}/{}{}",
+    data.tests.returned,
+    data.tests.total,
+    if data.tests.truncated { " (truncated)" } else { "" }
+  );
+  for test in &data.tests.items {
+    let tags = if test.tags.is_empty() {
+      String::new()
+    } else {
+      format!(" [{}]", test.tags.iter().map(|tag| format!(":{tag}")).collect::<Vec<_>>().join(" "))
+    };
+    let _ = writeln!(
+      &mut out,
+      "  # {}{}{}",
+      test.name,
+      tags,
+      if test.truncated { " (truncated)" } else { "" }
+    );
+    for line in test.cirru.lines() {
       let _ = writeln!(&mut out, "    {line}");
     }
   }
@@ -3110,6 +3186,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   if !code_entry.examples.is_empty() {
     let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
+  if !code_entry.tests.is_empty() {
+    let _ = writeln!(&mut out, "{} {}", "Tests:".bold(), code_entry.tests.len());
+  }
 
   let _ = writeln!(&mut out, "\n{}", "Schema:".bold());
   let schema_str = format_query_schema(code_entry.schema.as_ref(), true);
@@ -3166,6 +3245,11 @@ fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
     "doc": entry.doc,
     "tags": tags,
     "examples": entry.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
+    "tests": entry.tests.iter().map(|test| {
+      let mut tags = test.tags.iter().map(|tag| tag.ref_str().to_owned()).collect::<Vec<_>>();
+      tags.sort();
+      serde_json::json!({"name": test.name, "tags": tags, "code": cirru_to_json(&test.code)})
+    }).collect::<Vec<_>>(),
     "code": cirru_to_json(&entry.code),
     "schema": schema_json,
   })
@@ -3264,6 +3348,46 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
   Ok(())
 }
 
+fn handle_tests(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let file = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  if !file.defs.contains_key(definition) && lookup_special_builtin_query_meta(namespace, definition)?.is_some() {
+    let mut out = String::new();
+    let _ = writeln!(&mut out, "\n{}", "(no tests)".dimmed());
+    emit_cli_output(&out, false);
+    return Ok(());
+  }
+  let lookup = resolve_definition_lookup(namespace, definition, file.defs.keys().map(|name| name.as_str()), true)?;
+  let render_to_stderr = lookup.warning.is_some();
+  if let Some(warning) = lookup.warning.as_deref() {
+    print_cli_warning_block(warning);
+  }
+  let entry = file.defs.get(lookup.resolved.as_str()).expect("resolved definition exists");
+  let mut out = String::new();
+  if entry.tests.is_empty() {
+    let _ = writeln!(&mut out, "\n{}", "(no tests)".dimmed());
+  } else {
+    let _ = writeln!(&mut out, "{} test(s)\n", entry.tests.len());
+    for test in &entry.tests {
+      let mut tags = test.tags.iter().map(|tag| format!(":{}", tag.ref_str())).collect::<Vec<_>>();
+      tags.sort();
+      let _ = writeln!(&mut out, "{}", format!("# {}", test.name).bold());
+      if !tags.is_empty() {
+        let _ = writeln!(&mut out, "  Tags: {}", tags.join(" "));
+      }
+      for line in format_example_node(&test.code).lines().filter(|line| !line.trim().is_empty()) {
+        let _ = writeln!(&mut out, "  {line}");
+      }
+      let _ = writeln!(&mut out);
+    }
+  }
+  emit_cli_output(&out, render_to_stderr);
+  Ok(())
+}
+
 /// Peek definition - show signature/params/doc without full body
 fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
@@ -3330,6 +3454,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   }
 
   let _ = writeln!(&mut out, "{} {}", "Examples:".bold(), code_entry.examples.len());
+  let _ = writeln!(&mut out, "{} {}", "Tests:".bold(), code_entry.tests.len());
 
   if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
     let preview = format_query_schema_oneline(&cirru)?;
@@ -3568,6 +3693,19 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
         let context = get_symbol_context_cirru(&code_entry.code, &code_symbol);
         let coords = find_symbol_coords(&code_entry.code, &code_symbol);
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
+      }
+
+      for test in &code_entry.tests {
+        if find_symbol_in_cirru(&test.code, &code_symbol) {
+          let expression = get_symbol_context_cirru(&test.code, &code_symbol);
+          let context = if expression.is_empty() {
+            format!("#{}", test.name)
+          } else {
+            format!("#{}  {expression}", test.name)
+          };
+          let coords = find_symbol_coords(&test.code, &code_symbol);
+          usages.push((ns_name.clone(), def_name.clone(), context, coords, "tests"));
+        }
       }
 
       if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false) {

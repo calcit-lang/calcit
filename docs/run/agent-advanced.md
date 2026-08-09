@@ -501,6 +501,7 @@ cr query anchors app.main
 
 - **从后往前操作**（推荐）：先删大索引，再删小索引
 - **单次操作后重新搜索**：每次修改立即用 `cr query search` 更新路径
+- **为旧 path 增加内容护栏**：`tree delete/replace/insert-*` 传入 `--expect 'quote ...'`，节点或锚点不一致时拒绝写入
 - **整体重写**：优先用 `cr edit def --overwrite` 覆盖；根路径 `tree replace` 只保留给明确需要根节点级别改写的场景
 
 非法 path 会抛出明确错误，例如 `tree-show: invalid path 'bad.path': segment 'bad' is not an unsigned integer`。

@@ -113,10 +113,10 @@ impl CallStackList {
 
 // show simplified version of stack
 pub fn show_stack(stack: &CallStackList) {
-  println!("\ncall stack:");
+  eprintln!("\ncall stack:");
   for s in &stack.0 {
     let is_macro = s.kind == StackKind::Macro;
-    println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
+    eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 }
 

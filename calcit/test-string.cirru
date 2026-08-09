@@ -9,23 +9,24 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
+            defn main! () (log-title "|Testing str") (test-str) (test-includes) (test-format) (test-char) (test-lisp-style) (test-bitwise) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-bitwise $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            fn ()
-              assert= (bit-and 15 7) 7
-              assert= (bit-and 16 7) 0
-              assert= (bit-or 15 7) 15
-              assert= (bit-or 16 7) 23
-              assert= (bit-xor 15 7) 8
-              assert= (bit-xor 16 7) 23
-              assert= (bit-not 16) -17
-              assert= (bit-not 0) -1
-              assert= |0b10001 $ &number:display-by 17 2
-              assert= |0o21 $ &number:display-by 17 8
-              assert= |0x11 $ &number:display-by 17 16
+            fn () $ inside-js:
+              do
+                assert= (bit-and 15 7) 7
+                assert= (bit-and 16 7) 0
+                assert= (bit-or 15 7) 15
+                assert= (bit-or 16 7) 23
+                assert= (bit-xor 15 7) 8
+                assert= (bit-xor 16 7) 23
+                assert= (bit-not 16) -17
+                assert= (bit-not 0) -1
+                assert= |0b10001 $ &number:display-by 17 2
+                assert= |0o21 $ &number:display-by 17 8
+                assert= |0x11 $ &number:display-by 17 16
           :examples $ []
           :schema $ :: 'Dynamic
         |test-char $ %{} 'CodeEntry (:doc |)
@@ -127,119 +128,20 @@
                 , "|+ 1 2"
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-methods () (log-title "|Testing string methods")
-              assert= true $ .blank? |
-              assert= true $ .blank? "| "
-              assert= false $ .blank? |a
-              assert= 3 $ .count |abc
-              assert= | $ .empty |a
-              assert= true $ .ends-with? |abc |c
-              assert= false $ .ends-with? |abc |b
-              assert= (%some |a) (.get |abc 0)
-              assert= (%some |b) (.get |abc 1)
-              assert= (%ok 1) (.parse-float |1)
-              assert= (%ok 1.1) (.parse-float |1.1)
-              assert= |Abcd $ .replace |abcd |a |A
-              assert= |AbAd $ .replace |abad |a |A
-              assert= ([] |a |c) (.split |abc |b)
-              assert= ([] |a |c) (.split-lines "|a\nc")
-              assert= true $ .starts-with? |abcd |a
-              assert= false $ .starts-with? |abcd |b
-              assert= |bcd $ .strip-prefix |abcd |a
-              assert= |abc $ .strip-suffix |abcd |d
-              assert= |abcd $ .strip-suffix |abcd |a
-              assert= |bc $ .slice |abcd 1 3
-              assert= |bcd $ .slice |abcd 1
-              assert= "|文字" $ .slice "|中文字符串" 1 3
-              assert= "|文字符串" $ .slice "|中文字符串" 1
-              assert= "|ab cd" $ .trim "| ab cd"
-              assert= true $ .empty? |
-              assert= false $ .empty? |a
-              assert= true $ .contains? |abcd 0
-              assert= false $ .contains? |abcd 4
-              assert= true $ .includes? |abcd |a
-              assert= false $ .includes? |abcd |e
-              assert= (%some |a) (.nth |abc 0)
-              assert= (%some |b) (.nth |abc 1)
-              assert= (%some |a) (.first |abc)
-              assert= (%none) (.first |)
-              assert= |bc $ .rest |abc
-              assert= (%some 0) (.find-index |abc |a)
-              assert= (%some 1) (.find-index |abc |b)
-              assert= "|\"a \\\"\"" $ .escape "|a \""
-              assert= |00000a $ .pad-left |a 6 |0
-              assert= |a00000 $ .pad-right |a 6 |0
-              assert= |12312a $ .pad-left |a 6 |123
-              assert= |a12312 $ .pad-right |a 6 |123
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-parse $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert= (%ok 0) (parse-float |0)
-              assert= (%err |1oops) (parse-float |1oops)
-              assert= (%err |1e) (parse-float |1e)
-          :examples $ []
-          :schema $ :: 'Dynamic
         |test-str $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-str ()
-              assert= (&str:concat |a |b) |ab
-              assert= (&str:concat 1 2) |12
-              assert= (str |a |b |c) |abc
-              assert= (str |a nil |c) |ac
-              assert= (str-spaced |a nil |c 12) "|a c 12"
-              assert= (str-spaced nil nil |c 12) "|c 12"
-              assert= (str-spaced |a nil |c 12 nil) "|a c 12"
-              assert= (str 1 2 3) |123
-              assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str (:: :a "|世界" "|海 洋")
               assert=
                 type-of $ &str 1
                 , :string
               assert= (.replace "|this is a" |is |IS) "|thIS IS a"
-              assert= (split |a,b,c |,) ([] |a |b |c)
-              assert= (split-lines "|a\nb\nc") ([] |a |b |c)
-              assert= (split "|a中b文c" |) ([] |a "|中" |b "|文" |c)
-              assert= 4 $ count |good
               assert= |56789 $ .slice |0123456789 5
               assert= |567 $ .slice |0123456789 5 8
               assert= | $ .slice |0123456789 10
               assert= | $ .slice |0123456789 9 1
-              assert= -1 $ &str:compare |a |b
-              assert= 1 $ &str:compare |b |a
-              assert= 0 $ &str:compare |a |a
-              assert= -1 $ &compare |a |b
-              assert= 1 $ &compare |b |a
-              assert= 0 $ &compare |a |a
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-trim $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert= | $ trim "|    "
-              assert= |1 $ trim "|  1  "
-              assert= |1 $ trim "|\n1\n"
-              assert= | $ trim |______ |_
-              assert= |1 $ trim |__1__ |_
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-whitespace $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Test blank?")
-              assert-detect identity $ blank? |
-              assert-detect identity $ blank? |
-              assert-detect identity $ blank? "| "
-              assert-detect identity $ blank? "|  "
-              assert-detect identity $ blank? "|\n"
-              assert-detect identity $ blank? "|\n "
-              assert-detect not $ blank? |1
-              assert-detect not $ blank? "| 1"
-              assert-detect not $ blank? "|1 "
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-string.main $ :require
-            util.core :refer $ inside-eval: log-title
+            util.core :refer $ inside-eval: inside-js: log-title

@@ -1,6 +1,8 @@
 use calcit::cli_args::*;
 use colored::Colorize;
 
+const DEFAULT_ECHO_TOKEN_PREFIX: &str = "\u{1f}";
+
 macro_rules! echo_items {
   ($tokens:expr $(,)?) => {};
   ($tokens:expr, pos $name:literal => $value:expr $(, $($rest:tt)*)?) => {{
@@ -58,6 +60,7 @@ pub fn should_echo_command(cli_args: &ToplevelCalcit) -> bool {
       | Some(CalcitCommand::Config(_))
       | Some(CalcitCommand::Analyze(_))
       | Some(CalcitCommand::Cirru(_))
+      | Some(CalcitCommand::Test(_))
   )
 }
 
@@ -75,8 +78,13 @@ pub fn print_command_echo(cli_args: &ToplevelCalcit) {
 
 fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let subcommand = cli_args.subcommand.as_ref()?;
+  let snapshot_command = if cli_args.input == calcit::DEFAULT_SNAPSHOT_FILE {
+    "cr".to_owned()
+  } else {
+    format!("cr {}", format_atom(&cli_args.input))
+  };
   let mut tokens = vec![match subcommand {
-    CalcitCommand::Query(cmd) => format!("cr query {}", query_name(&cmd.subcommand)),
+    CalcitCommand::Query(cmd) => format!("{snapshot_command} query {}", query_name(&cmd.subcommand)),
     CalcitCommand::Docs(cmd) => match &cmd.subcommand {
       DocsSubcommand::RemoteLibs(opts) => match opts.subcommand.as_ref() {
         Some(subcommand) => format!("cr docs remote-libs {}", libs_name(subcommand)),
@@ -85,12 +93,13 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
       other => format!("cr docs {}", docs_name(other)),
     },
     CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
-    CalcitCommand::Edit(cmd) => format!("cr edit {}", edit_name(&cmd.subcommand)),
-    CalcitCommand::Tree(cmd) => format!("cr tree {}", tree_name(&cmd.subcommand)),
-    CalcitCommand::Cursor(cmd) => format!("cr cursor {}", cursor_name(&cmd.subcommand)),
-    CalcitCommand::Config(cmd) => format!("cr config {}", config_name(&cmd.subcommand)),
-    CalcitCommand::Analyze(cmd) => format!("cr analyze {}", analyze_name(&cmd.subcommand)),
+    CalcitCommand::Edit(cmd) => format!("{snapshot_command} edit {}", edit_name(&cmd.subcommand)),
+    CalcitCommand::Tree(cmd) => format!("{snapshot_command} tree {}", tree_name(&cmd.subcommand)),
+    CalcitCommand::Cursor(cmd) => format!("{snapshot_command} cursor {}", cursor_name(&cmd.subcommand)),
+    CalcitCommand::Config(cmd) => format!("{snapshot_command} config {}", config_name(&cmd.subcommand)),
+    CalcitCommand::Analyze(cmd) => format!("{snapshot_command} analyze {}", analyze_name(&cmd.subcommand)),
     CalcitCommand::Cirru(cmd) => format!("cr cirru {}", cirru_name(&cmd.subcommand)),
+    CalcitCommand::Test(_) => format!("{snapshot_command} test"),
     _ => return None,
   }];
 
@@ -104,7 +113,31 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Config(cmd) => push_config(&mut tokens, cmd),
     CalcitCommand::Analyze(cmd) => push_analyze(&mut tokens, cmd),
     CalcitCommand::Cirru(cmd) => push_cirru(&mut tokens, cmd),
+    CalcitCommand::Test(opts) => {
+      if let Some(target) = &opts.target {
+        push_positional(&mut tokens, "target", target);
+      }
+      push_optional(&mut tokens, "name", opts.name.as_deref(), "none");
+      push_list(&mut tokens, "tag", &opts.tag);
+      push_list(&mut tokens, "exclude-tag", &opts.exclude_tag);
+      push_list(&mut tokens, "affected", &opts.affected);
+      push_switch(&mut tokens, "list", opts.list);
+      push_switch(&mut tokens, "fail-fast", opts.fail_fast);
+      push_switch(&mut tokens, "require-match", opts.require_match);
+      push_switch(&mut tokens, "summary-only", opts.summary_only);
+      push_value(&mut tokens, "format", &opts.format, Some("human"));
+    }
     _ => return None,
+  }
+
+  if cli_args.verbose {
+    for token in &mut tokens {
+      if let Some(value) = token.strip_prefix(DEFAULT_ECHO_TOKEN_PREFIX) {
+        *token = value.to_owned();
+      }
+    }
+  } else {
+    tokens.retain(|token| !token.starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
   }
 
   Some(tokens.join(" "))
@@ -120,6 +153,7 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Docs(cmd) => render_docs_explanation(cmd),
     CalcitCommand::Analyze(cmd) => render_analyze_explanation(cmd),
     CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
+    CalcitCommand::Test(_) => Some("discovers and runs definition-attached tests".to_owned()),
     _ => None,
   }
 }
@@ -193,6 +227,7 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
     }
     QuerySubcommand::Peek(opts) => format!("previews definition `{}`", opts.target),
     QuerySubcommand::Examples(opts) => format!("shows usage examples for `{}`", opts.target),
+    QuerySubcommand::Tests(opts) => format!("shows definition-attached tests for `{}`", opts.target),
     QuerySubcommand::Schema(opts) => format!("shows type schema for `{}`", opts.target),
     QuerySubcommand::Type(opts) => format!("lists statically available methods for type `{}`", opts.target),
     QuerySubcommand::TypeAt(opts) => format!("inspects static type evidence for `{}` at `{}`", opts.target, opts.path),
@@ -284,6 +319,8 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
       opts.at.as_ref().map_or(String::new(), |at| format!(" at position `{at}`"))
     ),
     EditSubcommand::RmExample(opts) => format!("removes example at index {} from `{}`", opts.index, opts.target),
+    EditSubcommand::AddTest(opts) => format!("adds named test `{}` to `{}`", opts.name, opts.target),
+    EditSubcommand::RmTest(opts) => format!("removes named test `{}` from `{}`", opts.name, opts.target),
     EditSubcommand::Tags(opts) => {
       let mut desc = format!("views/updates tags for `{}`", opts.target);
       if let Some(tags) = &opts.tags {
@@ -572,7 +609,8 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       switch "deps" => opts.deps,
       value "dependency-limit" => opts.dependency_limit; default "12",
       value "usage-limit" => opts.usage_limit; default "8",
-      value "example-limit" => opts.example_limit; default "3"
+      value "example-limit" => opts.example_limit; default "3",
+      value "test-limit" => opts.test_limit; default "3"
     ),
     QuerySubcommand::Ns(opts) => {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
@@ -597,6 +635,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
     ),
     QuerySubcommand::Peek(opts) => echo_items!(tokens, pos "target" => &opts.target),
     QuerySubcommand::Examples(opts) => echo_items!(tokens, pos "target" => &opts.target),
+    QuerySubcommand::Tests(opts) => echo_items!(tokens, pos "target" => &opts.target),
     QuerySubcommand::Find(opts) => echo_items!(
       tokens,
       pos "symbol" => &opts.symbol,
@@ -855,6 +894,10 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       echo_items!(tokens, pos "target" => &opts.target, opt_owned "at" => opts.at.map(|v| v.to_string()); default "append", code_input opts)
     }
     EditSubcommand::RmExample(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "index" => &opts.index.to_string()),
+    EditSubcommand::AddTest(opts) => {
+      echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name, opt "tags" => opts.tags.as_deref(); default "none", code_input opts, switch "overwrite" => opts.overwrite)
+    }
+    EditSubcommand::RmTest(opts) => echo_items!(tokens, pos "target" => &opts.target, pos "name" => &opts.name),
     EditSubcommand::Tags(opts) => {
       echo_items!(
         tokens,
@@ -901,19 +944,20 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       switch "raw" => opts.raw
     ),
     TreeSubcommand::Replace(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, code_input opts, value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, code_input opts, opt "expect" => opts.expect.as_deref(); default "none", value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::ReplaceLeaf(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, value "pattern" => &opts.pattern, switch "regex" => opts.regex, code_input opts, value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::Delete(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, opt "expect" => opts.expect.as_deref(); default "none", value "depth" => opts.depth; default "2")
     }
     TreeSubcommand::InsertBefore(opts) => push_tree_insert(
       tokens,
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.expect.as_deref(),
       opts.depth,
     ),
     TreeSubcommand::InsertAfter(opts) => push_tree_insert(
@@ -921,6 +965,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.expect.as_deref(),
       opts.depth,
     ),
     TreeSubcommand::InsertChild(opts) => push_tree_insert(
@@ -928,6 +973,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.expect.as_deref(),
       opts.depth,
     ),
     TreeSubcommand::AppendChild(opts) => push_tree_insert(
@@ -935,6 +981,7 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
       &opts.target,
       &opts.path,
       CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+      opts.expect.as_deref(),
       opts.depth,
     ),
     TreeSubcommand::SwapNext(opts) => push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth),
@@ -1025,9 +1072,17 @@ impl<'a> CodeInputParts<'a> {
   }
 }
 
-fn push_tree_insert(tokens: &mut Vec<String>, target: &str, path: &str, code_input: CodeInputParts<'_>, depth: usize) {
+fn push_tree_insert(
+  tokens: &mut Vec<String>,
+  target: &str,
+  path: &str,
+  code_input: CodeInputParts<'_>,
+  expect: Option<&str>,
+  depth: usize,
+) {
   push_tree_path_depth(tokens, target, path, depth);
   push_code_input(tokens, &code_input);
+  push_optional(tokens, "expect", expect, "none");
 }
 
 fn push_tree_path_depth(tokens: &mut Vec<String>, target: &str, path: &str, depth: usize) {
@@ -1042,7 +1097,11 @@ fn push_code_input(tokens: &mut Vec<String>, code_input: &CodeInputParts<'_>) {
 }
 
 fn push_switch(tokens: &mut Vec<String>, name: &str, enabled: bool) {
-  tokens.push(format!("--{name}={}", if enabled { "ON" } else { "OFF" }));
+  if enabled {
+    tokens.push(format!("--{name}=ON"));
+  } else {
+    tokens.push(format!("{DEFAULT_ECHO_TOKEN_PREFIX}--{name}=OFF"));
+  }
 }
 
 fn push_value(tokens: &mut Vec<String>, name: &str, value: &str, default: Option<&str>) {
@@ -1050,7 +1109,7 @@ fn push_value(tokens: &mut Vec<String>, name: &str, value: &str, default: Option
 
   match default {
     Some(default_value) if default_value == value => {
-      tokens.push(format!("--{name}=({})", format_atom(default_value)));
+      tokens.push(format!("{DEFAULT_ECHO_TOKEN_PREFIX}--{name}=({})", format_atom(default_value)));
     }
     _ => tokens.push(format!("--{name}={display_value}")),
   }
@@ -1059,20 +1118,20 @@ fn push_value(tokens: &mut Vec<String>, name: &str, value: &str, default: Option
 fn push_optional(tokens: &mut Vec<String>, name: &str, value: Option<&str>, default_label: &str) {
   match value {
     Some(value) => tokens.push(format!("--{name}={}", format_atom(value))),
-    None => tokens.push(format!("--{name}=({})", format_atom(default_label))),
+    None => tokens.push(format!("{DEFAULT_ECHO_TOKEN_PREFIX}--{name}=({})", format_atom(default_label))),
   }
 }
 
 fn push_optional_owned(tokens: &mut Vec<String>, name: &str, value: Option<String>, default_label: &str) {
   match value {
     Some(value) => tokens.push(format!("--{name}={}", format_atom(&value))),
-    None => tokens.push(format!("--{name}=({})", format_atom(default_label))),
+    None => tokens.push(format!("{DEFAULT_ECHO_TOKEN_PREFIX}--{name}=({})", format_atom(default_label))),
   }
 }
 
 fn push_list(tokens: &mut Vec<String>, name: &str, values: &[String]) {
   if values.is_empty() {
-    tokens.push(format!("--{name}=(none)"));
+    tokens.push(format!("{DEFAULT_ECHO_TOKEN_PREFIX}--{name}=(none)"));
   } else {
     for value in values {
       tokens.push(format!("--{name}={}", format_atom(value)));
@@ -1107,6 +1166,7 @@ fn query_name(subcommand: &QuerySubcommand) -> &'static str {
     QuerySubcommand::Def(_) => "def",
     QuerySubcommand::Peek(_) => "peek",
     QuerySubcommand::Examples(_) => "examples",
+    QuerySubcommand::Tests(_) => "tests",
     QuerySubcommand::Find(_) => "find",
     QuerySubcommand::Usages(_) => "usages",
     QuerySubcommand::Search(_) => "search",
@@ -1185,6 +1245,8 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::Examples(_) => "examples",
     EditSubcommand::AddExample(_) => "add-example",
     EditSubcommand::RmExample(_) => "rm-example",
+    EditSubcommand::AddTest(_) => "add-test",
+    EditSubcommand::RmTest(_) => "rm-test",
     EditSubcommand::Tags(_) => "tags",
     EditSubcommand::AddNs(_) => "add-ns",
     EditSubcommand::RmNs(_) => "rm-ns",
@@ -1267,6 +1329,25 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
     ConfigSubcommand::RmModule(_) => "rm-module",
     ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
     ConfigSubcommand::RmTypeSlot(_) => "rm-type-slot",
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{DEFAULT_ECHO_TOKEN_PREFIX, push_switch, push_value};
+
+  #[test]
+  fn default_command_echo_tokens_are_marked_without_hiding_real_parentheses() {
+    let mut tokens = vec![];
+    push_value(&mut tokens, "format", "human", Some("human"));
+    push_value(&mut tokens, "pattern", "(foo)", None);
+    push_switch(&mut tokens, "list", false);
+    push_switch(&mut tokens, "summary-only", true);
+
+    assert!(tokens[0].starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
+    assert_eq!(tokens[1], "--pattern=(foo)");
+    assert!(tokens[2].starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
+    assert_eq!(tokens[3], "--summary-only=ON");
   }
 }
 
