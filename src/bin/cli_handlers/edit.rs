@@ -2720,10 +2720,11 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
 mod tests {
   use super::{
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
-    count_legacy_inherent_impls, load_snapshot, parse_examples_input, parse_input_to_cirru, parse_schema_input,
-    parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot,
-    save_snapshot,
+    count_legacy_inherent_impls, handle_add_import, handle_imports, load_snapshot, parse_examples_input, parse_input_to_cirru,
+    parse_schema_input, parse_transaction_operations, rename_definition_declaration, run_staged_transaction_with,
+    save_schema_preserving_snapshot, save_snapshot,
   };
+  use crate::cli_args::{EditAddImportCommand, EditImportsCommand};
   use crate::cli_handlers::test_support::TestProject;
   use cirru_parser::Cirru;
   use std::fs;
@@ -2803,6 +2804,41 @@ mod tests {
 
     assert_eq!(count_legacy_inherent_impls(&legacy), 1);
     assert_eq!(count_legacy_inherent_impls(&nominal), 0);
+  }
+
+  #[test]
+  fn imports_rejects_malformed_rule_without_writing_snapshot() {
+    let fixture = TestSnapshot::from_fixture();
+    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let opts = EditImportsCommand {
+      namespace: "app.main".to_string(),
+      file: None,
+      code: Some("quote (audit.invalid :as)".to_string()),
+    };
+
+    let error = handle_imports(&opts, &fixture.snapshot_string()).expect_err("malformed import rule should fail");
+
+    assert!(error.contains("import rule 1"), "error: {error}");
+    assert!(error.contains("exactly 3 items"), "error: {error}");
+    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn add_import_rejects_malformed_rule_without_writing_snapshot() {
+    let fixture = TestSnapshot::from_fixture();
+    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let opts = EditAddImportCommand {
+      namespace: "app.main".to_string(),
+      file: None,
+      code: Some("quote (audit.invalid :as)".to_string()),
+      overwrite: false,
+    };
+
+    let error = handle_add_import(&opts, &fixture.snapshot_string()).expect_err("malformed import rule should fail");
+
+    assert!(error.contains("import rule 1"), "error: {error}");
+    assert!(error.contains("exactly 3 items"), "error: {error}");
+    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
   }
 
   #[test]
