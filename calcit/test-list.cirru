@@ -13,7 +13,7 @@
           :schema $ :: 'Dynamic
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
+            defn main! () (test-alias) (test-doseq) (test-let[]) (test-comma) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -28,7 +28,7 @@
               :args $ []
         |test-comma $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            assert= ([] 1 2 3 4) ([,] 1 2 3 4)
+            fn () $ assert= ([] 1 2 3 4) ([,] 1 2 3 4)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
