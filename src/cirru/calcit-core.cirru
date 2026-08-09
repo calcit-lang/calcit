@@ -2649,6 +2649,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |adds-list-item-at-end)
+              :code $ quote
+                assert= ([] 1 2 3 4)
+                  append ([] 1 2 3) 4
+              :tags $ #{} :core :unit
         |apply $ %{} 'CodeEntry (:doc "|calls a function with arguments from a list, spreads the list as individual arguments")
           :code $ quote
             defn apply (f args) (f & args)
@@ -2821,7 +2827,9 @@
           :tests $ []
             %{} 'TestEntry (:name |combines-bits)
               :code $ quote
-                assert= 7 $ bit-and 15 7
+                do
+                  assert= 7 $ bit-and 15 7
+                  assert= 0 $ bit-and 16 7
               :tags $ #{} :core :unit
         |bit-not $ %{} 'CodeEntry (:doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer")
           :code $ quote &runtime-implementation
@@ -2833,7 +2841,9 @@
           :tests $ []
             %{} 'TestEntry (:name |complements-bits)
               :code $ quote
-                assert= -17 $ bit-not 16
+                do
+                  assert= -17 $ bit-not 16
+                  assert= -1 $ bit-not 0
               :tags $ #{} :core :unit
         |bit-or $ %{} 'CodeEntry (:doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers")
           :code $ quote &runtime-implementation
@@ -2845,7 +2855,9 @@
           :tests $ []
             %{} 'TestEntry (:name |merges-bits)
               :code $ quote
-                assert= 23 $ bit-or 16 7
+                do
+                  assert= 15 $ bit-or 15 7
+                  assert= 23 $ bit-or 16 7
               :tags $ #{} :core :unit
         |bit-shl $ %{} 'CodeEntry (:doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions")
           :code $ quote &runtime-implementation
@@ -2885,7 +2897,9 @@
           :tests $ []
             %{} 'TestEntry (:name |toggles-different-bits)
               :code $ quote
-                assert= 8 $ bit-xor 15 7
+                do
+                  assert= 8 $ bit-xor 15 7
+                  assert= 23 $ bit-xor 16 7
               :tags $ #{} :core :unit
         |blank? $ %{} 'CodeEntry (:doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace")
           :code $ quote &runtime-implementation
@@ -2899,8 +2913,13 @@
               :code $ quote
                 do
                   assert= true $ blank? |
-                  assert= true $ blank? "| \n"
-                  assert= false $ blank? |a
+                  assert= true $ blank? "| "
+                  assert= true $ blank? "|  "
+                  assert= true $ blank? "|\n"
+                  assert= true $ blank? "|\n "
+                  assert= false $ blank? |1
+                  assert= false $ blank? "| 1"
+                  assert= false $ blank? "|1 "
               :tags $ #{} :core :unit
         |bool? $ %{} 'CodeEntry (:doc |)
           :code $ quote &runtime-implementation
@@ -2932,6 +2951,15 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |drops-last-list-item)
+              :code $ quote
+                do
+                  assert= ([] 1 2)
+                    butlast $ [] 1 2 3
+                  assert= ([])
+                    butlast $ []
+              :tags $ #{} :core :unit
         |call-w-log $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro call-w-log (f & xs)
@@ -3066,6 +3094,12 @@
               :generics $ [] 'T
               :rest $ :: 'List 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |joins-many-lists)
+              :code $ quote
+                assert= ([] 1 2 4 5 7 8)
+                  concat ([] 1 2) ([] 4 5) ([] 7 8)
+              :tags $ #{} :core :unit
         |cond $ %{} 'CodeEntry (:doc "|Multi-branch conditional macro. Requires a final true branch so unmatched control flow cannot return nil.")
           :code $ quote
             defmacro cond (& pairs)
@@ -3114,6 +3148,12 @@
               :args $ [] (:: 'List 'T) 'T
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |appends-all-list-items)
+              :code $ quote
+                assert= ([] 1 2 3 4 5)
+                  conj ([] 1 2 3) 4 5
+              :tags $ #{} :core :unit
         |contains-in? $ %{} 'CodeEntry (:doc "|Check whether every hop in a nested path exists across maps, structs, enums, or lists.")
           :code $ quote
             defn contains-in? (xs path)
@@ -3803,6 +3843,12 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |drops-list-prefix)
+              :code $ quote
+                assert= ([] 4 5 6 7 8 9)
+                  drop (range 10) 4
+              :tags $ #{} :core :unit
         |each $ %{} 'CodeEntry (:doc "|Iterate over a collection, apply a function for side effects, and return Unit.")
           :code $ quote
             defn each (xs f)
@@ -4094,6 +4140,15 @@
             {}
               :args $ [] 'Dynamic
               :return $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-or-none)
+              :code $ quote
+                do
+                  assert= (%some 1)
+                    first $ [] 1 2 3
+                  assert= (%none)
+                    first $ []
+              :tags $ #{} :core :unit
         |flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro flipped (f & args)
@@ -4765,6 +4820,12 @@
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
               :return $ :: 'Set 'K
+          :tests $ []
+            %{} 'TestEntry (:name |omits-nil-map-values)
+              :code $ quote
+                assert= (#{} :a :b)
+                  keys-non-nil $ {,} :a 1 :b 2 :c nil
+              :tags $ #{} :core :unit
         |last $ %{} 'CodeEntry (:doc "|Return the last item as Option<T>; empty collections produce none.")
           :code $ quote
             defn last (xs)
@@ -4793,6 +4854,15 @@
             {}
               :args $ [] 'Dynamic
               :return $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |returns-last-or-none)
+              :code $ quote
+                do
+                  assert= (%some 3)
+                    last $ [] 1 2 3
+                  assert= (%none)
+                    last $ []
+              :tags $ #{} :core :unit
         |let $ %{} 'CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
             defmacro let (pairs & body)
@@ -5181,6 +5251,12 @@
             {} (:rest 'Dynamic) (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |combines-maps-left-to-right)
+              :code $ quote
+                assert= ({,} :a nil :b 12 :c nil :d 14)
+                  merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+              :tags $ #{} :core :unit
         |merge-non-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
@@ -5191,6 +5267,12 @@
               :generics $ [] 'K 'V
               :rest $ :: 'Map 'K 'V
               :return $ :: 'Map 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-existing-values-for-nil)
+              :code $ quote
+                assert= ({,} :a 1 :b 12 :c 3 :d 14)
+                  merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+              :tags $ #{} :core :unit
         |min $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn min (xs) (.min xs)
@@ -5549,6 +5631,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |adds-list-item-at-front)
+              :code $ quote
+                assert= ([] 4 1 2 3)
+                  prepend ([] 1 2 3) 4
+              :tags $ #{} :core :unit
         |quasiquote $ %{} 'CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5584,6 +5672,15 @@
               :args $ [] 'Number 'Number 'Number
               :return $ :: 'List 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |generates-half-open-ranges)
+              :code $ quote
+                do
+                  assert= ([]) (range 0)
+                  assert= ([] 0 1 2 3) (range 4)
+                  assert= ([] 4 5 6 7 8 9) (range 4 10)
+                  assert= ([] 2 4 6 8) (range 2 10 2)
+              :tags $ #{} :core :unit
         |range-bothway $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
@@ -5722,6 +5819,15 @@
             {} (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |drops-first-list-item)
+              :code $ quote
+                do
+                  assert= ([] 2 3)
+                    rest $ [] 1 2 3
+                  assert= ([])
+                    rest $ []
+              :tags $ #{} :core :unit
         |result:and-then $ %{} 'CodeEntry (:doc "|Chains a Result-producing function over :ok and preserves :err.")
           :code $ quote
             defn result:and-then (res f)
@@ -6294,6 +6400,12 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |takes-list-prefix)
+              :code $ quote
+                assert= ([] 0 1 2 3)
+                  take (range 10) 4
+              :tags $ #{} :core :unit
         |take-last $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn take-last (xs n)
@@ -6308,6 +6420,15 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
               :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |takes-list-suffix)
+              :code $ quote
+                do
+                  assert= ([] 6 7 8 9)
+                    take-last (range 10) 4
+                  assert= ([] 0 1 2)
+                    take-last (range 3) 4
+              :tags $ #{} :core :unit
         |thread-as $ %{} 'CodeEntry (:doc "|a alias for `->%`")
           :code $ quote
             defmacro thread-as (& xs)
@@ -6369,7 +6490,10 @@
             %{} 'TestEntry (:name |trims-whitespace-or-custom-chars)
               :code $ quote
                 do
+                  assert= | $ trim "|    "
                   assert= |1 $ trim "|  1  "
+                  assert= |1 $ trim "|\n1\n"
+                  assert= | $ trim |______ |_
                   assert= |1 $ trim |__1__ |_
               :tags $ #{} :core :unit
         |try $ %{} 'CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism")

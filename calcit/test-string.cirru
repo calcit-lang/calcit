@@ -9,23 +9,24 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
+            defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (test-format) (test-char) (test-lisp-style) (test-methods) (test-bitwise) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-bitwise $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            fn ()
-              assert= (bit-and 15 7) 7
-              assert= (bit-and 16 7) 0
-              assert= (bit-or 15 7) 15
-              assert= (bit-or 16 7) 23
-              assert= (bit-xor 15 7) 8
-              assert= (bit-xor 16 7) 23
-              assert= (bit-not 16) -17
-              assert= (bit-not 0) -1
-              assert= |0b10001 $ &number:display-by 17 2
-              assert= |0o21 $ &number:display-by 17 8
-              assert= |0x11 $ &number:display-by 17 16
+            fn () $ inside-js:
+              do
+                assert= (bit-and 15 7) 7
+                assert= (bit-and 16 7) 0
+                assert= (bit-or 15 7) 15
+                assert= (bit-or 16 7) 23
+                assert= (bit-xor 15 7) 8
+                assert= (bit-xor 16 7) 23
+                assert= (bit-not 16) -17
+                assert= (bit-not 0) -1
+                assert= |0b10001 $ &number:display-by 17 2
+                assert= |0o21 $ &number:display-by 17 8
+                assert= |0x11 $ &number:display-by 17 16
           :examples $ []
           :schema $ :: 'Dynamic
         |test-char $ %{} 'CodeEntry (:doc |)
@@ -215,31 +216,7 @@
               assert= 0 $ &compare |a |a
           :examples $ []
           :schema $ :: 'Dynamic
-        |test-trim $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn ()
-              assert= | $ trim "|    "
-              assert= |1 $ trim "|  1  "
-              assert= |1 $ trim "|\n1\n"
-              assert= | $ trim |______ |_
-              assert= |1 $ trim |__1__ |_
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-whitespace $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Test blank?")
-              assert-detect identity $ blank? |
-              assert-detect identity $ blank? |
-              assert-detect identity $ blank? "| "
-              assert-detect identity $ blank? "|  "
-              assert-detect identity $ blank? "|\n"
-              assert-detect identity $ blank? "|\n "
-              assert-detect not $ blank? |1
-              assert-detect not $ blank? "| 1"
-              assert-detect not $ blank? "|1 "
-          :examples $ []
-          :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote
           ns test-string.main $ :require
-            util.core :refer $ inside-eval: log-title
+            util.core :refer $ inside-eval: inside-js: log-title

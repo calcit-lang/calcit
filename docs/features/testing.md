@@ -122,6 +122,15 @@ and examples are not themselves executed as tests. Prefer a short
 definition-local test for one API contract, and reserve integration fixtures
 for behavior that actually crosses definitions or backends.
 
+## Target Coverage
+
+Definition-attached tests run in the native `cr test` runner. Keep a compact
+`test-*.cirru` fixture when behavior must be compiled and executed by another
+target. For example, `test-string.main/test-bitwise` is wrapped in `inside-js:`
+so the full `yarn try-js` flow continues to verify JavaScript bit operations,
+while its ordinary API assertions live beside the core definitions. WASM
+exports and FFI checks similarly remain in the dedicated WASM fixtures.
+
 ## Core Test Placement
 
 For a core function, macro, or builtin whose behavior can be expressed in one
