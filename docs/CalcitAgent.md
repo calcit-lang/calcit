@@ -63,7 +63,7 @@ cr query config
 cr /tmp/demo.cirru query config
 ```
 
-当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `cr ./calcit.cirru ...`）。`Command:` 回显可能省略或归一化 input，不能用它证明实际文件身份。
+当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `cr ./calcit.cirru ...`）。非默认 Snapshot 会包含在 `Command:` 回显中；默认值为减少噪音会省略，需要审计展开后的全部默认选项时加 `--verbose`。路径仍可能经过 alias 解析，必要时结合 `query config` 确认项目身份。
 
 `cr [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`cr ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
 
@@ -100,7 +100,7 @@ cr query defs '<namespace>'
 
 `query def` 对大定义默认可能输出 chunked preview；先用 `query peek` 或默认 `query def` 看结构，确实需要完整定义时才用 `query def '<ns/def>' --raw`。不要把 `FOLDED:*` 或 chunk 标记当成源码。
 
-path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list 的 child 3，再取其 child 2；空 path 表示 definition 根节点。结构 mutation 后旧 path 可能失效，优先重新查询或使用 cursor。
+path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list 的 child 3，再取其 child 2；空 path 表示 definition 根节点。结构 mutation 后旧 path 可能失效，优先重新查询或使用 cursor。必须直接使用旧数字 path 时，`tree replace/delete/insert-*` 推荐同时传 `--expect 'quote ...'`；实际节点或插入锚点不匹配时命令会在写入前失败。
 
 搜索选择规则：
 

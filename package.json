@@ -22,7 +22,7 @@
     "check-all": "yarn compile && yarn check-js-runtime && yarn check-agent-interface && yarn try-core-tests && yarn try-rs && yarn try-js && yarn try-ir && yarn try-wasm",
     "check-agent-interface": "cargo build --bin cr && node scripts/check-agent-interface.mjs",
     "try-all": "yarn check-all",
-    "try-core-tests": "cargo run --bin cr -- src/cirru/calcit-core.cirru test --tag unit",
+    "try-core-tests": "cargo run --bin cr -- src/cirru/calcit-core.cirru test --tag unit --summary-only",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru",
     "warn-dyn-method": "cargo run --bin cr -- calcit/test.cirru --warn-dyn-method",
     "try-js-brk": "cargo run --bin cr -- calcit/test.cirru js && node --inspect-brk js-out/main.mjs",

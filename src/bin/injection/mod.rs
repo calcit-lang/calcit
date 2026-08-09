@@ -31,6 +31,7 @@ type EdnFfiFn = fn(
 static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 static TRACE_FFI: AtomicBool = AtomicBool::new(false);
 static STDOUT_TO_STDERR: AtomicBool = AtomicBool::new(false);
+static SILENCE_PROGRAM_OUTPUT: AtomicBool = AtomicBool::new(false);
 static TRACE_FFI_EVENT_ID: AtomicUsize = AtomicUsize::new(1);
 static TRACE_FFI_STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 
@@ -58,6 +59,11 @@ pub fn set_trace_ffi(v: bool) {
 #[allow(dead_code)]
 pub fn set_stdout_to_stderr(v: bool) {
   STDOUT_TO_STDERR.store(v, Ordering::Relaxed);
+}
+
+#[allow(dead_code)]
+pub fn set_program_output_silenced(v: bool) {
+  SILENCE_PROGRAM_OUTPUT.store(v, Ordering::Relaxed);
 }
 
 fn should_trace_ffi() -> bool {
@@ -314,6 +320,9 @@ pub fn stdout_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     }
     s.push_str(&x.turn_string());
   }
+  if SILENCE_PROGRAM_OUTPUT.load(Ordering::Relaxed) {
+    return Ok(Calcit::Nil);
+  }
   if STDOUT_TO_STDERR.load(Ordering::Relaxed) {
     eprintln!("{s}");
   } else {
@@ -330,7 +339,9 @@ pub fn stderr_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     }
     s.push_str(&x.turn_string());
   }
-  eprintln!("{s}");
+  if !SILENCE_PROGRAM_OUTPUT.load(Ordering::Relaxed) {
+    eprintln!("{s}");
+  }
   Ok(Calcit::Nil)
 }
 

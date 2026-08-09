@@ -285,14 +285,22 @@ You can use numeric paths to locate deep nodes:
 
 ```bash
 # Replace the node at path @1.2.0
-cr tree replace app.main/main! --path '@1.2.0' --code 'quote $ + 1 2'
+cr tree replace app.main/main! --path '@1.2.0' \
+  --expect 'quote old-value' --code 'quote $ + 1 2'
 
 # Insert before a node
-cr tree insert-before app.main/main! --path '@1.0' --code 'quote (println |started)'
+cr tree insert-before app.main/main! --path '@1.0' \
+  --expect 'quote (render-page)' --code 'quote (println |started)'
 
 # Delete a node
-cr tree delete app.main/main! --path '@1.0'
+cr tree delete app.main/main! --path '@1.0' --expect 'quote (render-page)'
 ```
+
+`--expect` is optional, but recommended whenever a numeric path is copied from
+an earlier query. The mutation is rejected before writing if the node (or insert
+anchor) no longer has the expected shape. This catches both stale indices and a
+path copied from an adjacent sibling. Use quoted Cirru or a JSON AST, following
+the same input rules as `--code`.
 
 ### Copying and Moving Nodes
 

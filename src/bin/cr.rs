@@ -76,6 +76,12 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
   Ok(())
 }
 
+fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapshot: snapshot::Snapshot) {
+  for (namespace, file) in core_snapshot.files {
+    snapshot.files.entry(namespace).or_insert(file);
+  }
+}
+
 fn main() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
   calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
@@ -287,10 +293,10 @@ fn main() -> Result<(), String> {
     reload_def: reload_def.into(),
   };
 
-  // attach core
-  for (k, v) in core_snapshot.files {
-    snapshot.files.insert(k.to_owned(), v.to_owned());
-  }
+  // Attach built-in core namespaces without replacing a source Snapshot's own
+  // calcit.core entries. This matters when developing and testing calcit-core.cirru
+  // with an older globally installed `cr` binary.
+  attach_missing_core_namespaces(&mut snapshot, core_snapshot);
 
   // now global states
   {
@@ -444,21 +450,33 @@ struct TestReport {
   tests: Vec<TestReportRow>,
 }
 
-struct TestStdoutRedirect(bool);
+struct TestOutputGuard {
+  redirect_stdout: bool,
+  silence_program_output: bool,
+}
 
-impl TestStdoutRedirect {
-  fn new(enabled: bool) -> Self {
-    if enabled {
+impl TestOutputGuard {
+  fn new(redirect_stdout: bool, silence_program_output: bool) -> Self {
+    if redirect_stdout {
       injection::set_stdout_to_stderr(true);
     }
-    Self(enabled)
+    if silence_program_output {
+      injection::set_program_output_silenced(true);
+    }
+    Self {
+      redirect_stdout,
+      silence_program_output,
+    }
   }
 }
 
-impl Drop for TestStdoutRedirect {
+impl Drop for TestOutputGuard {
   fn drop(&mut self) {
-    if self.0 {
+    if self.redirect_stdout {
       injection::set_stdout_to_stderr(false);
+    }
+    if self.silence_program_output {
+      injection::set_program_output_silenced(false);
     }
   }
 }
@@ -505,7 +523,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     "json" => true,
     other => return Err(format!("Unknown test output format `{other}`. Expected `human` or `json`.")),
   };
-  let _stdout_redirect = TestStdoutRedirect::new(json_mode);
+  let _output_guard = TestOutputGuard::new(json_mode, options.summary_only);
   let scope = options.target.as_deref().map(parse_test_scope).transpose()?;
   if let Some((namespace, definition)) = &scope {
     let file = snapshot
@@ -1589,6 +1607,27 @@ mod tests {
   use calcit::calcit::{CalcitTypeAnnotation, SchemaKind};
   use std::collections::BTreeSet;
   use std::fs;
+
+  #[test]
+  fn attaching_core_preserves_source_namespaces_and_fills_missing_ones() {
+    let mut project = snapshot::Snapshot::default();
+    let mut local_core = snapshot::gen_meta_ns("calcit.core", "source");
+    local_core.ns.doc = "source core".to_owned();
+    project.files.insert("calcit.core".to_owned(), local_core);
+
+    let mut embedded = snapshot::Snapshot::default();
+    let mut embedded_core = snapshot::gen_meta_ns("calcit.core", "embedded");
+    embedded_core.ns.doc = "embedded core".to_owned();
+    embedded.files.insert("calcit.core".to_owned(), embedded_core);
+    embedded
+      .files
+      .insert("calcit.internal".to_owned(), snapshot::gen_meta_ns("calcit.internal", "embedded"));
+
+    attach_missing_core_namespaces(&mut project, embedded);
+
+    assert_eq!(project.files["calcit.core"].ns.doc, "source core");
+    assert!(project.files.contains_key("calcit.internal"));
+  }
 
   #[test]
   fn configured_js_entry_controls_bare_invocation() {

@@ -87,7 +87,7 @@ Each test is compiled as its own synthetic function and executed independently. 
 
 Without a scope, `cr test` discovers tests only in namespaces defined by the input snapshot. Tests bundled with `calcit-core.cirru` or loaded modules are excluded, so an external project does not accidentally run Calcit's own test suite. Pass an explicit namespace such as `cr test calcit.test` when maintaining the core assertions.
 
-In JSON mode, runner output produced by `println`/`echo` is redirected to stderr so stdout remains one parseable report envelope. Full reports contain one row per selected test, including its execution duration. `--summary-only` emits counts and total duration only, with `detail: "summary"`; this is useful when an agent needs a reliable gate without loading hundreds of passing test rows. The report also distinguishes `selected` tests from `executed` tests when `--fail-fast` stops early.
+In JSON mode, runner output produced by `println`/`echo` is redirected to stderr so stdout remains one parseable report envelope. Full reports contain one row per selected test, including its execution duration. `--summary-only` suppresses per-test program output and emits counts and total duration only, with `detail: "summary"`; failures are still reported by the test runner. This is useful when an agent needs a reliable gate without loading hundreds of passing test rows. The report also distinguishes `selected` tests from `executed` tests when `--fail-fast` stops early.
 
 `--exclude-tag` removes a test carrying any supplied tag, after required `--tag` matching. `--require-match` turns an empty selection into a failure; use it in CI whenever a tag, scope, or affected-test command is expected to protect a non-empty suite.
 
@@ -148,7 +148,11 @@ cr src/cirru/calcit-core.cirru edit add-test calcit.core/range creates-half-open
 ```
 
 The repository runs this suite with `yarn try-core-tests`, which explicitly
-loads `calcit-core.cirru` and runs its `:unit` tests. Keep `calcit/test-*.cirru`
+loads `calcit-core.cirru` and runs its `:unit` tests in summary mode. When the
+input snapshot itself contains `calcit.core`, `cr` preserves that source
+namespace instead of replacing it with the binary's embedded copy. This makes
+the command reliable even when the globally installed `cr` predates the source
+snapshot being tested. Keep `calcit/test-*.cirru`
 when a case verifies several definitions together, parser syntax, stateful
 behavior, JavaScript/WASM code generation, or a full program flow. Those files
 are integration fixtures rather than a substitute for definition-local tests.

@@ -1833,6 +1833,9 @@ pub struct TreeReplaceCommand {
   /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// require the current node to equal this quoted Cirru node before replacing
+  #[argh(option)]
+  pub expect: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1872,6 +1875,9 @@ pub struct TreeDeleteCommand {
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option)]
   pub path: String,
+  /// require the node at path to equal this quoted Cirru node before deleting
+  #[argh(option)]
+  pub expect: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1893,6 +1899,9 @@ pub struct TreeInsertBeforeCommand {
   /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// require the anchor node to equal this quoted Cirru node before inserting
+  #[argh(option)]
+  pub expect: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1914,6 +1923,9 @@ pub struct TreeInsertAfterCommand {
   /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// require the anchor node to equal this quoted Cirru node before inserting
+  #[argh(option)]
+  pub expect: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1935,6 +1947,9 @@ pub struct TreeInsertChildCommand {
   /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// require the parent node to equal this quoted Cirru node before inserting
+  #[argh(option)]
+  pub expect: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
@@ -1956,6 +1971,9 @@ pub struct TreeAppendChildCommand {
   /// syntax_tree as inline text (auto-detects JSON vs Cirru)
   #[argh(option, long = "code")]
   pub code: Option<String>,
+  /// require the parent node to equal this quoted Cirru node before appending
+  #[argh(option)]
+  pub expect: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,

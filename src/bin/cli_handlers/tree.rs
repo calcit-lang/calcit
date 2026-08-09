@@ -61,6 +61,23 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
   Ok(())
 }
 
+fn verify_expected_node(actual: &Cirru, expected_input: Option<&str>, path: &[usize]) -> Result<(), String> {
+  let Some(expected_input) = expected_input else {
+    return Ok(());
+  };
+  let expected = parse_input_to_cirru(expected_input).map_err(|error| format!("Invalid --expect value: {error}"))?;
+  if actual == &expected {
+    return Ok(());
+  }
+  Err(format!(
+    "Node guard failed at {}.\nExpected:\n{}\nActual:\n{}\nNo changes were written. Re-run `cr tree show ... --path {}` and update --expect or the path.",
+    format_path(path),
+    format_preview_with_type(&expected, 6),
+    format_preview_with_type(actual, 6),
+    format_path(path),
+  ))
+}
+
 fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) -> Result<(), String> {
   let target = match &mut cmd.subcommand {
     TreeSubcommand::Show(opts) => &mut opts.target,
@@ -701,6 +718,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   // Save original for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
+  verify_expected_node(&old_node, opts.expect.as_deref(), &path)?;
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
@@ -718,9 +736,9 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   println!("{} Replaced node", "✓".green());
   println!();
   println!("{}", "Changed node".blue().bold());
-  print_preview_block("Before", &old_node, 20, "yellow");
+  print_preview_block("Before", &old_node, opts.depth, "yellow");
   println!();
-  print_preview_block("After", &replaced_node, 20, "green");
+  print_preview_block("After", &replaced_node, opts.depth, "green");
 
   if !path.is_empty() {
     let parent_path = &path[..path.len() - 1];
@@ -731,7 +749,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
     };
     println!();
     println!("{}", "Containing expression".blue().bold());
-    print_preview_block("After", &parent_after, 12, "cyan");
+    print_preview_block("After", &parent_after, opts.depth, "cyan");
   }
 
   Ok(())
@@ -1090,21 +1108,8 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
 
   // Save original node and parent for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
+  verify_expected_node(&old_node, opts.expect.as_deref(), &path)?;
   let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
-  let old_parent = if parent_path.is_empty() {
-    code_entry.code.clone()
-  } else {
-    navigate_to_path(&code_entry.code, &parent_path)?
-  };
-
-  // Show diff preview with parent context
-  println!("\n{}: delete", "Preview".blue().bold());
-  println!("{}:", "Node to delete".yellow().bold());
-  println!("{}", format_preview_with_type(&old_node, 10));
-  println!();
-  println!("{}:", "Parent context".dimmed());
-  println!("{}", format_preview_with_type(&old_parent, 8));
-  println!();
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
     tips.add_with_priority(TipPriority::High, t);
@@ -1116,10 +1121,10 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  println!("{} Deleted node", "✓".green());
+  println!("{} Deleted node at {}", "✓".green(), format_path(&path));
   println!();
   println!("{}:", "Deleted node".yellow().bold());
-  println!("{}", format_preview_with_type(&old_node, 20));
+  println!("{}", format_preview_with_type(&old_node, opts.depth));
   println!();
   println!("{}:", "Parent after deletion".green().bold());
   let new_parent = if parent_path.is_empty() {
@@ -1127,7 +1132,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
-  println!("{}", format_preview_with_type(&new_parent, 20));
+  println!("{}", format_preview_with_type(&new_parent, opts.depth));
   println!();
 
   // Warn about index changes
@@ -1170,6 +1175,7 @@ fn handle_batch_delete(opts: &TreeBatchDeleteCommand, snapshot_file: &str) -> Re
     let delete_opts = TreeDeleteCommand {
       target: opts.target.clone(),
       path: original_path.clone(),
+      expect: None,
       depth: opts.depth,
     };
     handle_delete(&delete_opts, snapshot_file)?;
@@ -1229,6 +1235,7 @@ fn handle_append_child(opts: &TreeAppendChildCommand, snapshot_file: &str) -> Re
 trait InsertOperation {
   fn file(&self) -> &Option<String>;
   fn code(&self) -> &Option<String>;
+  fn expect(&self) -> Option<&str>;
   fn with(&self) -> &[String] {
     &[]
   }
@@ -1241,6 +1248,9 @@ impl InsertOperation for TreeInsertBeforeCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
+  fn expect(&self) -> Option<&str> {
+    self.expect.as_deref()
+  }
 }
 
 impl InsertOperation for TreeInsertAfterCommand {
@@ -1249,6 +1259,9 @@ impl InsertOperation for TreeInsertAfterCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
+  }
+  fn expect(&self) -> Option<&str> {
+    self.expect.as_deref()
   }
 }
 
@@ -1259,6 +1272,9 @@ impl InsertOperation for TreeInsertChildCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
+  fn expect(&self) -> Option<&str> {
+    self.expect.as_deref()
+  }
 }
 
 impl InsertOperation for TreeAppendChildCommand {
@@ -1267,6 +1283,9 @@ impl InsertOperation for TreeAppendChildCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
+  }
+  fn expect(&self) -> Option<&str> {
+    self.expect.as_deref()
   }
 }
 
@@ -1277,6 +1296,9 @@ impl InsertOperation for TreeSearchReplaceCommand {
   fn code(&self) -> &Option<String> {
     &self.code
   }
+  fn expect(&self) -> Option<&str> {
+    None
+  }
 }
 
 impl InsertOperation for TreeStructuralCommand {
@@ -1285,6 +1307,9 @@ impl InsertOperation for TreeStructuralCommand {
   }
   fn code(&self) -> &Option<String> {
     &self.code
+  }
+  fn expect(&self) -> Option<&str> {
+    None
   }
   fn with(&self) -> &[String] {
     &self.with
@@ -1297,7 +1322,7 @@ fn generic_insert_handler<T: InsertOperation>(
   operation: TreeOperation,
   opts: &T,
   snapshot_file: &str,
-  _depth: usize,
+  depth: usize,
 ) -> Result<(), String> {
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
@@ -1329,22 +1354,15 @@ fn generic_insert_handler<T: InsertOperation>(
     process_node_with_references(&new_node, &references)?
   };
 
-  // Save parent before insertion for comparison
-  let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
-  let old_parent = if parent_path.is_empty() {
-    code_entry.code.clone()
-  } else {
-    navigate_to_path(&code_entry.code, &parent_path)?
-  };
+  let anchor_node = navigate_to_path(&code_entry.code, &path)?;
+  verify_expected_node(&anchor_node, opts.expect(), &path)?;
 
-  // Show diff preview
-  println!("\n{}: {}", "Preview".blue().bold(), operation.as_str());
-  println!("{}:", "Node to insert".cyan().bold());
-  println!("{}", format_preview_with_type(&processed_node, 8));
-  println!();
-  println!("{}:", "Parent before".dimmed());
-  println!("{}", format_preview_with_type(&old_parent, 8));
-  println!();
+  let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
+  let context_path = match operation {
+    TreeOperation::InsertChild | TreeOperation::AppendChild => &path,
+    TreeOperation::InsertBefore | TreeOperation::InsertAfter => &parent_path,
+    _ => unreachable!("generic_insert_handler only accepts insert operations"),
+  };
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
     tips.add_with_priority(TipPriority::High, t);
@@ -1359,18 +1377,15 @@ fn generic_insert_handler<T: InsertOperation>(
   println!("{} Applied '{}'", "✓".green(), operation.as_str());
   println!();
   println!("{}:", "Inserted node".cyan().bold());
-  println!("{}", format_preview_with_type(&processed_node, 10));
+  println!("{}", format_preview_with_type(&processed_node, depth));
   println!();
-  println!("{}:", "Parent before".yellow().bold());
-  println!("{}", format_preview_with_type(&old_parent, 15));
-  println!();
-  println!("{}:", "Parent after".green().bold());
-  let new_parent = if parent_path.is_empty() {
+  println!("{}:", "Containing node after".green().bold());
+  let new_parent = if context_path.is_empty() {
     new_code.clone()
   } else {
-    navigate_to_path(&new_code, &parent_path)?
+    navigate_to_path(&new_code, context_path)?
   };
-  println!("{}", format_preview_with_type(&new_parent, 15));
+  println!("{}", format_preview_with_type(&new_parent, depth));
   println!();
 
   // Explain index impact based on operation
@@ -1694,4 +1709,32 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
   println!("{} Wrapped node", "✓".green());
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::verify_expected_node;
+  use cirru_parser::Cirru;
+
+  fn leaf(text: &str) -> Cirru {
+    Cirru::Leaf(text.into())
+  }
+
+  fn list(items: Vec<Cirru>) -> Cirru {
+    Cirru::List(items)
+  }
+
+  #[test]
+  fn expected_node_guard_accepts_exact_expression() {
+    let actual = list(vec![leaf("test-methods")]);
+    verify_expected_node(&actual, Some("quote (test-methods)"), &[4]).expect("matching guard should pass");
+  }
+
+  #[test]
+  fn expected_node_guard_rejects_wrong_path_content() {
+    let actual = list(vec![leaf("test-lisp-style")]);
+    let error = verify_expected_node(&actual, Some("quote (test-methods)"), &[8]).expect_err("mismatched guard should fail");
+    assert!(error.contains("Node guard failed at @8"), "error: {error}");
+    assert!(error.contains("No changes were written"), "error: {error}");
+  }
 }
