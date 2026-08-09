@@ -19,7 +19,7 @@ Calcit structs are declared data types with a fixed set of named fields. Struct 
 
 - **Define**: `defstruct Point (:x 'Number) (:y 'Number)`
 - **Create**: `%{} Point (:x 1) (:y 2)`
-- **Access**: `get p :x` or `(:x p)`
+- **Access**: `(:x p)`
 - **Update**: `assoc p :x 10` or `update p :x inc`
 - **Type Check**: `assert-type p 'Point`
 
@@ -96,17 +96,29 @@ let
 
 ## Accessing Fields
 
-Use `get` (or `&struct:get`) to read a field:
+Use the required field accessor `(:field value)` to read a field:
 
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
     p $ %{} Point (:x 1) (:y 2)
-  println $ get p :x
+  println $ :x p
   ; => 1
 ```
 
-For a statically known struct, field access returns the field's declared type directly. A missing field is a type/checking error; struct access never produces `Option` merely because the field name might be absent.
+Required field access only accepts a statically known, typed Struct and returns
+the field's declared type directly. A missing field or an untyped receiver is a
+checking error. It never changes into an `Option` lookup merely because type
+information is missing.
+
+Use `get` for maps and indexed collections when absence is intentional; it
+always returns `Option<T>`. Struct fields do not use `get`, which keeps the two
+contracts visibly distinct in source code.
+
+Loose/anonymous structs (`?{}` or `%{} _ ...`) also cannot be read through the
+required field accessor until an expected named Struct type rewrites them. This
+prevents an undeclared field from silently becoming `Dynamic` and forces the
+schema to be established before application code depends on it.
 
 Standard collection functions like `keys`, `count`, and `contains?` also work on structs:
 
@@ -163,9 +175,9 @@ Use `%{}?` to create a partial struct with only some fields set (others default 
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
     p1 $ %{}? Person (:name |Chen)
-  println $ get p1 :name
+  println $ :name p1
   ; => |Chen
-  println $ get p1 :age
+  println $ :age p1
   ; => nil
 ```
 
@@ -212,8 +224,8 @@ let
     shape $ %{} Circle (:radius 5)
   struct-match shape
     Circle c $ * 3.14
-      * (get c :radius) (get c :radius)
-    Square s $ * (get s :radius) (get s :radius)
+      * (:radius c) (:radius c)
+    Square s $ * (:radius s) (:radius s)
     _ _ 0
 
 ; => 78.5
@@ -288,7 +300,9 @@ let
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdImpl BirdTrait
       .show $ fn (self)
-        println $ get self :name
+        ; defimpl bodies are reusable before a concrete Struct is attached,
+        ; so low-level access is explicit at this dynamic implementation boundary.
+        println $ &struct:get self :name
       .rename $ fn (self name) (assoc self :name name)
     Bird $ impl-traits BirdShape BirdImpl
     b $ %{} Bird (:name |Sparrow)
@@ -307,7 +321,7 @@ let
 let
     Config $ defstruct Config (:host :string) (:port :number) (:debug :bool)
     config $ %{} Config (:host |localhost) (:port 3000) (:debug false)
-  println $ get config :port
+  println $ :port config
   ; => 3000
 ```
 
@@ -317,7 +331,7 @@ let
 let
     Product $ defstruct Product (:id :string) (:name :string) (:price :number) (:discount :number)
     product $ %{} Product (:id |P001) (:name |Widget) (:price 100) (:discount 0.9)
-  println $ * (get product :price) (get product :discount)
+  println $ * (:price product) (:discount product)
   ; => 90
 ```
 

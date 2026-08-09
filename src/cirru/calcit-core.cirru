@@ -449,7 +449,7 @@
           :tags $ #{} :internal
         |&core-struct-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-struct-methods $ &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :get get) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
+            def &core-struct-methods $ &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
               :: :empty? $ defn &struct:empty?-impl (x)
                 &= 0 $ &struct:count x
           :examples $ []
@@ -738,7 +738,7 @@
             {} (:return 'Tag)
               :args $ []
           :tags $ #{} :builtin :internal :io
-        |&get-raw $ %{} 'CodeEntry (:doc "|Internal raw lookup dispatcher. Public callers must use get, which returns Option.")
+        |&get-raw $ %{} 'CodeEntry (:doc "|Internal raw lookup dispatcher for collection algorithms and typed Struct traversal. Public optional lookups use get/get-in; required Struct fields use (:field value).")
           :code $ quote
             defn &get-raw (base k)
               cond
@@ -4963,7 +4963,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |get $ %{} 'CodeEntry (:doc "|Lookup by key or index. Struct fields return their declared value directly and unknown fields raise; maps and indexed collections return Option<T>.")
+        |get $ %{} 'CodeEntry (:doc "|Optional lookup by key or index for maps and indexed collections. Returns Option<T>. Required Struct fields use (:field value) and return their declared type directly.")
           :code $ quote
             defn get (base k)
               cond
@@ -4971,10 +4971,10 @@
                   if (&map:contains? base k)
                     %some $ &map:get base k
                     %none
-                (struct? base) (&struct:get base k)
+                (struct? base) (raise "|get does not read Struct fields; use (:field value) so the checker can enforce the declared type")
                 (or (list? base) (string? base) (enum? base))
                   if (number? k) (nth base k) (%none)
-                true $ raise (str-spaced |get |expected |a |collection |or |struct, |got: base)
+                true $ raise (str-spaced |get |expected |a |map |or |indexed |collection, |got: base)
           :examples $ []
             quote $ assert= (%some 2)
               get ([] 0 2 4) 1
@@ -6992,7 +6992,7 @@
               :code $ quote
                 do
                   assert= true $ starts-with? |01234 |01
-                  assert= true $ starts-with? :a/b :a/
+                  assert= true $ starts-with? (unsafe-coerce :a/b String) (unsafe-coerce :a/ String)
                   assert= false $ starts-with? |01234 |12
               :tags $ #{} :core :unit
         |str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")

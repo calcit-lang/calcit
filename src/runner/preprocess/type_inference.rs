@@ -191,6 +191,16 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
   if ns == calcit::CORE_NS
+    && def == "update"
+    && let Some(receiver_type) = call_expr.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
+  {
+    // `update` preserves its collection/Struct receiver. This is especially
+    // important when a required field access follows the update: losing the
+    // nominal Struct here would incorrectly turn a checked field into an
+    // untyped access.
+    return Some(receiver_type);
+  }
+  if ns == calcit::CORE_NS
     && def == "%::"
     && let Some(inferred) = infer_enum_annotation(call_expr, scope_types)
   {
@@ -330,15 +340,14 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
 }
 
 fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
-  let payload = infer_lookup_payload_type_from_type(base_type, key_arg)?;
+  // Required Struct fields use `(:field value)` and are lowered to
+  // `&struct:nth`/`&struct:get`. Keeping Struct out of `get` gives this public
+  // API one stable contract: a partial collection lookup returns Option<T>.
   if base_type.resolve_to_struct().is_some() {
-    // Struct fields are declared and always present. Runtime `get` delegates
-    // to the required lookup and reports an unknown field instead of returning
-    // Option/nil, so the static type must expose the declared field directly.
-    Some(payload)
-  } else {
-    Some(core_type_ref("Option", vec![payload]))
+    return None;
   }
+  let payload = infer_lookup_payload_type_from_type(base_type, key_arg)?;
+  Some(core_type_ref("Option", vec![payload]))
 }
 
 fn infer_sequence_payload_type(base_type: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1145,6 +1154,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(struct_type);
   }
+  if matches!(proc, CalcitProc::NativeStructFromMap)
+    && let Some(struct_value) = xs.get(1).and_then(|definition| resolve_struct_value(definition, scope_types))
+  {
+    return Some(Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref)));
+  }
   if matches!(proc, CalcitProc::NativeLooseStruct) {
     return Some(tag_annotation("struct"));
   }
@@ -1758,20 +1772,51 @@ mod tests {
   }
 
   #[test]
-  fn known_struct_get_returns_the_required_field_type_directly() {
+  fn common_get_does_not_specialize_struct_fields() {
     let mut struct_def = CalcitStructDef::from_fields(EdnTag::from("User"), vec![EdnTag::from("name")]);
     struct_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
     let user_type = CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![]));
     let key = Calcit::Tag(EdnTag::from("name"));
 
-    assert!(matches!(
-      infer_get_return_type_from_type(&user_type, Some(&key)).as_deref(),
-      Some(CalcitTypeAnnotation::String)
-    ));
+    assert!(infer_get_return_type_from_type(&user_type, Some(&key)).is_none());
     assert!(
       infer_get_return_type_from_type(&CalcitTypeAnnotation::Optional(Arc::new(user_type)), Some(&key)).is_none(),
       "legacy Optional receivers must be narrowed or converted before nominal lookup"
     );
+  }
+
+  #[test]
+  fn struct_preserving_operations_keep_nominal_type_for_required_field_access() {
+    let mut struct_def = CalcitStructDef::from_fields(EdnTag::from("User"), vec![EdnTag::from("name")]);
+    struct_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
+    let struct_def = Arc::new(struct_def);
+    let user_type = Arc::new(CalcitTypeAnnotation::StructValue(struct_def.clone()));
+    let user = local("user", user_type.clone());
+    let updater = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("updater")),
+      sym: Arc::from("updater"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.struct"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![Arc::new(CalcitTypeAnnotation::String)],
+        Arc::new(CalcitTypeAnnotation::String),
+      )),
+    });
+    let update_call = CalcitList::from(&[symbol("update"), user, Calcit::Tag(EdnTag::from("name")), updater] as &[Calcit]);
+
+    assert_eq!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "update", &update_call, &ScopeTypes::new()),
+      Some(user_type.clone())
+    );
+
+    let from_map_call = proc_call(
+      CalcitProc::NativeStructFromMap,
+      vec![Calcit::StructDef(struct_def.as_ref().clone()), Calcit::Map(Default::default())],
+    );
+    assert_eq!(infer_type_from_expr(&from_map_call, &ScopeTypes::new()), Some(user_type));
   }
 
   #[test]

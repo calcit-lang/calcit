@@ -31,6 +31,21 @@ try {
   assert.equal(todoEnum.toString(), "(%enum-def 'TodoState)");
   assert.equal(todoEnumValue.toString(), "(%:: 'TodoState :draft |)");
   assert.equal(anonymousEnumValue.toString(), "(%:: _ :draft |)");
+
+  const anonymousEnumCode = runtimeA.format_cirru_edn(anonymousEnumValue);
+  const parsedAnonymousEnum = runtimeA.parse_cirru_edn(anonymousEnumCode, null);
+  assert.equal(parsedAnonymousEnum.tag, todoField, "anonymous enum tags should stay interned after a Cirru EDN round-trip");
+  assert.equal(
+    parsedAnonymousEnum.tag === todoField ? "matched-draft" : "unmatched",
+    "matched-draft",
+    "a parsed enum should enter the same identity-based branch as a compiled match"
+  );
+
+  const enumOptions = new runtimeA.CalcitSliceMap([todoName, todoEnum]);
+  const namedEnumCode = runtimeA.format_cirru_edn(todoEnumValue);
+  const parsedNamedEnum = runtimeA.parse_cirru_edn(namedEnumCode, enumOptions);
+  assert.equal(parsedNamedEnum.tag, todoField, "named enum tags should stay interned after a Cirru EDN round-trip");
+  assert.equal(parsedNamedEnum.enumPrototype, todoEnum, "named enum round-trips should restore the provided prototype");
   assert.throws(
     () => runtimeA._$n_struct_$o_get(todoRecord, runtimeA.newTag("missing")),
     /does not define field :missing/,

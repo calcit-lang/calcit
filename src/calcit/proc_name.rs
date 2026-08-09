@@ -817,7 +817,7 @@ impl CalcitProc {
       }),
       StartsWith | EndsWith => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag(), dynamic_tag()],
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       GetCharCode => Some(ProcTypeSignature {
         return_type: some_tag("number"),

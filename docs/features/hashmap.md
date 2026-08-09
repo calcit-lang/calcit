@@ -58,9 +58,9 @@ The low-level primitive `&{}` takes flat key-value pairs:
 let
     m $ {} (:a 1) (:b 2) (:c 3)
   println $ get m :a
-  ; => 1
+  ; => (%some 1)
   println $ get m :missing
-  ; => nil
+  ; => (%none)
   println $ contains? m :b
   ; => true
   println $ count m

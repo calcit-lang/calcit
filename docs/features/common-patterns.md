@@ -94,7 +94,7 @@ let
 let
     find-user $ fn (users id)
       find users $ fn (u)
-        = (get u :id) id
+        = (option:unwrap $ get u :id) id
   println $ find-user
     [] ({} (:id |001) (:name |Alice))
     , |001
@@ -236,8 +236,8 @@ let
     toggle-todo! $ fn (id)
       swap! todos $ fn (items)
         map items $ fn (todo)
-          if (= (get todo :id) id)
-            assoc todo :done $ not (get todo :done)
+          if (= (option:unwrap $ get todo :id) id)
+            assoc todo :done $ not (option:unwrap $ get todo :done)
             , todo
   add-todo! |buy-milk
   add-todo! |write-docs
@@ -397,14 +397,14 @@ let
     items $ [] ({} (:value 1)) ({} (:value 2)) ({} (:value 3))
     result1 $ reduce items 0 $ fn (acc item)
       let
-          value $ get item :value
+          value $ option:unwrap $ get item :value
         tag-match value
           (:some number) (+ acc number)
           (:none) , acc
     result2 $ apply +
       map items $ fn (item)
         let
-            value $ get item :value
+            value $ option:unwrap $ get item :value
           tag-match value
             (:some number) , number
             (:none) 0

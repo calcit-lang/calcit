@@ -220,11 +220,16 @@ let recordFieldOrder = (a: [string, CirruEdnFormat], b: [string, CirruEdnFormat]
 
 /** makes sure we got string */
 let extractFieldTag = (x: string) => {
-  if (x[0] === ":") {
+  if (x[0] === ":" || x[0] === "'") {
     return newTag(x.slice(1));
   } else {
     return newTag(x);
   }
+};
+
+let extractEnumTag = (x: CirruEdnFormat, options: CalcitValue, preserveSourceEntries: boolean): CalcitValue => {
+  const parsedTag = extract_cirru_edn_inner(x, options, preserveSourceEntries);
+  return parsedTag instanceof CalcitSymbol ? newTag(parsedTag.value) : parsedTag;
 };
 
 let resolveEnumPrototype = (enumName: string, options: CalcitValue) => {
@@ -405,7 +410,7 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
         throw new Error(`anonymous enum expects at least 1 value, got: ${x}`);
       }
       return new CalcitEnumValue(
-        extract_cirru_edn_inner(x[1], options, preserveSourceEntries),
+        extractEnumTag(x[1], options, preserveSourceEntries),
         x
           .slice(2)
           .filter(notComment)
@@ -421,11 +426,8 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
         throw new Error(`Expected string for enum name, got: ${enumName}`);
       }
       let enumPrototype = resolveEnumPrototype(enumName, options);
-      // unwrap prototype to record then extract name
-      const proto = enumPrototype != null ? unwrap_enum_prototype_local(enumPrototype) : null;
-      const enumTag = proto != null ? proto.name.toString() : enumName;
       return new CalcitEnumValue(
-        extract_cirru_edn_inner(x[2], options, preserveSourceEntries),
+        extractEnumTag(x[2], options, preserveSourceEntries),
         x
           .slice(3)
           .filter(notComment)

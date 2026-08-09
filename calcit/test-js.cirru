@@ -84,7 +84,7 @@
               hint-fn $ {} (:async true)
               let
                   a $ {} (:a 1)
-                  b $ option:unwrap (:a a)
+                  b $ option:unwrap (get a :a)
                   ret $ js-await
                     case-default b
                       new js/Promise $ fn (resolve _reject)
