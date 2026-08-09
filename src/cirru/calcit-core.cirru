@@ -332,6 +332,13 @@
                   assert= 1 $ &compare |1 1
                   assert= 0 $ &compare 1 1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-strings)
+              :code $ quote
+                do
+                  assert= -1 $ &compare |a |b
+                  assert= 1 $ &compare |b |a
+                  assert= 0 $ &compare |a |a
+              :tags $ #{} :core :unit
         |&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote
             def &core-enum-impls $ [] &core-enum-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
@@ -3458,6 +3465,10 @@
               :code $ quote
                 assert= 4 $ count (#{} 1 2 3 4)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |counts-string-characters)
+              :code $ quote
+                assert= 4 $ count |good
+              :tags $ #{} :core :unit
         |cpu-time $ %{} 'CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3920,6 +3931,22 @@
               :args $ [] (:: 'List 'T)
               :generics $ [] 'T
               :return $ :: 'ListDestruct 'T
+          :tests $ []
+            %{} 'TestEntry (:name |splits-head-and-tail)
+              :code $ quote
+                do
+                  assert=
+                    :: :parts 1 $ [] 2 3
+                    tag-match
+                      destruct-list $ [] 1 2 3
+                      (:none) (:: :empty)
+                      (:some item tail) (:: :parts item tail)
+                  assert= (:: :empty)
+                    tag-match
+                      destruct-list $ []
+                      (:none) (:: :empty)
+                      (:some item tail) (:: :parts item tail)
+              :tags $ #{} :core :unit
         |destruct-map $ %{} 'CodeEntry (:doc "|Split a map into the nominal MapDestruct<K,V> enum.")
           :code $ quote
             defn destruct-map (xs)
@@ -3939,6 +3966,23 @@
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
               :return $ :: 'MapDestruct 'K 'V
+          :tests $ []
+            %{} 'TestEntry (:name |splits-entry-and-remainder)
+              :code $ quote
+                do
+                  assert= (:: :parts true true 1)
+                    tag-match
+                      destruct-map $ &{} :a 1 :b 2
+                      (:none) (:: :empty)
+                      (:some key value tail)
+                        :: :parts (tag? key) (number? value) (count tail)
+                  assert= (:: :empty)
+                    tag-match
+                      destruct-map $ &{}
+                      (:none) (:: :empty)
+                      (:some key value tail)
+                        :: :parts $ count tail
+              :tags $ #{} :core :unit
         |destruct-set $ %{} 'CodeEntry (:doc "|Split a set into the nominal SetDestruct<T> enum.")
           :code $ quote
             defn destruct-set (xs)
@@ -3959,6 +4003,23 @@
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
               :return $ :: 'SetDestruct 'T
+          :tests $ []
+            %{} 'TestEntry (:name |splits-item-and-remainder)
+              :code $ quote
+                do
+                  assert= (:: :parts true 2)
+                    tag-match
+                      destruct-set $ #{} 1 2 3
+                      (:none) (:: :empty)
+                      (:some item tail)
+                        :: :parts (number? item) (count tail)
+                  assert= (:: :empty)
+                    tag-match
+                      destruct-set $ #{}
+                      (:none) (:: :empty)
+                      (:some item tail)
+                        :: :parts (number? item) (count tail)
+              :tags $ #{} :core :unit
         |destruct-str $ %{} 'CodeEntry (:doc "|Split a string into the nominal StringDestruct enum.")
           :code $ quote
             defn destruct-str (s)
@@ -3970,6 +4031,19 @@
           :schema $ :: 'Fn
             {} (:return 'StringDestruct)
               :args $ [] 'String
+          :tests $ []
+            %{} 'TestEntry (:name |splits-non-empty-and-empty)
+              :code $ quote
+                do
+                  assert= (:: :parts |1 |23)
+                    tag-match (destruct-str |123)
+                      (:none) (:: :empty)
+                      (:some s0 ss) (:: :parts s0 ss)
+                  assert= (:: :empty)
+                    tag-match (destruct-str |)
+                      (:none) (:: :empty)
+                      (:some s0 ss) (:: :parts s0 ss)
+              :tags $ #{} :core :unit
         |difference $ %{} 'CodeEntry (:doc "|Returns the set difference of base and all other sets")
           :code $ quote
             defn difference (base & xs)

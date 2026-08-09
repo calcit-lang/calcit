@@ -179,33 +179,14 @@
         |test-str $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn test-str ()
-              assert= (&str:concat |a |b) |ab
-              assert= (&str:concat 1 2) |12
-              assert= (str |a |b |c) |abc
-              assert= (str |a nil |c) |ac
-              assert= (str-spaced |a nil |c 12) "|a c 12"
-              assert= (str-spaced nil nil |c 12) "|c 12"
-              assert= (str-spaced |a nil |c 12 nil) "|a c 12"
-              assert= (str 1 2 3) |123
-              assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str (:: :a "|世界" "|海 洋")
               assert=
                 type-of $ &str 1
                 , :string
               assert= (.replace "|this is a" |is |IS) "|thIS IS a"
-              assert= (split |a,b,c |,) ([] |a |b |c)
-              assert= (split-lines "|a\nb\nc") ([] |a |b |c)
-              assert= (split "|a中b文c" |) ([] |a "|中" |b "|文" |c)
-              assert= 4 $ count |good
               assert= |56789 $ .slice |0123456789 5
               assert= |567 $ .slice |0123456789 5 8
               assert= | $ .slice |0123456789 10
               assert= | $ .slice |0123456789 9 1
-              assert= -1 $ &str:compare |a |b
-              assert= 1 $ &str:compare |b |a
-              assert= 0 $ &str:compare |a |a
-              assert= -1 $ &compare |a |b
-              assert= 1 $ &compare |b |a
-              assert= 0 $ &compare |a |a
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
