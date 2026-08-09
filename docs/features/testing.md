@@ -109,3 +109,20 @@ The `calcit.test` namespace is embedded in `calcit-core.cirru` and requires no e
 - `fail` raises immediately with a message.
 
 All assertion macros evaluate each supplied expression once.
+
+## Core Test Placement
+
+For a core function, macro, or builtin whose behavior can be expressed in one
+namespace, attach the test directly to that definition in `calcit-core.cirru`:
+
+```bash
+cr src/cirru/calcit-core.cirru edit add-test calcit.core/range creates-half-open-range \
+  --tags unit,core \
+  --code 'quote $ assert= ([] 2 3 4) (range 2 5)'
+```
+
+The repository runs this suite with `yarn try-core-tests`, which explicitly
+loads `calcit-core.cirru` and runs its `:unit` tests. Keep `calcit/test-*.cirru`
+when a case verifies several definitions together, parser syntax, stateful
+behavior, JavaScript/WASM code generation, or a full program flow. Those files
+are integration fixtures rather than a substitute for definition-local tests.

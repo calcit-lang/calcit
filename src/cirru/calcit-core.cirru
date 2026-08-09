@@ -324,6 +324,14 @@
             {} (:return 'Number)
               :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |orders-cross-type-values)
+              :code $ quote
+                do
+                  assert= -1 $ &compare 1 |1
+                  assert= 1 $ &compare |1 1
+                  assert= 0 $ &compare 1 1
+              :tags $ #{} :core :unit
         |&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote
             def &core-enum-impls $ [] &core-enum-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
@@ -1261,6 +1269,12 @@
               :generics $ [] 'T
               :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |deduplicates-list-members)
+              :code $ quote
+                assert= (#{} 1)
+                  &list:to-set $ [] 1 1 1 1
+              :tags $ #{} :core :unit
         |&map:add-entry $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &map:add-entry (xs pair)
@@ -1575,6 +1589,11 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-fractional-part)
+              :code $ quote
+                assert= 0.8 $ &number:fract 1.8
+              :tags $ #{} :core :unit
         |&number:rem $ %{} 'CodeEntry (:doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (number), b (number)\nReturns: number\nReturns remainder of a divided by b")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1582,6 +1601,13 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |calculates-remainder)
+              :code $ quote
+                do
+                  assert= 1 $ &number:rem 33 4
+                  assert= 2 $ &number:rem 11 3
+              :tags $ #{} :core :unit
         |&parse-float $ %{} 'CodeEntry (:doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1695,6 +1721,15 @@
               :args $ [] (:: 'Set 'Number)
               :return $ :: 'Option 'Number
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |finds-largest-set-member)
+              :code $ quote
+                do
+                  assert= (%some 4)
+                    &set:max $ #{} 1 2 3 4
+                  assert= (%none)
+                    &set:max $ #{}
+              :tags $ #{} :core :unit
         |&set:min $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &set:min (xs)
@@ -1705,6 +1740,15 @@
               :args $ [] (:: 'Set 'Number)
               :return $ :: 'Option 'Number
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |finds-smallest-set-member)
+              :code $ quote
+                do
+                  assert= (%some 1)
+                    &set:min $ #{} 1 2 3 4
+                  assert= (%none)
+                    &set:min $ #{}
+              :tags $ #{} :core :unit
         |&set:to-list $ %{} 'CodeEntry (:doc "|internal function for converting set to list\nSyntax: (&set:to-list set)\nParams: set (set)\nReturns: list\nConverts set to list of elements")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1714,6 +1758,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |converts-set-to-list)
+              :code $ quote
+                assert= 3 $ count
+                  &set:to-list $ #{} 1 2 3
+              :tags $ #{} :core :unit
         |&str $ %{} 'CodeEntry (:doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2021,6 +2071,11 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |multiplies-variadic-numbers)
+              :code $ quote
+                assert= 24 $ * 1 2 3 4
+              :tags $ #{} :core :unit
         |+ $ %{} 'CodeEntry (:doc "|Mathematical addition operation\\nFunction: Calculates the sum of one or more numbers\\nParams: x (number), ys (variadic args, list of numbers)\\nReturns: number - sum of all arguments\\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
             defn + (x & ys) (reduce ys x &+)
@@ -2032,6 +2087,11 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |adds-variadic-numbers)
+              :code $ quote
+                assert= 10 $ + 1 2 3 4
+              :tags $ #{} :core :unit
         |- $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn - (x & ys)
@@ -2042,6 +2102,13 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |subtracts-and-negates)
+              :code $ quote
+                do
+                  assert= 4 $ - 10 1 2 3
+                  assert= -2 $ - 2
+              :tags $ #{} :core :unit
         |-> $ %{} 'CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
           :code $ quote
             defmacro -> (base & xs)
@@ -2115,6 +2182,13 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |divides-and-inverts)
+              :code $ quote
+                do
+                  assert= 15 $ / 360 2 3 4
+                  assert= 0.5 $ / 2
+              :tags $ #{} :core :unit
         |/= $ %{} 'CodeEntry (:doc "|not equal")
           :code $ quote
             defn /= (a b) (not= a b)
@@ -2162,6 +2236,13 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Bool)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |compares-ascending-chain)
+              :code $ quote
+                do
+                  assert= true $ < 1 2 3 4 5
+                  assert= false $ < 3 2
+              :tags $ #{} :core :unit
         |<- $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro <- (& xs)
@@ -2215,6 +2296,11 @@
           :schema $ :: 'Fn
             {} (:rest 'Number) (:return 'Bool)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |compares-descending-chain)
+              :code $ quote
+                assert= true $ > 10 8 6 4
+              :tags $ #{} :core :unit
         |>= $ %{} 'CodeEntry (:doc "|Greater-than-or-equal comparison for one or more numbers")
           :code $ quote
             defn >= (x & ys)
@@ -2488,6 +2574,11 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |returns-magnitude)
+              :code $ quote
+                assert= 4 $ abs -4
+              :tags $ #{} :core :unit
         |add-watch $ %{} 'CodeEntry (:doc "|internal function for adding atom watchers\nSyntax: (add-watch atom key callback)\nParams: atom (atom), key (any), callback (function)\nReturns: atom\nAdds watcher function to atom")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2740,6 +2831,13 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |shifts-left)
+              :code $ quote
+                do
+                  assert= 4 $ bit-shl 2 1
+                  assert= 16 $ bit-shl 4 2
+              :tags $ #{} :core :unit
         |bit-shr $ %{} 'CodeEntry (:doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2747,6 +2845,13 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |shifts-right)
+              :code $ quote
+                do
+                  assert= 1 $ bit-shr 2 1
+                  assert= 1 $ bit-shr 4 2
+              :tags $ #{} :core :unit
         |bit-xor $ %{} 'CodeEntry (:doc "|internal function for bitwise XOR\nSyntax: (bit-xor a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise XOR operation on two integers")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2882,6 +2987,11 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |rounds-up)
+              :code $ quote
+                assert= 2 $ ceil 1.1
+              :tags $ #{} :core :unit
         |char-from-code $ %{} 'CodeEntry (:doc "|internal function for creating character from code\nSyntax: (char-from-code code)\nParams: code (number)\nReturns: string\nCreates character from Unicode code point")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3055,6 +3165,11 @@
             {} (:return 'Number)
               :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |counts-set-members)
+              :code $ quote
+                assert= 4 $ count (#{} 1 2 3 4)
+              :tags $ #{} :core :unit
         |cpu-time $ %{} 'CodeEntry (:doc "|internal function for getting CPU time\nSyntax: (cpu-time)\nParams: none\nReturns: number\nReturns current CPU time in milliseconds for performance measurement")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3582,6 +3697,12 @@
               :generics $ [] 'T
               :rest $ :: 'Set 'T
               :return $ :: 'Set 'T
+          :tests $ []
+            %{} 'TestEntry (:name |subtracts-all-sets)
+              :code $ quote
+                assert= (#{} 3)
+                  difference (#{} 1 2 3) (#{} 1) (#{} 2)
+              :tags $ #{} :core :unit
         |dissoc $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn dissoc (x & args)
@@ -3784,6 +3905,11 @@
                 :: 'Fn $ {} (:return 'Bool)
                   :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |checks-every-set-member)
+              :code $ quote
+                assert= true $ every? (#{} 1 2 3) (\ > % 0)
+              :tags $ #{} :core :unit
         |exclude $ %{} 'CodeEntry (:doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item.")
           :code $ quote
             defn exclude (base & xs)
@@ -3794,6 +3920,12 @@
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
               :return $ :: 'Set 'T
+          :tests $ []
+            %{} 'TestEntry (:name |removes-set-members)
+              :code $ quote
+                assert= (#{} 3)
+                  exclude (#{} 1 2 3) 1 2
+              :tags $ #{} :core :unit
         |field-match $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defmacro field-match (value & body)
@@ -3928,6 +4060,11 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |rounds-down)
+              :code $ quote
+                assert= 1 $ floor 1.8
+              :tags $ #{} :core :unit
         |fn $ %{} 'CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
           :code $ quote
             defmacro fn (args & body)
@@ -4319,6 +4456,12 @@
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
               :return $ :: 'Set 'T
+          :tests $ []
+            %{} 'TestEntry (:name |adds-set-members)
+              :code $ quote
+                assert= (#{} 1 2 3 4)
+                  include (#{} 1 2) 3 4
+              :tags $ #{} :core :unit
         |includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn includes? (x k)
@@ -4380,6 +4523,12 @@
               :generics $ [] 'T
               :rest $ :: 'Set 'T
               :return $ :: 'Set 'T
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-common-set-members)
+              :code $ quote
+                assert= (#{} 3)
+                  intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
+              :tags $ #{} :core :unit
         |is-spreading-mark? $ %{} 'CodeEntry (:doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4862,6 +5011,12 @@
                   :args $ [] 'T
               :generics $ [] 'C 'T 'U
               :where $ {} ('C 'Mappable)
+          :tests $ []
+            %{} 'TestEntry (:name |maps-over-sets)
+              :code $ quote
+                assert= (#{} 2 3 4)
+                  map (#{} 1 2 3) inc
+              :tags $ #{} :core :unit
         |map-indexed $ %{} 'CodeEntry (:doc "|Map over a collection with index, f takes index and value")
           :code $ quote
             defn map-indexed (xs f)
@@ -4944,6 +5099,12 @@
               :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |returns-largest-option)
+              :code $ quote
+                assert= (%some 4)
+                  max $ [] 1 2 3 4
+              :tags $ #{} :core :unit
         |merge $ %{} 'CodeEntry (:doc "|Combines maps left-to-right, with later maps overwriting keys from earlier ones by reducing through `&merge`.")
           :code $ quote
             defn merge (x0 & xs) (reduce xs x0 &merge)
@@ -4982,6 +5143,12 @@
               :args $ [] 'T
               :generics $ [] 'T
               :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |returns-smallest-option)
+              :code $ quote
+                assert= (%some 1)
+                  min $ [] 1 2 3 4
+              :tags $ #{} :core :unit
         |negate $ %{} 'CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote
             defn negate (x) (&- 0 x)
@@ -4992,6 +5159,11 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |flips-number-sign)
+              :code $ quote
+                assert= 4 $ negate -4
+              :tags $ #{} :core :unit
         |nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5299,6 +5471,11 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |raises-to-power)
+              :code $ quote
+                assert= 81 $ pow 3 4
+              :tags $ #{} :core :unit
         |prepend $ %{} 'CodeEntry (:doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5601,6 +5778,13 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |rounds-nearest)
+              :code $ quote
+                do
+                  assert= 1 $ round 1.1
+                  assert= 2 $ round 1.8
+              :tags $ #{} :core :unit
         |round? $ %{} 'CodeEntry (:doc "|internal function for checking if number is round\nSyntax: (round? n)\nParams: n (number)\nReturns: boolean\nReturns true if number has no fractional part")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5608,6 +5792,13 @@
             {} (:return 'Bool)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |distinguishes-integers)
+              :code $ quote
+                do
+                  assert= true $ round? 1
+                  assert= false $ round? 1.1
+              :tags $ #{} :core :unit
         |section-by $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn section-by (xs0 n)
@@ -5733,6 +5924,11 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |finds-square-root)
+              :code $ quote
+                assert= 9 $ sqrt 81
+              :tags $ #{} :core :unit
         |starts-with? $ %{} 'CodeEntry (:doc "|internal function for checking string prefix\nSyntax: (starts-with? s prefix)\nParams: s (string), prefix (string)\nReturns: boolean\nReturns true if string starts with prefix")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6129,6 +6325,12 @@
               :generics $ [] 'T
               :rest $ :: 'Set 'T
               :return $ :: 'Set 'T
+          :tests $ []
+            %{} 'TestEntry (:name |combines-all-sets)
+              :code $ quote
+                assert= (#{} 1 2 3)
+                  union (#{} 1) (#{} 2) (#{} 3)
+              :tags $ #{} :core :unit
         |unix-time-ms $ %{} 'CodeEntry (:doc "|Return the current Unix timestamp in milliseconds.\nSyntax: (unix-time-ms)\nReturns: number")
           :code $ quote &runtime-implementation
           :examples $ []
