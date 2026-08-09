@@ -1567,6 +1567,14 @@
             {} (:return 'String)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |renders-number-bases)
+              :code $ quote
+                do
+                  assert= |0b10001 $ &number:display-by 17 2
+                  assert= |0o21 $ &number:display-by 17 8
+                  assert= |0x11 $ &number:display-by 17 16
+              :tags $ #{} :core :unit
         |&number:empty $ %{} 'CodeEntry (:doc "|internal helper for number :empty method entry")
           :code $ quote
             defn &number:empty (_x) 0
@@ -2810,6 +2818,11 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |combines-bits)
+              :code $ quote
+                assert= 7 $ bit-and 15 7
+              :tags $ #{} :core :unit
         |bit-not $ %{} 'CodeEntry (:doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2817,6 +2830,11 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |complements-bits)
+              :code $ quote
+                assert= -17 $ bit-not 16
+              :tags $ #{} :core :unit
         |bit-or $ %{} 'CodeEntry (:doc "|internal function for bitwise OR\nSyntax: (bit-or a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise OR operation on two integers")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2824,6 +2842,11 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |merges-bits)
+              :code $ quote
+                assert= 23 $ bit-or 16 7
+              :tags $ #{} :core :unit
         |bit-shl $ %{} 'CodeEntry (:doc "|internal function for bit shift left\nSyntax: (bit-shl n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n left by shift positions")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2859,6 +2882,11 @@
             {} (:return 'Number)
               :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |toggles-different-bits)
+              :code $ quote
+                assert= 8 $ bit-xor 15 7
+              :tags $ #{} :core :unit
         |blank? $ %{} 'CodeEntry (:doc "|internal function for checking if string is blank\nSyntax: (blank? s)\nParams: s (string)\nReturns: boolean\nReturns true if string is empty or contains only whitespace")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2866,6 +2894,14 @@
             {} (:return 'Bool)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |detects-empty-and-space)
+              :code $ quote
+                do
+                  assert= true $ blank? |
+                  assert= true $ blank? "| \n"
+                  assert= false $ blank? |a
+              :tags $ #{} :core :unit
         |bool? $ %{} 'CodeEntry (:doc |)
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2999,6 +3035,13 @@
             {} (:return 'String)
               :args $ [] 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |creates-unicode-character)
+              :code $ quote
+                do
+                  assert= |a $ char-from-code 97
+                  assert= "|汉" $ char-from-code 27721
+              :tags $ #{} :core :unit
         |cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn cirru-quote? (x)
@@ -3835,6 +3878,13 @@
             {} (:return 'Bool)
               :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-suffix)
+              :code $ quote
+                do
+                  assert= true $ ends-with? |01234 |34
+                  assert= false $ ends-with? |01234 |23
+              :tags $ #{} :core :unit
         |enum-def? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is an enum definition.")
           :code $ quote
             defn enum-def? (x)
@@ -4257,6 +4307,13 @@
             {} (:return 'Number)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |reads-unicode-character-code)
+              :code $ quote
+                do
+                  assert= 97 $ get-char-code |a
+                  assert= 27721 $ get-char-code "|汉"
+              :tags $ #{} :core :unit
         |get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
           :code $ quote
             defn get-env (name)
@@ -5464,6 +5521,13 @@
             {}
               :args $ [] 'String
               :return $ :: 'Result 'Number 'String
+          :tests $ []
+            %{} 'TestEntry (:name |wraps-number-or-source-error)
+              :code $ quote
+                do
+                  assert= (%ok 1.5) (parse-float |1.5)
+                  assert= (%err |oops) (parse-float |oops)
+              :tags $ #{} :core :unit
         |pow $ %{} 'CodeEntry (:doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5873,6 +5937,13 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic 'Number 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |slices-strings)
+              :code $ quote
+                do
+                  assert= |56789 $ slice |0123456789 5
+                  assert= |567 $ slice |0123456789 5 8
+              :tags $ #{} :core :unit
         |some-in? $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn some-in? (x path)
@@ -5909,6 +5980,11 @@
               :args $ [] 'String 'String
               :return $ :: 'List 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |splits-delimited-text)
+              :code $ quote
+                assert= ([] |a |b |c) (split |a,b,c |,)
+              :tags $ #{} :core :unit
         |split-lines $ %{} 'CodeEntry (:doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5917,6 +5993,11 @@
               :args $ [] 'String
               :return $ :: 'List 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |splits-newlines)
+              :code $ quote
+                assert= ([] |a |b |c) (split-lines "|a\nb\nc")
+              :tags $ #{} :core :unit
         |sqrt $ %{} 'CodeEntry (:doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5936,6 +6017,13 @@
             {} (:return 'Bool)
               :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-prefix)
+              :code $ quote
+                do
+                  assert= true $ starts-with? |01234 |01
+                  assert= false $ starts-with? |01234 |12
+              :tags $ #{} :core :unit
         |str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")
           :code $ quote
             defn str (x0 & xs)
@@ -5949,6 +6037,13 @@
           :schema $ :: 'Fn
             {} (:rest 'Dynamic) (:return 'String)
               :args $ [] 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |concats-dynamic-values)
+              :code $ quote
+                do
+                  assert= |abc $ str |a |b |c
+                  assert= |123 $ str 1 2 3
+              :tags $ #{} :core :unit
         |str-find-index $ %{} 'CodeEntry (:doc "|Find the first string index as Option<Number>, returning none when the pattern is absent.")
           :code $ quote
             defn str-find-index (text pattern)
@@ -5971,6 +6066,11 @@
           :schema $ :: 'Fn
             {} (:rest 'Dynamic) (:return 'String)
               :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |joins-non-nil-values)
+              :code $ quote
+                assert= "|a c 12" $ str-spaced |a nil |c 12
+              :tags $ #{} :core :unit
         |string? $ %{} 'CodeEntry (:doc "|checks if value is a string")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5995,6 +6095,13 @@
           :schema $ :: 'Fn
             {} (:return 'String)
               :args $ [] 'String 'String
+          :tests $ []
+            %{} 'TestEntry (:name |removes-only-matching-prefix)
+              :code $ quote
+                do
+                  assert= |abc $ strip-prefix |ababc |ab
+                  assert= |0abc $ strip-prefix |0abc |ab
+              :tags $ #{} :core :unit
         |strip-suffix $ %{} 'CodeEntry (:doc "|removes suffix from string if it ends with that suffix, returns original string otherwise")
           :code $ quote
             defn strip-suffix (s piece)
@@ -6008,6 +6115,13 @@
           :schema $ :: 'Fn
             {} (:return 'String)
               :args $ [] 'String 'String
+          :tests $ []
+            %{} 'TestEntry (:name |removes-only-matching-suffix)
+              :code $ quote
+                do
+                  assert= |aba $ strip-suffix |ababc |bc
+                  assert= |abc0 $ strip-suffix |abc0 |bc
+              :tags $ #{} :core :unit
         |struct-def? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a struct definition.")
           :code $ quote
             defn struct-def? (x)
@@ -6251,6 +6365,13 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |trims-whitespace-or-custom-chars)
+              :code $ quote
+                do
+                  assert= |1 $ trim "|  1  "
+                  assert= |1 $ trim |__1__ |_
+              :tags $ #{} :core :unit
         |try $ %{} 'CodeEntry (:doc "|internal syntax for try-catch error handling\nSyntax: (try body (catch error handler))\nParams: body (expression), error (symbol), handler (expression)\nReturns: result of body or handler if error occurs\nProvides exception handling mechanism")
           :code $ quote &runtime-implementation
           :examples $ []

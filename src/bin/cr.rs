@@ -604,34 +604,41 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   }
 
   let mut compile_errors = std::collections::HashMap::new();
-  for test in &tests {
-    let warnings = RefCell::new(Vec::new());
-    if let Err(failure) =
-      runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default())
-    {
-      compile_errors.insert(test.id(), failure.headline());
-    } else if !warnings.borrow().is_empty() {
-      let warnings = warnings.borrow();
-      compile_errors.insert(
-        test.id(),
-        format!(
-          "Found {} warnings, test blocked: {}",
-          warnings.len(),
-          warnings.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
-        ),
-      );
-    }
-  }
-
   if let Some(affected_ids) = &affected_ids {
+    // `--affected` needs every candidate's static dependency graph. Ordinary
+    // test runs compile lazily through `run_program_with_docs` below, so a
+    // fail-fast run does not preprocess tests it will never execute.
+    for test in &tests {
+      let warnings = RefCell::new(Vec::new());
+      if let Err(failure) =
+        runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default())
+      {
+        compile_errors.insert(test.id(), failure.headline());
+      } else if !warnings.borrow().is_empty() {
+        let warnings = warnings.borrow();
+        compile_errors.insert(
+          test.id(),
+          format!(
+            "Found {} warnings, test blocked: {}",
+            warnings.len(),
+            warnings.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
+          ),
+        );
+      }
+    }
     let compiled = program::clone_existing_compiled_program();
+    let compiled_by_id = compiled
+      .values()
+      .flat_map(|file| file.defs.values())
+      .map(|definition| (definition.def_id, definition))
+      .collect::<std::collections::HashMap<_, _>>();
     tests.retain(|test| {
       compile_errors.contains_key(&test.id())
         || options
           .affected
           .iter()
           .any(|target| target == &format!("{}/{}", test.namespace, test.definition))
-        || compiled_test_depends_on(&compiled, test, affected_ids)
+        || compiled_test_depends_on(&compiled, &compiled_by_id, test, affected_ids)
     });
   }
 
@@ -761,19 +768,18 @@ fn resolve_affected_definition_ids(targets: &[String], snapshot: &snapshot::Snap
   Ok(ids)
 }
 
-fn compiled_test_depends_on(compiled: &program::CompiledProgram, test: &RunnableTest, affected_ids: &HashSet<program::DefId>) -> bool {
+fn compiled_test_depends_on(
+  compiled: &program::CompiledProgram,
+  compiled_by_id: &std::collections::HashMap<program::DefId, &program::CompiledDef>,
+  test: &RunnableTest,
+  affected_ids: &HashSet<program::DefId>,
+) -> bool {
   let Some(root) = compiled
     .get(test.namespace.as_str())
     .and_then(|file| file.get(&test.synthetic_definition))
   else {
     return true;
   };
-  let mut by_id = std::collections::HashMap::new();
-  for file in compiled.values() {
-    for definition in file.defs.values() {
-      by_id.insert(definition.def_id, definition);
-    }
-  }
   let mut pending = root.deps.clone();
   let mut visited = HashSet::new();
   while let Some(def_id) = pending.pop() {
@@ -781,7 +787,7 @@ fn compiled_test_depends_on(compiled: &program::CompiledProgram, test: &Runnable
       return true;
     }
     if visited.insert(def_id)
-      && let Some(definition) = by_id.get(&def_id)
+      && let Some(definition) = compiled_by_id.get(&def_id)
     {
       pending.extend(definition.deps.iter().copied());
     }

@@ -110,6 +110,18 @@ The `calcit.test` namespace is embedded in `calcit-core.cirru` and requires no e
 
 All assertion macros evaluate each supplied expression once.
 
+## Execution Cost
+
+Normal `cr test` runs compile each selected test only when it is about to run.
+This keeps `--fail-fast` responsive and avoids preprocessing tests after the
+first failure. `--affected` intentionally compiles its candidate tests first:
+it needs their static dependency graph to select a safe, transitive subset.
+
+Tests execute the selected test and its runtime dependencies; documentation
+and examples are not themselves executed as tests. Prefer a short
+definition-local test for one API contract, and reserve integration fixtures
+for behavior that actually crosses definitions or backends.
+
 ## Core Test Placement
 
 For a core function, macro, or builtin whose behavior can be expressed in one
