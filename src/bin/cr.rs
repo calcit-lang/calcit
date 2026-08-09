@@ -425,6 +425,8 @@ struct TestReportRow {
   id: String,
   status: &'static str,
   #[serde(skip_serializing_if = "Option::is_none")]
+  duration_ms: Option<f64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
   error: Option<String>,
 }
 
@@ -433,7 +435,9 @@ struct TestReport {
   schema_version: u32,
   command: &'static str,
   mode: &'static str,
+  detail: &'static str,
   selected: usize,
+  executed: usize,
   passed: usize,
   failed: usize,
   duration_ms: f64,
@@ -465,19 +469,34 @@ fn print_test_json(
   passed: usize,
   failed: usize,
   duration_ms: f64,
+  summary_only: bool,
   rows: Vec<TestReportRow>,
 ) {
-  let report = TestReport {
+  let report = make_test_report(mode, tests, passed, failed, duration_ms, summary_only, rows);
+  println!("{}", serde_json::to_string(&report).expect("test report should serialize"));
+}
+
+fn make_test_report(
+  mode: &'static str,
+  tests: &[RunnableTest],
+  passed: usize,
+  failed: usize,
+  duration_ms: f64,
+  summary_only: bool,
+  rows: Vec<TestReportRow>,
+) -> TestReport {
+  TestReport {
     schema_version: 1,
     command: "test",
     mode,
+    detail: if summary_only { "summary" } else { "full" },
     selected: tests.len(),
+    executed: passed + failed,
     passed,
     failed,
     duration_ms,
     tests: rows,
-  };
-  println!("{}", serde_json::to_string(&report).expect("test report should serialize"));
+  }
 }
 
 fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Result<(), String> {
@@ -505,6 +524,11 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     Some(resolve_affected_definition_ids(&options.affected, snapshot)?)
   };
   let required_tags = options.tag.iter().map(|tag| tag.trim_start_matches(':')).collect::<HashSet<_>>();
+  let excluded_tags = options
+    .exclude_tag
+    .iter()
+    .map(|tag| tag.trim_start_matches(':'))
+    .collect::<HashSet<_>>();
   let mut tests = Vec::new();
 
   let mut namespaces = snapshot.files.keys().collect::<Vec<_>>();
@@ -535,6 +559,9 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
         if !required_tags.iter().all(|tag| test.tags.iter().any(|item| item.ref_str() == *tag)) {
           continue;
         }
+        if excluded_tags.iter().any(|tag| test.tags.iter().any(|item| item.ref_str() == *tag)) {
+          continue;
+        }
         tests.push(RunnableTest {
           namespace: namespace.clone(),
           definition: definition.clone(),
@@ -549,16 +576,21 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   tests.sort_by_key(RunnableTest::id);
   if options.list && options.affected.is_empty() {
     if json_mode {
-      let rows = tests
-        .iter()
-        .map(|test| TestReportRow {
-          id: test.id(),
-          status: "selected",
-          error: None,
-        })
-        .collect();
-      print_test_json("list", &tests, 0, 0, 0.0, rows);
-    } else {
+      let rows = if options.summary_only {
+        vec![]
+      } else {
+        tests
+          .iter()
+          .map(|test| TestReportRow {
+            id: test.id(),
+            status: "selected",
+            duration_ms: None,
+            error: None,
+          })
+          .collect()
+      };
+      print_test_json("list", &tests, 0, 0, 0.0, options.summary_only, rows);
+    } else if !options.summary_only {
       for test in &tests {
         println!("{}", test.id());
       }
@@ -568,10 +600,18 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   }
   if tests.is_empty() {
     if json_mode {
-      print_test_json(if options.list { "list" } else { "run" }, &tests, 0, 0, 0.0, vec![]);
+      print_test_json(
+        if options.list { "list" } else { "run" },
+        &tests,
+        0,
+        0,
+        0.0,
+        options.summary_only,
+        vec![],
+      );
     }
-    if let Some(name) = &options.name {
-      return Err(format!("Test named `{name}` was not found in the selected scope"));
+    if let Some(error) = no_tests_matched_error(options) {
+      return Err(error);
     }
     if !json_mode {
       println!("No tests matched.");
@@ -645,8 +685,19 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
 
   if tests.is_empty() {
     if json_mode {
-      print_test_json(if options.list { "list" } else { "run" }, &tests, 0, 0, 0.0, vec![]);
-    } else {
+      print_test_json(
+        if options.list { "list" } else { "run" },
+        &tests,
+        0,
+        0,
+        0.0,
+        options.summary_only,
+        vec![],
+      );
+    }
+    if let Some(error) = no_tests_matched_error(options) {
+      return Err(error);
+    } else if !json_mode {
       println!("No tests are affected.");
     }
     return Ok(());
@@ -654,16 +705,21 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
 
   if options.list {
     if json_mode {
-      let rows = tests
-        .iter()
-        .map(|test| TestReportRow {
-          id: test.id(),
-          status: "selected",
-          error: None,
-        })
-        .collect();
-      print_test_json("list", &tests, 0, 0, 0.0, rows);
-    } else {
+      let rows = if options.summary_only {
+        vec![]
+      } else {
+        tests
+          .iter()
+          .map(|test| TestReportRow {
+            id: test.id(),
+            status: "selected",
+            duration_ms: None,
+            error: None,
+          })
+          .collect()
+      };
+      print_test_json("list", &tests, 0, 0, 0.0, options.summary_only, rows);
+    } else if !options.summary_only {
       for test in &tests {
         println!("{}", test.id());
       }
@@ -681,6 +737,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   let mut rows = Vec::new();
   for test in &tests {
     let id = test.id();
+    let test_started = Instant::now();
     let result = if let Some(error) = compile_errors.remove(&id) {
       Err(error)
     } else {
@@ -698,25 +755,31 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     match result {
       Ok(()) => {
         passed += 1;
-        if !json_mode {
+        if !json_mode && !options.summary_only {
           println!("  {} {id}", "PASS".green());
         }
-        rows.push(TestReportRow {
-          id,
-          status: "passed",
-          error: None,
-        });
+        if !options.summary_only {
+          rows.push(TestReportRow {
+            id,
+            status: "passed",
+            duration_ms: Some(test_started.elapsed().as_secs_f64() * 1000.0),
+            error: None,
+          });
+        }
       }
       Err(error) => {
         if !json_mode {
           println!("  {} {id}: {error}", "FAIL".red());
         }
         failures.push((id.clone(), error.clone()));
-        rows.push(TestReportRow {
-          id,
-          status: "failed",
-          error: Some(error),
-        });
+        if !options.summary_only {
+          rows.push(TestReportRow {
+            id,
+            status: "failed",
+            duration_ms: Some(test_started.elapsed().as_secs_f64() * 1000.0),
+            error: Some(error),
+          });
+        }
         if options.fail_fast {
           break;
         }
@@ -726,7 +789,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
 
   let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
   if json_mode {
-    print_test_json("run", &tests, passed, failures.len(), duration_ms, rows);
+    print_test_json("run", &tests, passed, failures.len(), duration_ms, options.summary_only, rows);
   } else {
     println!(
       "Test result: {} passed; {} failed; {:.2}ms",
@@ -740,6 +803,14 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   } else {
     Err(format!("{} test(s) failed", failures.len()))
   }
+}
+
+fn no_tests_matched_error(options: &TestCommand) -> Option<String> {
+  options
+    .name
+    .as_ref()
+    .map(|name| format!("Test named `{name}` was not found in the selected scope"))
+    .or_else(|| options.require_match.then(|| "No tests matched the requested selection".to_owned()))
 }
 
 fn parse_test_scope(target: &str) -> Result<(String, Option<String>), String> {
@@ -2467,9 +2538,12 @@ mod tests {
       target: None,
       name: None,
       tag: vec![],
+      exclude_tag: vec![],
       affected: vec![format!("{namespace}/add")],
       list: false,
       fail_fast: false,
+      require_match: false,
+      summary_only: false,
       format: "human".to_owned(),
     };
     let project_namespaces = HashSet::from([namespace]);
@@ -2525,9 +2599,12 @@ mod tests {
       target: None,
       name: None,
       tag: vec![],
+      exclude_tag: vec![],
       affected: vec![],
       list: false,
       fail_fast: false,
+      require_match: false,
+      summary_only: false,
       format: "human".to_owned(),
     };
     let project_namespaces = HashSet::from([namespace]);
@@ -2541,5 +2618,83 @@ mod tests {
     let error =
       run_tests(&explicit_core_options, &project, &project_namespaces).expect_err("an explicitly scoped core test should still run");
     assert!(error.contains("1 test(s) failed"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn test_filters_can_exclude_tags_and_require_a_match() {
+    let _guard = GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    builtins::effects::init_effects_states();
+    injection::inject_platform_apis();
+
+    let namespace = format!("app.test-filter-{}", std::process::id());
+    let snippet = format!("ns {namespace}\n\ndefn fast () true\n\ndefn slow () true");
+    let mut project = snapshot::Snapshot::default();
+    project.files.insert(
+      namespace.clone(),
+      snapshot::create_file_from_snippet(&snippet).expect("test project should parse"),
+    );
+    let file = project.files.get_mut(&namespace).expect("test namespace should exist");
+    file
+      .defs
+      .get_mut("fast")
+      .expect("fast should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "fast-guard".to_owned(),
+        code: leaf("true"),
+        tags: HashSet::from([EdnTag::new("fast")]),
+      });
+    file
+      .defs
+      .get_mut("slow")
+      .expect("slow should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "slow-guard".to_owned(),
+        code: list(vec![leaf("raise"), leaf("|slow-test-ran")]),
+        tags: HashSet::from([EdnTag::new("slow")]),
+      });
+    for (core_ns, core_file) in calcit::load_core_snapshot().expect("core snapshot should load").files {
+      project.files.insert(core_ns, core_file);
+    }
+
+    let options = TestCommand {
+      target: None,
+      name: None,
+      tag: vec![],
+      exclude_tag: vec!["slow".to_owned()],
+      affected: vec![],
+      list: false,
+      fail_fast: false,
+      require_match: false,
+      summary_only: false,
+      format: "human".to_owned(),
+    };
+    let project_namespaces = HashSet::from([namespace]);
+    run_tests(&options, &project, &project_namespaces).expect("excluded slow test should not run");
+
+    let missing_options = TestCommand {
+      tag: vec!["missing".to_owned()],
+      require_match: true,
+      ..options
+    };
+    let error = run_tests(&missing_options, &project, &project_namespaces).expect_err("missing selection should fail when required");
+    assert_eq!(error, "No tests matched the requested selection");
+  }
+
+  #[test]
+  fn summary_test_report_omits_rows_and_tracks_executed_count() {
+    let tests = vec![RunnableTest {
+      namespace: "app.main".to_owned(),
+      definition: "demo".to_owned(),
+      name: "guard".to_owned(),
+      synthetic_definition: "&calcit:test:0".to_owned(),
+      code: leaf("true"),
+    }];
+    let report = make_test_report("run", &tests, 1, 0, 1.5, true, vec![]);
+    assert_eq!(report.detail, "summary");
+    assert_eq!(report.selected, 1);
+    assert_eq!(report.executed, 1);
+    assert!(report.tests.is_empty());
   }
 }

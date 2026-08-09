@@ -319,7 +319,7 @@ cr cirru show-guide
 1. 结构：`cursor show` 或 `tree show`，确认实际 subtree。
 2. 语义：`query type-at ... --format json`，运行 `analyze check-types --summary-only`；看到 `W_TYPE_COVERAGE_GAPS` 后继续执行 `analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only`，再对命中范围去掉 `--summary-only` 查看 path、impact 与 suggestion。
 3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `cr test <ns>/<def>`。
-4. 项目：运行 `cr test` 及仓库规定的 entry 和测试；默认 `cr test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `cr test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。只有项目目标是 JavaScript 时才运行对应的 `cr js` codegen。
+4. 项目：运行 `cr test` 及仓库规定的 entry 和测试；默认 `cr test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `cr test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。CI/Agent 按 tag 或 affected 筛选时加 `--require-match`，避免空选择误报成功；大套件可加 `--summary-only --format json` 保持 stdout 紧凑可解析。只有项目目标是 JavaScript 时才运行对应的 `cr js` codegen。
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 

@@ -73,18 +73,23 @@ cr test app.main/add
 cr test app.main --name adds-two-numbers
 cr test --tag unit --tag fast
 
+# Exclude slow or integration guards, and reject an empty selection
+cr test --tag unit --exclude-tag slow --exclude-tag integration --require-match
+
 # Inspect selection without executing
 cr test app.main --list
 
-# Emit one machine-readable JSON envelope on stdout
-cr test --format json
+# Emit a compact machine-readable report for large CI or agent runs
+cr test --tag unit --summary-only --format json
 ```
 
 Each test is compiled as its own synthetic function and executed independently. Reports use the stable identifier `namespace/definition#test-name`.
 
 Without a scope, `cr test` discovers tests only in namespaces defined by the input snapshot. Tests bundled with `calcit-core.cirru` or loaded modules are excluded, so an external project does not accidentally run Calcit's own test suite. Pass an explicit namespace such as `cr test calcit.test` when maintaining the core assertions.
 
-In JSON mode, runner output produced by `println`/`echo` is redirected to stderr so stdout remains one parseable report envelope.
+In JSON mode, runner output produced by `println`/`echo` is redirected to stderr so stdout remains one parseable report envelope. Full reports contain one row per selected test, including its execution duration. `--summary-only` emits counts and total duration only, with `detail: "summary"`; this is useful when an agent needs a reliable gate without loading hundreds of passing test rows. The report also distinguishes `selected` tests from `executed` tests when `--fail-fast` stops early.
+
+`--exclude-tag` removes a test carrying any supplied tag, after required `--tag` matching. `--require-match` turns an empty selection into a failure; use it in CI whenever a tag, scope, or affected-test command is expected to protect a non-empty suite.
 
 ## Run Affected Tests
 

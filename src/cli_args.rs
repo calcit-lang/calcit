@@ -112,6 +112,9 @@ pub struct TestCommand {
   /// run tests tagged with this tag; repeat to require multiple tags
   #[argh(option)]
   pub tag: Vec<String>,
+  /// skip tests tagged with this tag; repeat to exclude any matching tag
+  #[argh(option)]
+  pub exclude_tag: Vec<String>,
   /// select tests that statically depend on this namespace/definition; repeat for multiple changed definitions
   #[argh(option)]
   pub affected: Vec<String>,
@@ -121,6 +124,12 @@ pub struct TestCommand {
   /// stop after the first failed test
   #[argh(switch)]
   pub fail_fast: bool,
+  /// fail when the requested scope and filters select no tests
+  #[argh(switch)]
+  pub require_match: bool,
+  /// omit individual test rows; useful for large CI and agent runs
+  #[argh(switch)]
+  pub summary_only: bool,
   /// output format: human (default) or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
