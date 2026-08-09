@@ -2809,7 +2809,7 @@ mod tests {
   #[test]
   fn imports_rejects_malformed_rule_without_writing_snapshot() {
     let fixture = TestSnapshot::from_fixture();
-    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let original = fs::read(&fixture.path).expect("fixture should read");
     let opts = EditImportsCommand {
       namespace: "app.main".to_string(),
       file: None,
@@ -2820,13 +2820,13 @@ mod tests {
 
     assert!(error.contains("import rule 1"), "error: {error}");
     assert!(error.contains("exactly 3 items"), "error: {error}");
-    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+    assert_eq!(fs::read(&fixture.path).expect("fixture should remain"), original);
   }
 
   #[test]
   fn add_import_rejects_malformed_rule_without_writing_snapshot() {
     let fixture = TestSnapshot::from_fixture();
-    let original = fs::read_to_string(&fixture.path).expect("fixture should read");
+    let original = fs::read(&fixture.path).expect("fixture should read");
     let opts = EditAddImportCommand {
       namespace: "app.main".to_string(),
       file: None,
@@ -2838,7 +2838,7 @@ mod tests {
 
     assert!(error.contains("import rule 1"), "error: {error}");
     assert!(error.contains("exactly 3 items"), "error: {error}");
-    assert_eq!(fs::read_to_string(&fixture.path).expect("fixture should remain"), original);
+    assert_eq!(fs::read(&fixture.path).expect("fixture should remain"), original);
   }
 
   #[test]
