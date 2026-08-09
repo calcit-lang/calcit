@@ -25,7 +25,7 @@ coverage remains in the legacy fixtures.
 - CI and release workflows explicitly run the embedded core suite. A compact
   JavaScript fixture remains for target-specific bitwise execution.
 - Review fixes standardized whitespace/duplicate test-name validation,
-  preserved empty JSON report envelopes on selection errors, corrected builtin
+  preserved empty JSON report envelopes on selection errors, corrected built-in
   `query tests` behavior and affected-test diagnostics, executed the
   `test-comma` fixture, corrected `&map:diff-new` documentation, and removed
   25 duplicate or strict-subset attached tests. The final core suite contains
