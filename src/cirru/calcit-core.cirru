@@ -972,6 +972,11 @@
                 assert= ([] :a :b)
                   &list:dissoc ([] :a :b :c) 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |removes-index-directly)
+              :code $ quote
+                assert= ([] :a :c)
+                  &list:dissoc ([] :a :b :c) 1
+              :tags $ #{} :core :unit
         |&list:distinct $ %{} 'CodeEntry (:doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1037,6 +1042,15 @@
               :generics $ [] 'P
               :return $ :: 'List 'P
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |filters-key-value-pairs)
+              :code $ quote
+                assert=
+                  [] $ [] :b 12
+                  &list:filter-pair
+                    [] ([] :a 2) ([] :b 12)
+                    fn (k v) (> v 10)
+              :tags $ #{} :core :unit
         |&list:find-last $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last (xs f)
@@ -1054,6 +1068,19 @@
               :generics $ [] 'T
               :return $ :: 'Option 'T
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |finds-last-matching-item)
+              :code $ quote
+                assert= (%some 9)
+                  &list:find-last ([] 1 3 5 7 9)
+                    fn (x) (> x 5)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finds-last-no-match)
+              :code $ quote
+                assert= (%none)
+                  &list:find-last ([] 1 3 5)
+                    fn (x) (> x 8)
+              :tags $ #{} :core :unit
         |&list:find-last-index $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last-index (xs f)
@@ -1073,6 +1100,17 @@
               :generics $ [] 'T
               :return $ :: 'Option 'Number
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |finds-last-index-boundaries)
+              :code $ quote
+                do
+                  assert= (%some 4)
+                    &list:find-last-index ([] 1 3 5 7 9)
+                      fn (x) (> x 5)
+                  assert= (%none)
+                    &list:find-last-index ([] 1 3)
+                      fn (x) (> x 8)
+              :tags $ #{} :core :unit
         |&list:first $ %{} 'CodeEntry (:doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1082,6 +1120,11 @@
               :generics $ [] 'T
               :return $ :: 'Optional 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-directly)
+              :code $ quote
+                assert= 1 $ &list:first ([] 1 2)
+              :tags $ #{} :core :unit
         |&list:flatten $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:flatten (xs)
@@ -1165,6 +1208,13 @@
               :generics $ [] 'T 'U
               :return $ :: 'List 'U
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |maps-items-with-function)
+              :code $ quote
+                assert= ([] 4 5 6)
+                  &list:map ([] 1 2 3)
+                    fn (x) (+ x 3)
+              :tags $ #{} :core :unit
         |&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:map-pair (xs f)
@@ -1181,6 +1231,16 @@
               :generics $ [] 'P 'U
               :return $ :: 'List 'U
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |maps-key-value-pairs)
+              :code $ quote
+                assert=
+                  [] ([] :a 11) ([] :b 12)
+                  &list:map-pair
+                    [] ([] :a 1) ([] :b 2)
+                    fn (k v)
+                      [] k $ + v 10
+              :tags $ #{} :core :unit
         |&list:mappend $ %{} 'CodeEntry (:doc "|internal helper for list :mappend method entry")
           :code $ quote
             defn &list:mappend (x y) (&list:concat x y)
@@ -1245,6 +1305,11 @@
               :args $ [] (:: 'List 'T) 'Number
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-nth-directly)
+              :code $ quote
+                assert= :b $ &list:nth ([] :a :b :c) 1
+              :tags $ #{} :core :unit
         |&list:prepend $ %{} 'CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
           :examples $ []
@@ -1316,6 +1381,13 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |sorts-with-comparator)
+              :code $ quote
+                assert= ([] 1 2 3 4)
+                  &list:sort ([] 4 1 3 2)
+                    fn (a b) (- a b)
+              :tags $ #{} :core :unit
         |&list:sort-by $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:sort-by (xs f)
@@ -1331,6 +1403,12 @@
               :generics $ [] 'T
               :return $ :: 'List 'T
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |sorts-by-function-key)
+              :code $ quote
+                assert= ([] 1 2 3 4)
+                  &list:sort-by ([] 4 1 3 2) identity
+              :tags $ #{} :core :unit
         |&list:to-set $ %{} 'CodeEntry (:doc "|internal function for converting list to set\nSyntax: (&list:to-set list)\nParams: list (list)\nReturns: set\nConverts list to set, removing duplicates")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1368,6 +1446,12 @@
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |associates-map-entry-directly)
+              :code $ quote
+                assert= (&{} :a 1 :b 2)
+                  &map:assoc (&{} :a 1) :b 2
+              :tags $ #{} :core :unit
         |&map:common-keys $ %{} 'CodeEntry (:doc "|internal function for map common keys\nSyntax: (&map:common-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys common to both maps")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1480,6 +1564,12 @@
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |removes-map-keys-directly)
+              :code $ quote
+                assert= (&{} :a 1)
+                  &map:dissoc (&{} :a 1 :b 2) :b
+              :tags $ #{} :core :unit
         |&map:empty $ %{} 'CodeEntry (:doc "|internal helper for producing an empty map value while preserving method signature shape")
           :code $ quote
             defn &map:empty (_xs) (&{})
@@ -1498,6 +1588,13 @@
               :args $ [] (:: 'Map 'K 'V)
               :generics $ [] 'K 'V
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-empty-map-directly)
+              :code $ quote
+                do
+                  assert= true $ &map:empty? (&{})
+                  assert= false $ &map:empty? (&{} :a 1)
+              :tags $ #{} :core :unit
         |&map:filter $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &map:filter (xs f)
@@ -1518,6 +1615,14 @@
               :generics $ [] 'K 'V 'P
               :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |filters-map-pairs-directly)
+              :code $ quote
+                assert= (&{} :b 2)
+                  &map:filter (&{} :a 1 :b 2)
+                    fn (pair)
+                      > (&list:last pair) 1
+              :tags $ #{} :core :unit
         |&map:filter-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &map:filter-kv (xs f)
@@ -1539,6 +1644,13 @@
               :generics $ [] 'K 'V
               :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |filters-map-keys-and-values)
+              :code $ quote
+                assert= (&{} :b 2)
+                  &map:filter-kv (&{} :a 1 :b 2)
+                    fn (k v) (> v 1)
+              :tags $ #{} :core :unit
         |&map:get $ %{} 'CodeEntry (:doc "|internal function for getting map value\nSyntax: (&map:get map key) or (&map:get map key default)\nParams: map (map), key (any), default (any, optional)\nReturns: any\nGets value for key, returns default if key not found")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1587,6 +1699,15 @@
               :generics $ [] 'K 'V 'P 'Q 'R 'S
               :return $ :: 'Map 'R 'S
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |maps-map-pairs-directly)
+              :code $ quote
+                assert= (&{} :a 11 :b 12)
+                  &map:map (&{} :a 1 :b 2)
+                    fn (pair)
+                      [] (&list:first pair)
+                        + 10 $ &list:last pair
+              :tags $ #{} :core :unit
         |&map:map-list $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &map:map-list (xs f)
@@ -1607,6 +1728,16 @@
               :generics $ [] 'K 'V 'P 'U
               :return $ :: 'List 'U
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |maps-map-pairs-to-list)
+              :code $ quote
+                assert=
+                  #{} ([] :a 11) ([] :b 12)
+                  &list:to-set $ &map:map-list (&{} :a 1 :b 2)
+                    fn (pair)
+                      [] (&list:first pair)
+                        + 10 $ &list:last pair
+              :tags $ #{} :core :unit
         |&map:to-list $ %{} 'CodeEntry (:doc "|internal function for converting map to list\nSyntax: (&map:to-list map)\nParams: map (map)\nReturns: list\nConverts map to list of [key value] pairs")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1616,6 +1747,13 @@
               :generics $ [] 'K 'V
               :return $ :: 'List 'Enum
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-map-pairs-directly)
+              :code $ quote
+                assert=
+                  [] $ [] :a 1
+                  &map:to-list $ &{} :a 1
+              :tags $ #{} :core :unit
         |&map:vals $ %{} 'CodeEntry (:doc |)
           :code $ quote (&runtime-implementation)
           :examples $ []
@@ -1625,6 +1763,12 @@
               :generics $ [] 'K 'V
               :return $ :: 'Set 'V
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-map-values-directly)
+              :code $ quote
+                assert= ([] 1)
+                  &map:vals $ &{} :a 1
+              :tags $ #{} :core :unit
         |&max $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &max (a b)

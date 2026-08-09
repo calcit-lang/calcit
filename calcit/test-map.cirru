@@ -9,7 +9,7 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-methods) (test-shorthand) (do true)
+            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-get) (test-shorthand) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -120,127 +120,6 @@
                 assert=
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing map methods")
-              assert= (&{} :a 1 :b 2)
-                .add (&{} :a 1) ([] :b 2)
-              assert= (&{} :a 1 :b 2)
-                .assoc (&{} :a 1) :b 2
-              assert= true $ .contains? (&{} :a 1) :a
-              assert= false $ .contains? (&{} :a 1) :b
-              let
-                  m $ {} (:a 1) (:b 2)
-                inside-eval:
-                  assert= m $ assert-traits m calcit.core/Len
-                  assert= 2 $ .len m
-                inside-js: $ assert= 2 (.count m)
-              assert= (&{} :a 1)
-                .dissoc (&{} :a 1 :b 2) :b
-              assert= (&{} :a 1)
-                .dissoc (&{} :a 1 :b 2 :c 3) :b :c
-              assert= (&{})
-                .empty $ &{} :a 1 :b 2
-              assert= false $ .empty? (&{} :a 1 :b 2)
-              assert= true $ .empty? (&{})
-              assert= (%some 1)
-                .get (&{} :a 1) :a
-              assert= (%none)
-                .get (&{} :a 1) :b
-              assert= (%some 2)
-                .get-in
-                  {} $ :a
-                    {} $ :b 2
-                  [] :a :b
-              assert= (%none)
-                .get-in (&{}) ([] :a :b)
-              assert= true $ .includes? (&{} :a 1 :b 2) 1
-              assert= false $ .includes? (&{} :a 1 :b 2) 3
-              assert= (#{} :a :b)
-                .keys $ &{} :a 1 :b 2
-              assert= (#{} :a :b)
-                keys-non-nil $ &{} :a 1 :b 2 :c nil
-              assert=
-                {} (:a 11) (:b 12)
-                .map (&{} :a 1 :b 2)
-                  fn (entry)
-                    [] (&list:first entry)
-                      + 10 $ &list:last entry
-              ; "not so stable, :bbbb is rare so it could be larger"
-              let
-                  mapped $ .map-list (&{} :a 1 :bbbb 2)
-                    fn (entry)
-                      [] (&list:first entry)
-                        + 10 $ &list:last entry
-                  _ $ assert-type mapped 'List
-                assert=
-                  [] ([] :a 11) ([] :bbbb 12)
-                  .sort-by mapped &list:first
-              assert=
-                {} $ :a 11
-                .map-kv
-                  {} $ :a 1
-                  fn (k v)
-                    [] k $ + v 10
-              assert=
-                {} (:a 11) (:b 12)
-                .map-kv
-                  {} (:a 1) (:b 2) (:c 13)
-                  fn (k v)
-                    if (< v 10)
-                      [] k $ + v 10
-                      :: :none
-              assert= (&{} :a 1 :b 2)
-                .merge (&{} :a 1) (&{} :b 2)
-              assert= (&{} :a 1 :b 2)
-                select-keys (&{} :a 1 :b 2 :c 3) ([] :a :b)
-              assert=
-                [] $ [] :a 1
-                .to-list $ {} (:a 1)
-              let
-                  pairs $ .to-list
-                    {} (:a 1) (:b 2)
-                inside-eval:
-                  assert= pairs $ assert-traits pairs calcit.core/Len
-                  assert= 2 $ .len pairs
-                inside-js: $ assert= 2 (.count pairs)
-              let
-                  pairs $ .to-pairs
-                    {} (:a 1) (:b 2)
-                inside-eval:
-                  assert= pairs $ assert-traits pairs calcit.core/Len
-                  assert= 2 $ .len pairs
-                inside-js: $ assert= 2 (.count pairs)
-              assert= (&{} :a 1 :b 2)
-                unselect-keys (&{} :a 1 :b 2 :c 3) ([] :c)
-              assert= (#{} 1 2 3)
-                .values $ &{} :a 1 :b 2 :c 3
-              println $ .destruct (&{} :a 1 :b 2 :c 3)
-              tag-match
-                .destruct $ &{} :a 1 :b 2 :c 3
-                (:none) (raise |expected-map-entry)
-                (:some k v remaining)
-                  do (assert-detect tag? k) (assert-detect number? v)
-                    assert= 2 $ count remaining
-              assert= (&{} :c 3)
-                .diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-              assert= (#{} :c)
-                .diff-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-              assert= (#{} :a :b)
-                .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-              let
-                  triple $ .diff-triple (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
-                assert= (&list:nth triple 0) (#{} :c)
-                assert= (&list:nth triple 1) (&{})
-                assert=
-                  count $ &list:nth triple 2
-                  , 2
-              assert= (&{} :a 1)
-                .to-map $ &{} :a 1
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
