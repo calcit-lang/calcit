@@ -2468,4 +2468,71 @@ mod tests {
     let project_namespaces = HashSet::from([namespace]);
     run_tests(&options, &project, &project_namespaces).expect("only direct and transitive tests should run");
   }
+
+  #[test]
+  fn default_test_scope_excludes_core_and_dependency_namespaces() {
+    let _guard = GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    builtins::effects::init_effects_states();
+    injection::inject_platform_apis();
+
+    let namespace = format!("app.default-test-scope-{}", std::process::id());
+    let snippet = format!("ns {namespace}\n\ndefn local () nil");
+    let mut project = snapshot::Snapshot::default();
+    project.files.insert(
+      namespace.clone(),
+      snapshot::create_file_from_snippet(&snippet).expect("test project should parse"),
+    );
+    project
+      .files
+      .get_mut(&namespace)
+      .expect("project namespace should exist")
+      .defs
+      .get_mut("local")
+      .expect("local should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "project-test".to_owned(),
+        code: leaf("true"),
+        tags: HashSet::new(),
+      });
+
+    let mut core = calcit::load_core_snapshot().expect("core snapshot should load");
+    core
+      .files
+      .get_mut("calcit.core")
+      .expect("calcit.core should exist")
+      .defs
+      .get_mut("assert")
+      .expect("calcit.core/assert should exist")
+      .tests
+      .push(snapshot::TestEntry {
+        name: "must-not-run-by-default".to_owned(),
+        code: list(vec![leaf("raise"), leaf("|core-test-ran")]),
+        tags: HashSet::new(),
+      });
+    for (core_ns, core_file) in core.files {
+      project.files.insert(core_ns, core_file);
+    }
+
+    let default_options = TestCommand {
+      target: None,
+      name: None,
+      tag: vec![],
+      affected: vec![],
+      list: false,
+      fail_fast: false,
+      format: "human".to_owned(),
+    };
+    let project_namespaces = HashSet::from([namespace]);
+    run_tests(&default_options, &project, &project_namespaces).expect("default scope should run only the project test");
+
+    let explicit_core_options = TestCommand {
+      target: Some("calcit.core/assert".to_owned()),
+      name: Some("must-not-run-by-default".to_owned()),
+      ..default_options
+    };
+    let error =
+      run_tests(&explicit_core_options, &project, &project_namespaces).expect_err("an explicitly scoped core test should still run");
+    assert!(error.contains("1 test(s) failed"), "unexpected error: {error}");
+  }
 }

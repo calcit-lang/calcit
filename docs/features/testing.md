@@ -82,6 +82,8 @@ cr test --format json
 
 Each test is compiled as its own synthetic function and executed independently. Reports use the stable identifier `namespace/definition#test-name`.
 
+Without a scope, `cr test` discovers tests only in namespaces defined by the input snapshot. Tests bundled with `calcit-core.cirru` or loaded modules are excluded, so an external project does not accidentally run Calcit's own test suite. Pass an explicit namespace such as `cr test calcit.test` when maintaining the core assertions.
+
 In JSON mode, runner output produced by `println`/`echo` is redirected to stderr so stdout remains one parseable report envelope.
 
 ## Run Affected Tests
