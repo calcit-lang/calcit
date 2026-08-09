@@ -13,9 +13,9 @@ still relied on the former context-sensitive field syntax.
 - Generic enum payloads, local trait implementations, generic Struct bodies,
   and anonymous Struct examples use explicit `&struct:get` when their receiver
   has no statically resolvable named Struct declaration.
-- Snapshot/schema fragments now use `cirru-edn` fences so `check-md` validates
-  them as data instead of evaluating tags such as `:entries` or `:where` as
-  required field access.
+- Snapshot/schema fragments now use standard `cirru.edn` fences with valid
+  EDN roots and quoted symbols, so `check-md` validates them as data instead
+  of evaluating tags such as `:entries` or `:where` as required field access.
 
 ## Verification
 

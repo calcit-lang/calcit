@@ -146,14 +146,14 @@ This mirrors the main reason Rust has `where` clauses: parameter declaration and
 
 Top-level definitions use `:schema`:
 
-```cirru-edn
+```cirru.edn
 %{} :CodeEntry
   :code $ quote
     defn show-it (x) (x .show)
   :schema $ :: 'Fn
     {}
       :generics $ [] 'T
-      :where $ {} ('T Show)
+      :where $ {} ('T 'Show)
       :args $ [] 'T
       :return 'String
 ```
@@ -174,9 +174,10 @@ let
 
 For multiple constraints on the same variable, use a list value:
 
-```cirru-edn
-:where $ {}
-  'T $ [] Show Eq
+```cirru.edn
+{}
+  :where $ {}
+    'T $ [] 'Show 'Eq
 ```
 
 Do not use the old tuple form like `:where $ [] (:: 'Show 'T)`.
