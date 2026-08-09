@@ -1831,13 +1831,23 @@
             {} (:return 'Number)
               :args $ [] 'Number
           :tags $ #{} :internal
-        |&number:format $ %{} 'CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n)\nParams: n (number)\nReturns: string\nFormats number as string representation")
+          :tests $ []
+            %{} 'TestEntry (:name |returns-zero)
+              :code $ quote
+                assert= 0 $ &number:empty 1.1
+              :tags $ #{} :core :unit
+        |&number:format $ %{} 'CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n decimals)\nParams: n (number), decimals (number)\nReturns: string\nFormats number with the requested decimal places")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'String)
-              :args $ [] 'Number
+              :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |formats-decimal-places)
+              :code $ quote
+                assert= |1.235 $ &number:format 1.23456789 3
+              :tags $ #{} :core :unit
         |&number:fract $ %{} 'CodeEntry (:doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1887,6 +1897,11 @@
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |counts-set-members)
+              :code $ quote
+                assert= 3 $ &set:count (#{} 1 2 3)
+              :tags $ #{} :core :unit
         |&set:destruct $ %{} 'CodeEntry (:doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1906,6 +1921,12 @@
               :generics $ [] 'T
               :return $ :: 'Set 'T
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-empty-set)
+              :code $ quote
+                assert= (#{})
+                  &set:empty $ #{} 1 2 3
+              :tags $ #{} :core :unit
         |&set:empty? $ %{} 'CodeEntry (:doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1914,6 +1935,13 @@
               :args $ [] (:: 'Set 'T)
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-empty-sets)
+              :code $ quote
+                do
+                  assert= true $ &set:empty? (#{})
+                  assert= false $ &set:empty? (#{} 1)
+              :tags $ #{} :core :unit
         |&set:filter $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &set:filter (xs f)
@@ -1940,6 +1968,13 @@
               :args $ [] (:: 'Set 'T) 'T
               :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-set-membership)
+              :code $ quote
+                do
+                  assert= true $ &set:includes? (#{} 1 2 3) 1
+                  assert= false $ &set:includes? (#{} 1 2 3) 4
+              :tags $ #{} :core :unit
         |&set:intersection $ %{} 'CodeEntry (:doc "|internal function for set intersection\nSyntax: (&set:intersection set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements common to both sets")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1949,6 +1984,12 @@
               :generics $ [] 'T
               :return $ :: 'Set 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |intersects-sets)
+              :code $ quote
+                assert= (#{} 2)
+                  &set:intersection (#{} 1 2) (#{} 2 3)
+              :tags $ #{} :core :unit
         |&set:map $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &set:map (xs f)
@@ -2078,6 +2119,13 @@
             {} (:return 'Bool)
               :args $ [] 'String 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-character-index)
+              :code $ quote
+                do
+                  assert= true $ &str:contains? |abcd 0
+                  assert= false $ &str:contains? |abcd 4
+              :tags $ #{} :core :unit
         |&str:count $ %{} 'CodeEntry (:doc "|internal function for string character count\nSyntax: (&str:count s)\nParams: s (string)\nReturns: number\nReturns number of characters in string")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2085,6 +2133,13 @@
             {} (:return 'Number)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |counts-characters)
+              :code $ quote
+                do
+                  assert= 3 $ &str:count |abc
+                  assert= 2 $ &str:count "|中文"
+              :tags $ #{} :core :unit
         |&str:empty $ %{} 'CodeEntry (:doc "|internal helper for string :empty method entry")
           :code $ quote
             defn &str:empty (_) |
@@ -2093,6 +2148,11 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-empty-string)
+              :code $ quote
+                assert= | $ &str:empty |a
+              :tags $ #{} :core :unit
         |&str:empty? $ %{} 'CodeEntry (:doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2100,6 +2160,13 @@
             {} (:return 'Bool)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-empty-strings)
+              :code $ quote
+                do
+                  assert= true $ &str:empty? |
+                  assert= false $ &str:empty? |a
+              :tags $ #{} :core :unit
         |&str:escape $ %{} 'CodeEntry (:doc "|internal function for string escaping\nSyntax: (&str:escape s)\nParams: s (string)\nReturns: string\nEscapes special characters in string for safe output")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2107,6 +2174,11 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |escapes-quoted-strings)
+              :code $ quote
+                assert= "|\"a \\\"\"" $ &str:escape "|a \""
+              :tags $ #{} :core :unit
         |&str:find-index $ %{} 'CodeEntry (:doc "|Internal string search primitive. Returns a numeric index or -1 when absent; public callers should use str-find-index or .find-index.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2114,6 +2186,13 @@
             {} (:return 'Number)
               :args $ [] 'String 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |finds-substring-index)
+              :code $ quote
+                do
+                  assert= 1 $ &str:find-index |abc |b
+                  assert= -1 $ &str:find-index |abc |z
+              :tags $ #{} :core :unit
         |&str:first $ %{} 'CodeEntry (:doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2122,6 +2201,11 @@
               :args $ [] 'String
               :return $ :: 'Optional 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-character)
+              :code $ quote
+                assert= |a $ &str:first |abc
+              :tags $ #{} :core :unit
         |&str:includes? $ %{} 'CodeEntry (:doc "|internal function for checking if string includes substring\nSyntax: (&str:includes? s substring)\nParams: s (string), substring (string)\nReturns: boolean\nReturns true if string includes substring (alias for contains?)")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2129,6 +2213,13 @@
             {} (:return 'Bool)
               :args $ [] 'String 'String
           :tags $ #{} :alias :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checks-substring-membership)
+              :code $ quote
+                do
+                  assert= true $ &str:includes? |abcd |bc
+                  assert= false $ &str:includes? |abcd |z
+              :tags $ #{} :core :unit
         |&str:nth $ %{} 'CodeEntry (:doc "|internal function for getting nth character\nSyntax: (&str:nth s index)\nParams: s (string), index (number)\nReturns: string or nil\nReturns character at index, nil if index out of bounds")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2137,6 +2228,13 @@
               :args $ [] 'String 'Number
               :return $ :: 'Optional 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unicode-character-by-index)
+              :code $ quote
+                do
+                  assert= "|中" $ &str:nth "|中文" 0
+                  assert= "|文" $ &str:nth "|中文" 1
+              :tags $ #{} :core :unit
         |&str:pad-left $ %{} 'CodeEntry (:doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to specified length with pad character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2144,6 +2242,13 @@
             {} (:return 'String)
               :args $ [] 'String 'Number 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |pads-from-left)
+              :code $ quote
+                do
+                  assert= |00000a $ &str:pad-left |a 6 |0
+                  assert= |12312a $ &str:pad-left |a 6 |123
+              :tags $ #{} :core :unit
         |&str:pad-right $ %{} 'CodeEntry (:doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2151,6 +2256,13 @@
             {} (:return 'String)
               :args $ [] 'String 'Number 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |pads-from-right)
+              :code $ quote
+                do
+                  assert= |a00000 $ &str:pad-right |a 6 |0
+                  assert= |a12312 $ &str:pad-right |a 6 |123
+              :tags $ #{} :core :unit
         |&str:replace $ %{} 'CodeEntry (:doc "|internal function for string replacement\nSyntax: (&str:replace s pattern replacement)\nParams: s (string), pattern (string), replacement (string)\nReturns: string\nReplaces all occurrences of pattern with replacement")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2158,6 +2270,13 @@
             {} (:return 'String)
               :args $ [] 'String 'String 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |replaces-all-matches)
+              :code $ quote
+                do
+                  assert= |Abcd $ &str:replace |abcd |a |A
+                  assert= |AbAd $ &str:replace |abad |a |A
+              :tags $ #{} :core :unit
         |&str:rest $ %{} 'CodeEntry (:doc "|internal function for getting rest of string\nSyntax: (&str:rest s)\nParams: s (string)\nReturns: string\nReturns string without first character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2165,6 +2284,13 @@
             {} (:return 'String)
               :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |drops-first-character)
+              :code $ quote
+                do
+                  assert= |bc $ &str:rest |abc
+                  assert= | $ &str:rest |
+              :tags $ #{} :core :unit
         |&str:slice $ %{} 'CodeEntry (:doc "|internal function for string slicing\nSyntax: (&str:slice s start end)\nParams: s (string), start (number), end (number)\nReturns: string\nExtracts substring from start to end index")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2172,6 +2298,13 @@
             {} (:return 'String)
               :args $ [] 'String 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |slices-unicode-character-ranges)
+              :code $ quote
+                do
+                  assert= |bc $ &str:slice |abcd 1 3
+                  assert= "|文字" $ &str:slice "|中文字符串" 1 3
+              :tags $ #{} :core :unit
         |&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4295,6 +4428,11 @@
             {} (:return 'T)
               :args $ [] 'T
               :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |empties-number)
+              :code $ quote
+                assert= 0 $ empty 1.1
+              :tags $ #{} :core :unit
         |empty? $ %{} 'CodeEntry (:doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty.")
           :code $ quote
             defn empty? (x)
@@ -4859,6 +4997,12 @@
                 assert= (%none)
                   get (&{}) :missing
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-string-character-by-index)
+              :code $ quote
+                do
+                  assert= (%some |a) (get |abc 0)
+                  assert= (%some |b) (get |abc 1)
+              :tags $ #{} :core :unit
         |get-char-code $ %{} 'CodeEntry (:doc "|internal function for getting character code\nSyntax: (get-char-code char)\nParams: char (string, single character)\nReturns: number\nReturns Unicode code point of character")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5074,6 +5218,11 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |increments-number)
+              :code $ quote
+                assert= 2.1 $ inc 1.1
+              :tags $ #{} :core :unit
         |include $ %{} 'CodeEntry (:doc "|Add elements to a set, returns a new set with the elements included")
           :code $ quote
             defn include (base & xs)

@@ -9,7 +9,7 @@
       :defs $ {}
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing str") (test-str) (test-includes) (test-format) (test-char) (test-lisp-style) (test-methods) (test-bitwise) (do true)
+            defn main! () (log-title "|Testing str") (test-str) (test-includes) (test-format) (test-char) (test-lisp-style) (test-bitwise) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         |test-bitwise $ %{} 'CodeEntry (:doc |)
@@ -126,54 +126,6 @@
               assert=
                 format-cirru-one-liner $ [] |+ |1 |2
                 , "|+ 1 2"
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |test-methods $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            defn test-methods () (log-title "|Testing string methods")
-              assert= true $ .blank? |
-              assert= true $ .blank? "| "
-              assert= false $ .blank? |a
-              assert= 3 $ .count |abc
-              assert= | $ .empty |a
-              assert= true $ .ends-with? |abc |c
-              assert= false $ .ends-with? |abc |b
-              assert= (%some |a) (.get |abc 0)
-              assert= (%some |b) (.get |abc 1)
-              assert= (%ok 1) (.parse-float |1)
-              assert= (%ok 1.1) (.parse-float |1.1)
-              assert= |Abcd $ .replace |abcd |a |A
-              assert= |AbAd $ .replace |abad |a |A
-              assert= ([] |a |c) (.split |abc |b)
-              assert= ([] |a |c) (.split-lines "|a\nc")
-              assert= true $ .starts-with? |abcd |a
-              assert= false $ .starts-with? |abcd |b
-              assert= |bcd $ .strip-prefix |abcd |a
-              assert= |abc $ .strip-suffix |abcd |d
-              assert= |abcd $ .strip-suffix |abcd |a
-              assert= |bc $ .slice |abcd 1 3
-              assert= |bcd $ .slice |abcd 1
-              assert= "|文字" $ .slice "|中文字符串" 1 3
-              assert= "|文字符串" $ .slice "|中文字符串" 1
-              assert= "|ab cd" $ .trim "| ab cd"
-              assert= true $ .empty? |
-              assert= false $ .empty? |a
-              assert= true $ .contains? |abcd 0
-              assert= false $ .contains? |abcd 4
-              assert= true $ .includes? |abcd |a
-              assert= false $ .includes? |abcd |e
-              assert= (%some |a) (.nth |abc 0)
-              assert= (%some |b) (.nth |abc 1)
-              assert= (%some |a) (.first |abc)
-              assert= (%none) (.first |)
-              assert= |bc $ .rest |abc
-              assert= (%some 0) (.find-index |abc |a)
-              assert= (%some 1) (.find-index |abc |b)
-              assert= "|\"a \\\"\"" $ .escape "|a \""
-              assert= |00000a $ .pad-left |a 6 |0
-              assert= |a00000 $ .pad-right |a 6 |0
-              assert= |12312a $ .pad-left |a 6 |123
-              assert= |a12312 $ .pad-right |a 6 |123
           :examples $ []
           :schema $ :: 'Dynamic
         |test-str $ %{} 'CodeEntry (:doc |)
