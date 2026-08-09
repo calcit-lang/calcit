@@ -3204,11 +3204,12 @@
               list-match path
                 () v
                 (p0 ps)
-                  &let
-                    d $ either data (&{})
-                    assoc d p0 $ assoc-in
-                      if (contains? d p0) (&get-raw d p0) (&{})
-                      , ps v
+                  if (struct? data) (raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key")
+                    &let
+                      d $ either data (&{})
+                      assoc d p0 $ assoc-in
+                        if (contains? d p0) (&get-raw d p0) (&{})
+                        , ps v
           :examples $ []
             quote $ assert=
               &{} :a $ &{} :b 1
@@ -4320,10 +4321,11 @@
               list-match path
                 () data
                 (p0 ps)
-                  if
-                    &= 1 $ &list:count path
-                    dissoc data p0
-                    assoc data p0 $ dissoc-in (&get-raw data p0) ps
+                  if (struct? data) (raise "|dissoc-in does not traverse Struct fields; use dissoc with a direct field key")
+                    if
+                      &= 1 $ &list:count path
+                      dissoc data p0
+                      assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'D)
@@ -5036,8 +5038,7 @@
                 list-match path
                   () $ %some base
                   (y0 ys)
-                    if (struct? base)
-                      recur (&struct:get base y0) ys
+                    if (struct? base) (raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type")
                       tag-match (get base y0)
                         (:some value) (recur value ys)
                         (:none) (%none)
@@ -7545,14 +7546,15 @@
               list-match path
                 () $ f (%some data)
                 (p0 ps)
-                  let
-                      current $ if (nil? data) (%none) (get data p0)
-                    assoc
-                      either data $ {}
-                      , p0 $ if (empty? ps) (f current)
-                        update-in
-                          option:unwrap-or current $ {}
-                          , ps f
+                  if (struct? data) (raise "|update-in does not traverse Struct fields; use update with a direct field key")
+                    let
+                        current $ if (nil? data) (%none) (get data p0)
+                      assoc
+                        either data $ {}
+                        , p0 $ if (empty? ps) (f current)
+                          update-in
+                            option:unwrap-or current $ {}
+                            , ps f
           :examples $ []
             quote $ assert=
               {} $ :a

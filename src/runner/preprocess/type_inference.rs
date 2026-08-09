@@ -333,10 +333,42 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
   }
 
   for key in path_items {
+    // A path API must not become an alternate, Option-producing Struct field
+    // accessor. Stop inference at the same boundary that preprocessing and the
+    // runtime reject, so adding/removing type evidence never changes get-in's
+    // contract.
+    if is_struct_lookup_boundary(current_type.as_ref()) {
+      return None;
+    }
     current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
   }
 
   Some(core_type_ref("Option", vec![current_type]))
+}
+
+fn is_struct_lookup_boundary(type_info: &CalcitTypeAnnotation) -> bool {
+  type_info.resolve_to_struct().is_some()
+    || matches!(
+      type_info,
+      CalcitTypeAnnotation::Custom(value)
+        if matches!(value.as_ref(), Calcit::Tag(tag) if matches!(tag.ref_str().trim_start_matches(':'), "record" | "struct"))
+    )
+}
+
+/// Return the first literal path segment that would enter a Struct. Public
+/// path APIs use this to stop before nominal fields and keep required field
+/// access visible in source.
+pub(super) fn find_struct_lookup_in_literal_path(base_type: &CalcitTypeAnnotation, path_arg: &Calcit) -> Option<(usize, Calcit)> {
+  let path_items = extract_literal_list_items(path_arg)?;
+  let mut current_type = Arc::new(base_type.to_owned());
+
+  for (index, key) in path_items.into_iter().enumerate() {
+    if is_struct_lookup_boundary(current_type.as_ref()) {
+      return Some((index, key.to_owned()));
+    }
+    current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
+  }
+  None
 }
 
 fn infer_get_return_type_from_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -433,7 +465,7 @@ fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types
   }
 }
 
-fn extract_literal_list_items(form: &Calcit) -> Option<Vec<&Calcit>> {
+pub(super) fn extract_literal_list_items(form: &Calcit) -> Option<Vec<&Calcit>> {
   let Calcit::List(items) = form else {
     return None;
   };
@@ -1782,6 +1814,36 @@ mod tests {
     assert!(
       infer_get_return_type_from_type(&CalcitTypeAnnotation::Optional(Arc::new(user_type)), Some(&key)).is_none(),
       "legacy Optional receivers must be narrowed or converted before nominal lookup"
+    );
+  }
+
+  #[test]
+  fn get_in_stops_before_struct_boundaries() {
+    let mut struct_def = CalcitStructDef::from_fields(EdnTag::from("User"), vec![EdnTag::from("name")]);
+    struct_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
+    let user_type = Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![])));
+    let users_type = Arc::new(CalcitTypeAnnotation::Map(tag_annotation("tag"), user_type.clone()));
+    let path = proc_call(
+      CalcitProc::List,
+      vec![Calcit::Tag(EdnTag::from("user")), Calcit::Tag(EdnTag::from("name"))],
+    );
+    let call = CalcitList::from(&[symbol("get-in"), local("users", users_type.clone()), path.clone()] as &[Calcit]);
+
+    assert!(
+      infer_core_get_in_return_type(&call, &ScopeTypes::new()).is_none(),
+      "get-in must not infer through a Struct field"
+    );
+    assert!(matches!(
+      find_struct_lookup_in_literal_path(users_type.as_ref(), &path),
+      Some((1, Calcit::Tag(field))) if field.ref_str() == "name"
+    ));
+
+    let empty_path = proc_call(CalcitProc::List, vec![]);
+    let empty_call = CalcitList::from(&[symbol("get-in"), local("user", user_type.clone()), empty_path] as &[Calcit]);
+    assert_eq!(
+      infer_core_get_in_return_type(&empty_call, &ScopeTypes::new()),
+      Some(core_type_ref("Option", vec![user_type])),
+      "an empty path does not access a Struct field"
     );
   }
 

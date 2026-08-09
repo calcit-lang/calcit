@@ -256,6 +256,44 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
 }
 
 #[test]
+fn collection_path_operations_do_not_traverse_struct_fields() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "do\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n      people $ {} (:current person)\n    do\n      get-in person ([] :name)\n      get-in people ([] :current :name)\n      assoc-in person ([] :name) |Grace\n      update-in person ([] :name) $ fn (current) (, current)\n      dissoc-in person ([] :name)",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Struct path misuse should preprocess far enough to report every operation");
+
+    let warnings = warnings.borrow();
+    let path_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_STRUCT_PATH_OPERATION"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      path_warnings.len(),
+      5,
+      "every collection path operation that reaches a Struct should be rejected, got: {warnings:?}"
+    );
+    for operation in ["get-in", "assoc-in", "update-in", "dissoc-in"] {
+      assert!(
+        path_warnings
+          .iter()
+          .any(|warning| warning.message().contains(&format!("`{operation}`"))),
+        "missing Struct path diagnostic for `{operation}`, got: {warnings:?}"
+      );
+    }
+    assert!(
+      path_warnings
+        .iter()
+        .all(|warning| warning.message().contains("use `(:field value)` for reads or `assoc`/`update`")),
+      "Struct path diagnostics should point AI edits back to typed field operations, got: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn type_fail_trait_method_generic_receiver_fixture_reports_warning_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/trait-method-generic-receiver-mismatch.cirru");

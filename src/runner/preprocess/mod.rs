@@ -20,7 +20,8 @@ use type_checking::{
 };
 pub use type_inference::infer_static_type_from_expr;
 use type_inference::{
-  infer_struct_field_type, infer_type_from_expr, resolve_enum_value, resolve_program_value_for_preprocess, resolve_type_value,
+  extract_literal_list_items, find_struct_lookup_in_literal_path, infer_struct_field_type, infer_type_from_expr, resolve_enum_value,
+  resolve_program_value_for_preprocess, resolve_type_value,
 };
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
@@ -2560,6 +2561,36 @@ fn check_struct_field_access(
         struct_arg.get_location(),
         check_warnings,
       );
+    }
+    if &**ns == calcit::CORE_NS
+      && matches!(&**def, "get-in" | "assoc-in" | "update-in" | "dissoc-in")
+      && args.len() >= 2
+      && let (Some(base_arg), Some(path_arg)) = (args.first(), args.get(1))
+      && let Some(base_type) = resolve_type_value(base_arg, scope_types)
+    {
+      let literal_path = extract_literal_list_items(path_arg);
+      let known_struct_with_dynamic_path =
+        literal_path.is_none() && (base_type.as_ref().resolve_to_struct().is_some() || is_anonymous_struct_type(base_type.as_ref()));
+      let struct_step = find_struct_lookup_in_literal_path(base_type.as_ref(), path_arg);
+
+      if known_struct_with_dynamic_path || struct_step.is_some() {
+        let (segment_text, location_text, location) = match struct_step {
+          Some((index, segment)) => (
+            format!("segment {} `{}`", index + 1, segment.lisp_str()),
+            "enters a Struct".to_owned(),
+            segment.get_location().or_else(|| path_arg.get_location()),
+          ),
+          None => (
+            "a dynamic path".to_owned(),
+            "starts from a Struct and cannot prove that the path is empty".to_owned(),
+            path_arg.get_location().or_else(|| base_arg.get_location()),
+          ),
+        };
+        let message = format!(
+          "[Warn] `{def}` {location_text} at {segment_text} in {file_ns}. Collection path APIs do not traverse Struct fields. End the path before the Struct, unwrap/narrow the value, then use `(:field value)` for reads or `assoc`/`update` for declared field writes"
+        );
+        gen_check_warning_code_at(message, "W_STRUCT_PATH_OPERATION", file_ns, location, check_warnings);
+      }
     }
   }
   // Check for Method(Access) which handles .-field syntax: (.-field struct_value)
