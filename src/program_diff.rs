@@ -114,6 +114,10 @@ pub struct CirruEditAdvice {
   pub strategy: CirruEditStrategy,
 }
 
+// A structural-edit suggestion is only useful when a definition is substantial
+// enough that locating a smaller subtree saves meaningful work.
+const MIN_EDIT_ADVICE_NODES: usize = 32;
+
 pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &str) -> Result<ProgramDiffResult, String> {
   let cwd = env::current_dir().map_err(|e| format!("Failed to read current directory: {e}"))?;
   let input_abs = resolve_input_path(&cwd, input_path)?;
@@ -181,6 +185,10 @@ pub fn format_program_diff(result: &ProgramDiffResult) -> String {
 }
 
 pub fn analyze_cirru_edit_advice(old: &Cirru, new: &Cirru) -> Option<CirruEditAdvice> {
+  if count_cirru_nodes(old).max(count_cirru_nodes(new)) < MIN_EDIT_ADVICE_NODES {
+    return None;
+  }
+
   if old == new {
     return Some(CirruEditAdvice {
       similarity: 1.0,
@@ -1310,6 +1318,13 @@ mod tests {
     Cirru::List(items)
   }
 
+  fn large_list(last: &str) -> Cirru {
+    let mut items = vec![leaf("defn"), leaf("demo")];
+    items.extend((0..29).map(|index| leaf(&format!("arg-{index}"))));
+    items.push(leaf(last));
+    list(items)
+  }
+
   fn entry_with_type_slots(slots: &[(&str, &str)]) -> SnapshotEntry {
     SnapshotEntry {
       mode: SnapshotRunMode::Native,
@@ -1465,25 +1480,39 @@ mod tests {
 
   #[test]
   fn classifies_additive_similar_edits_as_insert_strategy() {
-    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
-    let new = list(vec![leaf("defn"), leaf("demo"), leaf("x"), leaf("y")]);
+    let old = large_list("x");
+    let mut new_items = match old.clone() {
+      Cirru::List(items) => items,
+      Cirru::Leaf(_) => unreachable!("large_list always returns a list"),
+    };
+    new_items.push(leaf("y"));
+    let new = list(new_items);
     let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for similar edit");
     assert_eq!(advice.strategy, CirruEditStrategy::Insert);
   }
 
   #[test]
   fn classifies_leaf_updates_as_replace_strategy() {
-    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
-    let new = list(vec![leaf("defn"), leaf("demo"), leaf("y")]);
+    let old = large_list("x");
+    let new = large_list("y");
     let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for similar edit");
     assert_eq!(advice.strategy, CirruEditStrategy::Replace);
   }
 
   #[test]
   fn reports_identical_trees() {
-    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let old = large_list("x");
     let advice = analyze_cirru_edit_advice(&old, &old).expect("expected advice for identical trees");
     assert_eq!(advice.strategy, CirruEditStrategy::Identical);
+  }
+
+  #[test]
+  fn omits_advice_for_small_trees() {
+    let old = list(vec![leaf("defn"), leaf("demo"), leaf("x")]);
+    let new = list(vec![leaf("defn"), leaf("demo"), leaf("y")]);
+
+    assert!(analyze_cirru_edit_advice(&old, &new).is_none());
+    assert!(analyze_cirru_edit_advice(&old, &old).is_none());
   }
 
   #[test]
@@ -1498,6 +1527,9 @@ mod tests {
       list(vec![leaf("println"), leaf("|d")]),
       list(vec![leaf("println"), leaf("|e")]),
       list(vec![leaf("println"), leaf("|f")]),
+      list(vec![leaf("println"), leaf("|g")]),
+      list(vec![leaf("println"), leaf("|h")]),
+      list(vec![leaf("println"), leaf("|i")]),
       list(vec![leaf("do"), leaf("true")]),
     ]);
     let new = list(vec![
@@ -1511,6 +1543,9 @@ mod tests {
       list(vec![leaf("println"), leaf("|extra-4")]),
       list(vec![leaf("println"), leaf("|extra-5")]),
       list(vec![leaf("println"), leaf("|extra-6")]),
+      list(vec![leaf("println"), leaf("|g")]),
+      list(vec![leaf("println"), leaf("|h")]),
+      list(vec![leaf("println"), leaf("|i")]),
       list(vec![leaf("do"), leaf("true")]),
     ]);
     let advice = analyze_cirru_edit_advice(&old, &new).expect("expected advice for mixed structural edit");

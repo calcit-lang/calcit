@@ -554,6 +554,10 @@ fn optional_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Optional(tag_type(name)))
 }
 
+fn optional_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Optional(inner))
+}
+
 fn optional_dynamic() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Optional(dynamic_tag()))
 }
@@ -946,7 +950,7 @@ impl CalcitProc {
         arg_types: vec![list_of(type_var("T")), some_tag("number")],
       }),
       NativeListFirst => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
+        return_type: optional_of(type_var("T")),
         arg_types: vec![list_of(type_var("T"))],
       }),
       NativeListRest => Some(ProcTypeSignature {
@@ -1533,6 +1537,12 @@ mod tests {
       .get_type_signature()
       .expect("record-struct signature");
     assert_eq!(record_struct.return_type, optional_tag("struct-def"));
+
+    let list_first = CalcitProc::NativeListFirst.get_type_signature().expect("&list:first signature");
+    assert!(matches!(
+      list_first.return_type.as_ref(),
+      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
+    ));
   }
 
   #[test]

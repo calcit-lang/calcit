@@ -1125,6 +1125,9 @@
               :code $ quote
                 assert= 1 $ &list:first ([] 1 2)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-nil-for-empty-list)
+              :code $ quote
+                assert= nil $ &list:first ([])
         |&list:flatten $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:flatten (xs)
@@ -2634,7 +2637,7 @@
             defn < (x & ys)
               if
                 &= 1 $ &list:count ys
-                &< x $ &list:first ys
+                &< x $ &list:nth ys 0
                 foldl-compare ys x &<
           :examples $ []
           :schema $ :: 'Fn
@@ -2661,7 +2664,7 @@
             defn <= (x & ys)
               if
                 &= 1 $ &list:count ys
-                &<= x $ &list:first ys
+                &<= x $ &list:nth ys 0
                 foldl-compare ys x &<=
           :examples $ []
             quote $ assert= true (<= 3 5)
@@ -2690,7 +2693,7 @@
             defn > (x & ys)
               if
                 &= 1 $ &list:count ys
-                &> x $ &list:first ys
+                &> x $ &list:nth ys 0
                 foldl-compare ys x &>
           :examples $ []
             quote $ assert= true (> 5 3)
@@ -2710,7 +2713,7 @@
             defn >= (x & ys)
               if
                 &= 1 $ &list:count ys
-                &>= x $ &list:first ys
+                &>= x $ &list:nth ys 0
                 foldl-compare ys x &>=
           :examples $ []
             quote $ assert= true (>= 5 3)
@@ -5526,7 +5529,7 @@
                         nil? $ &list:last pair
                         recur acc remaining
                         recur
-                          include acc $ &list:first pair
+                          include acc $ &list:nth pair 0
                           , remaining
           :examples $ []
             quote $ assert= (#{} :a :b)
@@ -5645,7 +5648,7 @@
               if (&list:empty? pairs)
                 quasiquote $ &let () ~@body
                 &let
-                  pair $ &list:first pairs
+                  pair $ &list:nth pairs 0
                   if
                     not $ &= 2 (&list:count pair)
                     raise $ str-spaced "|expected pair length of 2, got:" pair
@@ -7994,7 +7997,7 @@
               if (&list:empty? body)
                 quasiquote $ eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
                 &let
-                  pair $ &list:first body
+                  pair $ &list:nth body 0
                   if
                     not $ list? pair
                     raise $ str-spaced "|field-match expected arm in list, got:" pair

@@ -1069,15 +1069,19 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Ref(initial_type)));
   }
-  // These low-level collection intrinsics retain their unchecked payload
-  // inference strictly for guarded core macro expansion. Public lookup APIs
-  // return nominal Option<T> and never expose this nullable representation.
+  // `&list:nth` retains its unchecked payload type for guarded core macro
+  // expansion. Unlike it, `&list:first` has a nullable Core schema and must
+  // expose that absence to callers.
   if matches!(proc, CalcitProc::NativeListNth | CalcitProc::NativeListFirst)
     && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
     && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref()
   {
-    return Some(element_type.clone());
+    return Some(if matches!(proc, CalcitProc::NativeListFirst) {
+      wrap_optional_type(element_type.clone())
+    } else {
+      element_type.clone()
+    });
   }
   if matches!(
     proc,
@@ -1728,6 +1732,17 @@ mod tests {
       infer_static_type_from_expr(&map).as_deref(),
       Some(CalcitTypeAnnotation::Map(key, value))
         if matches!(key.as_ref(), CalcitTypeAnnotation::Tag) && matches!(value.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+  }
+
+  #[test]
+  fn list_first_inference_preserves_empty_list_absence() {
+    let list = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
+    let first = proc_call(CalcitProc::NativeListFirst, vec![list]);
+
+    assert!(matches!(
+      infer_static_type_from_expr(&first).as_deref(),
+      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
     ));
   }
 
