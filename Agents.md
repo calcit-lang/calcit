@@ -91,13 +91,26 @@ cr docs agents --full
 
 ### PR 与发布流程
 
-1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后合并到 `main`。`main` 不要求 PR 保护，维护者或 agent 可在验证通过后直接推送合并结果。
-2. **验证通过后再做版本升级**：在确认 `main` 上待发布 commit 稳定后，直接在 `main` 提交版本升级（如 `chore: release 0.12.28`），并同步更新 `Cargo.toml` 与 `package.json` 的 `version`，随后执行 `cargo update --workspace`。
-3. **发布前再次过 CI**：版本升级提交推送到 `main` 后，也必须通过同一套 Actions，避免“功能通过但发布提交未验证”的风险。
-4. **打 tag 并发布**：在通过 CI 的 `main` 版本升级提交上打 tag、推送、创建 GitHub release——这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm。
+1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后通过 PR 合并到 `main`。
+2. **以 release PR 升级版本**：从已验证的 `main` 创建 `codex/release-<version>` 分支；同步更新 `Cargo.toml`、`package.json`，执行 `cargo update --workspace`，再提交 `chore: release <version>`。不要直接推送 `main`；它受“必须经 PR”规则保护。若直接推送被拒绝，保留本地提交，切换到 release 分支并从该分支创建 PR，不要重写或丢弃提交。
+3. **发布前再次过 CI**：推送 release 分支并创建 PR；所有必需 Actions 通过后，合并该 PR。随后拉取 `main`，确认 tag 尚不存在且版本提交确实位于 `main` HEAD。
+4. **打 tag 并发布**：在合并后的 `main` 提交上打不带 `v` 前缀的 tag、推送、创建 GitHub release——这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm。
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。
 
 ```bash
+# 创建并合并 release PR（main 受 PR 保护）
+git switch -c codex/release-0.13.8 main
+# 修改 Cargo.toml、package.json，随后：
+cargo update --workspace
+git add Cargo.toml package.json Cargo.lock
+git commit -m "chore: release 0.13.8"
+git push -u origin codex/release-0.13.8
+gh pr create --base main --head codex/release-0.13.8 --title "chore: release 0.13.8" --body "..."
+gh pr checks <pr-number>
+gh pr merge <pr-number> --merge
+git switch main
+git pull --ff-only origin main
+
 # 打 tag 并推送（不带 v 前缀）
 git tag 0.12.28 -m "Release 0.12.28"
 git push origin 0.12.28
@@ -113,7 +126,7 @@ cargo search calcit --limit 1
 npm view @calcit/procs version
 ```
 
-> ⚠️ **`gh run watch` 是交互式 pager（类似 less），在脚本或 Agent 场景下会卡住**，按 `q` 退出后续命令也不会被执行。验证时统一用 `gh run list --limit 5` 轮询。
+> ⚠️ **`gh run watch` 是交互式 pager（类似 less），在脚本或 Agent 场景下会卡住**，按 `q` 退出后续命令也不会被执行。验证时统一用 `gh pr checks <pr-number>` 和 `gh run list --limit 5` 轮询。
 
 ## 性能与资源验证
 
