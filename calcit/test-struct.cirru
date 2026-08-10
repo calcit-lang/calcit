@@ -26,7 +26,7 @@
           :code $ quote
             defimpl BirdImpl BirdTrait
               .show $ fn (self)
-                println $ :name self
+                println $ &struct:get self :name
               .rename $ fn (self name) (assoc self :name name)
           :examples $ []
           :schema $ :: 'Dynamic
@@ -218,13 +218,13 @@
                   p1 $ %{}? Person (:name |Chen)
                   p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
                   p3 $ %{}? Person (:age 31)
-                assert= |Chen $ get p1 :name
-                assert= nil $ get p1 :age
-                assert= nil $ get p1 :position
-                assert= 20 $ get p2 :age
-                assert= nil $ get p3 :name
-                assert= 31 $ get p3 :age
-                assert= nil $ get p3 :position
+                assert= |Chen $ :name p1
+                assert= nil $ :age p1
+                assert= nil $ :position p1
+                assert= 20 $ :age p2
+                assert= nil $ :name p3
+                assert= 31 $ :age p3
+                assert= nil $ :position p3
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -283,27 +283,26 @@
                   p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                   c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
                 assert= true $ = (&struct:definition p0) Person
-                assert= nil $ get p0 :age
-                assert= nil $ get p0 :name
-                assert= nil $ get p0 :position
-                assert= 20 $ get p1 :age
-                assert= 20 $ get p2 :age
-                assert= 23 $ get p3 :age
+                assert= nil $ :age p0
+                assert= nil $ :name p0
+                assert= nil $ :position p0
+                assert= 20 $ :age p1
+                assert= 20 $ :age p2
+                assert= 23 $ :age p3
                 assert= 23 $ &struct:get p3 :age
                 assert= :struct $ type-of p1
                 assert= (&struct:to-map p1)
                   {} (:name |Chen) (:age 20) (:position :mainland)
-                assert= 21 $ get
+                assert= 21 $ :age
                   &struct:from-map Person $ {} (:name |Chen) (:age 21) (:position :mainland)
-                  , :age
                 assert= (keys p2) (#{} :age :name :position)
                 assert-detect identity $ &struct:matches? p1 p1
                 assert-detect identity $ &struct:matches? p1 p2
                 assert-detect not $ &struct:matches? p1 c1
                 &let
                   p4 $ assoc p1 :age 30
-                  assert= 20 $ get p1 :age
-                  assert= 30 $ get p4 :age
+                  assert= 20 $ :age p1
+                  assert= 30 $ :age p4
                 inside-js: $ js/console.log (to-js-data p1)
                 assert-detect identity $ = p1 p1
                 assert-detect identity $ = p1 p2
@@ -318,10 +317,9 @@
                 assert-detect identity $ contains? p1 :name
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1
-                assert= 21 $ get
+                assert= 21 $ :age
                   update p1 :age $ fn (age)
                     if (nil? age) 1 $ inc age
-                  , :age
                 assert= 20 $ :age p1
           :examples $ []
           :schema $ :: 'Fn
@@ -335,11 +333,11 @@
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
                   p2 $ struct-with p1 (:age 21) (:position :shanghai)
                 ; println |P2 p2
-                assert= 20 $ get p1 :age
-                assert= 21 $ get p2 :age
-                assert= :hangzhou $ get p1 :position
-                assert= :shanghai $ get p2 :position
-                assert= |Chen $ get p2 :name
+                assert= 20 $ :age p1
+                assert= 21 $ :age p2
+                assert= :hangzhou $ :position p1
+                assert= :shanghai $ :position p2
+                assert= |Chen $ :name p2
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

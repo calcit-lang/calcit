@@ -53,7 +53,7 @@ let
     Person0 $ defstruct Person (:name 'String)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
-        str-spaced |foo $ :name p
+        str-spaced |foo $ &struct:get p :name
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   p .foo
@@ -83,7 +83,7 @@ let
           :return 'String
     MyFooImplA $ defimpl MyFooImplA MyFooA
       .foo $ fn (p)
-        str-spaced |foo $ :name p
+        str-spaced |foo $ &struct:get p :name
     PersonA $ impl-traits PersonA0 MyFooImplA
     p $ %{} PersonA (:name |Alice)
   p .foo
@@ -104,7 +104,7 @@ let
     Person0 $ defstruct Person (:name 'String)
     ImplB $ defimpl ImplB MyFoo
       :: :foo $ fn (p)
-        str |B: $ :name p
+        str |B: $ &struct:get p :name
     PersonB $ impl-traits Person0 ImplB
     pb $ %{} PersonB (:name |Bob)
   pb .foo
@@ -159,11 +159,11 @@ let
           :return 'String
     ImplA $ defimpl ImplA MyFoo
       .foo $ fn (p)
-        str |A: $ :name p
+        str |A: $ &struct:get p :name
     MyBar $ deftrait MyBar (.bar 'Fn)
     ImplB $ defimpl ImplB MyBar
       .bar $ fn (p)
-        str |B: $ :name p
+        str |B: $ &struct:get p :name
     StructDef0 $ defstruct StructDef (:name 'String)
     StructDef $ impl-traits StructDef0 ImplA ImplB
     x $ %{} StructDef (:name |test)
@@ -186,7 +186,7 @@ do (; struct example)
             :return 'String
       MyFooImpl $ defimpl MyFooImpl MyFoo
         .foo $ fn (p)
-          str-spaced |foo $ :name p
+          str-spaced |foo $ &struct:get p :name
       Person0 $ defstruct Person (:name 'String)
       Person $ impl-traits Person0 MyFooImpl
       p $ %{} Person (:name |Alice)
@@ -326,7 +326,7 @@ let
     Person0 $ defstruct Person (:name 'String)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
-        str-spaced |foo $ :name p
+        str-spaced |foo $ &struct:get p :name
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo

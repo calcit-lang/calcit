@@ -24,7 +24,17 @@ impl GitRepo {
   }
 
   pub fn checkout(&self, version: &str) -> Result<(), String> {
-    self.run_command(&["checkout", version]).map(|_a| ())
+    if self.run_command(&["checkout", version]).is_ok() {
+      return Ok(());
+    }
+
+    // A branch fetched into an existing module clone may only exist as a
+    // remote-tracking ref. `git checkout <branch>` cannot resolve that name
+    // until a local branch is created. `-B` works even for clones with a
+    // narrow/non-standard remote refspec, while still pointing the local
+    // branch at the explicitly fetched origin ref.
+    let remote_branch = format!("origin/{version}");
+    self.run_command(&["checkout", "-B", version, &remote_branch]).map(|_| ())
   }
 
   /// clone to directory
@@ -97,7 +107,11 @@ impl GitRepo {
   }
 
   pub fn fetch(&self) -> Result<(), String> {
-    self.run_command(&["fetch", "origin", "--tags"])?;
+    // Module versions may be development branches, not only release tags.
+    // Fetch remote branch refs explicitly: existing module clones can have a
+    // narrow fetch refspec, in which case `git fetch --tags` leaves a newly
+    // pushed branch invisible to `show-ref` and checkout.
+    self.run_command(&["fetch", "--prune", "origin", "--tags", "+refs/heads/*:refs/remotes/origin/*"])?;
     Ok(())
   }
 

@@ -32,6 +32,23 @@ fn load_fixture_entries_with_entry(path: &str, selected_entry: Option<&str>) -> 
   snapshot
     .select_entry(selected_entry)
     .unwrap_or_else(|e| panic!("Failed to select fixture entry for {path}: {e}"));
+
+  prepare_snapshot_entries(snapshot)
+}
+
+fn load_snippet_entries(snippet: &str) -> ProgramEntries {
+  builtins::effects::init_effects_states();
+
+  let mut snapshot = snapshot::Snapshot::default();
+  snapshot.files.insert(
+    "app.main".to_owned(),
+    snapshot::create_file_from_snippet(snippet).expect("test snippet should parse"),
+  );
+
+  prepare_snapshot_entries(snapshot)
+}
+
+fn prepare_snapshot_entries(mut snapshot: snapshot::Snapshot) -> ProgramEntries {
   let core_snapshot = calcit::load_core_snapshot().expect("load core snapshot");
 
   for (k, v) in core_snapshot.files {
@@ -148,6 +165,131 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
         warning.message()
       );
     }
+  });
+}
+
+#[test]
+fn option_migration_source_calls_fail_during_preprocessing() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "do\n  = |dev $ get-env |mode\n  let\n      x $ get-env |mode\n    some? x\n  update-in ({} (:a ({}))) ([] :a) $ fn (x) do (assoc x :b 1)\n  let\n      op $ :: :session/connect\n      tag-name $ nth op 0\n    starts-with? tag-name :session/",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Option migration examples should preprocess with warnings, not reach runtime");
+
+    let warnings = warnings.borrow();
+    for operation in ["=", "some?", "assoc"] {
+      assert!(
+        warnings.iter().any(|warning| {
+          warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")
+            && warning.message().contains(&format!("`{operation}` consumes nominal enum `Option`"))
+        }),
+        "ordinary source call `{operation}` should report an Option migration warning, got: {warnings:?}"
+      );
+    }
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && warning.message().contains("Proc `starts-with?` arg 1 expects type `:string`")
+          && warning.message().contains("Option")
+      }),
+      "starts-with? should reject an Option argument during preprocessing, got: {warnings:?}"
+    );
+  });
+}
+
+#[test]
+fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "do\n  let\n      record $ {} (:name |Ada)\n      name $ :name record\n    , name\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n      name $ :name person\n    assert-type name 'String\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n    :missing person\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n    get person :name",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("required-field examples should preprocess with actionable diagnostics");
+
+    let warnings = warnings.borrow();
+    let required_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_REQUIRED_STRUCT_FIELD_TYPE"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      required_warnings.len(),
+      1,
+      "only the Map-backed field syntax should require a Struct declaration, got: {warnings:?}"
+    );
+    assert!(
+      required_warnings[0]
+        .message()
+        .contains("use `(get value :name)` only when absence is intentional")
+    );
+
+    let struct_get_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_STRUCT_FIELD_OPTIONAL_LOOKUP"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      struct_get_warnings.len(),
+      1,
+      "`get` on a typed Struct should point back to required field syntax, got: {warnings:?}"
+    );
+    assert!(struct_get_warnings[0].message().contains("Use `(:name value)`"));
+
+    let unknown_field_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_UNKNOWN_STRUCT_FIELD"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      unknown_field_warnings.len(),
+      1,
+      "a missing declared Struct field should fail before runtime, got: {warnings:?}"
+    );
+    assert!(
+      unknown_field_warnings[0]
+        .message()
+        .contains("Field `:missing` does not exist in struct `Person`")
+    );
+  });
+}
+
+#[test]
+fn collection_path_operations_do_not_traverse_struct_fields() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "do\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n      people $ {} (:current person)\n    do\n      get-in person ([] :name)\n      get-in people ([] :current :name)\n      contains-in? person ([] :name)\n      assoc-in person ([] :name) |Grace\n      update-in person ([] :name) $ fn (current) (, current)\n      dissoc-in person ([] :name)",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Struct path misuse should preprocess far enough to report every operation");
+
+    let warnings = warnings.borrow();
+    let path_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_STRUCT_PATH_OPERATION"))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      path_warnings.len(),
+      6,
+      "every collection path operation that reaches a Struct should be rejected, got: {warnings:?}"
+    );
+    for operation in ["get-in", "contains-in?", "assoc-in", "update-in", "dissoc-in"] {
+      assert!(
+        path_warnings
+          .iter()
+          .any(|warning| warning.message().contains(&format!("`{operation}`"))),
+        "missing Struct path diagnostic for `{operation}`, got: {warnings:?}"
+      );
+    }
+    assert!(
+      path_warnings
+        .iter()
+        .all(|warning| warning.message().contains("use `(:field value)` for reads or `assoc`/`update`")),
+      "Struct path diagnostics should point AI edits back to typed field operations, got: {warnings:?}"
+    );
   });
 }
 

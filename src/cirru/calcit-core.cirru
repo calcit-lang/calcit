@@ -449,7 +449,7 @@
           :tags $ #{} :internal
         |&core-struct-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def &core-struct-methods $ &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :get get) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
+            def &core-struct-methods $ &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
               :: :empty? $ defn &struct:empty?-impl (x)
                 &= 0 $ &struct:count x
           :examples $ []
@@ -738,7 +738,7 @@
             {} (:return 'Tag)
               :args $ []
           :tags $ #{} :builtin :internal :io
-        |&get-raw $ %{} 'CodeEntry (:doc "|Internal raw lookup dispatcher. Public callers must use get, which returns Option.")
+        |&get-raw $ %{} 'CodeEntry (:doc "|Internal raw lookup dispatcher for collection algorithms and typed Struct traversal. Public optional lookups use get/get-in; required Struct fields use (:field value).")
           :code $ quote
             defn &get-raw (base k)
               cond
@@ -3204,11 +3204,12 @@
               list-match path
                 () v
                 (p0 ps)
-                  &let
-                    d $ either data (&{})
-                    assoc d p0 $ assoc-in
-                      if (contains? d p0) (&get-raw d p0) (&{})
-                      , ps v
+                  if (struct? data) (raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key")
+                    &let
+                      d $ either data (&{})
+                      assoc d p0 $ assoc-in
+                        if (contains? d p0) (&get-raw d p0) (&{})
+                        , ps v
           :examples $ []
             quote $ assert=
               &{} :a $ &{} :b 1
@@ -3576,7 +3577,7 @@
                 assert= ([] 1 2 3 4 5)
                   conj ([] 1 2 3) 4 5
               :tags $ #{} :core :unit
-        |contains-in? $ %{} 'CodeEntry (:doc "|Check whether every hop in a nested path exists across maps, structs, enums, or lists.")
+        |contains-in? $ %{} 'CodeEntry (:doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead.")
           :code $ quote
             defn contains-in? (xs path)
               list-match path
@@ -3592,10 +3593,7 @@
                       if (&map:contains? xs p0)
                         recur (&map:get xs p0) ps
                         , false
-                    (struct? xs)
-                      if (&struct:contains? xs p0)
-                        recur (&struct:get xs p0) ps
-                        , false
+                    (struct? xs) (raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)")
                     (enum? xs)
                       if
                         and (&>= p0 0)
@@ -4320,10 +4318,11 @@
               list-match path
                 () data
                 (p0 ps)
-                  if
-                    &= 1 $ &list:count path
-                    dissoc data p0
-                    assoc data p0 $ dissoc-in (&get-raw data p0) ps
+                  if (struct? data) (raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys")
+                    if
+                      &= 1 $ &list:count path
+                      dissoc data p0
+                      assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'D)
@@ -4963,7 +4962,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        |get $ %{} 'CodeEntry (:doc "|Lookup by key or index. Struct fields return their declared value directly and unknown fields raise; maps and indexed collections return Option<T>.")
+        |get $ %{} 'CodeEntry (:doc "|Optional lookup by key or index for maps and indexed collections. Returns Option<T>. Required Struct fields use (:field value) and return their declared type directly.")
           :code $ quote
             defn get (base k)
               cond
@@ -4971,10 +4970,10 @@
                   if (&map:contains? base k)
                     %some $ &map:get base k
                     %none
-                (struct? base) (&struct:get base k)
+                (struct? base) (raise "|get does not read Struct fields; use (:field value) so the checker can enforce the declared type")
                 (or (list? base) (string? base) (enum? base))
                   if (number? k) (nth base k) (%none)
-                true $ raise (str-spaced |get |expected |a |collection |or |struct, |got: base)
+                true $ raise (str-spaced |get |expected |a |map |or |indexed |collection, |got: base)
           :examples $ []
             quote $ assert= (%some 2)
               get ([] 0 2 4) 1
@@ -5036,8 +5035,7 @@
                 list-match path
                   () $ %some base
                   (y0 ys)
-                    if (struct? base)
-                      recur (&struct:get base y0) ys
+                    if (struct? base) (raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type")
                       tag-match (get base y0)
                         (:some value) (recur value ys)
                         (:none) (%none)
@@ -6992,7 +6990,7 @@
               :code $ quote
                 do
                   assert= true $ starts-with? |01234 |01
-                  assert= true $ starts-with? :a/b :a/
+                  assert= true $ starts-with? (unsafe-coerce :a/b String) (unsafe-coerce :a/ String)
                   assert= false $ starts-with? |01234 |12
               :tags $ #{} :core :unit
         |str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")
@@ -7545,14 +7543,15 @@
               list-match path
                 () $ f (%some data)
                 (p0 ps)
-                  let
-                      current $ if (nil? data) (%none) (get data p0)
-                    assoc
-                      either data $ {}
-                      , p0 $ if (empty? ps) (f current)
-                        update-in
-                          option:unwrap-or current $ {}
-                          , ps f
+                  if (struct? data) (raise "|update-in does not traverse Struct fields; use update with a direct field key")
+                    let
+                        current $ if (nil? data) (%none) (get data p0)
+                      assoc
+                        either data $ {}
+                        , p0 $ if (empty? ps) (f current)
+                          update-in
+                            option:unwrap-or current $ {}
+                            , ps f
           :examples $ []
             quote $ assert=
               {} $ :a

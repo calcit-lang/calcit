@@ -312,10 +312,10 @@
                 assert-type name-v String
                 &inspect-type name-v
               let
-                  top-name-v $ get p :name
-                  city-v $ get-in p ([] :address :city)
+                  top-name-v $ :name p
+                  city-v $ :city (:address p)
                 assert-type top-name-v String
-                assert-type city-v $ :: 'Option 'String
+                assert-type city-v String
                 &inspect-type top-name-v
                 &inspect-type city-v
           :examples $ []

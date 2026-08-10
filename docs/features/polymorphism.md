@@ -68,7 +68,7 @@ let
           :return :string
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
-        str "|foo " $ :name p
+        str "|foo " $ &struct:get p :name
     Person0 $ defstruct Person (:name :string)
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
@@ -100,13 +100,13 @@ let
     Person0 $ defstruct Person (:name :string)
     ShowImpl $ defimpl ShowImpl ShowTrait
       .show $ fn (p)
-        str |Person: $ :name p
+        str |Person: $ &struct:get p :name
     EqImpl $ defimpl EqImpl EqTrait
       .eq $ fn (p)
-        str |eq: $ :name p
+        str |eq: $ &struct:get p :name
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
-        str |foo: $ :name p
+        str |foo: $ &struct:get p :name
     Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
     p $ %{} Person (:name |Alice)
   [] (p .show) (p .foo)
@@ -127,7 +127,7 @@ let
     Person0 $ defstruct Person (:name :string)
     MyFooImpl $ defimpl MyFooImpl MyFoo
       .foo $ fn (p)
-        str-spaced |foo $ :name p
+        str-spaced |foo $ &struct:get p :name
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo
@@ -146,14 +146,14 @@ This mirrors the main reason Rust has `where` clauses: parameter declaration and
 
 Top-level definitions use `:schema`:
 
-```cirru.no-run
+```cirru.edn
 %{} :CodeEntry
   :code $ quote
     defn show-it (x) (x .show)
   :schema $ :: 'Fn
     {}
       :generics $ [] 'T
-      :where $ {} ('T Show)
+      :where $ {} ('T 'Show)
       :args $ [] 'T
       :return 'String
 ```
@@ -174,9 +174,10 @@ let
 
 For multiple constraints on the same variable, use a list value:
 
-```cirru
-:where $ {}
-  'T $ [] Show Eq
+```cirru.edn
+{}
+  :where $ {}
+    'T $ [] 'Show 'Eq
 ```
 
 Do not use the old tuple form like `:where $ [] (:: 'Show 'T)`.
