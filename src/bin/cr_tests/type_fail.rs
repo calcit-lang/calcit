@@ -259,7 +259,7 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
 fn collection_path_operations_do_not_traverse_struct_fields() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "do\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n      people $ {} (:current person)\n    do\n      get-in person ([] :name)\n      get-in people ([] :current :name)\n      assoc-in person ([] :name) |Grace\n      update-in person ([] :name) $ fn (current) (, current)\n      dissoc-in person ([] :name)",
+      "do\n  let\n      Person $ defstruct Person (:name 'String)\n      person $ %{} Person (:name |Ada)\n      people $ {} (:current person)\n    do\n      get-in person ([] :name)\n      get-in people ([] :current :name)\n      contains-in? person ([] :name)\n      assoc-in person ([] :name) |Grace\n      update-in person ([] :name) $ fn (current) (, current)\n      dissoc-in person ([] :name)",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -273,10 +273,10 @@ fn collection_path_operations_do_not_traverse_struct_fields() {
       .collect::<Vec<_>>();
     assert_eq!(
       path_warnings.len(),
-      5,
+      6,
       "every collection path operation that reaches a Struct should be rejected, got: {warnings:?}"
     );
-    for operation in ["get-in", "assoc-in", "update-in", "dissoc-in"] {
+    for operation in ["get-in", "contains-in?", "assoc-in", "update-in", "dissoc-in"] {
       assert!(
         path_warnings
           .iter()

@@ -3577,7 +3577,7 @@
                 assert= ([] 1 2 3 4 5)
                   conj ([] 1 2 3) 4 5
               :tags $ #{} :core :unit
-        |contains-in? $ %{} 'CodeEntry (:doc "|Check whether every hop in a nested path exists across maps, structs, enums, or lists.")
+        |contains-in? $ %{} 'CodeEntry (:doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead.")
           :code $ quote
             defn contains-in? (xs path)
               list-match path
@@ -3593,10 +3593,7 @@
                       if (&map:contains? xs p0)
                         recur (&map:get xs p0) ps
                         , false
-                    (struct? xs)
-                      if (&struct:contains? xs p0)
-                        recur (&struct:get xs p0) ps
-                        , false
+                    (struct? xs) (raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)")
                     (enum? xs)
                       if
                         and (&>= p0 0)
@@ -4321,7 +4318,7 @@
               list-match path
                 () data
                 (p0 ps)
-                  if (struct? data) (raise "|dissoc-in does not traverse Struct fields; use dissoc with a direct field key")
+                  if (struct? data) (raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys")
                     if
                       &= 1 $ &list:count path
                       dissoc data p0

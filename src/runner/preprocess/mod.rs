@@ -2563,7 +2563,7 @@ fn check_struct_field_access(
       );
     }
     if &**ns == calcit::CORE_NS
-      && matches!(&**def, "get-in" | "assoc-in" | "update-in" | "dissoc-in")
+      && matches!(&**def, "get-in" | "contains-in?" | "assoc-in" | "update-in" | "dissoc-in")
       && args.len() >= 2
       && let (Some(base_arg), Some(path_arg)) = (args.first(), args.get(1))
       && let Some(base_type) = resolve_type_value(base_arg, scope_types)

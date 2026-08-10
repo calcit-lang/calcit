@@ -111,7 +111,7 @@ impl GitRepo {
     // Fetch remote branch refs explicitly: existing module clones can have a
     // narrow fetch refspec, in which case `git fetch --tags` leaves a newly
     // pushed branch invisible to `show-ref` and checkout.
-    self.run_command(&["fetch", "origin", "--tags", "+refs/heads/*:refs/remotes/origin/*"])?;
+    self.run_command(&["fetch", "--prune", "origin", "--tags", "+refs/heads/*:refs/remotes/origin/*"])?;
     Ok(())
   }
 
