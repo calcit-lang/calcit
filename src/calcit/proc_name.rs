@@ -555,7 +555,10 @@ fn optional_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
 }
 
 fn optional_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Optional(inner))
+  match inner.as_ref() {
+    CalcitTypeAnnotation::Optional(_) => inner,
+    _ => Arc::new(CalcitTypeAnnotation::Optional(inner)),
+  }
 }
 
 fn optional_dynamic() -> Arc<CalcitTypeAnnotation> {

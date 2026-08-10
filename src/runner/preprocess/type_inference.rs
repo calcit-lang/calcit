@@ -1736,13 +1736,20 @@ mod tests {
   }
 
   #[test]
-  fn list_first_inference_preserves_empty_list_absence() {
+  fn list_first_inference_preserves_nullable_result() {
     let list = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
     let first = proc_call(CalcitProc::NativeListFirst, vec![list]);
 
     assert!(matches!(
       infer_static_type_from_expr(&first).as_deref(),
       Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
+
+    let empty_list = proc_call(CalcitProc::List, vec![]);
+    let first_empty = proc_call(CalcitProc::NativeListFirst, vec![empty_list]);
+    assert!(matches!(
+      infer_static_type_from_expr(&first_empty).as_deref(),
+      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
     ));
   }
 
