@@ -429,7 +429,7 @@ let
 let
     ; inferred as :list
     numbers $ range 10
-    ; inferred as :number
+    ; inferred as :optional<number>; handle nil before using it as a number
     n $ &list:first numbers
   [] n numbers
 ```
