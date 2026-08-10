@@ -1302,7 +1302,7 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 mod tests {
   use super::{
     CirruEditStrategy, DiffNode, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, build_entry_tree, cirru_similarity,
-    diff_cirru, diff_code_entry, diff_entries, diff_entry, render_cirru_diff, render_text,
+    count_cirru_nodes, diff_cirru, diff_code_entry, diff_entries, diff_entry, render_cirru_diff, render_text,
   };
   use crate::calcit::DYNAMIC_TYPE;
   use crate::snapshot::{CodeEntry, SnapshotEntry, SnapshotRunMode, TestEntry};
@@ -1318,11 +1318,20 @@ mod tests {
     Cirru::List(items)
   }
 
-  fn large_list(last: &str) -> Cirru {
+  fn flat_list_with_node_count(node_count: usize, last: &str) -> Cirru {
+    assert!(node_count >= 4, "fixture needs room for a head, name, and tail");
     let mut items = vec![leaf("defn"), leaf("demo")];
-    items.extend((0..29).map(|index| leaf(&format!("arg-{index}"))));
+    while items.len() + 2 < node_count {
+      items.push(leaf(&format!("arg-{}", items.len())));
+    }
     items.push(leaf(last));
-    list(items)
+    let tree = list(items);
+    assert_eq!(count_cirru_nodes(&tree), node_count);
+    tree
+  }
+
+  fn large_list(last: &str) -> Cirru {
+    flat_list_with_node_count(32, last)
   }
 
   fn entry_with_type_slots(slots: &[(&str, &str)]) -> SnapshotEntry {
@@ -1513,6 +1522,24 @@ mod tests {
 
     assert!(analyze_cirru_edit_advice(&old, &new).is_none());
     assert!(analyze_cirru_edit_advice(&old, &old).is_none());
+  }
+
+  #[test]
+  fn respects_edit_advice_node_threshold_boundaries() {
+    let below_old = flat_list_with_node_count(31, "x");
+    let below_new = flat_list_with_node_count(31, "y");
+    assert!(analyze_cirru_edit_advice(&below_old, &below_new).is_none());
+
+    let at_old = flat_list_with_node_count(32, "x");
+    let at_new = flat_list_with_node_count(32, "y");
+    let replacement = analyze_cirru_edit_advice(&at_old, &at_new).expect("32-node trees should receive advice");
+    assert_eq!(replacement.strategy, CirruEditStrategy::Replace);
+
+    let insertion = analyze_cirru_edit_advice(&below_old, &at_old).expect("new tree at threshold should receive advice");
+    assert_eq!(insertion.strategy, CirruEditStrategy::Insert);
+
+    let deletion = analyze_cirru_edit_advice(&at_old, &below_old).expect("old tree at threshold should receive advice");
+    assert_eq!(deletion.strategy, CirruEditStrategy::Delete);
   }
 
   #[test]

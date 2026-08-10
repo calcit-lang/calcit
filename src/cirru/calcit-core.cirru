@@ -1128,6 +1128,7 @@
             %{} 'TestEntry (:name |returns-nil-for-empty-list)
               :code $ quote
                 assert= nil $ &list:first ([])
+              :tags $ #{} :core :unit
         |&list:flatten $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn &list:flatten (xs)
@@ -1258,7 +1259,7 @@
           :code $ quote
             defn &list:max (xs)
               if (&list:empty? xs) (%none)
-                %some $ &list:max-loop (&list:rest xs) (&list:first xs)
+                %some $ &list:max-loop (&list:rest xs) (&list:nth xs 0)
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -1269,7 +1270,7 @@
           :code $ quote
             defn &list:max-loop (xs acc)
               if (&list:empty? xs) acc $ &let
-                x $ &list:first xs
+                x $ &list:nth xs 0
                 recur (&list:rest xs)
                   if (&> x acc) x acc
           :examples $ []
@@ -1281,7 +1282,7 @@
           :code $ quote
             defn &list:min (xs)
               if (&list:empty? xs) (%none)
-                %some $ &list:min-loop (&list:rest xs) (&list:first xs)
+                %some $ &list:min-loop (&list:rest xs) (&list:nth xs 0)
           :examples $ []
           :schema $ :: 'Fn
             {}
@@ -1292,7 +1293,7 @@
           :code $ quote
             defn &list:min-loop (xs acc)
               if (&list:empty? xs) acc $ &let
-                x $ &list:first xs
+                x $ &list:nth xs 0
                 recur (&list:rest xs)
                   if (&< x acc) x acc
           :examples $ []
@@ -4148,7 +4149,7 @@
           :code $ quote
             defn destruct-list (xs)
               if (empty? xs) (%:: ListDestruct :none)
-                %:: ListDestruct :some (&list:first xs) (&list:rest xs)
+                %:: ListDestruct :some (&list:nth xs 0) (&list:rest xs)
           :examples $ []
             quote $ assert=
               %:: ListDestruct :some 1 $ [] 2
@@ -4827,8 +4828,8 @@
           :code $ quote
             defn foldl-compare (xs acc f)
               if (&list:empty? xs) true $ if
-                f acc $ &list:first xs
-                recur (&list:rest xs) (&list:first xs) f
+                f acc $ &list:nth xs 0
+                recur (&list:rest xs) (&list:nth xs 0) f
                 , false
           :examples $ []
             quote $ assert= true
