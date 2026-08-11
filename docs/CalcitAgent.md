@@ -115,6 +115,8 @@ path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list
 - 在一个复杂表达式中连续移动和修改：`cr cursor` 与 `@cursor`。
 - 多个 mutation 必须一起成功：`cr edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `cr docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
 
+同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
+
 ## 3. 高频黄金路径：查询 → 编辑 → 验证
 
 下面是需要替换 `<...>` 占位符的任务模板，不能原样执行。target、needle 和 replacement 必须来自当前项目及用户目标。先看搜索结果中的 `[#N]`，确认后再用同一序号设置 cursor：
@@ -172,6 +174,16 @@ cr --check-only
 ```
 
 `edit add-import` 接收一条 import rule body，不包含 `:require`；优先使用它。只有明确要整体替换全部 imports 时才使用 `edit imports`。已有 definition 或同来源 import 需要覆盖时必须显式加 `--overwrite`。优先局部 tree mutation，不要为了改几个节点整段覆盖。最后仍需运行项目规定的测试与 codegen。
+
+整体替换多条 import 时，`edit imports --file imports.cirru` 的主格式是 quoted Cirru AST，而不是 JSON：
+
+```cirru
+quote $ []
+  respo.core :refer $ div span
+  respo-ui.core :as ui
+```
+
+CLI 去掉外层 `quote`，确认 `[]` marker 后，把数组内部每个表达式作为一条 import rule；不要包含外层 `:require`。JSON 数组仅作为互操作兼容格式保留。
 
 ## 4. Cursor 连续编辑
 

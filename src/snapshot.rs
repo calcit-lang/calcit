@@ -694,6 +694,21 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
     hasher.update(content);
   }
 
+  fn render_cirru_node_for_revision(node: &Cirru, label: &str) -> Result<Vec<u8>, String> {
+    match node {
+      // `cirru_parser::format` accepts top-level expressions, not a standalone
+      // leaf. Examples and definition-attached tests intentionally allow both.
+      Cirru::Leaf(value) => {
+        let mut rendered = b"leaf\0".to_vec();
+        rendered.extend_from_slice(value.as_bytes());
+        Ok(rendered)
+      }
+      Cirru::List(_) => cirru_parser::format(std::slice::from_ref(node), true.into())
+        .map(String::into_bytes)
+        .map_err(|error| format!("Failed to format definition {label} for revision: {error}")),
+    }
+  }
+
   let mut hasher = Md5::new();
   update_part(&mut hasher, "doc", entry.doc.as_bytes());
 
@@ -707,14 +722,12 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
     .map_err(|error| format!("Failed to format definition schema for revision: {error}"))?;
   update_part(&mut hasher, "schema", schema.as_bytes());
 
-  let code = cirru_parser::format(std::slice::from_ref(&entry.code), true.into())
-    .map_err(|error| format!("Failed to format definition code for revision: {error}"))?;
-  update_part(&mut hasher, "code", code.as_bytes());
+  let code = render_cirru_node_for_revision(&entry.code, "code")?;
+  update_part(&mut hasher, "code", &code);
 
   for example in &entry.examples {
-    let rendered = cirru_parser::format(std::slice::from_ref(example), true.into())
-      .map_err(|error| format!("Failed to format definition example for revision: {error}"))?;
-    update_part(&mut hasher, "example", rendered.as_bytes());
+    let rendered = render_cirru_node_for_revision(example, "example")?;
+    update_part(&mut hasher, "example", &rendered);
   }
 
   for test in &entry.tests {
@@ -724,9 +737,8 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
     for tag in tags {
       update_part(&mut hasher, "test-tag", tag.as_bytes());
     }
-    let rendered = cirru_parser::format(std::slice::from_ref(&test.code), true.into())
-      .map_err(|error| format!("Failed to format definition test for revision: {error}"))?;
-    update_part(&mut hasher, "test-code", rendered.as_bytes());
+    let rendered = render_cirru_node_for_revision(&test.code, "test")?;
+    update_part(&mut hasher, "test-code", &rendered);
   }
 
   if let Some(ffi) = &entry.ffi {
@@ -2558,6 +2570,22 @@ mod tests {
     assert_ne!(
       revision,
       definition_revision(&changed).expect("changed test revision should render")
+    );
+  }
+
+  #[test]
+  fn definition_revision_supports_leaf_examples_and_tests() {
+    let mut entry = revision_test_entry(&["public"]);
+    entry.examples = vec![Cirru::leaf("literal-example")];
+    entry.tests[0].code = Cirru::leaf("run-test");
+
+    let revision = definition_revision(&entry).expect("leaf code entries should have a revision");
+
+    assert!(revision.starts_with("md5:"));
+    entry.tests[0].code = Cirru::leaf("run-other-test");
+    assert_ne!(
+      revision,
+      definition_revision(&entry).expect("changed leaf test should have a revision")
     );
   }
 

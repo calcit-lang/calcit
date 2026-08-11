@@ -455,7 +455,10 @@ fn transaction_edn_arg(value: &cirru_edn::Edn) -> Result<String, String> {
       let quoted = Cirru::List(vec![Cirru::leaf("quote"), code.clone()]);
       cirru_parser::format(
         std::slice::from_ref(&quoted),
-        cirru_parser::CirruWriterOptions { use_inline: false },
+        // Transaction arguments are fed back through `--code`. Inline mode is
+        // required for leaf and empty-list payloads: the multiline writer can
+        // render `quote ()` as `quote $\n()`, which changes the quoted AST.
+        cirru_parser::CirruWriterOptions { use_inline: true },
       )
       .map_err(|error| format!("Failed to format quoted transaction code argument: {error}"))
     }
@@ -2174,49 +2177,11 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     .get_mut(&opts.namespace)
     .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
 
-  // Determine input format: auto-detect JSON array vs Cirru EDN
-  let imports_json: serde_json::Value = if raw.trim().starts_with('[') {
-    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse imports JSON: {e}"))?
-  } else {
-    // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(&raw)?;
-    use super::common::cirru_to_json_value;
-    cirru_to_json_value(&cirru_node)
-  };
-
   // Build new ns code with imports.
   // Always use build_ns_code to produce the correct nested structure:
   //   ["ns", "namespace", [":require", rule1, rule2, ...]]
   let ns_name = &opts.namespace;
-
-  let rules: Vec<Cirru> = if let serde_json::Value::Array(ref elems) = imports_json {
-    use super::common::json_value_to_cirru;
-    if elems.is_empty() {
-      vec![]
-    } else {
-      // Detect: array-of-arrays => multiple rules; array-of-strings => single flat rule
-      let first_is_array = elems.first().map(|e| e.is_array()).unwrap_or(false);
-      if first_is_array {
-        // Each element is one import rule
-        elems.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?
-      } else {
-        // The whole array is a single import rule (e.g. from `-e 'src-ns :refer $ sym'`)
-        // Guard: user may have accidentally included ':require' prefix
-        if let Some(serde_json::Value::String(first_str)) = elems.first()
-          && first_str == ":require"
-        {
-          return Err(
-            "Do not include ':require' as a prefix in the imports input. \
-               Pass rules directly, e.g. --code 'src-ns :refer $ sym' or use --file for multiple rules."
-              .to_string(),
-          );
-        }
-        vec![json_value_to_cirru(&imports_json)?]
-      }
-    }
-  } else {
-    return Err("Imports must be a Cirru list or JSON array of import rules.".to_string());
-  };
+  let rules = parse_import_rules_input(&raw)?;
 
   for warning in validate_import_rules(&rules)? {
     eprintln!("{} in namespace '{}': {warning}", "Warning:".yellow(), opts.namespace);
@@ -2288,6 +2253,66 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
   }
 
   Ok(())
+}
+
+fn import_rules_from_json(value: &serde_json::Value) -> Result<Vec<Cirru>, String> {
+  use super::common::json_value_to_cirru;
+
+  let serde_json::Value::Array(elems) = value else {
+    return Err("Imports must be a Cirru EDN list or JSON array of import rules.".to_string());
+  };
+  if elems.is_empty() {
+    return Ok(vec![]);
+  }
+
+  // Detect: array-of-arrays => multiple rules; array-of-strings => single flat rule.
+  if elems.first().is_some_and(serde_json::Value::is_array) {
+    return elems.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>();
+  }
+
+  // Guard: user may have accidentally included ':require' prefix.
+  if let Some(serde_json::Value::String(first_str)) = elems.first()
+    && first_str == ":require"
+  {
+    return Err(
+      "Do not include ':require' as a prefix in the imports input. \
+       Pass rules directly, e.g. --code 'src-ns :refer $ sym' or use --file for multiple rules."
+        .to_string(),
+    );
+  }
+  Ok(vec![json_value_to_cirru(value)?])
+}
+
+fn parse_import_rules_input(raw: &str) -> Result<Vec<Cirru>, String> {
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return Err("Imports input is empty. Provide a quoted Cirru `[]` containing import rules (JSON is also accepted).".to_string());
+  }
+
+  if trimmed.starts_with('[') {
+    let value = serde_json::from_str(trimmed).map_err(|error| format!("Failed to parse imports JSON: {error}"))?;
+    return import_rules_from_json(&value);
+  }
+
+  let cirru_node = parse_input_to_cirru(trimmed)?;
+  let Cirru::List(items) = cirru_node else {
+    return Err("Imports Cirru input must be `quote $ []` followed by zero or more import rules.".to_string());
+  };
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if &**head == "[]") {
+    return Err("Imports Cirru input must be `quote $ []` followed by zero or more import rules.".to_string());
+  }
+
+  items
+    .iter()
+    .skip(1)
+    .enumerate()
+    .map(|(index, rule)| {
+      if !matches!(rule, Cirru::List(_)) {
+        return Err(format!("Import rule {} inside the quoted `[]` must be an expression.", index + 1));
+      }
+      Ok(rule.clone())
+    })
+    .collect()
 }
 
 /// Extract formatted import list from ns code for comparison
@@ -2798,8 +2823,8 @@ mod tests {
   use super::{
     TransactionOperationReport, bump_semver_value, collect_format_advisories, count_legacy_any_schema_fields,
     count_legacy_inherent_impls, handle_add_import, handle_add_test, handle_imports, handle_rm_test, load_snapshot,
-    parse_examples_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations, rename_definition_declaration,
-    run_staged_transaction_with, save_schema_preserving_snapshot, save_snapshot,
+    parse_examples_input, parse_import_rules_input, parse_input_to_cirru, parse_schema_input, parse_transaction_operations,
+    rename_definition_declaration, run_staged_transaction_with, save_schema_preserving_snapshot, save_snapshot,
   };
   use crate::cli_args::{EditAddImportCommand, EditAddTestCommand, EditImportsCommand, EditRmTestCommand};
   use crate::cli_handlers::test_support::TestProject;
@@ -2890,7 +2915,7 @@ mod tests {
     let opts = EditImportsCommand {
       namespace: "app.main".to_string(),
       file: None,
-      code: Some("quote (audit.invalid :as)".to_string()),
+      code: Some("quote $ []\n  audit.invalid :as".to_string()),
     };
 
     let error = handle_imports(&opts, &fixture.snapshot_string()).expect_err("malformed import rule should fail");
@@ -2898,6 +2923,33 @@ mod tests {
     assert!(error.contains("import rule 1"), "error: {error}");
     assert!(error.contains("exactly 3 items"), "error: {error}");
     assert_eq!(fs::read(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn imports_parse_quoted_rule_list_and_keep_json_compatibility() {
+    let cirru = "quote $ []\n  respo.core :refer $ div span\n  respo-ui.core :as ui";
+    let json = r#"[["respo.core",":refer",["div","span"]],["respo-ui.core",":as","ui"]]"#;
+    let expected = vec![
+      list(vec![leaf("respo.core"), leaf(":refer"), list(vec![leaf("div"), leaf("span")])]),
+      list(vec![leaf("respo-ui.core"), leaf(":as"), leaf("ui")]),
+    ];
+
+    assert_eq!(
+      parse_import_rules_input(cirru).expect("quoted Cirru imports should parse"),
+      expected
+    );
+    assert_eq!(
+      parse_import_rules_input(json).expect("JSON imports should remain supported"),
+      expected
+    );
+  }
+
+  #[test]
+  fn imports_quoted_list_requires_each_rule_to_be_an_expression() {
+    let error = parse_import_rules_input("quote $ [] respo.core").expect_err("flat quoted imports should fail");
+
+    assert!(error.contains("rule 1"), "error: {error}");
+    assert!(error.contains("must be an expression"), "error: {error}");
   }
 
   #[test]
@@ -2963,6 +3015,19 @@ mod tests {
     assert_eq!(
       parse_input_to_cirru(code).expect("embedded quoted code should remain valid edit input"),
       list(vec![leaf("println"), leaf("|done")])
+    );
+  }
+
+  #[test]
+  fn transaction_cirru_round_trips_quoted_empty_list() {
+    let cirru =
+      "[]\n  []\n    , |tree\n    , |insert-after\n    , |app.main/main!\n    , |--path\n    , |@1\n    , |--code\n    quote ()";
+    let operations = parse_transaction_operations(cirru).expect("Cirru transaction with an empty quoted list should parse");
+    let code = operations[0].get(6).expect("formatted --code argument should exist");
+
+    assert_eq!(
+      parse_input_to_cirru(code).expect("quoted empty list should remain valid edit input"),
+      list(vec![])
     );
   }
 
