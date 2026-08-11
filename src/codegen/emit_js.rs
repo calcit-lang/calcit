@@ -477,7 +477,20 @@ fn gen_call_code(
               local_defs,
               file_imports,
             };
-            let ret = gen_js_func(sym, &get_raw_args_fn(ys)?, &func_body.to_vec(), &passed_defs, false, tags, ns);
+            let arg_types = extract_fn_param_types(ys);
+            let raw_args = get_raw_args_fn(ys)?;
+            let ret = gen_js_func(
+              sym,
+              JsFnParams {
+                args: &raw_args,
+                arg_types: &arg_types,
+              },
+              &func_body.to_vec(),
+              &passed_defs,
+              false,
+              tags,
+              ns,
+            );
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{return_code}{code}")),
@@ -1449,15 +1462,22 @@ fn uses_recur(xs: &Calcit) -> bool {
   }
 }
 
+struct JsFnParams<'a> {
+  args: &'a CalcitFnArgs,
+  arg_types: &'a [Arc<calcit::CalcitTypeAnnotation>],
+}
+
 fn gen_js_func(
   name: &str,
-  args: &CalcitFnArgs,
+  params: JsFnParams<'_>,
   raw_body: &[Calcit],
   passed_defs: &PassedDefs,
   exported: bool,
   tags: &RefCell<HashSet<EdnTag>>,
   at_ns: &str,
 ) -> Result<String, String> {
+  let args = params.args;
+  let arg_types = params.arg_types;
   let var_prefix = if passed_defs.ns == "calcit.core" { "" } else { "$clt." };
   let mut local_defs = passed_defs.local_defs.to_owned();
   let mut spreading_code = String::from(""); // js list and calcit-js list are different, need to convert
@@ -1467,6 +1487,14 @@ fn gen_js_func(
   let mut args_count = 0;
   let mut optional_count = 0;
   let mut recur_arg_names: Vec<String> = vec![];
+  let mut fixed_arg_names: Vec<String> = vec![];
+  let has_rest_param =
+    matches!(args, CalcitFnArgs::MarkedArgs(labels) if labels.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
+  let trailing_option_count = if has_rest_param {
+    0
+  } else {
+    calcit::trailing_option_arg_count(arg_types, args.param_len())
+  };
 
   match args {
     CalcitFnArgs::MarkedArgs(args) => {
@@ -1497,7 +1525,9 @@ fn gen_js_func(
               args_code.push_str(", ");
             }
             let sym = CalcitLocal::read_name(*idx);
-            args_code.push_str(&escape_var(&sym));
+            let arg_name = escape_var(&sym);
+            args_code.push_str(&arg_name);
+            fixed_arg_names.push(arg_name);
             local_defs.insert(sym.into());
             optional_count += 1;
           } else {
@@ -1518,6 +1548,7 @@ fn gen_js_func(
               let sym = CalcitLocal::read_name(*idx);
               let arg_name = escape_var(&sym);
               args_code.push_str(&arg_name);
+              fixed_arg_names.push(arg_name.clone());
               recur_arg_names.push(arg_name);
               local_defs.insert(sym.into());
               args_count += 1;
@@ -1534,6 +1565,7 @@ fn gen_js_func(
         let sym = CalcitLocal::read_name(*idx);
         let arg_name = escape_var(&sym);
         args_code.push_str(&arg_name);
+        fixed_arg_names.push(arg_name.clone());
         recur_arg_names.push(arg_name);
         local_defs.insert(sym.into());
         args_count += 1;
@@ -1545,11 +1577,38 @@ fn gen_js_func(
     "".into()
   } else if spreading {
     snippets::tmpl_args_fewer_than(name, args_count, at_ns)
+  } else if trailing_option_count > 0 {
+    let option_required = args.param_len() - trailing_option_count;
+    let required = if has_optional {
+      args_count.min(option_required)
+    } else {
+      option_required
+    };
+    snippets::tmpl_args_between(name, required, args.param_len(), at_ns)
   } else if has_optional {
     snippets::tmpl_args_between(name, args_count, args_count + optional_count, at_ns)
   } else {
     snippets::tmpl_args_exact(name, args_count, at_ns)
   };
+
+  let option_fill_code = if trailing_option_count == 0 {
+    String::new()
+  } else {
+    let option_start = args.param_len() - trailing_option_count;
+    let none_call = format!("{var_prefix}{}()", escape_var("%none"));
+    fixed_arg_names
+      .iter()
+      .enumerate()
+      .skip(option_start)
+      .map(|(idx, arg_name)| format!("if (arguments.length >= {option_start} && arguments.length <= {idx}) {arg_name} = {none_call};"))
+      .collect::<Vec<_>>()
+      .join("\n")
+  };
+  let entry_check_code = [check_args.trim(), option_fill_code.trim()]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join("\n");
 
   let recur_assign_code_template = if !spreading && !has_optional {
     let mut code = String::new();
@@ -1605,7 +1664,7 @@ fn gen_js_func(
     let fn_def = snippets::tmpl_tail_recursion(
       /* name = */ escape_var(name),
       /* args_code = */ args_code,
-      /* check_args = */ check_args,
+      /* check_args = */ entry_check_code,
       /* spreading_code = */ spreading_code,
       /* recur_assign_code_template = */ recur_assign_code_template,
       /* body = */
@@ -1628,8 +1687,8 @@ fn gen_js_func(
     // `check_args` and `spreading_code` both contribute to the prologue; keep
     // each on its own line without leaving a leading blank line.
     let mut header_parts: Vec<&str> = vec![];
-    if !check_args.trim().is_empty() {
-      header_parts.push(check_args.trim());
+    if !entry_check_code.trim().is_empty() {
+      header_parts.push(entry_check_code.trim());
     }
     if !spreading_code.trim().is_empty() {
       header_parts.push(spreading_code.trim());
@@ -1718,7 +1777,23 @@ fn is_schema_map_form(form: &Calcit) -> bool {
   }
 }
 
-fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
+fn extract_fn_param_types(args: &CalcitList) -> Vec<Arc<calcit::CalcitTypeAnnotation>> {
+  args
+    .iter()
+    .filter_map(|arg| match arg {
+      Calcit::Local(local) => Some(local.type_info.clone()),
+      _ => None,
+    })
+    .collect()
+}
+
+struct PreprocessedFnParts {
+  args: CalcitFnArgs,
+  arg_types: Vec<Arc<calcit::CalcitTypeAnnotation>>,
+  body: Vec<Calcit>,
+}
+
+fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<PreprocessedFnParts, String> {
   let Calcit::List(items) = code else {
     return Err(format!("expected preprocessed defn list, got: {code}"));
   };
@@ -1730,7 +1805,11 @@ fn extract_preprocessed_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Cal
       Some(Calcit::List(args)),
     ) => {
       let raw_args = get_raw_args_fn(args)?;
-      Ok((raw_args, items.drop_left().drop_left().drop_left().to_vec()))
+      Ok(PreprocessedFnParts {
+        args: raw_args,
+        arg_types: extract_fn_param_types(args),
+        body: items.drop_left().drop_left().drop_left().to_vec(),
+      })
     }
     _ => Err(format!("expected preprocessed defn form, got: {code}")),
   }
@@ -1822,7 +1901,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           writeln!(defs_code, "\nvar {} = $procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
         program::CompiledDefKind::Fn => {
-          let (raw_args, raw_body) = extract_preprocessed_fn_parts(&compiled_def.preprocessed_code)?;
+          let fn_parts = extract_preprocessed_fn_parts(&compiled_def.preprocessed_code)?;
           gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.preprocessed_code.to_owned(), &[]);
           let passed_defs = PassedDefs {
             ns,
@@ -1833,7 +1912,18 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           if !defs_code.is_empty() {
             defs_code.push('\n');
           }
-          defs_code.push_str(&gen_js_func(&def, &raw_args, &raw_body, &passed_defs, true, &collected_tags, ns)?);
+          defs_code.push_str(&gen_js_func(
+            &def,
+            JsFnParams {
+              args: &fn_parts.args,
+              arg_types: &fn_parts.arg_types,
+            },
+            &fn_parts.body,
+            &passed_defs,
+            true,
+            &collected_tags,
+            ns,
+          )?);
           gen_stack::pop_call_stack();
         }
         program::CompiledDefKind::LazyValue => {
@@ -2102,7 +2192,19 @@ mod tests {
     let args = CalcitFnArgs::Args(vec![]);
     let raw_body = vec![Calcit::RawCode(calcit::RawCodeType::Js, Arc::from("let t = `line1\nline2`;"))];
 
-    let code = gen_js_func("demo", &args, &raw_body, &passed_defs, true, &tags, "tests.emit-js").expect("raw-code body should compile");
+    let code = gen_js_func(
+      "demo",
+      JsFnParams {
+        args: &args,
+        arg_types: &[],
+      },
+      &raw_body,
+      &passed_defs,
+      true,
+      &tags,
+      "tests.emit-js",
+    )
+    .expect("raw-code body should compile");
     // Multiline raw-code must stay byte-for-byte: the second line is not indented.
     assert!(code.contains("let t = `line1\nline2`;"), "raw-code changed:\n{code}");
     assert!(code.contains("\nline2`;"), "raw-code newline content indented:\n{code}");
@@ -2132,14 +2234,73 @@ mod tests {
 
     let prev = crate::codegen::skip_arity_check();
     crate::codegen::set_code_gen_skip_arity_check(true);
-    let code =
-      gen_js_func("demo", &args, &raw_body, &passed_defs, true, &tags, "tests.emit-js").expect("spreading body should compile");
+    let code = gen_js_func(
+      "demo",
+      JsFnParams {
+        args: &args,
+        arg_types: &[],
+      },
+      &raw_body,
+      &passed_defs,
+      true,
+      &tags,
+      "tests.emit-js",
+    )
+    .expect("spreading body should compile");
     crate::codegen::set_code_gen_skip_arity_check(prev);
 
     assert!(!code.contains("{\n\n"), "no leading blank line expected:\n{code}");
     assert!(
       code.contains("{\n  xs = $clt.arrayToList(xs);"),
       "spreading should be the first indented line:\n{code}"
+    );
+  }
+
+  #[test]
+  fn trailing_option_params_are_filled_with_none() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let passed_defs = PassedDefs {
+      ns: "tests.emit-js",
+      local_defs: &local_defs,
+      file_imports: &file_imports,
+    };
+    let first = CalcitLocal::track_sym(&Arc::from("required"));
+    let second = CalcitLocal::track_sym(&Arc::from("optional"));
+    let args = CalcitFnArgs::Args(vec![first, second]);
+    let option_number = Arc::new(calcit::CalcitTypeAnnotation::TypeRef(
+      Arc::from("Option"),
+      Arc::new(vec![Arc::new(calcit::CalcitTypeAnnotation::Number)]),
+    ));
+    let arg_types = vec![Arc::new(calcit::CalcitTypeAnnotation::Number), option_number];
+    let raw_body = vec![Calcit::Local(CalcitLocal {
+      idx: second,
+      sym: Arc::from("optional"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.emit-js"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: arg_types[1].clone(),
+    })];
+
+    let code = gen_js_func(
+      "demo",
+      JsFnParams {
+        args: &args,
+        arg_types: &arg_types,
+      },
+      &raw_body,
+      &passed_defs,
+      true,
+      &tags,
+      "tests.emit-js",
+    )
+    .expect("Option defaults should compile");
+    assert!(
+      code.contains("optional = $clt._PCT_none();"),
+      "omitted Option should be initialized with %none:\n{code}"
     );
   }
 

@@ -282,7 +282,24 @@ div
 - `map`、`filter`、`foldl` 等 Calcit 集合函数把集合放在前面；不确定参数顺序时运行 `cr query examples calcit.core/map` 或查询对应定义，不要套用 Clojure 记忆。
 - 改动缩进、`$`、`,` 或圆括号都会改变 AST 和 path；修改后重新 show/search，或继续使用 cursor。
 
-### 5.3 CLI 的 `quote` 是代码/数据边界
+### 5.3 可选参数优先使用 `Option`
+
+新代码优先用 `Option<T>` 表达“可能没有值”，减少通过参数列表里的 `?` 设置可选参数，也减少用 `nil` 表达缺失。函数末尾连续声明为 `Option<T>` 的参数可以在调用时省略；Calcit 会依次补成 `%none`：
+
+```cirru.no-check
+defn request (url trace-id timeout-ms)
+  hint-fn $ {}
+    :args $ [] 'String (:: 'Option 'String) (:: 'Option 'Number)
+    :return 'Unit
+  println url trace-id timeout-ms
+
+request |/health
+request |/health (%some |trace-1)
+```
+
+这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(%none)` 或 `(%some value)`，带 rest 参数的函数也不会自动补值。`?` 参数仍用于兼容已有的非类型化 API，其缺省值是 `nil`；修改旧接口时，优先逐步迁移到 `Option`。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。
+
+### 5.4 CLI 的 `quote` 是代码/数据边界
 
 所有接收 AST 的 Cirru 文本输入都必须让 `quote` **恰好包住一个节点**；提交 mutation 时 CLI 会剥离这个 transport wrapper。JSON 数组 AST 是兼容输入，不需要 `quote`，但不要手写大型 JSON AST。
 
@@ -313,7 +330,7 @@ quote $ if ready?
 END
 ```
 
-### 5.4 写入前先解析，写入后再做语义检查
+### 5.5 写入前先解析，写入后再做语义检查
 
 ```bash
 cr cirru parse -e --validate 'a $ b c'

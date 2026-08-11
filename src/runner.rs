@@ -7,13 +7,14 @@ use std::vec;
 
 use crate::builtins;
 use crate::calcit::{
-  CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-  CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
+  CORE_NS, Calcit, CalcitArgLabel, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList,
+  CalcitLocal, CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation, trailing_option_arg_count,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::data::cirru;
 use crate::program;
 use crate::util::string::has_ns_part;
+use cirru_edn::EdnTag;
 
 fn build_runtime_cell_error(ns: &str, def: &str, call_stack: &CallStackList, cell: program::RuntimeCell) -> CalcitErr {
   match cell {
@@ -532,7 +533,51 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   Ok(None)
 }
 
+fn option_none_value(expected_type: &crate::calcit::CalcitTypeAnnotation) -> Option<Calcit> {
+  if !expected_type.is_option_type() {
+    return None;
+  }
+  let enum_def = expected_type.resolve_to_enum()?;
+  let none_variant = enum_def.find_variant_by_name("none")?;
+  if enum_def.name().ref_str() != "Option" || none_variant.arity() != 0 {
+    return None;
+  }
+  Some(Calcit::Enum(CalcitEnumValue {
+    tag: Arc::new(Calcit::Tag(EdnTag::new("none"))),
+    extra: vec![],
+    sum_type: Some(Arc::new(enum_def)),
+  }))
+}
+
+/// Fill only a continuous trailing run of omitted `Option<T>` parameters.
+/// A rest parameter keeps the function variadic and therefore disables this sugar.
+fn complete_trailing_option_args(values: &[Calcit], info: &CalcitFn) -> Option<Vec<Calcit>> {
+  if info.rest_type.is_some()
+    || matches!(info.args.as_ref(), CalcitFnArgs::MarkedArgs(args) if args.iter().any(|arg| matches!(arg, CalcitArgLabel::RestMark)))
+  {
+    return None;
+  }
+
+  let param_len = info.args.param_len();
+  let optional_count = trailing_option_arg_count(&info.arg_types, param_len);
+  let required_len = param_len.saturating_sub(optional_count);
+  if optional_count == 0 || values.len() < required_len || values.len() >= param_len {
+    return None;
+  }
+
+  let missing = info.arg_types[values.len()..]
+    .iter()
+    .map(|expected| option_none_value(expected.as_ref()))
+    .collect::<Option<Vec<_>>>()?;
+  let mut completed = Vec::with_capacity(param_len);
+  completed.extend_from_slice(values);
+  completed.extend(missing);
+  Some(completed)
+}
+
 pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let completed_values = complete_trailing_option_args(values, info);
+  let values = completed_values.as_deref().unwrap_or(values);
   let mut body_scope = (*info.scope).to_owned();
   match &*info.args {
     CalcitFnArgs::Args(args) => {
@@ -574,6 +619,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
 
 /// quick path for `run_fn` which takes ownership of values
 pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let values = complete_trailing_option_args(&values, info).unwrap_or(values);
   let mut body_scope = (*info.scope).to_owned();
   match &*info.args {
     CalcitFnArgs::Args(args) => {
@@ -854,4 +900,50 @@ pub fn evaluate_spreaded_args_from(
   })?;
   // println!("Evaluated args: {}", ret);
   Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::{CalcitFnUsageMeta, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation};
+
+  fn user_option_type() -> Arc<CalcitTypeAnnotation> {
+    let option_def = crate::calcit::CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
+        EdnTag::new("Option"),
+        vec![EdnTag::new("some"), EdnTag::new("none")],
+      )),
+      values: Arc::new(vec![Calcit::from(vec![Calcit::tag("dynamic")]), Calcit::Nil]),
+    })
+    .expect("valid Option enum");
+    Arc::new(CalcitTypeAnnotation::Enum(
+      Arc::new(option_def),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ))
+  }
+
+  fn fn_info(arg_types: Vec<Arc<CalcitTypeAnnotation>>) -> CalcitFn {
+    let args = (0..arg_types.len()).map(|idx| idx as u16).collect();
+    CalcitFn {
+      name: Arc::from("with-options"),
+      def_ns: Arc::from("tests.runner"),
+      def_ref: None,
+      usage: CalcitFnUsageMeta::default(),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(args)),
+      body: vec![],
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      arg_types,
+      rest_type: None,
+    }
+  }
+
+  #[test]
+  fn does_not_fill_user_defined_option_enums() {
+    let option = user_option_type();
+    let info = fn_info(vec![Arc::new(CalcitTypeAnnotation::Number), option.clone(), option]);
+    assert!(complete_trailing_option_args(&[Calcit::Number(1.0)], &info).is_none());
+  }
 }

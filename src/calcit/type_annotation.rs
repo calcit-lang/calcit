@@ -325,6 +325,23 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  /// Whether this annotation is a source reference to the nominal `calcit.core/Option` type.
+  ///
+  /// This intentionally does not treat legacy `Optional<T>` as `Option<T>`:
+  /// the former uses `nil`, while the latter uses the named `:none` variant. A resolved enum
+  /// does not retain its namespace, so it is deliberately excluded: a user enum named `Option`
+  /// must not acquire core `Option`'s omitted-argument behavior.
+  pub(crate) fn is_option_type(&self) -> bool {
+    match self {
+      Self::TypeRef(name, args) => {
+        let name = name.trim_start_matches('\'').trim_start_matches(':');
+        args.len() == 1 && matches!(name, "Option" | "calcit.core/Option")
+      }
+      Self::TypeSlot(name) => resolve_type_slot(name).is_some_and(|bound| bound.is_option_type()),
+      _ => false,
+    }
+  }
+
   fn bind_declared_generics_from_applied_args(
     declared_generics: &[Arc<str>],
     applied_args: &[Arc<CalcitTypeAnnotation>],
@@ -3683,6 +3700,32 @@ mod tests {
       })
       .expect("valid generic enum"),
     )
+  }
+
+  #[test]
+  fn trailing_option_sugar_requires_a_core_option_reference() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let core_short = CalcitTypeAnnotation::TypeRef(Arc::from("Option"), Arc::new(vec![number.clone()]));
+    let core_qualified = CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Option"), Arc::new(vec![number.clone()]));
+    let user_qualified = CalcitTypeAnnotation::TypeRef(Arc::from("app.main/Option"), Arc::new(vec![number.clone()]));
+    assert!(core_short.is_option_type());
+    assert!(core_qualified.is_option_type());
+    assert!(!user_qualified.is_option_type());
+
+    let user_option = CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef {
+        name: EdnTag::new("Option"),
+        fields: Arc::new(vec![EdnTag::new("some"), EdnTag::new("none")]),
+        field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); 2]),
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![],
+      }),
+      values: Arc::new(vec![Calcit::from(vec![symbol("T")]), Calcit::Nil]),
+    })
+    .expect("valid user Option enum");
+    let resolved_user_option = CalcitTypeAnnotation::Enum(Arc::new(user_option), Arc::new(vec![number]));
+    assert!(!resolved_user_option.is_option_type());
   }
 
   #[test]
