@@ -1329,11 +1329,11 @@ export let _$n_set_$o_intersection = (xs: CalcitSet, ys: CalcitSet): CalcitSet =
 };
 
 export let _$n_str_$o_replace = (x: string, y: string, z: string): string => {
-  var result = x;
-  while (result.indexOf(y) >= 0) {
-    result = result.replace(y, z);
-  }
-  return result;
+  // Use a callback replacement so `$` sequences in `z` remain literal, matching Rust's
+  // `str::replace`. Escaping `y` preserves the proc's literal-pattern contract, while the
+  // global regex completes each original match once even when `z` contains `y`.
+  const literalPattern = y.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return x.replace(new RegExp(literalPattern, "gu"), () => z);
 };
 
 export let split = (xs: string, x: string): CalcitSliceList => {
