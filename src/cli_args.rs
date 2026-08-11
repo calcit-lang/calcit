@@ -510,7 +510,7 @@ pub struct QuerySchemaCommand {
 #[argh(subcommand, name = "type")]
 /// inspect a type and list methods available through static dispatch metadata
 pub struct QueryTypeCommand {
-  /// builtin type annotation (e.g. :number or ":: :list :number") or namespace/definition
+  /// builtin type annotation (e.g. 'Number or ":: 'List 'Number") or namespace/definition
   #[argh(positional)]
   pub target: String,
   /// output format: human (default) or json

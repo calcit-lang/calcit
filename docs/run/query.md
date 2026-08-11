@@ -144,16 +144,16 @@ Search JSON results contain a summary plus definition rows with `code@...` paths
 
 ```bash
 # Builtin type
-cr query type :number
+cr query type "'Number"
 
 # Parameterized type; pass Cirru directly, without an extra outer parenthesis layer
-cr query type ':: :list :number'
+cr query type ":: 'List 'Number"
 
 # A definition with an explicit static schema
 cr query type calcit.core/ceil
 
 # Machine-readable result; stdout is one JSON value
-cr query type :number --format json
+cr query type "'Number" --format json
 ```
 
 `query type` loads and preprocesses static metadata but does not run the project init or reload function. It lists methods in dispatch-precedence order and shows the impl that contributes each method. Definition targets first use an explicit schema, then static source inference. This allows `defstruct` and `defenum` declarations with a dynamic entry schema to expose their named type and methods without constructing a runtime value. If neither source is sufficient, query a concrete type annotation instead.

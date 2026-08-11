@@ -737,7 +737,7 @@ fn prepare_program_for_type_query(snapshot: &snapshot::Snapshot) -> Result<(), S
 }
 
 fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
-  const SIMPLE_TYPES: &[&str] = &[
+  const LEGACY_SIMPLE_TYPES: &[&str] = &[
     "any",
     "bool",
     "number",
@@ -764,14 +764,20 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
   }
   if trimmed.starts_with('(') {
     return Err(format!(
-      "Type annotation `{target}` has an extra outer parenthesis layer. Use Cirru directly, for example `:: :list :number`."
+      "Type annotation `{target}` has an extra outer parenthesis layer. Use Cirru directly, for example `:: 'List 'Number`."
     ));
   }
   if !trimmed.chars().any(char::is_whitespace) {
-    let name = trimmed.trim_start_matches(':');
-    if !SIMPLE_TYPES.contains(&name) {
+    let is_quoted_symbol = trimmed.starts_with('\'');
+    let name = trimmed.strip_prefix(':').or_else(|| trimmed.strip_prefix('\'')).unwrap_or(trimmed);
+    let is_legacy_type_name = LEGACY_SIMPLE_TYPES.contains(&name);
+    let is_builtin_type_symbol = is_quoted_symbol
+      && !name.starts_with(':')
+      && !name.starts_with('\'')
+      && CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some();
+    if !is_legacy_type_name && !is_builtin_type_symbol {
       return Err(format!(
-        "Unknown builtin type `{target}`. Use a builtin type tag such as `:number`, a type expression such as `:: :list :number`, or `namespace/definition`."
+        "Unknown builtin type `{target}`. Use a builtin type symbol such as `'Number`, a type expression such as `:: 'List 'Number`, or `namespace/definition`."
       ));
     }
     return Ok(Arc::new(CalcitTypeAnnotation::from_tag_name(name)));
@@ -814,6 +820,27 @@ mod type_query_tests {
   }
 
   #[test]
+  fn parses_canonical_builtin_type_symbol_without_treating_it_as_a_type_variable() {
+    let annotation = parse_type_annotation_query("'String").expect("String type symbol should parse");
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::String));
+  }
+
+  #[test]
+  fn unknown_builtin_type_suggests_canonical_symbols() {
+    let error = parse_type_annotation_query("String").expect_err("unquoted String should be rejected");
+    assert_eq!(
+      error,
+      "Unknown builtin type `String`. Use a builtin type symbol such as `'Number`, a type expression such as `:: 'List 'Number`, or `namespace/definition`."
+    );
+  }
+
+  #[test]
+  fn rejects_excess_type_symbol_prefixes() {
+    assert!(parse_type_annotation_query("''String").is_err());
+    assert!(parse_type_annotation_query("':String").is_err());
+  }
+
+  #[test]
   fn parses_any_as_the_legacy_dynamic_alias() {
     let annotation = parse_type_annotation_query(":any").expect("any type should parse");
     assert_eq!(annotation.to_brief_string(), "dynamic");
@@ -829,6 +856,9 @@ mod type_query_tests {
   #[test]
   fn parses_compound_type_with_cirru_structure() {
     let annotation = parse_type_annotation_query(":: :list :number").expect("compound list type should parse");
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)));
+
+    let annotation = parse_type_annotation_query(":: 'List 'Number").expect("canonical compound list type should parse");
     assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)));
   }
 
@@ -1232,7 +1262,7 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
     }
 
     return Err(format!(
-      "Definition `{target}` has neither an explicit schema nor an inferable static type. Add a schema or query a concrete type annotation such as `:number`."
+      "Definition `{target}` has neither an explicit schema nor an inferable static type. Add a schema or query a concrete type annotation such as `'Number`."
     ));
   }
 
@@ -1299,7 +1329,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
       code: "W_LEGACY_ANY_ALIAS".to_owned(),
       phase: "analysis",
       severity: "warning",
-      message: "`:any` is a legacy alias for `:dynamic`; the canonical type and generated schema use `:dynamic`. Do not use it to model polymorphism.".to_owned(),
+      message: "`:any` is a legacy alias for `:dynamic`; the canonical type and generated schema use `'Dynamic`. Do not use it to model polymorphism.".to_owned(),
       path: None,
       intent: Some("migration".to_owned()),
     }]
@@ -1333,7 +1363,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
   if uses_legacy_any {
     println!(
       "{}",
-      "Warning [W_LEGACY_ANY_ALIAS]: `:any` is the legacy spelling of `:dynamic`; use `:generics`/TypeVar or trait `:where` for polymorphism."
+      "Warning [W_LEGACY_ANY_ALIAS]: `:any` is the legacy spelling of `:dynamic`; use `'Dynamic` only for genuinely dynamic boundaries, or use `:generics`/TypeVar or trait `:where` for polymorphism."
         .yellow()
     );
   }
