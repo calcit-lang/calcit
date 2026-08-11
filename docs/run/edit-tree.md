@@ -239,6 +239,16 @@ cr edit add-import app.main --code 'quote (respo.core :refer $ deftime)'
 cr edit imports app.main --file imports.cirru
 ```
 
+`imports.cirru` quotes one Cirru list node. The command removes the outer `quote`, checks the `[]` marker, and uses each child expression as one import rule:
+
+```cirru
+quote $ []
+  respo.core :refer $ div span
+  respo-ui.core :as ui
+```
+
+The older JSON array form remains accepted for interoperability. Do not include the outer `:require`; the command rebuilds it.
+
 ### Managing Schemas and Examples
 
 ```bash

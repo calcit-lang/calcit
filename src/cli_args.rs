@@ -1691,10 +1691,10 @@ pub struct EditCpCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the source node (comma-separated indices)
+  /// path to the source node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option, long = "from")]
   pub from: String,
-  /// path to the destination node (comma-separated indices)
+  /// path to the destination node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option, long = "path")]
   pub path: String,
   /// position relative to the destination node (before, after, append-child, prepend-child, replace)
@@ -1709,10 +1709,10 @@ pub struct EditMvNodeCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the source node (comma-separated indices)
+  /// path to the source node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option, long = "from")]
   pub from: String,
-  /// path to the destination node (comma-separated indices)
+  /// path to the destination node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option, long = "path")]
   pub path: String,
   /// position relative to the destination node (before, after, append-child, prepend-child, replace)
@@ -1739,7 +1739,7 @@ pub struct EditSplitDefCommand {
   /// source definition in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node to extract (comma-separated indices, e.g. "3,2,1")
+  /// path to the node to extract (dot-separated coordinates, e.g. "@3.2.1")
   #[argh(option, long = "path")]
   pub path: String,
   /// name for the new extracted definition (within the same namespace)
@@ -1754,7 +1754,7 @@ pub struct TreeStructuralCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (auto-detects JSON vs Cirru)
@@ -1824,7 +1824,7 @@ pub struct TreeReplaceCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (auto-detects JSON vs Cirru)
@@ -1872,7 +1872,7 @@ pub struct TreeDeleteCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// require the node at path to equal this quoted Cirru node before deleting
@@ -1890,7 +1890,7 @@ pub struct TreeInsertBeforeCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (auto-detects JSON vs Cirru)
@@ -1914,7 +1914,7 @@ pub struct TreeInsertAfterCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (auto-detects JSON vs Cirru)
@@ -1938,7 +1938,7 @@ pub struct TreeInsertChildCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (auto-detects JSON vs Cirru)
@@ -1962,7 +1962,7 @@ pub struct TreeAppendChildCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// read syntax_tree from file (auto-detects JSON vs Cirru)
@@ -1986,7 +1986,7 @@ pub struct TreeSwapNextCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -2001,7 +2001,7 @@ pub struct TreeSwapPrevCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -2016,7 +2016,7 @@ pub struct TreeUnwrapCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node to unwrap (comma-separated indices, e.g. "2,1,0")
+  /// path to the node to unwrap (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -2046,7 +2046,7 @@ pub struct TreeWrapCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node to wrap (comma-separated indices, e.g. "2,1,0")
+  /// path to the node to wrap (dot-separated coordinates, e.g. "@2.1.0")
   #[argh(option)]
   pub path: String,
   /// wrapping expression with `self` as placeholder for the original node (e.g. 'println self')

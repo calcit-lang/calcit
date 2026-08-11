@@ -1132,8 +1132,11 @@ fn run_codegen_with_timeout(
   let (tx, rx) = channel();
   std::thread::Builder::new()
     .name("calcit-codegen".into())
-    // Macro/type preprocessing can be deeply recursive for large schemas.
-    .stack_size(16 * 1024 * 1024)
+    // Macro/type preprocessing follows transitive definition dependencies and
+    // can be deeply recursive in real module graphs (for example UI ->
+    // Markdown -> math parser helpers). Keep this above the ordinary Rust
+    // thread default so the CLI returns diagnostics instead of aborting.
+    .stack_size(64 * 1024 * 1024)
     .spawn(move || {
       let result = run_codegen(&entries, &emit_path, ir_mode, verbose);
       let _ = tx.send(result);
