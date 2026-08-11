@@ -17,6 +17,17 @@ try {
   const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
   assert.equal(runtimeA.get_env, runtimeA._$n_get_env, "legacy get_env export should delegate to the raw proc");
   assert.equal(runtimeA.get_env("CALCIT_MISSING_ENV_FOR_RUNTIME_TEST", "fallback"), "fallback");
+  assert.equal(
+    runtimeA._$n_str_$o_replace("a&a&", "&", "&amp;"),
+    "a&amp;a&amp;",
+    "string replacement must finish when the replacement contains the pattern"
+  );
+  assert.equal(
+    runtimeA._$n_str_$o_replace("a.b", ".", "$&"),
+    "a$&b",
+    "string replacement must treat patterns and replacement text literally"
+  );
+  assert.equal(runtimeA._$n_str_$o_replace("ab", "", "-"), "-a-b-", "empty string patterns should replace each boundary");
 
   const todoName = runtimeA.newTag("TodoState");
   const todoField = runtimeA.newTag("draft");
