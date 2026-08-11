@@ -1357,10 +1357,10 @@ fn preprocess_list_call(
     Some(Calcit::Fn { info, .. }) => {
       match &*info.args {
         CalcitFnArgs::MarkedArgs(xs) => {
-          check_fn_marked_args(xs, &args, file_ns, &info.name, &def_name, check_warnings);
+          check_fn_marked_args(xs, &info.arg_types, &args, file_ns, &info.name, &def_name, check_warnings);
         }
         CalcitFnArgs::Args(xs) => {
-          check_fn_args(xs, &args, file_ns, &info.name, &def_name, check_warnings);
+          check_fn_args(xs, &info.arg_types, &args, file_ns, &info.name, &def_name, check_warnings);
         }
       }
       let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
@@ -2219,12 +2219,24 @@ fn data_definition_kind(ns: &str, def: &str) -> Option<&'static str> {
 /// detects arguments of top-level functions when possible
 fn check_fn_marked_args(
   defined_args: &[CalcitArgLabel],
+  arg_types: &[Arc<CalcitTypeAnnotation>],
   params: &CalcitList,
   file_ns: &str,
   f_name: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  let param_len = defined_args.iter().filter(|arg| matches!(arg, CalcitArgLabel::Idx(_))).count();
+  let has_rest = defined_args.iter().any(|arg| matches!(arg, CalcitArgLabel::RestMark));
+  let trailing_options = if has_rest {
+    0
+  } else {
+    calcit::trailing_option_arg_count(arg_types, param_len)
+  };
+  if trailing_options > 0 && (param_len - trailing_options..=param_len).contains(&params.len()) {
+    return;
+  }
+
   let mut i = 0;
   let mut j = 0;
   let mut optional = false;
@@ -2283,6 +2295,7 @@ fn check_fn_marked_args(
 /// quick path check function without marks
 fn check_fn_args(
   defined_args: &[u16],
+  arg_types: &[Arc<CalcitTypeAnnotation>],
   params: &CalcitList,
   file_ns: &str,
   f_name: &str,
@@ -2291,6 +2304,7 @@ fn check_fn_args(
 ) {
   let expected_size = defined_args.len();
   let actual_size = params.len();
+  let trailing_options = calcit::trailing_option_arg_count(arg_types, expected_size);
 
   for (idx, item) in params.iter().enumerate() {
     if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = item {
@@ -2306,7 +2320,8 @@ fn check_fn_args(
     }
   }
 
-  if expected_size != actual_size {
+  let accepts_omission = trailing_options > 0 && (expected_size - trailing_options..=expected_size).contains(&actual_size);
+  if expected_size != actual_size && !accepts_omission {
     gen_check_warning(
       format!("[Warn] expected {expected_size} args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
       file_ns,
@@ -2873,7 +2888,13 @@ fn check_struct_method_args(
 
     let expected_count = signature.arg_types.len();
     let actual_with_receiver = method_args.len() + 1;
-    if expected_count != 0 && expected_count != actual_with_receiver {
+    let trailing_options = if signature.rest_type.is_none() {
+      calcit::trailing_option_arg_count(&signature.arg_types, expected_count)
+    } else {
+      0
+    };
+    let accepts_omission = trailing_options > 0 && (expected_count - trailing_options..=expected_count).contains(&actual_with_receiver);
+    if expected_count != 0 && expected_count != actual_with_receiver && !accepts_omission {
       gen_check_warning(
         format!(
           "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
@@ -2952,7 +2973,13 @@ fn check_struct_method_args(
     };
     let expected_count = signature.arg_types.len();
     let actual_with_receiver = method_args.len() + 1;
-    if expected_count != 0 && expected_count != actual_with_receiver {
+    let trailing_options = if signature.rest_type.is_none() {
+      calcit::trailing_option_arg_count(&signature.arg_types, expected_count)
+    } else {
+      0
+    };
+    let accepts_omission = trailing_options > 0 && (expected_count - trailing_options..=expected_count).contains(&actual_with_receiver);
+    if expected_count != 0 && expected_count != actual_with_receiver && !accepts_omission {
       gen_check_warning(
         format!(
           "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
@@ -3022,7 +3049,13 @@ fn check_struct_method_args(
     CalcitFnArgs::Args(_) => false,
   };
 
-  if !has_variadic && expected_count != actual_with_receiver {
+  let trailing_options = if has_variadic {
+    0
+  } else {
+    calcit::trailing_option_arg_count(&fn_info.arg_types, expected_count)
+  };
+  let accepts_omission = trailing_options > 0 && (expected_count - trailing_options..=expected_count).contains(&actual_with_receiver);
+  if !has_variadic && expected_count != actual_with_receiver && !accepts_omission {
     gen_check_warning(
       format!(
         "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"

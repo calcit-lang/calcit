@@ -38,6 +38,7 @@ pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStructDef;
 pub use calcit_trait::{CalcitTrait, CalcitTraitMemberKind};
 pub use enum_value::CalcitEnumValue;
+pub(crate) use fns::trailing_option_arg_count;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;

@@ -325,6 +325,23 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  /// Whether this annotation is the nominal `calcit.core/Option` type.
+  ///
+  /// This intentionally does not treat legacy `Optional<T>` as `Option<T>`:
+  /// the former uses `nil`, while the latter uses the named `:none` variant.
+  pub(crate) fn is_option_type(&self) -> bool {
+    match self {
+      Self::TypeRef(name, args) => {
+        let name = name.trim_start_matches('\'').trim_start_matches(':');
+        args.len() == 1 && matches!(name, "Option" | "calcit.core/Option")
+      }
+      Self::Enum(enum_def, args) => enum_def.name().ref_str() == "Option" && args.len() == 1,
+      Self::EnumValue(enum_def) => enum_def.name().ref_str() == "Option",
+      Self::TypeSlot(name) => resolve_type_slot(name).is_some_and(|bound| bound.is_option_type()),
+      _ => false,
+    }
+  }
+
   fn bind_declared_generics_from_applied_args(
     declared_generics: &[Arc<str>],
     applied_args: &[Arc<CalcitTypeAnnotation>],

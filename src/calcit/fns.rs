@@ -4,6 +4,15 @@ use crate::Calcit;
 
 use super::{CalcitGenericBound, CalcitLocal, CalcitTypeAnnotation};
 
+/// Counts the continuous `Option<T>` suffix of a fixed-arity parameter list.
+/// Incomplete type metadata is not enough to make any parameter omittable.
+pub(crate) fn trailing_option_arg_count(arg_types: &[Arc<CalcitTypeAnnotation>], param_len: usize) -> usize {
+  if arg_types.len() != param_len {
+    return 0;
+  }
+  arg_types.iter().rev().take_while(|arg| arg.is_option_type()).count()
+}
+
 /// structure of a function arguments
 #[derive(Debug, Clone)]
 pub enum CalcitArgLabel {
@@ -129,6 +138,20 @@ mod tests {
         .iter()
         .all(|item| matches!(**item, CalcitTypeAnnotation::Dynamic))
     );
+  }
+
+  #[test]
+  fn counts_only_continuous_option_suffix() {
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let types = vec![option_number.clone(), Arc::new(CalcitTypeAnnotation::String), option_number.clone()];
+    assert_eq!(trailing_option_arg_count(&types, 3), 1);
+
+    let types = vec![Arc::new(CalcitTypeAnnotation::Number), option_number.clone(), option_number];
+    assert_eq!(trailing_option_arg_count(&types, 3), 2);
+    assert_eq!(trailing_option_arg_count(&types, 4), 0, "partial metadata must keep exact arity");
   }
 }
 
