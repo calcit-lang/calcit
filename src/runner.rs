@@ -907,7 +907,7 @@ mod tests {
   use super::*;
   use crate::calcit::{CalcitFnUsageMeta, CalcitStructDef, CalcitStructValue, CalcitTypeAnnotation};
 
-  fn option_type() -> Arc<CalcitTypeAnnotation> {
+  fn user_option_type() -> Arc<CalcitTypeAnnotation> {
     let option_def = crate::calcit::CalcitEnumDef::from_struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(
         EdnTag::new("Option"),
@@ -941,24 +941,9 @@ mod tests {
   }
 
   #[test]
-  fn fills_omitted_trailing_options_with_none() {
-    let option = option_type();
+  fn does_not_fill_user_defined_option_enums() {
+    let option = user_option_type();
     let info = fn_info(vec![Arc::new(CalcitTypeAnnotation::Number), option.clone(), option]);
-    let completed = complete_trailing_option_args(&[Calcit::Number(1.0)], &info).expect("two omitted Option args");
-    assert_eq!(completed.len(), 3);
-    assert!(completed[1..].iter().all(
-      |value| matches!(value, Calcit::Enum(enum_value) if matches!(enum_value.tag.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "none"))
-    ));
-  }
-
-  #[test]
-  fn does_not_skip_required_parameter_before_option_suffix() {
-    let option = option_type();
-    let info = fn_info(vec![option.clone(), Arc::new(CalcitTypeAnnotation::Number), option]);
     assert!(complete_trailing_option_args(&[Calcit::Number(1.0)], &info).is_none());
-
-    let completed =
-      complete_trailing_option_args(&[Calcit::Number(1.0), Calcit::Number(2.0)], &info).expect("only the final Option is omittable");
-    assert_eq!(completed.len(), 3);
   }
 }
