@@ -1,6 +1,7 @@
 
 [package]
 name = "calcit"
+autobins = false
 version = "0.13.12"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2024"

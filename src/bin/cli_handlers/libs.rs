@@ -5,6 +5,7 @@
 use calcit::cli_args::{LibsCommand, LibsSubcommand};
 use colored::Colorize;
 use serde::Deserialize;
+use std::path::PathBuf;
 
 use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
 
@@ -57,6 +58,18 @@ struct ReadmeHeader<'a> {
   repository: Option<&'a str>,
   description: Option<&'a str>,
   file: Option<&'a str>,
+}
+
+fn local_module_dir(package: &str) -> Result<PathBuf, String> {
+  let project_path = std::env::current_dir()
+    .map_err(|e| format!("Failed to get current directory: {e}"))?
+    .join(".calcit/modules")
+    .join(package);
+  if project_path.exists() {
+    return Ok(project_path);
+  }
+  let home_dir = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
+  Ok(PathBuf::from(home_dir).join(".config/calcit/modules").join(package))
 }
 
 pub fn handle_libs_command(cmd: &LibsCommand) -> Result<(), String> {
@@ -166,9 +179,7 @@ fn handle_readme(
   let file_name = file.unwrap_or("README.md");
   println!("{}", format!("Looking for {file_name} in '{package}'...").dimmed());
 
-  // Try local directory first: ~/.config/calcit/modules/<package>/<file>
-  let home_dir = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
-  let local_path = format!("{home_dir}/.config/calcit/modules/{package}/{file_name}");
+  let local_path = local_module_dir(package)?.join(file_name);
 
   let render_readme = |content: &str| -> Result<(), String> {
     let no_match_error =
@@ -190,10 +201,11 @@ fn handle_readme(
   };
 
   if let Ok(content) = std::fs::read_to_string(&local_path) {
+    let local_path_display = local_path.display().to_string();
     print_readme_header(ReadmeHeader {
       package,
       source: Some("Local"),
-      path: Some(&local_path),
+      path: Some(&local_path_display),
       repository: None,
       description: None,
       file: None,
@@ -304,20 +316,20 @@ fn handle_search(keyword: &str) -> Result<(), String> {
 }
 
 fn handle_scan_md(module: &str) -> Result<(), String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
-  let module_path = format!("{home_dir}/.config/calcit/modules/{module}");
+  let module_path = local_module_dir(module)?;
 
   // Check if directory exists
-  if !std::path::Path::new(&module_path).exists() {
-    return Err(format!("Module directory not found: {module_path}"));
+  if !module_path.exists() {
+    return Err(format!("Module directory not found: {}", module_path.display()));
   }
 
   println!("{}", format!("Scanning markdown files in '{module}'...").cyan().bold());
-  println!("{}: {}", "Path".dimmed(), module_path);
+  println!("{}: {}", "Path".dimmed(), module_path.display());
   println!();
 
   // Recursively scan for .md files
   let mut md_files = Vec::new();
+  let module_path = module_path.to_string_lossy();
   scan_directory(&module_path, &module_path, &mut md_files)?;
 
   if md_files.is_empty() {

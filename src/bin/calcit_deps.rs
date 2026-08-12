@@ -3,13 +3,14 @@
 //!
 //! files are stored in `~/.config/calcit/modules/`.
 
+mod caps_graph;
 mod git;
 
 use argh::{self, FromArgs};
 
+use caps_graph::*;
 use cirru_edn::Edn;
 use colored::*;
-use git::*;
 use semver::Version;
 use std::{
   collections::HashMap,
@@ -23,6 +24,7 @@ use std::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PackageDeps {
+  version: Option<String>,
   calcit_version: Option<String>,
   dependencies: HashMap<Arc<str>, Arc<str>>,
 }
@@ -33,7 +35,10 @@ impl TryFrom<Edn> for PackageDeps {
   fn try_from(value: Edn) -> Result<Self, Self::Error> {
     let deps_info = value.view_map()?;
     #[allow(clippy::mutable_key_type)]
-    let dict = deps_info.get_or_nil("dependencies").view_map()?.0;
+    let dict = match deps_info.get_or_nil("dependencies") {
+      Edn::Nil => cirru_edn::EdnMapView::default().0,
+      value => value.view_map()?.0,
+    };
 
     let mut deps: HashMap<Arc<str>, Arc<str>> = HashMap::new();
     for (k, v) in &dict {
@@ -51,7 +56,13 @@ impl TryFrom<Edn> for PackageDeps {
       Edn::Nil => None,
       v => return Err(format!("invalid calcit-version: {v}")),
     };
+    let package_version: Option<String> = match deps_info.get_or_nil("version") {
+      Edn::Str(s) => Some((*s).to_owned()),
+      Edn::Nil => None,
+      v => return Err(format!("invalid version: {v}")),
+    };
     Ok(PackageDeps {
+      version: package_version,
       calcit_version: expected_version,
       dependencies: deps,
     })
@@ -61,7 +72,17 @@ impl TryFrom<Edn> for PackageDeps {
 pub fn main() -> Result<(), String> {
   // parse deps.cirru
 
+  let raw_args = std::env::args().collect::<Vec<_>>();
+  if raw_args.get(1).is_some_and(|arg| arg == "__verify-native") {
+    let path = raw_args.get(2).ok_or_else(|| "missing native library path".to_string())?;
+    verify_native_library(Path::new(path))?;
+    return Ok(());
+  }
+
   let cli_args: TopLevelCaps = argh::from_env();
+  if cli_args.pull_branch {
+    eprintln!("[Warn] --pull-branch is deprecated; branch refs are always resolved from the remote");
+  }
   if let Some(SubCommand::Download(dep_names)) = &cli_args.subcommand {
     if dep_names.packages.is_empty() {
       eprintln!("Error: no packages to download!");
@@ -134,10 +155,18 @@ pub fn main() -> Result<(), String> {
 
         let mut updated_deps = deps;
         for raw in &opts.packages {
-          let org_and_folder = normalize_package_name(raw)?;
+          let split_at = raw.rfind('@').filter(|index| {
+            let path_boundary = raw.rfind(['/', ':']).unwrap_or(0);
+            *index > path_boundary
+          });
+          let (package, inline_version) = split_at.map_or((raw.as_str(), None), |index| {
+            let (package, version) = raw.split_at(index);
+            (package, version.strip_prefix('@').filter(|version| !version.is_empty()))
+          });
+          let org_and_folder = normalize_package_name(package)?;
           updated_deps
             .dependencies
-            .insert(org_and_folder.into(), opts.version.to_owned().into());
+            .insert(org_and_folder.into(), inline_version.unwrap_or(&opts.version).to_owned().into());
         }
 
         write_deps_file(&cli_args.input, &updated_deps)?;
@@ -160,19 +189,49 @@ pub fn main() -> Result<(), String> {
         download_deps(updated_deps.dependencies, cli_args)?;
       }
       Some(SubCommand::Status(_)) => {
-        let issues = check_dependency_status(&deps, &cli_args, false)?;
+        let graph = resolve_for_cli(&deps, &cli_args, false)?;
+        print_warnings(&graph);
+        let issues = check_project_view(&graph, &graph_options(&cli_args, false)?)?;
         if issues > 0 {
           return Err(format!("{issues} module(s) are not in the expected state"));
         }
       }
+      Some(SubCommand::Verify(_)) => {
+        let graph = resolve_for_cli(&deps, &cli_args, false)?;
+        print_warnings(&graph);
+        let issues = verify_project_view(&graph, &graph_options(&cli_args, false)?)?;
+        if issues > 0 {
+          return Err(format!("{issues} module verification issue(s) found"));
+        }
+      }
+      Some(SubCommand::Tree(_)) => {
+        let graph = resolve_for_cli(&deps, &cli_args, false)?;
+        print_warnings(&graph);
+        print_tree(&graph);
+      }
+      Some(SubCommand::Why(opts)) => {
+        let graph = resolve_for_cli(&deps, &cli_args, false)?;
+        print_warnings(&graph);
+        print_why(&graph, &normalize_package_name(&opts.package)?)?;
+      }
+      Some(SubCommand::Version(opts)) => {
+        handle_version_command(deps, &cli_args.input, opts)?;
+      }
       Some(SubCommand::Reset(_)) => {
-        reset_dependency_status(&deps, &cli_args)?;
+        let graph = resolve_for_cli(&deps, &cli_args, true)?;
+        print_warnings(&graph);
+        let graph_options = graph_options(&cli_args, true)?;
+        install_project_view(&graph, &graph_options)?;
+        println!(
+          "restored {} module link(s) under {}",
+          graph.modules.len(),
+          graph_options.project_root.join(".calcit/modules").display()
+        );
       }
       Some(SubCommand::Download(dep_names)) => {
         unreachable!("already handled: {:?}", dep_names);
       }
       None => {
-        check_dependency_status(&deps, &cli_args, true)?;
         download_deps(deps.dependencies, cli_args)?;
       }
     }
@@ -190,218 +249,57 @@ pub fn main() -> Result<(), String> {
 }
 
 fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Result<(), String> {
-  // ~/.config/calcit/modules/
-  let clone_target = if options.local_debug {
-    println!("{}", "  [DEBUG] local debug mode, cloning to test-modules/".yellow());
-    ".config/calcit/test-modules"
-  } else {
-    ".config/calcit/modules"
+  let package = PackageDeps {
+    version: None,
+    calcit_version: None,
+    dependencies: deps,
   };
-  let modules_dir = dirs::home_dir().ok_or("no config dir")?.join(clone_target);
-
-  if !modules_dir.exists() {
-    fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
-    dim_println(format!("created dir: {modules_dir:?}"));
-  }
-
-  let mut children = vec![];
-
-  for (org_and_folder, version) in deps {
-    // cloned
-
-    let org_and_folder = org_and_folder.clone();
-    let options = options.to_owned();
-    let modules_dir = modules_dir.clone();
-
-    // TODO too many threads do not make it faster though
-    let options2 = options.clone();
-    let ret = thread::spawn(move || {
-      let ret = handle_path(modules_dir, version, &options2, org_and_folder);
-      if let Err(e) = ret {
-        err_println(format!("{e}\n"));
-      }
-    });
-    children.push(ret);
-  }
-  for child in children {
-    child.join().unwrap();
-  }
-
+  let graph = resolve_for_cli(&package, &options, !options.ci)?;
+  print_warnings(&graph);
+  let graph_options = graph_options(&options, !options.ci)?;
+  install_project_view(&graph, &graph_options)?;
+  println!(
+    "installed {} module(s) into {}",
+    graph.modules.len(),
+    graph_options.project_root.join(".calcit/modules").display()
+  );
   Ok(())
 }
 
+fn graph_options(options: &TopLevelCaps, build_native: bool) -> Result<GraphOptions, String> {
+  let input = PathBuf::from(&options.input);
+  let absolute_input = if input.is_absolute() {
+    input
+  } else {
+    std::env::current_dir().map_err(|e| e.to_string())?.join(input)
+  };
+  let project_root = absolute_input
+    .parent()
+    .ok_or_else(|| format!("cannot determine project directory from {}", absolute_input.display()))?
+    .to_path_buf();
+  Ok(GraphOptions {
+    project_root,
+    modules_dir: modules_dir(options)?,
+    ci: options.ci,
+    strict: options.strict,
+    build_native,
+  })
+}
+
+fn resolve_for_cli(deps: &PackageDeps, options: &TopLevelCaps, build_native: bool) -> Result<ResolvedGraph, String> {
+  resolve_graph(deps, &graph_options(options, build_native)?)
+}
+
 fn modules_dir(options: &TopLevelCaps) -> Result<PathBuf, String> {
+  if let Some(path) = std::env::var_os("CALCIT_MODULES_DIR") {
+    return Ok(PathBuf::from(path));
+  }
   let dir = if options.local_debug {
     ".config/calcit/test-modules"
   } else {
     ".config/calcit/modules"
   };
   Ok(dirs::home_dir().ok_or("no config dir")?.join(dir))
-}
-
-fn check_dependency_status(deps: &PackageDeps, options: &TopLevelCaps, warn_only: bool) -> Result<usize, String> {
-  let modules_dir = modules_dir(options)?;
-  let mut issues = 0;
-  for (org_and_folder, version) in &deps.dependencies {
-    let folder = module_folder(org_and_folder)?;
-    let folder_path = modules_dir.join(folder);
-    if !folder_path.exists() {
-      issues += 1;
-      println!("{}", format!("- {org_and_folder} not found (expected {version})").red());
-      continue;
-    }
-    let repo = GitRepo { dir: folder_path.clone() };
-    let changes = wrap_module_error(repo.status_porcelain(), org_and_folder, &folder_path, "read working tree status")?;
-    let head = wrap_module_error(repo.current_head(), org_and_folder, &folder_path, "read current git head")?;
-    if !changes.is_empty() {
-      issues += 1;
-      let message = format!(
-        "! {org_and_folder} has local modifications (expected {version}, at {})",
-        head.get_name()
-      );
-      if warn_only {
-        eprintln!("{}", message.yellow());
-      } else {
-        println!("{}", message.yellow());
-      }
-    } else if head.get_name() != **version {
-      issues += 1;
-      println!(
-        "{}",
-        format!("! {org_and_folder} is at {}, expected {version}", head.get_name()).yellow()
-      );
-    } else {
-      println!("{}", format!("√ {org_and_folder} at {version}").dimmed());
-    }
-  }
-  Ok(issues)
-}
-
-fn reset_dependency_status(deps: &PackageDeps, options: &TopLevelCaps) -> Result<(), String> {
-  let modules_dir = modules_dir(options)?;
-  for org_and_folder in deps.dependencies.keys() {
-    let folder = module_folder(org_and_folder)?;
-    let folder_path = modules_dir.join(folder);
-    if !folder_path.exists() {
-      continue;
-    }
-    let repo = GitRepo { dir: folder_path.clone() };
-    let changes = wrap_module_error(repo.status_porcelain(), org_and_folder, &folder_path, "read working tree status")?;
-    if changes.is_empty() {
-      continue;
-    }
-    if !changes.iter().any(|change| !change.starts_with("?? ")) {
-      println!("untracked files remain in {}", org_and_folder.yellow());
-      continue;
-    }
-    wrap_module_error(repo.reset_hard(), org_and_folder, &folder_path, "reset local changes")?;
-    println!("reset {}", org_and_folder.green());
-  }
-  Ok(())
-}
-
-fn wrap_module_error<T>(result: Result<T, String>, org_and_folder: &str, folder_path: &Path, action: &str) -> Result<T, String> {
-  result.map_err(|e| format!("failed to {action} module `{org_and_folder}` at `{}`\n{e}", folder_path.display()))
-}
-
-fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, org_and_folder: Arc<str>) -> Result<(), String> {
-  // check if exists
-  let folder = module_folder(&org_and_folder)?;
-  // split with / into (org,folder)
-
-  let folder_path = modules_dir.join(folder);
-  let build_file = folder_path.join("build.sh");
-  let git_repo = GitRepo { dir: folder_path.clone() };
-  if folder_path.exists() {
-    // println!("module {} exists", folder);
-    // check branch
-    let current_head = wrap_module_error(git_repo.current_head(), &org_and_folder, &folder_path, "read current git head")?;
-
-    if current_head.get_name() == *version {
-      dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
-      if let GitHead::Branch(branch) = current_head
-        && options.pull_branch
-      {
-        dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        wrap_module_error(git_repo.pull(&branch), &org_and_folder, &folder_path, "pull branch")?;
-        dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
-
-        // if there's a build.sh file in the folder, run it
-        if build_file.exists() {
-          let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
-          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
-          dim_println(build_msg);
-        }
-      }
-      return Ok(());
-    }
-    // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
-    // println!("  {}", msg.yellow());
-
-    // load latest tags
-    wrap_module_error(git_repo.fetch(), &org_and_folder, &folder_path, "fetch tags")?;
-    // try if tag or branch exists in git history
-    let has_target = wrap_module_error(
-      git_repo.check_branch_or_tag(&version, folder),
-      &org_and_folder,
-      &folder_path,
-      "check target branch or tag",
-    )?;
-    if !has_target {
-      dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-      wrap_module_error(git_repo.fetch(), &org_and_folder, &folder_path, "fetch tags")?;
-      dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
-      // fetch git repo and checkout target version
-    }
-    wrap_module_error(
-      git_repo.checkout(&version),
-      &org_and_folder,
-      &folder_path,
-      &format!("checkout version `{version}`"),
-    )?;
-    dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
-
-    let current_head = wrap_module_error(git_repo.current_head(), &org_and_folder, &folder_path, "read current git head")?;
-    if let GitHead::Branch(branch) = current_head
-      && options.pull_branch
-    {
-      dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-      wrap_module_error(git_repo.pull(&branch), &org_and_folder, &folder_path, "pull branch")?;
-      dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
-    }
-
-    // if there's a build.sh file in the folder, run it
-    if build_file.exists() {
-      let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
-      dim_println(format!("ran build script for {}", gray(&org_and_folder)));
-      dim_println(build_msg);
-    }
-  } else {
-    let url = if options.ci {
-      format!("https://github.com/{org_and_folder}.git")
-    } else {
-      format!("git@github.com:{org_and_folder}.git")
-    };
-    dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-    wrap_module_error(
-      GitRepo::clone_to(&modules_dir, &url, &version, options.ci),
-      &org_and_folder,
-      &folder_path,
-      &format!("clone version `{version}`"),
-    )?;
-    // println!("downloading {} at version {}", url, version);
-    dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
-
-    if !options.ci {
-      // if there's a build.sh file in the folder, run it
-      if build_file.exists() {
-        let build_msg = wrap_module_error(call_build_script(&folder_path), &org_and_folder, &folder_path, "run build.sh")?;
-        dim_println(format!("ran build script for {}", gray(&org_and_folder)));
-        dim_println(build_msg);
-      }
-    }
-  }
-  Ok(())
 }
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -417,7 +315,7 @@ struct TopLevelCaps {
   #[argh(subcommand)]
   subcommand: Option<SubCommand>,
 
-  /// pull branch in the repo
+  /// deprecated compatibility flag; branch refs resolve remotely
   #[argh(switch)]
   pull_branch: bool,
   /// CI mode loads shallow repo via HTTPS
@@ -426,6 +324,10 @@ struct TopLevelCaps {
   /// debug mode, clone to test-modules/
   #[argh(switch)]
   local_debug: bool,
+
+  /// reject branch and version-conflict warnings
+  #[argh(switch)]
+  strict: bool,
 
   /// input file
   #[argh(positional, default = "\"deps.cirru\".to_owned()")]
@@ -441,9 +343,17 @@ enum SubCommand {
   Download(DownloadCaps),
   Add(AddCaps),
   Remove(RemoveCaps),
+  /// show the resolved recursive dependency graph
+  Tree(TreeCaps),
+  /// explain why a module is present
+  Why(WhyCaps),
+  /// read or update the package version in deps.cirru
+  Version(VersionCaps),
   /// check installed modules for local modifications and version mismatches
   Status(StatusCaps),
-  /// discard tracked local modifications in installed modules
+  /// verify store contents, project links, and native receipts
+  Verify(VerifyCaps),
+  /// rebuild the project module links from resolved immutable store entries
   Reset(ResetCaps),
 }
 
@@ -453,9 +363,67 @@ enum SubCommand {
 struct StatusCaps {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-/// discard tracked local modifications in installed modules
+/// verify store contents, project links, and native receipts
+#[argh(subcommand, name = "verify")]
+struct VerifyCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// rebuild the project module links from resolved immutable store entries
 #[argh(subcommand, name = "reset")]
 struct ResetCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// show the resolved recursive dependency graph
+#[argh(subcommand, name = "tree")]
+struct TreeCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// explain why a module is present in the resolved graph
+#[argh(subcommand, name = "why")]
+struct WhyCaps {
+  /// package in owner/repo form
+  #[argh(positional)]
+  package: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// read or update the package version in deps.cirru
+#[argh(subcommand, name = "version")]
+struct VersionCaps {
+  #[argh(subcommand)]
+  command: VersionSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+enum VersionSubcommand {
+  Get(VersionGetCaps),
+  Set(VersionSetCaps),
+  Bump(VersionBumpCaps),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// print the package version
+#[argh(subcommand, name = "get")]
+struct VersionGetCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// set the package version
+#[argh(subcommand, name = "set")]
+struct VersionSetCaps {
+  /// exact SemVer version
+  #[argh(positional)]
+  version: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// bump the package version
+#[argh(subcommand, name = "bump")]
+struct VersionBumpCaps {
+  /// one of major, minor, or patch
+  #[argh(positional)]
+  level: String,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// upgrade dependencies
@@ -508,24 +476,12 @@ struct RemoveCaps {
   packages: Vec<String>,
 }
 
-fn dim_println(msg: String) {
-  if msg.chars().nth(1) == Some(' ') {
-    println!("{}", msg.truecolor(128, 128, 128));
-  } else {
-    println!("  {}", msg.truecolor(128, 128, 128));
-  }
-}
-
 fn err_println(msg: String) {
   if msg.chars().nth(1) == Some(' ') {
     println!("{}", msg.truecolor(255, 80, 80));
   } else {
     println!("  {}", msg.replace('\n', "\n  ").truecolor(255, 80, 80));
   }
-}
-
-fn gray(msg: &str) -> ColoredString {
-  msg.truecolor(172, 172, 172)
 }
 
 fn indent4(msg: &str) -> String {
@@ -584,7 +540,8 @@ fn valid_module_component(component: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-  use super::{module_folder, normalize_package_name};
+  use super::{PackageDeps, module_folder, normalize_package_name};
+  use cirru_edn::Edn;
 
   #[test]
   fn module_names_are_canonical_before_path_use() {
@@ -602,12 +559,36 @@ mod tests {
     );
     assert!(normalize_package_name("calcit-lang/respo.calcit/extra").is_err());
   }
+
+  #[test]
+  fn missing_dependencies_field_is_an_empty_graph() {
+    let deps: PackageDeps = Edn::Map(cirru_edn::EdnMapView::default()).try_into().unwrap();
+    assert!(deps.dependencies.is_empty());
+  }
+
+  #[test]
+  fn write_deps_preserves_package_version() {
+    let path = std::env::temp_dir().join(format!("calcit-caps-version-{}.cirru", std::process::id()));
+    let deps = PackageDeps {
+      version: Some("1.2.3".to_string()),
+      calcit_version: Some("0.13.12".to_string()),
+      dependencies: Default::default(),
+    };
+    super::write_deps_file(path.to_str().unwrap(), &deps).unwrap();
+    let parsed = cirru_edn::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let restored: PackageDeps = parsed.try_into().unwrap();
+    assert_eq!(restored.version.as_deref(), Some("1.2.3"));
+    std::fs::remove_file(path).unwrap();
+  }
 }
 
 fn write_deps_file(deps_file: &str, deps: &PackageDeps) -> Result<(), String> {
   let mut updated_edn = Edn::Map(cirru_edn::EdnMapView::default());
 
   if let Edn::Map(ref mut map) = updated_edn {
+    if let Some(ref version) = deps.version {
+      map.insert(Edn::tag("version"), Edn::str(version.as_str()));
+    }
     if let Some(ref version) = deps.calcit_version {
       map.insert(Edn::tag("calcit-version"), Edn::str(version.as_str()));
     }
@@ -721,22 +702,29 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
 }
 
 fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<Option<String>, String> {
-  let folder = module_folder(&org_and_folder)?;
-  let folder_path = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules").join(folder);
-  let git_repo = GitRepo { dir: folder_path.clone() };
-  if folder_path.exists() {
-    git_repo.fetch()?;
-
-    // get latest tag and timestamp
-    let latest_tag = git_repo.latest_tag()?;
-    let latest_timestamp = git_repo.timestamp(&latest_tag)?;
-
-    // get expected tag and timestamp
-    let expected_timestamp = git_repo.timestamp(&version)?;
-
-    let outdated = expected_timestamp < latest_timestamp;
-
-    if outdated {
+  let url = format!("https://github.com/{org_and_folder}.git");
+  let output = Command::new("git")
+    .args(["ls-remote", "--tags", "--refs", &url])
+    .output()
+    .map_err(|e| format!("failed to inspect tags for {org_and_folder}: {e}"))?;
+  if !output.status.success() {
+    return Err(format!(
+      "failed to inspect tags for {org_and_folder}: {}",
+      String::from_utf8_lossy(&output.stderr).trim()
+    ));
+  }
+  let latest = String::from_utf8_lossy(&output.stdout)
+    .lines()
+    .filter_map(|line| line.split_once("refs/tags/").map(|(_, tag)| tag))
+    .filter_map(|tag| {
+      Version::parse(tag.strip_prefix('v').unwrap_or(tag))
+        .ok()
+        .map(|parsed| (tag.to_string(), parsed))
+    })
+    .max_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+  if let Some((latest_tag, latest_version)) = latest {
+    let current = Version::parse(version.strip_prefix('v').unwrap_or(&version));
+    if current.as_ref().is_ok_and(|current| current < &latest_version) {
       print_column(org_and_folder.yellow(), version.yellow(), latest_tag.yellow(), "Outdated".yellow());
       Ok(Some(latest_tag))
     } else {
@@ -744,7 +732,7 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
       Ok(None)
     }
   } else {
-    print_column(org_and_folder.red(), version.red(), "not found".red(), "-".red());
+    print_column(org_and_folder.yellow(), version.yellow(), "no SemVer tags".yellow(), "-".yellow());
     Ok(None)
   }
 }
@@ -867,6 +855,85 @@ fn sync_calcit_procs_package() -> Result<(), String> {
       "`yarn up @calcit/procs` exited with status {}",
       status.code().map(|code| code.to_string()).unwrap_or_else(|| "signal".to_string())
     ))
+  }
+}
+
+fn handle_version_command(mut deps: PackageDeps, deps_file: &str, opts: &VersionCaps) -> Result<(), String> {
+  match &opts.command {
+    VersionSubcommand::Get(_) => {
+      let legacy = legacy_snapshot_version(deps_file)?;
+      let version = deps.version.as_deref().or(legacy.as_deref()).ok_or_else(|| {
+        format!(
+          "no :version declared in {deps_file} or its project snapshot; initialize it with `caps {deps_file} version set <version>`"
+        )
+      })?;
+      if deps.version.is_none() {
+        eprintln!("[Warn] reading legacy snapshot :version; migrate it with `caps {deps_file} version set {version}`");
+      }
+      println!("{version}");
+    }
+    VersionSubcommand::Set(opts) => {
+      Version::parse(&opts.version).map_err(|e| format!("invalid SemVer version '{}': {e}", opts.version))?;
+      deps.version = Some(opts.version.clone());
+      write_package_version(deps_file, &opts.version)?;
+      println!("updated {deps_file} to {}", opts.version);
+    }
+    VersionSubcommand::Bump(opts) => {
+      let legacy = legacy_snapshot_version(deps_file)?;
+      let current = deps.version.as_deref().or(legacy.as_deref()).ok_or_else(|| {
+        format!(
+          "no :version declared in {deps_file} or its project snapshot; initialize it with `caps {deps_file} version set <version>`"
+        )
+      })?;
+      let mut version = Version::parse(current).map_err(|e| format!("invalid existing SemVer version '{current}': {e}"))?;
+      match opts.level.as_str() {
+        "major" => {
+          version.major += 1;
+          version.minor = 0;
+          version.patch = 0;
+        }
+        "minor" => {
+          version.minor += 1;
+          version.patch = 0;
+        }
+        "patch" => version.patch += 1,
+        other => return Err(format!("invalid bump level '{other}', expected major, minor, or patch")),
+      }
+      version.pre = semver::Prerelease::EMPTY;
+      version.build = semver::BuildMetadata::EMPTY;
+      deps.version = Some(version.to_string());
+      write_package_version(deps_file, &version.to_string())?;
+      println!("updated {deps_file} to {version}");
+    }
+  }
+  Ok(())
+}
+
+fn write_package_version(deps_file: &str, version: &str) -> Result<(), String> {
+  let content = fs::read_to_string(deps_file).map_err(|e| e.to_string())?;
+  let mut parsed = cirru_edn::parse(&content).map_err(|e| format!("failed to parse {deps_file}: {e}"))?;
+  let Edn::Map(ref mut map) = parsed else {
+    return Err(format!("expected map in {deps_file}"));
+  };
+  map.insert(Edn::tag("version"), Edn::str(version));
+  fs::write(deps_file, cirru_edn::format(&parsed, false)?).map_err(|e| e.to_string())
+}
+
+fn legacy_snapshot_version(deps_file: &str) -> Result<Option<String>, String> {
+  let deps_path = Path::new(deps_file);
+  let project_root = deps_path.parent().unwrap_or(Path::new("."));
+  let snapshot = [project_root.join("calcit.cirru"), project_root.join("compact.cirru")]
+    .into_iter()
+    .find(|path| path.exists());
+  let Some(snapshot) = snapshot else {
+    return Ok(None);
+  };
+  let content = fs::read_to_string(&snapshot).map_err(|e| format!("failed to read {}: {e}", snapshot.display()))?;
+  let parsed = cirru_edn::parse(&content).map_err(|e| format!("failed to parse {}: {e}", snapshot.display()))?;
+  match parsed.view_map()?.get_or_nil("version") {
+    Edn::Str(version) => Ok(Some(version.to_string())),
+    Edn::Nil => Ok(None),
+    value => Err(format!("invalid snapshot :version in {}: {value}", snapshot.display())),
   }
 }
 

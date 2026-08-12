@@ -49,7 +49,8 @@ pub fn set_trace_ffi(v: bool) {
     trace_ffi_event(
       "enable",
       format!(
-        "cwd={cwd} exe={exe} abi={ABI_VERSION} edn={edn_version} host={}",
+        "cwd={cwd} exe={exe} abi={} edn={edn_version} host={}",
+        calcit::FFI_ABI_VERSION,
         std::env::consts::OS
       ),
     );
@@ -133,9 +134,16 @@ fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<()
     )
   })?;
   let current = lookup_version();
-  trace_ffi_event("abi-version", format!("lib={lib_name} current={current} expected={ABI_VERSION}"));
-  if current != ABI_VERSION {
-    return CalcitErr::err_str(CalcitErrKind::Unexpected, format!("ABI versions mismatch: {current} {ABI_VERSION}")).map(|_| ());
+  trace_ffi_event(
+    "abi-version",
+    format!("lib={lib_name} current={current} expected={}", calcit::FFI_ABI_VERSION),
+  );
+  if current != calcit::FFI_ABI_VERSION {
+    return CalcitErr::err_str(
+      CalcitErrKind::Unexpected,
+      format!("ABI versions mismatch: {current} {}", calcit::FFI_ABI_VERSION),
+    )
+    .map(|_| ());
   }
 
   trace_ffi_event("lookup-edn-version", format!("lib={lib_name}"));
@@ -159,8 +167,6 @@ fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<()
   }
   Ok(())
 }
-
-const ABI_VERSION: &str = "0.0.9";
 
 static PLATFORM_APIS_INJECTED: AtomicBool = AtomicBool::new(false);
 

@@ -34,6 +34,7 @@ use crate::util::string::strip_shebang;
 
 pub const DEFAULT_SNAPSHOT_FILE: &str = "calcit.cirru";
 pub const LEGACY_SNAPSHOT_FILE: &str = "compact.cirru";
+pub const FFI_ABI_VERSION: &str = "0.0.9";
 
 static QUIET_TOOL_OUTPUT: AtomicBool = AtomicBool::new(false);
 
@@ -158,6 +159,19 @@ fn materialize_module_path(file_path: &str, base_dir: &Path, module_folder: &Pat
   }
 }
 
+fn module_roots_for_path(file_path: &str, base_dir: &Path, module_folder: &Path) -> Vec<PathBuf> {
+  if file_path.starts_with("./") || file_path.starts_with('/') {
+    vec![module_folder.to_path_buf()]
+  } else {
+    let project_modules = base_dir.join(".calcit/modules");
+    if project_modules == module_folder {
+      vec![module_folder.to_path_buf()]
+    } else {
+      vec![project_modules, module_folder.to_path_buf()]
+    }
+  }
+}
+
 fn module_candidate_display_path(file_path: &str, fullpath: &Path, module_folder: &Path) -> String {
   if file_path.starts_with("./") {
     file_path.to_string()
@@ -174,12 +188,22 @@ fn module_candidate_display_path(file_path: &str, fullpath: &Path, module_folder
 
 pub fn resolve_module_snapshot_candidates(path: &str, base_dir: &Path, module_folder: &Path) -> Vec<(String, PathBuf, String)> {
   let candidates = module_path_candidates(path);
-  let mut items = candidates
+  let roots = module_roots_for_path(path, base_dir, module_folder);
+  let mut items = roots
     .iter()
-    .map(|candidate| {
-      let fullpath = materialize_module_path(candidate, base_dir, module_folder);
-      let display_path = module_candidate_display_path(candidate, &fullpath, module_folder);
-      (candidate.clone(), fullpath, display_path)
+    .flat_map(|root| {
+      candidates
+        .iter()
+        .map(|candidate| {
+          let fullpath = materialize_module_path(candidate, base_dir, root);
+          let display_path = if *root == module_folder {
+            module_candidate_display_path(candidate, &fullpath, module_folder)
+          } else {
+            format!("<project-mods>/{candidate}")
+          };
+          (candidate.clone(), fullpath, display_path)
+        })
+        .collect::<Vec<_>>()
     })
     .collect::<Vec<_>>();
 
@@ -191,6 +215,47 @@ pub fn resolve_module_snapshot_candidates(path: &str, base_dir: &Path, module_fo
 
   items.retain(|(_, fullpath, _)| fullpath.exists());
   items
+}
+
+#[cfg(test)]
+mod module_resolution_tests {
+  use super::resolve_module_snapshot_candidates;
+  use std::fs;
+  use std::path::PathBuf;
+
+  fn temp_root(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("calcit-module-resolution-{label}-{}", std::process::id()))
+  }
+
+  #[test]
+  fn project_module_view_precedes_legacy_global_modules() {
+    let root = temp_root("project-first");
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(project.join(".calcit/modules/demo")).unwrap();
+    fs::create_dir_all(global.join("demo")).unwrap();
+    fs::write(project.join(".calcit/modules/demo/compact.cirru"), "project").unwrap();
+    fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
+
+    let candidates = resolve_module_snapshot_candidates("demo/", &project, &global);
+    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/compact.cirru"));
+    assert_eq!(candidates[0].2, "<project-mods>/demo/compact.cirru");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn explicit_relative_modules_do_not_use_project_module_view() {
+    let root = temp_root("relative");
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("util.cirru"), "relative").unwrap();
+
+    let candidates = resolve_module_snapshot_candidates("./util.cirru", &project, &global);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, project.join("./util.cirru"));
+    fs::remove_dir_all(root).unwrap();
+  }
 }
 
 pub fn resolve_module_snapshot_path(path: &str, base_dir: &Path, module_folder: &Path) -> (String, PathBuf, String) {
