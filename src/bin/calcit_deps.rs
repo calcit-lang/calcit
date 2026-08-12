@@ -702,18 +702,16 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
 }
 
 fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<Option<String>, String> {
-  let url = format!("https://github.com/{org_and_folder}.git");
-  let output = Command::new("git")
-    .env("GIT_TERMINAL_PROMPT", "0")
-    .args(["ls-remote", "--tags", "--refs", &url])
-    .output()
-    .map_err(|e| format!("failed to inspect tags for {org_and_folder}: {e}"))?;
-  if !output.status.success() {
-    return Err(format!(
-      "failed to inspect tags for {org_and_folder}: {}",
-      String::from_utf8_lossy(&output.stderr).trim()
-    ));
-  }
+  let https_url = format!("https://github.com/{org_and_folder}.git");
+  let output = match list_remote_tags(&https_url) {
+    Ok(output) => output,
+    Err(https_error) => {
+      let ssh_url = format!("git@github.com:{org_and_folder}.git");
+      list_remote_tags(&ssh_url).map_err(|ssh_error| {
+        format!("failed to inspect tags for {org_and_folder} over HTTPS and SSH:\n  HTTPS: {https_error}\n  SSH: {ssh_error}")
+      })?
+    }
+  };
   let latest = String::from_utf8_lossy(&output.stdout)
     .lines()
     .filter_map(|line| line.split_once("refs/tags/").map(|(_, tag)| tag))
@@ -735,6 +733,20 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
   } else {
     print_column(org_and_folder.yellow(), version.yellow(), "no SemVer tags".yellow(), "-".yellow());
     Ok(None)
+  }
+}
+
+fn list_remote_tags(url: &str) -> Result<std::process::Output, String> {
+  let output = Command::new("git")
+    .env("GIT_TERMINAL_PROMPT", "0")
+    .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    .args(["ls-remote", "--tags", "--refs", url])
+    .output()
+    .map_err(|e| format!("failed to inspect {url}: {e}"))?;
+  if output.status.success() {
+    Ok(output)
+  } else {
+    Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
   }
 }
 

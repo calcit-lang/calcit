@@ -99,7 +99,7 @@ basename 建立项目链接。如果依赖图里出现 `owner-a/utils` 与 `owne
 
 `caps` 按以下顺序修改本机状态：
 
-1. 在 `.calcit/tmp/` 下创建本次操作的临时目录，解析 ref、下载 source；
+1. 在 store 的 `.store/tmp/` 下创建临时目录，解析 ref、下载 source（与 store 同文件系统，保证 rename 原子）；项目侧临时 project view 写入 `.calcit/tmp/`；
 2. 完成递归依赖图和版本选择；
 3. 完成需要的 native realization 与验证；
 4. 写入临时 project view；

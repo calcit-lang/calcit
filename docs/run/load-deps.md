@@ -42,7 +42,7 @@ To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename
 Paths defined in `:modules` first use `<project>/.calcit/modules/` and then the legacy
 `~/.config/calcit/modules/` fallback. Existing snapshot `:modules` values do not need to change.
 
-Modules that ends with `/`s are automatically suffixed `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+Modules that end with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 
 ### Dependency graph
 
@@ -114,7 +114,7 @@ reported as an error and should be moved aside before reinstalling.
 
 ```
 caps --help
-Usage: caps [<input>] [-v] [--pull-branch] [--ci] [--local-debug] [<command>] [<args>]
+Usage: caps [<input>] [-v] [--pull-branch] [--ci] [--local-debug] [--strict] [<command>] [<args>]
 
 Top-level command.
 
@@ -126,6 +126,7 @@ Options:
   --pull-branch     deprecated compatibility flag; branch refs resolve remotely
   --ci              CI mode loads shallow repo via HTTPS
   --local-debug     debug mode, clone to test-modules/
+  --strict          reject branch and version-conflict warnings
   --help, help      display usage information
 
 Commands:

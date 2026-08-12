@@ -41,6 +41,17 @@
 - Follow-up review fixes use `Path::is_absolute` for module paths, disable
   Git credential prompts in `caps outdated`, and create Windows directory
   junctions before falling back to directory symlinks.
+- The follow-up pass gives isolated commit hashes their own fetch-and-detached
+  checkout path, namespaces staging directories with an identity hash, and
+  keeps all network Git operations non-interactive with HTTPS-to-SSH fallback
+  where supported.
+- Native receipts now record every `dylibs/` artifact's relative path, size,
+  and MD5. Reuse and `caps verify` reject malformed receipts, path escapes,
+  symlinks, unlisted files, and changed contents. Native staging lives beside
+  the destination realization so its final rename stays on one filesystem.
+- On Windows a failed junction and symlink attempt uses a copy fallback. The
+  generated state records `:view-mode`, while `caps status` reports a
+  non-shared copy rather than treating it as a deduplicated store link.
 
 ## Real-project verification
 

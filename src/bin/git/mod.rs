@@ -1,3 +1,4 @@
+use crate::caps_graph::RefKind;
 use std::{
   path::{Path, PathBuf},
   process::Command,
@@ -24,19 +25,32 @@ impl GitRepo {
   }
 
   /// Clone one ref into an explicit destination path.
-  pub fn clone_to_path(target: &Path, url: &str, version: &str, shallow: bool) -> Result<(), String> {
+  pub fn clone_to_path(target: &Path, url: &str, version: &str, kind: &RefKind, shallow: bool) -> Result<(), String> {
     let parent = target
       .parent()
       .ok_or_else(|| format!("missing parent directory for {}", target.display()))?;
-    let container = GitRepo { dir: parent.to_path_buf() };
     let target_name = target
       .file_name()
       .and_then(|name| name.to_str())
       .ok_or_else(|| format!("invalid clone target {}", target.display()))?;
-    if shallow {
-      container.run_command(&["clone", "--branch", version, "--depth", "1", url, target_name])?;
+    if matches!(kind, RefKind::Commit) {
+      let mut init = Command::new("git");
+      init.current_dir(parent).args(["init", target_name]);
+      run_noninteractive(&mut init)?;
+      let repo = GitRepo { dir: target.to_path_buf() };
+      repo.run_command(&["remote", "add", "origin", url])?;
+      let mut fetch = Command::new("git");
+      fetch.current_dir(target).args(["fetch", "--depth", "1", "origin", version]);
+      run_noninteractive(&mut fetch)?;
+      repo.run_command(&["checkout", "--detach", "FETCH_HEAD"])?;
     } else {
-      container.run_command(&["clone", "--branch", version, url, target_name])?;
+      let mut command = Command::new("git");
+      command.current_dir(parent).args(["clone", "--branch", version]);
+      if shallow {
+        command.args(["--depth", "1"]);
+      }
+      command.args([url, target_name]);
+      run_noninteractive(&mut command)?;
     }
     Ok(())
   }
@@ -59,5 +73,21 @@ impl GitRepo {
   pub fn status_porcelain(&self) -> Result<Vec<String>, String> {
     let output = self.run_command(&["status", "--porcelain"])?;
     Ok(output.lines().map(str::to_owned).collect())
+  }
+}
+
+fn run_noninteractive(command: &mut Command) -> Result<(), String> {
+  command
+    .env("GIT_TERMINAL_PROMPT", "0")
+    .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+  let output = command.output().map_err(|e| e.to_string())?;
+  if output.status.success() {
+    Ok(())
+  } else {
+    Err(format!(
+      "{} from args {:?}",
+      String::from_utf8_lossy(&output.stderr).trim(),
+      command.get_args()
+    ))
   }
 }

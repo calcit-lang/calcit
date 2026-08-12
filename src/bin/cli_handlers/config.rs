@@ -512,8 +512,8 @@ mod tests {
         "{{}} (:package |{package})\n  :configs $ {{}} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)\n    :modules $ []\n  :files $ {{}}\n"
       )
     };
-    fs::write(project.join(".calcit/modules/demo/calcit.cirru"), "invalid snapshot").unwrap();
-    fs::write(project.join(".calcit/modules/demo/compact.cirru"), snapshot("project-demo")).unwrap();
+    fs::write(project.join(".calcit/modules/demo/compact.cirru"), "invalid snapshot").unwrap();
+    fs::write(project.join(".calcit/modules/demo/calcit.cirru"), snapshot("project-demo")).unwrap();
     fs::write(global.join("demo/calcit.cirru"), snapshot("global-demo")).unwrap();
 
     let loaded = load_module_silent("demo/", &project, &global).unwrap();

@@ -6,7 +6,7 @@ use md5::{Digest, Md5};
 use semver::Version;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::thread;
 
@@ -22,6 +22,24 @@ pub struct DependencyRequest {
 pub enum RefKind {
   Tag,
   Branch,
+  Commit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProjectModuleMode {
+  Link,
+  #[cfg(windows)]
+  Copy,
+}
+
+impl ProjectModuleMode {
+  fn as_str(self) -> &'static str {
+    match self {
+      Self::Link => "link",
+      #[cfg(windows)]
+      Self::Copy => "copy",
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -233,8 +251,9 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     .ok_or_else(|| format!("invalid repository {repository}"))?;
   let temp_root = options.modules_dir.join(".store/tmp");
   fs::create_dir_all(&temp_root).map_err(|e| format!("failed to create {}: {e}", temp_root.display()))?;
+  let identity = hex::encode(Md5::digest(format!("{repository}\n{reference}").as_bytes()));
   let temp_path = temp_root.join(format!(
-    "clone-{}-{}-{}",
+    "clone-{}-{}-{}-{identity}",
     std::process::id(),
     sanitize(repository),
     sanitize(reference)
@@ -265,7 +284,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
       dependencies,
     });
   }
-  GitRepo::clone_to_path(&temp_path, &remote.url, reference, true)
+  GitRepo::clone_to_path(&temp_path, &remote.url, reference, &remote.kind, true)
     .map_err(|e| format!("failed to clone {repository}@{reference}: {e}"))?;
   let temp_repo = GitRepo { dir: temp_path.clone() };
   let commit = temp_repo.head_commit()?;
@@ -351,6 +370,13 @@ struct RemoteRef {
 }
 
 fn resolve_remote_ref(repository: &str, reference: &str, ci: bool) -> Result<RemoteRef, String> {
+  if is_full_commit_hash(reference) {
+    return Ok(RemoteRef {
+      kind: RefKind::Commit,
+      commit: reference.to_ascii_lowercase(),
+      url: format!("https://github.com/{repository}.git"),
+    });
+  }
   let https_url = format!("https://github.com/{repository}.git");
   match inspect_remote_ref(&https_url, reference) {
     Ok(remote) => Ok(remote),
@@ -362,6 +388,10 @@ fn resolve_remote_ref(repository: &str, reference: &str, ci: bool) -> Result<Rem
     }
     Err(error) => Err(error),
   }
+}
+
+fn is_full_commit_hash(reference: &str) -> bool {
+  matches!(reference.len(), 40 | 64) && reference.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn inspect_remote_ref(url: &str, reference: &str) -> Result<RemoteRef, String> {
@@ -455,6 +485,10 @@ fn collect_warnings(
         "warning: {repository}@{} is a reproducible tag but not a SemVer version",
         module.reference
       )),
+      RefKind::Commit => warnings.push(format!(
+        "warning: {repository}@{} is a pinned commit without SemVer release metadata",
+        module.reference
+      )),
       RefKind::Tag => {}
     }
     if let Some(module_requests) = requests.get(repository) {
@@ -496,9 +530,11 @@ pub fn install_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Re
     fs::remove_dir_all(&next_modules).map_err(|e| format!("failed to clean {}: {e}", next_modules.display()))?;
   }
   fs::create_dir_all(&next_modules).map_err(|e| format!("failed to create {}: {e}", next_modules.display()))?;
+  let mut view_modes = BTreeMap::new();
   for module in graph.modules.values() {
     let folder = module_folder(&module.repository)?;
-    create_dir_link(&module.link_target, &next_modules.join(folder))?;
+    let mode = create_dir_link(&module.link_target, &next_modules.join(folder))?;
+    view_modes.insert(module.repository.clone(), mode);
   }
 
   let modules_path = calcit_dir.join("modules");
@@ -515,7 +551,7 @@ pub fn install_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Re
     }
     return Err(format!("failed to activate project module view: {error}"));
   }
-  if let Err(error) = write_state(graph, &calcit_dir.join("caps-state.cirru")) {
+  if let Err(error) = write_state(graph, &view_modes, &calcit_dir.join("caps-state.cirru")) {
     fs::remove_dir_all(&modules_path).map_err(|e| format!("{error}; also failed to remove new module view: {e}"))?;
     if backup.exists() {
       fs::rename(&backup, &modules_path).map_err(|e| format!("{error}; also failed to restore old module view: {e}"))?;
@@ -540,19 +576,33 @@ pub fn check_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Resu
       continue;
     }
     let actual = fs::canonicalize(&link).map_err(|e| format!("failed to resolve {}: {e}", link.display()))?;
-    let expected =
-      fs::canonicalize(&module.link_target).map_err(|e| format!("failed to resolve {}: {e}", module.link_target.display()))?;
-    let realization_root = module
-      .source
-      .parent()
-      .map(|parent| parent.join("realizations"))
-      .and_then(|path| fs::canonicalize(path).ok());
-    let is_known_realization = realization_root.as_ref().is_some_and(|root| actual.starts_with(root));
-    if actual != expected && !is_known_realization {
+    let expected_target = expected_link_target(module)?;
+    if !expected_target.exists() {
       println!(
         "{}",
         format!(
-          "! {} points to {}, expected {}",
+          "! {} has no native realization for the current ABI/toolchain; run caps to build it",
+          module.repository
+        )
+        .yellow()
+      );
+      issues += 1;
+      continue;
+    }
+    let expected = fs::canonicalize(&expected_target).map_err(|e| format!("failed to resolve {}: {e}", expected_target.display()))?;
+    if actual != expected {
+      let mode = if fs::symlink_metadata(&link)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
+      {
+        "link"
+      } else {
+        "copy"
+      };
+      println!(
+        "{}",
+        format!(
+          "! {} uses a non-shared {mode} at {}, expected {}",
           module.repository,
           actual.display(),
           expected.display()
@@ -629,55 +679,47 @@ pub fn verify_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Res
       issues += 1;
     }
     if expected_target != module.source {
-      let receipt = expected_target.join(".calcit-native.cirru");
-      let dylibs = expected_target.join("dylibs");
-      if !receipt.exists() || !dylibs.exists() {
-        println!(
-          "{}",
-          format!(
-            "! {} native realization is missing its receipt or dylibs directory",
-            module.repository
-          )
-          .red()
-        );
-        issues += 1;
-      } else {
-        let extension = match std::env::consts::OS {
-          "macos" => "dylib",
-          "windows" => "dll",
-          _ => "so",
-        };
-        let libraries = fs::read_dir(&dylibs)
-          .map_err(|e| format!("failed to read {}: {e}", dylibs.display()))?
-          .filter_map(Result::ok)
-          .map(|entry| entry.path())
-          .filter(|path| path.extension().is_some_and(|value| value == extension))
-          .collect::<Vec<_>>();
-        if libraries.is_empty() {
-          println!(
-            "{}",
-            format!("! {} has no .{extension} library under dylibs/", module.repository).red()
-          );
+      match verify_native_receipt(module, &expected_target) {
+        Err(error) => {
+          println!("{}", format!("! {} native receipt is invalid: {error}", module.repository).red());
           issues += 1;
         }
-        for library in libraries {
-          let output = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
-            .arg("__verify-native")
-            .arg(&library)
-            .output()
-            .map_err(|e| format!("failed to start native verifier for {}: {e}", library.display()))?;
-          if !output.status.success() {
+        Ok(libraries) => {
+          let extension = match std::env::consts::OS {
+            "macos" => "dylib",
+            "windows" => "dll",
+            _ => "so",
+          };
+          let libraries = libraries
+            .into_iter()
+            .filter(|path| path.extension().is_some_and(|value| value == extension))
+            .collect::<Vec<_>>();
+          if libraries.is_empty() {
             println!(
               "{}",
-              format!(
-                "! {} failed native verification for {}: {}",
-                module.repository,
-                library.display(),
-                String::from_utf8_lossy(&output.stderr).trim()
-              )
-              .red()
+              format!("! {} has no .{extension} library under dylibs/", module.repository).red()
             );
             issues += 1;
+          }
+          for library in libraries {
+            let output = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
+              .arg("__verify-native")
+              .arg(&library)
+              .output()
+              .map_err(|e| format!("failed to start native verifier for {}: {e}", library.display()))?;
+            if !output.status.success() {
+              println!(
+                "{}",
+                format!(
+                  "! {} failed native verification for {}: {}",
+                  module.repository,
+                  library.display(),
+                  String::from_utf8_lossy(&output.stderr).trim()
+                )
+                .red()
+              );
+              issues += 1;
+            }
           }
         }
       }
@@ -716,29 +758,34 @@ pub fn verify_native_library(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn create_dir_link(target: &Path, link: &Path) -> Result<(), String> {
-  std::os::unix::fs::symlink(target, link).map_err(|e| format!("failed to link {} -> {}: {e}", link.display(), target.display()))
+fn create_dir_link(target: &Path, link: &Path) -> Result<ProjectModuleMode, String> {
+  std::os::unix::fs::symlink(target, link)
+    .map(|_| ProjectModuleMode::Link)
+    .map_err(|e| format!("failed to link {} -> {}: {e}", link.display(), target.display()))
 }
 
 #[cfg(windows)]
-fn create_dir_link(target: &Path, link: &Path) -> Result<(), String> {
+fn create_dir_link(target: &Path, link: &Path) -> Result<ProjectModuleMode, String> {
   let junction = Command::new("cmd").args(["/C", "mklink", "/J"]).arg(link).arg(target).output();
   if let Ok(output) = junction
     && output.status.success()
   {
-    return Ok(());
+    return Ok(ProjectModuleMode::Link);
   }
 
-  std::os::windows::fs::symlink_dir(target, link).map_err(|error| {
-    format!(
-      "failed to create junction or directory symlink {} -> {}: {error}",
-      link.display(),
-      target.display()
-    )
-  })
+  match std::os::windows::fs::symlink_dir(target, link) {
+    Ok(()) => Ok(ProjectModuleMode::Link),
+    Err(link_error) => copy_tree(target, link).map(|_| ProjectModuleMode::Copy).map_err(|copy_error| {
+      format!(
+        "failed to create junction or directory symlink {} -> {} ({link_error}); copy fallback also failed: {copy_error}",
+        link.display(),
+        target.display()
+      )
+    }),
+  }
 }
 
-fn write_state(graph: &ResolvedGraph, state_path: &Path) -> Result<(), String> {
+fn write_state(graph: &ResolvedGraph, view_modes: &BTreeMap<String, ProjectModuleMode>, state_path: &Path) -> Result<(), String> {
   let mut root = EdnMapView::default();
   let mut modules = EdnMapView::default();
   for (repository, module) in &graph.modules {
@@ -746,6 +793,9 @@ fn write_state(graph: &ResolvedGraph, state_path: &Path) -> Result<(), String> {
     info.insert(Edn::tag("ref"), Edn::str(module.reference.as_str()));
     info.insert(Edn::tag("commit"), Edn::str(module.commit.as_str()));
     info.insert(Edn::tag("path"), Edn::str(module.link_target.to_string_lossy().as_ref()));
+    if let Some(mode) = view_modes.get(repository) {
+      info.insert(Edn::tag("view-mode"), Edn::str(mode.as_str()));
+    }
     modules.insert(Edn::str(repository.as_str()), Edn::Map(info));
   }
   root.insert(Edn::tag("modules"), Edn::Map(modules));
@@ -766,7 +816,7 @@ fn write_state(graph: &ResolvedGraph, state_path: &Path) -> Result<(), String> {
   fs::rename(&temp, state_path).map_err(|e| format!("failed to activate {}: {e}", state_path.display()))
 }
 
-fn prepare_native_realization(module: &ResolvedModule, options: &GraphOptions) -> Result<PathBuf, String> {
+fn prepare_native_realization(module: &ResolvedModule, _options: &GraphOptions) -> Result<PathBuf, String> {
   if !module.source.join("build.sh").exists() {
     return Ok(module.source.clone());
   }
@@ -774,13 +824,14 @@ fn prepare_native_realization(module: &ResolvedModule, options: &GraphOptions) -
   let build_key = realization.file_name().and_then(|name| name.to_str()).unwrap_or("unknown");
   let receipt = realization.join(".calcit-native.cirru");
   if receipt.exists() {
+    verify_native_receipt(module, &realization)?;
     return Ok(realization);
   }
-  let temp =
-    options
-      .project_root
-      .join(".calcit/tmp")
-      .join(format!("native-{}-{}", std::process::id(), module_folder(&module.repository)?));
+  let realization_parent = realization
+    .parent()
+    .ok_or_else(|| format!("invalid native realization path {}", realization.display()))?;
+  fs::create_dir_all(realization_parent).map_err(|e| format!("failed to create {}: {e}", realization_parent.display()))?;
+  let temp = realization_parent.join(format!(".tmp-native-{}-{}", std::process::id(), module_folder(&module.repository)?));
   if temp.exists() {
     fs::remove_dir_all(&temp).map_err(|e| format!("failed to clean {}: {e}", temp.display()))?;
   }
@@ -797,22 +848,7 @@ fn prepare_native_realization(module: &ResolvedModule, options: &GraphOptions) -
   if !dylibs.exists() || fs::read_dir(&dylibs).map_err(|e| e.to_string())?.next().is_none() {
     return Err(format!("native module {} did not produce files under dylibs/", module.repository));
   }
-  fs::write(
-    temp.join(".calcit-native.cirru"),
-    format!(
-      "{{}} (:module |{}) (:commit |{}) (:calcit-version |{}) (:ffi-abi |{}) (:cirru-edn |{}) (:build-key |{})\n",
-      module.repository,
-      module.commit,
-      CALCIT_VERSION,
-      calcit::FFI_ABI_VERSION,
-      cirru_edn::version(),
-      build_key
-    ),
-  )
-  .map_err(|e| format!("failed to write native receipt: {e}"))?;
-  if let Some(parent) = realization.parent() {
-    fs::create_dir_all(parent).map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
-  }
+  write_native_receipt(module, &temp, build_key)?;
   if realization.exists() {
     fs::remove_dir_all(&temp).map_err(|e| format!("failed to clean {}: {e}", temp.display()))?;
   } else if let Err(error) = fs::rename(&temp, &realization) {
@@ -842,6 +878,185 @@ fn expected_link_target(module: &ResolvedModule) -> Result<PathBuf, String> {
     .parent()
     .ok_or_else(|| format!("invalid source path {}", module.source.display()))?;
   Ok(commit_root.join("realizations").join(build_key))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeArtifact {
+  relative_path: String,
+  size: u64,
+  md5: String,
+}
+
+fn write_native_receipt(module: &ResolvedModule, realization: &Path, build_key: &str) -> Result<(), String> {
+  let artifacts = collect_native_artifacts(realization)?;
+  let mut receipt = EdnMapView::default();
+  receipt.insert(Edn::tag("module"), Edn::str(module.repository.as_str()));
+  receipt.insert(Edn::tag("commit"), Edn::str(module.commit.as_str()));
+  receipt.insert(Edn::tag("calcit-version"), Edn::str(CALCIT_VERSION));
+  receipt.insert(Edn::tag("ffi-abi"), Edn::str(calcit::FFI_ABI_VERSION));
+  receipt.insert(Edn::tag("cirru-edn"), Edn::str(cirru_edn::version()));
+  receipt.insert(Edn::tag("build-key"), Edn::str(build_key));
+  receipt.insert(
+    Edn::tag("artifacts"),
+    Edn::List(
+      artifacts
+        .values()
+        .map(|artifact| {
+          Edn::map_from_iter([
+            (Edn::tag("path"), Edn::str(artifact.relative_path.as_str())),
+            (Edn::tag("size"), Edn::Number(artifact.size as f64)),
+            (Edn::tag("md5"), Edn::str(artifact.md5.as_str())),
+          ])
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+  );
+  let content = cirru_edn::format(&Edn::Map(receipt), false)?;
+  fs::write(realization.join(".calcit-native.cirru"), content).map_err(|e| format!("failed to write native receipt: {e}"))
+}
+
+fn verify_native_receipt(module: &ResolvedModule, realization: &Path) -> Result<Vec<PathBuf>, String> {
+  let receipt_path = realization.join(".calcit-native.cirru");
+  let content = fs::read_to_string(&receipt_path).map_err(|e| format!("failed to read {}: {e}", receipt_path.display()))?;
+  let receipt = cirru_edn::parse(&content)
+    .map_err(|e| format!("failed to parse {}: {e}", receipt_path.display()))?
+    .view_map()?;
+  let expected_build_key = realization.file_name().and_then(|name| name.to_str()).unwrap_or("unknown");
+  for (key, expected) in [
+    ("module", module.repository.as_str()),
+    ("commit", module.commit.as_str()),
+    ("calcit-version", CALCIT_VERSION),
+    ("ffi-abi", calcit::FFI_ABI_VERSION),
+    ("cirru-edn", cirru_edn::version()),
+    ("build-key", expected_build_key),
+  ] {
+    let actual = receipt
+      .tag_get(key)
+      .ok_or_else(|| format!("receipt is missing :{key}"))?
+      .read_string()?;
+    if actual != expected {
+      return Err(format!("receipt :{key} is {actual:?}, expected {expected:?}"));
+    }
+  }
+
+  let declared = receipt
+    .tag_get("artifacts")
+    .ok_or_else(|| "receipt is missing :artifacts".to_string())?
+    .view_list()?
+    .0
+    .iter()
+    .map(native_artifact_from_edn)
+    .collect::<Result<Vec<_>, _>>()?;
+  let declared = declared
+    .into_iter()
+    .map(|artifact| {
+      if !is_safe_artifact_path(&artifact.relative_path) {
+        return Err(format!(
+          "receipt artifact path {:?} is not a safe relative dylibs path",
+          artifact.relative_path
+        ));
+      }
+      Ok((artifact.relative_path.clone(), artifact))
+    })
+    .collect::<Result<BTreeMap<_, _>, String>>()?;
+  if declared.len() != receipt.tag_get("artifacts").expect("artifacts was read above").view_list()?.0.len() {
+    return Err("receipt has duplicate artifact paths".to_string());
+  }
+  let actual = collect_native_artifacts(realization)?;
+  if actual != declared {
+    return Err("receipt artifacts do not match the current dylibs contents".to_string());
+  }
+  Ok(actual.keys().map(|relative_path| realization.join(relative_path)).collect())
+}
+
+fn native_artifact_from_edn(value: &Edn) -> Result<NativeArtifact, String> {
+  let map = value.view_map()?;
+  let relative_path = map
+    .tag_get("path")
+    .ok_or_else(|| "receipt artifact is missing :path".to_string())?
+    .read_string()?;
+  let size = map
+    .tag_get("size")
+    .ok_or_else(|| "receipt artifact is missing :size".to_string())?
+    .read_number()?;
+  if size < 0.0 || size.fract().abs() > f64::EPSILON || size > u64::MAX as f64 {
+    return Err(format!("receipt artifact size must be a non-negative integer, got {size}"));
+  }
+  let md5 = map
+    .tag_get("md5")
+    .ok_or_else(|| "receipt artifact is missing :md5".to_string())?
+    .read_string()?;
+  if md5.len() != 32 || !md5.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    return Err(format!("receipt artifact md5 is invalid: {md5:?}"));
+  }
+  Ok(NativeArtifact {
+    relative_path,
+    size: size as u64,
+    md5: md5.to_ascii_lowercase(),
+  })
+}
+
+fn is_safe_artifact_path(value: &str) -> bool {
+  let path = Path::new(value);
+  !path.is_absolute() && path.starts_with("dylibs") && path.components().all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn collect_native_artifacts(realization: &Path) -> Result<BTreeMap<String, NativeArtifact>, String> {
+  let root = fs::canonicalize(realization).map_err(|e| format!("failed to resolve {}: {e}", realization.display()))?;
+  let dylibs = realization.join("dylibs");
+  let dylibs_metadata =
+    fs::symlink_metadata(&dylibs).map_err(|e| format!("native realization is missing {}: {e}", dylibs.display()))?;
+  if !dylibs_metadata.is_dir() || dylibs_metadata.file_type().is_symlink() {
+    return Err(format!("{} must be a real directory, not a symlink", dylibs.display()));
+  }
+  let mut artifacts = BTreeMap::new();
+  collect_native_artifact_dir(realization, &root, &dylibs, &mut artifacts)?;
+  if artifacts.is_empty() {
+    return Err(format!("native realization has no artifacts under {}", dylibs.display()));
+  }
+  Ok(artifacts)
+}
+
+fn collect_native_artifact_dir(
+  realization: &Path,
+  canonical_root: &Path,
+  directory: &Path,
+  artifacts: &mut BTreeMap<String, NativeArtifact>,
+) -> Result<(), String> {
+  for entry in fs::read_dir(directory).map_err(|e| format!("failed to read {}: {e}", directory.display()))? {
+    let entry = entry.map_err(|e| format!("failed to read native artifact entry: {e}"))?;
+    let path = entry.path();
+    let metadata = fs::symlink_metadata(&path).map_err(|e| format!("failed to inspect {}: {e}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+      return Err(format!("native artifact {} must not be a symlink", path.display()));
+    }
+    if metadata.is_dir() {
+      collect_native_artifact_dir(realization, canonical_root, &path, artifacts)?;
+    } else if metadata.is_file() {
+      let canonical_path = fs::canonicalize(&path).map_err(|e| format!("failed to resolve {}: {e}", path.display()))?;
+      if !canonical_path.starts_with(canonical_root) {
+        return Err(format!("native artifact {} escapes {}", path.display(), realization.display()));
+      }
+      let relative_path = path
+        .strip_prefix(realization)
+        .map_err(|e| format!("failed to make artifact path relative for {}: {e}", path.display()))?
+        .to_string_lossy()
+        .replace('\\', "/");
+      let content = fs::read(&path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+      artifacts.insert(
+        relative_path.clone(),
+        NativeArtifact {
+          relative_path,
+          size: metadata.len(),
+          md5: hex::encode(Md5::digest(&content)),
+        },
+      );
+    } else {
+      return Err(format!("native artifact {} has an unsupported file type", path.display()));
+    }
+  }
+  Ok(())
 }
 
 fn rust_target_identity() -> String {
@@ -976,8 +1191,12 @@ fn sanitize(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-  use super::{DependencyRequest, parse_tag_version, select_reference};
+  use super::{
+    DependencyRequest, RefKind, ResolvedModule, is_full_commit_hash, parse_tag_version, select_reference, verify_native_receipt,
+    write_native_receipt,
+  };
   use std::collections::BTreeSet;
+  use std::fs;
 
   fn request(reference: &str, requested_by: Option<&str>) -> DependencyRequest {
     DependencyRequest {
@@ -1023,5 +1242,37 @@ mod tests {
       select_reference("org/repo", &requests, Some(&"0.16.32".to_string())),
       Ok("0.16.67".to_string())
     );
+  }
+
+  #[test]
+  fn accepts_only_full_commit_hashes() {
+    assert!(is_full_commit_hash("0123456789abcdef0123456789abcdef01234567"));
+    assert!(!is_full_commit_hash("0123456789abcdef"));
+    assert!(!is_full_commit_hash("g123456789abcdef0123456789abcdef01234567"));
+  }
+
+  #[test]
+  fn native_receipt_rejects_changed_artifacts() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-receipt-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let realization = root.join("build-key");
+    let dylibs = realization.join("dylibs");
+    fs::create_dir_all(&dylibs).unwrap();
+    let library = dylibs.join("libdemo.so");
+    fs::write(&library, b"first build").unwrap();
+    let module = ResolvedModule {
+      repository: "calcit-lang/demo".to_string(),
+      reference: "0.1.0".to_string(),
+      commit: "0123456789abcdef0123456789abcdef01234567".to_string(),
+      kind: RefKind::Tag,
+      source: root.join("source"),
+      link_target: realization.clone(),
+      dependencies: Default::default(),
+    };
+    write_native_receipt(&module, &realization, "build-key").unwrap();
+    assert_eq!(verify_native_receipt(&module, &realization).unwrap(), vec![library.clone()]);
+    fs::write(&library, b"modified build").unwrap();
+    assert!(verify_native_receipt(&module, &realization).is_err());
+    fs::remove_dir_all(root).unwrap();
   }
 }
