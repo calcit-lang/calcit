@@ -2843,7 +2843,7 @@
           :tags $ #{} :trait-impl
         |OptionMethods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def OptionMethods $ &impl::new :OptionMethods (:: .some? option:some?) (:: .none? option:none?) (:: .unwrap option:unwrap) (:: .unwrap-or option:unwrap-or) (:: .and-then option:and-then) (:: .fold option:fold)
+            def OptionMethods $ &impl::new :OptionMethods (:: .some? option:some?) (:: .none? option:none?) (:: .unwrap option:unwrap) (:: .unwrap-or option:unwrap-or) (:: .and-then option:and-then) (:: .or-else option:or-else) (:: .fold option:fold)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2863,7 +2863,7 @@
           :tags $ #{} :trait-impl
         |ResultMethods $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            def ResultMethods $ &impl::new :ResultMethods (:: .ok? result:ok?) (:: .err? result:err?) (:: .unwrap-or result:unwrap-or) (:: .and-then result:and-then) (:: .map-err result:map-err)
+            def ResultMethods $ &impl::new :ResultMethods (:: .ok? result:ok?) (:: .err? result:err?) (:: .unwrap-or result:unwrap-or) (:: .and-then result:and-then) (:: .map-err result:map-err) (:: .or-else result:or-else)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -6186,6 +6186,23 @@
               :generics $ [] 'T 'U
               :return $ :: 'Option 'U
           :tags $ #{} :internal
+        |option:or-else $ %{} 'CodeEntry (:doc "|Return the current Option when it is :some, otherwise evaluate a fallback Option-producing function.")
+          :code $ quote
+            defn option:or-else (opt fallback)
+              tag-match opt
+                (:some _) opt
+                (:none) (fallback)
+          :examples $ []
+            quote $ assert= (%some 2)
+              option:or-else (%none)
+                fn () (%some 2)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {} (:return $ :: 'Option 'T) (:args $ [])
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+          :tags $ #{} :internal
         |option:fold $ %{} 'CodeEntry (:doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload.")
           :code $ quote
             defn option:fold (opt on-none on-some)
@@ -6671,6 +6688,23 @@
                   :return $ :: 'Result 'U 'E
               :generics $ [] 'T 'U 'E
               :return $ :: 'Result 'U 'E
+          :tags $ #{} :internal
+        |result:or-else $ %{} 'CodeEntry (:doc "|Return the current Result when it is :ok, otherwise evaluate a fallback Result-producing function.")
+          :code $ quote
+            defn result:or-else (res fallback)
+              tag-match res
+                (:ok _) res
+                (:err _) (fallback)
+          :examples $ []
+            quote $ assert= (%ok 2)
+              result:or-else (%err |missing)
+                fn () (%ok 2)
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {} (:return $ :: 'Result 'T 'E) (:args $ [])
+              :generics $ [] 'T 'E
+              :return $ :: 'Result 'T 'E
           :tags $ #{} :internal
         |result:err? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :err.")
           :code $ quote

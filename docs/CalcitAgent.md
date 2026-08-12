@@ -299,6 +299,30 @@ request |/health (%some |trace-1)
 
 这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(%none)` 或 `(%some value)`，带 rest 参数的函数也不会自动补值。`?` 参数仍用于兼容已有的非类型化 API，其缺省值是 `nil`；修改旧接口时，优先逐步迁移到 `Option`。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。
 
+Option/Result 的级联优先使用组合函数，不要在每一层都 `unwrap`：
+
+```cirru.no-check
+option:and-then profile
+  fn (profile)
+    option:and-then (get-in profile $ [] :account)
+      fn (account) $ get account :name
+
+result:and-then parsed
+  fn (value) $ validate value
+```
+
+需要尝试备用来源时使用 `option:or-else` 或 `result:or-else`；它们只在 `none`/`err` 分支调用 fallback。`option:unwrap` 只适合已经由 `tag-match`、`option:some?` 或明确不变量证明为 `some` 的位置；默认值用 `option:unwrap-or`，继续转换用 `option:map` / `option:and-then`。
+
+`get-in` 返回 `Option<T>`，适合 Map/List/字符串等可能缺失的路径；路径进入 Struct 时应改用类型化的 `(:field value)` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
+
+```cirru.no-check
+update-in data ([] :profile :visits)
+  fn (current)
+    option:unwrap-or current 1
+```
+
+这样可以让缺失、默认值和失败在类型上分开，而不是继续依赖 `nil` 或组件临时的 `read-field` 函数。
+
 ### 5.4 CLI 的 `quote` 是代码/数据边界
 
 所有接收 AST 的 Cirru 文本输入都必须让 `quote` **恰好包住一个节点**；提交 mutation 时 CLI 会剥离这个 transport wrapper。JSON 数组 AST 是兼容输入，不需要 `quote`，但不要手写大型 JSON AST。
@@ -355,6 +379,10 @@ cr cirru show-guide
 `cr query tests <ns>/<def>` 查询 definition-attached tests；`cr edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`cr edit rm-test <ns>/<def> <name>` 按名称删除。`cr test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
 
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `cr edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
+
+每次 `cr` 执行或编译都会在 stderr 审计项目自身的 Dynamic 类型位置：少量仅提示，达到较高占比会告警。该提示不写入 stdout，也不替代 `analyze check-types` / `analyze weak-types`；Agent 应先查看告警，再用 `cr analyze weak-types --intent unresolved --format json` 定位并逐步收窄类型。
+
+`:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 
 | 现象                   | 恢复动作                                                                 |
 | ---------------------- | ------------------------------------------------------------------------ |
