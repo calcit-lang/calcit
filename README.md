@@ -132,7 +132,14 @@ Related examples and workflows:
     |calcit-lang/lilac |main
 ```
 
-Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`. If a module contains `build.sh`, it will be executed mostly for compiling Rust dylibs.
+Run `caps` to resolve the recursive dependency graph and install it. Immutable revisions are stored under
+`~/.config/calcit/modules/.store/`, while the current project receives links under `.calcit/modules/`.
+Different projects can therefore use different revisions without switching a shared checkout. Existing
+`~/.config/calcit/modules/<repo>/` checkouts remain a runtime fallback during migration.
+
+Published SemVer tags are preferred. Branch refs remain supported for development, but `caps` warns with
+the resolved commit. When a graph requests several SemVer tags for one repository, the highest requested
+version is selected and reported.
 
 `:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-cr).
 
@@ -144,10 +151,19 @@ To load modules, use `:modules` configuration and the runtime snapshot file `cal
     :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`,
-i.e. `~/.config/calcit/modules/memof/calcit.cirru`.
+Paths defined in `:modules` first load from the snapshot directory's `.calcit/modules/`, then fall back to
+`~/.config/calcit/modules/`, i.e. `.calcit/modules/memof/calcit.cirru` or the legacy global path.
 
 Modules ending with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+
+Inspect and verify the resolved graph with:
+
+```bash
+caps tree
+caps why calcit-lang/memof
+caps status
+caps verify
+```
 
 ### Development
 

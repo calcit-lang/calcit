@@ -22,7 +22,13 @@ aliases:
     |calcit-lang/lilac |main
 ```
 
-Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`. If a module contains `build.sh`, it will be executed mostly for compiling Rust dylibs.
+Run `caps` to recursively resolve and install the graph. Sources are stored by resolved commit under
+`~/.config/calcit/modules/.store/`. The project gets a local module view in `.calcit/modules/`, with
+`caps-state.cirru`, temporary files, and other generated state kept under `.calcit/`.
+
+SemVer tags are the recommended dependency refs. Branches are supported for development, but every
+resolution warns and prints the current commit. Conflicting SemVer tags select the highest version actually
+requested by the graph and emit a warning that lists the request sources.
 
 To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename: `compact.cirru`):
 
@@ -33,9 +39,41 @@ To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename
       :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`, i.e. `~/.config/calcit/modules/memof/calcit.cirru`.
+Paths defined in `:modules` first use `<project>/.calcit/modules/` and then the legacy
+`~/.config/calcit/modules/` fallback. Existing snapshot `:modules` values do not need to change.
 
-Modules that ends with `/`s are automatically suffixed `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+Modules that end with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
+
+### Dependency graph
+
+```bash
+caps tree
+caps why calcit-lang/memof
+caps status
+caps verify
+```
+
+`tree` displays selected recursive revisions, while `why` prints one shortest path from every root
+dependency and all direct version requests. `status` checks project links; `verify` also checks immutable
+store commits, local source modifications, and native realization receipts.
+
+The positional input may point to a standalone dependency file. Its parent directory becomes the project
+root even when no `calcit.cirru` exists:
+
+```bash
+caps /tmp/demo/deps.cirru
+```
+
+New projects may keep their package version in `deps.cirru` and manage it with:
+
+```bash
+caps version get
+caps version set 1.2.3
+caps version bump patch
+```
+
+During migration, the snapshot `:version` field remains supported by `cr`; `caps version` only manages the
+dependency metadata file and does not rewrite the snapshot automatically.
 
 ### Outdated
 
@@ -53,32 +91,30 @@ caps upgrade --all
 
 ### Module status and local changes
 
-Installed modules are Git working trees. Check that every installed module is at the
-version declared by `deps.cirru`, and report local working-tree changes, with:
+Check that every project link points to the revision selected from `deps.cirru` with:
 
 ```bash
 caps status
 ```
 
-The regular `caps` command performs the same local-change check before syncing
-dependencies. If a module has local modifications, it prints a warning so that the
-changes are not mistaken for the version from the remote repository.
+Use `caps verify` for the stronger immutable-store and native-receipt checks. Shared
+store revisions should not be edited directly; reinstall a damaged revision instead.
 
-To discard tracked local changes and return each installed dependency to its current
-commit, run:
+`caps reset` rebuilds the current project's `.calcit/modules/` links from the resolved immutable
+store entries:
 
 ```bash
 caps reset
 ```
 
-This uses `git reset --hard HEAD`; review and back up any work you need before running
-it. Untracked files are reported by `caps status` but are not deleted by `caps reset`.
+It never runs `git reset` inside shared store revisions. A damaged or edited store entry is
+reported as an error and should be moved aside before reinstalling.
 
 ### CLI Options
 
 ```
 caps --help
-Usage: caps [<input>] [-v] [--pull-branch] [--ci] [--local-debug] [<command>] [<args>]
+Usage: caps [<input>] [-v] [--pull-branch] [--ci] [--local-debug] [--strict] [<command>] [<args>]
 
 Top-level command.
 
@@ -87,17 +123,26 @@ Positional Arguments:
 
 Options:
   -v, --verbose     verbose mode
-  --pull-branch     pull branch in the repo
+  --pull-branch     deprecated compatibility flag; branch refs resolve remotely
   --ci              CI mode loads shallow repo via HTTPS
   --local-debug     debug mode, clone to test-modules/
+  --strict          reject branch and version-conflict warnings
   --help, help      display usage information
 
 Commands:
   outdated          show outdated versions
+  upgrade           upgrade dependencies
   download          download named packages with org/repo@branch
+  add               add dependencies to deps.cirru then install
+  remove            remove dependencies from deps.cirru then install
+  tree              show the resolved recursive dependency graph
+  why               explain why a module is present in the resolved graph
   status            check installed module versions and local modifications
-  reset             discard tracked local modifications in installed modules
+  verify            verify store contents, project links, and native receipts
+  reset             rebuild project links from immutable store entries
+  version           read or update the package version in deps.cirru
 ```
 
-- "pull branch" to fetch update if only branch name is specified like `main`.
+- `--pull-branch` is retained for CLI compatibility. Recursive resolution always checks
+  the current remote commit for branch refs.
 - "ci" does not support `git@` protocol, only `https://` protocol.

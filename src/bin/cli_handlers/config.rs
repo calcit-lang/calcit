@@ -170,23 +170,32 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
 }
 
 fn load_module_silent(module_path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
-  let candidates = [
-    base_dir.join(module_path).join("calcit.cirru"),
-    base_dir.join(module_path).join("compact.cirru"),
-    module_folder.join(module_path).join("calcit.cirru"),
-    module_folder.join(module_path).join("compact.cirru"),
-  ];
-
-  for candidate in &candidates {
+  let mut last_error = None;
+  for (_, candidate, _) in calcit::resolve_module_snapshot_candidates(module_path, base_dir, module_folder) {
     if candidate.exists() {
-      let mut content = fs::read_to_string(candidate).map_err(|e| format!("Failed to read: {e}"))?;
+      let mut content = match fs::read_to_string(&candidate) {
+        Ok(content) => content,
+        Err(error) => {
+          last_error = Some(format!("Failed to read {}: {error}", candidate.display()));
+          continue;
+        }
+      };
       strip_shebang(&mut content);
-      let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse: {e}"))?;
-      return snapshot::load_snapshot_data(&data, &candidate.to_string_lossy());
+      let data = match cirru_edn::parse(&content) {
+        Ok(data) => data,
+        Err(error) => {
+          last_error = Some(format!("Failed to parse {}: {error}", candidate.display()));
+          continue;
+        }
+      };
+      match snapshot::load_snapshot_data(&data, &candidate.to_string_lossy()) {
+        Ok(snapshot) => return Ok(snapshot),
+        Err(error) => last_error = Some(format!("Failed to load {}: {error}", candidate.display())),
+      }
     }
   }
 
-  Err(format!("Module not found: {module_path}"))
+  Err(last_error.unwrap_or_else(|| format!("Module not found: {module_path}")))
 }
 
 fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<(), String> {
@@ -490,6 +499,27 @@ fn handle_rm_type_slot(opts: &ConfigRmTypeSlotCommand, snapshot_file: &str) -> R
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn config_module_lookup_prefers_project_module_view() {
+    let root = std::env::temp_dir().join(format!("calcit-config-module-view-{}", std::process::id()));
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(project.join(".calcit/modules/demo")).unwrap();
+    fs::create_dir_all(global.join("demo")).unwrap();
+    let snapshot = |package: &str| {
+      format!(
+        "{{}} (:package |{package})\n  :configs $ {{}} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)\n    :modules $ []\n  :files $ {{}}\n"
+      )
+    };
+    fs::write(project.join(".calcit/modules/demo/compact.cirru"), "invalid snapshot").unwrap();
+    fs::write(project.join(".calcit/modules/demo/calcit.cirru"), snapshot("project-demo")).unwrap();
+    fs::write(global.join("demo/calcit.cirru"), snapshot("global-demo")).unwrap();
+
+    let loaded = load_module_silent("demo/", &project, &global).unwrap();
+    assert_eq!(loaded.package, "project-demo");
+    fs::remove_dir_all(root).unwrap();
+  }
 
   #[test]
   fn type_slot_edn_mutation_preserves_unrelated_snapshot_data() {

@@ -1471,6 +1471,12 @@ fn ensure_runtime_initialized() {
 }
 
 fn module_folder() -> Result<PathBuf, String> {
+  let project_modules = std::env::current_dir()
+    .map_err(|e| format!("Unable to get current directory: {e}"))?
+    .join(".calcit/modules");
+  if project_modules.exists() {
+    return Ok(project_modules);
+  }
   let home = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
   Ok(Path::new(&home).join(".config/calcit/modules/"))
 }
