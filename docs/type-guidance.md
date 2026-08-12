@@ -55,6 +55,17 @@ update-in data ([] :settings :retries)
 
 ## Enum 构造
 
+Struct 也支持同样的类型化头部调用：
+
+```cirru.no-check
+defstruct Profile (:name 'String) (:bio (:: 'Option 'String))
+Profile :name |Ada
+```
+
+参数必须是 `:field value` 对，必填字段不能省略；末尾声明为 `Option<T>`
+的字段可以省略，Calcit 会补成 `%none`。需要显式控制所有字段或构造部分值时，
+继续使用 `%{} Profile ...` / `%{}? Profile ...`。
+
 已知 Enum 定义时使用头部调用：
 
 ```cirru.no-check

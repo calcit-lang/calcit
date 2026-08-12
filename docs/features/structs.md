@@ -13,12 +13,13 @@ parent: core/features
 
 # Structs
 
-Calcit structs are declared data types with a fixed set of named fields. Struct definitions are created with `defstruct`; struct values are constructed with `%{}`.
+Calcit structs are declared data types with a fixed set of named fields. Struct definitions are created with `defstruct`; struct values are constructed with `%{}` or by calling the definition directly with tag/value pairs.
 
 ## Quick Recipes
 
 - **Define**: `defstruct Point (:x 'Number) (:y 'Number)`
 - **Create**: `%{} Point (:x 1) (:y 2)`
+- **Constructor sugar**: `Point :x 1 :y 2`
 - **Access**: `(:x p)`
 - **Update**: `assoc p :x 10` or `update p :x inc`
 - **Type Check**: `assert-type p 'Point`
@@ -75,6 +76,20 @@ let
 Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a struct value, so the constraint lives on the data definition rather than on each individual function schema.
 
 ## Creating Struct Values
+
+When the definition is in scope, the concise constructor form keeps field names at
+the call site:
+
+```cirru.no-check
+let
+    Point $ defstruct Point (:x 'Number) (:y 'Number)
+    p $ Point :x 1 :y 2
+  , p
+```
+
+Arguments must be tag/value pairs. Required fields must be present, while a field
+declared as `Option<T>` may be omitted; the constructor inserts the nominal
+`%none` variant. Non-`Option` fields are never silently filled with `nil`.
 
 Use the `%{}` macro to instantiate a struct:
 

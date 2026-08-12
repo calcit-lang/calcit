@@ -2079,10 +2079,10 @@ fn try_rewrite_struct_enum_constructor_head_call(
 
     for (idx, field) in struct_def.fields.iter().enumerate() {
       if !provided_fields.contains_key(field)
-        && !matches!(
-          struct_def.field_types.get(idx).map(AsRef::as_ref),
-          Some(CalcitTypeAnnotation::Optional(_))
-        )
+        && !struct_def
+          .field_types
+          .get(idx)
+          .is_some_and(|field_type| matches!(field_type.as_ref(), CalcitTypeAnnotation::Optional(_)) || field_type.is_option_type())
       {
         gen_check_warning(
           format!(
@@ -2129,10 +2129,23 @@ fn try_rewrite_struct_enum_constructor_head_call(
     let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
     struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
     struct_items.push(struct_ref_node);
-    for field in struct_def.fields.iter() {
+    for (field_idx, field) in struct_def.fields.iter().enumerate() {
       struct_items.push(Calcit::Tag(field.to_owned()));
       if let Some(value) = provided_fields.get(field) {
         struct_items.push((*value).to_owned());
+      } else if struct_def
+        .field_types
+        .get(field_idx)
+        .is_some_and(|field_type| field_type.is_option_type())
+      {
+        // Nominal Option fields use the typed `%none` variant when omitted.
+        // Keep legacy Optional<T> fields on their historical nil representation.
+        struct_items.push(Calcit::from(vec![Calcit::Import(CalcitImport {
+          ns: calcit::CORE_NS.into(),
+          def: "%none".into(),
+          info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+          def_id: None,
+        })]));
       } else {
         struct_items.push(Calcit::Nil);
       }
@@ -7314,6 +7327,60 @@ mod tests {
     assert_eq!(*items.get(4).expect("age field key"), Calcit::Tag(EdnTag::from("age")));
     assert_eq!(*items.get(3).expect("name value"), Calcit::Str(Arc::from("Alice")));
     assert_eq!(*items.get(5).expect("age value"), Calcit::Number(20.0));
+  }
+
+  #[test]
+  fn rewrites_omitted_option_struct_field_to_none() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_edn::EdnTag;
+    use cirru_parser::Cirru;
+
+    let mut person_struct = CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name"), EdnTag::from("trace")]);
+    person_struct.field_types = Arc::new(vec![
+      Arc::new(CalcitTypeAnnotation::String),
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+      )),
+    ]);
+
+    let expr = Cirru::List(vec![Cirru::leaf("Person"), Cirru::leaf(":name"), Cirru::leaf("|Alice")]);
+    let parsed = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse struct ctor");
+    let Calcit::List(parsed_items) = parsed else {
+      panic!("expected parsed call");
+    };
+    let mut code_items = parsed_items.to_vec();
+    code_items[0] = Calcit::StructDef(person_struct.clone());
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("Person"),
+      Arc::new(CalcitTypeAnnotation::Struct(Arc::new(person_struct.clone()), Arc::new(vec![]))),
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let result = try_rewrite_struct_enum_constructor_head_call(
+      code_items.first().expect("struct head"),
+      &CalcitList::from(&code_items[1..]),
+      &scope_types,
+      "tests.struct",
+      "demo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("rewrite struct ctor")
+    .expect("struct ctor should rewrite");
+    let Calcit::List(items) = result else {
+      panic!("expected rewritten struct list");
+    };
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))));
+    assert!(matches!(items.get(3), Some(Calcit::Str(value)) if value.as_ref() == "Alice"));
+    let Some(Calcit::List(none_call)) = items.get(5) else {
+      panic!("expected omitted Option field to become a %none call");
+    };
+    assert!(
+      matches!(none_call.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%none")
+    );
+    assert!(warnings.borrow().is_empty());
   }
 
   #[test]
