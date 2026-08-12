@@ -704,6 +704,7 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
 fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<Option<String>, String> {
   let url = format!("https://github.com/{org_and_folder}.git");
   let output = Command::new("git")
+    .env("GIT_TERMINAL_PROMPT", "0")
     .args(["ls-remote", "--tags", "--refs", &url])
     .output()
     .map_err(|e| format!("failed to inspect tags for {org_and_folder}: {e}"))?;

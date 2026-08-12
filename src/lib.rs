@@ -152,7 +152,7 @@ fn module_path_candidates(path: &str) -> Vec<String> {
 fn materialize_module_path(file_path: &str, base_dir: &Path, module_folder: &Path) -> PathBuf {
   if file_path.starts_with("./") {
     base_dir.join(file_path)
-  } else if file_path.starts_with('/') {
+  } else if Path::new(file_path).is_absolute() {
     Path::new(file_path).to_owned()
   } else {
     module_folder.join(file_path)
@@ -160,7 +160,7 @@ fn materialize_module_path(file_path: &str, base_dir: &Path, module_folder: &Pat
 }
 
 fn module_roots_for_path(file_path: &str, base_dir: &Path, module_folder: &Path) -> Vec<PathBuf> {
-  if file_path.starts_with("./") || file_path.starts_with('/') {
+  if file_path.starts_with("./") || Path::new(file_path).is_absolute() {
     vec![module_folder.to_path_buf()]
   } else {
     let project_modules = base_dir.join(".calcit/modules");
@@ -175,7 +175,7 @@ fn module_roots_for_path(file_path: &str, base_dir: &Path, module_folder: &Path)
 fn module_candidate_display_path(file_path: &str, fullpath: &Path, module_folder: &Path) -> String {
   if file_path.starts_with("./") {
     file_path.to_string()
-  } else if file_path.starts_with('/') {
+  } else if Path::new(file_path).is_absolute() {
     if let Ok(stripped) = fullpath.strip_prefix(module_folder) {
       format!("<mods>/{}", stripped.display())
     } else {
@@ -254,6 +254,21 @@ mod module_resolution_tests {
     let candidates = resolve_module_snapshot_candidates("./util.cirru", &project, &global);
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].1, project.join("./util.cirru"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn absolute_module_paths_do_not_use_project_module_view() {
+    let root = temp_root("absolute");
+    let project = root.join("project");
+    let global = root.join("global");
+    let module = root.join("external.cirru");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(&module, "absolute").unwrap();
+
+    let candidates = resolve_module_snapshot_candidates(module.to_str().unwrap(), &project, &global);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, module);
     fs::remove_dir_all(root).unwrap();
   }
 }

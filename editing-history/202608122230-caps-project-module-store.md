@@ -38,6 +38,9 @@
 - `cr config modules` now uses the same project-first candidate search as the
   runtime and continues from an invalid `calcit.cirru` to a valid legacy
   `compact.cirru` candidate.
+- Follow-up review fixes use `Path::is_absolute` for module paths, disable
+  Git credential prompts in `caps outdated`, and create Windows directory
+  junctions before falling back to directory symlinks.
 
 ## Real-project verification
 

@@ -722,7 +722,20 @@ fn create_dir_link(target: &Path, link: &Path) -> Result<(), String> {
 
 #[cfg(windows)]
 fn create_dir_link(target: &Path, link: &Path) -> Result<(), String> {
-  std::os::windows::fs::symlink_dir(target, link).map_err(|e| format!("failed to link {} -> {}: {e}", link.display(), target.display()))
+  let junction = Command::new("cmd").args(["/C", "mklink", "/J"]).arg(link).arg(target).output();
+  if let Ok(output) = junction
+    && output.status.success()
+  {
+    return Ok(());
+  }
+
+  std::os::windows::fs::symlink_dir(target, link).map_err(|error| {
+    format!(
+      "failed to create junction or directory symlink {} -> {}: {error}",
+      link.display(),
+      target.display()
+    )
+  })
 }
 
 fn write_state(graph: &ResolvedGraph, state_path: &Path) -> Result<(), String> {
