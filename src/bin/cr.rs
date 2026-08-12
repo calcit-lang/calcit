@@ -298,6 +298,15 @@ fn main() -> Result<(), String> {
   // with an older globally installed `cr` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
 
+  // Dynamic usage is a project-health signal, not a type-check failure. Keep
+  // it on stderr so command stdout remains machine-readable for Agent/CI use.
+  if !calcit::quiet_tool_output()
+    && let Ok(summary) = type_coverage::collect_dynamic_usage_summary(&snapshot)
+    && let Some(notice) = type_coverage::format_dynamic_usage_notice(summary)
+  {
+    eprintln!("{notice}");
+  }
+
   // now global states
   {
     let mut prgm = { program::PROGRAM_CODE_DATA.write().expect("open program data") };
@@ -1774,6 +1783,32 @@ mod tests {
     assert_eq!(row.level, type_coverage::CoverageLevel::Full);
     assert_eq!(row.params, vec!["arg0"]);
     assert_eq!(row.return_type_hints, vec!["'String"]);
+  }
+
+  #[test]
+  fn dynamic_usage_summary_escalates_by_ratio() {
+    let summary = type_coverage::DynamicUsageSummary {
+      total_positions: 20,
+      dynamic_positions: 1,
+    };
+    assert_eq!(summary.severity(), None);
+
+    let summary = type_coverage::DynamicUsageSummary {
+      total_positions: 10,
+      dynamic_positions: 2,
+    };
+    assert_eq!(summary.severity(), Some("notice"));
+
+    let summary = type_coverage::DynamicUsageSummary {
+      total_positions: 10,
+      dynamic_positions: 3,
+    };
+    assert_eq!(summary.severity(), Some("warning"));
+    assert!(
+      type_coverage::format_dynamic_usage_notice(summary)
+        .expect("dynamic notice")
+        .contains("30.0%")
+    );
   }
 
   #[test]

@@ -19,6 +19,7 @@ leads_to:
   - core/features/structs
   - core/features/anonymous-enums
   - core/features/enums
+  - core/features/type-guidance
 ---
 
 # Features
@@ -58,6 +59,7 @@ For detailed information about specific features:
 - [Polymorphism](features/polymorphism.md) - Object-oriented programming patterns
 - [Traits](features/traits.md) - Capability-based method dispatch and explicit trait calls
 - [Static Analysis](features/static-analysis.md) - Type checking and compile-time validation
+- [Type Guidance](type-guidance.md) - Dynamic audits, Option/Result composition, nested lookup, and typed Enum construction
 
 ## Compilation Targets
 

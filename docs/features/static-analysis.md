@@ -240,6 +240,22 @@ let
 
 `:any` is a legacy alias for `:dynamic`; both are accepted as input and formatter output is `'Dynamic`.
 
+### Dynamic 用量审计
+
+每次 `cr` 执行或编译都会在 stderr 统计当前项目的 Dynamic 类型位置。少量使用只保留静默结果；达到一定数量且占比超过阈值时输出 notice 或 warning。该审计不会改变程序语义，也不会污染 stdout；需要定位时运行：
+
+```bash
+cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --format json
+```
+
+Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使用 TypeVar/`:generics`，能力约束使用 trait/`:where`，缺失使用 `Option<T>`，失败使用 `Result<T,E>`。
+
+### Option / Result 级联
+
+使用 `option:map`、`option:and-then`、`option:or-else` 组合可选值；使用 `result:and-then`、`result:map-err`、`result:or-else` 组合失败路径。`unwrap` 只用于已经证明为 `some`/`ok` 的分支。
+
+`get-in` 返回 `Option<T>`，适合开放 Map/List 路径；不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的 updater 接收 `Option<T>`，必须显式处理缺失值。
+
 ### Complex Types
 
 #### Legacy Optional Types
@@ -741,6 +757,15 @@ d! $ %:: Op :delete (:id task)
 ;; Warning: "expects 0 payload(s), got 1"
 
 d! $ %:: Op :clear 42
+```
+
+### Typed Enum Constructor Sugar
+
+When an existing Enum definition is the head of a call, prefer `Enum :tag ...`. The preprocessor resolves the definition, checks the variant and payload types, and lowers it to the named constructor. `%:: Enum :tag ...` remains for explicit runtime prototypes, dynamic cross-module construction, and compatibility boundaries.
+
+```cirru.no-check
+Option :some value
+Result :err message
 ```
 
 ### Cirru EDN Representation
