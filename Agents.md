@@ -92,26 +92,24 @@ cr docs agents --full
 ### PR 与发布流程
 
 1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后通过 PR 合并到 `main`。
-2. **以 release PR 升级版本**：从已验证的 `main` 创建 `codex/release-<version>` 分支；同步更新 `Cargo.toml`、`package.json`，执行 `cargo update --workspace`，再提交 `chore: release <version>`。版本文件仍通过 release PR 合并，避免在 `main` 上直接制造未审查的版本提交。
+2. **升级版本**：版本号更新允许直接在已验证的 `main` 上进行，不需要为版本号本身创建 PR。同步更新 `Cargo.toml`、`package.json`，执行 `cargo update --workspace`，提交 `chore: release <version>` 并推送 `main`。如果项目维护者希望版本变更单独审核，也可以自愿使用 `codex/release-<version>` 分支和 PR，但不是硬性要求。
 3. **准备发布提交**：release PR 合并后拉取最新 `main`，确认版本提交确实位于 `main` HEAD 且目标 tag 尚不存在。可以先检查 Actions 状态，但不要求等待所有 Actions 完成后再继续。
-4. **从 main 打 tag 并发布**：允许直接基于合并后的 `main` 提交创建并推送不带 `v` 前缀的 tag，然后创建 GitHub release；打 tag 本身可以在 Actions 尚未完全验证时进行。这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm，之后继续轮询并确认发布 workflow 成功。
+4. **从 main 打 tag 并发布**：直接在已同步的 `main` 上创建并推送不带 `v` 前缀的 tag，然后创建 GitHub release；这一步不需要再创建发布分支。打 tag 本身可以在 Actions 尚未完全验证时进行。这一步触发 `publish.yaml` 自动发布到 crates.io 和 npm，之后继续轮询并确认发布 workflow 成功。
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。
 
 ```bash
-# 创建并合并 release PR
-git switch -c codex/release-0.13.8 main
+# 版本号更新（允许直接在已验证的 main 操作；不要求创建 release PR）
+git switch main
+git pull --ff-only origin main
 # 修改 Cargo.toml、package.json，随后：
 cargo update --workspace
 git add Cargo.toml package.json Cargo.lock
 git commit -m "chore: release 0.13.8"
-git push -u origin codex/release-0.13.8
-gh pr create --base main --head codex/release-0.13.8 --title "chore: release 0.13.8" --body "..."
-gh pr checks <pr-number>
-gh pr merge <pr-number> --merge
+git push origin main
+
+# release PR 合并后回到 main，再打 tag 并推送（不带 v 前缀；不再创建 tag 分支）
 git switch main
 git pull --ff-only origin main
-
-# 打 tag 并推送（不带 v 前缀）
 git tag 0.12.28 -m "Release 0.12.28"
 git push origin 0.12.28
 
