@@ -82,6 +82,38 @@ store commits, local source modifications, and native realization receipts. `cle
 the newest materialized revision of each module under `module-caches/`, plus any revision still linked by
 a registered project view, and removes the remaining older ones.
 
+### Auditing dependency intent
+
+Use the dependency manifest together with the graph, rather than treating installation as proof that an
+application entry uses a module:
+
+```bash
+# Inspect the two root groups in deps.cirru, then resolve the graph and one module's path.
+caps tree
+caps why calcit-lang/memof
+
+# Inspect the module list for each relevant executable entry.
+cr calcit.cirru config modules
+cr calcit.cirru config modules --entry test
+
+# Validate the reachable paths for those entries.
+cr calcit.cirru --check-only
+cr calcit.cirru --entry test --check-only
+```
+
+`caps tree` and `caps why` explain resolver reachability: why a repository is installed and which
+transitive dependency requests selected its revision. They do not inspect Calcit calls, macros, test
+metadata, or Markdown snippets. They also currently merge root `:dependencies` and
+`:dev-dependencies` in their display, so use `deps.cirru` as the authority for a root module's declared
+group. An installed module is therefore not automatically a runtime dependency: it can be a development
+module, a module configured only for another entry, or a module retained for a documentation check.
+
+Named entries do not inherit the default entry's modules. Audit each entry that CI or a release supports.
+For Markdown code, `cr docs check-md` defaults to modules from the default entry; use an explicit
+`--entry <snapshot>` and repeat `--dep <module-path>` for additional documentation-only modules. These
+checks provide static evidence for selected paths, not a guarantee about dynamic loading or external
+consumer usage.
+
 The positional input may point to a standalone dependency file. Its parent directory becomes the project
 root even when no `calcit.cirru` exists:
 
