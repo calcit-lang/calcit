@@ -27,6 +27,7 @@ struct PackageDeps {
   version: Option<String>,
   calcit_version: Option<String>,
   dependencies: HashMap<Arc<str>, Arc<str>>,
+  dev_dependencies: HashMap<Arc<str>, Arc<str>>,
 }
 
 impl TryFrom<Edn> for PackageDeps {
@@ -34,23 +35,8 @@ impl TryFrom<Edn> for PackageDeps {
 
   fn try_from(value: Edn) -> Result<Self, Self::Error> {
     let deps_info = value.view_map()?;
-    #[allow(clippy::mutable_key_type)]
-    let dict = match deps_info.get_or_nil("dependencies") {
-      Edn::Nil => cirru_edn::EdnMapView::default().0,
-      value => value.view_map()?.0,
-    };
-
-    let mut deps: HashMap<Arc<str>, Arc<str>> = HashMap::new();
-    for (k, v) in &dict {
-      match (k, v) {
-        (Edn::Str(k), Edn::Str(v)) => {
-          deps.insert(k.to_owned(), v.to_owned());
-        }
-        _ => {
-          return Err(format!("invalid dependency: {k} {v}"));
-        }
-      }
-    }
+    let dependencies = parse_dependency_group(&deps_info, "dependencies")?;
+    let dev_dependencies = parse_dependency_group(&deps_info, "dev-dependencies")?;
     let expected_version: Option<String> = match deps_info.get_or_nil("calcit-version") {
       Edn::Str(s) => Some((*s).to_owned()),
       Edn::Nil => None,
@@ -64,9 +50,45 @@ impl TryFrom<Edn> for PackageDeps {
     Ok(PackageDeps {
       version: package_version,
       calcit_version: expected_version,
-      dependencies: deps,
+      dependencies,
+      dev_dependencies,
     })
   }
+}
+
+impl PackageDeps {
+  fn root_dependencies(&self) -> Result<HashMap<Arc<str>, Arc<str>>, String> {
+    let mut root = self.dependencies.clone();
+    for (repository, reference) in &self.dev_dependencies {
+      if let Some(runtime_reference) = root.get(repository)
+        && runtime_reference != reference
+      {
+        return Err(format!(
+          "root dependency {repository} is declared in dependencies as {runtime_reference} and dev-dependencies as {reference}; keep one declaration or use the same ref"
+        ));
+      }
+      root.insert(repository.clone(), reference.clone());
+    }
+    Ok(root)
+  }
+}
+
+fn parse_dependency_group(deps_info: &cirru_edn::EdnMapView, field: &str) -> Result<HashMap<Arc<str>, Arc<str>>, String> {
+  #[allow(clippy::mutable_key_type)]
+  let dict = match deps_info.get_or_nil(field) {
+    Edn::Nil => cirru_edn::EdnMapView::default().0,
+    value => value.view_map()?.0,
+  };
+  let mut dependencies = HashMap::new();
+  for (key, value) in &dict {
+    match (key, value) {
+      (Edn::Str(key), Edn::Str(value)) => {
+        dependencies.insert(key.to_owned(), value.to_owned());
+      }
+      _ => return Err(format!("invalid {field} entry: {key} {value}")),
+    }
+  }
+  Ok(dependencies)
 }
 
 pub fn main() -> Result<(), String> {
@@ -96,7 +118,15 @@ pub fn main() -> Result<(), String> {
         Ok((org_and_folder.to_owned().into(), version.to_owned().into()))
       })
       .collect::<Result<_, String>>()?;
-    download_deps(dict, cli_args)?;
+    download_deps(
+      PackageDeps {
+        version: None,
+        calcit_version: None,
+        dependencies: dict,
+        dev_dependencies: Default::default(),
+      },
+      cli_args,
+    )?;
     return Ok(());
   }
 
@@ -130,7 +160,7 @@ pub fn main() -> Result<(), String> {
             format!("Failed to parse '{}'", cli_args.input)
           })?;
           let updated_deps: PackageDeps = parsed.try_into()?;
-          download_deps(updated_deps.dependencies, cli_args)?;
+          download_deps(updated_deps, cli_args)?;
         }
       }
       Some(SubCommand::Upgrade(opts)) => {
@@ -145,7 +175,7 @@ pub fn main() -> Result<(), String> {
             format!("Failed to parse '{}'", cli_args.input)
           })?;
           let updated_deps: PackageDeps = parsed.try_into()?;
-          download_deps(updated_deps.dependencies, cli_args)?;
+          download_deps(updated_deps, cli_args)?;
         }
       }
       Some(SubCommand::Add(opts)) => {
@@ -164,14 +194,18 @@ pub fn main() -> Result<(), String> {
             (package, version.strip_prefix('@').filter(|version| !version.is_empty()))
           });
           let org_and_folder = normalize_package_name(package)?;
-          updated_deps
-            .dependencies
-            .insert(org_and_folder.into(), inline_version.unwrap_or(&opts.version).to_owned().into());
+          let target = if opts.dev {
+            &mut updated_deps.dev_dependencies
+          } else {
+            &mut updated_deps.dependencies
+          };
+          target.insert(org_and_folder.into(), inline_version.unwrap_or(&opts.version).to_owned().into());
         }
 
+        updated_deps.root_dependencies()?;
         write_deps_file(&cli_args.input, &updated_deps)?;
         println!("updated {}", cli_args.input.green());
-        download_deps(updated_deps.dependencies, cli_args)?;
+        download_deps(updated_deps, cli_args)?;
       }
       Some(SubCommand::Remove(opts)) => {
         if opts.packages.is_empty() {
@@ -181,12 +215,17 @@ pub fn main() -> Result<(), String> {
         let mut updated_deps = deps;
         for raw in &opts.packages {
           let org_and_folder = normalize_package_name(raw)?;
-          updated_deps.dependencies.remove(org_and_folder.as_str());
+          let target = if opts.dev {
+            &mut updated_deps.dev_dependencies
+          } else {
+            &mut updated_deps.dependencies
+          };
+          target.remove(org_and_folder.as_str());
         }
 
         write_deps_file(&cli_args.input, &updated_deps)?;
         println!("updated {}", cli_args.input.green());
-        download_deps(updated_deps.dependencies, cli_args)?;
+        download_deps(updated_deps, cli_args)?;
       }
       Some(SubCommand::Status(_)) => {
         let graph = resolve_for_cli(&deps, &cli_args, false)?;
@@ -232,7 +271,7 @@ pub fn main() -> Result<(), String> {
         unreachable!("already handled: {:?}", dep_names);
       }
       None => {
-        download_deps(deps.dependencies, cli_args)?;
+        download_deps(deps, cli_args)?;
       }
     }
 
@@ -248,13 +287,8 @@ pub fn main() -> Result<(), String> {
   }
 }
 
-fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Result<(), String> {
-  let package = PackageDeps {
-    version: None,
-    calcit_version: None,
-    dependencies: deps,
-  };
-  let graph = resolve_for_cli(&package, &options, !options.ci)?;
+fn download_deps(deps: PackageDeps, options: TopLevelCaps) -> Result<(), String> {
+  let graph = resolve_for_cli(&deps, &options, !options.ci)?;
   print_warnings(&graph);
   let graph_options = graph_options(&options, !options.ci)?;
   install_project_view(&graph, &graph_options)?;
@@ -465,6 +499,9 @@ struct AddCaps {
   /// version/branch written to deps.cirru
   #[argh(option, short = 'r', default = "\"main\".to_string()")]
   version: String,
+  /// add packages to dev-dependencies
+  #[argh(switch)]
+  dev: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -474,6 +511,9 @@ struct RemoveCaps {
   /// packages in format `org/repo` or github URL
   #[argh(positional)]
   packages: Vec<String>,
+  /// remove packages from dev-dependencies
+  #[argh(switch)]
+  dev: bool,
 }
 
 fn err_println(msg: String) {
@@ -542,6 +582,8 @@ fn valid_module_component(component: &str) -> bool {
 mod tests {
   use super::{PackageDeps, module_folder, normalize_package_name};
   use cirru_edn::Edn;
+  use std::collections::HashMap;
+  use std::sync::Arc;
 
   #[test]
   fn module_names_are_canonical_before_path_use() {
@@ -564,6 +606,15 @@ mod tests {
   fn missing_dependencies_field_is_an_empty_graph() {
     let deps: PackageDeps = Edn::Map(cirru_edn::EdnMapView::default()).try_into().unwrap();
     assert!(deps.dependencies.is_empty());
+    assert!(deps.dev_dependencies.is_empty());
+  }
+
+  #[test]
+  fn parses_development_dependencies_separately() {
+    let parsed = cirru_edn::parse("{} (:dependencies $ {} (|org/runtime |1.0.0)) (:dev-dependencies $ {} (|org/test |main))").unwrap();
+    let deps: PackageDeps = parsed.try_into().unwrap();
+    assert_eq!(deps.dependencies.get("org/runtime").map(AsRef::as_ref), Some("1.0.0"));
+    assert_eq!(deps.dev_dependencies.get("org/test").map(AsRef::as_ref), Some("main"));
   }
 
   #[test]
@@ -573,11 +624,13 @@ mod tests {
       version: Some("1.2.3".to_string()),
       calcit_version: Some("0.13.12".to_string()),
       dependencies: Default::default(),
+      dev_dependencies: HashMap::from([(Arc::from("calcit-lang/test"), Arc::from("main"))]),
     };
     super::write_deps_file(path.to_str().unwrap(), &deps).unwrap();
     let parsed = cirru_edn::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let restored: PackageDeps = parsed.try_into().unwrap();
     assert_eq!(restored.version.as_deref(), Some("1.2.3"));
+    assert_eq!(restored.dev_dependencies.get("calcit-lang/test").map(AsRef::as_ref), Some("main"));
     std::fs::remove_file(path).unwrap();
   }
 }
@@ -598,6 +651,14 @@ fn write_deps_file(deps_file: &str, deps: &PackageDeps) -> Result<(), String> {
       deps_map.insert(Edn::str(&**k), Edn::str(&**v));
     }
     map.insert(Edn::tag("dependencies"), Edn::Map(deps_map));
+
+    if !deps.dev_dependencies.is_empty() {
+      let mut dev_deps_map = cirru_edn::EdnMapView::default();
+      for (k, v) in &deps.dev_dependencies {
+        dev_deps_map.insert(Edn::str(&**k), Edn::str(&**v));
+      }
+      map.insert(Edn::tag("dev-dependencies"), Edn::Map(dev_deps_map));
+    }
   }
 
   let updated_content = cirru_edn::format(&updated_edn, false)?;
@@ -633,7 +694,7 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
   let mut outdated_packages = Vec::new();
   let mut children = vec![];
 
-  for (org_and_folder, version) in &deps.dependencies {
+  for (org_and_folder, version) in deps.root_dependencies()? {
     let org_and_folder_clone = org_and_folder.clone();
     let version_clone = version.clone();
     let ret = thread::spawn(move || {
@@ -644,7 +705,7 @@ fn outdated_tags(deps: PackageDeps, deps_file: &str, auto_yes: bool) -> Result<b
       }
       ret.ok()
     });
-    children.push((org_and_folder.clone(), version.clone(), ret));
+    children.push((org_and_folder, version, ret));
   }
 
   for (org_and_folder, version, child) in children {
@@ -773,7 +834,12 @@ fn update_deps_file(
 
   // Update the dependencies in the parsed structure
   for (org_and_folder, _old_version, new_version) in outdated_packages {
-    deps.dependencies.insert(org_and_folder.clone(), new_version.clone().into());
+    if let Some(version) = deps.dependencies.get_mut(org_and_folder) {
+      *version = new_version.clone().into();
+    }
+    if let Some(version) = deps.dev_dependencies.get_mut(org_and_folder) {
+      *version = new_version.clone().into();
+    }
   }
 
   write_deps_file(deps_file, &deps)
@@ -784,7 +850,7 @@ fn upgrade_packages(deps: PackageDeps, deps_file: &str, opts: &UpgradeCaps) -> R
   let mut children = vec![];
 
   let targets: Vec<Arc<str>> = if opts.all {
-    deps.dependencies.keys().cloned().collect()
+    deps.root_dependencies()?.keys().cloned().collect()
   } else {
     opts
       .packages
@@ -798,7 +864,11 @@ fn upgrade_packages(deps: PackageDeps, deps_file: &str, opts: &UpgradeCaps) -> R
   }
 
   for org_and_folder in &targets {
-    if let Some(version) = deps.dependencies.get(org_and_folder) {
+    if let Some(version) = deps
+      .dependencies
+      .get(org_and_folder)
+      .or_else(|| deps.dev_dependencies.get(org_and_folder))
+    {
       let org_and_folder_clone = org_and_folder.clone();
       let version_clone = version.clone();
       let ret = thread::spawn(move || {

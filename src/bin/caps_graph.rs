@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::thread;
 
 const MAX_PARALLEL_RESOLVES: usize = 6;
@@ -71,7 +72,7 @@ pub struct GraphOptions {
 }
 
 pub fn resolve_graph(root_deps: &PackageDeps, options: &GraphOptions) -> Result<ResolvedGraph, String> {
-  let root = sorted_dependencies(root_deps);
+  let root = sorted_root_dependencies(root_deps)?;
   validate_module_folders(root.keys())?;
   let mut selections = BTreeMap::<String, String>::new();
   let mut stable_result = None;
@@ -443,15 +444,18 @@ fn read_module_dependencies(source: &Path) -> Result<BTreeMap<String, String>, S
   let content = fs::read_to_string(&deps_path).map_err(|e| format!("failed to read {}: {e}", deps_path.display()))?;
   let parsed = cirru_edn::parse(&content).map_err(|e| format!("failed to parse {}: {e}", deps_path.display()))?;
   let deps: PackageDeps = parsed.try_into().map_err(|e| format!("invalid {}: {e}", deps_path.display()))?;
-  Ok(sorted_dependencies(&deps))
+  Ok(sorted_dependencies(&deps.dependencies))
 }
 
-fn sorted_dependencies(deps: &PackageDeps) -> BTreeMap<String, String> {
+fn sorted_dependencies(deps: &std::collections::HashMap<Arc<str>, Arc<str>>) -> BTreeMap<String, String> {
   deps
-    .dependencies
     .iter()
     .map(|(repository, reference)| (repository.to_string(), reference.to_string()))
     .collect()
+}
+
+fn sorted_root_dependencies(deps: &PackageDeps) -> Result<BTreeMap<String, String>, String> {
+  Ok(sorted_dependencies(&deps.root_dependencies()?))
 }
 
 fn validate_module_folders<'a>(repositories: impl Iterator<Item = &'a String>) -> Result<(), String> {
@@ -1192,11 +1196,13 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::{
-    DependencyRequest, RefKind, ResolvedModule, is_full_commit_hash, parse_tag_version, select_reference, verify_native_receipt,
-    write_native_receipt,
+    DependencyRequest, RefKind, ResolvedModule, is_full_commit_hash, parse_tag_version, read_module_dependencies, select_reference,
+    sorted_root_dependencies, verify_native_receipt, write_native_receipt,
   };
-  use std::collections::BTreeSet;
+  use crate::PackageDeps;
+  use std::collections::{BTreeSet, HashMap};
   use std::fs;
+  use std::sync::Arc;
 
   fn request(reference: &str, requested_by: Option<&str>) -> DependencyRequest {
     DependencyRequest {
@@ -1229,6 +1235,46 @@ mod tests {
   fn published_tag_wins_over_transitive_branch() {
     let requests = BTreeSet::from([request("0.0.6", Some("stable@1.0.0")), request("main", Some("legacy@1.0.0"))]);
     assert_eq!(select_reference("org/repo", &requests, None), Ok("0.0.6".to_string()));
+  }
+
+  #[test]
+  fn root_includes_development_dependencies() {
+    let deps = PackageDeps {
+      version: None,
+      calcit_version: None,
+      dependencies: HashMap::from([(Arc::from("org/runtime"), Arc::from("1.0.0"))]),
+      dev_dependencies: HashMap::from([(Arc::from("org/test"), Arc::from("main"))]),
+    };
+    let root = sorted_root_dependencies(&deps).unwrap();
+    assert_eq!(root.get("org/runtime").map(String::as_str), Some("1.0.0"));
+    assert_eq!(root.get("org/test").map(String::as_str), Some("main"));
+  }
+
+  #[test]
+  fn transitive_module_excludes_development_dependencies() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-transitive-dev-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+      root.join("deps.cirru"),
+      "{} (:dependencies $ {} (|org/runtime |1.0.0)) (:dev-dependencies $ {} (|org/test |main))",
+    )
+    .unwrap();
+    let dependencies = read_module_dependencies(&root).unwrap();
+    assert_eq!(dependencies.get("org/runtime").map(String::as_str), Some("1.0.0"));
+    assert!(!dependencies.contains_key("org/test"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn conflicting_root_dependency_groups_are_rejected() {
+    let deps = PackageDeps {
+      version: None,
+      calcit_version: None,
+      dependencies: HashMap::from([(Arc::from("org/shared"), Arc::from("1.0.0"))]),
+      dev_dependencies: HashMap::from([(Arc::from("org/shared"), Arc::from("main"))]),
+    };
+    assert!(sorted_root_dependencies(&deps).is_err());
   }
 
   #[test]
