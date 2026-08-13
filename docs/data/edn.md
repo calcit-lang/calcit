@@ -18,6 +18,7 @@ The runtime APIs are:
 
 - `parse-cirru-edn text [type-options]`
 - `parse-cirru-edn-as text TypeExpr`
+- `decode-map-as value TypeExpr`
 - `format-cirru-edn value`
 
 `parse-cirru-edn` is the dynamic API: its result is `Dynamic`, and its optional type map only restores nominal identity. Use `parse-cirru-edn-as` when persisted or external data must enter typed application code.
@@ -51,6 +52,26 @@ parse-cirru-edn-as failed at $.friends[2].age: expected number, got string
 ```
 
 The failure is raised like `parse-cirru-edn` errors and can be handled with `try`.
+
+## Decoding runtime maps into Structs
+
+`decode-map-as` is the companion for data that has already crossed a host boundary and is now a Calcit Map, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries.
+
+It converts a Map to a nominal Struct recursively, rejects unknown keys and missing required fields, and reports the path of a bad nested value. A missing `Option<T>` field becomes `%none`; a present raw `T` becomes `%some T`. Already-wrapped `%some` and `%none` values are also accepted.
+
+```cirru.no-run
+defstruct Response (:code 'Number)
+  :message $ :: 'Option 'String
+  :body 'Dynamic
+
+; `raw` may be { :code 200, :message |ok, :body ... }
+; the result is Response(:code 200, :message (%some |ok), :body ...)
+; omitting :message produces (%none)
+```
+
+Unlike the closed text decoder, `decode-map-as` permits an explicitly declared `Dynamic` leaf for an open payload such as an HTTP response body. Keep it at the boundary and decode it again into a closed Struct/Enum before application logic depends on it. The root input must be a Map; it never treats `nil` as an empty map or silently supplies required fields.
+
+The syntax is available for native execution and JavaScript code generation. The current WASM backend does not yet support either typed EDN decoder.
 
 Map and Set iteration order is not a semantic guarantee. The formatter applies a stable order for readable, reproducible output; callers must not use that order as application data.
 

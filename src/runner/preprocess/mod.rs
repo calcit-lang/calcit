@@ -1616,6 +1616,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_parse_cirru_edn_as(name, name_ns, &args, &mut ctx)
         }
+        CalcitSyntax::DecodeMapAs => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_decode_map_as(name, name_ns, &args, &mut ctx)
+        }
         CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_traits(name, name_ns, &args, &mut ctx)
@@ -5593,6 +5597,46 @@ pub fn preprocess_parse_cirru_edn_as(
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     text_form,
+    type_form.to_owned(),
+    decoder.into_calcit_handle(),
+  ]))
+}
+
+pub fn preprocess_decode_map_as(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  if args.len() != 2 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!("{head} expected a map value and a type expression, got {}", args.len()),
+      ctx.call_stack,
+      args.first().and_then(Calcit::get_location),
+    ));
+  }
+  let value_form = preprocess_expr(
+    args.first().expect("validated decode-map-as value"),
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  let type_form = args.get(1).expect("validated decode-map-as type");
+  let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  let decoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("decode-map-as cannot derive a runtime map decoder: {error}"),
+      ctx.call_stack,
+      type_form.get_location(),
+    )
+  })?;
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    value_form,
     type_form.to_owned(),
     decoder.into_calcit_handle(),
   ]))

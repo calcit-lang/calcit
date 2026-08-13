@@ -641,6 +641,7 @@ pub fn handle_syntax(
     AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),
     UnsafeCoerce => syntax::unsafe_coerce(nodes, scope, file_ns, call_stack),
     ParseCirruEdnAs => syntax::parse_cirru_edn_as(nodes, scope, file_ns, call_stack),
+    DecodeMapAs => syntax::decode_map_as(nodes, scope, file_ns, call_stack),
     AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
     Match => syntax::syntax_match(nodes, scope, file_ns, call_stack),
   }

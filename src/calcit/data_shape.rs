@@ -26,6 +26,9 @@ pub(crate) struct DataShapeGraph {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DataShapeNode {
+  /// An intentionally open value at a runtime data boundary. Closed EDN
+  /// shapes never contain this node.
+  Dynamic,
   Unit,
   Bool,
   Number,
@@ -35,6 +38,13 @@ pub(crate) enum DataShapeNode {
   Buffer,
   CirruQuote,
   Optional(usize),
+  /// A nominal `Option<T>` accepted from an ordinary runtime value. Missing
+  /// struct fields become `%none`; present raw values become `%some value`.
+  MapOption {
+    nominal: Arc<CalcitEnumDef>,
+    nominal_path: Option<(Arc<str>, Arc<str>)>,
+    inner: usize,
+  },
   List(usize),
   Set(usize),
   Map {
@@ -99,15 +109,27 @@ struct GraphBuilder {
   nominal_nodes: HashMap<String, usize>,
   resolving_aliases: HashSet<String>,
   resolving_slots: HashSet<String>,
+  allow_dynamic: bool,
 }
 
 impl DataShapeGraph {
   pub(crate) fn build(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, DataShapeError> {
+    Self::build_with_options(target, default_ns, false)
+  }
+
+  /// Builds a decoder shape for a runtime Calcit map. This intentionally
+  /// permits explicit Dynamic leaves and lifts raw option fields.
+  pub(crate) fn build_open(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, DataShapeError> {
+    Self::build_with_options(target, default_ns, true)
+  }
+
+  fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
     let mut builder = GraphBuilder {
       nodes: vec![],
       nominal_nodes: HashMap::new(),
       resolving_aliases: HashSet::new(),
       resolving_slots: HashSet::new(),
+      allow_dynamic,
     };
     let root = builder.build_type(target, default_ns)?;
     let nodes = builder
@@ -160,7 +182,9 @@ impl DataShapeGraph {
     let mut paths = Vec::new();
     for node in &self.nodes {
       let path = match node {
-        DataShapeNode::Struct { nominal_path, .. } | DataShapeNode::Enum { nominal_path, .. } => nominal_path,
+        DataShapeNode::Struct { nominal_path, .. }
+        | DataShapeNode::Enum { nominal_path, .. }
+        | DataShapeNode::MapOption { nominal_path, .. } => nominal_path,
         _ => continue,
       };
       if let Some(path) = path
@@ -210,6 +234,17 @@ impl DataShapeGraph {
           self.validate_node_value(*inner, value, path, depth + 1)
         }
       }
+      DataShapeNode::Dynamic => Ok(()),
+      DataShapeNode::MapOption { nominal, inner, .. } => match value {
+        Calcit::Enum(enum_value) if enum_value.sum_type.as_ref().is_some_and(|actual| actual.name() == nominal.name()) => {
+          match (enum_value.tag.as_ref(), enum_value.extra.as_slice()) {
+            (Calcit::Tag(tag), []) if tag.ref_str() == "none" => Ok(()),
+            (Calcit::Tag(tag), [item]) if tag.ref_str() == "some" => self.validate_node_value(*inner, item, path, depth + 1),
+            _ => Err(DataShapeValueError::at(path, "invalid Option value")),
+          }
+        }
+        _ => Err(shape_kind_mismatch(path, "Option", value)),
+      },
       DataShapeNode::List(inner) => {
         let Calcit::List(values) = value else {
           return Err(shape_kind_mismatch(path, "list", value));
@@ -330,7 +365,9 @@ impl DataShapeGraph {
 impl DataShapeNode {
   fn child_nodes(&self) -> Vec<usize> {
     match self {
+      Self::Dynamic => vec![],
       Self::Optional(inner) | Self::List(inner) | Self::Set(inner) | Self::Ref(inner) => vec![*inner],
+      Self::MapOption { inner, .. } => vec![*inner],
       Self::Map { key, value } => vec![*key, *value],
       Self::Struct { fields, .. } => fields.iter().map(|(_, node)| *node).collect(),
       Self::Enum { variants, .. } => variants.iter().flat_map(|(_, payloads)| payloads.iter().copied()).collect(),
@@ -338,8 +375,9 @@ impl DataShapeNode {
     }
   }
 
-  fn expected_kind(&self) -> &str {
+  pub(crate) fn expected_kind(&self) -> &str {
     match self {
+      Self::Dynamic => "dynamic",
       Self::Unit => "nil",
       Self::Bool => "bool",
       Self::Number => "number",
@@ -348,6 +386,7 @@ impl DataShapeNode {
       Self::Tag => "tag",
       Self::Buffer => "buffer",
       Self::CirruQuote => "cirru-quote",
+      Self::MapOption { .. } => "Option",
       Self::Optional(_) => "optional value",
       Self::List(_) => "list",
       Self::Set(_) => "set",
@@ -423,6 +462,22 @@ impl GraphBuilder {
       CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Err(unsupported_type(
         "type-definition values are not closed application data; use the corresponding Struct or Enum instance type",
       )),
+      CalcitTypeAnnotation::TypeRef(name, args) if self.allow_dynamic && target.is_option_type() => {
+        let Some(inner) = args.first() else {
+          return Err(DataShapeError::new("Option requires one type argument"));
+        };
+        let (ns, def) = qualify_type_ref(name, default_ns);
+        let qualified = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), args.clone());
+        let Some(nominal) = qualified.resolve_to_enum() else {
+          return Err(DataShapeError::new("Option must resolve to calcit.core/Option"));
+        };
+        let inner = self.build_type(inner, default_ns)?;
+        Ok(self.push(DataShapeNode::MapOption {
+          nominal: Arc::new(nominal),
+          nominal_path: Some((ns, def)),
+          inner,
+        }))
+      }
       CalcitTypeAnnotation::TypeRef(name, args) => self.build_named(name, args, default_ns),
       CalcitTypeAnnotation::TypeSlot(name) => match super::resolve_type_slot(name) {
         Some(resolved) => {
@@ -436,6 +491,7 @@ impl GraphBuilder {
         }
         None => Err(DataShapeError::new(format!("unbound type slot `*{name}`"))),
       },
+      CalcitTypeAnnotation::Dynamic if self.allow_dynamic => Ok(self.push(DataShapeNode::Dynamic)),
       CalcitTypeAnnotation::Dynamic => Err(unsupported_type("Dynamic is forbidden in a closed data shape")),
       CalcitTypeAnnotation::TypeVar(name) => Err(unsupported_type(&format!("generic variable '{name} is not bound"))),
       CalcitTypeAnnotation::AnonymousEnum => Err(unsupported_type("anonymous enum has no declared enum schema")),
@@ -633,6 +689,7 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
   for (node_id, node) in nodes.iter().enumerate() {
     hasher.update(format!("#{node_id}:").as_bytes());
     match node {
+      DataShapeNode::Dynamic => hasher.update(b"dynamic;"),
       DataShapeNode::Unit => hasher.update(b"unit;"),
       DataShapeNode::Bool => hasher.update(b"bool;"),
       DataShapeNode::Number => hasher.update(b"number;"),
@@ -642,6 +699,14 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
       DataShapeNode::Buffer => hasher.update(b"buffer;"),
       DataShapeNode::CirruQuote => hasher.update(b"cirru-quote;"),
       DataShapeNode::Optional(inner) => hasher.update(format!("optional:{inner};").as_bytes()),
+      DataShapeNode::MapOption {
+        nominal,
+        nominal_path,
+        inner,
+      } => {
+        update_nominal_fingerprint(&mut hasher, "map-option", nominal.name().ref_str(), nominal_path.as_ref(), &[]);
+        hasher.update(format!("inner:{inner};").as_bytes());
+      }
       DataShapeNode::List(inner) => hasher.update(format!("list:{inner};").as_bytes()),
       DataShapeNode::Set(inner) => hasher.update(format!("set:{inner};").as_bytes()),
       DataShapeNode::Map { key, value } => hasher.update(format!("map:{key}:{value};").as_bytes()),
