@@ -236,7 +236,12 @@ impl DataShapeGraph {
       }
       DataShapeNode::Dynamic => Ok(()),
       DataShapeNode::MapOption { nominal, inner, .. } => match value {
-        Calcit::Enum(enum_value) if enum_value.sum_type.as_ref().is_some_and(|actual| actual.name() == nominal.name()) => {
+        Calcit::Enum(enum_value)
+          if enum_value
+            .sum_type
+            .as_ref()
+            .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.name() == nominal.name()) =>
+        {
           match (enum_value.tag.as_ref(), enum_value.extra.as_slice()) {
             (Calcit::Tag(tag), []) if tag.ref_str() == "none" => Ok(()),
             (Calcit::Tag(tag), [item]) if tag.ref_str() == "some" => self.validate_node_value(*inner, item, path, depth + 1),
@@ -467,6 +472,12 @@ impl GraphBuilder {
           return Err(DataShapeError::new("Option requires one type argument"));
         };
         let (ns, def) = qualify_type_ref(name, default_ns);
+        if ns.as_ref() != super::CORE_NS || def.as_ref() != "Option" {
+          return Err(DataShapeError::new("Option must resolve to calcit.core/Option"));
+        }
+        if inner.is_option_type() {
+          return Err(DataShapeError::new("nested Option<Option<T>> is not supported by decode-map-as"));
+        }
         let qualified = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), args.clone());
         let Some(nominal) = qualified.resolve_to_enum() else {
           return Err(DataShapeError::new("Option must resolve to calcit.core/Option"));

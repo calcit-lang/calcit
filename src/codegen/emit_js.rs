@@ -569,7 +569,7 @@ fn gen_call_code(
             let call_code = format!("{}decode_map_as({value_code}, {graph_code})", get_proc_prefix(ns));
             Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
           }
-          _ => Err(format!("decode-map-as expected a map and a type expression, got: {body}")),
+          _ => Err(format!("decode-map-as expected a value and a type expression, got: {body}")),
         },
         CalcitSyntax::AssertTraits => Ok(format!("{return_code}null")),
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),

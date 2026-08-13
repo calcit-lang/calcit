@@ -1897,7 +1897,10 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
     case "dynamic":
       return input;
     case "map-option": {
-      if (input instanceof CalcitEnumValue && input.enumPrototype?.name() === node.nominal.name()) {
+      if (
+        input instanceof CalcitEnumValue &&
+        (input.enumPrototype === node.nominal || input.enumPrototype?.name() === node.nominal.name())
+      ) {
         const tag: CalcitValue = input.tag;
         if (!(tag instanceof CalcitTag)) map_decode_error(path, "Option variant is not a tag");
         const tag_name = (tag as CalcitTag).value;
@@ -1970,15 +1973,40 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       });
       return new CalcitSliceMap(entries.flat());
     }
+    case "optional":
+      return input == null ? null : decode_runtime_map_node(graph, node.inner, input, path, depth + 1);
+    case "ref":
+      if (!(input instanceof CalcitRef)) return map_decode_error(path, `expected atom, got ${typed_edn_kind(input)}`);
+      return atom(decode_runtime_map_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
+    case "enum": {
+      if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null) {
+        return map_decode_error(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);
+      }
+      const actualEnumName = enum_prototype_name(input.enumPrototype);
+      if (actualEnumName !== node.nominal.name()) {
+        return map_decode_error(path, `expected enum :${node.nominal.name()}, got enum :${actualEnumName}`);
+      }
+      if (!(input.tag instanceof CalcitTag)) return map_decode_error(path, `enum :${node.nominal.name()} variant must be a tag`);
+      const inputTag = input.tag as CalcitTag;
+      const variant = node.variants.find((candidate) => candidate.tag === inputTag.value);
+      if (variant == null) return map_decode_error(path, `enum :${node.nominal.name()} has no variant :${inputTag.value}`);
+      if (variant.payload.length !== input.extra.length) {
+        return map_decode_error(
+          path,
+          `enum :${node.nominal.name()} variant :${variant.tag} expects ${variant.payload.length} payload(s), got ${input.extra.length}`
+        );
+      }
+      const values = variant.payload.map((payloadNode, idx) =>
+        decode_runtime_map_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1)
+      );
+      return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
+    }
     default:
       return decode_typed_edn_node(graph, nodeId, input, path, depth);
   }
 };
 
 export let decode_map_as = (value: CalcitValue, graph: DataShapeGraph): CalcitValue => {
-  if (!(value instanceof CalcitMap || value instanceof CalcitSliceMap)) {
-    throw new Error(`decode-map-as expected a map, got ${typed_edn_kind(value)}`);
-  }
   if (graph.version !== 1) throw new Error(`decode-map-as expected data shape ABI version 1, got ${graph.version}`);
   if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
     throw new Error("decode-map-as expected a non-empty data shape fingerprint");

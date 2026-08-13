@@ -5611,7 +5611,7 @@ pub fn preprocess_decode_map_as(
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
-      format!("{head} expected a map value and a type expression, got {}", args.len()),
+      format!("{head} expected a value and a type expression, got {}", args.len()),
       ctx.call_stack,
       args.first().and_then(Calcit::get_location),
     ));

@@ -698,7 +698,7 @@ pub fn decode_map_as(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
   if expr.len() != 2 && expr.len() != 3 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
-      "decode-map-as expected a map and a type expression, but received:",
+      "decode-map-as expected a value and a type expression, but received:",
       &expr.to_vec(),
     );
   }

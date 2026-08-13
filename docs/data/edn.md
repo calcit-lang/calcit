@@ -55,7 +55,7 @@ The failure is raised like `parse-cirru-edn` errors and can be handled with `try
 
 ## Decoding runtime maps into Structs
 
-`decode-map-as` is the companion for data that has already crossed a host boundary and is now a Calcit Map, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries.
+`decode-map-as` is the companion for data that has already crossed a host boundary and is now an evaluated Calcit value, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries. Struct targets consume maps, while list, map, enum, ref, and scalar targets are decoded recursively as well.
 
 It converts a Map to a nominal Struct recursively, rejects unknown keys and missing required fields, and reports the path of a bad nested value. A missing `Option<T>` field becomes `%none`; a present raw `T` becomes `%some T`. Already-wrapped `%some` and `%none` values are also accepted.
 
@@ -69,7 +69,7 @@ defstruct Response (:code 'Number)
 ; omitting :message produces (%none)
 ```
 
-Unlike the closed text decoder, `decode-map-as` permits an explicitly declared `Dynamic` leaf for an open payload such as an HTTP response body. Keep it at the boundary and decode it again into a closed Struct/Enum before application logic depends on it. The root input must be a Map; it never treats `nil` as an empty map or silently supplies required fields.
+Unlike the closed text decoder, `decode-map-as` permits an explicitly declared `Dynamic` leaf for an open payload such as an HTTP response body. Keep it at the boundary and decode it again into a closed Struct/Enum before application logic depends on it. It never treats `nil` as an empty map or silently supplies required fields. Native and JavaScript support this syntax; the WASM backend does not currently support typed decoder syntaxes.
 
 The syntax is available for native execution and JavaScript code generation. The current WASM backend does not yet support either typed EDN decoder.
 

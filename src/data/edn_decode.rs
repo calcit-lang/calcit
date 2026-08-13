@@ -46,12 +46,14 @@ pub(crate) fn decode(shape: &DataShapeGraph, input: &Edn) -> Result<Calcit, EdnD
 /// nominal `Option<T>` fields accept their raw payloads.
 pub(crate) fn decode_map(shape: &DataShapeGraph, input: &Calcit) -> Result<Calcit, EdnDecodeError> {
   let value = MapDecoder { shape }.decode_node(shape.root, input, "$", 0)?;
-  shape.validate_value(&value).map_err(|error| {
-    EdnDecodeError::at(
-      &error.path,
-      format!("internal runtime-map decoder invariant failed: {}", error.message),
-    )
-  })?;
+  if cfg!(debug_assertions) {
+    shape.validate_value(&value).map_err(|error| {
+      EdnDecodeError::at(
+        &error.path,
+        format!("internal runtime-map decoder invariant failed: {}", error.message),
+      )
+    })?;
+  }
   Ok(value)
 }
 
@@ -136,7 +138,13 @@ impl MapDecoder<'_> {
       }
       DataShapeNode::MapOption { nominal, inner, .. } => {
         if let Calcit::Enum(enum_value) = input
-          && enum_value.sum_type.as_ref().is_some_and(|actual| actual.name() == nominal.name())
+          // Runtime values reconstructed from snapshots may carry a distinct Arc for the
+          // canonical core Option declaration; the canonical type path is enforced while
+          // building the graph, so retain the nominal name fallback here.
+          && enum_value
+            .sum_type
+            .as_ref()
+            .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.name() == nominal.name())
         {
           return match (enum_value.tag.as_ref(), enum_value.extra.as_slice()) {
             (Calcit::Tag(tag), []) if tag.ref_str() == "none" => Ok(input.to_owned()),
@@ -283,12 +291,21 @@ impl MapDecoder<'_> {
           sum_type: Some(nominal.clone()),
         }))
       }
-      DataShapeNode::Ref(_) => {
-        self
-          .shape
-          .validate_node_value(node_id, input, path, depth)
-          .map_err(|error| EdnDecodeError::at(&error.path, error.message))?;
-        Ok(input.to_owned())
+      DataShapeNode::Ref(inner) => {
+        let Calcit::Ref(_, value_and_listeners) = input else {
+          return Err(map_kind_mismatch(path, "ref", input));
+        };
+        let inner_value = value_and_listeners
+          .lock()
+          .map_err(|_| EdnDecodeError::at(path, "cannot read poisoned ref"))?
+          .0
+          .clone();
+        Ok(quick_build_atom(self.decode_node(
+          *inner,
+          &inner_value,
+          &format!("{path}.value"),
+          depth + 1,
+        )?))
       }
     }
   }

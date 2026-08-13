@@ -2867,11 +2867,17 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
+        |RuntimeMapMeta $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defstruct RuntimeMapMeta $ :kind 'Tag
+          :examples $ []
+          :schema $ :: 'Dynamic
         |RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct RuntimeMapResponse (:code 'Number)
               :message $ :: 'Option 'String
               :body 'Dynamic
+              :meta $ :: 'Option RuntimeMapMeta
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -3786,7 +3792,7 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
-        |decode-map-as $ %{} 'CodeEntry (:doc "|Decode an evaluated Calcit Map into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct fields are checked recursively; unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps.")
+        |decode-map-as $ %{} 'CodeEntry (:doc "||Decode an evaluated Calcit value into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct fields are checked recursively; unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps. Native and JavaScript support this syntax; WASM does not currently support typed decoder syntaxes.")
           :code $ quote (def decode-map-as &runtime-implementation)
           :examples $ []
             quote $ let
@@ -3796,6 +3802,13 @@
                   , RuntimeMapResponse
               assert= 200 $ :code response
               assert= (%some |ok) (:message response)
+            quote $ assert=
+              %some $ %{} RuntimeMapMeta (:kind :nested)
+              :meta $ decode-map-as
+                {} (:code 202)
+                  :meta $ {} (:kind :nested)
+                  :body $ {} (:kind :json)
+                , RuntimeMapResponse
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ [] 'Dynamic 'Dynamic
@@ -3827,6 +3840,23 @@
                   assert= 201 $ :code response
                   assert= (%some |already) (:message response)
                   assert= true $ map? (:body response)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |nested-struct-option)
+              :code $ quote
+                do
+                  assert= 202 $ :code
+                    decode-map-as
+                      {} (:code 202)
+                        :meta $ {} (:kind :nested)
+                        :body $ {} (:kind :json)
+                      , RuntimeMapResponse
+                  assert=
+                    %some $ %{} RuntimeMapMeta (:kind :nested)
+                    :meta $ decode-map-as
+                      {} (:code 202)
+                        :meta $ {} (:kind :nested)
+                        :body $ {} (:kind :json)
+                      , RuntimeMapResponse
               :tags $ #{} :core :unit
         |def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote
