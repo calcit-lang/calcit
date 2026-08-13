@@ -508,9 +508,16 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
   run: |
     cr calcit.cirru edit format
     git diff --exit-code -- calcit.cirru
-    cr calcit.cirru --check-only
-    cr calcit.cirru --entry test --check-only
-    cr calcit.cirru --warn-dyn-method --check-only
+    # `cr config show` lists every configured :entries item, including default.
+    while IFS= read -r entry; do
+      if [ "$entry" = "default" ]; then
+        cr calcit.cirru --check-only
+        cr calcit.cirru --warn-dyn-method --check-only
+      else
+        cr calcit.cirru --entry "$entry" --check-only
+        cr calcit.cirru --entry "$entry" --warn-dyn-method --check-only
+      fi
+    done < <(cr calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
     mkdir -p .calcit/upgrade
     cr calcit.cirru analyze check-types --summary-only --format json > .calcit/upgrade/check-types.json
     cr calcit.cirru analyze weak-types --only schema-dynamic,code-dynamic,code-nil --intent unresolved,declared-optional --summary-only --format json > .calcit/upgrade/weak-types.json
