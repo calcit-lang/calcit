@@ -32,6 +32,13 @@
             defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
           :schema $ :: 'Dynamic
+        |Response $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defstruct Response (:code 'Number)
+              :message $ :: 'Option 'String
+              :body 'Dynamic
+          :examples $ []
+          :schema $ :: 'Dynamic
         |Team $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Team $ :members (:: 'List Person)
@@ -45,6 +52,7 @@
               test-typed-edn
               test-imported-typed-edn
               test-top-level-typed-edn
+              test-runtime-map-decode
           :examples $ []
           :schema $ :: 'Dynamic
         |reload! $ %{} 'CodeEntry (:doc |)
@@ -156,6 +164,42 @@
             defn test-imported-typed-edn () $ assert=
               %{} External $ :label |linked
               parse-cirru-edn-as "|%{} :External (:label |linked)" External
+          :examples $ []
+          :schema $ :: 'Dynamic
+        |test-runtime-map-decode $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn test-runtime-map-decode () $ let
+                response $ decode-map-as
+                  {} (:code 200) (:message |ok)
+                    :body $ {} (:kind :json)
+                  , Response
+                no-message $ decode-map-as
+                  {} (:code 204)
+                    :body $ {} (:kind :json)
+                  , Response
+                prewrapped $ decode-map-as
+                  {} (:code 201)
+                    :message $ %some |already
+                    :body $ {} (:kind :json)
+                  , Response
+              assert= 200 $ :code response
+              assert= (%some |ok) (:message response)
+              assert= (%none) (:message no-message)
+              assert= (%some |already) (:message prewrapped)
+              assert= true $ try
+                do
+                  decode-map-as
+                    {} $ :message |ok
+                    , Response
+                  , false
+                fn (_error) true
+              assert= true $ try
+                do
+                  decode-map-as
+                    {} (:code 200) (:extra true)
+                    , Response
+                  , false
+                fn (_error) true
           :examples $ []
           :schema $ :: 'Dynamic
         |test-symbol $ %{} 'CodeEntry (:doc |)

@@ -30,6 +30,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "defwasm-import" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmImport, ns.into())),
       "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
       "parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, ns.into())),
+      "decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::DecodeMapAs, ns.into())),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // anonymous enum constructor syntax
@@ -327,6 +328,17 @@ mod tests {
       panic!("expected list");
     };
     assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _))));
+  }
+
+  #[test]
+  fn parses_runtime_map_decode_as_syntax() {
+    let expr = Cirru::List(vec![Cirru::leaf("decode-map-as"), Cirru::leaf("value"), Cirru::leaf("Response")]);
+
+    let calcit = code_to_calcit(&expr, "tests.ns", "demo", vec![]).expect("parse runtime map decoder");
+    let Calcit::List(items) = calcit else {
+      panic!("expected list");
+    };
+    assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::DecodeMapAs, _))));
   }
 
   #[test]

@@ -585,7 +585,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           .get(2)
           .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
 
-        Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, _) => xs
+        Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs, _) => xs
           .get(2)
           .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
 
@@ -1754,22 +1754,24 @@ mod tests {
   }
 
   #[test]
-  fn strict_edn_decode_expression_has_declared_closed_type() {
+  fn typed_decode_expression_has_declared_target_type() {
     let target = Calcit::Enum(calcit::CalcitEnumValue {
       tag: Arc::new(Calcit::tag("list")),
       extra: vec![Calcit::tag("number")],
       sum_type: None,
     });
-    let expression = Calcit::from(vec![
-      Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, Arc::from(calcit::CORE_NS)),
-      Calcit::Str(Arc::from("[] 1 2")),
-      target,
-    ]);
+    for syntax in [CalcitSyntax::ParseCirruEdnAs, CalcitSyntax::DecodeMapAs] {
+      let expression = Calcit::from(vec![
+        Calcit::Syntax(syntax, Arc::from(calcit::CORE_NS)),
+        Calcit::Str(Arc::from("[] 1 2")),
+        target.clone(),
+      ]);
 
-    assert!(matches!(
-      infer_static_type_from_expr(&expression).as_deref(),
-      Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
-    ));
+      assert!(matches!(
+        infer_static_type_from_expr(&expression).as_deref(),
+        Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+      ));
+    }
   }
 
   #[test]

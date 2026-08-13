@@ -694,6 +694,48 @@ pub fn parse_cirru_edn_as(
   })
 }
 
+pub fn decode_map_as(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 && expr.len() != 3 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "decode-map-as expected a value and a type expression, but received:",
+      &expr.to_vec(),
+    );
+  }
+  let input = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let decoder = match expr.get(2) {
+    Some(handle) => crate::calcit::data_shape::DataShapeGraph::from_calcit_handle(handle).ok_or_else(|| {
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Unexpected,
+        "decode-map-as received an invalid internal data shape".to_owned(),
+        call_stack,
+        expr.get(1).and_then(Calcit::get_location),
+      )
+    })?,
+    None => {
+      let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
+      Arc::new(
+        crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), file_ns).map_err(|error| {
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Type,
+            format!("decode-map-as cannot derive a runtime map decoder: {error}"),
+            call_stack,
+            expr.get(1).and_then(Calcit::get_location),
+          )
+        })?,
+      )
+    }
+  };
+  crate::data::edn_decode::decode_map(decoder.as_ref(), &input).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("decode-map-as failed at {}: {}", error.path, error.message),
+      call_stack,
+      expr.first().and_then(Calcit::get_location),
+    )
+  })
+}
+
 pub fn assert_traits(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes(

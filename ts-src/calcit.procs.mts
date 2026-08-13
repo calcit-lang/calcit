@@ -1676,9 +1676,10 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
 };
 
 type DataShapeNode =
-  | { kind: "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" }
+  | { kind: "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
   | { kind: "optional" | "list" | "set" | "ref"; inner: number }
   | { kind: "map"; key: number; value: number }
+  | { kind: "map-option"; nominal: CalcitEnumDef; inner: number }
   | { kind: "struct"; nominal: CalcitStructDef; fields: Array<[string, number]> }
   | { kind: "enum"; nominal: CalcitEnumDef; variants: Array<{ tag: string; payload: number[] }> };
 
@@ -1881,6 +1882,136 @@ export let parse_cirru_edn_as = (code: string, graph: DataShapeGraph): CalcitVal
     throw new Error(`parse-cirru-edn-as failed to parse Cirru EDN: ${message}`);
   }
   return decode_typed_edn_node(graph, graph.root, input, "$", 0) as CalcitValue;
+};
+
+const map_decode_error = (path: string, message: string): never => {
+  throw new Error(`decode-map-as failed at ${path}: ${message}`);
+};
+
+const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: any, path: string, depth: number): any => {
+  if (depth > 1024) map_decode_error(path, "decode nesting exceeds 1024");
+  const node = graph.nodes[nodeId];
+  if (node == null) map_decode_error(path, `invalid data shape node #${nodeId}`);
+
+  switch (node.kind) {
+    case "dynamic":
+      return input;
+    case "map-option": {
+      if (
+        input instanceof CalcitEnumValue &&
+        (input.enumPrototype === node.nominal || input.enumPrototype?.name() === node.nominal.name())
+      ) {
+        const tag: CalcitValue = input.tag;
+        if (!(tag instanceof CalcitTag)) map_decode_error(path, "Option variant is not a tag");
+        const tag_name = (tag as CalcitTag).value;
+        if (tag_name === "none" && input.extra.length === 0) return input;
+        if (tag_name === "some" && input.extra.length === 1) {
+          return new CalcitEnumValue(tag as CalcitTag, [decode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1)], node.nominal);
+        }
+        return map_decode_error(path, "invalid Option value");
+      }
+      return new CalcitEnumValue(newTag("some"), [decode_runtime_map_node(graph, node.inner, input, path, depth + 1)], node.nominal);
+    }
+    case "struct": {
+      if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap)) {
+        return map_decode_error(path, `expected map for struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
+      }
+      const entries = new Map<string, any>();
+      input.pairs().forEach(([key, value]) => {
+        const name = key instanceof CalcitTag ? key.value : typeof key === "string" ? key : null;
+        if (name == null) map_decode_error(path, "struct map keys must be tags or strings");
+        if (!node.fields.some(([field]) => field === name)) {
+          map_decode_error(path, `struct :${node.nominal.name.value} has unknown field :${name}`);
+        }
+        if (entries.has(name)) map_decode_error(path, `struct :${node.nominal.name.value} has duplicate field :${name}`);
+        entries.set(name, value);
+      });
+      const decoded = new Map<string, any>();
+      node.fields.forEach(([field, child]) => {
+        if (entries.has(field)) {
+          decoded.set(field, decode_runtime_map_node(graph, child, entries.get(field), `${path}.${field}`, depth + 1));
+        } else {
+          const fieldNode = graph.nodes[child];
+          if (fieldNode?.kind === "map-option") {
+            decoded.set(field, new CalcitEnumValue(newTag("none"), [], fieldNode.nominal));
+          } else {
+            map_decode_error(path, `struct :${node.nominal.name.value} is missing required field :${field}`);
+          }
+        }
+      });
+      const values = node.nominal.fields.map((field) => decoded.get(field.value));
+      return new CalcitStructValue(node.nominal.name, node.nominal.fields, values, node.nominal);
+    }
+    case "list": {
+      if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
+        return map_decode_error(path, `expected list, got ${typed_edn_kind(input)}`);
+      }
+      return new CalcitSliceList(Array.from(input.items()).map((value, idx) => decode_runtime_map_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1)));
+    }
+    case "set": {
+      if (!(input instanceof CalcitSet || input instanceof TypedEdnSetView)) {
+        return map_decode_error(path, `expected set, got ${typed_edn_kind(input)}`);
+      }
+      const values: any[] = [];
+      const source = input instanceof TypedEdnSetView ? input.items : input.values();
+      source.forEach((value) => {
+        const decoded = decode_runtime_map_node(graph, node.inner, value, `${path}.item`, depth + 1);
+        if (values.some((item) => _$n__$e_(item, decoded))) map_decode_error(path, "duplicate decoded set value");
+        values.push(decoded);
+      });
+      return new CalcitSet(values);
+    }
+    case "map": {
+      if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap)) {
+        return map_decode_error(path, `expected map, got ${typed_edn_kind(input)}`);
+      }
+      const entries: any[] = [];
+      input.pairs().forEach(([key, value]) => {
+        const decodedKey = decode_runtime_map_node(graph, node.key, key, `${path}.key`, depth + 1);
+        if (entries.some(([existing]) => _$n__$e_(existing, decodedKey))) map_decode_error(path, "duplicate decoded map key");
+        entries.push([decodedKey, decode_runtime_map_node(graph, node.value, value, `${path}.value`, depth + 1)]);
+      });
+      return new CalcitSliceMap(entries.flat());
+    }
+    case "optional":
+      return input == null ? null : decode_runtime_map_node(graph, node.inner, input, path, depth + 1);
+    case "ref":
+      if (!(input instanceof CalcitRef)) return map_decode_error(path, `expected atom, got ${typed_edn_kind(input)}`);
+      return atom(decode_runtime_map_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
+    case "enum": {
+      if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null) {
+        return map_decode_error(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);
+      }
+      const actualEnumName = enum_prototype_name(input.enumPrototype);
+      if (actualEnumName !== node.nominal.name()) {
+        return map_decode_error(path, `expected enum :${node.nominal.name()}, got enum :${actualEnumName}`);
+      }
+      if (!(input.tag instanceof CalcitTag)) return map_decode_error(path, `enum :${node.nominal.name()} variant must be a tag`);
+      const inputTag = input.tag as CalcitTag;
+      const variant = node.variants.find((candidate) => candidate.tag === inputTag.value);
+      if (variant == null) return map_decode_error(path, `enum :${node.nominal.name()} has no variant :${inputTag.value}`);
+      if (variant.payload.length !== input.extra.length) {
+        return map_decode_error(
+          path,
+          `enum :${node.nominal.name()} variant :${variant.tag} expects ${variant.payload.length} payload(s), got ${input.extra.length}`
+        );
+      }
+      const values = variant.payload.map((payloadNode, idx) =>
+        decode_runtime_map_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1)
+      );
+      return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
+    }
+    default:
+      return decode_typed_edn_node(graph, nodeId, input, path, depth);
+  }
+};
+
+export let decode_map_as = (value: CalcitValue, graph: DataShapeGraph): CalcitValue => {
+  if (graph.version !== 1) throw new Error(`decode-map-as expected data shape ABI version 1, got ${graph.version}`);
+  if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
+    throw new Error("decode-map-as expected a non-empty data shape fingerprint");
+  }
+  return decode_runtime_map_node(graph, graph.root, value, "$", 0) as CalcitValue;
 };
 
 const json_to_calcit = (value: any): CalcitValue => {
