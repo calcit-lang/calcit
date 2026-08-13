@@ -20,7 +20,15 @@ aliases:
   :dependencies $ {}
     |calcit-lang/memof |0.0.11
     |calcit-lang/lilac |main
+  :dev-dependencies $ {}
+    |calcit-lang/calcit-test |0.1.0
 ```
+
+Use `:dependencies` for modules required by consumers at runtime or compile time. Use
+`:dev-dependencies` only for the current project's tests, examples, documentation checks, and
+maintenance tasks. `caps` installs both groups for the root project, but recursive resolution reads
+only each dependency's `:dependencies`; a dependency's own `:dev-dependencies` never leaks into the
+consumer. Conflicting references for the same repository in both root groups are rejected.
 
 Run `caps` to recursively resolve and install the graph. Sources are stored by resolved commit under
 `~/.config/calcit/modules/.store/`. The project gets a local module view in `.calcit/modules/`, with
@@ -29,6 +37,16 @@ Run `caps` to recursively resolve and install the graph. Sources are stored by r
 SemVer tags are the recommended dependency refs. Branches are supported for development, but every
 resolution warns and prints the current commit. Conflicting SemVer tags select the highest version actually
 requested by the graph and emit a warning that lists the request sources.
+
+Manage development dependencies explicitly:
+
+```bash
+caps add --dev calcit-lang/calcit-test@0.1.0
+caps remove --dev calcit-lang/calcit-test
+```
+
+`caps outdated` and `caps upgrade --all` inspect both root groups and preserve each declaration's
+group.
 
 To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename: `compact.cirru`):
 

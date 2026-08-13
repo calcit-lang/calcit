@@ -130,6 +130,8 @@ Related examples and workflows:
   :dependencies $ {}
     |calcit-lang/memof |0.0.11
     |calcit-lang/lilac |main
+  :dev-dependencies $ {}
+    |calcit-lang/calcit-test |0.1.0
 ```
 
 Run `caps` to resolve the recursive dependency graph and install it. Immutable revisions are stored under
@@ -140,6 +142,10 @@ Different projects can therefore use different revisions without switching a sha
 Published SemVer tags are preferred. Branch refs remain supported for development, but `caps` warns with
 the resolved commit. When a graph requests several SemVer tags for one repository, the highest requested
 version is selected and reported.
+
+Root projects install both `:dependencies` and `:dev-dependencies`. Recursive resolution only follows
+`:dependencies`, so test and maintenance modules declared by a dependency do not leak into consumers.
+Use `caps add --dev <org/repo>@<ref>` and `caps remove --dev <org/repo>` to manage the development group.
 
 `:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-cr).
 

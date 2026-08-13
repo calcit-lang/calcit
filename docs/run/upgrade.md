@@ -34,6 +34,7 @@ related:
 - 命令入口：`README`、项目脚本、CI workflow
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
+- 依赖边界：运行/编译期需要的模块放在 `:dependencies`；只供当前项目测试、examples、文档检查和维护脚本使用的模块放在 `:dev-dependencies`
 - 结构化编辑优先使用 `cr edit` / `cr tree`；若直接改过 `calcit.cirru`（或旧文件名 `compact.cirru`），提交前执行一次 `cr calcit.cirru edit format`
 - 静态质量基线：`check-types`、`weak-types`、公开 namespace examples 与 Markdown 示例
 
@@ -143,11 +144,30 @@ cr --version
 
 ### Step C：检查并更新 `deps.cirru`
 
+先审计依赖分组。新版 `caps` 对根项目同时安装 `:dependencies` 和
+`:dev-dependencies`，但递归解析某个依赖模块时只读取它的 `:dependencies`，不会把该模块
+自己的开发依赖带入消费者。升级旧项目时，应把测试、examples、文档验证与维护工具专用模块
+迁到 `:dev-dependencies`，避免递归依赖图继续无边界扩张：
+
+```cirru
+{}
+  :calcit-version |0.13.13
+  :dependencies $ {}
+    |calcit-lang/respo.calcit |0.16.67
+  :dev-dependencies $ {}
+    |calcit-lang/calcit-test |0.1.0
+```
+
+可以用 `caps add --dev <org/repo>@<ref>` 和 `caps remove --dev <org/repo>` 管理开发依赖。
+同一个仓库不要以不同 ref 同时出现在两个分组；新版会直接拒绝这种歧义配置。
+
 ```bash
 caps upgrade --all
 ```
 
-说明：`caps upgrade --all` 会更新 `deps.cirru` 里的依赖版本与 `:calcit-version`；如果确实发生升级，还会顺带执行一次 `yarn up @calcit/procs`，把 JS 运行时包同步到当前 Calcit 版本链路。
+说明：`caps upgrade --all` 会检查 `:dependencies` 与根项目的 `:dev-dependencies`，更新
+对应分组中的依赖版本与 `:calcit-version`；如果确实发生升级，还会顺带执行一次
+`yarn up @calcit/procs`，把 JS 运行时包同步到当前 Calcit 版本链路。
 
 如果你只想批量把旧版本提升到最新标签，也可以继续用：
 
@@ -163,7 +183,8 @@ caps outdated --yes
 caps
 ```
 
-说明：这一步才会按当前 `deps.cirru` 下载/同步模块内容。
+说明：这一步才会按当前 `deps.cirru` 下载/同步模块内容。根项目的两个依赖分组都会安装，
+依赖模块的 `:dev-dependencies` 会在递归解析中排除。
 
 ### Step E：用 Yarn Berry 安装并校验
 
@@ -357,14 +378,15 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
 
 1. `cr --version`
 2. `caps upgrade --all`（确认无遗漏项或已按预期处理）
-3. `yarn install --immutable`
-4. `cr calcit.cirru edit format` 后 `git diff --exit-code -- calcit.cirru`
-5. `cr calcit.cirru --check-only`
-6. 所有声明支持的 entry（默认 once；watch 另行验收）
-7. `check-types` 与 unresolved `weak-types` 基线
-8. 公开 namespace 的 `check-examples` 与 `docs check-md`
-9. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
-10. `package.json` 中与编译/构建相关的脚本
-11. 类库项目在 Respo 等真实消费者中的回归证据
+3. `caps tree`（确认根开发依赖存在，同时传递模块的开发依赖未进入图）
+4. `yarn install --immutable`
+5. `cr calcit.cirru edit format` 后 `git diff --exit-code -- calcit.cirru`
+6. `cr calcit.cirru --check-only`
+7. 所有声明支持的 entry（默认 once；watch 另行验收）
+8. `check-types` 与 unresolved `weak-types` 基线
+9. 公开 namespace 的 `check-examples` 与 `docs check-md`
+10. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
+11. `package.json` 中与编译/构建相关的脚本
+12. 类库项目在 Respo 等真实消费者中的回归证据
 
 call graph 的 `--show-unused` 只能作为 entry-relative 线索；公开 API 和替代入口可能被列为 unreachable，不能据此自动删除。
