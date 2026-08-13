@@ -2867,6 +2867,14 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
+        |RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defstruct RuntimeMapResponse (:code 'Number)
+              :message $ :: 'Option 'String
+              :body 'Dynamic
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data :internal
         |Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote
             deftrait Serialize $ .serialize
@@ -3778,6 +3786,48 @@
           :schema $ :: 'Fn
             {} (:return 'Number)
               :args $ [] 'Number
+        |decode-map-as $ %{} 'CodeEntry (:doc "|Decode an evaluated Calcit Map into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct fields are checked recursively; unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps.")
+          :code $ quote (def decode-map-as &runtime-implementation)
+          :examples $ []
+            quote $ let
+                response $ decode-map-as
+                  {} (:code 200) (:message |ok)
+                    :body $ {} (:kind :json)
+                  , RuntimeMapResponse
+              assert= 200 $ :code response
+              assert= (%some |ok) (:message response)
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ [] 'Dynamic 'Dynamic
+          :tags $ #{} :builtin :internal :meta :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |decodes-struct-and-option)
+              :code $ quote
+                do $ let
+                    response $ decode-map-as
+                      {} (:code 200) (:message |ok)
+                        :body $ {} (:kind :json)
+                      , RuntimeMapResponse
+                    missing $ decode-map-as
+                      {} (:code 204)
+                        :body $ {} (:kind :json)
+                      , RuntimeMapResponse
+                  assert= 200 $ :code response
+                  assert= (%some |ok) (:message response)
+                  assert= (%none) (:message missing)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-dynamic-and-prewrapped-option)
+              :code $ quote
+                do $ let
+                    response $ decode-map-as
+                      {} (:code 201)
+                        :message $ %some |already
+                        :body $ {} (:kind :json)
+                      , RuntimeMapResponse
+                  assert= 201 $ :code response
+                  assert= (%some |already) (:message response)
+                  assert= true $ map? (:body response)
+              :tags $ #{} :core :unit
         |def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote
             defmacro def (_name x) x
@@ -6186,23 +6236,6 @@
               :generics $ [] 'T 'U
               :return $ :: 'Option 'U
           :tags $ #{} :internal
-        |option:or-else $ %{} 'CodeEntry (:doc "|Return the current Option when it is :some, otherwise evaluate a fallback Option-producing function.")
-          :code $ quote
-            defn option:or-else (opt fallback)
-              tag-match opt
-                (:some _) opt
-                (:none) (fallback)
-          :examples $ []
-            quote $ assert= (%some 2)
-              option:or-else (%none)
-                fn () (%some 2)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Option 'T)
-                :: 'Fn $ {} (:return $ :: 'Option 'T) (:args $ [])
-              :generics $ [] 'T
-              :return $ :: 'Option 'T
-          :tags $ #{} :internal
         |option:fold $ %{} 'CodeEntry (:doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload.")
           :code $ quote
             defn option:fold (opt on-none on-some)
@@ -6257,6 +6290,25 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Option 'T)
               :generics $ [] 'T
+          :tags $ #{} :internal
+        |option:or-else $ %{} 'CodeEntry (:doc "|Return the current Option when it is :some, otherwise evaluate a fallback Option-producing function.")
+          :code $ quote
+            defn option:or-else (opt fallback)
+              tag-match opt
+                (:some _) opt
+                (:none) (fallback)
+          :examples $ []
+            quote $ assert= (%some 2)
+              option:or-else (%none)
+                fn () $ %some 2
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Option 'T)
+                :: 'Fn $ {}
+                  :args $ []
+                  :return $ :: 'Option 'T
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
           :tags $ #{} :internal
         |option:some? $ %{} 'CodeEntry (:doc "|Returns true when an Option is :some.")
           :code $ quote
@@ -6689,23 +6741,6 @@
               :generics $ [] 'T 'U 'E
               :return $ :: 'Result 'U 'E
           :tags $ #{} :internal
-        |result:or-else $ %{} 'CodeEntry (:doc "|Return the current Result when it is :ok, otherwise evaluate a fallback Result-producing function.")
-          :code $ quote
-            defn result:or-else (res fallback)
-              tag-match res
-                (:ok _) res
-                (:err _) (fallback)
-          :examples $ []
-            quote $ assert= (%ok 2)
-              result:or-else (%err |missing)
-                fn () (%ok 2)
-          :schema $ :: 'Fn
-            {}
-              :args $ [] (:: 'Result 'T 'E)
-                :: 'Fn $ {} (:return $ :: 'Result 'T 'E) (:args $ [])
-              :generics $ [] 'T 'E
-              :return $ :: 'Result 'T 'E
-          :tags $ #{} :internal
         |result:err? $ %{} 'CodeEntry (:doc "|Returns true when a Result is :err.")
           :code $ quote
             defn result:err? (res)
@@ -6770,6 +6805,25 @@
             {} (:return 'Bool)
               :args $ [] (:: 'Result 'T 'E)
               :generics $ [] 'T 'E
+          :tags $ #{} :internal
+        |result:or-else $ %{} 'CodeEntry (:doc "|Return the current Result when it is :ok, otherwise evaluate a fallback Result-producing function.")
+          :code $ quote
+            defn result:or-else (res fallback)
+              tag-match res
+                (:ok _) res
+                (:err _) (fallback)
+          :examples $ []
+            quote $ assert= (%ok 2)
+              result:or-else (%err |missing)
+                fn () $ %ok 2
+          :schema $ :: 'Fn
+            {}
+              :args $ [] (:: 'Result 'T 'E)
+                :: 'Fn $ {}
+                  :args $ []
+                  :return $ :: 'Result 'T 'E
+              :generics $ [] 'T 'E
+              :return $ :: 'Result 'T 'E
           :tags $ #{} :internal
         |result:unwrap-or $ %{} 'CodeEntry (:doc "|Returns the :ok payload, or the fallback for :err.")
           :code $ quote
