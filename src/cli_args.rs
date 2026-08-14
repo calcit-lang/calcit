@@ -2388,6 +2388,7 @@ pub enum ConfigSubcommand {
   /// list entry-level type-slot bindings
   TypeSlots(ConfigTypeSlotsCommand),
   /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
+  /// [Deprecated] prefer `caps version get/set/bump` which manages `deps.cirru :version`
   Version(ConfigVersionCommand),
   /// set a configuration key to a value (mode, init-fn, reload-fn, description, version)
   Set(ConfigSetCommand),
@@ -2430,7 +2431,7 @@ pub struct ConfigTypeSlotsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "version")]
-/// show or bump the project version
+/// [Deprecated] show or bump the snapshot-mirrored project version; prefer `caps version get/set/bump` to manage `deps.cirru :version`
 pub struct ConfigVersionCommand {
   /// patch | minor | major to bump, or a semver string to set explicitly; omit to show current version
   #[argh(positional)]
@@ -2444,7 +2445,7 @@ pub struct ConfigSetCommand {
   /// apply to a named entry (e.g. "test"); defaults to "default" (version is always project-level)
   #[argh(option)]
   pub entry: Option<String>,
-  /// config key: mode, init-fn, reload-fn, description, version
+  /// config key: mode, init-fn, reload-fn, description, version ([Deprecated] prefer `caps version`)
   #[argh(positional)]
   pub key: String,
   /// config value; for "version" accepts semver string or patch|minor|major
