@@ -8,6 +8,7 @@
 - Added a destination writer lock around staged snapshot replacement and strengthened the named-cursor round-trip fixture with distinct states.
 - Enforced one `todo!` argument contract across preprocessing, JavaScript, WASM, and native boundaries; diagnostics now identify the containing definition and invalid messages use the argument location.
 - Expanded the machine-protocol RFC with canonical JSON tagged projections and stdio framing/negotiation fixtures, and aligned the cursor default example with `:default`.
+- Added a concrete nested EDN/JSON typed-value fixture and equivalent EDN/JSON handshake fixture requirements.
 
 ## Validation
 
@@ -18,4 +19,3 @@
 - `yarn check-agent-interface`
 - `yarn check-all`
 - `cr docs check-md` for all modified RFC and static-analysis documents
-

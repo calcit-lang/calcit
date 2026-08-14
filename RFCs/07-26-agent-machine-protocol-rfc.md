@@ -73,6 +73,26 @@ the projection reconstructs an EDN value equivalent to the source; a successful
 round-trip tests, while JSON fixtures protect compatibility for `jq`, LSP/MCP
 adapters and existing scripts.
 
+最小语义 fixture（`typed-value/nested-v1`）如下；测试同时检查 decode 后的 EDN
+等价性，而不是只检查 JSON 文本可解析：
+
+```cirru.no-check
+{}
+  :value $ :: :ok
+    {}
+      :name 'calcit/demo
+      :items $ #{} :ready
+      :empty $ []
+      :missing nil
+```
+
+```json
+{"value":{"$type":"enum","variant":"ok","type":null,"items":[{"$type":"struct","name":"","fields":{"name":{"$type":"symbol","value":"calcit/demo"},"items":{"$type":"set","items":[{"$type":"tag","value":"ready"}]},"empty":[],"missing":null}}]}}
+```
+
+实现应为 EDN/JSON 各保留一组同构 fixture，并至少覆盖该嵌套案例、空 Set/空
+List、`nil`、Quote 和带类型名的 Enum/Struct。
+
 ## 4. 统一 Definition Descriptor
 
 query、docs、静态分析与 builtin fallback 应从同一只读描述视图组装结果：
@@ -145,6 +165,10 @@ EDN；若客户端只声明 `:json`，服务端选择 JSON；无法满足时返�
 上述 typed-value projection。LSP/MCP 只是其上的薄映射；LSP 的 document symbol、
 references、hover、versioned diagnostics 与 workspace edit 可以借鉴，但内部身份
 仍是 definition/tree 语义。
+
+握手 fixture 至少包含两组等价请求：一组声明 `:format :edn` 并逐行传输 EDN，
+另一组声明 `:format :json` 并逐行传输 JSON；两组都必须得到相同语义的
+`:request-id`、`:ok`、`:result`/`:error` 响应。
 
 ## 7. 验收
 
