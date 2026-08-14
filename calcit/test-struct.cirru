@@ -70,6 +70,17 @@
             defstruct Lagopus0 $ :name (:: 'Optional 'String)
           :examples $ []
           :schema $ :: 'Dynamic
+        |MapLiteralStore $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defstruct MapLiteralStore $ {} (:text 'String)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |map-literal-fields)
+              :code $ quote
+                let
+                    store $ MapLiteralStore :text |ok
+                  assert= |ok $ :text store
         |Person $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Person
