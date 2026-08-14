@@ -3535,7 +3535,7 @@ fn nominal_enum_membership_element_name(operation: &str, collection: &Calcit, sc
     let element_type = match (operation, collection_type.as_ref()) {
       ("includes?", CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item)) => item,
       ("includes?", CalcitTypeAnnotation::Map(_, value)) => value,
-      ("contains?", CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item)) => item,
+      ("contains?", CalcitTypeAnnotation::Set(item)) => item,
       ("contains?", CalcitTypeAnnotation::Map(key, _)) => key,
       _ => return None,
     };
@@ -3551,7 +3551,11 @@ fn nominal_enum_membership_element_name(operation: &str, collection: &Calcit, sc
   let Calcit::List(items) = collection else {
     return None;
   };
-  if !matches!(items.first(), Some(Calcit::Proc(CalcitProc::List | CalcitProc::Set))) {
+  let supports_element_membership = matches!(
+    (operation, items.first()),
+    ("includes?", Some(Calcit::Proc(CalcitProc::List | CalcitProc::Set))) | ("contains?", Some(Calcit::Proc(CalcitProc::Set)))
+  );
+  if !supports_element_membership {
     return None;
   }
   let mut elements = items.iter().skip(1);
@@ -6291,6 +6295,22 @@ mod tests {
     assert!(
       literal_option_membership_warnings.borrow().is_empty(),
       "a Set literal with Option elements should remain warning-free before generic return inference"
+    );
+
+    let literal_option_list = Calcit::from(vec![Calcit::Proc(CalcitProc::List), option_constructor.to_owned()]);
+    let list_contains_option_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("contains?"),
+      &CalcitList::from(&[literal_option_list, option_constructor.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &list_contains_option_warnings,
+    );
+    assert_eq!(
+      list_contains_option_warnings.borrow().len(),
+      1,
+      "List contains? checks an index, so it must not use the element-membership exemption"
     );
 
     let mixed_literal_option_set = Calcit::from(vec![
