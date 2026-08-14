@@ -87,6 +87,31 @@ cr config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 cr config rm-type-slot :dispatch-op
 ```
 
+## Architecture plans and local Agent state
+
+Architecture plans that belong in version control should live under
+`docs/architectures/<feature>.cirru`. They describe a feature as a flat
+Cirru EDN `:definitions` map plus typed anonymous-enum edges, and can be
+reviewed independently from the generated Snapshot stubs:
+
+```bash
+cr calcit.cirru edit scaffold \
+  --file docs/architectures/order-submission.cirru \
+  --dry-run --format edn
+cr calcit.cirru edit scaffold \
+  --file docs/architectures/order-submission.cirru \
+  --expect-revision md5:...
+```
+
+`--dry-run` is read-only. An apply creates only missing `:ensure` definitions,
+preserving existing code/doc/schema and reporting compatible reuse or conflicts.
+Generated function definitions carry a `:scaffold` tag and `todo!` body so they
+remain visible to static checks and can be assigned as work items.
+
+`.calcit/` remains local transient state for cursor, error, and snippets. Do
+not store architecture plans there; do not commit cursor sidecars with the
+project source.
+
 ## `deps.cirru` 与运行时快照文件的关系
 
 给 Agent 一个最小心智就够：

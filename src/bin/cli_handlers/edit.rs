@@ -46,6 +46,7 @@ use super::cursor::{
   maintain_cursor_after_split_definition, maintain_cursor_after_tree_mutation, resolve_active_cursor_reference,
   resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
+use super::handle_scaffold_command;
 use super::tips::{Tips, command_guidance_enabled};
 use super::tree_mutation::{TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, path_is_strict_descendant};
 
@@ -84,6 +85,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
   let result = match &resolved.subcommand {
     EditSubcommand::Format(opts) => handle_format(opts, snapshot_file),
     EditSubcommand::Transaction(opts) => handle_transaction(opts, snapshot_file),
+    EditSubcommand::Scaffold(opts) => handle_scaffold_command(opts, snapshot_file),
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
     EditSubcommand::MvDef(opts) => handle_mv_def(opts, snapshot_file),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
@@ -132,6 +134,7 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     EditSubcommand::SplitDef(opts) => Some(&mut opts.target),
     EditSubcommand::Format(_)
     | EditSubcommand::Transaction(_)
+    | EditSubcommand::Scaffold(_)
     | EditSubcommand::AddNs(_)
     | EditSubcommand::RmNs(_)
     | EditSubcommand::Imports(_)
@@ -234,6 +237,9 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
     }
     EditSubcommand::Transaction(opts) if !opts.dry_run => {
       maintain_cursor_after_any_mutation(snapshot_file, "validated after edit transaction")
+    }
+    EditSubcommand::Scaffold(opts) if !opts.dry_run => {
+      maintain_cursor_after_any_mutation(snapshot_file, "validated after scaffold apply")
     }
     _ => Ok(()),
   }

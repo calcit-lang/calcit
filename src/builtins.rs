@@ -407,6 +407,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeInspectType => Ok(Calcit::Nil), // Handled in preprocessing phase
     NativeAssertTraits => meta::assert_traits(args, call_stack),
     Raise => effects::raise(args),
+    Todo => effects::todo(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),
     UnixTimeMs => effects::unix_time_ms(args),

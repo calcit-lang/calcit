@@ -19,9 +19,9 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
 ```cirru
 {}
   :schema-version 4
-  :active :main
+  :active :default
   :cursors $ {}
-    :main $ {}
+    :default $ {}
       :snapshot |calcit.cirru
       :target |app.main/render!
       :section :code
@@ -144,7 +144,7 @@ cr edit split-def @cursor --path @cursor --name render-items
 
 `cursor show` 默认调用 Cirru Parser 0.2.15 的 `focus_cirru_preview_with_options`，通过 `CirruFocusOptions` 在 definition 级展示副本中折叠无关分支、保留 definition 的 head/name/参数，并直接使用 `CURSOR` marker。Calcit 不再遍历重写 `'FOCUSED` 或手工拼接 definition header；该依赖使用精确版本约束，防止全局安装忽略 lockfile 时出现未经验证的展示语义漂移。目标表达式只在展示副本中渲染为：
 
-```cirru
+```cirru.no-check
 CURSOR
   map items $ fn (item)
     render-item item
@@ -248,6 +248,24 @@ snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。�
 
 当前状态只有一个 active cursor。原子 rename 保证文件完整性，但不提供多个进程共享同一 Snapshot 时的语义并发控制；并行 Agent 应使用独立 worktree/Snapshot，或改用带 precondition 的 transaction 与显式路径。marks 只能隔离导航位置，不能解决并发源码写入，因此不作为并发安全方案。
 
+兼容性更新（2026-08-14）：CLI 仍只操作 `:active` 指向的 cursor，但 cursor 文档读写会保留该名称以及 `:cursors` map 中其他合法条目，不再在保存 active state 时把 map 收缩为固定的 `:main`。新建 sidecar 的默认名称改为 `:default`，读取旧 `:main` 不受影响。这只为未来 cursor user 排除有损迁移障碍，尚不提供 user 选择、lease、心跳或并发写保护。
+
+### 6.1 下一阶段：cursor user
+
+CLI 将引入项目本地 `cursor user`，取代进程间共享的 active selection：
+
+```bash
+cr --cursor-user agent-a cursor show
+CALCIT_CURSOR_USER=agent-b cr tree show @cursor --path @cursor
+cr cursor show # 未指定时使用 default
+```
+
+解析优先级为 `--cursor-user` > `CALCIT_CURSOR_USER` > `default`。`@cursor`、history、stack、anchor、marks、last-query 和 clipboard 全部按 user 隔离；`cursor whoami/users` 提供发现接口。
+
+后续持久化推荐使用 `.calcit/cursors/<user>.cirru`，而不是让多个进程 read-modify-rename 同一个 `:users` map；否则即使文件写入原子，仍会丢失另一个 user 的并发导航更新。`cursor users` 通过目录发现，v1-v4 的 active entry 迁入 `default` 文件，其他合法 named entry 迁入对应 user 文件。
+
+source mutation 只立即迁移发起 user 的 cursor/anchor/marks；其他 user 下次访问时按 definition revision、same-path fingerprint 或唯一 fingerprint 懒惰恢复，无法恢复则标 stale。cursor activity、lease 和 overlap warning 不进入第一版；任务重叠由 orchestrator 比较 work item write-set，写入正确性依赖 Snapshot/definition revision precondition。完整边界见 `08-14-architecture-scaffold-rfc.md` 第 7 节。
+
 ## 7. 第一阶段实现范围
 
 1. Cirru EDN cursor 状态的读取、v1-v3→v4 兼容、旧路径一次性迁移、校验、64 KiB 上限和原子写入；
@@ -263,7 +281,7 @@ snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。�
 11. leaf/expression search 都支持 `--filter @cursor` 与 `--start-path @cursor`，并继续支持 `--set-cursor`。
 12. 单一 sibling region anchor、最多 16 个 named marks，以及只保存参数的 last query / `query next/prev`。
 
-transaction 内逐 operation 的 cursor preview、多 active cursor、region 批量 mutation，以及跨 definition 的 clipboard 引用策略在后续阶段接入；未接入的 mutation 必须让 cursor/anchor/marks 在下次使用时经过 stale 校验，不能绕过 fingerprint。
+transaction 内逐 operation 的 cursor preview、多 cursor user、region 批量 mutation，以及跨 definition 的 clipboard 引用策略在后续阶段接入；未接入的 mutation 必须让 cursor/anchor/marks 在下次使用时经过 stale 校验，不能绕过 fingerprint。
 
 ## 8. 验收
 

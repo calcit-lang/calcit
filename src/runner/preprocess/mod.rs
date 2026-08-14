@@ -875,7 +875,12 @@ pub fn preprocess_expr(
           let def_ns = &info.at_ns;
           let at_def = &info.at_def;
           // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
-          if scope_defs.contains(def) {
+          // `todo!` is a compiler-known completion marker, not a normal
+          // callable binding. Keep it recognizable even when a local happens
+          // to use the same name, so scaffold completion checks stay sound.
+          if def.as_ref() == "todo!" {
+            Ok(Calcit::Proc(CalcitProc::Todo))
+          } else if scope_defs.contains(def) {
             let type_info = scope_types.get(def).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
             Ok(Calcit::Local(CalcitLocal {
               idx: CalcitLocal::track_sym(def),
@@ -1848,6 +1853,44 @@ fn preprocess_list_call(
         // Check Proc argument types if available
         if let Some(Calcit::Proc(proc)) = ys.first() {
           let processed_args = CalcitList::from(ys.drop_left());
+          if matches!(proc, CalcitProc::Todo) {
+            if processed_args.len() > 1 {
+              return Err(CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Arity,
+                format!("todo! expects 0~1 arguments, got {}", processed_args.len()),
+                call_stack,
+                call_location.clone(),
+              ));
+            }
+            if let Some(message) = processed_args.first()
+              && !matches!(message, Calcit::Str(_))
+            {
+              let argument_location = message.get_location().or_else(|| call_location.clone());
+              return Err(CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Type,
+                "todo! expects an optional static String message",
+                call_stack,
+                argument_location,
+              ));
+            }
+            let enclosing_def = call_location
+              .as_ref()
+              .map(|location| location.def.as_ref())
+              .or_else(|| call_stack.0.first().map(|frame| frame.def.as_ref()))
+              .unwrap_or(def_name.as_ref());
+            let message = match processed_args.first() {
+              None => ": implementation is pending".to_owned(),
+              Some(Calcit::Str(message)) => format!(": {message}"),
+              Some(_) => unreachable!("invalid todo! message was rejected above"),
+            };
+            gen_check_warning_code_at(
+              format!("[Warn] TODO placeholder in {file_ns}/{enclosing_def}{message}"),
+              "W_TODO",
+              file_ns,
+              call_location.clone(),
+              check_warnings,
+            );
+          }
           check_proc_arg_types(
             proc,
             &processed_args,
@@ -8839,6 +8882,105 @@ mod tests {
       warning_msg.contains("number") || warning_msg.contains(":number"),
       "warning should mention actual type: {warning_msg}"
     );
+  }
+
+  #[test]
+  fn todo_placeholder_emits_todo_warning_without_return_type_mismatch() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_parser::Cirru;
+
+    let expr = Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("unfinished"),
+      Cirru::List(vec![]),
+      Cirru::List(vec![
+        Cirru::leaf("hint-fn"),
+        Cirru::List(vec![
+          Cirru::leaf("{}"),
+          Cirru::List(vec![Cirru::leaf(":return"), Cirru::leaf(":string")]),
+        ]),
+      ]),
+      Cirru::List(vec![Cirru::leaf("todo!"), Cirru::leaf("|write this")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.todo", "unfinished", vec![]).expect("parse todo expression");
+    let mut scope_types = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+
+    preprocess_expr(
+      &code,
+      &HashSet::new(),
+      &mut scope_types,
+      "tests.todo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess todo expression");
+
+    let warning_messages = warnings.borrow().iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert!(
+      warning_messages
+        .iter()
+        .any(|message| message.contains("W_TODO") && message.contains("write this")),
+      "todo warning missing: {warning_messages:?}"
+    );
+    assert!(
+      !warning_messages.iter().any(|message| message.contains("W_FN_RETURN_TYPE_MISMATCH")),
+      "todo should be accepted for any declared return type: {warning_messages:?}"
+    );
+  }
+
+  #[test]
+  fn todo_placeholder_cannot_be_shadowed_by_a_local_binding() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_parser::Cirru;
+
+    let code =
+      code_to_calcit(&Cirru::List(vec![Cirru::leaf("todo!")]), "tests.todo", "shadowed", vec![]).expect("parse todo expression");
+    let scope_defs = HashSet::from([Arc::from("todo!")]);
+    let mut scope_types = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let processed = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut scope_types,
+      "tests.todo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("preprocess todo expression");
+
+    assert!(
+      matches!(processed, Calcit::List(ref items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::Todo)))),
+      "todo should remain a compiler-known proc: {processed}"
+    );
+    assert!(warnings.borrow().iter().any(|warning| warning.to_string().contains("W_TODO")));
+  }
+
+  #[test]
+  fn todo_placeholder_requires_a_static_string_message() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_parser::Cirru;
+
+    let code = code_to_calcit(
+      &Cirru::List(vec![Cirru::leaf("todo!"), Cirru::leaf("1")]),
+      "tests.todo",
+      "message",
+      vec![],
+    )
+    .expect("parse todo expression");
+    let mut scope_types = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let error = preprocess_expr(
+      &code,
+      &HashSet::new(),
+      &mut scope_types,
+      "tests.todo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("non-literal todo! message should be rejected before code generation");
+    assert!(error.to_string().contains("static String"), "unexpected error: {error}");
+    assert!(warnings.borrow().is_empty(), "invalid todo! should not emit a completion warning");
   }
 
   #[test]

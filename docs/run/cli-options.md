@@ -26,6 +26,22 @@ cr --help
 
 Quick note: `cr edit format` rewrites the target snapshot using canonical serialization without guessing semantic changes. It normalizes legacy namespace records and top-level `:configs`, and rewrites legacy schema type tags such as `:string` and `:ref` to quoted symbols such as `'String` and `'Ref` only in known type positions. Ordinary tag data stays unchanged. It then emits recoverable stderr advisories for legacy filenames, legacy `:any`, and unresolved dynamic type debt. Use `cr analyze weak-types` for exact paths and recommendations; format warnings do not turn the command into a type-quality gate.
 
+For feature-level planning, use `cr edit scaffold`. Its primary input is a
+Cirru EDN architecture plan, preferably stored under
+`docs/architectures/<feature>.cirru`:
+
+```bash
+cr calcit.cirru edit scaffold --file docs/architectures/order.cirru \
+  --dry-run --format edn
+cr calcit.cirru edit scaffold --file docs/architectures/order.cirru \
+  --expect-revision md5:... --format edn
+```
+
+`--dry-run` previews reconciliation and work items without writing. Apply mode
+atomically creates missing definitions only; existing definitions are reported
+with their planned/existing metadata and are never overwritten. EDN is the
+canonical machine format; JSON is a compatibility projection.
+
 ## Detailed Option Descriptions
 
 ### Input File

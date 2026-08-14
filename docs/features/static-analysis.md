@@ -42,6 +42,7 @@ The static analysis system provides:
 - **Type inference** - Automatically infers types from literals and expressions
 - **Type annotations** - Optional type hints for function parameters and return values
 - **Compile-time warnings** - Catches errors before code execution
+- **Completion warnings** - Keeps scaffolded `todo!` paths visible to Agents
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
 ## Static Project Reports
@@ -99,6 +100,26 @@ For one expression, `cr query type-at '<ns/def>' --path code@... --format json` 
 These analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
+
+### TODO completion warnings
+
+`todo!` is a compiler-known diverging placeholder for code that is intentionally
+not implemented yet:
+
+```cirru.no-check
+defn load-user (id)
+  todo! "|implement user lookup"
+```
+
+Each occurrence emits `W_TODO` with the containing namespace, definition, and
+structural path. A static String literal is required for the message; invalid
+messages or extra arguments are rejected as type/arity errors before codegen;
+they do not emit a completion warning. The placeholder is accepted in a
+declared return position without manufacturing a return-type mismatch, but the
+warning remains a completion-gate failure until the body is implemented.
+
+`raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
+and implementation-completion status are separate concerns.
 
 `analyze.weak-types` uses protocol `schema_version: 2` because nil intent classes and `W_NIL_TYPE_DEBT` extend previously closed machine-readable enums. Consumers should reject v1 when they require the nil-contract fields rather than accepting the old version and failing on new intent values.
 

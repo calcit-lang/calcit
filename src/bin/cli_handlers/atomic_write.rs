@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) struct StagedFile {
   destination: PathBuf,
   temporary: PathBuf,
+  lock: PathBuf,
   committed: bool,
 }
 
@@ -41,6 +42,7 @@ impl StagedFile {
       )
     })?;
     self.committed = true;
+    let _ = fs::remove_file(&self.lock);
     Ok(())
   }
 }
@@ -49,6 +51,7 @@ impl Drop for StagedFile {
   fn drop(&mut self) {
     if !self.committed {
       let _ = fs::remove_file(&self.temporary);
+      let _ = fs::remove_file(&self.lock);
     }
   }
 }
@@ -78,6 +81,13 @@ pub(crate) fn stage_atomic_file(destination: &Path, content: &[u8], label: &str)
     .map_err(|error| format!("System clock error while staging {label}: {error}"))?
     .as_nanos();
   let file_name = destination.file_name().and_then(|value| value.to_str()).unwrap_or("calcit-state");
+  let lock = parent.join(format!(".{file_name}.lock"));
+  let _lock_file = OpenOptions::new().write(true).create_new(true).open(&lock).map_err(|error| {
+    format!(
+      "Failed to acquire writer lock for staged {label} destination '{}': {error}",
+      destination.display()
+    )
+  })?;
 
   for attempt in 0..32_u8 {
     let temporary = parent.join(format!(".{file_name}.{}.{nonce}.{attempt}.tmp", std::process::id()));
@@ -88,12 +98,14 @@ pub(crate) fn stage_atomic_file(destination: &Path, content: &[u8], label: &str)
     };
     if let Err(error) = file.write_all(content).and_then(|_| file.sync_all()) {
       let _ = fs::remove_file(&temporary);
+      let _ = fs::remove_file(&lock);
       return Err(format!("Failed to write staged {label} file '{}': {error}", temporary.display()));
     }
     if let Some(permissions) = &permissions
       && let Err(error) = fs::set_permissions(&temporary, permissions.clone())
     {
       let _ = fs::remove_file(&temporary);
+      let _ = fs::remove_file(&lock);
       return Err(format!(
         "Failed to preserve permissions on staged {label} file '{}': {error}",
         temporary.display()
@@ -102,9 +114,11 @@ pub(crate) fn stage_atomic_file(destination: &Path, content: &[u8], label: &str)
     return Ok(StagedFile {
       destination: destination.to_path_buf(),
       temporary,
+      lock,
       committed: false,
     });
   }
+  let _ = fs::remove_file(&lock);
   Err(format!(
     "Failed to allocate a unique staged {label} file in '{}'.",
     parent.display()

@@ -147,12 +147,30 @@ assert= (+ 1 2) 3
 assert-type x :number
 ```
 
+## Marking unfinished paths with `todo!`
+
+Use the compiler-known `todo!` expression for an intentionally unfinished
+implementation, especially in scaffold-generated definitions:
+
+```cirru.no-check
+defn validate-order (order)
+  todo! "|implement order validation"
+```
+
+`todo!` accepts zero or one static String message. Static preprocessing emits a
+`W_TODO` warning with the definition and path, so normal check/codegen gates
+continue to report unfinished work. Reaching it at runtime raises a TODO effect;
+JavaScript throws an Error and WASM traps. It is not an alias for `raise`:
+`raise` is an ordinary application error path and does not mean that an Agent
+still needs to implement the code.
+
 ## Notes
 
 - `raise` accepts any value that can be converted to a string. String literals and tags work best.
 - Raising maps or complex data structures may produce unexpected results — use the Result enum pattern for structured error data.
 - `try` always produces a value: either the result of the body, or the result of the handler.
 - `assert` / `assert=` are for development-time invariants. They generate warnings (not runtime errors) during static analysis.
+- `todo!` is a completion warning and should be removed when the implementation is finished; do not use it for recoverable domain errors.
 
 ## See Also
 

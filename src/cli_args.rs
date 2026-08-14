@@ -1249,6 +1249,8 @@ pub enum EditSubcommand {
   Format(EditFormatCommand),
   /// apply multiple existing edit/tree/config commands against one staged snapshot
   Transaction(EditTransactionCommand),
+  /// validate a definition-graph architecture plan and preview scaffold work
+  Scaffold(EditScaffoldCommand),
   /// add or update a definition
   Def(EditDefCommand),
   /// move a definition to another namespace
@@ -1319,6 +1321,27 @@ pub struct EditTransactionCommand {
   #[argh(switch, long = "dry-run")]
   pub dry_run: bool,
   /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "scaffold")]
+/// preview or atomically create a definition-graph architecture scaffold
+pub struct EditScaffoldCommand {
+  /// read architecture Cirru EDN from file
+  #[argh(option)]
+  pub file: Option<String>,
+  /// architecture Cirru EDN as inline text
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// require the snapshot content to match this revision before planning
+  #[argh(option, long = "expect-revision")]
+  pub expect_revision: Option<String>,
+  /// validate and preview the scaffold without replacing the snapshot
+  #[argh(switch, long = "dry-run")]
+  pub dry_run: bool,
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }

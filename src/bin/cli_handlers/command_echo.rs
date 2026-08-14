@@ -281,6 +281,10 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
       "{} a staged edit transaction with revision checks",
       if opts.dry_run { "previews" } else { "applies" }
     ),
+    EditSubcommand::Scaffold(opts) => format!(
+      "{} a definition-graph architecture scaffold",
+      if opts.dry_run { "previews" } else { "applies" }
+    ),
     EditSubcommand::Def(opts) => {
       let desc = format!("adds/updates definition `{}`", opts.target);
       format!(
@@ -881,6 +885,15 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
         value "format" => &opts.format; default "human"
       );
     }
+    EditSubcommand::Scaffold(opts) => {
+      echo_items!(
+        tokens,
+        code_input opts,
+        opt "expect-revision" => opts.expect_revision.as_deref(); default "none",
+        switch "dry-run" => opts.dry_run,
+        value "format" => &opts.format; default "human"
+      );
+    }
     EditSubcommand::Def(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, code_input opts, switch "overwrite" => opts.overwrite)
     }
@@ -1236,6 +1249,7 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
   match subcommand {
     EditSubcommand::Format(_) => "format",
     EditSubcommand::Transaction(_) => "transaction",
+    EditSubcommand::Scaffold(_) => "scaffold",
     EditSubcommand::Def(_) => "def",
     EditSubcommand::MvDef(_) => "mv-def",
     EditSubcommand::RmDef(_) => "rm-def",

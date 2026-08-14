@@ -22,7 +22,7 @@ use super::tree_mutation::{
 };
 
 const LEGACY_CURSOR_FILE: &str = ".calcit-cursor.cirru";
-const ACTIVE_CURSOR: &str = "main";
+const DEFAULT_CURSOR: &str = "default";
 const CURSOR_MAINTENANCE_ENV: &str = "CALCIT_CURSOR_MAINTENANCE";
 const CURSOR_SCHEMA_VERSION: u8 = 4;
 const CURSOR_HISTORY_LIMIT: usize = 32;
@@ -68,7 +68,9 @@ pub(crate) struct CursorLastQuery {
 
 #[derive(Debug, Clone, PartialEq)]
 struct CursorDocument {
+  active_name: String,
   active: CursorState,
+  inactive_cursors: BTreeMap<String, CursorState>,
   history: Vec<CursorState>,
   stack: Vec<CursorState>,
   anchor: Option<CursorState>,
@@ -181,7 +183,9 @@ fn set_cursor_selection_with_last_query(
   };
   refresh_cursor_state(&mut state, snapshot_file)?;
   let mut document = load_cursor_document_optional(snapshot_file)?.unwrap_or_else(|| CursorDocument {
+    active_name: DEFAULT_CURSOR.to_string(),
     active: state.clone(),
+    inactive_cursors: BTreeMap::new(),
     history: vec![],
     stack: vec![],
     anchor: None,
@@ -1740,17 +1744,20 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
   {
     return Err(format!("Unsupported cursor schema version {version}."));
   }
-  let active = root
+  let active_name = root
     .tag_get("active")
     .ok_or("Cursor file is missing :active")?
     .read_tag_str()?
     .to_string();
   let cursors = root.tag_get("cursors").ok_or("Cursor file is missing :cursors")?.view_map()?;
-  let entry = cursors
-    .get(&Edn::tag(active.as_str()))
-    .ok_or_else(|| format!("Cursor file has no entry for active cursor :{active}"))?
-    .clone();
-  let active = cursor_state_from_edn(&entry)?;
+  let mut cursor_states = cursors
+    .0
+    .iter()
+    .map(|(name, value)| Ok((name.read_tag_str()?.to_string(), cursor_state_from_edn(value)?)))
+    .collect::<Result<BTreeMap<_, _>, String>>()?;
+  let active = cursor_states
+    .remove(&active_name)
+    .ok_or_else(|| format!("Cursor file has no entry for active cursor :{active_name}"))?;
   let history = optional_state_list(&root, "history")?;
   let stack = optional_state_list(&root, "stack")?;
   let anchor = match root.tag_get("anchor") {
@@ -1768,7 +1775,9 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
   };
 
   Ok(Some(CursorDocument {
+    active_name,
     active,
+    inactive_cursors: cursor_states,
     history,
     stack,
     anchor,
@@ -1995,7 +2004,9 @@ fn cursor_last_query_to_edn(query: &CursorLastQuery) -> Edn {
 #[cfg(test)]
 fn save_cursor_state(snapshot_file: &str, state: &CursorState) -> Result<(), String> {
   let mut document = load_cursor_document_optional(snapshot_file)?.unwrap_or_else(|| CursorDocument {
+    active_name: DEFAULT_CURSOR.to_string(),
     active: state.clone(),
+    inactive_cursors: BTreeMap::new(),
     history: vec![],
     stack: vec![],
     anchor: None,
@@ -2008,13 +2019,19 @@ fn save_cursor_state(snapshot_file: &str, state: &CursorState) -> Result<(), Str
 }
 
 fn render_cursor_document(document: &CursorDocument) -> Result<String, String> {
+  let mut cursors = document.inactive_cursors.clone();
+  cursors.insert(document.active_name.clone(), document.active.clone());
   let mut content = cirru_edn::format(
     &Edn::map_from_iter([
       (Edn::tag("schema-version"), Edn::from(CURSOR_SCHEMA_VERSION)),
-      (Edn::tag("active"), Edn::tag(ACTIVE_CURSOR)),
+      (Edn::tag("active"), Edn::tag(document.active_name.as_str())),
       (
         Edn::tag("cursors"),
-        Edn::map_from_iter([(Edn::tag(ACTIVE_CURSOR), cursor_state_to_edn(&document.active))]),
+        Edn::map_from_iter(
+          cursors
+            .iter()
+            .map(|(name, state)| (Edn::tag(name.as_str()), cursor_state_to_edn(state))),
+        ),
       ),
       (
         Edn::tag("history"),
@@ -2135,8 +2152,8 @@ fn warn_cursor_gitignore(snapshot_file: &str) {
 #[cfg(test)]
 mod tests {
   use super::{
-    CursorClipboard, CursorDocument, CursorLastQuery, CursorState, RestoreSource, TreeCursorMutation, TreeOperation, apply_at_cursor,
-    barf_first, barf_last, build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path,
+    CursorClipboard, CursorDocument, CursorLastQuery, CursorState, DEFAULT_CURSOR, RestoreSource, TreeCursorMutation, TreeOperation,
+    apply_at_cursor, barf_first, barf_last, build_cursor_preview, commit_cut_staged_files, commit_paste_staged_files, cursor_file_path,
     cursor_region_bounds, cursor_state_to_edn, duplicate_cursor, legacy_cursor_file_path, load_cursor_document, load_cursor_state,
     maintain_cursor_after_node_move, maintain_cursor_after_tree_mutation, move_cursor_across_siblings, move_cursor_depth_first,
     move_cursor_to_child, node_fingerprint, paste_cursor_clipboard, push_bounded, read_cursor_target, render_cursor_document,
@@ -2231,6 +2248,15 @@ mod tests {
       .expect("cursor state should parse")
       .view_map()
       .expect("cursor state should be a map");
+    assert_eq!(
+      root
+        .tag_get("active")
+        .expect("cursor active name should exist")
+        .read_tag_str()
+        .expect("cursor active name should be a tag")
+        .as_ref(),
+      DEFAULT_CURSOR,
+    );
     assert_eq!(
       root
         .tag_get("schema-version")
@@ -2347,7 +2373,7 @@ mod tests {
   }
 
   #[test]
-  fn cursor_document_round_trips_history_stack_and_clipboard() {
+  fn cursor_document_round_trips_named_cursors_history_stack_and_clipboard() {
     let fixture = TestCursorSnapshot::from_fixture();
     let snapshot_file = fixture.snapshot_string();
     let path = vec![48, 1];
@@ -2359,8 +2385,20 @@ mod tests {
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
     };
+    let inactive_path = vec![48, 0];
+    let (inactive_node, inactive_revision) =
+      read_cursor_target(&snapshot_file, "app.main/main!", &inactive_path).expect("inactive cursor target should exist");
+    let inactive_state = CursorState {
+      snapshot: snapshot_file.clone(),
+      target: "app.main/main!".to_string(),
+      path: inactive_path,
+      definition_revision: inactive_revision,
+      fingerprint: node_fingerprint(&inactive_node),
+    };
     let document = CursorDocument {
+      active_name: "agent-a".to_string(),
       active: state.clone(),
+      inactive_cursors: BTreeMap::from([("agent-b".to_string(), inactive_state.clone())]),
       history: vec![state.clone()],
       stack: vec![state.clone()],
       anchor: Some(state.clone()),
@@ -2388,7 +2426,10 @@ mod tests {
     };
 
     save_cursor_document(&snapshot_file, &document).expect("cursor document should save");
-    assert_eq!(load_cursor_document(&snapshot_file).expect("cursor document should load"), document);
+    let loaded = load_cursor_document(&snapshot_file).expect("cursor document should load");
+    assert_eq!(loaded.active, state);
+    assert_eq!(loaded.inactive_cursors.get("agent-b"), Some(&inactive_state));
+    assert_eq!(loaded, document);
   }
 
   #[test]
@@ -2405,7 +2446,9 @@ mod tests {
       fingerprint: node_fingerprint(&node),
     };
     let document = CursorDocument {
+      active_name: DEFAULT_CURSOR.to_string(),
       active: state.clone(),
+      inactive_cursors: BTreeMap::new(),
       history: vec![],
       stack: vec![],
       anchor: None,
