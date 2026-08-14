@@ -3324,6 +3324,17 @@ fn calcit_type_to_edn(form: &Calcit) -> Edn {
   }
 }
 
+/// Check whether a definition's source code form resolves to a concrete
+/// StructDef or EnumDef. Used to restrict direct `assert-type` type resolution
+/// to nominal type definitions, so visible function or value names are never
+/// parsed as resolved types.
+pub(crate) fn code_resolves_to_nominal_type_def(code: &Calcit) -> bool {
+  matches!(
+    resolve_type_def_from_code(code),
+    Some(Calcit::StructDef(_)) | Some(Calcit::EnumDef(_))
+  )
+}
+
 fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   // Unwrap thunks: defstruct/defenum definitions are stored as unevaluated thunks
   if let Calcit::Thunk(thunk) = code {

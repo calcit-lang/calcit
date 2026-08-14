@@ -5604,22 +5604,41 @@ pub fn preprocess_assert_type(
   // The type position may refer directly to a Struct/Enum definition. Resolve
   // only an unquoted symbol here: a quoted symbol remains a TypeVar or an
   // explicit nominal TypeRef, while `assert-type value Store` can use the
-  // definition value itself without redundant quote syntax.
+  // definition value itself without redundant quote syntax. The target must
+  // resolve to a concrete StructDef/EnumDef; visible function or value names
+  // are kept as-is instead of being parsed as resolved types.
   let asserted_type_form = match type_form {
-    Calcit::Symbol { sym, info, .. }
-      if !sym.starts_with('\'')
-        && (runner::parse_ns_def(sym).is_some_and(|(ns, def)| program::has_def_code(&ns, &def))
-          || program::has_def_code(&info.at_ns, sym)
-          || program::lookup_def_target_in_import(&info.at_ns, sym).is_some()) =>
-    {
-      preprocess_expr(
-        type_form,
-        ctx.scope_defs,
-        ctx.scope_types,
-        ctx.file_ns,
-        ctx.check_warnings,
-        ctx.call_stack,
-      )?
+    Calcit::Symbol { sym, info, .. } if !sym.starts_with('\'') => {
+      let nominal_target = runner::parse_ns_def(sym)
+        .filter(|(ns, def)| {
+          program::lookup_def_code(ns, def).is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+        })
+        .or_else(|| {
+          if program::lookup_def_code(&info.at_ns, sym)
+            .is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+          {
+            Some((info.at_ns.clone(), sym.clone()))
+          } else {
+            program::lookup_def_target_in_import(&info.at_ns, sym)
+              .filter(|ns| {
+                program::lookup_def_code(ns, sym)
+                  .is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+              })
+              .map(|ns| (ns, sym.clone()))
+          }
+        });
+      if nominal_target.is_some() {
+        preprocess_expr(
+          type_form,
+          ctx.scope_defs,
+          ctx.scope_types,
+          ctx.file_ns,
+          ctx.check_warnings,
+          ctx.call_stack,
+        )?
+      } else {
+        type_form.to_owned()
+      }
     }
     _ => type_form.to_owned(),
   };
@@ -6356,6 +6375,128 @@ mod tests {
       "a mixed literal cannot prove Option membership is intentional"
     );
 
+    let option_key_sym: Arc<str> = Arc::from("option-key-map");
+    let option_key_map = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&option_key_sym),
+      sym: option_key_sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.option-migration"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Map(
+        Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("calcit.core/Option"),
+          Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+        )),
+        Arc::new(CalcitTypeAnnotation::String),
+      )),
+    });
+    let option_key_map_args = CalcitList::from(&[option_key_map.to_owned(), option_value.to_owned()] as &[Calcit]);
+    let option_key_map_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("contains?"),
+      &option_key_map_args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &option_key_map_warnings,
+    );
+    assert!(
+      option_key_map_warnings.borrow().is_empty(),
+      "Map<Option<T>, V> key membership via contains? should compare nominal Option keys without warning"
+    );
+
+    let option_value_sym: Arc<str> = Arc::from("option-value-map");
+    let option_value_map = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&option_value_sym),
+      sym: option_value_sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.option-migration"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Map(
+        Arc::new(CalcitTypeAnnotation::String),
+        Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("calcit.core/Option"),
+          Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+        )),
+      )),
+    });
+    let option_value_map_args = CalcitList::from(&[option_value_map.to_owned(), option_value.to_owned()] as &[Calcit]);
+    let option_value_map_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("includes?"),
+      &option_value_map_args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &option_value_map_warnings,
+    );
+    assert!(
+      option_value_map_warnings.borrow().is_empty(),
+      "Map<K, Option<T>> value membership via includes? should compare nominal Option values without warning"
+    );
+
+    let reversed_option_key_map_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("includes?"),
+      &CalcitList::from(&[option_key_map.to_owned(), option_value.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &reversed_option_key_map_warnings,
+    );
+    assert_eq!(
+      reversed_option_key_map_warnings.borrow().len(),
+      1,
+      "includes? on Map<Option<T>, V> checks the String value, so the Option key must not suppress the warning"
+    );
+
+    let reversed_option_value_map_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("contains?"),
+      &CalcitList::from(&[option_value_map.to_owned(), option_value.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &reversed_option_value_map_warnings,
+    );
+    assert_eq!(
+      reversed_option_value_map_warnings.borrow().len(),
+      1,
+      "contains? on Map<K, Option<T>> checks the String key, so the Option value must not suppress the warning"
+    );
+
+    let specialized_option_key_map_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &Calcit::Proc(CalcitProc::NativeMapContains),
+      &CalcitList::from(&[option_key_map.to_owned(), option_value.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &specialized_option_key_map_warnings,
+    );
+    assert!(
+      specialized_option_key_map_warnings.borrow().is_empty(),
+      "the specialized Map contains proc should retain the Option key membership exemption"
+    );
+
+    let specialized_option_value_map_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &Calcit::Proc(CalcitProc::NativeMapIncludes),
+      &CalcitList::from(&[option_value_map.to_owned(), option_value.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &specialized_option_value_map_warnings,
+    );
+    assert!(
+      specialized_option_value_map_warnings.borrow().is_empty(),
+      "the specialized Map includes proc should retain the Option value membership exemption"
+    );
+
     let application_get = Calcit::Symbol {
       sym: Arc::from("get"),
       info: Arc::new(CalcitSymbolInfo {
@@ -6813,6 +6954,43 @@ mod tests {
       "assert-type head should remain syntax"
     );
     assert!(scope_types.is_empty(), "expression assert-type should not mutate local scope types");
+  }
+
+  #[test]
+  fn assert_type_direct_def_resolution_rejects_visible_values() {
+    let _guard = lock_preprocess_test_state();
+
+    program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
+      Arc::from("tests.assert"),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("answer"),
+          program::ProgramDefEntry {
+            code: Calcit::Number(42.0),
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    );
+
+    let assert_value_expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf("answer")]);
+    let value_code = code_to_calcit(&assert_value_expr, "tests.assert", "demo", vec![]).expect("parse assert-type value");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let resolved = preprocess_expr(&value_code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack)
+      .expect("preprocess visible value assert-type");
+    let asserted_type = resolve_type_value(&resolved, &scope_types);
+    assert!(
+      matches!(resolved, Calcit::Local(local) if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Number)),
+      "a visible value name must not be treated as a resolved nominal type, got {asserted_type:?}"
+    );
   }
 
   #[test]
