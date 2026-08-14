@@ -334,6 +334,13 @@ fn to_js_code(
         }
       }
       Calcit::Local(CalcitLocal { sym, .. }) => Ok(escape_var(sym)),
+      // A bare `{}` is represented as the NativeMap proc in the preprocessed
+      // tree. Unlike ordinary proc values it must be evaluated here, otherwise
+      // the generated module refers to the non-existent `$clt._$M_` binding.
+      Calcit::Proc(CalcitProc::NativeMap) => {
+        let proc_prefix = get_proc_prefix(ns);
+        Ok(format!("{proc_prefix}{}()", escape_var(CalcitProc::NativeMap.as_ref())))
+      }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
         // println!("gen proc {} under {}", s, ns,);
@@ -2402,5 +2409,24 @@ mod tests {
     let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("eval should compile");
 
     assert_eq!(code, "$clt.eval(code)");
+  }
+
+  #[test]
+  fn bare_empty_map_uses_the_runtime_constructor() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+
+    let code = to_js_code(
+      &Calcit::Proc(CalcitProc::NativeMap),
+      "tests.emit-js",
+      &local_defs,
+      &file_imports,
+      &tags,
+      None,
+    )
+    .expect("bare empty map should compile");
+
+    assert_eq!(code, "$clt._$n__$M_()");
   }
 }
