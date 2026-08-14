@@ -1854,22 +1854,37 @@ fn preprocess_list_call(
         if let Some(Calcit::Proc(proc)) = ys.first() {
           let processed_args = CalcitList::from(ys.drop_left());
           if matches!(proc, CalcitProc::Todo) {
+            if processed_args.len() > 1 {
+              return Err(CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Arity,
+                format!("todo! expects 0~1 arguments, got {}", processed_args.len()),
+                call_stack,
+                call_location.clone(),
+              ));
+            }
+            if let Some(message) = processed_args.first()
+              && !matches!(message, Calcit::Str(_))
+            {
+              let argument_location = message.get_location().or_else(|| call_location.clone());
+              return Err(CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Type,
+                "todo! expects an optional static String message",
+                call_stack,
+                argument_location,
+              ));
+            }
+            let enclosing_def = call_location
+              .as_ref()
+              .map(|location| location.def.as_ref())
+              .or_else(|| call_stack.0.first().map(|frame| frame.def.as_ref()))
+              .unwrap_or(def_name.as_ref());
             let message = match processed_args.first() {
               None => ": implementation is pending".to_owned(),
               Some(Calcit::Str(message)) => format!(": {message}"),
-              Some(_) => {
-                gen_check_warning_code_at(
-                  format!("[Warn] TODO placeholder in {file_ns}/{def_name} requires a static String message"),
-                  "W_TODO_MESSAGE_LITERAL",
-                  file_ns,
-                  call_location.clone(),
-                  check_warnings,
-                );
-                String::new()
-              }
+              Some(_) => unreachable!("invalid todo! message was rejected above"),
             };
             gen_check_warning_code_at(
-              format!("[Warn] TODO placeholder in {file_ns}/{def_name}{message}"),
+              format!("[Warn] TODO placeholder in {file_ns}/{enclosing_def}{message}"),
               "W_TODO",
               file_ns,
               call_location.clone(),
@@ -8955,7 +8970,7 @@ mod tests {
     .expect("parse todo expression");
     let mut scope_types = ScopeTypes::new();
     let warnings = RefCell::new(vec![]);
-    preprocess_expr(
+    let error = preprocess_expr(
       &code,
       &HashSet::new(),
       &mut scope_types,
@@ -8963,14 +8978,9 @@ mod tests {
       &warnings,
       &CallStackList::default(),
     )
-    .expect("preprocess todo expression");
-
-    assert!(
-      warnings
-        .borrow()
-        .iter()
-        .any(|warning| warning.to_string().contains("W_TODO_MESSAGE_LITERAL"))
-    );
+    .expect_err("non-literal todo! message should be rejected before code generation");
+    assert!(error.to_string().contains("static String"), "unexpected error: {error}");
+    assert!(warnings.borrow().is_empty(), "invalid todo! should not emit a completion warning");
   }
 
   #[test]

@@ -19,9 +19,9 @@ Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision �
 ```cirru
 {}
   :schema-version 4
-  :active :main
+  :active :default
   :cursors $ {}
-    :main $ {}
+    :default $ {}
       :snapshot |calcit.cirru
       :target |app.main/render!
       :section :code

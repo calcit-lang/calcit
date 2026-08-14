@@ -113,7 +113,8 @@ defn load-user (id)
 
 Each occurrence emits `W_TODO` with the containing namespace, definition, and
 structural path. A static String literal is required for the message; invalid
-messages also emit `W_TODO_MESSAGE_LITERAL`. The placeholder is accepted in a
+messages or extra arguments are rejected as type/arity errors before codegen;
+they do not emit a completion warning. The placeholder is accepted in a
 declared return position without manufacturing a return-type mismatch, but the
 warning remains a completion-gate failure until the body is implemented.
 

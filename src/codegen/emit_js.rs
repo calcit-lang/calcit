@@ -603,8 +603,12 @@ fn gen_call_code(
       }
     }
     Calcit::Proc(CalcitProc::Todo) => {
+      if body.len() > 1 {
+        return Err(format!("todo! expects 0~1 arguments, got {}", body.len()));
+      }
       let message = match body.first() {
-        Some(message) => to_js_code(message, ns, local_defs, file_imports, tags, None)?,
+        Some(Calcit::Str(message)) => serde_json::to_string(message.as_ref()).map_err(|error| error.to_string())?,
+        Some(_) => return Err("todo! expects an optional static String message".to_owned()),
         None => String::from("\"implementation is pending\""),
       };
       let has_await = detect_await(&body);

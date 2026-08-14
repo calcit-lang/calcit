@@ -1960,10 +1960,23 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Raise — terminates execution
-    CalcitProc::Raise | CalcitProc::Todo => {
-      // `raise` and `todo!` abort the program; emit a WASM unreachable trap.
-      // Any preceding args are evaluated for side effects but discarded.
+    CalcitProc::Raise => {
+      // `raise` aborts the program; any args are evaluated for side effects but discarded.
       for arg in args {
+        emit_expr(ctx, arg)?;
+        ctx.emit(Instruction::Drop);
+      }
+      ctx.emit(Instruction::Unreachable);
+      Ok(())
+    }
+    CalcitProc::Todo => {
+      if args.len() > 1 {
+        return Err(format!("todo! expects 0~1 arguments, got {}", args.len()));
+      }
+      if args.first().is_some_and(|arg| !matches!(arg, Calcit::Str(_))) {
+        return Err("todo! expects an optional static String message".to_owned());
+      }
+      if let Some(arg) = args.first() {
         emit_expr(ctx, arg)?;
         ctx.emit(Instruction::Drop);
       }

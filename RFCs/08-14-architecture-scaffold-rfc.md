@@ -302,6 +302,7 @@ Cirru EDN stdout 是单个 map：
   :dry-run true
   :snapshot-revision |md5:current
   :proposed-revision |md5:proposed
+  :new-snapshot-revision |md5:applied
   :normalized-plan $ {}
     :roots $ #{} 'app.order/submit-order!
     :definitions $ {}
@@ -361,7 +362,7 @@ CLI 只负责产生结构化 work items。parent agent 或外部 orchestrator �
 
 ```cirru
 {}
-  :id 'order-submission/implement-validate-order
+  :id 'order-submission/implement/app.order/validate-order
   :plan-id |md5:plan
   :target 'app.order/validate-order
   :base-snapshot-revision |md5:scaffolded
@@ -378,7 +379,8 @@ CLI 只负责产生结构化 work items。parent agent 或外部 orchestrator �
 
 规则：
 
-- work item ID 与 target 稳定，不包含运行时 Agent 名称；
+- work item ID 包含完整 FQN，与 target 稳定且不包含运行时 Agent 名称；
+- `base-snapshot-revision` 指向 scaffold 应用后的 Snapshot revision；dry-run 使用 proposed revision；
 - `write-set` 表示默认允许修改的 definition；parent 扩大范围时必须显式处理重叠；
 - cursor user 是执行 Agent 的导航身份，由 parent 分配，不属于 architecture；
 - call graph 邻接不代表 write-set 重叠；第一版不计算强制 batch；

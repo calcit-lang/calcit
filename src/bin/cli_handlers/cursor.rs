@@ -2385,10 +2385,20 @@ mod tests {
       definition_revision: revision,
       fingerprint: node_fingerprint(&node),
     };
+    let inactive_path = vec![48, 0];
+    let (inactive_node, inactive_revision) =
+      read_cursor_target(&snapshot_file, "app.main/main!", &inactive_path).expect("inactive cursor target should exist");
+    let inactive_state = CursorState {
+      snapshot: snapshot_file.clone(),
+      target: "app.main/main!".to_string(),
+      path: inactive_path,
+      definition_revision: inactive_revision,
+      fingerprint: node_fingerprint(&inactive_node),
+    };
     let document = CursorDocument {
       active_name: "agent-a".to_string(),
       active: state.clone(),
-      inactive_cursors: BTreeMap::from([("agent-b".to_string(), state.clone())]),
+      inactive_cursors: BTreeMap::from([("agent-b".to_string(), inactive_state.clone())]),
       history: vec![state.clone()],
       stack: vec![state.clone()],
       anchor: Some(state.clone()),
@@ -2416,7 +2426,10 @@ mod tests {
     };
 
     save_cursor_document(&snapshot_file, &document).expect("cursor document should save");
-    assert_eq!(load_cursor_document(&snapshot_file).expect("cursor document should load"), document);
+    let loaded = load_cursor_document(&snapshot_file).expect("cursor document should load");
+    assert_eq!(loaded.active, state);
+    assert_eq!(loaded.inactive_cursors.get("agent-b"), Some(&inactive_state));
+    assert_eq!(loaded, document);
   }
 
   #[test]

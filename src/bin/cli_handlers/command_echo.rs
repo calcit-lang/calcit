@@ -283,7 +283,7 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
     ),
     EditSubcommand::Scaffold(opts) => format!(
       "{} a definition-graph architecture scaffold",
-      if opts.dry_run { "previews" } else { "plans" }
+      if opts.dry_run { "previews" } else { "applies" }
     ),
     EditSubcommand::Def(opts) => {
       let desc = format!("adds/updates definition `{}`", opts.target);

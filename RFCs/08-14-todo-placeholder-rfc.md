@@ -94,6 +94,11 @@ Cirru EDN diagnostic 至少包含：
 - 后续若引入 warning severity/allow-list，`W_TODO` 的默认 completion gate 仍应为 deny，显式探索性运行才允许降级；
 - Cirru EDN stdout 保持单个 value；JSON 只作为现有工具兼容投影，human warning 与普通命令提示走 stderr。
 
+参数契约也由 compiler-known proc 统一执行：`todo!` 只接受零个参数，或一个
+静态 String literal；非 literal 参数和多余参数在 preprocessing 阶段分别报告
+Type/Arity 错误并阻止 codegen。native、JavaScript、WASM backend 仍保留同样的
+校验作为防御性边界，不把非法调用静默降级为 unconditional trap。
+
 ## 5. 运行时与 codegen
 
 即使静态门禁通常会先发现 TODO，各后端仍必须定义一致的防御行为：

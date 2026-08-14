@@ -48,6 +48,31 @@ Calcit 的源码、定义元数据与编辑对象本来就是 Cirru EDN 树。Ag
 - 保留兼容期 `--json`，但内部等价于 `--format json`；
 - 结果 schema 只能向后兼容地增加可选字段；破坏性变更升级 `:schema-version`，JSON projection 使用 `schema_version`。
 
+### 3.1 JSON compatibility projection
+
+JSON 只是 EDN typed result 的兼容投影，不能把 Calcit 值压扁成容易歧义的
+字符串或普通数组。projection 使用稳定的 tagged shape；对象字段使用
+snake_case，集合保持顺序，Set 额外携带 `set` 标签以区别普通数组：
+
+| Cirru EDN | JSON projection |
+|---|---|
+| Symbol `foo/bar` | `{"$type":"symbol","value":"foo/bar"}` |
+| Tag `:ok` | `{"$type":"tag","value":"ok"}` |
+| Set `#{:a :b}` | `{"$type":"set","items":[...]}` |
+| Quote `quote (...)` | `{"$type":"quote","value":...}` |
+| anonymous Enum `:: :call a b` | `{"$type":"enum","variant":"call","type":null,"items":[...]}` |
+| Struct | `{"$type":"struct","name":"...","fields":{...}}` |
+| nested value | recursively apply the same mapping |
+| `nil` | JSON `null` |
+| empty collection | tagged empty collection, never `null` |
+
+Implementations must include semantic fixtures for every row, including nested
+values and `nil` versus empty collections. A fixture passes only when decoding
+the projection reconstructs an EDN value equivalent to the source; a successful
+`JSON.parse` alone is insufficient. The EDN renderer remains the reference for
+round-trip tests, while JSON fixtures protect compatibility for `jq`, LSP/MCP
+adapters and existing scripts.
+
 ## 4. 统一 Definition Descriptor
 
 query、docs、静态分析与 builtin fallback 应从同一只读描述视图组装结果：
@@ -98,7 +123,28 @@ cr query type-at <ns/def> --path code@3.2 --format edn
 3. editor/LSP 映射不把行号变成新的事实来源；
 4. 有明确维护者承担协议兼容、进程恢复和跨平台测试。
 
-届时优先实现 `cr serve --stdio`，复用本 RFC typed result；stdio transport 可协商 EDN 或兼容 JSON，LSP/MCP 只是其上的薄映射。LSP 的 document symbol、references、hover、versioned diagnostics 与 workspace edit 可以借鉴，但内部身份仍是 definition/tree 语义。
+届时优先实现 `cr serve --stdio`，复用本 RFC typed result。stdio 使用一行一个
+请求、一行一个响应的 framing；每一行必须是一个完整 EDN value，或在握手后是
+一个完整 JSON value，禁止把日志写入 stdout。客户端首先发送：
+
+```cirru.no-check
+{}
+  :protocol |calcit-agent/1
+  :format :edn
+  :request-id |hello-1
+```
+
+服务端响应同样带 `:request-id` 与最终选择的 `:format`。当前实现应优先选择
+EDN；若客户端只声明 `:json`，服务端选择 JSON；无法满足时返回结构化错误并
+关闭会话。后续请求使用 `:request-id`、`:command`、`:params`，响应使用
+`:ok`、`:result`、`:diagnostics`；错误使用 `:ok false`、`:error {:code ...
+:message ... :details ...}`，EDN/JSON 两种格式字段语义完全一致。stdio 同样
+遵守“一次响应一个 stdout value”，stderr 才能承载日志和进度信息。
+
+协议 fixture 必须覆盖 EDN 握手、JSON 握手、格式不支持错误、请求/响应关联和
+上述 typed-value projection。LSP/MCP 只是其上的薄映射；LSP 的 document symbol、
+references、hover、versioned diagnostics 与 workspace edit 可以借鉴，但内部身份
+仍是 definition/tree 语义。
 
 ## 7. 验收
 

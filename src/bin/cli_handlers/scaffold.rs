@@ -8,7 +8,7 @@
 use calcit::calcit::CalcitTypeAnnotation;
 use calcit::cli_args::EditScaffoldCommand;
 use calcit::snapshot::{self, CodeEntry, Snapshot, definition_revision, render_snapshot_content};
-use cirru_edn::{Edn, EdnListView, EdnMapView, EdnSetView, EdnTag};
+use cirru_edn::{Edn, EdnListView, EdnMapView, EdnSetView, EdnTag, from_edn};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -58,6 +58,9 @@ struct DefinitionSpec {
   schema: Edn,
   schema_annotation: Arc<CalcitTypeAnnotation>,
   params: Vec<String>,
+  code: Option<Cirru>,
+  tags: Option<HashSet<EdnTag>>,
+  examples: Option<Vec<Cirru>>,
   raw: Edn,
 }
 
@@ -95,6 +98,7 @@ struct ReconciliationEntry {
   origin: String,
   existing: Option<Edn>,
   planned: Edn,
+  diff: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -106,6 +110,7 @@ struct WorkItem {
   schema: Edn,
   doc: String,
   params: Vec<String>,
+  examples: Vec<Cirru>,
   planned_edges: Vec<ArchitectureEdge>,
 }
 
@@ -114,6 +119,7 @@ struct ScaffoldPlanReport {
   plan: ArchitecturePlan,
   plan_id: String,
   snapshot_revision: String,
+  proposed_snapshot_revision: String,
   reconciliation: BTreeMap<String, ReconciliationEntry>,
   diagnostics: Vec<Edn>,
   work_items: Vec<WorkItem>,
@@ -151,8 +157,8 @@ pub(crate) fn handle_scaffold_command(opts: &EditScaffoldCommand, snapshot_file:
   let report = reconcile_plan(plan, &snapshot, snapshot_revision)?;
   let apply_result = if opts.dry_run {
     ScaffoldApplyResult {
-      changed: false,
-      new_snapshot_revision: report.snapshot_revision.clone(),
+      changed: report.proposed_snapshot_revision != report.snapshot_revision,
+      new_snapshot_revision: report.proposed_snapshot_revision.clone(),
     }
   } else {
     apply_scaffold(&report, &snapshot, snapshot_file, &snapshot_content)?
@@ -237,21 +243,27 @@ fn apply_scaffold(
 
 fn scaffold_entry(id: &str, definition: &str, spec: &DefinitionSpec) -> Result<CodeEntry, String> {
   let code = match spec.kind {
-    DefinitionKind::Function => Cirru::List(vec![
-      Cirru::leaf("defn"),
-      Cirru::leaf(definition),
-      Cirru::List(spec.params.iter().map(|param| Cirru::leaf(param.as_str())).collect()),
-      Cirru::List(vec![Cirru::leaf("todo!"), Cirru::leaf(format!("|TODO(scaffold): implement {id}"))]),
-    ]),
-    DefinitionKind::Data => match spec.raw.view_map()?.tag_get("code") {
-      Some(Edn::Quote(code)) => code.clone(),
-      _ => return Err(format!("Architecture data definition '{id}' is missing validated quoted :code.")),
-    },
+    DefinitionKind::Function => spec.code.clone().unwrap_or_else(|| {
+      Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf(definition),
+        Cirru::List(spec.params.iter().map(|param| Cirru::leaf(param.as_str())).collect()),
+        Cirru::List(vec![Cirru::leaf("todo!"), Cirru::leaf(format!("|TODO(scaffold): implement {id}"))]),
+      ])
+    }),
+    DefinitionKind::Data => spec
+      .code
+      .clone()
+      .ok_or_else(|| format!("Architecture data definition '{id}' is missing validated quoted :code."))?,
   };
   let mut entry = CodeEntry::from_code(code);
   entry.doc = spec.doc.clone().unwrap_or_default();
   entry.schema = spec.schema_annotation.clone();
-  entry.tags.insert(EdnTag::new("scaffold"));
+  entry.tags = spec.tags.clone().unwrap_or_default();
+  entry.examples = spec.examples.clone().unwrap_or_default();
+  if spec.kind == DefinitionKind::Function && spec.code.is_none() {
+    entry.tags.insert(EdnTag::new("scaffold"));
+  }
   Ok(entry)
 }
 
@@ -270,6 +282,9 @@ fn parse_architecture_plan(raw: &str) -> Result<ArchitecturePlan, String> {
   let feature = required_symbol(&map, "feature")?;
   let doc = optional_string(&map, "doc")?;
   let roots = required_symbol_set(&map, "roots")?;
+  if roots.is_empty() {
+    return Err("Architecture :roots must contain at least one definition Symbol.".to_string());
+  }
   let definitions_value = map.tag_get("definitions").ok_or("Architecture is missing :definitions")?;
   let definitions_map = definitions_value
     .view_map()
@@ -387,6 +402,25 @@ fn parse_definition_spec(id: &str, value: &Edn) -> Result<DefinitionSpec, String
     return Err(format!("Architecture definition '{id}' :code must be quoted Cirru AST."));
   }
 
+  let code = match map.tag_get("code") {
+    Some(Edn::Quote(code)) => Some(code.clone()),
+    Some(_) => unreachable!("quoted code was validated above"),
+    None => None,
+  };
+  let tags = match map.tag_get("tags") {
+    None => None,
+    Some(value) => Some(
+      snapshot::parse_code_entry_tags_from_edn(value)
+        .map_err(|error| format!("Architecture definition '{id}' has invalid :tags: {error}"))?,
+    ),
+  };
+  let examples = match map.tag_get("examples") {
+    None => None,
+    Some(value) => {
+      Some(from_edn(value.clone()).map_err(|error| format!("Architecture definition '{id}' has invalid :examples: {error}"))?)
+    }
+  };
+
   Ok(DefinitionSpec {
     mode,
     kind,
@@ -394,6 +428,9 @@ fn parse_definition_spec(id: &str, value: &Edn) -> Result<DefinitionSpec, String
     schema,
     schema_annotation,
     params,
+    code,
+    tags,
+    examples,
     raw: value.clone(),
   })
 }
@@ -420,18 +457,23 @@ fn reconcile_plan(plan: ArchitecturePlan, snapshot: &Snapshot, snapshot_revision
   let plan_id = plan_id(&plan)?;
   let mut reconciliation = BTreeMap::new();
   let mut diagnostics = vec![];
-  let mut work_items = vec![];
 
   for (id, spec) in &plan.definitions {
     let (namespace, definition) = parse_target(id)?;
     let local_entry = snapshot.files.get(namespace).and_then(|file| file.defs.get(definition));
-    let (status, origin, existing) = match spec.mode {
+    let (status, origin, existing, diff) = match spec.mode {
       DefinitionMode::External => {
-        let origin = if local_entry.is_some() { "project" } else { "external" };
+        let entry = local_entry.ok_or_else(|| {
+          format!(
+            "Architecture external definition '{id}' could not be resolved in the current Snapshot; dependency/core lookup is not available for scaffold validation."
+          )
+        })?;
+        let diff = validate_existing_compatibility(id, spec, entry, &mut diagnostics)?;
         (
           ReconciliationStatus::External,
-          origin.to_string(),
-          local_entry.map(existing_entry_to_edn),
+          "project".to_string(),
+          Some(existing_entry_to_edn(entry)),
+          diff,
         )
       }
       DefinitionMode::Ensure => {
@@ -442,46 +484,20 @@ fn reconcile_plan(plan: ArchitecturePlan, snapshot: &Snapshot, snapshot_revision
           ));
         }
         match local_entry {
-          None => (ReconciliationStatus::Create, "project".to_string(), None),
+          None => (
+            ReconciliationStatus::Create,
+            "project".to_string(),
+            None,
+            BTreeSet::from(["definition".to_owned()]),
+          ),
           Some(entry) => {
-            let existing_kind = code_entry_kind(entry);
-            if existing_kind != spec.kind {
-              return Err(format!(
-                "Architecture conflict for '{id}': existing kind :{} does not match planned kind :{}.",
-                existing_kind.as_tag(),
-                spec.kind.as_tag()
-              ));
-            }
-            if entry.schema.as_ref() != spec.schema_annotation.as_ref() {
-              let existing_dynamic = matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic);
-              let planned_dynamic = matches!(spec.schema_annotation.as_ref(), CalcitTypeAnnotation::Dynamic);
-              if existing_dynamic || planned_dynamic {
-                diagnostics.push(diagnostic(
-                  "warning",
-                  "W_SCAFFOLD_DYNAMIC_SCHEMA",
-                  id,
-                  "Existing and planned schema differ because one side is Dynamic; scaffold will reuse the existing definition without narrowing it.",
-                ));
-              } else {
-                return Err(format!(
-                  "Architecture conflict for '{id}': existing schema does not match the planned schema."
-                ));
-              }
-            }
-            if spec.doc.as_deref().is_some_and(|doc| doc != entry.doc) {
-              diagnostics.push(diagnostic(
-                "warning",
-                "W_SCAFFOLD_DOC_DIFF",
-                id,
-                "Existing documentation differs from the planned documentation; scaffold will preserve the existing value.",
-              ));
-            }
+            let diff = validate_existing_compatibility(id, spec, entry, &mut diagnostics)?;
             let status = if entry_has_scaffold_todo(entry) {
               ReconciliationStatus::ReusePending
             } else {
               ReconciliationStatus::ReuseComplete
             };
-            (status, "project".to_string(), Some(existing_entry_to_edn(entry)))
+            (status, "project".to_string(), Some(existing_entry_to_edn(entry)), diff)
           }
         }
       }
@@ -493,30 +509,112 @@ fn reconcile_plan(plan: ArchitecturePlan, snapshot: &Snapshot, snapshot_revision
         origin,
         existing,
         planned: spec.raw.clone(),
+        diff,
       },
     );
-    if spec.kind == DefinitionKind::Function && matches!(status, ReconciliationStatus::Create | ReconciliationStatus::ReusePending) {
-      let planned_edges = plan.edges.iter().filter(|edge| edge.source == *id).cloned().collect::<Vec<_>>();
-      work_items.push(WorkItem {
-        id: format!("{}/implement-{}", plan.feature, definition),
+  }
+
+  let mut staged_snapshot = snapshot.clone();
+  for (id, reconciliation) in &reconciliation {
+    if reconciliation.status != ReconciliationStatus::Create {
+      continue;
+    }
+    let spec = plan.definitions.get(id).expect("reconciled definition must have a plan spec");
+    let (namespace, definition) = parse_target(id)?;
+    staged_snapshot
+      .files
+      .get_mut(namespace)
+      .expect("editable namespace was validated during reconciliation")
+      .defs
+      .insert(definition.to_owned(), scaffold_entry(id, definition, spec)?);
+  }
+  let staged_content = render_snapshot_content(&staged_snapshot)?;
+  let proposed_snapshot_revision = content_revision(&staged_content);
+  let work_items = plan
+    .definitions
+    .iter()
+    .filter_map(|(id, spec)| {
+      let entry = reconciliation.get(id)?;
+      if spec.kind != DefinitionKind::Function
+        || !matches!(entry.status, ReconciliationStatus::Create | ReconciliationStatus::ReusePending)
+      {
+        return None;
+      }
+      Some(WorkItem {
+        id: format!("{}/implement/{id}", plan.feature),
         plan_id: plan_id.clone(),
-        base_snapshot_revision: snapshot_revision.clone(),
+        base_snapshot_revision: proposed_snapshot_revision.clone(),
         target: id.clone(),
         schema: spec.schema.clone(),
         doc: spec.doc.clone().unwrap_or_default(),
         params: spec.params.clone(),
-        planned_edges,
-      });
-    }
-  }
+        examples: spec.examples.clone().unwrap_or_default(),
+        planned_edges: plan.edges.iter().filter(|edge| edge.source == *id).cloned().collect(),
+      })
+    })
+    .collect();
   Ok(ScaffoldPlanReport {
     plan,
     plan_id,
     snapshot_revision,
+    proposed_snapshot_revision,
     reconciliation,
     diagnostics,
     work_items,
   })
+}
+
+fn validate_existing_compatibility(
+  id: &str,
+  spec: &DefinitionSpec,
+  entry: &CodeEntry,
+  diagnostics: &mut Vec<Edn>,
+) -> Result<BTreeSet<String>, String> {
+  let existing_kind = code_entry_kind(entry);
+  if existing_kind != spec.kind {
+    return Err(format!(
+      "Architecture conflict for '{id}': existing kind :{} does not match planned kind :{}.",
+      existing_kind.as_tag(),
+      spec.kind.as_tag()
+    ));
+  }
+  let mut diff = BTreeSet::new();
+  if entry.schema.as_ref() != spec.schema_annotation.as_ref() {
+    let existing_dynamic = matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic);
+    let planned_dynamic = matches!(spec.schema_annotation.as_ref(), CalcitTypeAnnotation::Dynamic);
+    if existing_dynamic || planned_dynamic {
+      diagnostics.push(diagnostic(
+        "warning",
+        "W_SCAFFOLD_DYNAMIC_SCHEMA",
+        id,
+        "Existing and planned schema differ because one side is Dynamic; scaffold will reuse the existing definition without narrowing it.",
+      ));
+    } else {
+      return Err(format!(
+        "Architecture conflict for '{id}': existing schema does not match the planned schema."
+      ));
+    }
+    diff.insert("schema".to_owned());
+  }
+  if spec.doc.as_deref().is_some_and(|doc| doc != entry.doc) {
+    diagnostics.push(diagnostic(
+      "warning",
+      "W_SCAFFOLD_DOC_DIFF",
+      id,
+      "Existing documentation differs from the planned documentation; scaffold will preserve the existing value.",
+    ));
+    diff.insert("doc".to_owned());
+  }
+  if spec.tags.as_ref().is_some_and(|tags| tags != &entry.tags) {
+    diff.insert("tags".to_owned());
+  }
+  if spec.examples.as_ref().is_some_and(|examples| examples != &entry.examples) {
+    diff.insert("examples".to_owned());
+  }
+  if spec.code.as_ref().is_some_and(|code| code != &entry.code) {
+    diff.insert("code".to_owned());
+  }
+  Ok(diff)
 }
 
 fn report_to_edn(report: &ScaffoldPlanReport, dry_run: bool, apply_result: &ScaffoldApplyResult) -> Edn {
@@ -525,6 +623,10 @@ fn report_to_edn(report: &ScaffoldPlanReport, dry_run: bool, apply_result: &Scaf
       (Edn::tag("status"), Edn::tag(entry.status.as_tag())),
       (Edn::tag("origin"), Edn::tag(entry.origin.as_str())),
       (Edn::tag("planned"), entry.planned.clone()),
+      (
+        Edn::tag("diff"),
+        Edn::Set(EdnSetView(entry.diff.iter().map(|field| Edn::tag(field.as_str())).collect())),
+      ),
     ];
     if let Some(existing) = &entry.existing {
       fields.push((Edn::tag("existing"), existing.clone()));
@@ -551,6 +653,7 @@ fn report_to_edn(report: &ScaffoldPlanReport, dry_run: bool, apply_result: &Scaf
     (Edn::tag("dry-run"), Edn::Bool(dry_run)),
     (Edn::tag("changed"), Edn::Bool(apply_result.changed)),
     (Edn::tag("snapshot-revision"), Edn::str(report.snapshot_revision.as_str())),
+    (Edn::tag("proposed-revision"), Edn::str(report.proposed_snapshot_revision.as_str())),
     (
       Edn::tag("new-snapshot-revision"),
       Edn::str(apply_result.new_snapshot_revision.as_str()),
@@ -613,6 +716,10 @@ fn work_item_to_edn(item: &WorkItem) -> Edn {
     ),
     (Edn::tag("schema"), item.schema.clone()),
     (
+      Edn::tag("examples"),
+      Edn::List(EdnListView(item.examples.iter().cloned().map(Edn::from).collect())),
+    ),
+    (
       Edn::tag("planned-edges"),
       Edn::Set(EdnSetView(item.planned_edges.iter().map(edge_to_edn).collect::<HashSet<_>>())),
     ),
@@ -632,6 +739,14 @@ fn edge_to_edn(edge: &ArchitectureEdge) -> Edn {
 fn existing_entry_to_edn(entry: &CodeEntry) -> Edn {
   Edn::map_from_iter([
     (Edn::tag("doc"), Edn::str(entry.doc.as_str())),
+    (
+      Edn::tag("examples"),
+      Edn::List(EdnListView(entry.examples.iter().cloned().map(Edn::from).collect())),
+    ),
+    (
+      Edn::tag("tags"),
+      Edn::Set(EdnSetView(entry.tags.iter().map(|tag| Edn::Tag(tag.clone())).collect())),
+    ),
     (Edn::tag("kind"), Edn::tag(code_entry_kind(entry).as_tag())),
     (Edn::tag("schema"), snapshot::schema_annotation_to_edn(entry.schema.as_ref())),
     (
@@ -849,7 +964,12 @@ mod tests {
     )
     .expect("plan should reconcile");
     assert_eq!(report.work_items.len(), 2);
-    assert!(report.work_items.iter().all(|item| item.base_snapshot_revision == "md5:test"));
+    assert!(
+      report
+        .work_items
+        .iter()
+        .all(|item| item.base_snapshot_revision == report.proposed_snapshot_revision)
+    );
     assert_eq!(
       std::fs::read_to_string(&snapshot_file).expect("fixture snapshot should remain readable"),
       original
