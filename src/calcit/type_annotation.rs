@@ -1874,7 +1874,7 @@ impl CalcitTypeAnnotation {
         CalcitTypeAnnotation::Enum(enum_def, _) => {
           return Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(args)));
         }
-        CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs => {
+        CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs || name.contains('/') => {
           return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(args)));
         }
         _ => {}
@@ -2096,7 +2096,7 @@ impl CalcitTypeAnnotation {
             CalcitTypeAnnotation::Enum(enum_def, _) => {
               return Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(args)));
             }
-            CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs => {
+            CalcitTypeAnnotation::TypeRef(name, _) if strict_named_refs || name.contains('/') => {
               return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(args)));
             }
             // In an unscoped assertion, a quoted leaf is historically parsed as a TypeVar.
@@ -3985,6 +3985,20 @@ mod tests {
     assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::TypeRef(name, args)
         if name.as_ref() == "Box"
           && matches!(args.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number))));
+  }
+
+  #[test]
+  fn unscoped_parser_keeps_applied_qualified_name_as_type_ref() {
+    let applied = Calcit::List(Arc::new(CalcitList::from(&[
+      symbol("::"),
+      symbol("'app.schema/Box"),
+      symbol("'String"),
+    ])));
+
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&applied);
+    assert!(matches!(parsed.as_ref(), CalcitTypeAnnotation::TypeRef(name, args)
+        if name.as_ref() == "app.schema/Box"
+          && matches!(args.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "String"))));
   }
 
   #[test]
