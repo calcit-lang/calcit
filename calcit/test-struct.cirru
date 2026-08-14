@@ -113,7 +113,7 @@
             defn read-asserted-map-literal-store (source)
               let
                   store source
-                assert-type store 'test-struct.main/MapLiteralStore
+                assert-type store test-struct.main/MapLiteralStore
                 :text store
           :examples $ []
           :schema $ :: 'Dynamic
@@ -125,7 +125,7 @@
           :code $ quote
             defn read-let-asserted-map-literal-store (source)
               let
-                  store $ assert-type source 'test-struct.main/MapLiteralStore
+                  store $ assert-type source test-struct.main/MapLiteralStore
                 :text store
           :examples $ []
           :schema $ :: 'Dynamic

@@ -5601,9 +5601,32 @@ pub fn preprocess_assert_type(
     ctx.call_stack,
   )?;
 
+  // The type position may refer directly to a Struct/Enum definition. Resolve
+  // only an unquoted symbol here: a quoted symbol remains a TypeVar or an
+  // explicit nominal TypeRef, while `assert-type value Store` can use the
+  // definition value itself without redundant quote syntax.
+  let asserted_type_form = match type_form {
+    Calcit::Symbol { sym, info, .. }
+      if !sym.starts_with('\'')
+        && (runner::parse_ns_def(sym).is_some_and(|(ns, def)| program::has_def_code(&ns, &def))
+          || program::has_def_code(&info.at_ns, sym)
+          || program::lookup_def_target_in_import(&info.at_ns, sym).is_some()) =>
+    {
+      preprocess_expr(
+        type_form,
+        ctx.scope_defs,
+        ctx.scope_types,
+        ctx.file_ns,
+        ctx.check_warnings,
+        ctx.call_stack,
+      )?
+    }
+    _ => type_form.to_owned(),
+  };
+
   let asserted_target = target_form;
   if let Calcit::Local(local) = &asserted_target {
-    let asserted_type = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
+    let asserted_type = CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form);
     let current_type = resolve_type_value(&asserted_target, ctx.scope_types).unwrap_or_else(|| local.type_info.clone());
     let type_entry = if current_type.as_ref().matches_annotation(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
@@ -5623,7 +5646,7 @@ pub fn preprocess_assert_type(
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     asserted_target,
-    type_form.to_owned(),
+    asserted_type_form,
   ]))
 }
 
