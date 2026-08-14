@@ -117,6 +117,34 @@ path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 
+### Feature-level architecture scaffold
+
+当任务包含多个相互调用的 definition 时，先把架构写入版本控制中的
+`docs/architectures/<feature>.cirru`，再运行 scaffold planner：
+
+```bash
+cr calcit.cirru edit scaffold --file docs/architectures/order.cirru \
+  --dry-run --format edn
+```
+
+Architecture plan 是 Cirru EDN 数据：definition FQN 和 `:params` 使用
+Symbol，调用/类型关系使用 `:: :call` / `:: :type` anonymous enum，不能用
+混合类型的 `[]` 表示。先查看 `reconciliation`、warnings 与 work items；
+已有 definition 仍会出现在结果中。只有确认 revision 后才 apply：
+
+```bash
+cr calcit.cirru edit scaffold --file docs/architectures/order.cirru \
+  --expect-revision md5:... --format edn
+```
+
+apply 只创建缺失的 `:ensure` definition，不覆盖已有 code/doc/schema。新建
+函数带 `:scaffold` tag 和 `todo!`，因此会产生 `W_TODO`；它们是待分配的
+work items，不是已经完成的实现。父 Agent 可以并行分发 work item，但第一
+版仍应在最新 Snapshot 上串行合并实现，使用 revision/write-set 防止陈旧写入。
+
+Architecture 计划放在 `docs/`，而 `.calcit/` 只保存本机 cursor、error 和
+snippets 等临时状态；不要把需要评审的设计落进隐藏目录。
+
 ## 3. 高频黄金路径：查询 → 编辑 → 验证
 
 下面是需要替换 `<...>` 占位符的任务模板，不能原样执行。target、needle 和 replacement 必须来自当前项目及用户目标。先看搜索结果中的 `[#N]`，确认后再用同一序号设置 cursor：

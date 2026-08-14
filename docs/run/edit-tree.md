@@ -174,6 +174,43 @@ cr calcit.cirru cursor clear-clipboard
 
 Use `cr calcit.cirru cursor clear` to remove the local selection and clipboard together. Transaction child operations deliberately do not mutate the real cursor file; after a committed transaction, the parent command revalidates or uniquely relocates the cursor against the final snapshot and warns if manual recovery is required.
 
+### Architecture Scaffold
+
+`cr edit scaffold` turns one feature-level architecture plan into a validated
+set of definition work items. The recommended source is Cirru EDN under
+`docs/architectures/`; the canonical graph uses Symbol FQNs in `:definitions`
+and homogeneous typed anonymous-enum edges such as
+`:: :call 'app.order/validate 'app.order/order-total`.
+
+Preview first:
+
+```bash
+cr calcit.cirru edit scaffold \
+  --file docs/architectures/order-submission.cirru \
+  --dry-run --format edn
+```
+
+Apply with a revision precondition:
+
+```bash
+cr calcit.cirru edit scaffold \
+  --file docs/architectures/order-submission.cirru \
+  --expect-revision md5:... --format edn
+```
+
+Scaffold reconciliation keeps existing definitions in the result. Compatible
+definitions become `reuse-complete` or `reuse-pending`; documentation and
+Dynamic-schema differences are warnings; concrete kind/schema conflicts reject
+the whole apply. Only missing `:ensure` definitions are created. Function stubs
+contain `todo!` and are marked `:scaffold`; data definitions must provide an
+explicit quoted `:code`.
+
+The apply stages the complete Snapshot, rechecks its revision, and commits with
+one atomic rename. A successful apply then revalidates the current cursor. The
+work item is the unit assigned to an Agent; the first workflow keeps Snapshot
+writes serial at the parent/coordinator even when implementation work is
+parallel.
+
 ### Atomic Transactions
 
 `cr edit transaction` applies existing `edit`, `tree`, and `config` mutations to a staged snapshot. The original snapshot is replaced only after every operation succeeds and the staged result can be loaded and serialized again. A failed operation, stale revision, or `--dry-run` leaves the original file unchanged.

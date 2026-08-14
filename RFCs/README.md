@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-08
+更新时间：2026-08-14
 
 ## 目录原则
 
@@ -39,6 +39,8 @@
 | `07-28-git-module-store-rfc.md`                     | Draft         | 保持 `deps.cirru` 与 Git 模块路径，以 tag 为最佳实践并使用 pnpm 式全局目录存储；不引入 registry、lockfile、workspace 或多版本。 |
 | `07-28-project-tooling-contract-rfc.md`             | Draft         | 在既有 `cr` 子命令上补强单项目工具契约，保持 EDN 树形事实来源。                                                        |
 | `07-28-persistent-tree-cursor-rfc.md`               | Draft         | `.calcit/` 本地状态、虚拟 cursor、region/marks/last-query、结构化 clipboard 与 path 迁移。                            |
+| `08-14-architecture-scaffold-rfc.md`                | Implemented   | Cirru EDN architecture graph、existing-definition reconciliation、atomic scaffold apply、work items 与多 Agent 分工边界。 |
+| `08-14-todo-placeholder-rfc.md`                      | Partial       | compiler-known `todo!`、`W_TODO` 与 native/JS/WASM 中止行为已落地；完整 Never/control-flow inference 后续实现。 |
 | `08-04-strict-cirru-edn-decoding-rfc.md`            | Implemented   | Phase 1：`parse-cirru-edn-as` 严格类型化反序列化、无 Dynamic 的 `EdnDecoderGraph`、名义身份与 Native/JS 一致性。    |
 | `08-05-systematic-nil-reduction-rfc.md`              | Partial       | 类型驱动减少 nil：先拆分可省略参数与 nullable 值，再迁移至 Option/Result 并逐步收紧 typed code。                  |
 | `08-08-cross-backend-host-ffi-contracts-rfc.md`      | Draft         | 统一 JS/native/WASM/WASI 的逻辑 FFI 契约与诊断，ABI transport 保持 backend-specific；首个完整 shape consumer 为 JS/DOM。 |
