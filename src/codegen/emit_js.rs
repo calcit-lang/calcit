@@ -335,8 +335,7 @@ fn to_js_code(
       }
       Calcit::Local(CalcitLocal { sym, .. }) => Ok(escape_var(sym)),
       // A bare `{}` is represented as the NativeMap proc in the preprocessed
-      // tree. Unlike ordinary proc values it must be evaluated here, otherwise
-      // the generated module refers to the non-existent `$clt._$M_` binding.
+      // tree. Unlike ordinary proc values it must be evaluated here.
       Calcit::Proc(CalcitProc::NativeMap) => {
         let proc_prefix = get_proc_prefix(ns);
         Ok(format!("{proc_prefix}{}()", escape_var(CalcitProc::NativeMap.as_ref())))
@@ -686,7 +685,15 @@ fn gen_call_code(
     Calcit::Proc(_) => {
       let (prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
-      let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
+      // `to_js_code(NativeMap)` evaluates a bare map. In call position we need
+      // the constructor itself, otherwise map literals with entries become a
+      // call of an already-created empty map.
+      let callee = if matches!(head, Calcit::Proc(CalcitProc::NativeMap)) {
+        format!("{proc_prefix}{}", escape_var(CalcitProc::NativeMap.as_ref()))
+      } else {
+        to_js_code(&head, ns, local_defs, file_imports, tags, None)?
+      };
+      let call_code = format!("{callee}({args_code})");
       Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
     Calcit::Symbol { sym: s, .. } | Calcit::Registered(s) => {
@@ -2428,5 +2435,21 @@ mod tests {
     .expect("bare empty map should compile");
 
     assert_eq!(code, "$clt._$n__$M_()");
+  }
+
+  #[test]
+  fn map_literal_with_entries_keeps_the_runtime_constructor_as_callee() {
+    let local_defs: HashSet<Arc<str>> = HashSet::new();
+    let file_imports = RefCell::new(ImportsDict::new());
+    let tags = RefCell::new(HashSet::new());
+    let form = Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Proc(CalcitProc::NativeMap),
+      Calcit::Tag(EdnTag::from("value")),
+      Calcit::Number(1.0),
+    ])));
+
+    let code = to_js_code(&form, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("map literal should compile");
+
+    assert_eq!(code, "$clt._$n__$M_(_t_.value, 1)");
   }
 }
