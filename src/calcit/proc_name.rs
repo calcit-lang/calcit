@@ -106,6 +106,8 @@ pub enum CalcitProc {
   NativeAssertTraits,
   #[strum(serialize = "raise")]
   Raise,
+  #[strum(serialize = "todo!")]
+  Todo,
   #[strum(serialize = "quit!")]
   Quit,
   #[strum(serialize = "&get-env")]
@@ -1332,6 +1334,13 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![variadic_dynamic()],
       }),
+      Todo => Some(ProcTypeSignature {
+        // `todo!` is a diverging compiler-known placeholder. Dynamic keeps it
+        // assignable to any declared return type while the static W_TODO
+        // diagnostic prevents it from being silently forgotten.
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("string")],
+      }),
       Quit => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
         arg_types: vec![some_tag("number")],
@@ -1434,7 +1443,7 @@ impl CalcitProc {
     match self {
       GenerateId | Range | NativeListRange => 2,
       NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
-      | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn => 1,
+      | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo => 1,
       _ => 0,
     }
   }
@@ -1502,6 +1511,7 @@ mod tests {
 
     for (proc, expected) in [
       (CalcitProc::GenerateId, ProcArity { min: 0, max: Some(2) }),
+      (CalcitProc::Todo, ProcArity { min: 0, max: Some(1) }),
       (CalcitProc::Range, ProcArity { min: 1, max: Some(3) }),
       (CalcitProc::NativeListRange, ProcArity { min: 1, max: Some(3) }),
       (CalcitProc::NativeInspectMethods, ProcArity { min: 1, max: Some(2) }),

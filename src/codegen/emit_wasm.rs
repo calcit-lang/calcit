@@ -1960,8 +1960,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Raise — terminates execution
-    CalcitProc::Raise => {
-      // `raise` aborts the program; emit WASM unreachable trap.
+    CalcitProc::Raise | CalcitProc::Todo => {
+      // `raise` and `todo!` abort the program; emit a WASM unreachable trap.
       // Any preceding args are evaluated for side effects but discarded.
       for arg in args {
         emit_expr(ctx, arg)?;

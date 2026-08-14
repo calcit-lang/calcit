@@ -158,7 +158,7 @@ fn is_complex_syntax(x: &Calcit) -> bool {
           | CalcitSyntax::DefWasmImport
           | CalcitSyntax::Defmacro
       ),
-      Some(Calcit::Proc(CalcitProc::Raise)) => true,
+      Some(Calcit::Proc(CalcitProc::Raise | CalcitProc::Todo)) => true,
       _ => false,
     },
     _ => false,

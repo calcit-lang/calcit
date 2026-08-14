@@ -602,6 +602,18 @@ fn gen_call_code(
         None => Err(format!("raise expected 1~2 arguments, got: {body}")),
       }
     }
+    Calcit::Proc(CalcitProc::Todo) => {
+      let message = match body.first() {
+        Some(message) => to_js_code(message, ns, local_defs, file_imports, tags, None)?,
+        None => String::from("\"implementation is pending\""),
+      };
+      let has_await = detect_await(&body);
+      let ret = format!("throw new Error(`TODO: ${{{message}}}`);");
+      match return_label {
+        Some(_) => Ok(ret),
+        _ => Ok(make_fn_wrapper(&ret, has_await)),
+      }
+    }
     // deftype-slot is preprocessing-only; it has no JS runtime effect.
     Calcit::Proc(CalcitProc::DeftypeSlot) => Ok(format!("{return_code}null")),
     Calcit::Proc(CalcitProc::WithTypeSlot) => Err("internal compiler error: with-type-slot escaped preprocessing".to_owned()),

@@ -32,6 +32,19 @@ pub fn raise(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   CalcitErr::err_str(CalcitErrKind::Effect, s)
 }
 
+/// Runtime endpoint for the compiler-known `todo!` placeholder.
+///
+/// Unlike `raise`, this has a fixed shape so preprocessing can reliably emit
+/// W_TODO and tools can identify unfinished scaffolded definitions.
+pub fn todo(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs {
+    [] => CalcitErr::err_str(CalcitErrKind::Effect, "TODO: implementation is pending"),
+    [Calcit::Str(message)] => CalcitErr::err_str(CalcitErrKind::Effect, format!("TODO: {message}")),
+    [_] => CalcitErr::err_str(CalcitErrKind::Type, "todo! expects an optional string message"),
+    _ => CalcitErr::err_str(CalcitErrKind::Arity, "todo! expects 0~1 arguments"),
+  }
+}
+
 pub fn init_effects_states() {
   // trigger lazy instant
   let _eff = STARTED_INSTANT.read().expect("read instant");
@@ -232,5 +245,23 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = format_proc_examples_hint(&CalcitProc::WriteFile).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::todo;
+  use crate::calcit::Calcit;
+
+  #[test]
+  fn todo_runtime_error_has_a_stable_prefix() {
+    let error = todo(&[Calcit::new_str("finish this")]).expect_err("todo must not return a value");
+    assert!(error.to_string().contains("TODO: finish this"));
+  }
+
+  #[test]
+  fn todo_runtime_error_has_a_default_message() {
+    let error = todo(&[]).expect_err("todo must not return a value");
+    assert!(error.to_string().contains("TODO: implementation is pending"));
   }
 }
