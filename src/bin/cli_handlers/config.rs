@@ -199,8 +199,13 @@ fn load_module_silent(module_path: &str, base_dir: &Path, module_folder: &Path) 
 }
 
 fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<(), String> {
+  let replacement = match opts.value.as_deref() {
+    None => "`caps version get`".to_owned(),
+    Some(v @ ("patch" | "minor" | "major")) => format!("`caps version bump {v}`"),
+    Some(v) => format!("`caps version set {v}`"),
+  };
   eprintln!(
-    "[Deprecated] `cr config version` manages the snapshot mirror of the project version; prefer `caps version get/set/bump`, which manages `deps.cirru :version` as the authoritative source"
+    "[Deprecated] `cr config version` manages the snapshot mirror of the project version; prefer {replacement}, which manages `deps.cirru :version` as the authoritative source"
   );
   match &opts.value {
     None => {
@@ -257,8 +262,12 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       format!("{} Set [{entry_label}] description = '{}'", "✓".green(), opts.value)
     }
     "version" => {
+      let replacement = match opts.value.as_str() {
+        "patch" | "minor" | "major" => format!("`caps version bump {}`", opts.value),
+        _ => "`caps version set <version>`".to_owned(),
+      };
       eprintln!(
-        "[Deprecated] `cr config set version` writes the snapshot mirror; prefer `caps version set` to manage `deps.cirru :version` as the authoritative source"
+        "[Deprecated] `cr config set version` writes the snapshot mirror; prefer {replacement} to manage `deps.cirru :version` as the authoritative source"
       );
       if opts.entry.is_some() {
         return Err("Project version is top-level; omit `--entry` when setting it".to_owned());
