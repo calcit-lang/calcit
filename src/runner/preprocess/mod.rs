@@ -3474,6 +3474,11 @@ fn warn_on_legacy_js_nullish_predicate(
 fn canonical_absence_operation_name(head: &Calcit) -> Option<&str> {
   match head {
     Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS => Some(def.as_ref()),
+    // Polymorphic membership calls are specialized before the final warning
+    // pass. Keep their source-level meaning so the same typed-membership
+    // exemption applies to both `(includes? set value)` and its native form.
+    Calcit::Proc(CalcitProc::NativeListContains | CalcitProc::NativeMapContains) => Some("contains?"),
+    Calcit::Proc(CalcitProc::NativeListIncludes | CalcitProc::NativeMapIncludes | CalcitProc::NativeSetIncludes) => Some("includes?"),
     Calcit::Proc(proc) => Some(proc.as_ref()),
     Calcit::Method(name, _) => Some(name.as_ref()),
     _ => None,
@@ -3520,6 +3525,40 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
     Some("%ok" | "%err" | "parse-float") => Some("Result".to_owned()),
     _ => None,
   }
+}
+
+/// Return the nominal element type used by a membership operation, when the
+/// collection has enough static information to prove it. `includes?` checks
+/// map values while `contains?` checks map keys.
+fn nominal_enum_membership_element_name(operation: &str, collection: &Calcit, scope_types: &ScopeTypes) -> Option<String> {
+  if let Some(collection_type) = resolve_type_value(collection, scope_types) {
+    let element_type = match (operation, collection_type.as_ref()) {
+      ("includes?", CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item)) => item,
+      ("includes?", CalcitTypeAnnotation::Map(_, value)) => value,
+      ("contains?", CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item)) => item,
+      ("contains?", CalcitTypeAnnotation::Map(key, _)) => key,
+      _ => return None,
+    };
+    if let Some(enum_name) = nominal_enum_type_name(element_type.as_ref()) {
+      return Some(enum_name);
+    }
+  }
+
+  // The first warning pass runs while a literal's generic constructor can
+  // still lack a synthesized return type. Its members have already been
+  // preprocessed, though, so a homogeneous literal still proves membership
+  // safe without relying on Dynamic inference.
+  let Calcit::List(items) = collection else {
+    return None;
+  };
+  if !matches!(items.first(), Some(Calcit::Proc(CalcitProc::List | CalcitProc::Set))) {
+    return None;
+  }
+  let mut elements = items.iter().skip(1);
+  let element_name = nominal_enum_expression_name(elements.next()?, scope_types)?;
+  elements
+    .all(|item| nominal_enum_expression_name(item, scope_types).as_deref() == Some(element_name.as_str()))
+    .then_some(element_name)
 }
 
 fn warn_on_nominal_enum_legacy_absence_use(
@@ -3578,6 +3617,18 @@ fn warn_on_nominal_enum_legacy_absence_use(
       | "&="
       | "&compare"
   ) {
+    return;
+  }
+
+  // Membership is safe when both the collection element and candidate carry
+  // the same nominal enum. In particular, Set<Option<T>> membership compares
+  // Option values; it does not recover a nullable payload.
+  if matches!(operation, "contains?" | "includes?")
+    && args.len() == 2
+    && let (Some(collection), Some(candidate)) = (args.first(), args.get(1))
+    && let Some(candidate_enum) = nominal_enum_expression_name(candidate, scope_types)
+    && nominal_enum_membership_element_name(operation, collection, scope_types).as_deref() == Some(candidate_enum.as_str())
+  {
     return;
   }
 
@@ -6169,7 +6220,7 @@ mod tests {
     );
 
     let option_constructor = Calcit::from(vec![core_head("%some"), Calcit::Number(1.0)]);
-    let constructor_equality_args = CalcitList::from(&[option_value.to_owned(), option_constructor] as &[Calcit]);
+    let constructor_equality_args = CalcitList::from(&[option_value.to_owned(), option_constructor.to_owned()] as &[Calcit]);
     let constructor_equality_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_legacy_absence_use(
       &equality_head,
@@ -6182,6 +6233,84 @@ mod tests {
     assert!(
       constructor_equality_warnings.borrow().is_empty(),
       "Option equality with a core Option constructor should stay valid"
+    );
+
+    let option_set_sym: Arc<str> = Arc::from("option-set");
+    let option_set = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&option_set_sym),
+      sym: option_set_sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.option-migration"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+      )))),
+    });
+    let option_membership_args = CalcitList::from(&[option_set.to_owned(), option_value.to_owned()] as &[Calcit]);
+    let option_membership_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("includes?"),
+      &option_membership_args,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &option_membership_warnings,
+    );
+    assert!(
+      option_membership_warnings.borrow().is_empty(),
+      "membership in a Set<Option<T>> should compare nominal Option values without warning"
+    );
+
+    let specialized_option_membership_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &Calcit::Proc(CalcitProc::NativeSetIncludes),
+      &CalcitList::from(&[option_set, option_constructor.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &specialized_option_membership_warnings,
+    );
+    assert!(
+      specialized_option_membership_warnings.borrow().is_empty(),
+      "the specialized Set membership proc should retain the Option membership exemption"
+    );
+
+    let literal_option_set = Calcit::from(vec![Calcit::Proc(CalcitProc::Set), option_constructor.to_owned()]);
+    let literal_option_membership_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("includes?"),
+      &CalcitList::from(&[literal_option_set, option_constructor.to_owned()] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &literal_option_membership_warnings,
+    );
+    assert!(
+      literal_option_membership_warnings.borrow().is_empty(),
+      "a Set literal with Option elements should remain warning-free before generic return inference"
+    );
+
+    let mixed_literal_option_set = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::Set),
+      option_constructor.to_owned(),
+      Calcit::Number(1.0),
+    ]);
+    let mixed_literal_option_membership_warnings = RefCell::new(vec![]);
+    warn_on_nominal_enum_legacy_absence_use(
+      &core_head("includes?"),
+      &CalcitList::from(&[mixed_literal_option_set, option_constructor] as &[Calcit]),
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      "demo",
+      &mixed_literal_option_membership_warnings,
+    );
+    assert_eq!(
+      mixed_literal_option_membership_warnings.borrow().len(),
+      1,
+      "a mixed literal cannot prove Option membership is intentional"
     );
 
     let application_get = Calcit::Symbol {

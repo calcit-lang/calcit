@@ -112,7 +112,7 @@ nil 审计也坚持证据边界：返回的 `do` 只有最后一项继承返回�
 
 - 直接将原有 `find`、`find-index`、`index-of` 改为返回 `Option`，让旧调用在结果消费处产生明确的类型迁移提示；
 - 将公开 `parse-float` 改为 `String -> Result<Number,String>`，`:err` 保留原始非法输入；nullable 底层过程改名为内部 `&parse-float`；
-- 将公开 `get-env` 改为 `String -> Option<String>`，删除旧的第二个默认值参数；迁移时使用 `option:unwrap-or`，nullable 底层过程改名为内部 `&get-env`；
+- 将公开 `get-env` 改为 `String -> Option<String>`，删除旧的第二个默认值参数；迁移时优先使用接收者方法 `.unwrap-or`，nullable 底层过程改名为内部 `&get-env`；
 - `optionally` 仅保留为 core/internal 遗留 Optional 到 Option 的桥接，不接受 JsNullish；
 - 反射 API `tuple-enum`、`impl-origin` 返回名义 `Option`，nullable 的 `&tuple:enum`、`&impl:origin` 只保留为内部原语；`record-struct` 则收紧为必然返回 `Struct`；
 - `destruct-list/map/set/str` 从匿名 `:: :some/:none` tuple 升级到参数化的名义 `*Destruct` enum，让 variant 载荷参与类型检查；
@@ -151,7 +151,7 @@ core 自举宏已经迁到明确的 `&` raw primitive，公开 `first`、`last`�
 - nil 作为集合：提示在来源处处理缺失，不自动替换成空集合，因为二者业务语义不同；
 - 可省略参数处显式传 nil：提示省略参数，或修改参数值类型为 Optional；
 - 解析返回 Optional：提示改用后续的 Result API，以保留错误信息。
-- 名义 Option 仍用 `some?`/`nil?` 或 tuple 位置读取：提示改用 `option:some?`、`option:none?`、`option:unwrap-or` 或 `tag-match`。
+- 名义 Option 仍用 `some?`/`nil?` 或 tuple 位置读取：提示改用 `.some?`、`.none?`、`.unwrap-or` 或 `tag-match`。
 
 自动修复不得把 nil 无条件替换为空集合、0、空字符串或 false。
 

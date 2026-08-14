@@ -27,19 +27,20 @@ cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --f
 
 ## Option / Result 组合
 
-优先组合而不是逐层 `unwrap`：
+优先让 `Option` / `Result` 的方法表达类型流，而不是逐层 `unwrap` 或调用
+`option:*` / `result:*` 的函数形式：
 
 ```cirru.no-check
-option:and-then user
+user .and-then
   fn (user)
-    option:and-then (get user :profile)
+    (get user :profile) .and-then
       fn (profile) $ get profile :name
 
-result:and-then loaded
+loaded .and-then
   fn (value) $ validate value
 ```
 
-备用来源使用 `option:or-else` / `result:or-else`。`unwrap-or` 只用于默认值，`map` 用于同步转换，`and-then` 用于下一个仍可能失败的操作。
+备用来源使用 `.or-else`。`.unwrap-or` 只用于确实需要默认值的终点，`.map` 用于同步转换，`.and-then` 用于下一个仍可能失败的操作。保留 `Option` 本身能让类型系统持续检查缺失路径；不要为了集合判断而把它解成 `nil`。
 
 ## get-in / update-in
 
@@ -50,7 +51,7 @@ result:and-then loaded
 ```cirru.no-check
 update-in data ([] :settings :retries)
   fn (current)
-    option:unwrap-or current 0
+    current .unwrap-or 0
 ```
 
 ## Enum 构造
