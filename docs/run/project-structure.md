@@ -52,7 +52,7 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 字段职责可以快速记成：
 
 - `:package`：包名边界（影响哪些 namespace 允许被 `cr edit` 修改）。
-- `:version`：项目版本，独立于各运行入口。
+- `:version`：项目版本的 snapshot 镜像字段，迁移期保留给旧版 `cr` 读取；权威版本号请维护在 `deps.cirru :version`（用 `caps version get/set/bump` 管理）。
 - `:entries`：全部运行入口；不指定 `--entry` 时使用 `:default`。
 - `:mode`：入口的默认运行后端，只接受 `:native` 或 `:js`。
 - `:description`：entry 用途的简短语义说明；只提供给人和工具阅读，不影响运行。
@@ -116,8 +116,11 @@ project source.
 
 给 Agent 一个最小心智就够：
 
-- `deps.cirru`：声明"要下载哪些外部模块 + 期望的 calcit 版本"。
+- `deps.cirru`：声明"要下载哪些外部模块 + 期望的 calcit 版本 + 项目发布版本（`:version`）"。
 - `calcit.cirru`（兼容旧文件名 `compact.cirru`）：声明"运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）"。
+
+版本号以 `deps.cirru :version` 为权威，用 `caps version get/set/bump` 管理；`calcit.cirru :version`
+只是迁移期兼容镜像，`cr config version` / `cr config set version` 已废弃，请改用 `caps version`。
 
 常见升级动作（最少命令）：
 

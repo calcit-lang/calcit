@@ -91,7 +91,8 @@ caps version bump patch
 ```
 
 During migration, the snapshot `:version` field remains supported by `cr`; `caps version` only manages the
-dependency metadata file and does not rewrite the snapshot automatically.
+dependency metadata file and does not rewrite the snapshot automatically. `cr config version` / `cr config set version`
+are deprecated — use `caps version` instead.
 
 ### Outdated
 

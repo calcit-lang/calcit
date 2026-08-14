@@ -199,6 +199,9 @@ fn load_module_silent(module_path: &str, base_dir: &Path, module_folder: &Path) 
 }
 
 fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<(), String> {
+  eprintln!(
+    "[Deprecated] `cr config version` manages the snapshot mirror of the project version; prefer `caps version get/set/bump`, which manages `deps.cirru :version` as the authoritative source"
+  );
   match &opts.value {
     None => {
       // Show current version
@@ -254,6 +257,9 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       format!("{} Set [{entry_label}] description = '{}'", "✓".green(), opts.value)
     }
     "version" => {
+      eprintln!(
+        "[Deprecated] `cr config set version` writes the snapshot mirror; prefer `caps version set` to manage `deps.cirru :version` as the authoritative source"
+      );
       if opts.entry.is_some() {
         return Err("Project version is top-level; omit `--entry` when setting it".to_owned());
       }
