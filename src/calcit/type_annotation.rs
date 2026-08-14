@@ -1697,7 +1697,10 @@ impl CalcitTypeAnnotation {
       if let Some(builtin) = Self::builtin_type_from_symbol_name(&name) {
         return Arc::new(builtin);
       }
-      return if strict_named_refs && !Self::generics_contains(generics, &name) {
+      // A qualified quoted name cannot be a lexical type variable. Preserve
+      // it as a nominal reference even in unscoped `assert-type` forms, so a
+      // later Struct field access can resolve its declaration.
+      return if (strict_named_refs || name.contains('/')) && !Self::generics_contains(generics, &name) {
         Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])))
       } else {
         Arc::new(CalcitTypeAnnotation::TypeVar(name))
@@ -1714,7 +1717,7 @@ impl CalcitTypeAnnotation {
         if n_quotes > 1 {
           eprintln!("[Error] Type variable `{sym}` has excess leading quotes — expected a single-quoted uppercase symbol like `'T`");
         }
-        return if strict_named_refs && !Self::generics_contains(generics, stripped) {
+        return if (strict_named_refs || stripped.contains('/')) && !Self::generics_contains(generics, stripped) {
           Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(stripped), Arc::new(vec![])))
         } else {
           Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)))
@@ -3407,31 +3410,32 @@ fn is_list_literal_head(head: &Calcit) -> bool {
 }
 
 fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
-  let name_form = items.get(1)?;
+  let forms = normalized_data_definition_forms(items);
+  let name_form = forms.get(1)?;
   let name = parse_type_name(name_form)?;
   let mut generics: Vec<Arc<str>> = vec![];
   let mut where_bounds = vec![];
   let mut start_idx = 2;
 
-  if let Some(generics_form) = items.get(2)
+  if let Some(generics_form) = forms.get(2)
     && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
   {
     generics = vars;
     start_idx = 3;
   }
-  let has_where_form = items.get(start_idx).is_some_and(|form| match form {
+  let has_where_form = forms.get(start_idx).is_some_and(|form| match form {
     Calcit::Map(_) => true,
     Calcit::List(xs) => xs.first().is_some_and(CalcitTypeAnnotation::is_schema_map_literal_head),
     _ => false,
   });
   if has_where_form {
-    let form = items.get(start_idx)?;
+    let form = forms.get(start_idx)?;
     where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(form, generics.as_slice(), true);
     start_idx += 1;
   }
   let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = Vec::new();
 
-  for item in items.iter().skip(start_idx) {
+  for item in forms.iter().skip(start_idx) {
     let Calcit::List(pair) = item else {
       return None;
     };
@@ -3469,31 +3473,32 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
 }
 
 fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
-  let name_form = items.get(1)?;
+  let forms = normalized_data_definition_forms(items);
+  let name_form = forms.get(1)?;
   let name = parse_type_name(name_form)?;
   let mut generics: Vec<Arc<str>> = vec![];
   let mut where_bounds = vec![];
   let mut start_idx = 2;
 
-  if let Some(generics_form) = items.get(2)
+  if let Some(generics_form) = forms.get(2)
     && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
   {
     generics = vars;
     start_idx = 3;
   }
-  let has_where_form = items.get(start_idx).is_some_and(|form| match form {
+  let has_where_form = forms.get(start_idx).is_some_and(|form| match form {
     Calcit::Map(_) => true,
     Calcit::List(xs) => xs.first().is_some_and(CalcitTypeAnnotation::is_schema_map_literal_head),
     _ => false,
   });
   if has_where_form {
-    let form = items.get(start_idx)?;
+    let form = forms.get(start_idx)?;
     where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(form, generics.as_slice(), true);
     start_idx += 1;
   }
 
   let mut variants: Vec<(EdnTag, Calcit)> = Vec::new();
-  for item in items.iter().skip(start_idx) {
+  for item in forms.iter().skip(start_idx) {
     let Calcit::List(variant) = item else {
       return None;
     };
@@ -3527,6 +3532,22 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     values: Arc::new(values),
   };
   CalcitEnumDef::from_struct(struct_value).ok()
+}
+
+/// `defstruct` and `defenum` accept a map-headed wrapper (`$ {} ...`) so data
+/// definitions can be supplied as one macro argument. Runtime macros normalize
+/// that form before parsing generics and `:where`; do the same for static type
+/// resolution so a named TypeRef observes identical fields or variants.
+fn normalized_data_definition_forms(items: &CalcitList) -> Vec<&Calcit> {
+  let Some(Calcit::List(wrapper)) = items.get(2) else {
+    return items.iter().collect();
+  };
+  if items.len() != 3 || !wrapper.first().is_some_and(CalcitTypeAnnotation::is_schema_map_literal_head) {
+    return items.iter().collect();
+  }
+  let mut forms = vec![items.first().expect("definition head"), items.get(1).expect("definition name")];
+  forms.extend(wrapper.iter().skip(1));
+  forms
 }
 
 fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
@@ -3680,6 +3701,43 @@ mod tests {
       ),
       "recursive field annotation must remain a finite TypeRef, got {parsed:?}"
     );
+  }
+
+  #[test]
+  fn unscoped_assertion_parser_keeps_qualified_name_as_type_ref() {
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form(&symbol("'app.schema/Store"));
+    assert!(
+      matches!(
+        parsed.as_ref(),
+        CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
+      ),
+      "expected qualified type reference, got {parsed:?}"
+    );
+  }
+
+  #[test]
+  fn parses_map_wrapped_data_definition_forms() {
+    let struct_code = CalcitList::from(&[
+      symbol("defstruct"),
+      symbol("Store"),
+      Calcit::from(vec![symbol("{}"), Calcit::from(vec![Calcit::tag("text"), symbol("'String")])]),
+    ] as &[Calcit]);
+    let struct_def = parse_defstruct_code(&struct_code).expect("map-wrapped struct definition");
+    assert_eq!(struct_def.fields.as_ref(), &[EdnTag::new("text")]);
+    assert_eq!(struct_def.field_types.len(), 1);
+
+    let enum_code = CalcitList::from(&[
+      symbol("defenum"),
+      symbol("Choice"),
+      Calcit::from(vec![
+        symbol("{}"),
+        Calcit::from(vec![Calcit::tag("some"), symbol("'String")]),
+        Calcit::from(vec![Calcit::tag("none")]),
+      ]),
+    ] as &[Calcit]);
+    let enum_def = parse_defenum_code(&enum_code).expect("map-wrapped enum definition");
+    assert!(enum_def.find_variant_by_name("some").is_some());
+    assert!(enum_def.find_variant_by_name("none").is_some());
   }
 
   fn generic_result_enum() -> Arc<CalcitEnumDef> {
