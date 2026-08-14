@@ -580,8 +580,11 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           Some(infer_preprocessed_function_type(xs))
         }
 
-        // Coercion type expressions have no local generics, so names are concrete refs.
-        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) => xs
+        // Assertion and coercion type expressions have no local generics, so names are concrete refs.
+        // `assert-type` is erased for local bindings during preprocessing, but when it wraps an
+        // arbitrary expression (notably on the right-hand side of `let`) the expression must keep
+        // its declared type for the new local binding and later field/method checks.
+        Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce, _) => xs
           .get(2)
           .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])),
 
@@ -1772,6 +1775,25 @@ mod tests {
         Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
       ));
     }
+  }
+
+  #[test]
+  fn assert_type_expression_has_declared_target_type() {
+    let target = Calcit::Enum(calcit::CalcitEnumValue {
+      tag: Arc::new(Calcit::tag("list")),
+      extra: vec![Calcit::tag("number")],
+      sum_type: None,
+    });
+    let expression = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::AssertType, Arc::from(calcit::CORE_NS)),
+      Calcit::Nil,
+      target,
+    ]);
+
+    assert!(matches!(
+      infer_static_type_from_expr(&expression).as_deref(),
+      Some(CalcitTypeAnnotation::List(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+    ));
   }
 
   #[test]

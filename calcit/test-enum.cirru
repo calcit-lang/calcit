@@ -12,6 +12,17 @@
             defenum Duo ('T 'U) (:pair 'T 'U) (:swapped 'U 'T)
           :examples $ []
           :schema $ :: 'Dynamic
+        |MapLiteralChoice $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defenum MapLiteralChoice $ {} (:some 'String) (:none)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |map-literal-variants)
+              :code $ quote
+                tag-match (MapLiteralChoice :some |ok)
+                  (:some value) (assert= |ok value)
+                  (:none) (raise |expected-some)
         |Maybe1 $ %{} 'CodeEntry (:doc "|Generic enum with 1 type variable")
           :code $ quote
             defenum Maybe1 ('T) (:some 'T) (:none)

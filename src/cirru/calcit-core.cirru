@@ -3882,72 +3882,82 @@
               &let
                 first-variant $ if (empty? variants) ([]) (&list:first variants)
                 &let
-                  generics $ if
-                    and (list? first-variant)
-                      not $ empty? first-variant
-                      not $ tag? (&list:first first-variant)
-                    if
-                      &= [] $ &list:first first-variant
-                      &list:rest first-variant
-                      , first-variant
-                    []
+                  variants $ if
+                    and
+                      &= 1 $ count variants
+                      list? first-variant
+                      &= '{} $ &list:first first-variant
+                    &list:rest first-variant
+                    , variants
                   &let
-                    tail-forms $ if (empty? generics) variants (&list:rest variants)
+                    first-variant $ if (empty? variants) ([]) (&list:first variants)
                     &let
-                      has-where-form? $ data-definition-where-form? tail-forms
+                      generics $ if
+                        and (list? first-variant)
+                          not $ empty? first-variant
+                          not $ tag? (&list:first first-variant)
+                        if
+                          &= [] $ &list:first first-variant
+                          &list:rest first-variant
+                          , first-variant
+                        []
                       &let
-                        where-form $ if has-where-form?
-                          data-definition-form $ &list:first tail-forms
-                          {}
+                        tail-forms $ if (empty? generics) variants (&list:rest variants)
                         &let
-                          variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
-                          assert "|defenum expects each variant as (:tag & payloads); check indentation if one variant was nested under another" $ every? variant-forms
-                            fn (variant)
-                              &let
-                                items $ data-definition-form variant
-                                and
-                                  &>= (count items) 1
-                                  tag? $ &list:first items
-                          assert "|defenum found malformed nested payload syntax; check indentation around variants" $ every? variant-forms
-                            fn (variant)
-                              &let
-                                items $ data-definition-form variant
-                                every? (&list:rest items)
-                                  fn (payload-form)
-                                    not $ data-definition-malformed-nesting? payload-form
+                          has-where-form? $ data-definition-where-form? tail-forms
                           &let
-                            normalized $ map variant-forms
-                              fn (variant)
-                                &let
-                                  items $ data-definition-form variant
+                            where-form $ if has-where-form?
+                              data-definition-form $ &list:first tail-forms
+                              {}
+                            &let
+                              variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
+                              assert "|defenum expects each variant as (:tag & payloads); check indentation if one variant was nested under another" $ every? variant-forms
+                                fn (variant)
                                   &let
-                                    variant-tag $ &list:first items
+                                    items $ data-definition-form variant
+                                    and
+                                      &>= (count items) 1
+                                      tag? $ &list:first items
+                              assert "|defenum found malformed nested payload syntax; check indentation around variants" $ every? variant-forms
+                                fn (variant)
+                                  &let
+                                    items $ data-definition-form variant
+                                    every? (&list:rest items)
+                                      fn (payload-form)
+                                        not $ data-definition-malformed-nesting? payload-form
+                              &let
+                                normalized $ map variant-forms
+                                  fn (variant)
                                     &let
-                                      payload-forms $ map (&list:rest items)
-                                        fn (t)
-                                          if (list? t)
-                                            quasiquote $ quote (~ t)
-                                            , t
-                                      quasiquote $ [] (~ variant-tag) (~@ payload-forms)
-                            if (empty? generics)
-                              if has-where-form?
-                                quasiquote $ &enum-def:new
-                                  ~ $ turn-tag name
-                                  ~ where-form
-                                  ~@ normalized
-                                quasiquote $ &enum-def:new
-                                  ~ $ turn-tag name
-                                  ~@ normalized
-                              if has-where-form?
-                                quasiquote $ &enum-def:new
-                                  ~ $ turn-tag name
-                                  [] ~@generics
-                                  ~ where-form
-                                  ~@ normalized
-                                quasiquote $ &enum-def:new
-                                  ~ $ turn-tag name
-                                  [] ~@generics
-                                  ~@ normalized
+                                      items $ data-definition-form variant
+                                      &let
+                                        variant-tag $ &list:first items
+                                        &let
+                                          payload-forms $ map (&list:rest items)
+                                            fn (t)
+                                              if (list? t)
+                                                quasiquote $ quote (~ t)
+                                                , t
+                                          quasiquote $ [] (~ variant-tag) (~@ payload-forms)
+                                if (empty? generics)
+                                  if has-where-form?
+                                    quasiquote $ &enum-def:new
+                                      ~ $ turn-tag name
+                                      ~ where-form
+                                      ~@ normalized
+                                    quasiquote $ &enum-def:new
+                                      ~ $ turn-tag name
+                                      ~@ normalized
+                                  if has-where-form?
+                                    quasiquote $ &enum-def:new
+                                      ~ $ turn-tag name
+                                      [] ~@generics
+                                      ~ where-form
+                                      ~@ normalized
+                                    quasiquote $ &enum-def:new
+                                      ~ $ turn-tag name
+                                      [] ~@generics
+                                      ~@ normalized
           :examples $ []
             quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
           :schema $ :: 'Macro
@@ -4094,77 +4104,87 @@
               &let
                 first-pair $ if (empty? pairs) ([]) (&list:first pairs)
                 &let
-                  generics $ if
-                    and (list? first-pair)
-                      not $ empty? first-pair
-                      not $ tag? (&list:first first-pair)
-                    if
-                      &= [] $ &list:first first-pair
-                      &list:rest first-pair
-                      , first-pair
-                    []
+                  pairs $ if
+                    and
+                      &= 1 $ count pairs
+                      list? first-pair
+                      &= '{} $ &list:first first-pair
+                    &list:rest first-pair
+                    , pairs
                   &let
-                    tail-forms $ if (empty? generics) pairs (&list:rest pairs)
+                    first-pair $ if (empty? pairs) ([]) (&list:first pairs)
                     &let
-                      has-where-form? $ data-definition-where-form? tail-forms
+                      generics $ if
+                        and (list? first-pair)
+                          not $ empty? first-pair
+                          not $ tag? (&list:first first-pair)
+                        if
+                          &= [] $ &list:first first-pair
+                          &list:rest first-pair
+                          , first-pair
+                        []
                       &let
-                        where-form $ if has-where-form?
-                          data-definition-form $ &list:first tail-forms
-                          {}
+                        tail-forms $ if (empty? generics) pairs (&list:rest pairs)
                         &let
-                          field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
-                          assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs
-                            fn (pair)
-                              &let
-                                items $ data-definition-form pair
-                                and
-                                  &= 2 $ count items
-                                  tag? $ &list:first items
-                          assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs
-                            fn (pair)
-                              &let
-                                items $ data-definition-form pair
-                                not $ data-definition-malformed-nesting? (&list:last items)
+                          has-where-form? $ data-definition-where-form? tail-forms
                           &let
-                            normalized $ map field-pairs
-                              fn (pair)
-                                &let
-                                  items $ data-definition-form pair
+                            where-form $ if has-where-form?
+                              data-definition-form $ &list:first tail-forms
+                              {}
+                            &let
+                              field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
+                              assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs
+                                fn (pair)
                                   &let
-                                    field-name $ &list:first items
+                                    items $ data-definition-form pair
+                                    and
+                                      &= 2 $ count items
+                                      tag? $ &list:first items
+                              assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs
+                                fn (pair)
+                                  &let
+                                    items $ data-definition-form pair
+                                    not $ data-definition-malformed-nesting? (&list:last items)
+                              &let
+                                normalized $ map field-pairs
+                                  fn (pair)
                                     &let
-                                      type-form $ &list:last items
-                                      if (list? type-form)
-                                        if
-                                          and
-                                            &= 2 $ count type-form
-                                            syntax? $ &list:first type-form
-                                          if (includes? generics type-form)
-                                            quasiquote $ [] (~ field-name)
-                                              quote $ ~ type-form
+                                      items $ data-definition-form pair
+                                      &let
+                                        field-name $ &list:first items
+                                        &let
+                                          type-form $ &list:last items
+                                          if (list? type-form)
+                                            if
+                                              and
+                                                &= 2 $ count type-form
+                                                syntax? $ &list:first type-form
+                                              if (includes? generics type-form)
+                                                quasiquote $ [] (~ field-name)
+                                                  quote $ ~ type-form
+                                                quasiquote $ [] (~ field-name) (~ type-form)
+                                              quasiquote $ [] (~ field-name)
+                                                quote $ ~ type-form
                                             quasiquote $ [] (~ field-name) (~ type-form)
-                                          quasiquote $ [] (~ field-name)
-                                            quote $ ~ type-form
-                                        quasiquote $ [] (~ field-name) (~ type-form)
-                            if (empty? generics)
-                              if has-where-form?
-                                quasiquote $ &struct-def:new
-                                  ~ $ turn-tag name
-                                  ~ where-form
-                                  ~@ normalized
-                                quasiquote $ &struct-def:new
-                                  ~ $ turn-tag name
-                                  ~@ normalized
-                              if has-where-form?
-                                quasiquote $ &struct-def:new
-                                  ~ $ turn-tag name
-                                  [] ~@generics
-                                  ~ where-form
-                                  ~@ normalized
-                                quasiquote $ &struct-def:new
-                                  ~ $ turn-tag name
-                                  [] ~@generics
-                                  ~@ normalized
+                                if (empty? generics)
+                                  if has-where-form?
+                                    quasiquote $ &struct-def:new
+                                      ~ $ turn-tag name
+                                      ~ where-form
+                                      ~@ normalized
+                                    quasiquote $ &struct-def:new
+                                      ~ $ turn-tag name
+                                      ~@ normalized
+                                  if has-where-form?
+                                    quasiquote $ &struct-def:new
+                                      ~ $ turn-tag name
+                                      [] ~@generics
+                                      ~ where-form
+                                      ~@ normalized
+                                    quasiquote $ &struct-def:new
+                                      ~ $ turn-tag name
+                                      [] ~@generics
+                                      ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name 'String) (:age 'Number)
           :schema $ :: 'Macro

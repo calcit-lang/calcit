@@ -273,7 +273,7 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 ### Option / Result 级联
 
-使用 `option:map`、`option:and-then`、`option:or-else` 组合可选值；使用 `result:and-then`、`result:map-err`、`result:or-else` 组合失败路径。`unwrap` 只用于已经证明为 `some`/`ok` 的分支。
+优先使用接收者方法组合可选值，例如 `opt .map f`、`opt .and-then f`、`opt .or-else f`；`Result` 同样使用 `.and-then`、`.map-err`、`.or-else`。`.unwrap` 只用于已经证明为 `some`/`ok` 的分支，`.unwrap-or` 只在默认值终点使用，避免把 `Option` 过早还原成 `nil`。
 
 `get-in` 返回 `Option<T>`，适合开放 Map/List 路径；不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的 updater 接收 `Option<T>`，必须显式处理缺失值。
 

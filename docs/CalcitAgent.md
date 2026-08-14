@@ -330,26 +330,26 @@ Profile :name |Ada
 
 这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(%none)` 或 `(%some value)`，带 rest 参数的函数也不会自动补值。`?` 参数仍用于兼容已有的非类型化 API，其缺省值是 `nil`；修改旧接口时，优先逐步迁移到 `Option`。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。
 
-Option/Result 的级联优先使用组合函数，不要在每一层都 `unwrap`：
+Option/Result 的级联优先使用接收者方法，不要在每一层都 `unwrap`：
 
 ```cirru.no-check
-option:and-then profile
+profile .and-then
   fn (profile)
-    option:and-then (get-in profile $ [] :account)
+    (get-in profile $ [] :account) .and-then
       fn (account) $ get account :name
 
-result:and-then parsed
+parsed .and-then
   fn (value) $ validate value
 ```
 
-需要尝试备用来源时使用 `option:or-else` 或 `result:or-else`；它们只在 `none`/`err` 分支调用 fallback。`option:unwrap` 只适合已经由 `tag-match`、`option:some?` 或明确不变量证明为 `some` 的位置；默认值用 `option:unwrap-or`，继续转换用 `option:map` / `option:and-then`。
+需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由 `tag-match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
 `get-in` 返回 `Option<T>`，适合 Map/List/字符串等可能缺失的路径；路径进入 Struct 时应改用类型化的 `(:field value)` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
 
 ```cirru.no-check
 update-in data ([] :profile :visits)
   fn (current)
-    option:unwrap-or current 1
+    current .unwrap-or 1
 ```
 
 这样可以让缺失、默认值和失败在类型上分开，而不是继续依赖 `nil` 或组件临时的 `read-field` 函数。

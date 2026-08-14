@@ -70,6 +70,17 @@
             defstruct Lagopus0 $ :name (:: 'Optional 'String)
           :examples $ []
           :schema $ :: 'Dynamic
+        |MapLiteralStore $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defstruct MapLiteralStore $ {} (:text 'String)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |map-literal-fields)
+              :code $ quote
+                let
+                    store $ MapLiteralStore :text |ok
+                  assert= |ok $ :text store
         |Person $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defstruct Person
@@ -97,6 +108,31 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
+        |read-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn read-asserted-map-literal-store (source)
+              let
+                  store source
+                assert-type store test-struct.main/MapLiteralStore
+                :text store
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |assert-type-statement-narrows-struct)
+              :code $ quote
+                assert= |ok $ read-asserted-map-literal-store (MapLiteralStore :text |ok)
+        |read-let-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn read-let-asserted-map-literal-store (source)
+              let
+                  store $ assert-type source test-struct.main/MapLiteralStore
+                :text store
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |assert-type-expression-narrows-struct)
+              :code $ quote
+                assert= |ok $ read-let-asserted-map-literal-store (MapLiteralStore :text |ok)
         |reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ println |reloaded
