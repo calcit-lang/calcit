@@ -81,6 +81,39 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 3. 执行 `cr calcit.cirru edit format`，审阅 diff，再对新的 `calcit.cirru` 运行 `--check-only` 和原有 entry/构建测试
 4. 新旧入口行为一致后再删除旧文件并提交；后续所有 `cr` 命令都显式基于单一的 `calcit.cirru`
 
+如果新版 `cr` 连旧的完整 `calcit.cirru` 都无法反序列化，就不能先对它执行 `edit format`。先确认旁边的
+`compact.cirru` 能在旧工具链运行，并从 Git 状态/历史确认它是最后的有效精简源码；然后用可恢复的步骤重建：
+
+```bash
+cp calcit.cirru calcit.full-snapshot.backup.cirru
+cp compact.cirru calcit.cirru
+cr calcit.cirru edit format
+git diff -- calcit.cirru
+cr calcit.cirru --check-only
+```
+
+不要删除备份或旧文件，直到所有 entry 与原有 native/JS 测试均通过。现在反序列化错误会带上失败的
+Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。
+
+旧 namespace 里的 `:require-macros` 也必须在 Snapshot 规范化前处理。宏与普通值现在共用
+`:require` 规则，例如把：
+
+```cirru.no-check
+ns app.main
+  :require-macros
+    legacy.macros :refer $ defcomp
+```
+
+改为：
+
+```cirru.no-check
+ns app.main
+  :require
+    legacy.macros :refer $ defcomp
+```
+
+遇到旧写法时，加载阶段会明确报告 `:require-macros` 迁移提示，而不是只返回笼统的 invalid `ns` form。
+
 > `cr` 仍然读取 Snapshot，只是当前约定把精简 Snapshot 直接命名为 `calcit.cirru`；不要把它理解为
 > “不再依赖 Snapshot”。`cr edit` / `cr tree` 会直接修改该文件。确认迁移完成后，可以移除旧的
 > `.gitattributes` generated 标记和过时的双文件生成脚本；不要把仍可能承载源码的文件直接加入 ignore。
@@ -319,6 +352,42 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 
 推荐先执行 `cr calcit.cirru --check-only`，按诊断逐项替换，再运行完整 JS 回归。不要先全局删除
 `.unwrap`；只处理接收者已被推断为 Struct 且字段在 `defstruct` 中声明的访问。
+
+#### Option 返回 API 对照
+
+以下 API 不再用 `nil` 或 `-1` 表示缺失。把结果直接传给算术、字符串或集合函数时，诊断会显示完整的
+`Option<T>` 推断类型，并建议用 `option:unwrap-or` 或 `tag-match` 显式处理：
+
+| API | 当前返回类型 | 迁移注意点 |
+| --- | --- | --- |
+| `find-index` | `Option<Number>` | 不再用 `-1`；索引运算前先处理 `%none` |
+| `first` / `last` | `Option<T>` | 空集合和空字符串可能没有元素 |
+| `nth` | `Option<T>` | 越界是 `%none`；不要把结果直接当元素值 |
+| `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；已知 Struct 的声明字段直接返回字段类型 |
+| `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `%none` |
+| `get-env` | `Option<String>` | 未设置的环境变量是 `%none` |
+
+```cirru
+let
+    xs $ [] 1 2 3
+    predicate $ fn (x) = x 2
+    idx $ find-index xs predicate
+    safe-idx $ option:unwrap-or idx 0
+  &+ safe-idx 1
+
+match (get-env |APP_MODE)
+  (:some mode) $ println mode
+  (:none) $ println |development
+```
+
+只有业务语义确实有合理默认值时才用 `unwrap-or`；需要区分“缺失”和“存在”时保留两个分支。
+
+#### `.trim` / `.blank?` 接收者迁移
+
+`.trim` 与 `.blank?` 只对静态推断为 String 的接收者可用。若错误写成 `unknown method .trim for map`，
+重点不是给 Map 增加方法，而是先修正数据流：当前接收者已被推断成 Map。可将接收者收紧/转换为 String，
+或改成 `(trim receiver)` / `(blank? receiver)` 获取直接的参数类型诊断。新的 unknown-method 错误会同时写出
+实际接收者类型和这两个函数形式；不要用 `unsafe-coerce` 掩盖业务数据类型错误。
 
 ### 3.3 统一 entries
 

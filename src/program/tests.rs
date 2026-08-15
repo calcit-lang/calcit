@@ -157,6 +157,23 @@ fn namespace_validation_rejects_unknown_clause() {
 }
 
 #[test]
+fn namespace_validation_explains_require_macros_migration() {
+  let ns_form = cirru_list(vec![
+    cirru_leaf("ns"),
+    cirru_leaf("app.main"),
+    cirru_list(vec![
+      cirru_leaf(":require-macros"),
+      import_rule("legacy.macros", ":refer", cirru_list(vec![cirru_leaf("defcomp")])),
+    ]),
+  ]);
+  let error = extract_import_map(&ns_form, "app.main").expect_err("legacy macro imports should report a migration error");
+
+  assert!(error.contains("legacy `:require-macros`"), "error: {error}");
+  assert!(error.contains("ordinary `:require`"), "error: {error}");
+  assert!(error.contains("macros and values now share import rules"), "error: {error}");
+}
+
+#[test]
 fn namespace_validation_accepts_legacy_colon_ns_form() {
   let ns_form = cirru_list(vec![cirru_leaf(":ns"), cirru_leaf("app.main")]);
 

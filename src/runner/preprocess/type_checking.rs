@@ -53,6 +53,16 @@ fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
   message
 }
 
+fn append_option_migration_hint(mut message: String, actual_type: &CalcitTypeAnnotation) -> String {
+  if actual_type.is_option_type() {
+    message.push_str(&format!(
+      "; inferred type `{}` is an Option rather than its payload; use `option:unwrap-or` for a safe default or `tag-match` to handle both variants before passing it here",
+      actual_type.to_brief_string()
+    ));
+  }
+  message
+}
+
 fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
   if ctx.where_bounds.is_empty() {
     return;
@@ -142,9 +152,10 @@ impl<'a> CheckContext<'a> {
     &self,
     arg_idx: usize,
     expected_str: &str,
-    actual_str: &str,
+    actual_type: &CalcitTypeAnnotation,
     make_warning: impl Fn(usize, &str, &str, String) -> String,
   ) {
+    let actual_str = actual_type.to_brief_string();
     let expr_str = format!(
       "{} {}",
       self.head_form,
@@ -156,7 +167,10 @@ impl<'a> CheckContext<'a> {
       .and_then(Calcit::get_location)
       .or_else(|| self.call_location.clone());
     gen_check_warning_code_at(
-      append_js_ffi_type_hint(make_warning(arg_idx, expected_str, actual_str, expr_str), actual_str),
+      append_js_ffi_type_hint(
+        append_option_migration_hint(make_warning(arg_idx, expected_str, &actual_str, expr_str), actual_type),
+        &actual_str,
+      ),
       self.warning_code,
       self.file_ns,
       warning_location,
@@ -196,8 +210,7 @@ where
           && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings)
         {
           let expected_str = inner_type.as_ref().to_brief_string();
-          let actual_str = actual_type.as_ref().to_brief_string();
-          ctx.emit_warning(idx + rest_idx + 1, &expected_str, &actual_str, &make_warning);
+          ctx.emit_warning(idx + rest_idx + 1, &expected_str, actual_type.as_ref(), &make_warning);
         }
       }
       return; // Done after variadic
@@ -207,8 +220,7 @@ where
       && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
     {
       let expected_str = expected_type.as_ref().to_brief_string();
-      let actual_str = actual_type.as_ref().to_brief_string();
-      ctx.emit_warning(idx + 1, &expected_str, &actual_str, &make_warning);
+      ctx.emit_warning(idx + 1, &expected_str, actual_type.as_ref(), &make_warning);
     }
   }
 
@@ -326,10 +338,13 @@ pub(crate) fn check_proc_arg_types(
       let actual_str = actual_type.as_ref().to_brief_string();
       let warning_location = arg.get_location().or_else(|| call_location.clone());
       gen_check_warning_code_at(
-        format!(
-          "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-          proc.as_ref(),
-          idx + 1
+        append_option_migration_hint(
+          format!(
+            "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            proc.as_ref(),
+            idx + 1
+          ),
+          actual_type.as_ref(),
         ),
         "W_PROC_ARG_TYPE_MISMATCH",
         file_ns,
@@ -377,10 +392,13 @@ pub(crate) fn check_core_fn_arg_types(
       let actual_str = actual_type.as_ref().to_brief_string();
       let warning_location = arg.get_location().or_else(|| call_location.clone());
       gen_check_warning_code_at(
-        format!(
-          "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-          fn_info.name,
-          idx + 1
+        append_option_migration_hint(
+          format!(
+            "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            fn_info.name,
+            idx + 1
+          ),
+          actual_type.as_ref(),
         ),
         "W_CORE_FN_ARG_TYPE_MISMATCH",
         file_ns,

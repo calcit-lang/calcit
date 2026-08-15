@@ -4108,6 +4108,18 @@ fn find_method_entry_with_impl<'a>(
   None
 }
 
+fn append_string_method_receiver_hint(mut message: String, method_name: &str, type_desc: &str) -> String {
+  let replacement = match method_name {
+    "trim" => "trim",
+    "blank?" => "blank?",
+    _ => return message,
+  };
+  message.push_str(&format!(
+    ". String API hint: `.{method_name}` requires a String receiver, but this receiver was inferred as `{type_desc}`; fix or narrow the receiver type, or use `({replacement} receiver)` for direct argument-type diagnostics"
+  ));
+  message
+}
+
 fn validate_method_call(
   head: &Calcit,
   args: &CalcitList,
@@ -4145,7 +4157,11 @@ fn validate_method_call(
     let type_desc = describe_type(type_value.as_ref());
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+      append_string_method_receiver_hint(
+        format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+        method_name,
+        &type_desc,
+      ),
       call_stack,
       head.get_location(),
     ));
@@ -4176,7 +4192,11 @@ fn validate_method_call(
   let type_desc = describe_type(type_value.as_ref());
   Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
-    format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+    append_string_method_receiver_hint(
+      format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+      method_name,
+      &type_desc,
+    ),
     call_stack,
     head.get_location(),
   ))
@@ -8792,6 +8812,19 @@ mod tests {
         "error should mention the struct type: {msg}"
       );
     }
+  }
+
+  #[test]
+  fn string_method_receiver_hint_names_inferred_type_and_function_form() {
+    let message = append_string_method_receiver_hint(
+      "unknown method `.trim` for map<:tag,:string>".to_owned(),
+      "trim",
+      "map<:tag,:string>",
+    );
+
+    assert!(message.contains("requires a String receiver"), "message: {message}");
+    assert!(message.contains("inferred as `map<:tag,:string>`"), "message: {message}");
+    assert!(message.contains("`(trim receiver)`"), "message: {message}");
   }
 
   #[test]

@@ -201,6 +201,28 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
+fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("do\n  &+ (find-index ([] 1 2) $ fn (x) = x 2) 1\n  starts-with? (get-env |HOME) |/");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Option-returning API examples should preprocess with migration warnings");
+
+    let warnings = warnings.borrow();
+    for inferred in ["Option<:number>", "Option<:string>"] {
+      let warning = warnings
+        .iter()
+        .find(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains(inferred))
+        .unwrap_or_else(|| panic!("missing mismatch for {inferred}; warnings: {warnings:?}"));
+      assert!(warning.message().contains("inferred type"), "warning: {warning:?}");
+      assert!(warning.message().contains("option:unwrap-or"), "warning: {warning:?}");
+      assert!(warning.message().contains("tag-match"), "warning: {warning:?}");
+    }
+  });
+}
+
+#[test]
 fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
