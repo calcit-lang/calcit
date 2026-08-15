@@ -53,10 +53,14 @@ fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
   message
 }
 
-fn append_option_migration_hint(mut message: String, actual_type: &CalcitTypeAnnotation) -> String {
-  if actual_type.is_option_type() {
+fn append_option_migration_hint(
+  mut message: String,
+  expected_type: &CalcitTypeAnnotation,
+  actual_type: &CalcitTypeAnnotation,
+) -> String {
+  if actual_type.is_option_type() && !expected_type.is_option_type() {
     message.push_str(&format!(
-      "; inferred type `{}` is an Option rather than its payload; use `option:unwrap-or` for a safe default or `tag-match` to handle both variants before passing it here",
+      "; inferred type `{}` is an Option rather than its payload; use `option:unwrap-or` for a safe default or native `match` (legacy `tag-match`) to handle both variants before passing it here",
       actual_type.to_brief_string()
     ));
   }
@@ -151,10 +155,11 @@ impl<'a> CheckContext<'a> {
   fn emit_warning(
     &self,
     arg_idx: usize,
-    expected_str: &str,
+    expected_type: &CalcitTypeAnnotation,
     actual_type: &CalcitTypeAnnotation,
     make_warning: impl Fn(usize, &str, &str, String) -> String,
   ) {
+    let expected_str = expected_type.to_brief_string();
     let actual_str = actual_type.to_brief_string();
     let expr_str = format!(
       "{} {}",
@@ -168,7 +173,11 @@ impl<'a> CheckContext<'a> {
       .or_else(|| self.call_location.clone());
     gen_check_warning_code_at(
       append_js_ffi_type_hint(
-        append_option_migration_hint(make_warning(arg_idx, expected_str, &actual_str, expr_str), actual_type),
+        append_option_migration_hint(
+          make_warning(arg_idx, &expected_str, &actual_str, expr_str),
+          expected_type,
+          actual_type,
+        ),
         &actual_str,
       ),
       self.warning_code,
@@ -209,8 +218,7 @@ where
         if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types)
           && !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings)
         {
-          let expected_str = inner_type.as_ref().to_brief_string();
-          ctx.emit_warning(idx + rest_idx + 1, &expected_str, actual_type.as_ref(), &make_warning);
+          ctx.emit_warning(idx + rest_idx + 1, inner_type.as_ref(), actual_type.as_ref(), &make_warning);
         }
       }
       return; // Done after variadic
@@ -219,8 +227,7 @@ where
     if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types)
       && !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings)
     {
-      let expected_str = expected_type.as_ref().to_brief_string();
-      ctx.emit_warning(idx + 1, &expected_str, actual_type.as_ref(), &make_warning);
+      ctx.emit_warning(idx + 1, expected_type.as_ref(), actual_type.as_ref(), &make_warning);
     }
   }
 
@@ -344,6 +351,7 @@ pub(crate) fn check_proc_arg_types(
             proc.as_ref(),
             idx + 1
           ),
+          expected_type.as_ref(),
           actual_type.as_ref(),
         ),
         "W_PROC_ARG_TYPE_MISMATCH",
@@ -398,6 +406,7 @@ pub(crate) fn check_core_fn_arg_types(
             fn_info.name,
             idx + 1
           ),
+          expected_type.as_ref(),
           actual_type.as_ref(),
         ),
         "W_CORE_FN_ARG_TYPE_MISMATCH",

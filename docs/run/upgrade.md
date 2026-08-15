@@ -86,13 +86,27 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 
 ```bash
 cp calcit.cirru calcit.full-snapshot.backup.cirru
+cp compact.cirru compact.migration-backup.cirru
+$EDITOR compact.cirru
+# 在每个 ns 规则中将 :require-macros 改为 :require，并确认不再有旧 clause
+if rg -q ':require-macros' compact.cirru; then
+  echo '请先逐个迁移 compact.cirru 中的 :require-macros 规则'
+  exit 1
+else
+  status=$?
+  if [ "$status" -ne 1 ]; then
+    echo '无法检查 compact.cirru 中的 :require-macros 规则'
+    exit "$status"
+  fi
+fi
 cp compact.cirru calcit.cirru
 cr calcit.cirru edit format
 git diff -- calcit.cirru
 cr calcit.cirru --check-only
 ```
 
-不要删除备份或旧文件，直到所有 entry 与原有 native/JS 测试均通过。现在反序列化错误会带上失败的
+若 `rg` 没有匹配，才继续复制和格式化；如果仍有匹配，应逐个编辑 namespace 规则，而不是用全局替换，
+以免改动代码字符串中的同名文本。不要删除备份或旧文件，直到所有 entry 与原有 native/JS 测试均通过。现在反序列化错误会带上失败的
 Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上述恢复方向。
 
 旧 namespace 里的 `:require-macros` 也必须在 Snapshot 规范化前处理。宏与普通值现在共用
@@ -379,6 +393,9 @@ match (get-env |APP_MODE)
   (:some mode) $ println mode
   (:none) $ println |development
 ```
+
+上例使用推荐的原生 `match`；维护旧代码时也可以把同一组分支头替换为 `tag-match`，两者都能处理
+`Option` 的 `:some` / `:none`，但 `match` 额外提供穷举检查。
 
 只有业务语义确实有合理默认值时才用 `unwrap-or`；需要区分“缺失”和“存在”时保留两个分支。
 
