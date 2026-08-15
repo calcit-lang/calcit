@@ -8816,15 +8816,91 @@ mod tests {
 
   #[test]
   fn string_method_receiver_hint_names_inferred_type_and_function_form() {
-    let message = append_string_method_receiver_hint(
-      "unknown method `.trim` for map<:tag,:string>".to_owned(),
-      "trim",
-      "map<:tag,:string>",
-    );
+    let receiver_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
+      EdnTag::from("MapLike"),
+      vec![],
+    ))));
+    let head = Calcit::Method(Arc::from("trim"), calcit::MethodKind::Invoke(receiver_type.clone()));
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.method"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: receiver_type,
+    });
+    let args = CalcitList::from(&[receiver][..]);
+
+    let error = validate_method_call(&head, &args, &ScopeTypes::new(), &CallStackList::default())
+      .expect_err("trim should reject a non-String receiver through method validation");
+    let message = error.to_string();
 
     assert!(message.contains("requires a String receiver"), "message: {message}");
-    assert!(message.contains("inferred as `map<:tag,:string>`"), "message: {message}");
+    assert!(message.contains("inferred as `struct MapLike`"), "message: {message}");
     assert!(message.contains("`(trim receiver)`"), "message: {message}");
+  }
+
+  #[test]
+  fn option_mismatch_between_nominal_payloads_does_not_suggest_unwrap() {
+    let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let option_string = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let fn_info = CalcitFn {
+      name: Arc::from("expects-option-number"),
+      def_ns: Arc::from("tests.option"),
+      def_ref: None,
+      usage: crate::calcit::CalcitFnUsageMeta::default(),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![0])),
+      body: vec![Calcit::Nil],
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![option_number],
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
+      rest_type: None,
+    };
+    let args = CalcitList::from(
+      &[Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from("value"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.option"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+        type_info: option_string,
+      })][..],
+    );
+    let head = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.option"),
+      def: Arc::from("expects-option-number"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_ns: Arc::from("tests.option"),
+        at_def: Arc::from("demo"),
+      }),
+      def_id: None,
+    });
+    let warnings = RefCell::new(vec![]);
+    let call_info = CallTypeCheckInfo {
+      file_ns: "tests.option",
+      def_name: "demo",
+      call_location: None,
+    };
+
+    check_user_fn_arg_types(&fn_info, &head, &args, &ScopeTypes::new(), &call_info, &warnings);
+
+    let warnings = warnings.borrow();
+    let warning = warnings.first().expect("Option payload mismatch should warn");
+    assert_eq!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH"));
+    assert!(!warning.message().contains("option:unwrap-or"), "warning: {warning:?}");
+    assert!(!warning.message().contains("tag-match"), "warning: {warning:?}");
   }
 
   #[test]
