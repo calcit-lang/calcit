@@ -16,6 +16,7 @@ aliases:
 
 ```cirru
 {}
+  :version |0.1.0
   :calcit-version |0.9.18
   :dependencies $ {}
     |calcit-lang/memof |0.0.11
@@ -90,8 +91,9 @@ caps version set 1.2.3
 caps version bump patch
 ```
 
-During migration, the snapshot `:version` field remains supported by `cr`; `caps version` only manages the
-dependency metadata file and does not rewrite the snapshot automatically. `cr config version` / `cr config set version`
+The project version belongs in `deps.cirru :version`. If it is missing, `caps` invocations that read the file print a
+migration warning; initialize it with `caps version set <version>`. `caps version get` and `caps version bump` fail when the
+field is missing, even if a legacy `calcit.cirru :version` field exists. `cr config version` / `cr config set version`
 are deprecated — use `caps version` instead.
 
 ### Outdated

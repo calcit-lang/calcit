@@ -1,6 +1,6 @@
 ---
 title: "项目结构：calcit.cirru 与 deps.cirru"
-summary: "calcit.cirru 的 EDN 结构说明（:package、:version、:entries、:files、:modules）以及 deps.cirru 的版本管理"
+summary: "calcit.cirru 的 EDN 结构说明（:package、:entries、:files、:modules）以及 deps.cirru 的版本管理"
 scope: "core"
 kind: "reference"
 category: "run"
@@ -24,7 +24,6 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 ```cirru.no-check
 {}
   :package |my-app
-  :version |0.1.0
   :entries $ {}
     :default $ {}
       :mode :js
@@ -52,7 +51,7 @@ Agent 切到新窗口时，优先把 `calcit.cirru`（兼容旧文件名 `compac
 字段职责可以快速记成：
 
 - `:package`：包名边界（影响哪些 namespace 允许被 `cr edit` 修改）。
-- `:version`：项目版本的 snapshot 镜像字段，迁移期保留给旧版 `cr` 读取；权威版本号请维护在 `deps.cirru :version`（用 `caps version get/set/bump` 管理）。
+- `:version`：不再属于推荐的 Snapshot 配置；旧 Snapshot 可能仍带有该字段，但 `caps` 不会读取它。项目版本请维护在 `deps.cirru :version`（用 `caps version get/set/bump` 管理）。
 - `:entries`：全部运行入口；不指定 `--entry` 时使用 `:default`。
 - `:mode`：入口的默认运行后端，只接受 `:native` 或 `:js`。
 - `:description`：entry 用途的简短语义说明；只提供给人和工具阅读，不影响运行。
@@ -119,8 +118,8 @@ project source.
 - `deps.cirru`：声明"要下载哪些外部模块 + 期望的 calcit 版本 + 项目发布版本（`:version`）"。
 - `calcit.cirru`（兼容旧文件名 `compact.cirru`）：声明"运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）"。
 
-版本号以 `deps.cirru :version` 为权威，用 `caps version get/set/bump` 管理；`calcit.cirru :version`
-只是迁移期兼容镜像，`cr config version` / `cr config set version` 已废弃，请改用 `caps version`。
+版本号只以 `deps.cirru :version` 为权威，用 `caps version get/set/bump` 管理；`calcit.cirru :version`
+不会作为 `caps` 的回退来源。`cr config version` / `cr config set version` 已废弃，请改用 `caps version`。
 
 常见升级动作（最少命令）：
 
