@@ -141,6 +141,13 @@ pub fn main() -> Result<(), String> {
     })?;
     let deps: PackageDeps = parsed.try_into()?;
 
+    if deps.version.is_none() {
+      eprintln!(
+        "[Warn] {} has no :version; initialize the project version with `caps {} version set <version>`",
+        cli_args.input, cli_args.input
+      );
+    }
+
     if let Some(version) = &deps.calcit_version
       && version != CALCIT_VERSION
     {
@@ -580,7 +587,10 @@ fn valid_module_component(component: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-  use super::{PackageDeps, module_folder, normalize_package_name};
+  use super::{
+    PackageDeps, VersionBumpCaps, VersionCaps, VersionGetCaps, VersionSubcommand, handle_version_command, module_folder,
+    normalize_package_name,
+  };
   use cirru_edn::Edn;
   use std::collections::HashMap;
   use std::sync::Arc;
@@ -605,8 +615,46 @@ mod tests {
   #[test]
   fn missing_dependencies_field_is_an_empty_graph() {
     let deps: PackageDeps = Edn::Map(cirru_edn::EdnMapView::default()).try_into().unwrap();
+    assert!(deps.version.is_none());
     assert!(deps.dependencies.is_empty());
     assert!(deps.dev_dependencies.is_empty());
+  }
+
+  #[test]
+  fn version_commands_do_not_read_snapshot_version() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-version-migration-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let deps_path = root.join("deps.cirru");
+    std::fs::write(&deps_path, "{} (:dependencies $ {})").unwrap();
+    // A legacy snapshot version must not be used as a fallback anymore.
+    std::fs::write(root.join("calcit.cirru"), "{} (:version |1.2.3)").unwrap();
+
+    let deps: PackageDeps = cirru_edn::parse("{} (:dependencies $ {})").unwrap().try_into().unwrap();
+    let deps_file = deps_path.to_str().unwrap();
+    let get_error = handle_version_command(
+      deps.clone(),
+      deps_file,
+      &VersionCaps {
+        command: VersionSubcommand::Get(VersionGetCaps {}),
+      },
+    )
+    .expect_err("missing deps.cirru version should reject version get");
+    assert!(get_error.contains("no :version declared in"), "unexpected error: {get_error}");
+    assert!(get_error.contains("deps.cirru"), "unexpected error: {get_error}");
+
+    let bump_error = handle_version_command(
+      deps,
+      deps_file,
+      &VersionCaps {
+        command: VersionSubcommand::Bump(VersionBumpCaps { level: "patch".to_owned() }),
+      },
+    )
+    .expect_err("missing deps.cirru version should reject version bump");
+    assert!(bump_error.contains("no :version declared in"), "unexpected error: {bump_error}");
+    assert!(bump_error.contains("deps.cirru"), "unexpected error: {bump_error}");
+
+    std::fs::remove_dir_all(root).unwrap();
   }
 
   #[test]
@@ -944,15 +992,10 @@ fn sync_calcit_procs_package() -> Result<(), String> {
 fn handle_version_command(mut deps: PackageDeps, deps_file: &str, opts: &VersionCaps) -> Result<(), String> {
   match &opts.command {
     VersionSubcommand::Get(_) => {
-      let legacy = legacy_snapshot_version(deps_file)?;
-      let version = deps.version.as_deref().or(legacy.as_deref()).ok_or_else(|| {
-        format!(
-          "no :version declared in {deps_file} or its project snapshot; initialize it with `caps {deps_file} version set <version>`"
-        )
-      })?;
-      if deps.version.is_none() {
-        eprintln!("[Warn] reading legacy snapshot :version; migrate it with `caps {deps_file} version set {version}`");
-      }
+      let version = deps
+        .version
+        .as_deref()
+        .ok_or_else(|| format!("no :version declared in {deps_file}; initialize it with `caps {deps_file} version set <version>`"))?;
       println!("{version}");
     }
     VersionSubcommand::Set(opts) => {
@@ -962,12 +1005,10 @@ fn handle_version_command(mut deps: PackageDeps, deps_file: &str, opts: &Version
       println!("updated {deps_file} to {}", opts.version);
     }
     VersionSubcommand::Bump(opts) => {
-      let legacy = legacy_snapshot_version(deps_file)?;
-      let current = deps.version.as_deref().or(legacy.as_deref()).ok_or_else(|| {
-        format!(
-          "no :version declared in {deps_file} or its project snapshot; initialize it with `caps {deps_file} version set <version>`"
-        )
-      })?;
+      let current = deps
+        .version
+        .as_deref()
+        .ok_or_else(|| format!("no :version declared in {deps_file}; initialize it with `caps {deps_file} version set <version>`"))?;
       let mut version = Version::parse(current).map_err(|e| format!("invalid existing SemVer version '{current}': {e}"))?;
       match opts.level.as_str() {
         "major" => {
@@ -1000,24 +1041,6 @@ fn write_package_version(deps_file: &str, version: &str) -> Result<(), String> {
   };
   map.insert(Edn::tag("version"), Edn::str(version));
   fs::write(deps_file, cirru_edn::format(&parsed, false)?).map_err(|e| e.to_string())
-}
-
-fn legacy_snapshot_version(deps_file: &str) -> Result<Option<String>, String> {
-  let deps_path = Path::new(deps_file);
-  let project_root = deps_path.parent().unwrap_or(Path::new("."));
-  let snapshot = [project_root.join("calcit.cirru"), project_root.join("compact.cirru")]
-    .into_iter()
-    .find(|path| path.exists());
-  let Some(snapshot) = snapshot else {
-    return Ok(None);
-  };
-  let content = fs::read_to_string(&snapshot).map_err(|e| format!("failed to read {}: {e}", snapshot.display()))?;
-  let parsed = cirru_edn::parse(&content).map_err(|e| format!("failed to parse {}: {e}", snapshot.display()))?;
-  match parsed.view_map()?.get_or_nil("version") {
-    Edn::Str(version) => Ok(Some(version.to_string())),
-    Edn::Nil => Ok(None),
-    value => Err(format!("invalid snapshot :version in {}: {value}", snapshot.display())),
-  }
 }
 
 fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {
