@@ -143,7 +143,7 @@ pub fn main() -> Result<(), String> {
 
     if deps.version.is_none() {
       eprintln!(
-        "[Warn] {} has no :version; initialize the project version with `caps {} version set <version>`",
+        "[Warn] {} has no :version; initialize the project version with `caps version set <version> {}`",
         cli_args.input, cli_args.input
       );
     }
@@ -642,6 +642,10 @@ mod tests {
     .expect_err("missing deps.cirru version should reject version get");
     assert!(get_error.contains("no :version declared in"), "unexpected error: {get_error}");
     assert!(get_error.contains("deps.cirru"), "unexpected error: {get_error}");
+    assert!(
+      get_error.contains(&format!("caps version set <version> {deps_file}")),
+      "unexpected migration hint: {get_error}"
+    );
 
     let bump_error = handle_version_command(
       deps,
@@ -653,6 +657,10 @@ mod tests {
     .expect_err("missing deps.cirru version should reject version bump");
     assert!(bump_error.contains("no :version declared in"), "unexpected error: {bump_error}");
     assert!(bump_error.contains("deps.cirru"), "unexpected error: {bump_error}");
+    assert!(
+      bump_error.contains(&format!("caps version set <version> {deps_file}")),
+      "unexpected migration hint: {bump_error}"
+    );
 
     std::fs::remove_dir_all(root).unwrap();
   }
@@ -995,7 +1003,7 @@ fn handle_version_command(mut deps: PackageDeps, deps_file: &str, opts: &Version
       let version = deps
         .version
         .as_deref()
-        .ok_or_else(|| format!("no :version declared in {deps_file}; initialize it with `caps {deps_file} version set <version>`"))?;
+        .ok_or_else(|| format!("no :version declared in {deps_file}; initialize it with `caps version set <version> {deps_file}`"))?;
       println!("{version}");
     }
     VersionSubcommand::Set(opts) => {
@@ -1008,7 +1016,7 @@ fn handle_version_command(mut deps: PackageDeps, deps_file: &str, opts: &Version
       let current = deps
         .version
         .as_deref()
-        .ok_or_else(|| format!("no :version declared in {deps_file}; initialize it with `caps {deps_file} version set <version>`"))?;
+        .ok_or_else(|| format!("no :version declared in {deps_file}; initialize it with `caps version set <version> {deps_file}`"))?;
       let mut version = Version::parse(current).map_err(|e| format!("invalid existing SemVer version '{current}': {e}"))?;
       match opts.level.as_str() {
         "major" => {
