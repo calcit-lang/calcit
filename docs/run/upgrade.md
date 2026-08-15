@@ -89,9 +89,15 @@ cp calcit.cirru calcit.full-snapshot.backup.cirru
 cp compact.cirru compact.migration-backup.cirru
 $EDITOR compact.cirru
 # 在每个 ns 规则中将 :require-macros 改为 :require，并确认不再有旧 clause
-if rg ':require-macros' compact.cirru; then
+if rg -q ':require-macros' compact.cirru; then
   echo '请先逐个迁移 compact.cirru 中的 :require-macros 规则'
   exit 1
+else
+  status=$?
+  if [ "$status" -ne 1 ]; then
+    echo '无法检查 compact.cirru 中的 :require-macros 规则'
+    exit "$status"
+  fi
 fi
 cp compact.cirru calcit.cirru
 cr calcit.cirru edit format

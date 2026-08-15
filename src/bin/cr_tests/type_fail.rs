@@ -217,6 +217,7 @@ fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
         .unwrap_or_else(|| panic!("missing mismatch for {inferred}; warnings: {warnings:?}"));
       assert!(warning.message().contains("inferred type"), "warning: {warning:?}");
       assert!(warning.message().contains("option:unwrap-or"), "warning: {warning:?}");
+      assert!(warning.message().contains("native `match`"), "warning: {warning:?}");
       assert!(warning.message().contains("tag-match"), "warning: {warning:?}");
     }
   });

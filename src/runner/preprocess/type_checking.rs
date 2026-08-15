@@ -60,7 +60,7 @@ fn append_option_migration_hint(
 ) -> String {
   if actual_type.is_option_type() && !expected_type.is_option_type() {
     message.push_str(&format!(
-      "; inferred type `{}` is an Option rather than its payload; use `option:unwrap-or` for a safe default or `tag-match` to handle both variants before passing it here",
+      "; inferred type `{}` is an Option rather than its payload; use `option:unwrap-or` for a safe default or native `match` (legacy `tag-match`) to handle both variants before passing it here",
       actual_type.to_brief_string()
     ));
   }
