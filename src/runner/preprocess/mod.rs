@@ -667,64 +667,38 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
   }
 }
 
-/// Resolve named types declared in the same lexical scope, such as a `defstruct`
-/// bound by an enclosing `let`. Program-level `TypeRef` resolution cannot see
-/// those definitions, so retaining the symbolic reference would make otherwise
-/// precise function parameters fall back to `Dynamic` inside the body.
-fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+fn map_type_refs_for_body<F>(annotation: Arc<CalcitTypeAnnotation>, resolve_type_ref: &F) -> Arc<CalcitTypeAnnotation>
+where
+  F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
+{
   match annotation.as_ref() {
     CalcitTypeAnnotation::TypeRef(name, args) => {
       let resolved_args = Arc::new(
         args
           .iter()
-          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
           .collect::<Vec<_>>(),
       );
-      let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
-      let short_name = lookup_name.rsplit('/').next().unwrap_or(lookup_name);
-      let local_type = scope_types.get(lookup_name).or_else(|| scope_types.get(short_name));
-      match local_type.map(AsRef::as_ref) {
-        Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
-        Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
-          Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
-        }
-        Some(CalcitTypeAnnotation::EnumDef(enum_def)) => Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args)),
-        Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
-          Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
-        }
-        Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
-          Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
-        }
-        _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
-      }
+      resolve_type_ref(name, resolved_args)
     }
-    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(resolve_local_type_refs_for_body(
-      inner.clone(),
-      scope_types,
-    ))),
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
     CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
-      resolve_local_type_refs_for_body(key.clone(), scope_types),
-      resolve_local_type_refs_for_body(value.clone(), scope_types),
+      map_type_refs_for_body(key.clone(), resolve_type_ref),
+      map_type_refs_for_body(value.clone(), resolve_type_ref),
     )),
-    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
+    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
+    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(map_type_refs_for_body(
       inner.clone(),
-      scope_types,
+      resolve_type_ref,
     ))),
-    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(map_type_refs_for_body(
       inner.clone(),
-      scope_types,
+      resolve_type_ref,
     ))),
-    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(map_type_refs_for_body(
       inner.clone(),
-      scope_types,
-    ))),
-    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(resolve_local_type_refs_for_body(
-      inner.clone(),
-      scope_types,
-    ))),
-    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(resolve_local_type_refs_for_body(
-      inner.clone(),
-      scope_types,
+      resolve_type_ref,
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: signature.generics.clone(),
@@ -732,14 +706,14 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       arg_types: signature
         .arg_types
         .iter()
-        .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+        .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
         .collect(),
-      return_type: resolve_local_type_refs_for_body(signature.return_type.clone(), scope_types),
+      return_type: map_type_refs_for_body(signature.return_type.clone(), resolve_type_ref),
       fn_kind: signature.fn_kind,
       rest_type: signature
         .rest_type
         .as_ref()
-        .map(|rest| resolve_local_type_refs_for_body(rest.clone(), scope_types)),
+        .map(|rest| map_type_refs_for_body(rest.clone(), resolve_type_ref)),
       features: signature.features.clone(),
     }))),
     CalcitTypeAnnotation::Struct(struct_def, args) => Arc::new(CalcitTypeAnnotation::Struct(
@@ -747,7 +721,7 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       Arc::new(
         args
           .iter()
-          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
           .collect(),
       ),
     )),
@@ -756,7 +730,7 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       Arc::new(
         args
           .iter()
-          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
           .collect(),
       ),
     )),
@@ -764,103 +738,58 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
   }
 }
 
+/// Resolve named types declared in the same lexical scope, such as a `defstruct`
+/// bound by an enclosing `let`. Program-level `TypeRef` resolution cannot see
+/// those definitions, so retaining the symbolic reference would make otherwise
+/// precise function parameters fall back to `Dynamic` inside the body.
+fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+  map_type_refs_for_body(annotation, &|name, resolved_args| {
+    let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
+    let short_name = lookup_name.rsplit('/').next().unwrap_or(lookup_name);
+    let local_type = scope_types.get(lookup_name).or_else(|| scope_types.get(short_name));
+    match local_type.map(AsRef::as_ref) {
+      Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
+      Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
+        Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
+      }
+      Some(CalcitTypeAnnotation::EnumDef(enum_def)) => Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args)),
+      Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
+        Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
+      }
+      Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
+        Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
+      }
+      _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
+    }
+  })
+}
+
 /// Qualify nominal type references from the namespace where their declaration
 /// was written. Nested Struct fields often use concise forms such as
 /// `'Router`; once that field type flows into a caller in another namespace,
 /// retaining only `Router` is ambiguous and prevents required-field lowering.
 fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
-  match annotation.as_ref() {
-    CalcitTypeAnnotation::TypeRef(name, args) => {
-      let resolved_args = Arc::new(
-        args
-          .iter()
-          .map(|arg| resolve_namespace_type_refs_for_body(arg.clone(), declaring_ns))
-          .collect::<Vec<_>>(),
-      );
-      let stripped = name.trim_start_matches('\'').trim_start_matches(':');
-      let qualified_name = if let Some((prefix, def)) = stripped.rsplit_once('/') {
-        if program::has_def_code(prefix, def) {
-          Arc::from(stripped)
-        } else if let Some(target_ns) = program::lookup_ns_target_in_import(declaring_ns, prefix) {
-          Arc::from(format!("{target_ns}/{def}"))
-        } else {
-          Arc::from(stripped)
-        }
-      } else if program::has_def_code(declaring_ns, stripped) {
-        Arc::from(format!("{declaring_ns}/{stripped}"))
-      } else if let Some(target_ns) = program::lookup_def_target_in_import(declaring_ns, stripped) {
-        Arc::from(format!("{target_ns}/{stripped}"))
-      } else if program::has_def_code(calcit::CORE_NS, stripped) {
-        Arc::from(format!("{}/{stripped}", calcit::CORE_NS))
+  map_type_refs_for_body(annotation, &|name, resolved_args| {
+    let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+    let qualified_name = if let Some((prefix, def)) = stripped.rsplit_once('/') {
+      if program::has_def_code(prefix, def) {
+        Arc::from(stripped)
+      } else if let Some(target_ns) = program::lookup_ns_target_in_import(declaring_ns, prefix) {
+        Arc::from(format!("{target_ns}/{def}"))
       } else {
-        name.clone()
-      };
-      Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
-    }
-    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(resolve_namespace_type_refs_for_body(
-      inner.clone(),
-      declaring_ns,
-    ))),
-    CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
-      resolve_namespace_type_refs_for_body(key.clone(), declaring_ns),
-      resolve_namespace_type_refs_for_body(value.clone(), declaring_ns),
-    )),
-    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(resolve_namespace_type_refs_for_body(
-      inner.clone(),
-      declaring_ns,
-    ))),
-    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(resolve_namespace_type_refs_for_body(
-      inner.clone(),
-      declaring_ns,
-    ))),
-    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(resolve_namespace_type_refs_for_body(
-      inner.clone(),
-      declaring_ns,
-    ))),
-    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(resolve_namespace_type_refs_for_body(
-      inner.clone(),
-      declaring_ns,
-    ))),
-    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(resolve_namespace_type_refs_for_body(
-      inner.clone(),
-      declaring_ns,
-    ))),
-    CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      generics: signature.generics.clone(),
-      where_bounds: signature.where_bounds.clone(),
-      arg_types: signature
-        .arg_types
-        .iter()
-        .map(|arg| resolve_namespace_type_refs_for_body(arg.clone(), declaring_ns))
-        .collect(),
-      return_type: resolve_namespace_type_refs_for_body(signature.return_type.clone(), declaring_ns),
-      fn_kind: signature.fn_kind,
-      rest_type: signature
-        .rest_type
-        .as_ref()
-        .map(|rest| resolve_namespace_type_refs_for_body(rest.clone(), declaring_ns)),
-      features: signature.features.clone(),
-    }))),
-    CalcitTypeAnnotation::Struct(struct_def, args) => Arc::new(CalcitTypeAnnotation::Struct(
-      struct_def.clone(),
-      Arc::new(
-        args
-          .iter()
-          .map(|arg| resolve_namespace_type_refs_for_body(arg.clone(), declaring_ns))
-          .collect(),
-      ),
-    )),
-    CalcitTypeAnnotation::Enum(enum_def, args) => Arc::new(CalcitTypeAnnotation::Enum(
-      enum_def.clone(),
-      Arc::new(
-        args
-          .iter()
-          .map(|arg| resolve_namespace_type_refs_for_body(arg.clone(), declaring_ns))
-          .collect(),
-      ),
-    )),
-    _ => annotation,
-  }
+        Arc::from(stripped)
+      }
+    } else if program::has_def_code(declaring_ns, stripped) {
+      Arc::from(format!("{declaring_ns}/{stripped}"))
+    } else if let Some(target_ns) = program::lookup_def_target_in_import(declaring_ns, stripped) {
+      Arc::from(format!("{target_ns}/{stripped}"))
+    } else if program::has_def_code(calcit::CORE_NS, stripped) {
+      Arc::from(format!("{}/{stripped}", calcit::CORE_NS))
+    } else {
+      name.clone()
+    };
+    Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
+  })
 }
 
 fn unwrap_named_body_parameter_type(annotation: Arc<CalcitTypeAnnotation>, parameter: Option<&Arc<str>>) -> Arc<CalcitTypeAnnotation> {

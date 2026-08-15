@@ -427,7 +427,8 @@ Anonymous structs still have a runtime field set, but they do not carry the
 declaration needed for typed required-field access. Do not use them as a way to
 bypass field analysis in application code. Convert/rewrite the value to an
 expected named Struct before reading fields. `&struct:get` remains available
-only to core/runtime code that intentionally implements a dynamic boundary.
+only to core/runtime code or an explicit reusable `defimpl` that intentionally
+implements a dynamic boundary.
 The following block deliberately demonstrates that low-level runtime behavior;
 using the same call in application code produces a typed-access warning.
 
