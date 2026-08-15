@@ -66,10 +66,10 @@ let
           :generics $ [] 'T
           :args $ [] 'T
           :return :string
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p)
-        str "|foo " $ &struct:get p :name
     Person0 $ defstruct Person (:name :string)
+    MyFooImpl $ defimpl MyFooImpl MyFoo
+      .foo $ fn (p) (assert-type p Person0)
+        str "|foo " $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   p .foo
@@ -99,14 +99,14 @@ let
           :return :string
     Person0 $ defstruct Person (:name :string)
     ShowImpl $ defimpl ShowImpl ShowTrait
-      .show $ fn (p)
-        str |Person: $ &struct:get p :name
+      .show $ fn (p) (assert-type p Person0)
+        str |Person: $ :name p
     EqImpl $ defimpl EqImpl EqTrait
-      .eq $ fn (p)
-        str |eq: $ &struct:get p :name
+      .eq $ fn (p) (assert-type p Person0)
+        str |eq: $ :name p
     MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p)
-        str |foo: $ &struct:get p :name
+      .foo $ fn (p) (assert-type p Person0)
+        str |foo: $ :name p
     Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
     p $ %{} Person (:name |Alice)
   [] (p .show) (p .foo)
@@ -126,8 +126,8 @@ let
           :return :string
     Person0 $ defstruct Person (:name :string)
     MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p)
-        str-spaced |foo $ &struct:get p :name
+      .foo $ fn (p) (assert-type p Person0)
+        str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo

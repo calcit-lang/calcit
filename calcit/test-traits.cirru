@@ -138,19 +138,19 @@
         |myfoo:foo $ %{} 'CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote
             defn myfoo:foo (p)
-              str "|foo " $ &struct:get p :name
+              str "|foo " $ :name p
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
+            {} (:return 'String)
+              :args $ [] 'test-traits.main/Person0
         |myfoo:foo2 $ %{} 'CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote
             defn myfoo:foo2 (p)
-              str "|foo2 " $ &struct:get p :name
+              str "|foo2 " $ :name p
           :examples $ []
           :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ [] 'Dynamic
+            {} (:return 'String)
+              :args $ [] 'test-traits.main/Person0
         |myzap:a $ %{} 'CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote
             defn myzap:a (_x) |zapA

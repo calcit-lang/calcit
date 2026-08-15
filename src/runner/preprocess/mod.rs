@@ -30,8 +30,8 @@ use type_rewriting::{
 
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, RwLock};
 use std::{cell::RefCell, vec};
 
 use cirru_edn::EdnTag;
@@ -42,6 +42,22 @@ pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
+static PROJECT_NAMESPACES: LazyLock<RwLock<HashSet<Arc<str>>>> = LazyLock::new(|| RwLock::new(HashSet::new()));
+
+pub fn set_project_namespaces(namespaces: &HashSet<String>) {
+  let mut target = PROJECT_NAMESPACES.write().expect("write project namespaces");
+  target.clear();
+  target.extend(namespaces.iter().map(|ns| Arc::from(ns.as_str())));
+}
+
+fn should_emit_project_source_lint(file_ns: &str) -> bool {
+  let namespaces = PROJECT_NAMESPACES.read().expect("read project namespaces");
+  namespace_is_project_source(&namespaces, file_ns)
+}
+
+fn namespace_is_project_source(namespaces: &HashSet<Arc<str>>, file_ns: &str) -> bool {
+  namespaces.is_empty() || namespaces.contains(file_ns)
+}
 
 fn format_inspect_type_coord(coord: &[u16]) -> String {
   format!("@{}", coord.iter().map(u16::to_string).collect::<Vec<_>>().join("."))
@@ -651,61 +667,38 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
   }
 }
 
-/// Resolve named types declared in the same lexical scope, such as a `defstruct`
-/// bound by an enclosing `let`. Program-level `TypeRef` resolution cannot see
-/// those definitions, so retaining the symbolic reference would make otherwise
-/// precise function parameters fall back to `Dynamic` inside the body.
-fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+fn map_type_refs_for_body<F>(annotation: Arc<CalcitTypeAnnotation>, resolve_type_ref: &F) -> Arc<CalcitTypeAnnotation>
+where
+  F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
+{
   match annotation.as_ref() {
     CalcitTypeAnnotation::TypeRef(name, args) => {
       let resolved_args = Arc::new(
         args
           .iter()
-          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
           .collect::<Vec<_>>(),
       );
-      let short_name = name.rsplit('/').next().unwrap_or(name.as_ref());
-      let local_type = scope_types.get(name).or_else(|| scope_types.get(short_name));
-      match local_type.map(AsRef::as_ref) {
-        Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
-          Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
-        }
-        Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
-          Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
-        }
-        Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
-          Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
-        }
-        _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
-      }
+      resolve_type_ref(name, resolved_args)
     }
-    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(resolve_local_type_refs_for_body(
-      inner.clone(),
-      scope_types,
-    ))),
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
     CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
-      resolve_local_type_refs_for_body(key.clone(), scope_types),
-      resolve_local_type_refs_for_body(value.clone(), scope_types),
+      map_type_refs_for_body(key.clone(), resolve_type_ref),
+      map_type_refs_for_body(value.clone(), resolve_type_ref),
     )),
-    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
+    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(map_type_refs_for_body(inner.clone(), resolve_type_ref))),
+    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(map_type_refs_for_body(
       inner.clone(),
-      scope_types,
+      resolve_type_ref,
     ))),
-    CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(map_type_refs_for_body(
       inner.clone(),
-      scope_types,
+      resolve_type_ref,
     ))),
-    CalcitTypeAnnotation::Optional(inner) => Arc::new(CalcitTypeAnnotation::Optional(resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(map_type_refs_for_body(
       inner.clone(),
-      scope_types,
-    ))),
-    CalcitTypeAnnotation::JsNullish(inner) => Arc::new(CalcitTypeAnnotation::JsNullish(resolve_local_type_refs_for_body(
-      inner.clone(),
-      scope_types,
-    ))),
-    CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(resolve_local_type_refs_for_body(
-      inner.clone(),
-      scope_types,
+      resolve_type_ref,
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       generics: signature.generics.clone(),
@@ -713,14 +706,14 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       arg_types: signature
         .arg_types
         .iter()
-        .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+        .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
         .collect(),
-      return_type: resolve_local_type_refs_for_body(signature.return_type.clone(), scope_types),
+      return_type: map_type_refs_for_body(signature.return_type.clone(), resolve_type_ref),
       fn_kind: signature.fn_kind,
       rest_type: signature
         .rest_type
         .as_ref()
-        .map(|rest| resolve_local_type_refs_for_body(rest.clone(), scope_types)),
+        .map(|rest| map_type_refs_for_body(rest.clone(), resolve_type_ref)),
       features: signature.features.clone(),
     }))),
     CalcitTypeAnnotation::Struct(struct_def, args) => Arc::new(CalcitTypeAnnotation::Struct(
@@ -728,7 +721,7 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       Arc::new(
         args
           .iter()
-          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
           .collect(),
       ),
     )),
@@ -737,12 +730,66 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
       Arc::new(
         args
           .iter()
-          .map(|arg| resolve_local_type_refs_for_body(arg.clone(), scope_types))
+          .map(|arg| map_type_refs_for_body(arg.clone(), resolve_type_ref))
           .collect(),
       ),
     )),
     _ => annotation,
   }
+}
+
+/// Resolve named types declared in the same lexical scope, such as a `defstruct`
+/// bound by an enclosing `let`. Program-level `TypeRef` resolution cannot see
+/// those definitions, so retaining the symbolic reference would make otherwise
+/// precise function parameters fall back to `Dynamic` inside the body.
+fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+  map_type_refs_for_body(annotation, &|name, resolved_args| {
+    let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
+    let short_name = lookup_name.rsplit('/').next().unwrap_or(lookup_name);
+    let local_type = scope_types.get(lookup_name).or_else(|| scope_types.get(short_name));
+    match local_type.map(AsRef::as_ref) {
+      Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
+      Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
+        Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
+      }
+      Some(CalcitTypeAnnotation::EnumDef(enum_def)) => Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args)),
+      Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
+        Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
+      }
+      Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
+        Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
+      }
+      _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
+    }
+  })
+}
+
+/// Qualify nominal type references from the namespace where their declaration
+/// was written. Nested Struct fields often use concise forms such as
+/// `'Router`; once that field type flows into a caller in another namespace,
+/// retaining only `Router` is ambiguous and prevents required-field lowering.
+fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
+  map_type_refs_for_body(annotation, &|name, resolved_args| {
+    let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+    let qualified_name = if let Some((prefix, def)) = stripped.rsplit_once('/') {
+      if program::has_def_code(prefix, def) {
+        Arc::from(stripped)
+      } else if let Some(target_ns) = program::lookup_ns_target_in_import(declaring_ns, prefix) {
+        Arc::from(format!("{target_ns}/{def}"))
+      } else {
+        Arc::from(stripped)
+      }
+    } else if program::has_def_code(declaring_ns, stripped) {
+      Arc::from(format!("{declaring_ns}/{stripped}"))
+    } else if let Some(target_ns) = program::lookup_def_target_in_import(declaring_ns, stripped) {
+      Arc::from(format!("{target_ns}/{stripped}"))
+    } else if program::has_def_code(calcit::CORE_NS, stripped) {
+      Arc::from(format!("{}/{stripped}", calcit::CORE_NS))
+    } else {
+      name.clone()
+    };
+    Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
+  })
 }
 
 fn unwrap_named_body_parameter_type(annotation: Arc<CalcitTypeAnnotation>, parameter: Option<&Arc<str>>) -> Arc<CalcitTypeAnnotation> {
@@ -1421,7 +1468,7 @@ fn preprocess_list_call(
         let mut current_args = CalcitList::from(ys.drop_left());
         // Core helpers such as `get` resolve to ordinary functions, so validate
         // their statically known struct fields in this branch as well.
-        check_struct_field_access(&head_form, &current_args, scope_types, file_ns, check_warnings);
+        check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         warn_on_legacy_js_nullish_predicate(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         let mut any_rewritten = false;
@@ -1733,7 +1780,7 @@ fn preprocess_list_call(
         // Check for struct field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
-        check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
+        check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_typed_js_field_operation(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
@@ -2598,6 +2645,7 @@ fn check_struct_field_access(
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
+  call_stack: &CallStackList,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // Check if this is a call to &struct:get
@@ -2607,6 +2655,7 @@ fn check_struct_field_access(
       && let (Some(struct_arg), Some(field_arg)) = (args.first(), args.get(1))
     {
       check_field_in_struct(struct_arg, field_arg, scope_types, file_ns, check_warnings);
+      warn_on_raw_struct_field_access(struct_arg, field_arg, scope_types, file_ns, call_stack, check_warnings);
     }
   }
   // Also check calcit.core imports that perform required struct field access.
@@ -2617,6 +2666,7 @@ fn check_struct_field_access(
       && let (Some(struct_arg), Some(field_arg)) = (args.first(), args.get(1))
     {
       check_field_in_struct(struct_arg, field_arg, scope_types, file_ns, check_warnings);
+      warn_on_raw_struct_field_access(struct_arg, field_arg, scope_types, file_ns, call_stack, check_warnings);
     }
     if &**ns == calcit::CORE_NS
       && &**def == "get"
@@ -2677,6 +2727,71 @@ fn check_struct_field_access(
       check_field_in_struct(struct_arg, &field_tag, scope_types, file_ns, check_warnings);
     }
   }
+}
+
+fn warn_on_raw_struct_field_access(
+  receiver: &Calcit,
+  field: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if !should_emit_project_source_lint(file_ns)
+    || file_ns == calcit::CORE_NS
+    || call_stack
+      .0
+      .iter()
+      .any(|frame| matches!(frame.kind, StackKind::Macro) && frame.def.as_ref() == "defimpl")
+  {
+    return;
+  }
+
+  let Calcit::Tag(field_tag) = field else {
+    return;
+  };
+  let field_text = format!(":{}", field_tag.ref_str());
+  let receiver_type = resolve_type_value(receiver, scope_types);
+  let (code, message) = match receiver_type.as_deref().and_then(CalcitTypeAnnotation::resolve_to_struct) {
+    Some(_) => (
+      "W_STRUCT_RAW_ACCESS",
+      format!(
+        "[Warn] direct `&struct:get` for field `{field_text}` in {file_ns} bypasses the typed source syntax. Use `({field_text} value)` or `value.{field_text}` so the checker exposes the declared field type and lowers the read to indexed `&struct:nth` access"
+      ),
+    ),
+    None if matches!(receiver_type.as_deref(), Some(CalcitTypeAnnotation::TypeRef(..))) => {
+      let type_text = receiver_type
+        .as_deref()
+        .map(CalcitTypeAnnotation::to_brief_string)
+        .unwrap_or_else(|| ":unknown".to_owned());
+      (
+        "W_STRUCT_DYNAMIC_RAW_ACCESS",
+        format!(
+          "[Warn] direct `&struct:get` for field `{field_text}` in {file_ns} has unresolved nominal receiver `{type_text}`. Its declaration namespace or dependency could not be recovered, so the field cannot be checked or specialized. Keep/restore a qualified schema such as `'app.schema/Type`, then use `({field_text} value)` or `value.{field_text}`; do not use `&struct:get` to hide an unresolved TypeRef"
+        ),
+      )
+    }
+    None => {
+      let type_text = receiver_type
+        .as_deref()
+        .map(CalcitTypeAnnotation::to_brief_string)
+        .unwrap_or_else(|| ":unknown".to_owned());
+      (
+        "W_STRUCT_DYNAMIC_RAW_ACCESS",
+        format!(
+          "[Warn] direct `&struct:get` for field `{field_text}` in {file_ns} has receiver type `{type_text}`, so the field cannot be statically checked or specialized. Add/narrow a named Struct schema, then use `({field_text} value)` or `value.{field_text}`; reserve `&struct:get` for an intentional reusable `defimpl` or core/runtime boundary"
+        ),
+      )
+    }
+  };
+
+  gen_check_warning_code_at(
+    message,
+    code,
+    file_ns,
+    field.get_location().or_else(|| receiver.get_location()),
+    check_warnings,
+  );
 }
 
 /// Validate statically known struct updates before they are rewritten to the indexed runtime procs.
@@ -4815,10 +4930,12 @@ fn resolve_enum_type_for_match(
   };
   let stripped = name.trim_start_matches('\'').trim_start_matches(':');
   let short_name = stripped.rsplit('/').next().unwrap_or(stripped);
-  if let Some(local_type) = scope_types.get(stripped).or_else(|| scope_types.get(short_name))
-    && let Some(enum_def) = local_type.resolve_to_enum()
-  {
-    return Some(enum_def);
+  if let Some(local_type) = scope_types.get(stripped).or_else(|| scope_types.get(short_name)) {
+    match local_type.as_ref() {
+      CalcitTypeAnnotation::EnumDef(enum_def) => return Some(enum_def.as_ref().to_owned()),
+      _ if let Some(enum_def) = local_type.resolve_to_enum() => return Some(enum_def),
+      _ => {}
+    }
   }
   let (target_ns, target_def) = if let Some((ns, def)) = stripped.rsplit_once('/') {
     (Arc::from(ns), Arc::from(def))
@@ -5013,6 +5130,7 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
                 .and_then(|e| e.find_variant_by_name(pat_tag))
                 .and_then(|v| v.payload_types().get(bind_idx).cloned())
                 .map(|payload| payload.substitute_type_vars(&enum_bindings))
+                .map(|payload| resolve_local_type_refs_for_body(payload, &body_types))
                 .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
 
               let local = Calcit::Local(CalcitLocal {
@@ -5224,12 +5342,14 @@ pub fn preprocess_defn(
           .map(|(idx, arg_type)| {
             let substituted = arg_type.substitute_type_vars(&body_type_bindings);
             let positional = unwrap_named_body_parameter_type(substituted, param_symbols.get(idx));
-            resolve_local_type_refs_for_body(positional, &body_types)
+            let local = resolve_local_type_refs_for_body(positional, &body_types);
+            resolve_namespace_type_refs_for_body(local, ctx.file_ns)
           })
           .chain(fn_annot.rest_type.iter().map(|rest_type| {
-            Arc::new(CalcitTypeAnnotation::Variadic(resolve_local_type_refs_for_body(
-              rest_type.substitute_type_vars(&body_type_bindings),
-              &body_types,
+            let local = resolve_local_type_refs_for_body(rest_type.substitute_type_vars(&body_type_bindings), &body_types);
+            Arc::new(CalcitTypeAnnotation::Variadic(resolve_namespace_type_refs_for_body(
+              local,
+              ctx.file_ns,
             )))
           }))
           .collect::<Vec<_>>();
@@ -5663,9 +5783,18 @@ pub fn preprocess_assert_type(
     _ => type_form.to_owned(),
   };
 
+  let local_nominal_type = match type_form {
+    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => ctx.scope_types.get(sym).and_then(|type_info| match type_info.as_ref() {
+      CalcitTypeAnnotation::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![])))),
+      CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
+      _ => None,
+    }),
+    _ => None,
+  };
+
   let asserted_target = target_form;
   if let Calcit::Local(local) = &asserted_target {
-    let asserted_type = CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form);
+    let asserted_type = local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form));
     let current_type = resolve_type_value(&asserted_target, ctx.scope_types).unwrap_or_else(|| local.type_info.clone());
     let type_entry = if current_type.as_ref().matches_annotation(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
@@ -6662,6 +6791,31 @@ mod tests {
   }
 
   #[test]
+  fn assert_type_resolves_local_struct_definitions() {
+    let expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf("LocalPerson")]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    scope_defs.insert(Arc::from("LocalPerson"));
+    let struct_def = Arc::new(CalcitStructDef::from_fields(EdnTag::from("Person"), vec![EdnTag::from("name")]));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(
+      Arc::from("LocalPerson"),
+      Arc::new(CalcitTypeAnnotation::StructDef(struct_def.clone())),
+    );
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    assert!(
+      matches!(resolve_type_value(&resolved, &scope_types).as_deref(), Some(CalcitTypeAnnotation::Struct(def, args)) if def == &struct_def && args.is_empty()),
+      "a local StructDef in type position should become its instance type, got {resolved}"
+    );
+  }
+
+  #[test]
   fn inspect_type_locations_use_at_paths_without_brackets() {
     assert_eq!(format_inspect_type_coord(&[3, 5, 1]), "@3.5.1");
   }
@@ -7555,20 +7709,11 @@ mod tests {
       vec![EdnTag::from("age"), EdnTag::from("name")],
     ))));
 
-    // Test expression: (assert-type user <struct-type>) (&struct:get user :name)
-    let expr = Cirru::List(vec![
-      Cirru::leaf("&let"),
-      Cirru::List(vec![Cirru::leaf("user"), Cirru::leaf("nil")]),
-      Cirru::List(vec![
-        Cirru::leaf("assert-type"),
-        Cirru::leaf("user"),
-        Cirru::leaf("struct-type"), // placeholder, will be replaced
-      ]),
-      Cirru::List(vec![Cirru::leaf("&struct:get"), Cirru::leaf("user"), Cirru::leaf(":name")]),
-    ]);
+    let expr = Cirru::List(vec![Cirru::leaf("&struct:get"), Cirru::leaf("user"), Cirru::leaf(":name")]);
 
     let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse cirru");
-    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
     let mut scope_types: ScopeTypes = ScopeTypes::new();
 
     // Manually insert the struct type for testing
@@ -7577,12 +7722,252 @@ mod tests {
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
 
-    // This should not produce warnings since :name exists
     let _resolved =
       preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.struct", &warnings, &stack).expect("preprocess should succeed");
 
-    // Currently no warnings expected for valid field access
-    // In future, we'll check warnings.borrow().is_empty()
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].code(), Some("W_STRUCT_RAW_ACCESS"));
+    assert!(warnings[0].message().contains("Use `(:name value)`"));
+  }
+
+  #[test]
+  fn quoted_local_struct_definition_resolves_parameter_type_refs() {
+    let box_def = Arc::new(CalcitStructDef::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]));
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("Box"), Arc::new(CalcitTypeAnnotation::StructDef(box_def.clone())));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let annotation = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("'Box"), Arc::new(vec![number.clone()])));
+
+    let resolved = resolve_local_type_refs_for_body(annotation, &scope_types);
+
+    assert!(
+      matches!(resolved.as_ref(), CalcitTypeAnnotation::Struct(def, args) if def == &box_def && args.as_slice() == [number]),
+      "local defstruct should become a concrete applied Struct annotation, got {resolved}"
+    );
+  }
+
+  #[test]
+  fn nested_struct_field_type_inherits_the_declaring_namespace() {
+    let _guard = lock_preprocess_test_state();
+    calcit::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+
+    let ns = "tests.nested-struct-owner";
+    let mut router_def = CalcitStructDef::from_fields(EdnTag::from("Router"), vec![EdnTag::from("name")]);
+    router_def.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
+    let mut store_def = CalcitStructDef::from_fields(EdnTag::from("ClientStore"), vec![EdnTag::from("router")]);
+    store_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Router"), Arc::new(vec![])))]);
+
+    program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([
+          (
+            Arc::from("Router"),
+            program::ProgramDefEntry {
+              code: Calcit::StructDef(router_def.clone()),
+              schema: crate::calcit::DYNAMIC_TYPE.clone(),
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          ),
+          (
+            Arc::from("ClientStore"),
+            program::ProgramDefEntry {
+              code: Calcit::StructDef(store_def.clone()),
+              schema: crate::calcit::DYNAMIC_TYPE.clone(),
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          ),
+        ]),
+      },
+    );
+    program::write_runtime_ready(ns, "Router", Calcit::StructDef(router_def)).expect("register Router runtime metadata");
+    program::write_runtime_ready(ns, "ClientStore", Calcit::StructDef(store_def)).expect("register ClientStore runtime metadata");
+
+    let store_type = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from(format!("{ns}/ClientStore")),
+      Arc::new(vec![]),
+    ));
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("store")),
+      sym: Arc::from("store"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.consumer"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: store_type,
+    });
+
+    let inferred = infer_struct_field_type(&receiver, "router", &ScopeTypes::new());
+    assert!(
+      matches!(
+        inferred.as_deref(),
+        Some(CalcitTypeAnnotation::TypeRef(name, args)) if name.as_ref() == format!("{ns}/Router") && args.is_empty()
+      ),
+      "nested field should resolve relative to its owner, got {inferred:?}"
+    );
+  }
+
+  #[test]
+  fn match_resolves_local_enum_definitions_with_applied_args() {
+    use crate::calcit::{CalcitEnumDef, CalcitStructValue};
+
+    let generic: Arc<str> = Arc::from("T");
+    let enum_struct = CalcitStructDef {
+      name: EdnTag::from("Wrapped"),
+      fields: Arc::new(vec![EdnTag::from("empty"), EdnTag::from("some")]),
+      field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(), crate::calcit::DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![generic.clone()]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    };
+    let enum_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(enum_struct),
+        values: Arc::new(vec![
+          Calcit::from(CalcitList::default()),
+          Calcit::from(vec![CalcitTypeAnnotation::TypeVar(generic).to_calcit()]),
+        ]),
+      })
+      .expect("valid local enum fixture"),
+    );
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("Wrapped"), Arc::new(CalcitTypeAnnotation::EnumDef(enum_def.clone())));
+    let type_ref = CalcitTypeAnnotation::TypeRef(Arc::from("Wrapped"), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+
+    assert_eq!(
+      resolve_enum_type_for_match(&type_ref, "tests.enum", &scope_types),
+      Some(enum_def.as_ref().to_owned())
+    );
+  }
+
+  #[test]
+  fn raw_struct_access_requires_static_evidence_outside_defimpl() {
+    let head = Calcit::Proc(CalcitProc::NativeStructGet);
+    let receiver = Calcit::Symbol {
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.struct"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+    let args = CalcitList::from(&[receiver, Calcit::Tag(EdnTag::from("name"))][..]);
+    let warnings = RefCell::new(vec![]);
+
+    check_struct_field_access(
+      &head,
+      &args,
+      &ScopeTypes::new(),
+      "tests.struct",
+      &CallStackList::default(),
+      &warnings,
+    );
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].code(), Some("W_STRUCT_DYNAMIC_RAW_ACCESS"));
+    assert!(warnings[0].message().contains("Add/narrow a named Struct schema"));
+  }
+
+  #[test]
+  fn raw_struct_access_explains_unresolved_nominal_receivers() {
+    let head = Calcit::Proc(CalcitProc::NativeStructGet);
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("router")),
+      sym: Arc::from("router"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.consumer"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Router"), Arc::new(vec![]))),
+    });
+    let args = CalcitList::from(&[receiver, Calcit::Tag(EdnTag::from("name"))][..]);
+    let warnings = RefCell::new(vec![]);
+
+    check_struct_field_access(
+      &head,
+      &args,
+      &ScopeTypes::new(),
+      "tests.consumer",
+      &CallStackList::default(),
+      &warnings,
+    );
+
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].code(), Some("W_STRUCT_DYNAMIC_RAW_ACCESS"));
+    assert!(warnings[0].message().contains("unresolved nominal receiver `'Router`"));
+    assert!(warnings[0].message().contains("qualified schema such as `'app.schema/Type`"));
+  }
+
+  #[test]
+  fn dynamic_raw_struct_field_keys_do_not_suggest_tag_syntax() {
+    let head = Calcit::Proc(CalcitProc::NativeStructGet);
+    let receiver = Calcit::Symbol {
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.struct"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+    let field = Calcit::Symbol {
+      sym: Arc::from("field"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.struct"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+    let args = CalcitList::from(&[receiver, field][..]);
+    let warnings = RefCell::new(vec![]);
+
+    check_struct_field_access(
+      &head,
+      &args,
+      &ScopeTypes::new(),
+      "tests.struct",
+      &CallStackList::default(),
+      &warnings,
+    );
+
+    assert!(warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn project_source_lints_exclude_loaded_module_namespaces() {
+    let namespaces = HashSet::from([Arc::from("app.main"), Arc::from("app.comp")]);
+    assert!(namespace_is_project_source(&namespaces, "app.comp"));
+    assert!(!namespace_is_project_source(&namespaces, "respo.core"));
+    assert!(namespace_is_project_source(&HashSet::new(), "tests.default"));
+  }
+
+  #[test]
+  fn reusable_defimpl_may_use_explicit_raw_struct_access() {
+    let head = Calcit::Proc(CalcitProc::NativeStructGet);
+    let receiver = Calcit::Symbol {
+      sym: Arc::from("value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.struct"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    };
+    let args = CalcitList::from(&[receiver, Calcit::Tag(EdnTag::from("name"))][..]);
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default().extend(calcit::CORE_NS, "defimpl", StackKind::Macro, &Calcit::Nil, &[]);
+
+    check_struct_field_access(&head, &args, &ScopeTypes::new(), "tests.struct", &stack, &warnings);
+
+    assert!(warnings.borrow().is_empty());
   }
 
   #[test]
@@ -7617,7 +8002,7 @@ mod tests {
     );
     let warnings = RefCell::new(vec![]);
 
-    check_struct_field_access(&head, &args, &scope_types, "tests.struct", &warnings);
+    check_struct_field_access(&head, &args, &scope_types, "tests.struct", &CallStackList::default(), &warnings);
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1);

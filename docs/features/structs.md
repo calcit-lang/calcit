@@ -50,7 +50,7 @@ let
         :generics $ [] 'T
         :args $ [] (:: 'Box 'T)
         :return 'T
-      &struct:get box :value
+      :value box
     b $ %{} Box (:value 1)
   assert-type b $ :: 'Box :number
   assert= 1 $ keep b
@@ -68,7 +68,7 @@ let
       {} $ 'T Show
       :value 'T
     box $ %{} ShownBox (:value 1)
-    item $ &struct:get box :value
+    item $ :value box
   assert-type box $ :: 'ShownBox 'Number
   assert= |1 $ item .show
 ```
@@ -129,6 +129,25 @@ information is missing.
 Use `get` for maps and indexed collections when absence is intentional; it
 always returns `Option<T>`. Struct fields do not use `get`, which keeps the two
 contracts visibly distinct in source code.
+
+Nested nominal fields keep the namespace where their declaration was written.
+This means a concise same-namespace field type such as `'Router` remains
+statically resolvable even when the outer Struct flows into another namespace:
+
+```cirru.no-check
+defstruct Router (:name 'String)
+defstruct ClientStore (:router 'Router)
+
+defn router-name (store)
+  hint-fn $ {}
+    :args $ [] 'app.schema/ClientStore
+    :return 'String
+  :name $ :router store
+```
+
+If a diagnostic still shows an unresolved short receiver such as `'Router`, fix
+or qualify the schema/dependency reference. Do not replace the typed read with
+`&struct:get`; that only hides the missing declaration context.
 
 Loose/anonymous structs (`?{}` or `%{} _ ...`) also cannot be read through the
 required field accessor until an expected named Struct type rewrites them. This
@@ -307,25 +326,18 @@ let
         {}
           :args $ [] 'T
           :return :nil
-      .rename $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T :string
-          :return 'T
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdImpl BirdTrait
       .show $ fn (self)
         ; defimpl bodies are reusable before a concrete Struct is attached,
         ; so low-level access is explicit at this dynamic implementation boundary.
+        ; Do not copy this form into typed application code.
         println $ &struct:get self :name
-      .rename $ fn (self name) (assoc self :name name)
     Bird $ impl-traits BirdShape BirdImpl
     b $ %{} Bird (:name |Sparrow)
   assert-traits b BirdTrait
   b .show
-  let
-      b2 $ b .rename |Eagle
-    println $ &struct:get b2 :name
+  println $ :name b
 ```
 
 ## Common Use Cases
@@ -359,7 +371,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      &struct:get user :name
+      :name user
   println $ get-user-name
     %{} User (:name |John) (:age 30) (:email |john@example.com)
 
@@ -411,11 +423,16 @@ Fields are automatically sorted alphabetically, matching the field ordering of n
 
 ### Accessing Fields
 
-Anonymous structs still have a fixed field set, but they do not carry a named
-type declaration. Use the explicit low-level accessor until the value has been
-rewritten to an expected named Struct:
+Anonymous structs still have a runtime field set, but they do not carry the
+declaration needed for typed required-field access. Do not use them as a way to
+bypass field analysis in application code. Convert/rewrite the value to an
+expected named Struct before reading fields. `&struct:get` remains available
+only to core/runtime code or an explicit reusable `defimpl` that intentionally
+implements a dynamic boundary.
+The following block deliberately demonstrates that low-level runtime behavior;
+using the same call in application code produces a typed-access warning.
 
-```cirru
+```cirru.no-check
 let
     r $ %{} _ (:x 10) (:y 20)
   println $ &struct:get r :x
@@ -475,6 +492,6 @@ When the static analysis system knows a value's struct type, the preprocessor re
 These rewrites are automatic and transparent. To benefit from them, provide type annotations via `:schema` or `hint-fn` so the preprocessor can resolve struct types.
 
 Struct intentionally has no public `.nth` method: positional field order is not
-a cross-backend API contract. Use field-name `get`, which returns the declared
-field type directly. Only generated, statically checked access uses internal
-`&struct:nth`.
+a cross-backend API contract. Use `(:field value)` or `value.:field`, which
+returns the declared field type directly. Only generated, statically checked
+access uses internal `&struct:nth`.

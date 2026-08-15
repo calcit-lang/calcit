@@ -308,7 +308,7 @@
               assert-type p $ :: Person
               &inspect-type p
               let
-                  name-v $ &struct:get p :name
+                  name-v $ :name p
                 assert-type name-v String
                 &inspect-type name-v
               let

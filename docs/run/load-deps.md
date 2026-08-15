@@ -80,7 +80,7 @@ The positional input may point to a standalone dependency file. Its parent direc
 root even when no `calcit.cirru` exists:
 
 ```bash
-caps /tmp/demo/deps.cirru
+caps ./demo/deps.cirru
 ```
 
 New projects may keep their package version in `deps.cirru` and manage it with:

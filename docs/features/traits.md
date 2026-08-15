@@ -52,8 +52,8 @@ let
           :return 'String
     Person0 $ defstruct Person (:name 'String)
     MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p)
-        str-spaced |foo $ &struct:get p :name
+      .foo $ fn (p) (assert-type p Person0)
+        str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   p .foo
@@ -82,8 +82,8 @@ let
           :args $ [] 'T
           :return 'String
     MyFooImplA $ defimpl MyFooImplA MyFooA
-      .foo $ fn (p)
-        str-spaced |foo $ &struct:get p :name
+      .foo $ fn (p) (assert-type p PersonA0)
+        str-spaced |foo $ :name p
     PersonA $ impl-traits PersonA0 MyFooImplA
     p $ %{} PersonA (:name |Alice)
   p .foo
@@ -103,8 +103,8 @@ let
           :return 'String
     Person0 $ defstruct Person (:name 'String)
     ImplB $ defimpl ImplB MyFoo
-      :: :foo $ fn (p)
-        str |B: $ &struct:get p :name
+      :: :foo $ fn (p) (assert-type p Person0)
+        str |B: $ :name p
     PersonB $ impl-traits Person0 ImplB
     pb $ %{} PersonB (:name |Bob)
   pb .foo
@@ -157,14 +157,14 @@ let
           :generics $ [] 'T
           :args $ [] 'T
           :return 'String
+    StructDef0 $ defstruct StructDef (:name 'String)
     ImplA $ defimpl ImplA MyFoo
-      .foo $ fn (p)
-        str |A: $ &struct:get p :name
+      .foo $ fn (p) (assert-type p StructDef0)
+        str |A: $ :name p
     MyBar $ deftrait MyBar (.bar 'Fn)
     ImplB $ defimpl ImplB MyBar
-      .bar $ fn (p)
-        str |B: $ &struct:get p :name
-    StructDef0 $ defstruct StructDef (:name 'String)
+      .bar $ fn (p) (assert-type p StructDef0)
+        str |B: $ :name p
     StructDef $ impl-traits StructDef0 ImplA ImplB
     x $ %{} StructDef (:name |test)
   x .foo
@@ -184,10 +184,10 @@ do (; struct example)
             :generics $ [] 'T
             :args $ [] 'T
             :return 'String
-      MyFooImpl $ defimpl MyFooImpl MyFoo
-        .foo $ fn (p)
-          str-spaced |foo $ &struct:get p :name
       Person0 $ defstruct Person (:name 'String)
+      MyFooImpl $ defimpl MyFooImpl MyFoo
+        .foo $ fn (p) (assert-type p Person0)
+          str-spaced |foo $ :name p
       Person $ impl-traits Person0 MyFooImpl
       p $ %{} Person (:name |Alice)
     p .foo
@@ -325,8 +325,8 @@ let
           :return 'String
     Person0 $ defstruct Person (:name 'String)
     MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p)
-        str-spaced |foo $ &struct:get p :name
+      .foo $ fn (p) (assert-type p Person0)
+        str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ %{} Person (:name |Alice)
   assert-traits p MyFoo

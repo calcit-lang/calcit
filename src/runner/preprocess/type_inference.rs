@@ -28,7 +28,8 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, find_method_entry_for_type, find_trait_field_type, find_trait_method_type, get_impls_from_type,
-  resolve_trait_def_from_source_code, tag_annotation, trait_is_external_object, trait_list_from_type,
+  resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_trait_def_from_source_code, tag_annotation,
+  trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -1360,7 +1361,10 @@ fn infer_enum_applied_args<'a>(
 
   for (payload, expected_type) in payload_args.zip(variant.payload_types().iter()) {
     let actual_type = resolve_type_value(payload, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-    actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+    let resolved_expected = resolve_local_type_refs_for_body(expected_type.clone(), scope_types);
+    actual_type
+      .as_ref()
+      .matches_with_bindings(resolved_expected.as_ref(), &mut bindings);
   }
 
   Some(
@@ -1458,13 +1462,13 @@ fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usi
       ))
     }
     CalcitTypeAnnotation::TypeRef(_, args) => {
-      let struct_def = type_info.resolve_to_struct()?;
+      let (struct_def, definition_ref) = type_info.resolve_to_struct_with_ref()?;
       let field_type = struct_def.field_types.get(idx)?.clone();
-      Some(substitute_declared_generics(
-        struct_def.generics.as_ref(),
-        args.as_ref(),
-        field_type.as_ref(),
-      ))
+      let resolved = substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref());
+      Some(match definition_ref {
+        Some((declaring_ns, _)) => resolve_namespace_type_refs_for_body(resolved, &declaring_ns),
+        None => resolved,
+      })
     }
     _ => None,
   }
@@ -2024,6 +2028,55 @@ mod tests {
         if inferred.name() == enum_def.name()
           && matches!(args.first().map(AsRef::as_ref), Some(CalcitTypeAnnotation::Number))
     ));
+  }
+
+  #[test]
+  fn enum_constructor_resolves_local_generic_struct_payloads() {
+    let generic: Arc<str> = Arc::from("T");
+    let mut box_def = CalcitStructDef::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]);
+    box_def.generics = Arc::new(vec![generic.clone()]);
+    box_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic.clone()))]);
+    let box_def = Arc::new(box_def);
+
+    let enum_struct = CalcitStructDef {
+      name: EdnTag::from("MaybeBox"),
+      fields: Arc::new(vec![EdnTag::from("empty"), EdnTag::from("box")]),
+      field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone(), calcit::DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![generic.clone()]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    };
+    let enum_def = CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(enum_struct),
+      values: Arc::new(vec![
+        Calcit::from(CalcitList::default()),
+        Calcit::from(vec![
+          CalcitTypeAnnotation::TypeRef(Arc::from("Box"), Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(generic))])).to_calcit(),
+        ]),
+      ]),
+    })
+    .expect("valid generic enum fixture");
+
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let boxed_number = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("boxed")),
+      sym: Arc::from("boxed"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.enum"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Struct(box_def.clone(), Arc::new(vec![number.clone()]))),
+    });
+    let payloads = [boxed_number];
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("Box"), Arc::new(CalcitTypeAnnotation::StructDef(box_def)));
+
+    assert_eq!(
+      infer_enum_applied_args(&enum_def, Some(&Calcit::Tag(EdnTag::from("box"))), payloads.iter(), &scope_types,),
+      Some(vec![number]),
+      "a local Box<T> payload should preserve T for the enclosing enum"
+    );
   }
 
   #[test]
