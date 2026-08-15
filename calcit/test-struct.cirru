@@ -216,19 +216,13 @@
               &let
                 kitty $ %{} Cat (:name |kitty) (:color :red)
                 assert= :Cat $ &struct:get-name kitty
-                assert= :red $ &struct:get kitty :color
+                assert= :red $ :color kitty
                 assert= true $ = (&struct:definition kitty) Cat
                 assert= true $ struct-def? (&struct:definition kitty)
                 assert= true $ &struct:matches? kitty
                   %{} (&struct:definition kitty) (:name |kitty) (:color :red)
                 assert= (&struct:to-map kitty) (&{} :name |kitty :color :red)
                 assert= 2 $ &struct:count kitty
-                assert=
-                  &struct:get kitty $ &struct:field-tag kitty 0
-                  &struct:nth kitty 0
-                assert=
-                  &struct:get kitty $ &struct:field-tag kitty 1
-                  &struct:nth kitty 1
                 assert= true $ &struct:contains? kitty (&struct:field-tag kitty 0)
                 assert= true $ &struct:contains? kitty (&struct:field-tag kitty 1)
                 assert= true $ &struct:contains? kitty :color
@@ -241,7 +235,7 @@
                   %{} Cat (:name |kitty) (:color :red)
                 &let
                   persian $ &struct:extend-as kitty :Persian :age 10
-                  assert= 10 $ &struct:get persian :age
+                  assert= 10 $ &struct:nth persian 0
                   assert= :Persian $ &struct:get-name persian
           :examples $ []
           :schema $ :: 'Fn
@@ -325,7 +319,7 @@
                 assert= 20 $ :age p1
                 assert= 20 $ :age p2
                 assert= 23 $ :age p3
-                assert= 23 $ &struct:get p3 :age
+                assert= 23 $ :age p3
                 assert= :struct $ type-of p1
                 assert= (&struct:to-map p1)
                   {} (:name |Chen) (:age 20) (:position :mainland)

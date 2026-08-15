@@ -33,6 +33,8 @@ entry_for:
 
 当**同时省略 `--file` 和 `--code`** 时，命令默认从 stdin 读取。无需 Shell 转义，不需临时文件——这是极力推荐的高级重构方式。
 
+确实需要复用或审阅 `--file` 输入时，在项目内使用 `.calcit/snippets/<name>`，并让 `.calcit/` 保持在 `.gitignore`；不要为仓库相关输入使用全局 `/tmp`。CLI 会在 stderr 提示迁移 `/tmp/...` 与 `/private/tmp/...` 路径。
+
 ### 统一查询命令
 
 ```bash

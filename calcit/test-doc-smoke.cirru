@@ -78,8 +78,8 @@
           :code $ quote
             defn test-native-impl-new-dot-method () $ let
                 DotImpl $ &impl::new DocTrait
-                  :: .label $ fn (x)
-                    str-spaced |native-dot $ &struct:get x :name
+                  :: .label $ fn (x) (assert-type x DocPerson0)
+                    str-spaced |native-dot $ :name x
                 DotPerson $ impl-traits DocPerson0 DotImpl
                 p $ %{} DotPerson (:name |Bob)
               assert= (%some DocTrait) (impl-origin DotImpl)

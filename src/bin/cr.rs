@@ -99,6 +99,7 @@ fn main() -> Result<(), String> {
 
 fn run_cli() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
+  cli_handlers::warn_on_global_temp_path(&cli_args.input);
   calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
 
   cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;

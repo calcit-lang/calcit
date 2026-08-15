@@ -97,7 +97,7 @@ let
     p $ %{} Point (:x 1) (:y 2)
     shape $ %:: Shape :point p
   assert-type shape Shape
-  assert= 1 $ &struct:get (&enum:nth shape 1) :x
+  assert= 1 $ :x (&enum:nth shape 1)
 ```
 
 Applied generic structs also work in enum payloads:
@@ -110,9 +110,10 @@ let
       :empty
     value $ %:: Wrapped :box
       %{} Box $ :value 1
-    boxed $ &enum:nth value 1
   assert-type value $ :: 'Wrapped :number
-  assert= 1 $ &struct:get boxed :value
+  assert= 1 $ match value
+    (:box boxed) (:value boxed)
+    (:empty) 0
 ```
 
 When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.

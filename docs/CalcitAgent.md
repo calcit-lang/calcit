@@ -49,7 +49,8 @@ cr query modules
 git -C '<module-directory>' remote get-url origin
 # 将 origin 规范化为 OWNER/REPO 后，确认目标确实是对应 GitHub 仓库。
 gh repo view OWNER/REPO --json nameWithOwner,url
-gh issue create --repo OWNER/REPO --title '<concise problem title>' --body-file /tmp/calcit-issue.md
+mkdir -p .calcit/snippets
+gh issue create --repo OWNER/REPO --title '<concise problem title>' --body-file .calcit/snippets/calcit-issue.md
 ```
 
 `gh issue create --repo OWNER/REPO` 可显式提交到**非当前仓库**；不要依赖 cwd 或当前 Git remote 推断目标。若模块目录没有自己的 GitHub origin，先根据其路径、模块元数据、发布页或维护文档找出权威仓库；仍无法确认归属时，报告这一阻塞并向用户确认，不能把 Issue 猜测性地投到核心仓库。
@@ -60,7 +61,7 @@ Issue 正文至少包括：最小 Snapshot/snippet 或步骤、实际与预期�
 
 ```bash
 cr query config
-cr /tmp/demo.cirru query config
+cr .calcit/snippets/demo.cirru query config
 ```
 
 当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `cr ./calcit.cirru ...`）。非默认 Snapshot 会包含在 `Command:` 回显中；默认值为减少噪音会省略，需要审计展开后的全部默认选项时加 `--verbose`。路径仍可能经过 alias 解析，必要时结合 `query config` 确认项目身份。
@@ -354,6 +355,8 @@ update-in data ([] :profile :visits)
 
 这样可以让缺失、默认值和失败在类型上分开，而不是继续依赖 `nil` 或组件临时的 `read-field` 函数。
 
+已知具名 Struct 的字段读取一律写成 `(:field value)`（接收者优先的 invoke 简写为 `value.:field`），不要在应用代码中生成 `&struct:get`。检查器会验证字段、返回声明类型，并把读取自动降为 `&struct:nth value <index>`；直接写低层 primitive 会隐藏源码中的类型意图，并触发 `W_STRUCT_RAW_ACCESS`。如果 `(:field value)` 报 `W_REQUIRED_STRUCT_FIELD_TYPE`，应补全 schema、先 narrow/unwrap，不能改写成 `&struct:get` 绕过分析。只有可复用 `defimpl` 尚未绑定具体 Struct 的实现体以及 core/runtime 底层代码，才把 `&struct:get` 作为明确的动态边界。
+
 ### 5.4 CLI 的 `quote` 是代码/数据边界
 
 所有接收 AST 的 Cirru 文本输入都必须让 `quote` **恰好包住一个节点**；提交 mutation 时 CLI 会剥离这个 transport wrapper。JSON 数组 AST 是兼容输入，不需要 `quote`，但不要手写大型 JSON AST。
@@ -372,7 +375,7 @@ empty list/map: quote $ []      /    quote $ {}
 | 输入方式              | 适用场景                             |
 | --------------------- | ------------------------------------ |
 | `--code 'quote ...'`  | 简短单行输入                         |
-| `--file <file>`       | 需要复用、审阅或 transaction 的输入 |
+| `--file <file>`       | 需要复用、审阅或 transaction 的输入；临时文件放 `.calcit/snippets/` |
 | 省略两者，从 stdin 读 | 一次性多行内容，避免 Shell 转义      |
 
 修改命令没有 `--stdin` 参数。多行内容直接省略 `--file/--code`：
@@ -384,6 +387,8 @@ quote $ if ready?
   render-loading
 END
 ```
+
+不要把仓库相关的 snippet 放进全局 `/tmp`；它脱离项目生命周期，也容易被 Agent 在后续命令中误用。需要落盘时先 `mkdir -p .calcit/snippets`，并确认 `.calcit/` 已加入项目 `.gitignore`。CLI 收到 `/tmp/...` 或 `/private/tmp/...` 的 Snapshot/`--file` 路径时会在 stderr 给出这一迁移提示，不污染 JSON stdout。
 
 ### 5.5 写入前先解析，写入后再做语义检查
 

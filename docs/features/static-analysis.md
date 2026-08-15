@@ -357,7 +357,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      &struct:get u :name
+      :name u
   get-name $ %{} User (:name |Alice)
 ```
 

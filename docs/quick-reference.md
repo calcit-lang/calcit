@@ -189,7 +189,8 @@ let
 ### Method & Access Syntax
 
 - Method call: `xs .map inc` when the receiver type is known; prefix `.map xs inc` remains compatible for dynamic boundaries
-- Tag access (map key): prefer `obj.:name` over legacy `(:name obj)`
+- Required named-Struct field access: use `(:name value)` or receiver-first `value.:name`; the checker validates the declared type and lowers it to indexed access
+- Optional Map lookup: use `get` and handle its `Option`; do not use `&struct:get` as application syntax
 - Trait/impl declarations prefer dot method keys like `.foo`; legacy tag keys like `:foo` remain compatible but emit a default warning in `deftrait`/`defimpl`
 
 ## File Structure
@@ -288,7 +289,7 @@ let
 - `%{}?` - create a partial struct (unset fields default to nil)
 - `&%{}` - low-level struct constructor (flat key-value pairs, no type check)
 - `struct-with` - update multiple declared fields
-- `&struct:get` - get a required declared field
+- `&struct:get` - internal/dynamic-boundary field lookup; normal typed code must use `(:field value)`
 - `&struct:assoc` - set a declared field (low-level)
 - `struct-definition` - get the definition as `Option<StructDef>`
 - `&struct:matches?` - type check
@@ -356,9 +357,10 @@ let
 Nested updates are nominal as well: `update-in` passes `Option<T>` to its
 updater, and `dissoc-in` treats an empty path as a no-op. Public lookup and
 positional APIs (`get`, `get-in`, `first`, `last`, and collection `nth`) return
-`Option<T>`. Accessing a statically known struct field with `get`, `:field`, or
-`.field` returns the field's declared type directly; an undeclared field is a
-diagnostic, not `nil`. Struct has no public positional `.nth`.
+`Option<T>`. Accessing a statically known struct field with `(:field value)` or
+receiver-first `value.:field` returns the field's declared type directly and is
+lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
+`get` does not read Struct fields, and Struct has no public positional `.nth`.
 
 ### Threading Macros
 

@@ -50,7 +50,7 @@ let
         :generics $ [] 'T
         :args $ [] (:: 'Box 'T)
         :return 'T
-      &struct:get box :value
+      :value box
     b $ %{} Box (:value 1)
   assert-type b $ :: 'Box :number
   assert= 1 $ keep b
@@ -68,7 +68,7 @@ let
       {} $ 'T Show
       :value 'T
     box $ %{} ShownBox (:value 1)
-    item $ &struct:get box :value
+    item $ :value box
   assert-type box $ :: 'ShownBox 'Number
   assert= |1 $ item .show
 ```
@@ -307,25 +307,18 @@ let
         {}
           :args $ [] 'T
           :return :nil
-      .rename $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T :string
-          :return 'T
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdImpl BirdTrait
       .show $ fn (self)
         ; defimpl bodies are reusable before a concrete Struct is attached,
         ; so low-level access is explicit at this dynamic implementation boundary.
+        ; Do not copy this form into typed application code.
         println $ &struct:get self :name
-      .rename $ fn (self name) (assoc self :name name)
     Bird $ impl-traits BirdShape BirdImpl
     b $ %{} Bird (:name |Sparrow)
   assert-traits b BirdTrait
   b .show
-  let
-      b2 $ b .rename |Eagle
-    println $ &struct:get b2 :name
+  println $ :name b
 ```
 
 ## Common Use Cases
@@ -359,7 +352,7 @@ let
       hint-fn $ {}
         :args $ [] 'User
         :return :string
-      &struct:get user :name
+      :name user
   println $ get-user-name
     %{} User (:name |John) (:age 30) (:email |john@example.com)
 
@@ -411,11 +404,13 @@ Fields are automatically sorted alphabetically, matching the field ordering of n
 
 ### Accessing Fields
 
-Anonymous structs still have a fixed field set, but they do not carry a named
-type declaration. Use the explicit low-level accessor until the value has been
-rewritten to an expected named Struct:
+Anonymous structs still have a runtime field set, but they do not carry the
+declaration needed for typed required-field access. Do not use them as a way to
+bypass field analysis in application code. Convert/rewrite the value to an
+expected named Struct before reading fields. `&struct:get` remains available
+only to core/runtime code that intentionally implements a dynamic boundary.
 
-```cirru
+```cirru.no-check
 let
     r $ %{} _ (:x 10) (:y 20)
   println $ &struct:get r :x
