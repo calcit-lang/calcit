@@ -1860,8 +1860,32 @@ fn parse_entries_with_context(data: &Edn, require_mode: bool) -> Result<HashMap<
   Ok(entries)
 }
 
-/// parse snapshot
+fn legacy_snapshot_recovery_hint(path: &str) -> Option<String> {
+  let snapshot_path = Path::new(path);
+  let compact_path = snapshot_path.parent()?.join("compact.cirru");
+  if snapshot_path.file_name()?.to_str()? == "calcit.cirru" && compact_path.is_file() {
+    Some(format!(
+      "A sibling `{}` exists. If it is the last runnable compact Snapshot, back up this `calcit.cirru`, copy `compact.cirru` over it, then run `cr calcit.cirru edit format` before `cr calcit.cirru --check-only`.",
+      compact_path.display()
+    ))
+  } else {
+    None
+  }
+}
+
+/// Parse a Snapshot while preserving the source path in deserialization errors.
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
+  load_snapshot_data_inner(data, path).map_err(|error| {
+    let mut message = format!("Failed to load Snapshot `{path}`: {error}");
+    if let Some(hint) = legacy_snapshot_recovery_hint(path) {
+      message.push_str("\nLegacy Snapshot recovery: ");
+      message.push_str(&hint);
+    }
+    message
+  })
+}
+
+fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let data = data.view_map()?;
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
   let mut files: HashMap<String, FileInSnapShot> = parse_files_with_context(&data.get_or_nil("files"))?;
@@ -2524,6 +2548,26 @@ mod tests {
       .into_iter()
       .next()
       .expect("test Cirru should contain one expression")
+  }
+
+  #[test]
+  fn snapshot_load_error_names_source_and_compact_recovery_path() {
+    let root = std::env::temp_dir().join(format!("calcit-legacy-snapshot-recovery-{}", std::process::id()));
+    fs::create_dir_all(&root).expect("create legacy snapshot fixture directory");
+    let snapshot_path = root.join("calcit.cirru");
+    let compact_path = root.join("compact.cirru");
+    fs::write(&snapshot_path, "legacy full snapshot").expect("write full snapshot marker");
+    fs::write(&compact_path, "compact snapshot").expect("write compact snapshot marker");
+
+    let error = load_snapshot_data(&Edn::Nil, snapshot_path.to_str().expect("utf-8 temp path"))
+      .expect_err("invalid legacy snapshot data should fail with recovery guidance");
+
+    assert!(error.contains(snapshot_path.to_str().unwrap()), "error: {error}");
+    assert!(error.contains(compact_path.to_str().unwrap()), "error: {error}");
+    assert!(error.contains("cr calcit.cirru edit format"), "error: {error}");
+    assert!(error.contains("cr calcit.cirru --check-only"), "error: {error}");
+
+    fs::remove_dir_all(root).expect("remove legacy snapshot fixture directory");
   }
 
   fn revision_test_entry(tags: &[&str]) -> CodeEntry {

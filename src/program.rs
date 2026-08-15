@@ -761,39 +761,51 @@ pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
 
 fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
   match nodes {
-    Cirru::List(xs) => match xs.as_slice() {
-      [head, Cirru::Leaf(_declared_ns)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => Ok(HashMap::new()),
-      [head, Cirru::Leaf(_declared_ns), Cirru::List(require_nodes)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => {
-        if require_nodes.first().is_none_or(|node| !node.eq_leaf(":require")) {
-          return Err(format!(
-            "invalid ns clause in namespace '{ns_name}': expected `:require`, got {}",
-            Cirru::List(require_nodes.clone())
-          ));
-        }
+    Cirru::List(xs) => {
+      if xs
+        .iter()
+        .skip(2)
+        .any(|node| matches!(node, Cirru::List(items) if items.first().is_some_and(|head| head.eq_leaf(":require-macros"))))
+      {
+        return Err(format!(
+          "legacy `:require-macros` in namespace '{ns_name}' is no longer supported; move macro imports into the ordinary `:require` clause, for example `foo.macros :refer $ macro-name` (macros and values now share import rules)"
+        ));
+      }
 
-        let rules = &require_nodes[1..];
-        let warnings = validate_import_rules(rules).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
-        for warning in warnings {
-          eprintln!("[Warn] in namespace '{ns_name}': {warning}");
-        }
-        let mut import_map: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(rules.len());
-        for rule_node in rules {
-          for (target, rule) in extract_import_rule(rule_node).map_err(|e| format!("in namespace '{ns_name}': {e}"))? {
-            import_map.insert(target, rule);
+      match xs.as_slice() {
+        [head, Cirru::Leaf(_declared_ns)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => Ok(HashMap::new()),
+        [head, Cirru::Leaf(_declared_ns), Cirru::List(require_nodes)] if head.eq_leaf("ns") || head.eq_leaf(":ns") => {
+          if require_nodes.first().is_none_or(|node| !node.eq_leaf(":require")) {
+            return Err(format!(
+              "invalid ns clause in namespace '{ns_name}': expected `:require`, got {}",
+              Cirru::List(require_nodes.clone())
+            ));
           }
+
+          let rules = &require_nodes[1..];
+          let warnings = validate_import_rules(rules).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
+          for warning in warnings {
+            eprintln!("[Warn] in namespace '{ns_name}': {warning}");
+          }
+          let mut import_map: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(rules.len());
+          for rule_node in rules {
+            for (target, rule) in extract_import_rule(rule_node).map_err(|e| format!("in namespace '{ns_name}': {e}"))? {
+              import_map.insert(target, rule);
+            }
+          }
+          Ok(import_map)
         }
-        Ok(import_map)
+        _ => {
+          let preview = cirru_parser::format(std::slice::from_ref(nodes), true.into()).unwrap_or_else(|_| format!("{nodes:?}"));
+          let preview_short = if preview.chars().count() > 200 {
+            format!("{}...", preview.chars().take(200).collect::<String>())
+          } else {
+            preview
+          };
+          Err(format!("invalid ns form in '{ns_name}':\n{preview_short}"))
+        }
       }
-      _ => {
-        let preview = cirru_parser::format(std::slice::from_ref(nodes), true.into()).unwrap_or_else(|_| format!("{nodes:?}"));
-        let preview_short = if preview.chars().count() > 200 {
-          format!("{}...", preview.chars().take(200).collect::<String>())
-        } else {
-          preview
-        };
-        Err(format!("invalid ns form in '{ns_name}':\n{preview_short}"))
-      }
-    },
+    }
     Cirru::Leaf(_) => Err(format!(
       "invalid ns form in '{ns_name}': expected `(ns {ns_name})` (legacy `:ns` is also accepted) with an optional `:require` clause, got {nodes}"
     )),

@@ -82,7 +82,22 @@ fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapsh
   }
 }
 
+const CLI_STACK_SIZE: usize = 32 * 1024 * 1024;
+
 fn main() -> Result<(), String> {
+  let worker = std::thread::Builder::new()
+    .name("calcit-cli".to_owned())
+    .stack_size(CLI_STACK_SIZE)
+    .spawn(run_cli)
+    .map_err(|error| format!("Failed to start Calcit CLI worker: {error}"))?;
+
+  match worker.join() {
+    Ok(result) => result,
+    Err(payload) => std::panic::resume_unwind(payload),
+  }
+}
+
+fn run_cli() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
   calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
 
