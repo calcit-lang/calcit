@@ -28,7 +28,8 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, find_method_entry_for_type, find_trait_field_type, find_trait_method_type, get_impls_from_type,
-  resolve_local_type_refs_for_body, resolve_trait_def_from_source_code, tag_annotation, trait_is_external_object, trait_list_from_type,
+  resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_trait_def_from_source_code, tag_annotation,
+  trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -1461,13 +1462,13 @@ fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usi
       ))
     }
     CalcitTypeAnnotation::TypeRef(_, args) => {
-      let struct_def = type_info.resolve_to_struct()?;
+      let (struct_def, definition_ref) = type_info.resolve_to_struct_with_ref()?;
       let field_type = struct_def.field_types.get(idx)?.clone();
-      Some(substitute_declared_generics(
-        struct_def.generics.as_ref(),
-        args.as_ref(),
-        field_type.as_ref(),
-      ))
+      let resolved = substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref());
+      Some(match definition_ref {
+        Some((declaring_ns, _)) => resolve_namespace_type_refs_for_body(resolved, &declaring_ns),
+        None => resolved,
+      })
     }
     _ => None,
   }

@@ -1621,6 +1621,7 @@ fn prepare_program_for_snippet(
   program::clear_runtime_caches_for_reload(Arc::from("app.main"), Arc::from("app.main"), true)?;
 
   let mut snapshot = load_entry_snapshot_for_check_md(entry).map_err(|e| format!("check-md: failed to load entry `{entry}`: {e}"))?;
+  let mut project_namespaces = snapshot.files.keys().cloned().collect::<HashSet<_>>();
   let main_file = snapshot::create_file_from_snippet(code)?;
 
   for (k, v) in shared_files {
@@ -1628,6 +1629,8 @@ fn prepare_program_for_snippet(
   }
   // Insert snippet last so loaded modules cannot overwrite the markdown block under test.
   snapshot.files.insert(String::from("app.main"), main_file);
+  project_namespaces.insert(String::from("app.main"));
+  runner::preprocess::set_project_namespaces(&project_namespaces);
 
   {
     let mut prgm = program::PROGRAM_CODE_DATA.write().map_err(|_| "open program data".to_string())?;

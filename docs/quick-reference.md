@@ -191,6 +191,7 @@ let
 - Method call: `xs .map inc` when the receiver type is known; prefix `.map xs inc` remains compatible for dynamic boundaries
 - Required named-Struct field access: use `(:name value)` or receiver-first `value.:name`; the checker validates the declared type and lowers it to indexed access
 - Optional Map lookup: use `get` and handle its `Option`; do not use `&struct:get` as application syntax
+- An unresolved short nominal receiver such as `'Router` means its declaration context was lost; qualify the schema (for example `'app.schema/Router`) instead of hiding the diagnostic with `&struct:get`
 - Trait/impl declarations prefer dot method keys like `.foo`; legacy tag keys like `:foo` remain compatible but emit a default warning in `deftrait`/`defimpl`
 
 ## File Structure

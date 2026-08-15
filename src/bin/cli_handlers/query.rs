@@ -2695,7 +2695,10 @@ fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
     eprintln!("{e}");
     format!("Failed to parse file '{}'", resolved_input_path.display())
   })?;
-  snapshot::load_snapshot_data(&data, &resolved_input_str)
+  let snapshot = snapshot::load_snapshot_data(&data, &resolved_input_str)?;
+  let project_namespaces = snapshot.files.keys().cloned().collect::<HashSet<_>>();
+  runner::preprocess::set_project_namespaces(&project_namespaces);
+  Ok(snapshot)
 }
 
 /// Prefer the project Snapshot for metadata-only queries. Dependencies and

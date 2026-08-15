@@ -99,7 +99,7 @@ fn main() -> Result<(), String> {
 
 fn run_cli() -> Result<(), String> {
   let cli_args: ToplevelCalcit = argh::from_env();
-  cli_handlers::warn_on_global_temp_path(&cli_args.input);
+  cli_handlers::warn_on_global_temp_snapshot_path(&cli_args.input);
   calcit::project_state::set_active_project_directory_from_snapshot(&cli_args.input);
 
   cli_handlers::set_cursor_after_mode(&cli_args.cursor_after)?;
@@ -227,6 +227,7 @@ fn run_cli() -> Result<(), String> {
     {
       let main_file = snapshot::create_file_from_snippet(&buf)?;
       snapshot.files.insert(String::from("app.main"), main_file);
+      project_namespaces.insert(String::from("app.main"));
     }
 
     for module_path in &command.dep {
@@ -248,6 +249,7 @@ fn run_cli() -> Result<(), String> {
     {
       let main_file = snapshot::create_file_from_snippet(&snippet)?;
       snapshot.files.insert(String::from("app.main"), main_file);
+      project_namespaces.insert(String::from("app.main"));
     }
 
     for module_path in &command.dep {
@@ -313,6 +315,7 @@ fn run_cli() -> Result<(), String> {
   // calcit.core entries. This matters when developing and testing calcit-core.cirru
   // with an older globally installed `cr` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
+  runner::preprocess::set_project_namespaces(&project_namespaces);
 
   // Dynamic usage is a project-health signal, not a type-check failure. Keep
   // it on stderr so command stdout remains machine-readable for Agent/CI use.

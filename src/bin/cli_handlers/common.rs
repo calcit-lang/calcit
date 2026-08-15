@@ -162,19 +162,36 @@ pub fn print_cli_warning_block(message: &str) {
   }
 }
 
-pub fn global_temp_path_guidance(path: &str) -> Option<String> {
+#[derive(Clone, Copy)]
+pub enum GlobalTempPathKind {
+  ScratchCode,
+  Snapshot,
+}
+
+pub fn global_temp_path_guidance(path: &str, kind: GlobalTempPathKind) -> Option<String> {
   let path_ref = Path::new(path);
   if !path_ref.is_absolute() || !(path_ref.starts_with("/tmp") || path_ref.starts_with("/private/tmp")) {
     return None;
   }
 
-  Some(format!(
-    "`{path}` is under a global temporary directory. For project-local Calcit scratch input, prefer `.calcit/snippets/<name>`; keep `.calcit/` in `.gitignore`. For one-off multi-line input, omit `--file`/`--code` and pipe stdin instead."
-  ))
+  Some(match kind {
+    GlobalTempPathKind::ScratchCode => format!(
+      "`{path}` is under a global temporary directory. For project-local Calcit scratch input, prefer `.calcit/snippets/<name>`; keep `.calcit/` in `.gitignore`. For one-off multi-line input, omit `--file`/`--code` and pipe stdin instead."
+    ),
+    GlobalTempPathKind::Snapshot => format!(
+      "snapshot `{path}` is under a global temporary directory. Keep `calcit.cirru` (or legacy `compact.cirru`) at the project root so relative module paths and project-local files resolve from the intended base directory. Use `.calcit/snippets/` only for scratch files passed with `--file`, not for the project snapshot."
+    ),
+  })
 }
 
 pub fn warn_on_global_temp_path(path: &str) {
-  if let Some(message) = global_temp_path_guidance(path) {
+  if let Some(message) = global_temp_path_guidance(path, GlobalTempPathKind::ScratchCode) {
+    print_cli_warning_block(&message);
+  }
+}
+
+pub fn warn_on_global_temp_snapshot_path(path: &str) {
+  if let Some(message) = global_temp_path_guidance(path, GlobalTempPathKind::Snapshot) {
     print_cli_warning_block(&message);
   }
 }
@@ -367,8 +384,8 @@ pub fn parse_input_to_cirru(raw: &str) -> Result<Cirru, String> {
 #[cfg(test)]
 mod tests {
   use super::{
-    format_path, format_path_with_separator, global_temp_path_guidance, parse_input_to_cirru, parse_path, parse_quoted_cirru_nodes,
-    resolve_definition_lookup, shell_quote,
+    GlobalTempPathKind, format_path, format_path_with_separator, global_temp_path_guidance, parse_input_to_cirru, parse_path,
+    parse_quoted_cirru_nodes, resolve_definition_lookup, shell_quote,
   };
   use cirru_parser::Cirru;
 
@@ -445,13 +462,22 @@ mod tests {
   #[test]
   fn global_tmp_path_guidance_points_to_project_local_snippets() {
     for path in ["/tmp/change.cirru", "/private/tmp/change.cirru"] {
-      let guidance = global_temp_path_guidance(path).expect("global tmp path should be recognized");
+      let guidance = global_temp_path_guidance(path, GlobalTempPathKind::ScratchCode).expect("global tmp path should be recognized");
       assert!(guidance.contains(".calcit/snippets/<name>"));
       assert!(guidance.contains("stdin"));
     }
 
-    assert!(global_temp_path_guidance(".calcit/snippets/change.cirru").is_none());
-    assert!(global_temp_path_guidance("/tmp-project/change.cirru").is_none());
+    assert!(global_temp_path_guidance(".calcit/snippets/change.cirru", GlobalTempPathKind::ScratchCode).is_none());
+    assert!(global_temp_path_guidance("/tmp-project/change.cirru", GlobalTempPathKind::ScratchCode).is_none());
+  }
+
+  #[test]
+  fn global_tmp_snapshot_guidance_preserves_project_root() {
+    let guidance = global_temp_path_guidance("/tmp/project/calcit.cirru", GlobalTempPathKind::Snapshot)
+      .expect("global tmp snapshot should be recognized");
+    assert!(guidance.contains("project root"));
+    assert!(guidance.contains("relative module paths"));
+    assert!(guidance.contains("not for the project snapshot"));
   }
 
   #[test]
