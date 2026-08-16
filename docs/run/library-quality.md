@@ -91,26 +91,20 @@ cr calcit.cirru analyze weak-types \
 - 有限的异构值：使用 enum，而不是用 `:dynamic` 绕过检查。
 - JS FFI、global state 或 macro 边界确实无法静态确定：保持边界窄，并显式声明 `:features $ #{} :js-ffi`；进入 typed code 前 validate/convert。
 
-`check-types` 与 `weak-types` 是报告命令：发现 debt 时会产生诊断，但不会仅凭命中数量自动采用你的发布策略。严格 CI 应读取单个 JSON stdout，并拒绝 unresolved 数量增加：
+`check-types` 与 `weak-types` 是定位报告；`analyze quality` 是带非零失败退出的发布门禁。新类库直接使用零容忍：
 
 ```bash
-mkdir -p .calcit
-cr calcit.cirru analyze weak-types \
-  --only schema-dynamic,code-dynamic \
-  --intent unresolved \
-  --summary-only \
-  --format json > .calcit/weak-types.json
-node --input-type=commonjs -e '
-  const report = require("./.calcit/weak-types.json");
-  const unresolved = report.data.summary.intents.unresolved;
-  if (unresolved !== 0) {
-    console.error(`unresolved dynamic debt: ${unresolved}`);
-    process.exit(1);
-  }
-'
+cr calcit.cirru analyze quality
 ```
 
-新类库推荐以 `data.summary.intents.unresolved == 0` 为目标。存量类库可以把脚本中的零替换为一份明确 baseline，先阻止回归，再逐步降低；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。`.calcit/` 是项目本地状态目录，应保持在 `.gitignore` 中。
+存量类库先审阅现状并生成 baseline，再在 CI 中阻止回归：
+
+```bash
+cr calcit.cirru analyze quality --write-baseline config/calcit-quality.json
+cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+```
+
+baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
 
 ## 3. API examples 与文档
 

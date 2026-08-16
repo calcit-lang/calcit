@@ -276,6 +276,30 @@ const scenarios = [
       }
     },
   },
+  {
+    name: "static quality gate failure",
+    args: [
+      "calcit/test.cirru",
+      "analyze",
+      "quality",
+      "--ns",
+      "app.main",
+      "--format",
+      "json",
+    ],
+    expectedStatus: 1,
+    check(result) {
+      if (result.schema_version !== 1 || result.command !== "analyze.quality") {
+        throw new Error("unexpected analyze.quality envelope");
+      }
+      if (result.data.passed !== false || result.data.mode !== "strict-zero") {
+        throw new Error("quality gate did not preserve strict failure semantics");
+      }
+      if (result.data.violations.length === 0 || result.diagnostics[0]?.code !== "E_STATIC_QUALITY_REGRESSION") {
+        throw new Error("quality gate failure lost regressions or structured diagnostics");
+      }
+    },
+  },
 ];
 
 const rows = [];
@@ -291,8 +315,9 @@ for (const scenario of scenarios) {
   if (child.error) {
     throw child.error;
   }
-  if (child.status !== 0) {
-    throw new Error(`${scenario.name} failed (${child.status}):\n${child.stderr}`);
+  const expectedStatus = scenario.expectedStatus ?? 0;
+  if (child.status !== expectedStatus) {
+    throw new Error(`${scenario.name} returned ${child.status}, expected ${expectedStatus}:\n${child.stderr}`);
   }
 
   let parsed;

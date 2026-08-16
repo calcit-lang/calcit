@@ -25,6 +25,23 @@ cr analyze check-types --summary-only
 cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --format json
 ```
 
+## 用原生 quality gate 阻止类型债务回归
+
+新项目直接要求所有发布指标归零：
+
+```bash
+cr calcit.cirru analyze quality
+```
+
+存量项目先审阅当前结果并写入 baseline，随后在 CI 中只执行比较命令：
+
+```bash
+cr calcit.cirru analyze quality --write-baseline config/calcit-quality.json
+cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+```
+
+门禁同时覆盖未完整类型、unresolved Dynamic、未迁移的 nil/Optional 和 deprecated calls。原生 baseline 按 definition 保存预算，新债务不能被其他 definition 的改善抵消；`--write-baseline` 只用于明确审阅后的更新，不应作为每次 CI 的前置步骤。需要机器读取时追加 `--format json`，失败时 stdout 仍是单个 JSON，进度与错误摘要写入 stderr。
+
 ## Option / Result 组合
 
 优先让 `Option` / `Result` 的方法表达类型流，而不是逐层 `unwrap` 或调用

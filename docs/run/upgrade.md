@@ -472,8 +472,8 @@ cr calcit.cirru --entry test --warn-dyn-method --check-only
 - `--check-only` 和实际 native/JS codegen：预处理错误或 warning 会阻断并非零退出，必须修到通过；
 - `check-examples`、`docs check-md` 和 `cr test`：所选示例/测试失败时阻断；测试应加
   `--require-match`，避免过滤条件拼错后“零测试通过”；
-- `check-types`、`weak-types`、`deprecated`：是静态报告命令，有命中不等于非零退出；CI 必须解析
-  `--format json` 的 summary 并与零目标或已审阅 baseline 比较。
+- `check-types`、`weak-types`、`deprecated`：是静态定位报告，有命中不等于非零退出；`analyze quality`
+  聚合它们的发布指标，并按零目标或已审阅 baseline 返回失败退出码。
 
 老项目不必在第一次升级提交中把所有历史 dynamic 清零，但必须先让报告可重复，再阻止新增债务：
 
@@ -489,23 +489,22 @@ baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` �
 和 `intents.declared-optional`，再比较 `deprecated` 的 `summary.calls`。否则一种债务增加、另一种
 减少时，相同的总数会掩盖回归。
 
-可用下面命令生成三份机器报告；它们的 stdout 都是单个 JSON，进度与提示写到 stderr：
+新项目直接执行零容忍门禁：
 
 ```bash
-mkdir -p .calcit/upgrade
-cr calcit.cirru analyze check-types --summary-only --format json \
-  > .calcit/upgrade/check-types.json
-cr calcit.cirru analyze weak-types \
-  --only schema-dynamic,code-dynamic,code-nil \
-  --intent unresolved,declared-optional \
-  --summary-only --format json \
-  > .calcit/upgrade/weak-types.json
-cr calcit.cirru analyze deprecated --summary-only --format json \
-  > .calcit/upgrade/deprecated.json
+cr calcit.cirru analyze quality
 ```
 
-`.calcit/upgrade/` 可以作为本地迁移证据目录并保持在 `.gitignore`；真正用于 CI 的 baseline 数值或
-脚本应放在仓库跟踪的配置中，并在 PR 中解释每次变化。
+存量项目先审阅现状并生成原生 baseline，再在 CI 中执行比较：
+
+```bash
+cr calcit.cirru analyze quality --write-baseline config/calcit-quality.json
+cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+```
+
+原生 baseline 记录 scope、汇总指标和每个 definition 的独立预算。新增 definition 默认预算为零；
+一个 definition 的改善不能掩盖另一个 definition 的回归。`--write-baseline` 会原子写入文件，
+但 baseline 仍需人工审阅并随仓库提交，每次提高都要在 PR 中解释。
 
 例如把首次审阅后的上限提交为 `config/calcit-upgrade-baseline.json`：
 
@@ -516,15 +515,17 @@ cr calcit.cirru analyze deprecated --summary-only --format json \
   "schemaDynamic": 21,
   "codeDynamic": 0,
   "codeNil": 22,
+  "unresolved": 43,
   "declaredOptional": 0,
   "deprecatedCalls": 0
 }
 ```
 
-然后由仓库脚本读取上述三份报告，对每个指标执行 `current <= baseline`。如果迁移把 `none` 改善为
+这个旧版扁平 shape 仍可直接传给 `analyze quality --baseline`，便于已有项目删除 Node 检查脚本后
+无缝迁移；重新执行 `--write-baseline` 会生成更严格的按 definition 格式。如果迁移把 `none` 改善为
 `partial`，`typeNone` 会下降且 `typeNotFull` 不变；改善为 `full` 时二者都会下降。确有类型债务在
 不同分类间迁移时，应在 PR 中解释并显式更新 baseline，而不是让一个总数相互抵消。baseline 归零后
-保留检查脚本，以阻止后续重新引入。
+保留 `analyze quality`，以阻止后续重新引入。
 
 ### 3.7 format 的边界
 
@@ -604,11 +605,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
         cr calcit.cirru --entry "$entry" --warn-dyn-method --check-only
       fi
     done < <(cr calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
-    mkdir -p .calcit/upgrade
-    cr calcit.cirru analyze check-types --summary-only --format json > .calcit/upgrade/check-types.json
-    cr calcit.cirru analyze weak-types --only schema-dynamic,code-dynamic,code-nil --intent unresolved,declared-optional --summary-only --format json > .calcit/upgrade/weak-types.json
-    cr calcit.cirru analyze deprecated --summary-only --format json > .calcit/upgrade/deprecated.json
-    node scripts/check-calcit-upgrade-baseline.mjs
+    cr calcit.cirru analyze quality --baseline config/calcit-quality.json
 
 - name: Run project tests
   run: |
@@ -620,11 +617,9 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
-注意：三个 `analyze` 命令只是展示机器报告，上面的示例还没有对 debt 数量作判断。迁移期应把
-summary 与仓库中已审阅的 baseline 比较，禁止数字上升；示例中的
-`scripts/check-calcit-upgrade-baseline.mjs` 是项目需要自行实现并纳入版本控制的比较脚本，不是 `cr`
-内建文件。清零后则要求 unresolved dynamic、
-unresolved/declared-optional nil debt 和 deprecated calls 均为 0。不要只依赖 analysis 命令退出码。
+注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败；CI 使用
+`analyze quality` 执行零目标或 baseline 策略。清零后则要求 unresolved dynamic、
+unresolved/declared-optional nil debt 和 deprecated calls 均为 0。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
 definition-attached unit tests 时，应删除对应示例行并替换成项目真实测试命令，而不是机械照抄。
 

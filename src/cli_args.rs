@@ -183,7 +183,7 @@ pub struct ExecCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, weak-types, deprecated, js-escape)
+/// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, program-diff, check-examples, check-types, weak-types, deprecated, quality, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -208,6 +208,8 @@ pub enum AnalyzeSubcommand {
   WeakTypes(WeakTypesCommand),
   /// locate calls to definitions marked with the :deprecated tag
   Deprecated(DeprecatedCommand),
+  /// enforce type coverage, weak-type, and deprecated API quality budgets
+  Quality(QualityCommand),
   /// decompose entry into State / Transform / Effect graph
   EffectsGraph(EffectsGraphCommand),
   /// escape a Calcit symbol into JavaScript-safe identifier form
@@ -304,6 +306,30 @@ pub struct DeprecatedCommand {
   /// emit aggregate counts without per-definition details
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
+}
+
+/// enforce static quality budgets or generate a reviewed baseline
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "quality")]
+pub struct QualityCommand {
+  /// exact namespace to analyze
+  #[argh(option)]
+  pub ns: Option<String>,
+  /// namespace prefix scope filter
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// include dependency/core namespaces
+  #[argh(switch)]
+  pub deps: bool,
+  /// compare against a committed quality baseline JSON file
+  #[argh(option)]
+  pub baseline: Option<String>,
+  /// write a per-definition quality baseline JSON file and exit successfully
+  #[argh(option, long = "write-baseline")]
+  pub write_baseline: Option<String>,
+  /// output format: human (default) or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 /// check examples in namespace
