@@ -193,15 +193,41 @@ fn is_anonymous_struct_type(type_info: &CalcitTypeAnnotation) -> bool {
   )
 }
 
+struct RequiredStructFieldWarningContext<'a> {
+  file_ns: &'a str,
+  def_name: &'a str,
+  location: Option<NodeLocation>,
+  call_stack: &'a CallStackList,
+}
+
 fn warn_required_struct_field_type(
   field_name: &str,
   receiver: &Calcit,
   receiver_type: Option<&CalcitTypeAnnotation>,
-  file_ns: &str,
-  def_name: &str,
-  location: Option<NodeLocation>,
+  context: RequiredStructFieldWarningContext<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  let RequiredStructFieldWarningContext {
+    file_ns,
+    def_name,
+    location,
+    call_stack,
+  } = context;
+  // Macros such as `defimpl`, `tag-match`, and typed `%{}` constructors may
+  // create tag-access forms without a source coordinate. Those probes are
+  // implementation details, not source-level required Struct reads. Preserve
+  // diagnostics whenever either side still carries an attributable location.
+  let receiver_location = receiver.get_location();
+  let generated_location = location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
+    || receiver_location
+      .as_ref()
+      .is_some_and(|location| location.def.as_ref() == GENERATED_DEF);
+  let generated_without_location =
+    location.is_none() && receiver_location.is_none() && call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
+  if generated_location || generated_without_location {
+    return;
+  }
+
   let receiver_type_text = receiver_type
     .map(CalcitTypeAnnotation::to_brief_string)
     .unwrap_or_else(|| ":unknown".to_owned());
@@ -212,7 +238,7 @@ fn warn_required_struct_field_type(
     message,
     "W_REQUIRED_STRUCT_FIELD_TYPE",
     file_ns,
-    location.or_else(|| receiver.get_location()),
+    location.or(receiver_location),
     check_warnings,
   );
 }
@@ -1282,9 +1308,12 @@ fn preprocess_list_call(
               field_tag.ref_str(),
               &head_form,
               Some(type_info.as_ref()),
-              file_ns,
-              def_name.as_ref(),
-              first_arg.get_location(),
+              RequiredStructFieldWarningContext {
+                file_ns,
+                def_name: def_name.as_ref(),
+                location: first_arg.get_location(),
+                call_stack,
+              },
               check_warnings,
             );
             return Ok(Calcit::from(CalcitList::from(&[
@@ -1561,9 +1590,12 @@ fn preprocess_list_call(
                 tag.ref_str(),
                 &processed_arg,
                 Some(type_info.as_ref()),
-                file_ns,
-                def_name.as_ref(),
-                head.get_location(),
+                RequiredStructFieldWarningContext {
+                  file_ns,
+                  def_name: def_name.as_ref(),
+                  location: head.get_location(),
+                  call_stack,
+                },
                 check_warnings,
               );
               return Ok(Calcit::from(CalcitList::from(&[
@@ -1584,9 +1616,12 @@ fn preprocess_list_call(
             tag.ref_str(),
             &processed_arg,
             receiver_type.as_deref(),
-            file_ns,
-            def_name.as_ref(),
-            head.get_location(),
+            RequiredStructFieldWarningContext {
+              file_ns,
+              def_name: def_name.as_ref(),
+              location: head.get_location(),
+              call_stack,
+            },
             check_warnings,
           );
 
@@ -8045,6 +8080,50 @@ mod tests {
       warnings[0]
         .message()
         .contains("use `(get value :name)` only when absence is intentional")
+    );
+  }
+
+  #[test]
+  fn macro_generated_prefix_field_probe_does_not_emit_required_struct_warning() {
+    let receiver = Calcit::Tag(EdnTag::from("guide"));
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default().extend(calcit::CORE_NS, "%{}", StackKind::Macro, &Calcit::Nil, &[]);
+
+    warn_required_struct_field_type(
+      "key",
+      &receiver,
+      Some(&CalcitTypeAnnotation::Tag),
+      RequiredStructFieldWarningContext {
+        file_ns: "tests.consumer",
+        def_name: "demo",
+        location: None,
+        call_stack: &stack,
+      },
+      &warnings,
+    );
+
+    assert!(
+      warnings.borrow().is_empty(),
+      "generated macro probes must not be reported as source-level Struct reads"
+    );
+
+    let source_warnings = RefCell::new(vec![]);
+    warn_required_struct_field_type(
+      "key",
+      &receiver,
+      Some(&CalcitTypeAnnotation::Tag),
+      RequiredStructFieldWarningContext {
+        file_ns: "tests.consumer",
+        def_name: "demo",
+        location: Some(NodeLocation::new(Arc::from("tests.consumer"), Arc::from("demo"), Arc::new(vec![1]))),
+        call_stack: &stack,
+      },
+      &source_warnings,
+    );
+    assert_eq!(
+      source_warnings.borrow().first().and_then(LocatedWarning::code),
+      Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
+      "macro arguments with a source coordinate must keep required Struct diagnostics"
     );
   }
 
