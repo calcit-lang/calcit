@@ -477,7 +477,7 @@ cr calcit.cirru --entry test --warn-dyn-method --check-only
 
 老项目不必在第一次升级提交中把所有历史 dynamic 清零，但必须先让报告可重复，再阻止新增债务：
 
-1. 保存当前 JSON summary、Calcit 版本和 Snapshot revision，作为审阅过的 baseline；
+1. 运行 `analyze quality --write-baseline <file>` 生成原生 baseline，人工审阅后与 Calcit 版本、Snapshot revision 一起记录；baseline 本身保存 scope、汇总指标和每个 definition 的预算；
 2. 先要求 `--check-only`、测试和行为构建全绿；
 3. CI 拒绝 unresolved dynamic、nil/Optional debt 或 deprecated call 数量上升；
 4. 按模块降低 baseline，降到 0 后改为零容忍；baseline 只能下降，不能无说明地更新；
@@ -644,7 +644,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 6. default 与每个 named entry 的 `--check-only`
 7. 每个 entry 的 `--warn-dyn-method --check-only`（普通检查全绿后启用）
 8. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
-9. `check-types`、dynamic/nil `weak-types`、`deprecated` 的 JSON baseline 或零目标
+9. `analyze quality` 的 JSON baseline 或零目标（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍作为定位报告）
 10. `cr test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
 11. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
 12. `package.json` 中与编译/构建相关的脚本
