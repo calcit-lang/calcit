@@ -15,6 +15,8 @@ mod cli_handlers;
 
 #[path = "../deprecated_api.rs"]
 mod deprecated_api;
+#[path = "../quality_gate.rs"]
+mod quality_gate;
 #[path = "../type_coverage.rs"]
 mod type_coverage;
 
@@ -33,7 +35,7 @@ use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarnin
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, EffectsGraphCommand,
-  TestCommand, ToplevelCalcit, WeakTypesCommand,
+  QualityCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
 };
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
@@ -74,6 +76,29 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
     other => return Err(format!("Unknown deprecated output format `{other}`. Expected `human` or `json`.")),
   }
   Ok(())
+}
+
+fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  if !matches!(options.format.as_str(), "human" | "text" | "json") {
+    return Err(format!(
+      "Unknown quality output format `{}`. Expected `human` or `json`.",
+      options.format
+    ));
+  }
+  let outcome = quality_gate::analyze_quality(options, snapshot)?;
+  match options.format.as_str() {
+    "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
+    "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
+    _ => unreachable!("quality output format was validated before analysis"),
+  }
+  if outcome.passed {
+    Ok(())
+  } else {
+    Err(format!(
+      "Static quality gate failed with {} regression(s).",
+      outcome.violations.len()
+    ))
+  }
 }
 
 fn attach_missing_core_namespaces(snapshot: &mut snapshot::Snapshot, core_snapshot: snapshot::Snapshot) {
@@ -176,6 +201,10 @@ fn run_cli() -> Result<(), String> {
       AnalyzeSubcommand::Deprecated(options) => {
         let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
         return run_deprecated(options, &snapshot);
+      }
+      AnalyzeSubcommand::Quality(options) => {
+        let snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input)?;
+        return run_quality(options, &snapshot);
       }
       _ => {}
     },
@@ -397,6 +426,7 @@ fn run_cli() -> Result<(), String> {
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(weak_type_options, &snapshot),
       AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
+      AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
       AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
       AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),

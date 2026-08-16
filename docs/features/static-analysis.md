@@ -9,11 +9,14 @@ aliases:
   - "assert-type"
   - "compile-time checks"
   - "weak types"
+  - "quality gate"
+  - "type baseline"
 entry_for:
   - "assert-type"
   - "cr analyze check-types"
   - "cr analyze weak-types"
   - "cr analyze deprecated"
+  - "cr analyze quality"
 id: core/features/static-analysis
 related:
   - core/run/library-quality
@@ -43,6 +46,7 @@ The static analysis system provides:
 - **Type annotations** - Optional type hints for function parameters and return values
 - **Compile-time warnings** - Catches errors before code execution
 - **Completion warnings** - Keeps scaffolded `todo!` paths visible to Agents
+- **CI quality gate**: `cr analyze quality --baseline config/calcit-quality.json`
 - **Composable runtime assertions** - `assert-type` and `assert-traits` can validate values at runtime and return original values for chaining
 
 ## Static Project Reports
@@ -58,6 +62,13 @@ cr analyze weak-types --ns app.main
 
 # Deprecated API calls, including the source definition and exact code path
 cr analyze deprecated --ns app.main
+
+# Enforce zero type/weak-type/deprecated debt with a non-zero failure exit
+cr analyze quality
+
+# Bootstrap and enforce a reviewed baseline for an existing project
+cr analyze quality --write-baseline config/calcit-quality.json
+cr analyze quality --baseline config/calcit-quality.json
 
 # Focus only on unresolved type debt
 cr analyze weak-types --ns app.main --intent unresolved
@@ -98,6 +109,8 @@ For one definition, `cr query context '<ns/def>' --format json` embeds the same 
 For one expression, `cr query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, and diagnostics. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
 These analysis commands run as static Snapshot readers: they load configured modules and core metadata but do not preprocess or execute the application entry. With `--format json`, stdout is one versioned JSON envelope containing a stable scope revision, filters, summary, and definition-level rows; startup/command messages stay on stderr.
+
+`analyze quality` combines the release-facing metrics from `check-types`, `weak-types --only schema-dynamic,code-dynamic,code-nil --intent unresolved,declared-optional`, and `deprecated`. With no baseline it is a zero-debt gate. `--baseline <file>` compares against a committed baseline and exits non-zero on regression; `--write-baseline <file>` atomically writes a reviewed native baseline. Native baselines keep budgets per definition, so improving one definition cannot hide new debt in another. For migration, `--baseline` also accepts the older flat eight-metric JSON shape (`typeNone`, `typeNotFull`, `schemaDynamic`, `codeDynamic`, `codeNil`, `unresolved`, `declaredOptional`, `deprecatedCalls`). Scope flags (`--ns`, `--ns-prefix`, `--deps`) are recorded in native baselines and must match when they are enforced.
 
 `analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 

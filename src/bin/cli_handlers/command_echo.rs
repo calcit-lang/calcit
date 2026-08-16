@@ -574,6 +574,15 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       }
       desc
     }
+    AnalyzeSubcommand::Quality(opts) => {
+      if let Some(path) = &opts.write_baseline {
+        format!("writes a per-definition static quality baseline to `{path}`")
+      } else if let Some(path) = &opts.baseline {
+        format!("enforces static quality budgets from `{path}`")
+      } else {
+        "enforces zero static type and deprecated API debt".to_string()
+      }
+    }
     AnalyzeSubcommand::EffectsGraph(opts) => {
       let mut desc = "builds effects dependency graph".to_string();
       if let Some(root) = &opts.root {
@@ -857,6 +866,15 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,
       switch "summary-only" => opts.summary_only
+    ),
+    AnalyzeSubcommand::Quality(opts) => echo_items!(
+      tokens,
+      opt "ns" => opts.ns.as_deref(); default "none",
+      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
+      switch "deps" => opts.deps,
+      opt "baseline" => opts.baseline.as_deref(); default "strict-zero",
+      opt "write-baseline" => opts.write_baseline.as_deref(); default "none",
+      value "format" => &opts.format; default "human"
     ),
     AnalyzeSubcommand::EffectsGraph(opts) => echo_items!(
       tokens,
@@ -1239,6 +1257,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::CheckTypes(_) => "check-types",
     AnalyzeSubcommand::WeakTypes(_) => "weak-types",
     AnalyzeSubcommand::Deprecated(_) => "deprecated",
+    AnalyzeSubcommand::Quality(_) => "quality",
     AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",
     AnalyzeSubcommand::JsEscape(_) => "js-escape",
     AnalyzeSubcommand::JsUnescape(_) => "js-unescape",

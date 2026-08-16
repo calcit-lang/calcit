@@ -25,6 +25,7 @@ mod tips;
 mod tree;
 mod tree_mutation;
 
+pub(crate) use atomic_write::stage_atomic_file;
 pub use call_graph_diff::handle_call_graph_diff_command;
 pub use cirru::handle_cirru_command;
 pub use command_echo::{print_command_echo, should_echo_command};
