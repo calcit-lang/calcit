@@ -182,7 +182,7 @@ cr calcit.cirru docs check-md README.md --failures-only
 cr calcit.cirru --entry test
 ```
 
-在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。发布门禁应比较 JSON 结果或 baseline，而不是只检查分析命令退出码。
+在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。发布门禁统一执行 `analyze quality`：新类库要求零容忍，存量类库传入已审阅的 `--baseline`；该命令的非零退出码就是回归信号，`--format json` 只用于机器读取和保留定位证据。
 
 ## 8. 发布前记录
 
