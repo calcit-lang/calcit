@@ -200,6 +200,14 @@ struct RequiredStructFieldWarningContext<'a> {
   call_stack: &'a CallStackList,
 }
 
+fn find_calcit_location_matching(value: &Calcit, predicate: fn(&NodeLocation) -> bool) -> Option<NodeLocation> {
+  match value {
+    Calcit::List(items) => items.iter().find_map(|item| find_calcit_location_matching(item, predicate)),
+    Calcit::Recur(items) => items.iter().find_map(|item| find_calcit_location_matching(item, predicate)),
+    _ => value.get_location().filter(predicate),
+  }
+}
+
 fn warn_required_struct_field_type(
   field_name: &str,
   receiver: &Calcit,
@@ -217,14 +225,15 @@ fn warn_required_struct_field_type(
   // create tag-access forms without a source coordinate. Those probes are
   // implementation details, not source-level required Struct reads. Preserve
   // diagnostics whenever either side still carries an attributable location.
-  let receiver_location = receiver.get_location();
-  let generated_location = location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
-    || receiver_location
-      .as_ref()
-      .is_some_and(|location| location.def.as_ref() == GENERATED_DEF);
-  let generated_without_location =
-    location.is_none() && receiver_location.is_none() && call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
-  if generated_location || generated_without_location {
+  let attributable_location = location
+    .as_ref()
+    .filter(|location| location.def.as_ref() != GENERATED_DEF)
+    .cloned()
+    .or_else(|| find_calcit_location_matching(receiver, |location| location.def.as_ref() != GENERATED_DEF));
+  let generated_context = location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
+    || find_calcit_location_matching(receiver, |location| location.def.as_ref() == GENERATED_DEF).is_some()
+    || call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
+  if attributable_location.is_none() && generated_context {
     return;
   }
 
@@ -238,7 +247,7 @@ fn warn_required_struct_field_type(
     message,
     "W_REQUIRED_STRUCT_FIELD_TYPE",
     file_ns,
-    location.or(receiver_location),
+    attributable_location,
     check_warnings,
   );
 }
@@ -8125,6 +8134,57 @@ mod tests {
       Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
       "macro arguments with a source coordinate must keep required Struct diagnostics"
     );
+
+    let nested_receiver = code_to_calcit(
+      &Cirru::List(vec![Cirru::leaf("identity"), Cirru::leaf("value")]),
+      "tests.consumer",
+      "demo",
+      vec![2],
+    )
+    .expect("parse source-located receiver");
+    let nested_source_warnings = RefCell::new(vec![]);
+    warn_required_struct_field_type(
+      "key",
+      &nested_receiver,
+      Some(&CalcitTypeAnnotation::Tag),
+      RequiredStructFieldWarningContext {
+        file_ns: "tests.consumer",
+        def_name: "demo",
+        location: None,
+        call_stack: &stack,
+      },
+      &nested_source_warnings,
+    );
+    assert_eq!(
+      nested_source_warnings.borrow().first().and_then(LocatedWarning::code),
+      Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
+      "source locations nested in a receiver expression must keep required Struct diagnostics"
+    );
+
+    let mixed_location_warnings = RefCell::new(vec![]);
+    warn_required_struct_field_type(
+      "key",
+      &nested_receiver,
+      Some(&CalcitTypeAnnotation::Tag),
+      RequiredStructFieldWarningContext {
+        file_ns: "tests.consumer",
+        def_name: "demo",
+        location: Some(NodeLocation::new(
+          Arc::from("tests.consumer"),
+          Arc::from(GENERATED_DEF),
+          Arc::new(vec![]),
+        )),
+        call_stack: &stack,
+      },
+      &mixed_location_warnings,
+    );
+    let mixed_location_warnings = mixed_location_warnings.borrow();
+    assert_eq!(
+      mixed_location_warnings.first().and_then(LocatedWarning::code),
+      Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
+      "a generated location must not hide an attributable receiver location"
+    );
+    assert_eq!(mixed_location_warnings[0].location().def.as_ref(), "demo");
   }
 
   #[test]
