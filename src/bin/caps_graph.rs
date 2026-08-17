@@ -5,12 +5,12 @@ use colored::Colorize;
 use md5::{Digest, Md5};
 use semver::Version;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MAX_PARALLEL_RESOLVES: usize = 6;
 const MODULE_CACHE_DIR: &str = "module-caches";
@@ -105,7 +105,9 @@ and any revision still linked by a registered project view.
 
 /// Removes unreferenced, non-current revisions while preserving the newest revision per module.
 pub fn clean_version_store(modules_dir: &Path) -> Result<StoreCleanup, String> {
-  let git_root = module_cache_root(modules_dir).join("git");
+  let cache_root = module_cache_root(modules_dir);
+  let _lock = CacheMetadataLock::acquire(&cache_root)?;
+  let git_root = cache_root.join("git");
   if !git_root.exists() {
     return Ok(StoreCleanup {
       modules: 0,
@@ -175,6 +177,62 @@ impl PartialOrd for StoredRevision {
 
 fn module_cache_root(modules_dir: &Path) -> PathBuf {
   modules_dir.parent().unwrap_or(modules_dir).join(MODULE_CACHE_DIR)
+}
+
+struct CacheMetadataLock {
+  file: fs::File,
+}
+
+impl CacheMetadataLock {
+  fn acquire(cache_root: &Path) -> Result<Self, String> {
+    Self::acquire_named(cache_root, ".metadata.lock")
+  }
+
+  fn acquire_named(lock_root: &Path, file_name: &str) -> Result<Self, String> {
+    fs::create_dir_all(lock_root).map_err(|e| format!("failed to create {}: {e}", lock_root.display()))?;
+    let path = lock_root.join(file_name);
+    let file = OpenOptions::new()
+      .read(true)
+      .write(true)
+      .create(true)
+      .truncate(false)
+      .open(&path)
+      .map_err(|e| format!("failed to open lock {}: {e}", path.display()))?;
+    for _ in 0..500 {
+      match fs4::FileExt::try_lock(&file) {
+        Ok(()) => return Ok(Self { file }),
+        Err(fs4::TryLockError::WouldBlock) => thread::sleep(Duration::from_millis(10)),
+        Err(fs4::TryLockError::Error(error)) => return Err(format!("failed to acquire lock {}: {error}", path.display())),
+      }
+    }
+    Err(format!("timed out waiting for lock {}", path.display()))
+  }
+}
+
+impl Drop for CacheMetadataLock {
+  fn drop(&mut self) {
+    let _ = fs4::FileExt::unlock(&self.file);
+  }
+}
+
+#[cfg(test)]
+fn metadata_cache_root(source: &Path) -> PathBuf {
+  for ancestor in source.ancestors() {
+    if ancestor.file_name().and_then(|name| name.to_str()) == Some("git")
+      && ancestor
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|name| name.to_str())
+        == Some(MODULE_CACHE_DIR)
+    {
+      return ancestor.parent().expect("git cache directory has a parent").to_path_buf();
+    }
+  }
+  source.parent().unwrap_or(source).to_path_buf()
+}
+
+fn project_view_lock(calcit_dir: &Path) -> Result<CacheMetadataLock, String> {
+  CacheMetadataLock::acquire_named(calcit_dir, ".view.lock")
 }
 
 fn register_project_view(options: &GraphOptions) -> Result<(), String> {
@@ -462,9 +520,10 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     .join(repo)
     .join(&remote.commit)
     .join("source");
+  let _lock = CacheMetadataLock::acquire(&module_cache_root(&options.modules_dir))?;
   if source.exists() {
     validate_store_source(repository, &source, &remote.commit)?;
-    ensure_store_metadata(&source, repository, reference, &remote.commit)?;
+    ensure_store_metadata_unlocked(&source, repository, reference, &remote.commit)?;
     let dependencies = read_module_dependencies(&source)?;
     return Ok(ResolvedModule {
       repository: repository.to_string(),
@@ -512,7 +571,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     }
   }
 
-  ensure_store_metadata(&source, repository, reference, &commit)?;
+  ensure_store_metadata_unlocked(&source, repository, reference, &commit)?;
 
   let dependencies = read_module_dependencies(&source)?;
   Ok(ResolvedModule {
@@ -526,7 +585,13 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
   })
 }
 
+#[cfg(test)]
 fn ensure_store_metadata(source: &Path, repository: &str, reference: &str, commit: &str) -> Result<(), String> {
+  let _lock = CacheMetadataLock::acquire(&metadata_cache_root(source))?;
+  ensure_store_metadata_unlocked(source, repository, reference, commit)
+}
+
+fn ensure_store_metadata_unlocked(source: &Path, repository: &str, reference: &str, commit: &str) -> Result<(), String> {
   let root = source.parent().ok_or_else(|| format!("invalid store path {}", source.display()))?;
   let metadata = root.join(VERSION_STORE_METADATA);
   let retained_reference = fs::read_to_string(&metadata)
@@ -736,7 +801,15 @@ fn collect_warnings(
 }
 
 pub fn install_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Result<(), String> {
+  install_project_view_with(graph, options, register_project_view)
+}
+
+fn install_project_view_with<F>(graph: &ResolvedGraph, options: &GraphOptions, register: F) -> Result<(), String>
+where
+  F: Fn(&GraphOptions) -> Result<(), String>,
+{
   let calcit_dir = options.project_root.join(".calcit");
+  let _project_lock = project_view_lock(&calcit_dir)?;
   let temp_root = calcit_dir.join("tmp");
   fs::create_dir_all(&temp_root).map_err(|e| format!("failed to create {}: {e}", temp_root.display()))?;
   let local_ignore = calcit_dir.join(".gitignore");
@@ -769,17 +842,49 @@ pub fn install_project_view(graph: &ResolvedGraph, options: &GraphOptions) -> Re
     }
     return Err(format!("failed to activate project module view: {error}"));
   }
-  if let Err(error) = write_state(graph, &view_modes, &calcit_dir.join("caps-state.cirru")) {
+  let state_path = calcit_dir.join("caps-state.cirru");
+  let state_backup = temp_root.join(format!("caps-state-backup-{}", std::process::id()));
+  if state_backup.exists() {
+    fs::remove_file(&state_backup).map_err(|e| format!("failed to clean {}: {e}", state_backup.display()))?;
+  }
+  if fs::symlink_metadata(&state_path).is_ok() {
+    fs::rename(&state_path, &state_backup).map_err(|e| {
+      let _ = fs::remove_dir_all(&modules_path);
+      if backup.exists() {
+        let _ = fs::rename(&backup, &modules_path);
+      }
+      format!("failed to stage old caps state: {e}")
+    })?;
+  }
+  if let Err(error) = write_state(graph, &view_modes, &state_path) {
     fs::remove_dir_all(&modules_path).map_err(|e| format!("{error}; also failed to remove new module view: {e}"))?;
     if backup.exists() {
       fs::rename(&backup, &modules_path).map_err(|e| format!("{error}; also failed to restore old module view: {e}"))?;
+    }
+    if state_backup.exists() {
+      fs::rename(&state_backup, &state_path).map_err(|e| format!("{error}; also failed to restore old caps state: {e}"))?;
+    }
+    return Err(error);
+  }
+  if let Err(error) = register(options) {
+    fs::remove_dir_all(&modules_path).map_err(|e| format!("{error}; also failed to remove new module view: {e}"))?;
+    if backup.exists() {
+      fs::rename(&backup, &modules_path).map_err(|e| format!("{error}; also failed to restore old module view: {e}"))?;
+    }
+    if fs::symlink_metadata(&state_path).is_ok() {
+      fs::remove_file(&state_path).map_err(|e| format!("{error}; also failed to remove new caps state: {e}"))?;
+    }
+    if state_backup.exists() {
+      fs::rename(&state_backup, &state_path).map_err(|e| format!("{error}; also failed to restore old caps state: {e}"))?;
     }
     return Err(error);
   }
   if backup.exists() {
     fs::remove_dir_all(&backup).map_err(|e| format!("failed to clean old module view: {e}"))?;
   }
-  register_project_view(options)?;
+  if state_backup.exists() {
+    fs::remove_file(&state_backup).map_err(|e| format!("failed to clean old caps state: {e}"))?;
+  }
   Ok(())
 }
 
@@ -1411,14 +1516,14 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::{
-    DependencyRequest, RefKind, ResolvedModule, clean_version_store, ensure_store_metadata, is_full_commit_hash, parse_tag_version,
-    read_module_dependencies, select_reference, sorted_root_dependencies, verify_native_receipt, write_modules_agents,
-    write_native_receipt,
+    DependencyRequest, GraphOptions, RefKind, ResolvedGraph, ResolvedModule, clean_version_store, ensure_store_metadata,
+    install_project_view_with, is_full_commit_hash, parse_tag_version, read_module_dependencies, select_reference,
+    sorted_root_dependencies, verify_native_receipt, write_modules_agents, write_native_receipt,
   };
   use crate::PackageDeps;
   use std::collections::{BTreeSet, HashMap};
   use std::fs;
-  use std::sync::Arc;
+  use std::sync::{Arc, Barrier};
 
   fn request(reference: &str, requested_by: Option<&str>) -> DependencyRequest {
     DependencyRequest {
@@ -1608,6 +1713,65 @@ mod tests {
 
     let metadata = fs::read_to_string(root.join("revision/metadata.txt")).unwrap();
     assert!(metadata.contains("reference = 1.10.0"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn concurrent_store_metadata_updates_retain_the_highest_semver_reference() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-metadata-concurrent-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let source = root.join("revision/source");
+    fs::create_dir_all(&source).unwrap();
+    let barrier = Arc::new(Barrier::new(3));
+    let first_barrier = barrier.clone();
+    let first_source = source.clone();
+    let first = std::thread::spawn(move || {
+      first_barrier.wait();
+      ensure_store_metadata(&first_source, "org/demo", "1.10.0", "same-commit")
+    });
+    let second_barrier = barrier.clone();
+    let second_source = source.clone();
+    let second = std::thread::spawn(move || {
+      second_barrier.wait();
+      ensure_store_metadata(&second_source, "org/demo", "1.2.0", "same-commit")
+    });
+    barrier.wait();
+    first.join().unwrap().unwrap();
+    second.join().unwrap().unwrap();
+
+    let metadata = fs::read_to_string(root.join("revision/metadata.txt")).unwrap();
+    assert!(metadata.contains("reference = 1.10.0"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn project_view_registration_failure_restores_previous_view_and_state() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-view-rollback-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let project_root = root.join("project");
+    let calcit_dir = project_root.join(".calcit");
+    let modules_path = calcit_dir.join("modules");
+    fs::create_dir_all(&modules_path).unwrap();
+    fs::write(modules_path.join("old.txt"), "old view").unwrap();
+    fs::write(calcit_dir.join("caps-state.cirru"), "old state").unwrap();
+
+    let graph = ResolvedGraph {
+      root: Default::default(),
+      modules: Default::default(),
+      requests: Default::default(),
+      warnings: vec![],
+    };
+    let options = GraphOptions {
+      project_root: project_root.clone(),
+      modules_dir: root.join("modules"),
+      ci: false,
+      strict: false,
+      build_native: false,
+    };
+    let result = install_project_view_with(&graph, &options, |_| Err("registration failed".to_string()));
+    assert_eq!(result.unwrap_err(), "registration failed");
+    assert_eq!(fs::read_to_string(modules_path.join("old.txt")).unwrap(), "old view");
+    assert_eq!(fs::read_to_string(calcit_dir.join("caps-state.cirru")).unwrap(), "old state");
     fs::remove_dir_all(root).unwrap();
   }
 
