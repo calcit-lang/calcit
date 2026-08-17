@@ -106,6 +106,7 @@ cr calcit.cirru config modules
 cr calcit.cirru config modules --entry '<entry-name>'
 cr calcit.cirru --check-only
 cr calcit.cirru --entry '<entry-name>' --check-only
+# Here --entry is the snapshot filename, not a named entry:
 cr calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
 ```
 
@@ -114,6 +115,9 @@ cr calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
 entry 都是独立配置，不能假设其模块继承 default。`--check-only` 只验证所选 entry 的可达预处理路径，
 而 `docs check-md` 默认只带 default entry 的模块；有测试或文档专用模块时，须显式选择相应 entry 或
 重复传入 `--dep`。动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
+
+注意：`config modules --entry` 与顶层 `--entry` 选择 named entry；`docs check-md --entry` 则选择用于
+检查的 snapshot 文件（如 `calcit.cirru` 或 `compact.cirru`），两者不是同一种参数。
 
 读取源码优先使用 human/Cirru 输出；只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出后附加 JSON，具体以子命令 `--help` 为准。
 

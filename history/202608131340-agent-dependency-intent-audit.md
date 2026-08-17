@@ -17,6 +17,5 @@
 
 ## Validation
 
-- `cr docs format-md docs/CalcitAgent.md --check`
-- `cr docs format-md docs/run/load-deps.md --check`
 - `cr docs check-md docs/run/load-deps.md --entry calcit/test.cirru --failures-only`
+- `cr docs check-md docs/CalcitAgent.md --entry calcit/test.cirru --failures-only`
