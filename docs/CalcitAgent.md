@@ -77,6 +77,10 @@ cr -v
 cr query config
 cr query ns
 cr query modules
+# Dependency intent audit (when deps.cirru uses dev-dependencies):
+caps tree
+# Choose a module from the tree, then explain its root/transitive path:
+caps why '<owner/repo>'
 # 从 query ns 的输出中选择真实 namespace，再执行：
 cr query defs '<namespace>'
 ```
@@ -85,6 +89,35 @@ cr query defs '<namespace>'
 - `query ns`：先发现 namespace，不要猜 `<ns>`。
 - `query defs <ns>`：从真实定义名中选择 target。
 - `query modules`：确认依赖边界；不要修改已安装依赖目录来代替当前项目修改。
+- `caps tree` / `caps why`：审计 `deps.cirru` 的已解析下载图和传递来源；它们不分析
+  Calcit 源码，因此不能单独证明模块是否被某个 entry、测试或 Markdown 示例实际使用。
+
+### 1.1 依赖分组审计：runtime、development 与源码使用是三件事
+
+`deps.cirru` 的 `:dependencies` 是消费者在运行或编译时需要的模块；
+`:dev-dependencies` 仅供当前项目的测试、examples、Markdown 检查和维护任务使用。根项目会安装
+两组，递归解析某个模块时只读取它自己的 `:dependencies`。先直接阅读 `deps.cirru` 的两个根分组，
+再用下面流程审计；不要仅凭模块出现在 `.calcit/modules/` 就把它判为 runtime 依赖：
+
+```bash
+caps tree
+caps why '<owner/repo>'
+cr calcit.cirru config modules
+cr calcit.cirru config modules --entry '<entry-name>'
+cr calcit.cirru --check-only
+cr calcit.cirru --entry '<entry-name>' --check-only
+# Here --entry is the snapshot filename, not a named entry:
+cr calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
+```
+
+`caps tree` 和 `caps why` 回答“该仓库为什么被依赖解析器安装”；目前它们会合并显示两个根分组，
+所以根归属仍以 `deps.cirru` 为准。`config modules` 回答“某个 entry 配置加载哪些模块”；每个 named
+entry 都是独立配置，不能假设其模块继承 default。`--check-only` 只验证所选 entry 的可达预处理路径，
+而 `docs check-md` 默认只带 default entry 的模块；有测试或文档专用模块时，须显式选择相应 entry 或
+重复传入 `--dep`。动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
+
+注意：`config modules --entry` 与顶层 `--entry` 选择 named entry；`docs check-md --entry` 则选择用于
+检查的 snapshot 文件（如 `calcit.cirru` 或 `compact.cirru`），两者不是同一种参数。
 
 读取源码优先使用 human/Cirru 输出；只有需要稳定字段、自动分支或静态证据时才使用 `--format json`。`--format json` 承诺 stdout 为单个 JSON envelope；某些命令的 `--json` 只是在人类输出后附加 JSON，具体以子命令 `--help` 为准。
 
