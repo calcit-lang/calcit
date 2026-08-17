@@ -10,8 +10,11 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_PARALLEL_RESOLVES: usize = 6;
+const VERSION_STORE_DIR: &str = "versions";
+const VERSION_STORE_METADATA: &str = "metadata.txt";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DependencyRequest {
@@ -69,6 +72,137 @@ pub struct GraphOptions {
   pub ci: bool,
   pub strict: bool,
   pub build_native: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreCleanup {
+  pub modules: usize,
+  pub kept: usize,
+  pub removed: usize,
+}
+
+pub fn write_modules_agents(modules_dir: &Path) -> Result<(), String> {
+  fs::create_dir_all(modules_dir).map_err(|e| format!("failed to create {}: {e}", modules_dir.display()))?;
+  let content = r#"# Calcit module cache
+
+This directory is managed by `caps`. Its `versions/` subtree is a shared, immutable cache of
+resolved module revisions. Project snapshots load modules through their own
+`<project>/.calcit/modules/` links, not by importing this cache directly.
+
+Do not edit a cached module in place. To change a dependency, clone or open its source repository,
+make the change through its normal Git workflow, commit it, publish a new SemVer tag, update the
+consumer's `deps.cirru`, and run `caps` again. For local experiments, use an explicit relative
+module path instead of modifying the cache.
+
+`caps clean` is a global cache cleanup: it keeps only the newest materialized revision of each
+module. Run `caps` in projects that still need an older dependency revision after cleanup.
+"#;
+  fs::write(modules_dir.join("AGENTS.md"), content).map_err(|e| format!("failed to write {}/AGENTS.md: {e}", modules_dir.display()))
+}
+
+pub fn clean_version_store(modules_dir: &Path) -> Result<StoreCleanup, String> {
+  let git_root = version_store_root(modules_dir).join("git");
+  if !git_root.exists() {
+    return Ok(StoreCleanup {
+      modules: 0,
+      kept: 0,
+      removed: 0,
+    });
+  }
+
+  let mut cleanup = StoreCleanup {
+    modules: 0,
+    kept: 0,
+    removed: 0,
+  };
+  for owner in read_directories(&git_root)? {
+    for repository in read_directories(&owner)? {
+      let revisions = read_directories(&repository)?
+        .into_iter()
+        .filter(|revision| is_store_revision(revision))
+        .map(stored_revision)
+        .collect::<Result<Vec<_>, _>>()?;
+      if revisions.is_empty() {
+        continue;
+      }
+      cleanup.modules += 1;
+      let newest = revisions.iter().max().expect("non-empty revisions").path.clone();
+      cleanup.kept += 1;
+      for revision in revisions {
+        if revision.path == newest {
+          continue;
+        }
+        fs::remove_dir_all(&revision.path)
+          .map_err(|e| format!("failed to remove old module revision {}: {e}", revision.path.display()))?;
+        cleanup.removed += 1;
+      }
+    }
+  }
+  Ok(cleanup)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StoredRevision {
+  path: PathBuf,
+  version: Option<Version>,
+  modified: SystemTime,
+}
+
+impl Ord for StoredRevision {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self
+      .version
+      .cmp(&other.version)
+      .then_with(|| self.modified.cmp(&other.modified))
+      .then_with(|| self.path.cmp(&other.path))
+  }
+}
+
+impl PartialOrd for StoredRevision {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+fn version_store_root(modules_dir: &Path) -> PathBuf {
+  modules_dir.join(VERSION_STORE_DIR)
+}
+
+fn read_directories(path: &Path) -> Result<Vec<PathBuf>, String> {
+  let mut items = fs::read_dir(path)
+    .map_err(|e| format!("failed to read {}: {e}", path.display()))?
+    .filter_map(Result::ok)
+    .filter_map(|entry| entry.file_type().ok().filter(|kind| kind.is_dir()).map(|_| entry.path()))
+    .collect::<Vec<_>>();
+  items.sort();
+  Ok(items)
+}
+
+fn is_store_revision(path: &Path) -> bool {
+  fs::symlink_metadata(path.join("source"))
+    .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    .unwrap_or(false)
+}
+
+fn stored_revision(path: PathBuf) -> Result<StoredRevision, String> {
+  let reference = fs::read_to_string(path.join(VERSION_STORE_METADATA))
+    .ok()
+    .and_then(|content| metadata_value(&content, "reference"));
+  let modified = fs::metadata(&path).and_then(|metadata| metadata.modified()).unwrap_or(UNIX_EPOCH);
+  Ok(StoredRevision {
+    path,
+    version: reference.as_deref().and_then(parse_tag_version),
+    modified,
+  })
+}
+
+fn metadata_value(content: &str, name: &str) -> Option<String> {
+  content.lines().find_map(|line| {
+    line
+      .split_once('=')
+      .filter(|(key, _)| key.trim() == name)
+      .map(|(_, value)| value.trim().to_string())
+  })
 }
 
 pub fn resolve_graph(root_deps: &PackageDeps, options: &GraphOptions) -> Result<ResolvedGraph, String> {
@@ -250,7 +384,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
   let (owner, repo) = repository
     .split_once('/')
     .ok_or_else(|| format!("invalid repository {repository}"))?;
-  let temp_root = options.modules_dir.join(".store/tmp");
+  let temp_root = version_store_root(&options.modules_dir).join("tmp");
   fs::create_dir_all(&temp_root).map_err(|e| format!("failed to create {}: {e}", temp_root.display()))?;
   let identity = hex::encode(Md5::digest(format!("{repository}\n{reference}").as_bytes()));
   let temp_path = temp_root.join(format!(
@@ -267,13 +401,15 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
   let remote = resolve_remote_ref(repository, reference, options.ci)?;
   let source = options
     .modules_dir
-    .join(".store/git")
+    .join(VERSION_STORE_DIR)
+    .join("git")
     .join(owner)
     .join(repo)
     .join(&remote.commit)
     .join("source");
   if source.exists() {
     validate_store_source(repository, &source, &remote.commit)?;
+    ensure_store_metadata(&source, repository, reference, &remote.commit)?;
     let dependencies = read_module_dependencies(&source)?;
     return Ok(ResolvedModule {
       repository: repository.to_string(),
@@ -297,7 +433,8 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
   }
   let source = options
     .modules_dir
-    .join(".store/git")
+    .join(VERSION_STORE_DIR)
+    .join("git")
     .join(owner)
     .join(repo)
     .join(&commit)
@@ -322,6 +459,8 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     }
   }
 
+  ensure_store_metadata(&source, repository, reference, &commit)?;
+
   let dependencies = read_module_dependencies(&source)?;
   Ok(ResolvedModule {
     repository: repository.to_string(),
@@ -332,6 +471,19 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     source,
     dependencies,
   })
+}
+
+fn ensure_store_metadata(source: &Path, repository: &str, reference: &str, commit: &str) -> Result<(), String> {
+  let root = source.parent().ok_or_else(|| format!("invalid store path {}", source.display()))?;
+  let metadata = root.join(VERSION_STORE_METADATA);
+  if metadata.exists() {
+    return Ok(());
+  }
+  fs::write(
+    &metadata,
+    format!("repository = {repository}\nreference = {reference}\ncommit = {commit}\n"),
+  )
+  .map_err(|e| format!("failed to write {}: {e}", metadata.display()))
 }
 
 fn validate_store_source(repository: &str, source: &Path, expected_commit: &str) -> Result<(), String> {
@@ -1196,8 +1348,8 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::{
-    DependencyRequest, RefKind, ResolvedModule, is_full_commit_hash, parse_tag_version, read_module_dependencies, select_reference,
-    sorted_root_dependencies, verify_native_receipt, write_native_receipt,
+    DependencyRequest, RefKind, ResolvedModule, clean_version_store, is_full_commit_hash, parse_tag_version, read_module_dependencies,
+    select_reference, sorted_root_dependencies, verify_native_receipt, write_modules_agents, write_native_receipt,
   };
   use crate::PackageDeps;
   use std::collections::{BTreeSet, HashMap};
@@ -1319,6 +1471,44 @@ mod tests {
     assert_eq!(verify_native_receipt(&module, &realization).unwrap(), vec![library.clone()]);
     fs::write(&library, b"modified build").unwrap();
     assert!(verify_native_receipt(&module, &realization).is_err());
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn clean_keeps_the_latest_semver_revision_for_each_module() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-clean-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    for (commit, version) in [("old", "1.2.0"), ("new", "1.10.0")] {
+      let revision = root.join("versions/git/org/demo").join(commit);
+      fs::create_dir_all(revision.join("source")).unwrap();
+      fs::write(
+        revision.join("metadata.txt"),
+        format!("repository = org/demo\nreference = {version}\ncommit = {commit}\n"),
+      )
+      .unwrap();
+    }
+
+    let cleanup = clean_version_store(&root).unwrap();
+    assert_eq!(cleanup.modules, 1);
+    assert_eq!(cleanup.kept, 1);
+    assert_eq!(cleanup.removed, 1);
+    assert!(!root.join("versions/git/org/demo/old").exists());
+    assert!(root.join("versions/git/org/demo/new/source").exists());
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn module_cache_agents_file_is_overwritten_with_release_workflow() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-agents-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("AGENTS.md"), "stale").unwrap();
+
+    write_modules_agents(&root).unwrap();
+    let content = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    assert!(content.contains("Do not edit a cached module in place."));
+    assert!(content.contains("publish a new SemVer tag"));
+    assert!(!content.contains("stale"));
     fs::remove_dir_all(root).unwrap();
   }
 }

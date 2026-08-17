@@ -1,7 +1,7 @@
 //! CLI tool to download packages from github,
 //! packages are defined in `deps.cirru` file
 //!
-//! immutable source revisions are stored under `~/.config/calcit/modules/.store/` and
+//! immutable source revisions are stored under `~/.config/calcit/modules/versions/` and
 //! linked into each project's `.calcit/modules/` view.
 
 mod caps_graph;
@@ -103,8 +103,18 @@ pub fn main() -> Result<(), String> {
   }
 
   let cli_args: TopLevelCaps = argh::from_env();
+  let global_modules_dir = modules_dir(&cli_args)?;
+  write_modules_agents(&global_modules_dir)?;
   if cli_args.pull_branch {
     eprintln!("[Warn] --pull-branch is deprecated; branch refs are always resolved from the remote");
+  }
+  if matches!(&cli_args.subcommand, Some(SubCommand::Clean(_))) {
+    let cleanup = clean_version_store(&global_modules_dir)?;
+    println!(
+      "cleaned global module cache: kept {} newest revision(s) for {} module(s), removed {} old revision(s)",
+      cleanup.kept, cleanup.modules, cleanup.removed
+    );
+    return Ok(());
   }
   if let Some(SubCommand::Download(dep_names)) = &cli_args.subcommand {
     if dep_names.packages.is_empty() {
@@ -278,6 +288,9 @@ pub fn main() -> Result<(), String> {
       Some(SubCommand::Download(dep_names)) => {
         unreachable!("already handled: {:?}", dep_names);
       }
+      Some(SubCommand::Clean(_)) => {
+        unreachable!("already handled before reading deps.cirru");
+      }
       None => {
         download_deps(deps, cli_args)?;
       }
@@ -397,6 +410,8 @@ enum SubCommand {
   Verify(VerifyCaps),
   /// rebuild the project module links from resolved immutable store entries
   Reset(ResetCaps),
+  /// remove old immutable revisions from the global module cache
+  Clean(CleanCaps),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -413,6 +428,11 @@ struct VerifyCaps {}
 /// rebuild the project module links from resolved immutable store entries
 #[argh(subcommand, name = "reset")]
 struct ResetCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// remove old immutable revisions from the global module cache, keeping the newest revision per module
+#[argh(subcommand, name = "clean")]
+struct CleanCaps {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// show the resolved recursive dependency graph
