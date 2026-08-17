@@ -111,7 +111,7 @@ pub fn main() -> Result<(), String> {
   if matches!(&cli_args.subcommand, Some(SubCommand::Clean(_))) {
     let cleanup = clean_version_store(&global_modules_dir)?;
     println!(
-      "cleaned global module cache: kept {} newest revision(s) for {} module(s), removed {} old revision(s)",
+      "cleaned global module cache: kept {} newest or linked revision(s) for {} module(s), removed {} old revision(s)",
       cleanup.kept, cleanup.modules, cleanup.removed
     );
     return Ok(());

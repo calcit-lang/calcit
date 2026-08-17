@@ -157,8 +157,8 @@ To load modules, use `:modules` configuration and the runtime snapshot file `cal
     :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` first load from the snapshot directory's `.calcit/modules/`, then fall back to
-`~/.config/calcit/modules/`, i.e. `.calcit/modules/memof/calcit.cirru` or the legacy global path.
+Paths defined in `:modules` load from the snapshot directory's `.calcit/modules/`, e.g.
+`.calcit/modules/memof/calcit.cirru`. Run `caps` to materialize or refresh that project-local view.
 
 Modules ending with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 

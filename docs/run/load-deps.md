@@ -77,7 +77,8 @@ caps clean
 `tree` displays selected recursive revisions, while `why` prints one shortest path from every root
 dependency and all direct version requests. `status` checks project links; `verify` also checks immutable
 store commits, local source modifications, and native realization receipts. `clean` is global: it retains
-the newest materialized revision of each module under `module-caches/` and removes older ones.
+the newest materialized revision of each module under `module-caches/`, plus any revision still linked by
+a registered project view, and removes the remaining older ones.
 
 The positional input may point to a standalone dependency file. Its parent directory becomes the project
 root even when no `calcit.cirru` exists:

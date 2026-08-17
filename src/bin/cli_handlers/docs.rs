@@ -759,7 +759,7 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
     && !seen_modules.contains(filter)
   {
     return Err(format!(
-      "Module '{filter}' not found under {modules_dir:?}. Use 'cr docs list --module <module>' or inspect ~/.config/calcit/modules/."
+      "Module '{filter}' not found under {modules_dir:?}. Run `caps` to materialize the current project's .calcit/modules/ view."
     ));
   }
 
@@ -767,7 +767,7 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
 }
 
 fn load_module_docs(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
-  let modules_dir = module_folder()?;
+  let modules_dir = current_project_module_folder()?;
   load_module_docs_from_dir(&modules_dir, module_filter)
 }
 
@@ -782,10 +782,14 @@ fn collect_docs_for_query(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, 
 }
 
 fn list_doc_scopes() -> Result<Vec<String>, String> {
-  let modules_dir = module_folder()?;
+  let modules_dir = current_project_module_folder()?;
+  list_doc_scopes_from_dir(&modules_dir)
+}
+
+fn list_doc_scopes_from_dir(modules_dir: &Path) -> Result<Vec<String>, String> {
   let mut scopes = vec!["calcit".to_string()];
 
-  for entry in fs::read_dir(&modules_dir).map_err(|e| format!("Failed to read modules directory {modules_dir:?}: {e}"))? {
+  for entry in fs::read_dir(modules_dir).map_err(|e| format!("Failed to read modules directory {modules_dir:?}: {e}"))? {
     let entry = entry.map_err(|e| format!("Failed to read modules directory entry: {e}"))?;
     let path = entry.path();
     if !path.is_dir() {
@@ -1470,15 +1474,9 @@ fn ensure_runtime_initialized() {
   });
 }
 
-fn module_folder() -> Result<PathBuf, String> {
-  let project_modules = std::env::current_dir()
-    .map_err(|e| format!("Unable to get current directory: {e}"))?
-    .join(".calcit/modules");
-  if project_modules.exists() {
-    return Ok(project_modules);
-  }
-  let home = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
-  Ok(Path::new(&home).join(".config/calcit/modules/"))
+fn current_project_module_folder() -> Result<PathBuf, String> {
+  let project_root = std::env::current_dir().map_err(|e| format!("Unable to get current directory: {e}"))?;
+  Ok(calcit::project_module_folder(&project_root))
 }
 
 fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<String>, String> {
