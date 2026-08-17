@@ -34,6 +34,8 @@ consumer. Conflicting references for the same repository in both root groups are
 Run `caps` to recursively resolve and install the graph. Sources are stored by resolved commit under
 `~/.config/calcit/module-caches/`. The project gets a local module view in `.calcit/modules/`, with
 `caps-state.cirru`, temporary files, and other generated state kept under `.calcit/`.
+Package-style module paths resolve only through that project view. Explicit relative paths still resolve
+from the snapshot directory, and absolute paths resolve directly.
 
 SemVer tags are the recommended dependency refs. Branches are supported for development, but every
 resolution warns and prints the current commit. Conflicting SemVer tags select the highest version actually

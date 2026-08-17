@@ -137,7 +137,8 @@ Related examples and workflows:
 Run `caps` to resolve the recursive dependency graph and install it. Immutable revisions are stored under
 `~/.config/calcit/module-caches/`, while the current project receives links under `.calcit/modules/`.
 Different projects can therefore use different revisions without switching a shared checkout. Existing
-project module links are the only runtime module source.
+project module links are the only runtime source for package-style module paths; explicit relative and
+absolute paths retain their normal direct resolution.
 
 Published SemVer tags are preferred. Branch refs remain supported for development, but `caps` warns with
 the resolved commit. When a graph requests several SemVer tags for one repository, the highest requested
