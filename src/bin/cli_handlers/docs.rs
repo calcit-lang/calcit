@@ -767,7 +767,12 @@ fn load_module_docs_from_dir(modules_dir: &Path, module_filter: Option<&str>) ->
 }
 
 fn load_module_docs(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
-  let modules_dir = current_project_module_folder()?;
+  let project_root = std::env::current_dir().map_err(|e| format!("Unable to get current directory: {e}"))?;
+  load_module_docs_for_project(&project_root, module_filter)
+}
+
+fn load_module_docs_for_project(project_root: &Path, module_filter: Option<&str>) -> Result<Vec<GuideDoc>, String> {
+  let modules_dir = calcit::project_module_folder(project_root);
   load_module_docs_from_dir(&modules_dir, module_filter)
 }
 
@@ -782,7 +787,12 @@ fn collect_docs_for_query(module_filter: Option<&str>) -> Result<Vec<GuideDoc>, 
 }
 
 fn list_doc_scopes() -> Result<Vec<String>, String> {
-  let modules_dir = current_project_module_folder()?;
+  let project_root = std::env::current_dir().map_err(|e| format!("Unable to get current directory: {e}"))?;
+  list_doc_scopes_for_project(&project_root)
+}
+
+fn list_doc_scopes_for_project(project_root: &Path) -> Result<Vec<String>, String> {
+  let modules_dir = calcit::project_module_folder(project_root);
   list_doc_scopes_from_dir(&modules_dir)
 }
 
@@ -1472,11 +1482,6 @@ fn ensure_runtime_initialized() {
     #[cfg(not(target_arch = "wasm32"))]
     crate::injection::inject_platform_apis();
   });
-}
-
-fn current_project_module_folder() -> Result<PathBuf, String> {
-  let project_root = std::env::current_dir().map_err(|e| format!("Unable to get current directory: {e}"))?;
-  Ok(calcit::project_module_folder(&project_root))
 }
 
 fn collect_check_md_module_paths(entry: &str, deps: &[String]) -> Result<Vec<String>, String> {

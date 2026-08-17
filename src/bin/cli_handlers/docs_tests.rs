@@ -1,8 +1,9 @@
 use super::{
   CirruCheckMode, GuideDoc, GuideDocFrontmatter, GuideDocScope, collect_check_md_module_paths, collect_docs_for_query,
   collect_search_results, extract_cirru_blocks, find_doc_by_query, format_markdown_cirru_blocks, handle_check_md, handle_format_md,
-  list_doc_scopes_from_dir, load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_from_dir, parse_doc_frontmatter,
-  parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape, validate_doc_frontmatter,
+  list_doc_scopes_for_project, load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_for_project,
+  load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape,
+  validate_doc_frontmatter,
 };
 use std::fs;
 use std::path::Path;
@@ -164,14 +165,13 @@ fn load_module_docs_from_dir_errors_on_missing_module() {
 #[test]
 fn module_docs_do_not_fall_back_to_a_global_modules_directory() {
   let root = unique_temp_dir("project-module-docs");
-  let project_modules = calcit::project_module_folder(&root);
   let global_modules = root.join("global-modules");
   write_file(&global_modules.join("global-only/Agents.md"), "# Global module\n");
-  fs::create_dir_all(&project_modules).unwrap();
+  fs::create_dir_all(calcit::project_module_folder(&root)).unwrap();
 
-  let err = load_module_docs_from_dir(&project_modules, Some("global-only")).unwrap_err();
+  let err = load_module_docs_for_project(&root, Some("global-only")).unwrap_err();
   assert!(err.contains("Module 'global-only' not found"));
-  assert_eq!(list_doc_scopes_from_dir(&project_modules).unwrap(), vec!["calcit"]);
+  assert_eq!(list_doc_scopes_for_project(&root).unwrap(), vec!["calcit"]);
 
   fs::remove_dir_all(root).unwrap();
 }
