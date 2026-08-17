@@ -180,31 +180,42 @@ fn module_cache_root(modules_dir: &Path) -> PathBuf {
 }
 
 struct CacheMetadataLock {
-  path: PathBuf,
-  _file: fs::File,
+  file: fs::File,
 }
 
 impl CacheMetadataLock {
   fn acquire(cache_root: &Path) -> Result<Self, String> {
-    fs::create_dir_all(cache_root).map_err(|e| format!("failed to create {}: {e}", cache_root.display()))?;
-    let path = cache_root.join(".metadata.lock");
+    Self::acquire_named(cache_root, ".metadata.lock")
+  }
+
+  fn acquire_named(lock_root: &Path, file_name: &str) -> Result<Self, String> {
+    fs::create_dir_all(lock_root).map_err(|e| format!("failed to create {}: {e}", lock_root.display()))?;
+    let path = lock_root.join(file_name);
+    let file = OpenOptions::new()
+      .read(true)
+      .write(true)
+      .create(true)
+      .truncate(false)
+      .open(&path)
+      .map_err(|e| format!("failed to open lock {}: {e}", path.display()))?;
     for _ in 0..500 {
-      match OpenOptions::new().write(true).create_new(true).open(&path) {
-        Ok(file) => return Ok(Self { path, _file: file }),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => thread::sleep(Duration::from_millis(10)),
-        Err(error) => return Err(format!("failed to acquire metadata lock {}: {error}", path.display())),
+      match fs4::FileExt::try_lock(&file) {
+        Ok(()) => return Ok(Self { file }),
+        Err(fs4::TryLockError::WouldBlock) => thread::sleep(Duration::from_millis(10)),
+        Err(fs4::TryLockError::Error(error)) => return Err(format!("failed to acquire lock {}: {error}", path.display())),
       }
     }
-    Err(format!("timed out waiting for metadata lock {}", path.display()))
+    Err(format!("timed out waiting for lock {}", path.display()))
   }
 }
 
 impl Drop for CacheMetadataLock {
   fn drop(&mut self) {
-    let _ = fs::remove_file(&self.path);
+    let _ = fs4::FileExt::unlock(&self.file);
   }
 }
 
+#[cfg(test)]
 fn metadata_cache_root(source: &Path) -> PathBuf {
   for ancestor in source.ancestors() {
     if ancestor.file_name().and_then(|name| name.to_str()) == Some("git")
@@ -218,6 +229,10 @@ fn metadata_cache_root(source: &Path) -> PathBuf {
     }
   }
   source.parent().unwrap_or(source).to_path_buf()
+}
+
+fn project_view_lock(calcit_dir: &Path) -> Result<CacheMetadataLock, String> {
+  CacheMetadataLock::acquire_named(calcit_dir, ".view.lock")
 }
 
 fn register_project_view(options: &GraphOptions) -> Result<(), String> {
@@ -505,9 +520,10 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     .join(repo)
     .join(&remote.commit)
     .join("source");
+  let _lock = CacheMetadataLock::acquire(&module_cache_root(&options.modules_dir))?;
   if source.exists() {
     validate_store_source(repository, &source, &remote.commit)?;
-    ensure_store_metadata(&source, repository, reference, &remote.commit)?;
+    ensure_store_metadata_unlocked(&source, repository, reference, &remote.commit)?;
     let dependencies = read_module_dependencies(&source)?;
     return Ok(ResolvedModule {
       repository: repository.to_string(),
@@ -555,7 +571,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
     }
   }
 
-  ensure_store_metadata(&source, repository, reference, &commit)?;
+  ensure_store_metadata_unlocked(&source, repository, reference, &commit)?;
 
   let dependencies = read_module_dependencies(&source)?;
   Ok(ResolvedModule {
@@ -569,9 +585,14 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
   })
 }
 
+#[cfg(test)]
 fn ensure_store_metadata(source: &Path, repository: &str, reference: &str, commit: &str) -> Result<(), String> {
-  let root = source.parent().ok_or_else(|| format!("invalid store path {}", source.display()))?;
   let _lock = CacheMetadataLock::acquire(&metadata_cache_root(source))?;
+  ensure_store_metadata_unlocked(source, repository, reference, commit)
+}
+
+fn ensure_store_metadata_unlocked(source: &Path, repository: &str, reference: &str, commit: &str) -> Result<(), String> {
+  let root = source.parent().ok_or_else(|| format!("invalid store path {}", source.display()))?;
   let metadata = root.join(VERSION_STORE_METADATA);
   let retained_reference = fs::read_to_string(&metadata)
     .ok()
@@ -788,6 +809,7 @@ where
   F: Fn(&GraphOptions) -> Result<(), String>,
 {
   let calcit_dir = options.project_root.join(".calcit");
+  let _project_lock = project_view_lock(&calcit_dir)?;
   let temp_root = calcit_dir.join("tmp");
   fs::create_dir_all(&temp_root).map_err(|e| format!("failed to create {}: {e}", temp_root.display()))?;
   let local_ignore = calcit_dir.join(".gitignore");

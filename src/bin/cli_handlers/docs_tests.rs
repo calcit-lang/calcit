@@ -5,8 +5,10 @@ use super::{
   load_module_docs_from_dir, parse_doc_frontmatter, parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape,
   validate_doc_frontmatter,
 };
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_temp_dir(label: &str) -> std::path::PathBuf {
@@ -19,6 +21,35 @@ fn write_file(path: &Path, content: &str) {
     fs::create_dir_all(parent).unwrap();
   }
   fs::write(path, content).unwrap();
+}
+
+struct TestHome {
+  previous: Option<OsString>,
+  _guard: MutexGuard<'static, ()>,
+}
+
+impl TestHome {
+  fn new(path: &Path) -> Self {
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let previous = std::env::var_os("HOME");
+    // SAFETY: the process-wide environment is serialized by ENV_LOCK for this test.
+    unsafe { std::env::set_var("HOME", path) };
+    Self { previous, _guard: guard }
+  }
+}
+
+impl Drop for TestHome {
+  fn drop(&mut self) {
+    // SAFETY: the process-wide environment remains serialized until _guard is dropped.
+    unsafe {
+      if let Some(previous) = &self.previous {
+        std::env::set_var("HOME", previous);
+      } else {
+        std::env::remove_var("HOME");
+      }
+    }
+  }
 }
 
 #[test]
@@ -165,7 +196,8 @@ fn load_module_docs_from_dir_errors_on_missing_module() {
 #[test]
 fn module_docs_do_not_fall_back_to_a_global_modules_directory() {
   let root = unique_temp_dir("project-module-docs");
-  let global_modules = root.join("global-modules");
+  let _home = TestHome::new(&root);
+  let global_modules = root.join(".config/calcit/modules");
   write_file(&global_modules.join("global-only/Agents.md"), "# Global module\n");
   fs::create_dir_all(calcit::project_module_folder(&root)).unwrap();
 
