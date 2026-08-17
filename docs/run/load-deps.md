@@ -58,8 +58,9 @@ To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename
       :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` first use `<project>/.calcit/modules/` and then the legacy
-`~/.config/calcit/modules/` fallback. Existing snapshot `:modules` values do not need to change.
+Paths defined in `:modules` are loaded only through `<project>/.calcit/modules/`. `caps` creates
+this project view as links to the matching immutable revisions in the global store; it is therefore
+an error to run a project before its dependencies have been installed with `caps`.
 
 Modules that end with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 

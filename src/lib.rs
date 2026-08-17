@@ -159,17 +159,13 @@ fn materialize_module_path(file_path: &str, base_dir: &Path, module_folder: &Pat
   }
 }
 
-fn module_roots_for_path(file_path: &str, base_dir: &Path, module_folder: &Path) -> Vec<PathBuf> {
-  if file_path.starts_with("./") || Path::new(file_path).is_absolute() {
-    vec![module_folder.to_path_buf()]
-  } else {
-    let project_modules = base_dir.join(".calcit/modules");
-    if project_modules == module_folder {
-      vec![module_folder.to_path_buf()]
-    } else {
-      vec![project_modules, module_folder.to_path_buf()]
-    }
-  }
+/// The module view installed for the project that owns a snapshot.
+///
+/// `caps` materializes this directory with links into its immutable global store. Runtime
+/// module loading must use this view rather than reaching into the store directly, so every
+/// project uses the revisions it resolved.
+pub fn project_module_folder(base_dir: &Path) -> PathBuf {
+  base_dir.join(".calcit/modules")
 }
 
 fn module_candidate_display_path(file_path: &str, fullpath: &Path, module_folder: &Path) -> String {
@@ -188,22 +184,12 @@ fn module_candidate_display_path(file_path: &str, fullpath: &Path, module_folder
 
 pub fn resolve_module_snapshot_candidates(path: &str, base_dir: &Path, module_folder: &Path) -> Vec<(String, PathBuf, String)> {
   let candidates = module_path_candidates(path);
-  let roots = module_roots_for_path(path, base_dir, module_folder);
-  let mut items = roots
+  let mut items = candidates
     .iter()
-    .flat_map(|root| {
-      candidates
-        .iter()
-        .map(|candidate| {
-          let fullpath = materialize_module_path(candidate, base_dir, root);
-          let display_path = if *root == module_folder {
-            module_candidate_display_path(candidate, &fullpath, module_folder)
-          } else {
-            format!("<project-mods>/{candidate}")
-          };
-          (candidate.clone(), fullpath, display_path)
-        })
-        .collect::<Vec<_>>()
+    .map(|candidate| {
+      let fullpath = materialize_module_path(candidate, base_dir, module_folder);
+      let display_path = module_candidate_display_path(candidate, &fullpath, module_folder);
+      (candidate.clone(), fullpath, display_path)
     })
     .collect::<Vec<_>>();
 
@@ -219,7 +205,7 @@ pub fn resolve_module_snapshot_candidates(path: &str, base_dir: &Path, module_fo
 
 #[cfg(test)]
 mod module_resolution_tests {
-  use super::resolve_module_snapshot_candidates;
+  use super::{project_module_folder, resolve_module_snapshot_candidates};
   use std::fs;
   use std::path::PathBuf;
 
@@ -228,7 +214,7 @@ mod module_resolution_tests {
   }
 
   #[test]
-  fn project_module_view_precedes_legacy_global_modules() {
+  fn project_module_view_is_the_only_root_for_named_modules() {
     let root = temp_root("project-first");
     let project = root.join("project");
     let global = root.join("global");
@@ -237,9 +223,26 @@ mod module_resolution_tests {
     fs::write(project.join(".calcit/modules/demo/compact.cirru"), "project").unwrap();
     fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
 
-    let candidates = resolve_module_snapshot_candidates("demo/", &project, &global);
+    let module_folder = project_module_folder(&project);
+    let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
     assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/compact.cirru"));
-    assert_eq!(candidates[0].2, "<project-mods>/demo/compact.cirru");
+    assert_eq!(candidates[0].2, "<mods>/demo/compact.cirru");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn named_modules_do_not_fall_back_to_the_global_store() {
+    let root = temp_root("no-global-fallback");
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(global.join("demo")).unwrap();
+    fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
+
+    let module_folder = project_module_folder(&project);
+    let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/calcit.cirru"));
     fs::remove_dir_all(root).unwrap();
   }
 

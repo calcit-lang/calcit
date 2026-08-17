@@ -2739,9 +2739,7 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
 
   // Load modules (dependencies) silently
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
-  let module_folder = dirs::home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .unwrap_or_else(|| Path::new(".").to_owned());
+  let module_folder = calcit::project_module_folder(base_dir);
 
   for module_path in &modules_to_load {
     match load_module_silent(module_path, base_dir, &module_folder) {
@@ -3071,9 +3069,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
   let snapshot = snapshot::load_snapshot_data(&data, input_path)?;
 
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
-  let module_folder = dirs::home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .unwrap_or_else(|| Path::new(".").to_owned());
+  let module_folder = calcit::project_module_folder(base_dir);
 
   println!("{}", "Modules in project:".bold());
 

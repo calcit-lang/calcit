@@ -128,9 +128,7 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
   let snapshot = load_snapshot_for_display(input_path)?;
 
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
-  let module_folder = dirs::home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .unwrap_or_else(|| Path::new(".").to_owned());
+  let module_folder = calcit::project_module_folder(base_dir);
 
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let (label, modules) = {
@@ -531,7 +529,7 @@ mod tests {
     fs::write(project.join(".calcit/modules/demo/calcit.cirru"), snapshot("project-demo")).unwrap();
     fs::write(global.join("demo/calcit.cirru"), snapshot("global-demo")).unwrap();
 
-    let loaded = load_module_silent("demo/", &project, &global).unwrap();
+    let loaded = load_module_silent("demo/", &project, &calcit::project_module_folder(&project)).unwrap();
     assert_eq!(loaded.package, "project-demo");
     fs::remove_dir_all(root).unwrap();
   }

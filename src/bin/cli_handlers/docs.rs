@@ -1569,7 +1569,7 @@ fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMa
 
   let entry_path = PathBuf::from(entry);
   let base_dir = entry_path.parent().unwrap_or(Path::new("."));
-  let module_folder = module_folder()?;
+  let module_folder = calcit::project_module_folder(base_dir);
   let module_paths = collect_check_md_module_paths(entry, deps)?;
 
   let mut shared_files: HashMap<String, snapshot::FileInSnapShot> = HashMap::new();

@@ -40,7 +40,6 @@ use calcit::cli_args::{
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
-use dirs::home_dir;
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
 
@@ -228,16 +227,6 @@ fn run_cli() -> Result<(), String> {
   let mut snapshot = snapshot::Snapshot::default(); // placeholder data
   let mut project_namespaces: HashSet<String> = HashSet::new();
 
-  let module_folder = home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .expect("failed to load $HOME");
-  if !calcit::quiet_tool_output() {
-    eprintln!(
-      "{}",
-      format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
-    );
-  }
-
   if cli_args.disable_stack {
     call_stack::set_using_stack(false);
     if !calcit::quiet_tool_output() {
@@ -248,6 +237,10 @@ fn run_cli() -> Result<(), String> {
   let input_path = calcit::resolve_snapshot_path_alias(&PathBuf::from(&cli_args.input));
   let input_path_str = input_path.to_string_lossy().to_string();
   let base_dir = input_path.parent().expect("extract parent");
+  let module_folder = calcit::project_module_folder(base_dir);
+  if !calcit::quiet_tool_output() {
+    eprintln!("{}", format!("project module folder: {}", module_folder.display()).dimmed());
+  }
 
   if let Some(CalcitCommand::Exec(ref command)) = cli_args.subcommand {
     eval_once = true;

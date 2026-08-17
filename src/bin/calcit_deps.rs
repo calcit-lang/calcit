@@ -1,7 +1,8 @@
 //! CLI tool to download packages from github,
 //! packages are defined in `deps.cirru` file
 //!
-//! files are stored in `~/.config/calcit/modules/`.
+//! immutable source revisions are stored under `~/.config/calcit/modules/.store/` and
+//! linked into each project's `.calcit/modules/` view.
 
 mod caps_graph;
 mod git;
