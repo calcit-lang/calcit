@@ -89,7 +89,7 @@ fn semantic_revision(parts: &[&str]) -> String {
     hasher.update((part.len() as u64).to_le_bytes());
     hasher.update(part.as_bytes());
   }
-  format!("md5:{:x}", hasher.finalize())
+  format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
 #[derive(Debug, Serialize)]
@@ -4164,7 +4164,7 @@ fn snapshot_content_revision(input_path: &str) -> Result<String, String> {
   let content = fs::read(input_path).map_err(|error| format!("Failed to read snapshot revision from '{input_path}': {error}"))?;
   let mut hasher = Md5::new();
   hasher.update(&content);
-  Ok(format!("md5:{:x}", hasher.finalize()))
+  Ok(format!("md5:{}", hex::encode(hasher.finalize())))
 }
 
 fn cursor_last_query(

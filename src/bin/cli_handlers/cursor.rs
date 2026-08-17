@@ -1534,7 +1534,7 @@ fn node_fingerprint(node: &Cirru) -> String {
   let encoded = cirru_to_json_value(node).to_string();
   let mut hasher = Md5::new();
   hasher.update(encoded.as_bytes());
-  format!("md5:{:x}", hasher.finalize())
+  format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
 fn read_cursor_context(snapshot_file: &str, target: &str, path: &[usize]) -> Result<(Cirru, Cirru, String), String> {

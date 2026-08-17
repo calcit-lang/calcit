@@ -774,7 +774,7 @@ fn plan_id(plan: &ArchitecturePlan) -> Result<String, String> {
 fn content_revision(content: &str) -> String {
   let mut hasher = Md5::new();
   hasher.update(content.as_bytes());
-  format!("md5:{:x}", hasher.finalize())
+  format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
 fn code_entry_kind(entry: &CodeEntry) -> DefinitionKind {
