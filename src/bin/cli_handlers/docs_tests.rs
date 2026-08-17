@@ -23,6 +23,15 @@ fn write_file(path: &Path, content: &str) {
   fs::write(path, content).unwrap();
 }
 
+fn home_env_lock() -> &'static Mutex<()> {
+  static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+  ENV_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn lock_home_env() -> MutexGuard<'static, ()> {
+  home_env_lock().lock().unwrap()
+}
+
 struct TestHome {
   previous: Option<OsString>,
   _guard: MutexGuard<'static, ()>,
@@ -30,8 +39,7 @@ struct TestHome {
 
 impl TestHome {
   fn new(path: &Path) -> Self {
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let guard = lock_home_env();
     let previous = std::env::var_os("HOME");
     // SAFETY: the process-wide environment is serialized by ENV_LOCK for this test.
     unsafe { std::env::set_var("HOME", path) };
@@ -150,6 +158,7 @@ fn load_entry_snapshot_for_check_md_reads_respo_project() {
 
 #[test]
 fn collect_docs_for_query_uses_guidebook_without_module() {
+  let _home_guard = lock_home_env();
   match collect_docs_for_query(None) {
     Ok(docs) => {
       assert!(!docs.is_empty());
