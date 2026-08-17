@@ -135,9 +135,10 @@ Related examples and workflows:
 ```
 
 Run `caps` to resolve the recursive dependency graph and install it. Immutable revisions are stored under
-`~/.config/calcit/modules/.store/`, while the current project receives links under `.calcit/modules/`.
+`~/.config/calcit/module-caches/`, while the current project receives links under `.calcit/modules/`.
 Different projects can therefore use different revisions without switching a shared checkout. Existing
-`~/.config/calcit/modules/<repo>/` checkouts remain a runtime fallback during migration.
+project module links are the only runtime source for package-style module paths; explicit relative and
+absolute paths retain their normal direct resolution.
 
 Published SemVer tags are preferred. Branch refs remain supported for development, but `caps` warns with
 the resolved commit. When a graph requests several SemVer tags for one repository, the highest requested
@@ -157,8 +158,8 @@ To load modules, use `:modules` configuration and the runtime snapshot file `cal
     :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` first load from the snapshot directory's `.calcit/modules/`, then fall back to
-`~/.config/calcit/modules/`, i.e. `.calcit/modules/memof/calcit.cirru` or the legacy global path.
+Paths defined in `:modules` load from the snapshot directory's `.calcit/modules/`, e.g.
+`.calcit/modules/memof/calcit.cirru`. Run `caps` to materialize or refresh that project-local view.
 
 Modules ending with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 

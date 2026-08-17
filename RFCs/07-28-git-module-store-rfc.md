@@ -50,21 +50,24 @@ Calcit 继续使用 GitHub repository + Git ref 管理模块，不建设 registr
 
 ## 3. 目录模型
 
-当前正式路径是 `~/.config/calcit/modules/`。新 store 放在它下面，避免再引入
-一套顶级目录；路径解析应集中到一个 helper，后续再考虑 XDG 或其他平台差异。
+`~/.config/calcit/modules/` 保留给 legacy module root；新的不可变 store 使用它的
+同级路径 `~/.config/calcit/module-caches/`。路径解析应集中到一个 helper，后续再
+考虑 XDG 或其他平台差异。
 
 ```text
-~/.config/calcit/modules/
-  .store/git/<owner>/<repo>/<commit>/source/
-  .store/git/<owner>/<repo>/<commit>/realizations/<build-key>/
-  <repo>/                                  # legacy clone，迁移期保留
+~/.config/calcit/
+  modules/
+    <repo>/                                # legacy clone，迁移期保留
+  module-caches/
+    git/<owner>/<repo>/<commit>/source/
+    git/<owner>/<repo>/<commit>/realizations/<build-key>/
 
 <project>/
   deps.cirru
   .calcit/
     caps-state.cirru
     modules/
-      <repo> -> ~/.config/calcit/modules/.store/.../source/
+      <repo> -> ~/.config/calcit/module-caches/.../source/
       <native-repo> -> .../realizations/<build-key>/
     tmp/
 ```
@@ -99,7 +102,7 @@ basename 建立项目链接。如果依赖图里出现 `owner-a/utils` 与 `owne
 
 `caps` 按以下顺序修改本机状态：
 
-1. 在 store 的 `.store/tmp/` 下创建临时目录，解析 ref、下载 source（与 store 同文件系统，保证 rename 原子）；项目侧临时 project view 写入 `.calcit/tmp/`；
+1. 在 store 的 `~/.config/calcit/module-caches/tmp/` 下创建临时目录，解析 ref、下载 source（与 store 同文件系统，保证 rename 原子）；项目侧临时 project view 写入 `.calcit/tmp/`；
 2. 完成递归依赖图和版本选择；
 3. 完成需要的 native realization 与验证；
 4. 写入临时 project view；

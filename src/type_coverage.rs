@@ -2158,7 +2158,7 @@ pub(crate) fn analysis_revision(snapshot: &snapshot::Snapshot, definitions: &[(S
     hasher.update(id.as_bytes());
     hasher.update(revision.as_bytes());
   }
-  Ok(format!("md5:{:x}", hasher.finalize()))
+  Ok(format!("md5:{}", hex::encode(hasher.finalize())))
 }
 
 pub fn format_check_types_json(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<String, String> {

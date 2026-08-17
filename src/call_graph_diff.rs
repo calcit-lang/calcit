@@ -48,9 +48,7 @@ pub fn analyze_call_graph_diff(cmd: &CallGraphDiffCommand, input_path: &str) -> 
   let snapshot_path = repo_rel_path.to_string_lossy().to_string();
 
   let base_dir = input_abs.parent().unwrap_or(cwd.as_path());
-  let module_folder = dirs::home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .unwrap_or_else(|| Path::new(".").to_owned());
+  let module_folder = crate::project_module_folder(base_dir);
   let core_snapshot = crate::load_core_snapshot()?;
 
   let current_content = fs::read_to_string(&input_abs).map_err(|e| format!("Failed to read {}: {e}", input_abs.display()))?;

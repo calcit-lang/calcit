@@ -32,8 +32,10 @@ only each dependency's `:dependencies`; a dependency's own `:dev-dependencies` n
 consumer. Conflicting references for the same repository in both root groups are rejected.
 
 Run `caps` to recursively resolve and install the graph. Sources are stored by resolved commit under
-`~/.config/calcit/modules/.store/`. The project gets a local module view in `.calcit/modules/`, with
+`~/.config/calcit/module-caches/`. The project gets a local module view in `.calcit/modules/`, with
 `caps-state.cirru`, temporary files, and other generated state kept under `.calcit/`.
+Package-style module paths resolve only through that project view. Explicit relative paths still resolve
+from the snapshot directory, and absolute paths resolve directly.
 
 SemVer tags are the recommended dependency refs. Branches are supported for development, but every
 resolution warns and prints the current commit. Conflicting SemVer tags select the highest version actually
@@ -58,8 +60,9 @@ To load modules, use `:modules` configuration in `calcit.cirru` (legacy filename
       :modules $ [] |memof/calcit.cirru |lilac/
 ```
 
-Paths defined in `:modules` first use `<project>/.calcit/modules/` and then the legacy
-`~/.config/calcit/modules/` fallback. Existing snapshot `:modules` values do not need to change.
+Paths defined in `:modules` are loaded only through `<project>/.calcit/modules/`. `caps` creates
+this project view as links to the matching immutable revisions in the global store; it is therefore
+an error to run a project before its dependencies have been installed with `caps`.
 
 Modules that end with `/` are automatically suffixed with `calcit.cirru`, and still fall back to `compact.cirru` for compatibility.
 
@@ -70,11 +73,14 @@ caps tree
 caps why calcit-lang/memof
 caps status
 caps verify
+caps clean
 ```
 
 `tree` displays selected recursive revisions, while `why` prints one shortest path from every root
 dependency and all direct version requests. `status` checks project links; `verify` also checks immutable
-store commits, local source modifications, and native realization receipts.
+store commits, local source modifications, and native realization receipts. `clean` is global: it retains
+the newest materialized revision of each module under `module-caches/`, plus any revision still linked by
+a registered project view, and removes the remaining older ones.
 
 The positional input may point to a standalone dependency file. Its parent directory becomes the project
 root even when no `calcit.cirru` exists:
@@ -119,7 +125,9 @@ caps status
 ```
 
 Use `caps verify` for the stronger immutable-store and native-receipt checks. Shared
-store revisions should not be edited directly; reinstall a damaged revision instead.
+store revisions should not be edited directly; reinstall a damaged revision instead. `caps` overwrites
+`~/.config/calcit/module-caches/AGENTS.md` on every invocation with the workflow for changing a dependency:
+use its Git repository, commit the change, publish a new tag, then update `deps.cirru` and reinstall.
 
 `caps reset` rebuilds the current project's `.calcit/modules/` links from the resolved immutable
 store entries:
@@ -161,6 +169,7 @@ Commands:
   status            check installed module versions and local modifications
   verify            verify store contents, project links, and native receipts
   reset             rebuild project links from immutable store entries
+  clean             remove old immutable revisions from the global module cache
   version           read or update the package version in deps.cirru
 ```
 

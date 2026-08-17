@@ -447,7 +447,7 @@ struct TransactionReport {
 fn snapshot_content_revision(content: &str) -> String {
   let mut hasher = Md5::new();
   hasher.update(content.as_bytes());
-  format!("md5:{:x}", hasher.finalize())
+  format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
 fn transaction_edn_arg(value: &cirru_edn::Edn) -> Result<String, String> {

@@ -750,7 +750,7 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
       }
     }
   }
-  format!("{:x}", hasher.finalize())
+  hex::encode(hasher.finalize())
 }
 
 fn update_nominal_fingerprint(

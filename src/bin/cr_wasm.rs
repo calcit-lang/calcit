@@ -17,7 +17,6 @@ use calcit::call_stack::CallStackList;
 use calcit::util::string::strip_shebang;
 use calcit::{ProgramEntries, builtins, call_stack, codegen, program, runner, snapshot, util};
 use colored::Colorize;
-use dirs::home_dir;
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// Standalone WASM codegen command.
@@ -81,9 +80,7 @@ fn main() -> Result<(), String> {
   }
 
   let base_dir = input_path.parent().expect("extract parent");
-  let module_folder = home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .expect("failed to load $HOME");
+  let module_folder = calcit::project_module_folder(base_dir);
 
   let module_paths = snapshot.active_entry()?.modules.clone();
   for module_path in &module_paths {

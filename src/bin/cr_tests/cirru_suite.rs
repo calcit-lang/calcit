@@ -24,9 +24,7 @@ fn load_and_run_cirru(path: &str) {
 
   // load modules (local .cirru files referenced in the snapshot config)
   let base_dir = Path::new(path).parent().expect("extract parent");
-  let module_folder = dirs::home_dir()
-    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
-    .expect("failed to load $HOME");
+  let module_folder = calcit::project_module_folder(base_dir);
   for module_path in &snapshot.active_entry().expect("default entry").modules.clone() {
     let module_data = calcit::load_module(module_path, base_dir, &module_folder)
       .unwrap_or_else(|e| panic!("Failed to load module {module_path} for {path}: {e}"));

@@ -747,7 +747,7 @@ pub fn definition_revision(entry: &CodeEntry) -> Result<String, String> {
     update_part(&mut hasher, "ffi", rendered.as_bytes());
   }
 
-  Ok(format!("md5:{:x}", hasher.finalize()))
+  Ok(format!("md5:{}", hex::encode(hasher.finalize())))
 }
 
 impl TryFrom<Edn> for CodeEntry {

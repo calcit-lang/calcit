@@ -69,7 +69,7 @@ pub(crate) struct DocsCache {
 #[allow(dead_code)]
 pub(crate) fn content_hash(content: &str) -> String {
   let digest = Md5::digest(content.as_bytes());
-  format!("{digest:x}")
+  hex::encode(digest)
 }
 
 pub(crate) fn cache_root() -> Result<PathBuf, String> {
