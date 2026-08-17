@@ -32,7 +32,7 @@ only each dependency's `:dependencies`; a dependency's own `:dev-dependencies` n
 consumer. Conflicting references for the same repository in both root groups are rejected.
 
 Run `caps` to recursively resolve and install the graph. Sources are stored by resolved commit under
-`~/.config/calcit/modules/versions/`. The project gets a local module view in `.calcit/modules/`, with
+`~/.config/calcit/module-caches/`. The project gets a local module view in `.calcit/modules/`, with
 `caps-state.cirru`, temporary files, and other generated state kept under `.calcit/`.
 
 SemVer tags are the recommended dependency refs. Branches are supported for development, but every
@@ -77,7 +77,7 @@ caps clean
 `tree` displays selected recursive revisions, while `why` prints one shortest path from every root
 dependency and all direct version requests. `status` checks project links; `verify` also checks immutable
 store commits, local source modifications, and native realization receipts. `clean` is global: it retains
-the newest materialized revision of each module under `versions/` and removes older ones.
+the newest materialized revision of each module under `module-caches/` and removes older ones.
 
 The positional input may point to a standalone dependency file. Its parent directory becomes the project
 root even when no `calcit.cirru` exists:
@@ -123,7 +123,7 @@ caps status
 
 Use `caps verify` for the stronger immutable-store and native-receipt checks. Shared
 store revisions should not be edited directly; reinstall a damaged revision instead. `caps` overwrites
-`~/.config/calcit/modules/AGENTS.md` on every invocation with the workflow for changing a dependency:
+`~/.config/calcit/module-caches/AGENTS.md` on every invocation with the workflow for changing a dependency:
 use its Git repository, commit the change, publish a new tag, then update `deps.cirru` and reinstall.
 
 `caps reset` rebuilds the current project's `.calcit/modules/` links from the resolved immutable

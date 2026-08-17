@@ -13,7 +13,7 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_PARALLEL_RESOLVES: usize = 6;
-const VERSION_STORE_DIR: &str = "versions";
+const MODULE_CACHE_DIR: &str = "module-caches";
 const VERSION_STORE_METADATA: &str = "metadata.txt";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -82,11 +82,12 @@ pub struct StoreCleanup {
 }
 
 pub fn write_modules_agents(modules_dir: &Path) -> Result<(), String> {
-  fs::create_dir_all(modules_dir).map_err(|e| format!("failed to create {}: {e}", modules_dir.display()))?;
+  let cache_root = module_cache_root(modules_dir);
+  fs::create_dir_all(&cache_root).map_err(|e| format!("failed to create {}: {e}", cache_root.display()))?;
   let content = r#"# Calcit module cache
 
-This directory is managed by `caps`. Its `versions/` subtree is a shared, immutable cache of
-resolved module revisions. Project snapshots load modules through their own
+This directory is managed by `caps` as a shared, immutable cache of resolved module revisions.
+Project snapshots load modules through their own
 `<project>/.calcit/modules/` links, not by importing this cache directly.
 
 Do not edit a cached module in place. To change a dependency, clone or open its source repository,
@@ -97,11 +98,11 @@ module path instead of modifying the cache.
 `caps clean` is a global cache cleanup: it keeps only the newest materialized revision of each
 module. Run `caps` in projects that still need an older dependency revision after cleanup.
 "#;
-  fs::write(modules_dir.join("AGENTS.md"), content).map_err(|e| format!("failed to write {}/AGENTS.md: {e}", modules_dir.display()))
+  fs::write(cache_root.join("AGENTS.md"), content).map_err(|e| format!("failed to write {}/AGENTS.md: {e}", cache_root.display()))
 }
 
 pub fn clean_version_store(modules_dir: &Path) -> Result<StoreCleanup, String> {
-  let git_root = version_store_root(modules_dir).join("git");
+  let git_root = module_cache_root(modules_dir).join("git");
   if !git_root.exists() {
     return Ok(StoreCleanup {
       modules: 0,
@@ -164,8 +165,8 @@ impl PartialOrd for StoredRevision {
   }
 }
 
-fn version_store_root(modules_dir: &Path) -> PathBuf {
-  modules_dir.join(VERSION_STORE_DIR)
+fn module_cache_root(modules_dir: &Path) -> PathBuf {
+  modules_dir.parent().unwrap_or(modules_dir).join(MODULE_CACHE_DIR)
 }
 
 fn read_directories(path: &Path) -> Result<Vec<PathBuf>, String> {
@@ -384,7 +385,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
   let (owner, repo) = repository
     .split_once('/')
     .ok_or_else(|| format!("invalid repository {repository}"))?;
-  let temp_root = version_store_root(&options.modules_dir).join("tmp");
+  let temp_root = module_cache_root(&options.modules_dir).join("tmp");
   fs::create_dir_all(&temp_root).map_err(|e| format!("failed to create {}: {e}", temp_root.display()))?;
   let identity = hex::encode(Md5::digest(format!("{repository}\n{reference}").as_bytes()));
   let temp_path = temp_root.join(format!(
@@ -399,9 +400,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
 
   eprintln!("resolving {repository}@{reference}");
   let remote = resolve_remote_ref(repository, reference, options.ci)?;
-  let source = options
-    .modules_dir
-    .join(VERSION_STORE_DIR)
+  let source = module_cache_root(&options.modules_dir)
     .join("git")
     .join(owner)
     .join(repo)
@@ -431,9 +430,7 @@ fn materialize_module(repository: &str, reference: &str, options: &GraphOptions)
       remote.commit
     ));
   }
-  let source = options
-    .modules_dir
-    .join(VERSION_STORE_DIR)
+  let source = module_cache_root(&options.modules_dir)
     .join("git")
     .join(owner)
     .join(repo)
@@ -1478,8 +1475,9 @@ mod tests {
   fn clean_keeps_the_latest_semver_revision_for_each_module() {
     let root = std::env::temp_dir().join(format!("calcit-caps-clean-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
+    let modules_dir = root.join("modules");
     for (commit, version) in [("old", "1.2.0"), ("new", "1.10.0")] {
-      let revision = root.join("versions/git/org/demo").join(commit);
+      let revision = root.join("module-caches/git/org/demo").join(commit);
       fs::create_dir_all(revision.join("source")).unwrap();
       fs::write(
         revision.join("metadata.txt"),
@@ -1488,12 +1486,12 @@ mod tests {
       .unwrap();
     }
 
-    let cleanup = clean_version_store(&root).unwrap();
+    let cleanup = clean_version_store(&modules_dir).unwrap();
     assert_eq!(cleanup.modules, 1);
     assert_eq!(cleanup.kept, 1);
     assert_eq!(cleanup.removed, 1);
-    assert!(!root.join("versions/git/org/demo/old").exists());
-    assert!(root.join("versions/git/org/demo/new/source").exists());
+    assert!(!root.join("module-caches/git/org/demo/old").exists());
+    assert!(root.join("module-caches/git/org/demo/new/source").exists());
     fs::remove_dir_all(root).unwrap();
   }
 
@@ -1501,11 +1499,12 @@ mod tests {
   fn module_cache_agents_file_is_overwritten_with_release_workflow() {
     let root = std::env::temp_dir().join(format!("calcit-caps-agents-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("AGENTS.md"), "stale").unwrap();
+    let modules_dir = root.join("modules");
+    fs::create_dir_all(root.join("module-caches")).unwrap();
+    fs::write(root.join("module-caches/AGENTS.md"), "stale").unwrap();
 
-    write_modules_agents(&root).unwrap();
-    let content = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    write_modules_agents(&modules_dir).unwrap();
+    let content = fs::read_to_string(root.join("module-caches/AGENTS.md")).unwrap();
     assert!(content.contains("Do not edit a cached module in place."));
     assert!(content.contains("publish a new SemVer tag"));
     assert!(!content.contains("stale"));

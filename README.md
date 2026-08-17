@@ -135,7 +135,7 @@ Related examples and workflows:
 ```
 
 Run `caps` to resolve the recursive dependency graph and install it. Immutable revisions are stored under
-`~/.config/calcit/modules/versions/`, while the current project receives links under `.calcit/modules/`.
+`~/.config/calcit/module-caches/`, while the current project receives links under `.calcit/modules/`.
 Different projects can therefore use different revisions without switching a shared checkout. Existing
 project module links are the only runtime module source.
 
