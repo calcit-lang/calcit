@@ -6526,7 +6526,8 @@ fn validate_def_schema_during_preprocess(
 mod tests {
   use super::*;
   use crate::calcit::{
-    CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitScope, CalcitStructDef, CalcitStructValue, ImportInfo,
+    CalcitEnumDef, CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitScope, CalcitStructDef,
+    CalcitStructValue, ImportInfo,
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
@@ -8242,6 +8243,13 @@ mod tests {
     router_def.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
     let mut store_def = CalcitStructDef::from_fields(EdnTag::from("ClientStore"), vec![EdnTag::from("router")]);
     store_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Router"), Arc::new(vec![])))]);
+    let event_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("Event"), vec![EdnTag::from("none")])),
+        values: Arc::new(vec![Calcit::Nil]),
+      })
+      .expect("valid Event enum"),
+    );
 
     program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
       Arc::from(ns),
@@ -8268,11 +8276,22 @@ mod tests {
               ffi: None,
             },
           ),
+          (
+            Arc::from("Event"),
+            program::ProgramDefEntry {
+              code: Calcit::EnumDef(event_def.as_ref().clone()),
+              schema: crate::calcit::DYNAMIC_TYPE.clone(),
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          ),
         ]),
       },
     );
     program::write_runtime_ready(ns, "Router", Calcit::StructDef(router_def)).expect("register Router runtime metadata");
     program::write_runtime_ready(ns, "ClientStore", Calcit::StructDef(store_def)).expect("register ClientStore runtime metadata");
+    program::write_runtime_ready(ns, "Event", Calcit::EnumDef(event_def.as_ref().clone())).expect("register Event runtime metadata");
 
     let store_type = Arc::new(CalcitTypeAnnotation::TypeRef(
       Arc::from(format!("{ns}/ClientStore")),
@@ -8297,6 +8316,21 @@ mod tests {
       ),
       "nested field should resolve relative to its owner, got {inferred:?}"
     );
+
+    let struct_marker = CalcitTypeAnnotation::from_tag_name("struct-def");
+    let enum_marker = CalcitTypeAnnotation::from_tag_name("enum-def");
+    let struct_ref = CalcitTypeAnnotation::TypeRef(Arc::from("Router"), Arc::new(vec![]));
+    let enum_ref = CalcitTypeAnnotation::TypeRef(Arc::from("Event"), Arc::new(vec![]));
+    crate::calcit::with_type_annotation_warning_context(format!("{ns}/ClientStore"), || {
+      assert!(
+        struct_ref.matches_annotation(&struct_marker),
+        "unqualified struct TypeRef should resolve in its source namespace"
+      );
+      assert!(
+        enum_ref.matches_annotation(&enum_marker),
+        "unqualified enum TypeRef should resolve in its source namespace"
+      );
+    });
   }
 
   #[test]

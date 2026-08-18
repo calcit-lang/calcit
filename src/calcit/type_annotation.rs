@@ -60,6 +60,10 @@ fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
 }
 
+fn current_type_annotation_namespace() -> Option<Arc<str>> {
+  current_type_annotation_warning_context().and_then(|label| label.rsplit_once('/').map(|(namespace, _)| Arc::from(namespace)))
+}
+
 // ---------------------------------------------------------------------------
 // Type-slot public API
 // ---------------------------------------------------------------------------
@@ -629,10 +633,6 @@ impl CalcitTypeAnnotation {
   }
 
   fn extract_type_ref_name(form: &Calcit) -> Option<Arc<str>> {
-    if let Some(name) = Self::parse_type_var_form(form) {
-      return Some(name);
-    }
-
     match form {
       Calcit::Symbol { sym, info, .. } => {
         let normalized = Self::normalize_type_ref_name(sym);
@@ -647,7 +647,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Calcit::Import(import) => Some(Arc::from(format!("{}/{}", import.ns, import.def))),
-      _ => None,
+      _ => Self::parse_type_var_form(form),
     }
   }
 
@@ -1701,7 +1701,8 @@ impl CalcitTypeAnnotation {
       // it as a nominal reference even in unscoped `assert-type` forms, so a
       // later Struct field access can resolve its declaration.
       return if (strict_named_refs || name.contains('/')) && !Self::generics_contains(generics, &name) {
-        Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])))
+        let qualified_name = Self::extract_type_ref_name(form).unwrap_or_else(|| name.clone());
+        Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, Arc::new(vec![])))
       } else {
         Arc::new(CalcitTypeAnnotation::TypeVar(name))
       };
@@ -2279,7 +2280,9 @@ impl CalcitTypeAnnotation {
         if let Some((ns, def)) = stripped.rsplit_once('/') {
           resolve_struct_from_program(ns, def).map(|s| (s, Some((Arc::from(ns), Arc::from(def)))))
         } else {
-          None
+          current_type_annotation_namespace()
+            .and_then(|ns| resolve_struct_from_program(&ns, stripped).map(|s| (s, Some((ns, Arc::from(stripped))))))
+            .or_else(|| resolve_struct_from_program(CORE_NS, stripped).map(|s| (s, Some((Arc::from(CORE_NS), Arc::from(stripped))))))
         }
       }
       Self::Optional(inner) => inner.resolve_to_struct_with_ref(),
@@ -2306,10 +2309,13 @@ impl CalcitTypeAnnotation {
         if let Some((ns, def)) = stripped.rsplit_once('/') {
           resolve_enum_from_program(ns, def).map(|e| (e, Some((Arc::from(ns), Arc::from(def)))))
         } else {
-          // Core named types are commonly written without a namespace in
-          // schemas because calcit.core is implicitly available. Resolve that
-          // global namespace before treating the reference as unknown.
-          resolve_enum_from_program(CORE_NS, stripped).map(|e| (e, Some((Arc::from(CORE_NS), Arc::from(stripped)))))
+          current_type_annotation_namespace()
+            .and_then(|ns| resolve_enum_from_program(&ns, stripped).map(|e| (e, Some((ns, Arc::from(stripped))))))
+            .or_else(|| {
+              // Core named types are commonly written without a namespace in
+              // schemas because calcit.core is implicitly available.
+              resolve_enum_from_program(CORE_NS, stripped).map(|e| (e, Some((Arc::from(CORE_NS), Arc::from(stripped)))))
+            })
         }
       }
       Self::Optional(inner) => inner.resolve_to_enum_with_ref(),

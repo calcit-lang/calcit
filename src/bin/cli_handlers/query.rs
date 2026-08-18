@@ -4,7 +4,8 @@
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{
-  cirru_to_json_value, emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup,
+  cirru_to_json_value, deps_path_for_snapshot, emit_cli_output, format_path, parse_path, print_cli_warning_block,
+  resolve_definition_lookup,
 };
 use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
@@ -2970,7 +2971,8 @@ fn handle_config(input_path: &str) -> Result<(), String> {
   let snapshot = load_main_snapshot(input_path)?;
 
   println!("{}", "Project Config:".bold());
-  println!("  {}: managed in deps.cirru (use `caps version get`)", "version".cyan());
+  let deps_path = deps_path_for_snapshot(input_path);
+  println!("  {}: managed in deps.cirru (use `caps version get {deps_path}`)", "version".cyan());
   println!("\n{}", "Snapshot Entries:".bold());
 
   let mut names: Vec<&String> = snapshot.entries.keys().collect();
