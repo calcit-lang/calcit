@@ -2522,6 +2522,7 @@ fn require_js_ffi_feature(
   if file_ns == calcit::CORE_NS {
     return Ok(());
   }
+  validate_js_ffi_definition_target(operation, location.clone(), file_ns, def_name, call_stack)?;
   let policy = program::active_feature_policy("js-ffi");
   if matches!(policy, crate::snapshot::FeaturePolicy::Allow) {
     return Ok(());
@@ -2561,6 +2562,74 @@ fn require_js_ffi_feature(
   Ok(())
 }
 
+fn ffi_metadata_value<'a>(ffi: &'a cirru_edn::Edn, key: &str) -> Option<&'a cirru_edn::Edn> {
+  match ffi {
+    cirru_edn::Edn::Struct(value) => value.pairs.iter().find(|(field, _)| field.ref_str() == key).map(|(_, value)| value),
+    cirru_edn::Edn::Map(value) => value.get(&cirru_edn::Edn::tag(key)),
+    _ => None,
+  }
+}
+
+fn ffi_metadata_target(ffi: &cirru_edn::Edn) -> Option<crate::snapshot::SnapshotTarget> {
+  let value = ffi_metadata_value(ffi, "target")?;
+  let name = match value {
+    cirru_edn::Edn::Tag(tag) => tag.ref_str(),
+    cirru_edn::Edn::Str(text) | cirru_edn::Edn::Symbol(text) => text.trim_start_matches(':'),
+    _ => return None,
+  };
+  match name {
+    "browser" => Some(crate::snapshot::SnapshotTarget::Browser),
+    "node" => Some(crate::snapshot::SnapshotTarget::Node),
+    "native" => Some(crate::snapshot::SnapshotTarget::Native),
+    "wasm" => Some(crate::snapshot::SnapshotTarget::Wasm),
+    _ => None,
+  }
+}
+
+fn validate_js_ffi_target(
+  expected: crate::snapshot::SnapshotTarget,
+  operation: &str,
+  location: Option<NodeLocation>,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Some(active) = program::active_entry_target() else {
+    return Ok(());
+  };
+  if active == expected {
+    return Ok(());
+  }
+  let message = format!(
+    "[Error] {operation} requires `{}` target, but the selected entry targets `{}` in {file_ns}/{def_name}",
+    expected.as_str(),
+    active.as_str()
+  );
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    message,
+    "E_JS_FFI_TARGET_MISMATCH",
+    call_stack,
+    location,
+  ))
+}
+
+fn validate_js_ffi_definition_target(
+  operation: &str,
+  location: Option<NodeLocation>,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Some(ffi) = program::lookup_def_ffi(file_ns, def_name) else {
+    return Ok(());
+  };
+  let Some(expected) = ffi_metadata_target(&ffi) else {
+    return Ok(());
+  };
+  validate_js_ffi_target(expected, operation, location, file_ns, def_name, call_stack)
+}
+
 fn js_ffi_operation_name(head: &Calcit) -> Option<&'static str> {
   match head {
     Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional) => {
@@ -2586,6 +2655,26 @@ fn require_js_ffi_feature_for_operation(
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   if let Some(operation) = js_ffi_operation_name(head) {
+    if let Some(receiver_type) = match head {
+      Calcit::Method(_, calcit::MethodKind::ExternalAccess(value))
+      | Calcit::Method(_, calcit::MethodKind::ExternalGet(value))
+      | Calcit::Method(_, calcit::MethodKind::ExternalSet(value))
+      | Calcit::Method(_, calcit::MethodKind::ExternalInvoke(value)) => Some(value.as_ref()),
+      _ => None,
+    } && let Some(traits) = trait_list_from_type(receiver_type)
+    {
+      for trait_def in traits {
+        if let Some(ffi) = trait_def
+          .definition_ref
+          .as_deref()
+          .and_then(|definition| definition.rsplit_once('/'))
+          .and_then(|(ns, def)| program::lookup_def_ffi(ns, def))
+          && let Some(expected) = ffi_metadata_target(&ffi)
+        {
+          validate_js_ffi_target(expected, operation, head.get_location(), file_ns, def_name, call_stack)?;
+        }
+      }
+    }
     require_js_ffi_feature(operation, head.get_location(), file_ns, def_name, check_warnings, call_stack)?;
   }
   Ok(())

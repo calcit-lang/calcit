@@ -57,6 +57,10 @@ pub struct SnapshotEntry {
   pub modules: Vec<String>,
   #[serde(default, rename = "type-slots")]
   pub type_slots: HashMap<String, String>,
+  #[serde(default, rename = "feature-policy")]
+  pub feature_policy: HashMap<String, String>,
+  #[serde(default)]
+  pub target: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,6 +143,11 @@ fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
     description: from_edn(map.get_or_nil("description")).map_err(|e| format!("entry `:description`: {e}"))?,
     modules: from_edn(map.get_or_nil("modules")).map_err(|e| format!("entry `:modules`: {e}"))?,
     type_slots: from_edn(map.get_or_nil("type-slots")).map_err(|e| format!("entry `:type-slots`: {e}"))?,
+    feature_policy: HashMap::new(),
+    target: match map.get_or_nil("target") {
+      Edn::Nil => None,
+      value => Some(from_edn(value).map_err(|e| format!("entry `:target`: {e}"))?),
+    },
   })
 }
 
@@ -576,6 +585,8 @@ fn main() {
         description: String::new(),
         modules: configs.modules.clone(),
         type_slots: configs.type_slots.clone(),
+        feature_policy: HashMap::new(),
+        target: None,
       },
     );
   }

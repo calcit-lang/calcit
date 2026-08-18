@@ -26,6 +26,7 @@ pub use entry_book::EntryBook;
 
 static ACTIVE_FEATURE_POLICY: LazyLock<RwLock<HashMap<String, snapshot::FeaturePolicy>>> =
   LazyLock::new(|| RwLock::new(HashMap::new()));
+static ACTIVE_TARGET: LazyLock<RwLock<Option<snapshot::SnapshotTarget>>> = LazyLock::new(|| RwLock::new(None));
 
 pub fn configure_entry_feature_policy(policies: &HashMap<String, snapshot::FeaturePolicy>) {
   let mut active = ACTIVE_FEATURE_POLICY.write().expect("write active feature policy");
@@ -39,6 +40,15 @@ pub fn active_feature_policy(feature: &str) -> snapshot::FeaturePolicy {
     .get(feature)
     .copied()
     .unwrap_or_default()
+}
+
+pub fn configure_entry_target(target: Option<snapshot::SnapshotTarget>) {
+  let mut active = ACTIVE_TARGET.write().expect("write active entry target");
+  *active = target;
+}
+
+pub fn active_entry_target() -> Option<snapshot::SnapshotTarget> {
+  *ACTIVE_TARGET.read().expect("read active entry target")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -877,6 +887,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   }
   calcit::configure_entry_type_slots(&entry.type_slots).map_err(|message| format!("{entry_owner}.type-slots: {message}"))?;
   configure_entry_feature_policy(&entry.feature_policy);
+  configure_entry_target(entry.target);
 
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
 

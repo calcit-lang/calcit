@@ -396,6 +396,7 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         modules: old_modules,
         type_slots: old_type_slots,
         feature_policy: old_feature_policy,
+        target: old_target,
       } = old;
       let SnapshotEntry {
         mode: new_mode,
@@ -405,6 +406,7 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         modules: new_modules,
         type_slots: new_type_slots,
         feature_policy: new_feature_policy,
+        target: new_target,
       } = new;
 
       let old_feature_policy = feature_policy_strings(old_feature_policy);
@@ -418,6 +420,11 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         diff_string_list("modules", old_modules, new_modules),
         diff_string_map("type-slots", old_type_slots, new_type_slots),
         diff_string_map("feature-policy", &old_feature_policy, &new_feature_policy),
+        diff_string(
+          "target",
+          old_target.map(|value| value.as_str()),
+          new_target.map(|value| value.as_str()),
+        ),
       ];
       DiffNode::new(label, aggregate_status(&children)).with_children(children)
     }
@@ -658,6 +665,7 @@ fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> D
     modules,
     type_slots,
     feature_policy,
+    target,
   } = value;
 
   let feature_policy = feature_policy_strings(feature_policy);
@@ -668,6 +676,7 @@ fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> D
     DiffNode::new("reload-fn", status).with_detail(render_text(reload_fn)),
     DiffNode::new("description", status).with_detail(render_text(description)),
     build_string_list_tree("modules", modules, status),
+    DiffNode::new("target", status).with_detail(render_text(target.map(|value| value.as_str()).unwrap_or(""))),
     build_string_map_tree("type-slots", type_slots, status),
     build_string_map_tree("feature-policy", &feature_policy, status),
   ])
@@ -1363,6 +1372,7 @@ mod tests {
         .map(|(slot, type_path)| ((*slot).to_owned(), (*type_path).to_owned()))
         .collect(),
       feature_policy: HashMap::new(),
+      target: None,
     }
   }
 

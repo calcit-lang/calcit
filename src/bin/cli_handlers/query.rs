@@ -20,6 +20,7 @@ use calcit::cli_args::{
   QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
 };
 use calcit::data::cirru::code_to_calcit;
+use calcit::data::edn::format_edn_display;
 use calcit::load_core_snapshot;
 use calcit::project_state::{self, ERROR_STATE_FILE};
 use calcit::snapshot;
@@ -3212,6 +3213,10 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     let _ = writeln!(&mut out, "{} {}", "Tags:".bold(), tags_text);
   }
 
+  if let Some(ffi) = &code_entry.ffi {
+    let _ = writeln!(&mut out, "{} {}", "FFI:".bold(), format_edn_display(ffi));
+  }
+
   if !code_entry.examples.is_empty() {
     let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
@@ -3281,6 +3286,7 @@ fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
     }).collect::<Vec<_>>(),
     "code": cirru_to_json(&entry.code),
     "schema": schema_json,
+    "ffi": entry.ffi.as_ref().map(format_edn_display),
   })
 }
 

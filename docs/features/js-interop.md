@@ -66,6 +66,18 @@ without declaring `:js-ffi`; only the wrapper's own implementation body needs
 the feature. An anonymous function uses the feature declared in its own
 `hint-fn` schema.
 
+Entries can additionally declare an explicit host target:
+
+```cirru
+:target :browser
+```
+
+Supported targets are `:browser`, `:node`, `:native`, and `:wasm`. A definition's
+`:ffi` metadata may add `:target :browser` or `:target :node`; an external-object
+operation or a raw host operation in that definition then fails before codegen
+when the selected entry targets another host. Omitting `:target` preserves
+legacy projects and disables this target-specific check.
+
 Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
 legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
 with `js-nullish->option` only after accepting the opaque payload contract;
@@ -121,6 +133,10 @@ report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
 `W_JS_FFI_FIELD_TYPE_MISMATCH`. External fields are read-only by default. Add
 only the fields that a host API permits to `:ffi :writable`; otherwise `js-set`
 reports `W_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
+
+`cr query def namespace/name --json` includes the normalized `ffi` metadata.
+The human-readable form prints an `FFI:` line, making `:names`, `:writable`,
+`:backend`, `:kind`, and `:target` inspectable without opening the snapshot.
 
 ```cirru.no-check
 :ffi $ {}

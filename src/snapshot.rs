@@ -113,6 +113,28 @@ impl std::fmt::Display for SnapshotRunMode {
   }
 }
 
+/// Host target selected by an entry. This stays separate from the execution
+/// mode because Node.js code is emitted by the JavaScript backend too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotTarget {
+  Browser,
+  Node,
+  Native,
+  Wasm,
+}
+
+impl SnapshotTarget {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Browser => "browser",
+      Self::Node => "node",
+      Self::Native => "native",
+      Self::Wasm => "wasm",
+    }
+  }
+}
+
 /// Per-entry capability policy. Features remain implementation metadata; this
 /// policy only controls the diagnostics emitted when a body uses a capability
 /// without declaring it.
@@ -151,6 +173,10 @@ pub struct SnapshotEntry {
   pub type_slots: HashMap<String, String>,
   #[serde(default, rename = "feature-policy")]
   pub feature_policy: HashMap<String, FeaturePolicy>,
+  /// Optional host target. Omitting it preserves old projects and disables
+  /// target-specific FFI validation for that entry.
+  #[serde(default)]
+  pub target: Option<SnapshotTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1820,6 +1846,10 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     Some(value) => parse_snapshot_feature_policy(value, owner)?,
     None => HashMap::new(),
   };
+  let target = match data.get(&Edn::tag("target")) {
+    Some(value) => Some(parse_snapshot_target(value, owner)?),
+    None => None,
+  };
 
   Ok(SnapshotEntry {
     mode,
@@ -1829,7 +1859,30 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     modules,
     type_slots,
     feature_policy,
+    target,
   })
+}
+
+fn parse_snapshot_target(value: &Edn, owner: &str) -> Result<SnapshotTarget, String> {
+  let target = match value {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+    _ => {
+      return Err(format!(
+        "{owner}.target: expected :browser, :node, :native, or :wasm, got {}",
+        format_edn_preview(value)
+      ));
+    }
+  };
+  match target {
+    "browser" => Ok(SnapshotTarget::Browser),
+    "node" => Ok(SnapshotTarget::Node),
+    "native" => Ok(SnapshotTarget::Native),
+    "wasm" => Ok(SnapshotTarget::Wasm),
+    _ => Err(format!(
+      "{owner}.target: expected :browser, :node, :native, or :wasm, got `{target}`"
+    )),
+  }
 }
 
 fn parse_snapshot_feature_policy(data: &Edn, owner: &str) -> Result<HashMap<String, FeaturePolicy>, String> {
@@ -2136,6 +2189,7 @@ impl Default for Snapshot {
       modules: vec![],
       type_slots: HashMap::new(),
       feature_policy: HashMap::new(),
+      target: None,
     };
     Snapshot {
       package: "app".into(),
@@ -2568,6 +2622,9 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
     );
     entry_map.insert_key("type-slots", type_slots_to_edn(&v.type_slots));
     entry_map.insert_key("feature-policy", feature_policy_to_edn(&v.feature_policy));
+    if let Some(target) = v.target {
+      entry_map.insert_key("target", Edn::tag(target.as_str()));
+    }
     entries_map.insert_key(k.as_str(), entry_map.into());
   }
   edn_map.insert_key("entries", entries_map.into());
@@ -3891,11 +3948,13 @@ mod tests {
   :entries $ {}
     :default $ {} (:mode :js) (:init-fn |mini/main!) (:reload-fn 'mini/reload!)
       :description "|Browser client entry"
+      :target :browser
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
       :feature-policy $ {} (:js-ffi :error)
     :server $ {} (:mode :native) (:init-fn 'mini/server-main!) (:reload-fn 'mini/reload!)
       :description "|HTTP server entry"
+      :target :node
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
       :feature-policy $ {} (:js-ffi :warn)
@@ -3918,12 +3977,14 @@ mod tests {
     );
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].mode, SnapshotRunMode::Js);
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].description, "Browser client entry");
+    assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].target, Some(SnapshotTarget::Browser));
     assert_eq!(
       snapshot.entries[DEFAULT_ENTRY_NAME].feature_policy.get("js-ffi"),
       Some(&FeaturePolicy::Error)
     );
     let server = snapshot.entries.get("server").expect("server entry");
     assert_eq!(server.description, "HTTP server entry");
+    assert_eq!(server.target, Some(SnapshotTarget::Node));
     assert_eq!(
       server.type_slots.get("dispatch-op").map(String::as_str),
       Some("mini.schema/ServerOp")
@@ -3947,6 +4008,11 @@ mod tests {
       snapshot.entries[DEFAULT_ENTRY_NAME].type_slots
     );
     assert_eq!(restored.entries["server"].type_slots, server.type_slots);
+    assert_eq!(
+      restored.entries[DEFAULT_ENTRY_NAME].target,
+      snapshot.entries[DEFAULT_ENTRY_NAME].target
+    );
+    assert_eq!(restored.entries["server"].target, server.target);
     assert_eq!(
       restored.entries[DEFAULT_ENTRY_NAME].feature_policy,
       snapshot.entries[DEFAULT_ENTRY_NAME].feature_policy

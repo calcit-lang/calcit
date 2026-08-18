@@ -828,6 +828,19 @@ callback 若自身包含 raw JS，它自己的实现体必须有 `:js-ffi`。把
 availability。Backend 信息不参与普通 schema type matching，但调用不可用 binding 时必须
 在 codegen 前失败。
 
+当前实现把 entry target 独立保存，避免把 `:mode :js` 误当成 Node 或 browser：
+
+```cirru.no-check
+:browser $ {} (:mode :js) (:target :browser)
+:node $ {} (:mode :native) (:target :node)
+```
+
+definition 的 `:ffi` metadata 可以声明 `(:target :browser)` 或
+`(:target :node)`。typed external-object operation 和带该 metadata 的 raw host
+wrapper 会在 codegen 前检查 selected entry；缺少 entry target 的旧项目保持兼容，暂不做
+target-specific validation。`cr query def ns/name --json` 同时暴露 `ffi` metadata，包含
+host name mapping，供 adapter 审计使用。
+
 ## external trait 的有限补充
 
 ### 不由 FFI 推动参数化 trait
