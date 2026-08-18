@@ -2647,6 +2647,8 @@ fn validate_js_ffi_definition_target(
 
 fn js_ffi_operation_name(head: &Calcit) -> Option<&'static str> {
   match head {
+    Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "js-get" | "aget") => Some("JavaScript field read"),
+    Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "js-set" | "aset") => Some("JavaScript field write"),
     Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional) => {
       Some("native JavaScript method call")
     }
@@ -7727,6 +7729,33 @@ mod tests {
     .expect_err("rewritten typed js-get must require the js-ffi feature");
 
     assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"));
+  }
+
+  #[test]
+  fn unlowered_js_field_operations_still_require_js_ffi_capability() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::require();
+    let _codegen_mode = CodegenModeGuard::enabled();
+
+    for (operation, key) in [
+      ("js-get", Calcit::Tag(EdnTag::new("missing"))),
+      ("aget", untyped_js_ffi_test_receiver()),
+    ] {
+      let expression = Calcit::from(vec![external_field_test_symbol(operation), untyped_js_ffi_test_receiver(), key]);
+      let scope_defs = HashSet::new();
+      let mut scope_types = ScopeTypes::new();
+      let warnings = RefCell::new(vec![]);
+      let error = preprocess_expr(
+        &expression,
+        &scope_defs,
+        &mut scope_types,
+        "tests.untyped-ffi",
+        &warnings,
+        &CallStackList::default(),
+      )
+      .expect_err("raw JS field operations must be gated even when typed lowering is unavailable");
+      assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"), "operation: {operation}");
+    }
   }
 
   #[test]

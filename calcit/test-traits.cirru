@@ -130,7 +130,7 @@
               :where $ {} ('T 'Countable)
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-debug-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-enum-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
+            defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Debug trait - all types should have it) (test-debug-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-enum-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -227,7 +227,7 @@
                 assert= s $ assert-traits s calcit.core/Debug calcit.core/Eq
                 assert= opt $ assert-traits opt calcit.core/Mappable
                 assert= p $ assert-traits p MyFoo
-                ; Structs satisfy the built-in Show trait through the shared struct impls.
+                ; Structs satisfy the built-in Debug trait through the shared struct impls.
                 assert= p $ assert-traits p calcit.core/Debug
                 ; Person has no implementation of the unrelated MyBar trait.
                 assert= :true $ try
@@ -360,7 +360,7 @@
               :args $ []
         |test-debug-trait $ %{} 'CodeEntry (:doc "||Test Debug trait for built-in types")
           :code $ quote
-            defn test-debug-trait () (println "|Testing Debug trait...") (; All types should be showable)
+            defn test-debug-trait () (println "|Testing Debug trait...") (; All built-in types should be debuggable)
               assert= |true $ str true
               assert= |false $ str false
               do

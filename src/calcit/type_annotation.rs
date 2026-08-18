@@ -2661,6 +2661,12 @@ impl CalcitTypeAnnotation {
       {
         true
       }
+      (Self::TypeRef(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct-def") => {
+        self.resolve_to_struct().is_some()
+      }
+      (Self::TypeRef(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum-def") => {
+        self.resolve_to_enum().is_some()
+      }
       (Self::StructDef(actual), Self::StructDef(expected)) => actual.name == expected.name,
       (Self::EnumDef(actual), Self::EnumDef(expected)) => actual.name() == expected.name(),
       (Self::StructDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct-def") => true,

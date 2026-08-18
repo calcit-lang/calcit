@@ -60,35 +60,35 @@
                     :generics $ [] 'T
                     :return 'T
                   do x
-                show-id $ fn (x)
+                debug-id $ fn (x)
                   hint-fn $ {}
                     :generics $ [] 'T
-                    :where $ {} ('T Show)
+                    :where $ {} ('T Debug)
                     :args $ [] 'T
                     :return 'String
-                  x .show
+                  x .debug
                 n $ id2 1
                 s $ id2 |hi
-                shown-n $ show-id 1
-                shown-s $ show-id |hi
+                debugged-n $ debug-id 1
+                debugged-s $ debug-id |hi
               assert-type id $ :: 'Fn
                 {} (:return 'T)
                   :generics $ [] 'T
                   :args $ [] 'T
-              assert-type show-id $ :: 'Fn
+              assert-type debug-id $ :: 'Fn
                 {}
                   :generics $ [] 'T
-                  :where $ {} ('T Show)
+                  :where $ {} ('T Debug)
                   :args $ [] 'T
                   :return 'String
               assert-type n 'Number
               assert-type s 'String
-              assert= |1 shown-n
-              assert= |hi shown-s
+              assert= |1 debugged-n
+              assert= |hi debugged-s
               &inspect-type id
               &inspect-type n
               &inspect-type s
-              &inspect-type show-id
+              &inspect-type debug-id
           :examples $ []
           :schema $ :: 'Dynamic
         |test-recursive-struct $ %{} 'CodeEntry (:doc |)

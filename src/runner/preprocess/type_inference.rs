@@ -15,6 +15,7 @@ use std::{
   collections::{HashMap, HashSet},
 };
 
+use crate::calcit::type_annotation::code_resolves_to_nominal_type_def;
 use crate::{
   builtins,
   calcit::{
@@ -1263,6 +1264,28 @@ fn infer_definition_value_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnno
 }
 
 fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let schema = program::lookup_def_schema(ns, def);
+
+  // Data definitions keep `:dynamic` as their value schema because their
+  // concrete shape is declared in the source form. Resolve the nominal name
+  // before looking at compiled metadata: preprocessing a `defstruct` can
+  // temporarily expose an implementation helper, which must not replace the
+  // public `namespace/Definition` type seen by callers.
+  let schema_is_data_definition_marker = match schema.as_ref() {
+    CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::Custom(value) => {
+      matches!(value.as_ref(), Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def"))
+    }
+    _ => false,
+  };
+  if schema_is_data_definition_marker {
+    let named_type = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])));
+    let source_is_nominal = program::lookup_def_code(ns, def).is_some_and(|code| code_resolves_to_nominal_type_def(&code));
+    if source_is_nominal || named_type.resolve_to_struct().is_some() || named_type.resolve_to_enum().is_some() {
+      return Some(named_type);
+    }
+  }
+
   // Static data/trait/impl declarations carry richer metadata in their
   // preprocessed value than in the intentionally broad top-level schema.
   // Prefer that concrete metadata so definition values stay distinct from
@@ -1284,7 +1307,6 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
     }
   }
 
-  let schema = program::lookup_def_schema(ns, def);
   if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
     return Some(schema);
   }

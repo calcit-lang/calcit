@@ -1037,7 +1037,7 @@ mod type_query_tests {
         ".round",
         ".round?",
         ".sqrt",
-        ".show",
+        ".debug",
         ".eq?",
         ".add",
         ".multiply",
@@ -1251,7 +1251,12 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
     }
 
     let annotation = program::lookup_def_schema(namespace, definition);
-    if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    let is_data_definition_marker = matches!(
+      annotation.as_ref(),
+      CalcitTypeAnnotation::Custom(value)
+        if matches!(value.as_ref(), Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def"))
+    );
+    if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) && !is_data_definition_marker {
       return Ok((annotation, "definition schema"));
     }
 
@@ -2965,7 +2970,7 @@ fn handle_config(input_path: &str) -> Result<(), String> {
   let snapshot = load_main_snapshot(input_path)?;
 
   println!("{}", "Project Config:".bold());
-  println!("  {}: {}", "version".cyan(), snapshot.version);
+  println!("  {}: managed in deps.cirru (use `caps version get`)", "version".cyan());
   println!("\n{}", "Snapshot Entries:".bold());
 
   let mut names: Vec<&String> = snapshot.entries.keys().collect();

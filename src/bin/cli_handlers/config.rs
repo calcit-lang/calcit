@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use super::edit::{bump_semver_value, load_snapshot, parse_semver_value, save_snapshot};
+use super::edit::{load_snapshot, save_snapshot};
 
 fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
   if !Path::new(input_path).exists() {
@@ -74,7 +74,7 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
   }
 
   println!("{}", "Project Config:".bold());
-  println!("  {}: {}", "version".cyan(), snapshot.version);
+  println!("  {}: managed in deps.cirru (use `caps version get`)", "version".cyan());
   println!("\n{}", "Snapshot Entries:".bold());
 
   let mut names: Vec<&String> = snapshot.entries.keys().collect();
@@ -203,33 +203,10 @@ fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<()
     Some(v) => format!("`caps version set {v}`"),
   };
   eprintln!(
-    "[Deprecated] `cr config version` manages the snapshot mirror of the project version; prefer {replacement}, which manages `deps.cirru :version` as the authoritative source"
+    "[Deprecated] `cr config version` no longer writes `calcit.cirru :version`; use {replacement}, which manages `deps.cirru :version`"
   );
-  match &opts.value {
-    None => {
-      // Show current version
-      let snapshot = load_snapshot_for_display(snapshot_file)?;
-      println!("{}", snapshot.version);
-      Ok(())
-    }
-    Some(v) if matches!(v.as_str(), "patch" | "minor" | "major") => {
-      let mut snapshot = load_snapshot(snapshot_file)?;
-      let previous = snapshot.version.clone();
-      let next = bump_semver_value(&previous, v)?;
-      snapshot.version = next.clone();
-      save_snapshot(&snapshot, snapshot_file)?;
-      println!("{} Bumped version: {} → {}", "✓".green(), previous.yellow(), next.green());
-      Ok(())
-    }
-    Some(v) => {
-      parse_semver_value(v)?;
-      let mut snapshot = load_snapshot(snapshot_file)?;
-      snapshot.version = v.clone();
-      save_snapshot(&snapshot, snapshot_file)?;
-      println!("{} Set version to {}", "✓".green(), v.green());
-      Ok(())
-    }
-  }
+  let _ = snapshot_file;
+  Err(format!("Project version is stored in deps.cirru; run {replacement}"))
 }
 
 fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String> {
@@ -265,26 +242,9 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
         _ => "`caps version set <version>`".to_owned(),
       };
       eprintln!(
-        "[Deprecated] `cr config set version` writes the snapshot mirror; prefer {replacement} to manage `deps.cirru :version` as the authoritative source"
+        "[Deprecated] `cr config set version` no longer writes `calcit.cirru :version`; use {replacement} to manage `deps.cirru :version`"
       );
-      if opts.entry.is_some() {
-        return Err("Project version is top-level; omit `--entry` when setting it".to_owned());
-      }
-      if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
-        let previous = snapshot.version.clone();
-        let next = bump_semver_value(&previous, &opts.value)?;
-        snapshot.version = next.clone();
-        format!(
-          "{} Bumped [{entry_label}] version: {} → {}",
-          "✓".green(),
-          previous.yellow(),
-          next.green()
-        )
-      } else {
-        parse_semver_value(&opts.value)?;
-        snapshot.version = opts.value.clone();
-        format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-      }
+      return Err(format!("Project version is stored in deps.cirru; run {replacement}"));
     }
     _ => {
       return Err(format!(

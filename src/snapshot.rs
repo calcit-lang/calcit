@@ -1924,6 +1924,9 @@ fn parse_snapshot_feature_policy(data: &Edn, owner: &str) -> Result<HashMap<Stri
         ));
       }
     };
+    if feature.trim().is_empty() {
+      return Err(format!("{owner}.feature-policy: feature name cannot be empty"));
+    }
     let policy_name = match raw_policy {
       Edn::Tag(tag) => tag.ref_str(),
       Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
@@ -2628,8 +2631,6 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
 
   // Insert about message (always enforce canonical hint)
   edn_map.insert_key("about", Edn::Str(SNAPSHOT_ABOUT_MESSAGE.into()));
-
-  edn_map.insert_key("version", Edn::Str(snapshot.version.as_str().into()));
 
   // Build entries
   let mut entries_map = EdnMapView::default();
@@ -4045,6 +4046,10 @@ mod tests {
 
     let rendered = render_snapshot_content(&snapshot).expect("snapshot should render");
     assert!(
+      !rendered.contains(":version"),
+      "snapshot version must stay in deps.cirru, not calcit.cirru: {rendered}"
+    );
+    assert!(
       rendered.contains(":init-fn 'mini/main!"),
       "entry function should be stored as a symbol: {rendered}"
     );
@@ -4088,7 +4093,7 @@ mod tests {
     assert!(default_entry.description.is_empty());
 
     let rendered = render_snapshot_content(&snapshot).expect("legacy snapshot should render canonically");
-    assert!(rendered.contains(":version |1.2.3"));
+    assert!(!rendered.contains(":version"));
     assert!(rendered.contains(":default $ {}") && rendered.contains(":mode :native"));
     assert!(!rendered.contains(":configs"));
   }
@@ -4101,6 +4106,13 @@ mod tests {
     ])));
     let err = parse_snapshot_type_slots(&slots, "configs").expect_err("duplicate normalized slot names should fail");
     assert!(err.contains("duplicate slot name `:dispatch-op`"), "unexpected error: {err}");
+  }
+
+  #[test]
+  fn test_feature_policy_rejects_empty_feature_name() {
+    let policies = Edn::map_from_iter([(Edn::str(""), Edn::tag("error"))]);
+    let err = parse_snapshot_feature_policy(&policies, "entry").expect_err("empty feature names should be rejected");
+    assert!(err.contains("feature name cannot be empty"), "unexpected error: {err}");
   }
 
   #[test]
