@@ -2,11 +2,17 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-traits) (:version |0.0.0)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-traits.main/main!) (:mode :native) (:reload-fn 'test-traits.main/main!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
     |test-traits.main $ %{} 'FileEntry
       :defs $ {}
+        |CoreShowImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defimpl CoreShowImpl calcit.core/Show $ .show core-show:show
+          :examples $ []
+          :schema $ :: 'Impl
         |Demo0 $ %{} 'CodeEntry (:doc "|Enum prototype for tuple trait tests")
           :code $ quote
             defenum Demo $ :demo 'Dynamic
@@ -105,6 +111,14 @@
               :args $ [] 'T 'K
               :generics $ [] 'T 'K
               :where $ {} ('T 'Contains)
+        |core-show:show $ %{} 'CodeEntry (:doc |)
+          :code $ quote
+            defn core-show:show (p)
+              str |Person: $ :name p
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'String)
+              :args $ [] 'test-traits.main/Person0
         |count-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn count-with-trait (x) (x .count)
@@ -116,7 +130,7 @@
               :where $ {} ('T 'Countable)
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-show-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-enum-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
+            defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...") (; Test Show trait - all types should have it) (test-debug-trait) (; Test deftrait macro) (test-deftrait) (; Test impl precedence order) (test-impl-precedence-order) (test-enum-impl-precedence-order) (test-cross-trait-method-conflict) (test-explicit-trait-call) (; Test Eq trait) (test-eq-trait) (; Test Compare trait) (test-compare-trait) (; Test Add trait) (test-add-trait) (; Test Len/Empty traits) (test-collection-traits) (; Test Option/Result Mappable) (test-option-result-map) (; Test assert-traits) (test-assert-trait) (; Debug helpers: methods introspection) (test-method-introspection) (println "|All trait tests passed!")
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
@@ -201,20 +215,20 @@
                   flag true
                   keyword :demo
                   nothing nil
-                assert= x $ assert-traits x calcit.core/Show
-                assert= x $ assert-traits x calcit.core/Show calcit.core/Eq
+                assert= x $ assert-traits x calcit.core/Debug
+                assert= x $ assert-traits x calcit.core/Debug calcit.core/Eq
                 assert= xs $ assert-traits xs calcit.core/Mappable
-                assert= xs $ assert-traits xs calcit.core/Mappable calcit.core/Show
+                assert= xs $ assert-traits xs calcit.core/Mappable calcit.core/Debug
                 assert= m $ assert-traits m calcit.core/Mappable
-                assert= m $ assert-traits m calcit.core/Mappable calcit.core/Show
+                assert= m $ assert-traits m calcit.core/Mappable calcit.core/Debug
                 assert= st $ assert-traits st calcit.core/Mappable
-                assert= st $ assert-traits st calcit.core/Mappable calcit.core/Show
-                assert= s $ assert-traits s calcit.core/Show
-                assert= s $ assert-traits s calcit.core/Show calcit.core/Eq
+                assert= st $ assert-traits st calcit.core/Mappable calcit.core/Debug
+                assert= s $ assert-traits s calcit.core/Debug
+                assert= s $ assert-traits s calcit.core/Debug calcit.core/Eq
                 assert= opt $ assert-traits opt calcit.core/Mappable
                 assert= p $ assert-traits p MyFoo
                 ; Structs satisfy the built-in Show trait through the shared struct impls.
-                assert= p $ assert-traits p calcit.core/Show
+                assert= p $ assert-traits p calcit.core/Debug
                 ; Person has no implementation of the unrelated MyBar trait.
                 assert= :true $ try
                   do (assert-traits p MyBar) :false
@@ -224,9 +238,9 @@
                 assert= :true $ try
                   do (assert-traits zp MyZapB) :false
                   fn (e) (do :true)
-                assert= flag $ assert-traits flag calcit.core/Show calcit.core/Eq
-                assert= keyword $ assert-traits keyword calcit.core/Show calcit.core/Eq
-                assert= nothing $ assert-traits nothing calcit.core/Show calcit.core/Eq
+                assert= flag $ assert-traits flag calcit.core/Debug calcit.core/Eq
+                assert= keyword $ assert-traits keyword calcit.core/Debug calcit.core/Eq
+                assert= nothing $ assert-traits nothing calcit.core/Debug calcit.core/Eq
               println "|  assert-traits: ✓"
           :examples $ []
           :schema $ :: 'Fn
@@ -344,6 +358,32 @@
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
+        |test-debug-trait $ %{} 'CodeEntry (:doc "||Test Debug trait for built-in types")
+          :code $ quote
+            defn test-debug-trait () (println "|Testing Debug trait...") (; All types should be showable)
+              assert= |true $ str true
+              assert= |false $ str false
+              do
+                assert= |42 $ str 42
+                let
+                    n 42
+                  assert= |42 $ n .debug
+              assert= |hello $ str |hello
+              assert= |:tag $ str :tag
+              assert= "|([] 1 2 3)" $ str ([] 1 2 3)
+              assert= "|({} (:a 1))" $ str
+                {} $ :a 1
+              ; assert= "|(#{} 1 2)" $ str (#{} 1 2)
+              let
+                  Person $ impl-traits Person0 CoreShowImpl
+                  p $ %{} Person (:name |Alice)
+                assert-traits p calcit.core/Show
+                assert= |Person:Alice $ p .show
+              println "|  Debug trait: ✓"
+          :examples $ []
+          :schema $ :: 'Fn
+            {} (:return 'Dynamic)
+              :args $ []
         |test-deftrait $ %{} 'CodeEntry (:doc "|Test deftrait macro")
           :code $ quote
             defn test-deftrait () (println "|Testing deftrait macro...")
@@ -411,7 +451,7 @@
                   xs $ [] 1 2 3
                   flag true
                 assert= 3 $ &trait-call calcit.core/Countable :count xs
-                assert= |true $ &trait-call calcit.core/Show :show flag
+                assert= |true $ &trait-call calcit.core/Debug :debug flag
                 assert= true $ &trait-call calcit.core/Eq :eq? flag true
               let
                   t $ %:: DemoZap :demo 1
@@ -520,23 +560,6 @@
                 assert= (%ok 1) (res-ok .map-err turn-tag)
                 assert= (%err :oops) (res-err .map-err turn-tag)
               println "|  Option/Result map: ✓"
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-show-trait $ %{} 'CodeEntry (:doc "|Test Show trait for built-in types")
-          :code $ quote
-            defn test-show-trait () (println "|Testing Show trait...") (; All types should be showable)
-              assert= |true $ str true
-              assert= |false $ str false
-              assert= |42 $ str 42
-              assert= |hello $ str |hello
-              assert= |:tag $ str :tag
-              assert= "|([] 1 2 3)" $ str ([] 1 2 3)
-              assert= "|({} (:a 1))" $ str
-                {} $ :a 1
-              ; assert= "|(#{} 1 2)" $ str (#{} 1 2)
-              println "|  Show trait: ✓"
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

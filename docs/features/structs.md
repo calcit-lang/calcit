@@ -65,15 +65,15 @@ Use this pattern when the struct definition owns the type variable. Function-lev
 ```cirru
 let
     ShownBox $ defstruct ShownBox ([] 'T)
-      {} $ 'T Show
+      {} $ 'T Debug
       :value 'T
     box $ %{} ShownBox (:value 1)
     item $ :value box
   assert-type box $ :: 'ShownBox 'Number
-  assert= |1 $ item .show
+  assert= |1 $ item .debug
 ```
 
-Here `({} ('T Show))` means `T` must satisfy the `Show` trait. `%{}` enforces that bound when constructing a struct value, so the constraint lives on the data definition rather than on each individual function schema.
+Here `({} ('T Debug))` means `T` must satisfy the built-in `Debug` trait. `%{}` enforces that bound when constructing a struct value, so the constraint lives on the data definition rather than on each individual function schema. Use `Show` instead only when the payload has an explicit user-facing presentation implementation.
 
 ## Creating Struct Values
 

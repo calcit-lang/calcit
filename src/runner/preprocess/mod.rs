@@ -1358,8 +1358,15 @@ fn preprocess_list_call(
             let expected = format!(".{method_name}");
             methods.iter().any(|method| method.name == expected)
           });
+          // `Show` and `Debug` are presentation contracts. Keep them on the
+          // typed-method path whenever the receiver has a static Calcit type:
+          // an omitted `Show` implementation must be a type error rather than
+          // silently becoming a prefix argument. Dynamic and external JS
+          // values retain the existing escape hatch.
+          let is_display_contract = matches!(method_name.as_ref(), "show" | "debug")
+            && !matches!(type_info.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::JsObject);
 
-          if is_nominal_or_trait || has_known_method {
+          if is_nominal_or_trait || has_known_method || is_display_contract {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let is_external = trait_list_from_type(type_info.as_ref())
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
@@ -1374,6 +1381,9 @@ fn preprocess_list_call(
               processed_args = processed_args.push(preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?);
             }
             let processed_args = CalcitList::from(processed_args);
+            if is_display_contract {
+              validate_method_call(&typed_method, &processed_args, scope_types, call_stack)?;
+            }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
@@ -4504,7 +4514,7 @@ fn validate_method_call(
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   // Only validate Method(Invoke) calls
-  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(inferred_receiver_type)) = head else {
     return Ok(());
   };
 
@@ -4513,10 +4523,18 @@ fn validate_method_call(
     return Ok(());
   };
 
+  // Trait declarations encode a member signature as `deftrait T .show :fn`.
+  // The temporary Dynamic method receiver and the trailing tag are syntax, not
+  // a value-level method call, so the trait declaration owns its validation.
+  if matches!(inferred_receiver_type.as_ref(), CalcitTypeAnnotation::Dynamic) && matches!(receiver, Calcit::Tag(_)) {
+    return Ok(());
+  }
+
   // Get receiver type
-  let Some(type_value) = resolve_type_value(receiver, scope_types) else {
-    return Ok(()); // No type info, skip validation
-  };
+  // Postfix method rewriting records the receiver type on the method itself.
+  // Literals do not always carry a separately resolvable type in `ScopeTypes`,
+  // so prefer that evidence and only fall back to resolving the expression.
+  let type_value = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
 
   if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
     let method_str = method_name.as_ref();
@@ -4538,6 +4556,23 @@ fn validate_method_call(
         format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
         method_name,
         &type_desc,
+      ),
+      call_stack,
+      head.get_location(),
+    ));
+  }
+
+  // `Show` is opt-in even while the core implementation tables are still
+  // bootstrapping. Without this explicit branch, a primitive receiver can
+  // have no resolved impl table yet and method validation would skip it.
+  if method_name.as_ref() == "show"
+    && static_method_descriptors(type_value.as_ref()).is_some_and(|methods| methods.iter().all(|method| method.name != ".show"))
+  {
+    let type_desc = describe_type(type_value.as_ref());
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!(
+        "unknown method `.show` for {type_desc}. Show is opt-in; attach an explicit `defimpl ... calcit.core/Show` implementation, or use `.debug` for the built-in diagnostic representation"
       ),
       call_stack,
       head.get_location(),
@@ -9741,6 +9776,40 @@ mod tests {
     assert!(message.contains("requires a String receiver"), "message: {message}");
     assert!(message.contains("inferred as `struct MapLike`"), "message: {message}");
     assert!(message.contains("`(trim receiver)`"), "message: {message}");
+  }
+
+  #[test]
+  fn show_on_builtin_value_is_a_type_error_but_debug_is_a_typed_method() {
+    let show_expr = Cirru::List(vec![Cirru::leaf("1"), Cirru::leaf(".show")]);
+    let show_code = code_to_calcit(&show_expr, "tests.method", "demo", vec![]).expect("parse show call");
+    let warnings = RefCell::new(vec![]);
+    let mut scope_types = ScopeTypes::new();
+    let show_error = preprocess_expr(
+      &show_code,
+      &HashSet::new(),
+      &mut scope_types,
+      "tests.method",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("a Number must not receive the opt-in Show method");
+    assert!(show_error.to_string().contains("unknown method `.show`"), "error: {show_error}");
+
+    let debug_expr = Cirru::List(vec![Cirru::leaf("1"), Cirru::leaf(".debug")]);
+    let debug_code = code_to_calcit(&debug_expr, "tests.method", "demo", vec![]).expect("parse debug call");
+    let debug_value = preprocess_expr(
+      &debug_code,
+      &HashSet::new(),
+      &mut scope_types,
+      "tests.method",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("a Number should receive the built-in Debug method");
+    let Calcit::List(debug_call) = debug_value else {
+      panic!("debug call should stay a list");
+    };
+    assert!(matches!(debug_call.first(), Some(Calcit::Method(name, calcit::MethodKind::Invoke(_))) if name.as_ref() == "debug"));
   }
 
   #[test]

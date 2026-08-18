@@ -2,6 +2,7 @@
 {} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |test-enum) (:version |0.0.0)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'test-enum.main/main!) (:mode :native) (:reload-fn 'test-enum.main/reload!)
+      :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
   :files $ {}
@@ -51,14 +52,14 @@
         |ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
           :code $ quote
             defstruct ShownBox ('T)
-              ({} ('T Show))
+              ({} ('T Debug))
               (:value 'T)
           :examples $ []
           :schema $ :: 'Dynamic
         |ShownMaybe $ %{} 'CodeEntry (:doc "|Generic enum with where-bound on payload type")
           :code $ quote
             defenum ShownMaybe ('T)
-              ({} ('T Show))
+              ({} ('T Debug))
               (:some 'T)
               (:none)
           :examples $ []
@@ -169,23 +170,23 @@
                 render-maybe $ fn (v)
                   hint-fn $ {}
                     :generics $ [] 'T
-                    :where $ {} ('T Show)
+                    :where $ {} ('T Debug)
                     :args $ [] (:: 'Maybe1 'T)
                     :return 'String
                   match v
                     (:none) |none
-                    (:some item) (item .show)
+                    (:some item) (item .debug)
                 render-duo $ fn (v)
                   hint-fn $ {}
                     :generics $ [] 'T 'U
-                    :where $ {} ('T Show) ('U Show)
+                    :where $ {} ('T Debug) ('U Debug)
                     :args $ [] (:: 'Duo 'T 'U)
                     :return 'String
                   match v
                     (:pair left right)
-                      str-spaced |pair (left .show) (right .show)
+                      str-spaced |pair (left .debug) (right .debug)
                     (:swapped right left)
-                      str-spaced |swapped (right .show) (left .show)
+                      str-spaced |swapped (right .debug) (left .debug)
               println "|Testing generic enum where-bounds..."
               assert= |1 $ render-maybe (%:: Maybe1 :some 1)
               assert= |none $ render-maybe (%:: Maybe1 :none)
@@ -249,10 +250,10 @@
                     assert-type box $ :: 'ShownBox 'Number
                     assert-type some-value $ :: 'ShownMaybe 'Number
                     assert= |1 $ match some-value
-                      (:some item) (item .show)
+                      (:some item) (item .debug)
                       (:none) |none
                     assert= |none $ match none-value
-                      (:some item) (item .show)
+                      (:some item) (item .debug)
                       (:none) |none
               println "|✓ Data definition where-bounds passed"
           :examples $ []

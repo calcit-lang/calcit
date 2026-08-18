@@ -214,17 +214,17 @@ let
 
 ```cirru
 let
-    print-it $ fn (x)
+    debug-it $ fn (x)
       hint-fn $ {}
         :generics $ [] 'T
-        :where $ {} ('T Show)
+        :where $ {} ('T Debug)
         :args $ [] 'T
         :return 'String
-      x .show
-  print-it 1
+      x .debug
+  debug-it 1
 ```
 
-Do not use the old tuple/list form such as `:where $ [] (:: 'Show 'T)`.
+Do not use the old tuple/list form such as `:where $ [] (:: 'Debug 'T)`.
 
 #### 2. Compact Hint (Trailing Label)
 
@@ -352,7 +352,7 @@ If the body only needs a capability, add a trait bound rather than replacing `'T
 ```cirru.no-run
 :: :fn $ {}
   :generics $ [] 'T
-  :where $ {} ('T Show)
+  :where $ {} ('T Debug)
   :args $ [] 'T
   :return :string
 ```

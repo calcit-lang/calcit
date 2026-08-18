@@ -30,6 +30,19 @@ Historically, the idea was inspired by JavaScript, and also [borrowed from a tri
 ## Key terms
 
 - **Trait**: A named capability with method signatures (defined by `deftrait`).
+
+## `Debug` and `Show`
+
+Calcit separates diagnostic rendering from user-facing presentation:
+
+- `Debug` / `.debug` is implemented by every built-in Calcit value. It is the
+  faithful diagnostic representation, intended for logging and inspection.
+- `Show` / `.show` is deliberately opt-in. A struct or enum only receives it
+  after an explicit `defimpl ... calcit.core/Show`; calling `.show` on a
+  statically known value without that implementation is a type error.
+
+Use `Debug` for polymorphic helpers that must work with ordinary values. Use
+`Show` only when the API promises a curated presentation format.
 - **Trait impl**: An impl carrying the exact trait value as origin and providing its complete method set.
 - **Inherent method bag**: A compatibility impl without trait origin. It participates only in ordinary `.method` lookup and proves no trait bound.
 - **impl-traits**: Attaches one or more trait impl records to a struct/enum definition.
@@ -169,7 +182,7 @@ let
         :args $ [] 'T
         :return 'String
       x .show
-  show-it 1
+  ; `show-it` requires an explicit Show implementation at its call site.
 ```
 
 For multiple constraints on the same variable, use a list value:
@@ -218,8 +231,9 @@ Core types provide origin-carrying built-in trait implementations registered con
 | `Countable` | `.count` | List, Map, Set, String, Struct, Enum |
 | `Contains` | `.contains?` | List, Map, Set, String, Struct, Enum |
 | `Mappable` | `.map` | List, Map, Set, Option, Result |
-| `Show` | `.show` | Number, String, Bool, Tag, Symbol, Nil, CirruQuote, List, Map, Set, Fn, Struct, Enum |
-| `Eq` | `.eq?` | The same scalar, collection, struct, and enum categories registered for `Show` |
+| `Debug` | `.debug` | Number, String, Bool, Tag, Symbol, Nil, CirruQuote, List, Map, Set, Fn, Struct, Enum |
+| `Show` | `.show` | Explicit user implementations only |
+| `Eq` | `.eq?` | The same scalar, collection, struct, and enum categories registered for `Debug` |
 
 `Compare` returns a negative number, zero, or a positive number. It intentionally starts with Number and String; cross-category ordering is not defined.
 

@@ -2443,19 +2443,19 @@ impl CalcitTypeAnnotation {
   /// changing whether an otherwise identical core call emits a warning.
   fn builtin_core_trait_names(&self) -> &'static [&'static str] {
     if matches!(self, Self::StructValue(_) | Self::Struct(_, _)) {
-      return &["Show", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Countable", "Contains"];
     }
     if matches!(self, Self::AnonymousEnum | Self::EnumValue(_) | Self::Enum(_, _)) {
-      return &["Show", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Countable", "Contains"];
     }
     match self.core_impl_list_symbol() {
-      Some("&core-list-impls") => &["Show", "Eq", "Add", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-map-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-set-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-string-impls") => &["Show", "Eq", "Add", "Len", "Countable", "Contains", "Compare"],
-      Some("&core-number-impls") => &["Show", "Eq", "Add", "Multiply", "Compare"],
-      Some("&core-fn-impls") => &["Show"],
-      Some("&core-scalar-impls") => &["Show", "Eq"],
+      Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-string-impls") => &["Debug", "Eq", "Add", "Len", "Countable", "Contains", "Compare"],
+      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare"],
+      Some("&core-fn-impls") => &["Debug"],
+      Some("&core-scalar-impls") => &["Debug", "Eq"],
       _ => &[],
     }
   }
@@ -3671,13 +3671,15 @@ mod tests {
   #[test]
   fn bootstrap_core_trait_fallback_rejects_non_core_same_name() {
     let number = CalcitTypeAnnotation::Number;
+    let core_debug = Arc::new(CalcitTrait::new_reference("calcit.core/Debug"));
     let core_show = Arc::new(CalcitTrait::new_reference("calcit.core/Show"));
-    let user_show = Arc::new(CalcitTrait::new_reference("app.main/Show"));
-    let runtime_user_show = Arc::new(CalcitTrait::new_runtime(EdnTag::new("Show"), vec![], vec![]));
+    let user_debug = Arc::new(CalcitTrait::new_reference("app.main/Debug"));
+    let runtime_user_debug = Arc::new(CalcitTrait::new_runtime(EdnTag::new("Debug"), vec![], vec![]));
 
-    assert!(number.matches_annotation(&CalcitTypeAnnotation::Trait(core_show)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(user_show)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_show)));
+    assert!(number.matches_annotation(&CalcitTypeAnnotation::Trait(core_debug)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(core_show)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(user_debug)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
   }
 
   fn symbol(name: &str) -> Calcit {
