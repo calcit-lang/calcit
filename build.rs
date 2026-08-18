@@ -143,12 +143,25 @@ fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
     description: from_edn(map.get_or_nil("description")).map_err(|e| format!("entry `:description`: {e}"))?,
     modules: from_edn(map.get_or_nil("modules")).map_err(|e| format!("entry `:modules`: {e}"))?,
     type_slots: from_edn(map.get_or_nil("type-slots")).map_err(|e| format!("entry `:type-slots`: {e}"))?,
-    feature_policy: HashMap::new(),
+    feature_policy: match map.get_or_nil("feature-policy") {
+      Edn::Nil => HashMap::new(),
+      value => parse_feature_policy(value)?,
+    },
     target: match map.get_or_nil("target") {
       Edn::Nil => None,
       value => Some(from_edn(value).map_err(|e| format!("entry `:target`: {e}"))?),
     },
   })
+}
+
+fn parse_feature_policy(data: Edn) -> Result<HashMap<String, String>, String> {
+  let map = data.view_map().map_err(|e| format!("entry `:feature-policy` must be a map: {e}"))?;
+  let text = |value: &Edn| match value {
+    Edn::Tag(tag) => Ok(tag.ref_str().to_owned()),
+    Edn::Str(value) | Edn::Symbol(value) => Ok(value.to_string().trim_start_matches(':').to_owned()),
+    other => Err(format!("entry `:feature-policy` expects tag/string/symbol values, got {other:?}")),
+  };
+  map.0.iter().map(|(key, value)| Ok((text(key)?, text(value)?))).collect()
 }
 
 fn parse_entries(data: Edn) -> Result<HashMap<String, SnapshotEntry>, String> {

@@ -54,6 +54,11 @@ Functions containing raw interop should declare `:features $ #{} :js-ffi` in
 their schema. The feature identifies the boundary but does not suppress
 nullable dereference or strong-type mismatch diagnostics.
 
+Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
+legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
+with `js-nullish->option` only after accepting the opaque payload contract;
+generic `optionally` does not accept `JsNullish<T>`.
+
 ## 2. Capability and target policy
 
 ### 2.1 Capability policy
@@ -87,11 +92,6 @@ Supported targets are `:browser`, `:node`, `:native`, and `:wasm`. A definition'
 operation or a raw host operation in that definition then fails before codegen
 when the selected entry targets another host. Omitting `:target` preserves
 legacy projects and disables this target-specific check.
-
-Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
-legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
-with `js-nullish->option` only after accepting the opaque payload contract;
-generic `optionally` does not accept `JsNullish<T>`.
 
 ### 2.3 Audit untyped access points
 

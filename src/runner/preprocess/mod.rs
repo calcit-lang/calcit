@@ -1840,6 +1840,11 @@ fn preprocess_list_call(
           call_stack,
         )?;
         if let Some(rewritten) = rewrite_typed_js_field_operation(&head_form, &processed_args, scope_types) {
+          let rewritten_head = match &rewritten {
+            Calcit::List(items) => items.first().expect("typed JS field rewrite must have a head"),
+            _ => &rewritten,
+          };
+          require_js_ffi_feature_for_operation(rewritten_head, file_ns, &def_name, check_warnings, call_stack)?;
           return Ok(rewritten);
         }
 
@@ -4790,16 +4795,7 @@ fn external_trait_field_is_writable(trait_def: &CalcitTrait, field_name: &str) -
   let Some(ffi) = program::lookup_def_ffi(ns, def) else {
     return false;
   };
-  let writable = match ffi {
-    cirru_edn::Edn::Struct(value) => value
-      .pairs
-      .iter()
-      .find(|(key, _)| key.ref_str() == "writable")
-      .map(|(_, value)| value.clone()),
-    cirru_edn::Edn::Map(value) => value.get(&cirru_edn::Edn::Tag(EdnTag::new("writable"))).cloned(),
-    _ => None,
-  };
-  let Some(cirru_edn::Edn::Set(values)) = writable.as_ref() else {
+  let Some(cirru_edn::Edn::Set(values)) = ffi_metadata_value(&ffi, "writable") else {
     return false;
   };
   values.0.iter().any(|value| match value {
@@ -7668,6 +7664,34 @@ mod tests {
       Calcit::List(items)
         if matches!(items.first(), Some(Calcit::Method(name, calcit::MethodKind::ExternalGet(_))) if name.as_ref() == "value")
     ));
+  }
+
+  #[test]
+  fn typed_js_field_rewrite_obeys_js_ffi_capability_policy() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::require();
+    let _codegen_mode = CodegenModeGuard::enabled();
+    let receiver = external_field_test_receiver(seed_external_field_trait(true));
+    let rewritten = rewrite_typed_js_field_operation(
+      &external_field_test_symbol("js-get"),
+      &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value"))]),
+      &ScopeTypes::new(),
+    )
+    .expect("typed js-get should rewrite");
+    let rewritten_head = match &rewritten {
+      Calcit::List(items) => items.first().expect("typed JS field rewrite must have a head"),
+      _ => &rewritten,
+    };
+    let error = require_js_ffi_feature_for_operation(
+      rewritten_head,
+      "tests.external-field",
+      "unmarked",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("rewritten typed js-get must require the js-ffi feature");
+
+    assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"));
   }
 
   #[test]
