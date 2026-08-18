@@ -314,12 +314,12 @@ defstruct ElementSnapshot
 
 ```cirru
 defenum JsErrorKind
-  (:exception)
-  (:type-error)
-  (:range-error)
-  (:permission)
-  (:quota)
-  (:unknown)
+  :exception
+  :type-error
+  :range-error
+  :permission
+  :quota
+  :unknown
 
 defstruct JsError
   :kind 'js-ffi.types/JsErrorKind
@@ -480,10 +480,10 @@ JavaScript API 常返回有限字符串，例如 document ready state。使用 E
 
 ```cirru
 defenum DocumentReadyState
-  (:loading)
-  (:interactive)
-  (:complete)
-  (:unknown 'String)
+  :loading
+  :interactive
+  :complete
+  :unknown 'String
 ```
 
 raw adapter 先得到 String，decoder 再返回
@@ -603,12 +603,12 @@ Filesystem error 使用 Enum + Struct，而不是 String：
 
 ```cirru
 defenum FsErrorKind
-  (:not-found)
-  (:permission)
-  (:already-exists)
-  (:invalid-path)
-  (:io)
-  (:unknown 'String)
+  :not-found
+  :permission
+  :already-exists
+  :invalid-path
+  :io
+  :unknown 'String
 
 defstruct FsError
   :kind 'js-ffi.node/FsErrorKind
