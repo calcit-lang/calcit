@@ -5186,7 +5186,19 @@ fn validate_transparent_union_struct_match(
       continue;
     }
 
-    let Some(pattern_type) = resolve_type_value(pattern, scope_types) else {
+    let pattern_type = resolve_type_value(pattern, scope_types).or_else(|| match pattern {
+      // `struct-match` receives its source arms before macro expansion. A
+      // qualified struct name can therefore still be a Symbol rather than a
+      // resolved program value. Keep it as a nominal TypeRef so the common
+      // resolver below can look up its StructDef, including across namespaces.
+      Calcit::Symbol { sym, .. } => Some(Arc::new(CalcitTypeAnnotation::TypeRef(sym.clone(), Arc::new(vec![])))),
+      Calcit::Import(import) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from(format!("{}/{}", import.ns, import.def)),
+        Arc::new(vec![]),
+      ))),
+      _ => None,
+    });
+    let Some(pattern_type) = pattern_type else {
       return Err(fail(format!(
         "struct-match branch `{pattern}` cannot be resolved to a concrete Struct member of `{}`",
         receiver_type.to_brief_string()
