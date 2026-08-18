@@ -60,6 +60,10 @@ fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
 }
 
+fn current_type_annotation_namespace() -> Option<Arc<str>> {
+  current_type_annotation_warning_context().and_then(|label| label.rsplit_once('/').map(|(namespace, _)| Arc::from(namespace)))
+}
+
 // ---------------------------------------------------------------------------
 // Type-slot public API
 // ---------------------------------------------------------------------------
@@ -629,10 +633,6 @@ impl CalcitTypeAnnotation {
   }
 
   fn extract_type_ref_name(form: &Calcit) -> Option<Arc<str>> {
-    if let Some(name) = Self::parse_type_var_form(form) {
-      return Some(name);
-    }
-
     match form {
       Calcit::Symbol { sym, info, .. } => {
         let normalized = Self::normalize_type_ref_name(sym);
@@ -647,7 +647,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Calcit::Import(import) => Some(Arc::from(format!("{}/{}", import.ns, import.def))),
-      _ => None,
+      _ => Self::parse_type_var_form(form),
     }
   }
 
@@ -1701,7 +1701,8 @@ impl CalcitTypeAnnotation {
       // it as a nominal reference even in unscoped `assert-type` forms, so a
       // later Struct field access can resolve its declaration.
       return if (strict_named_refs || name.contains('/')) && !Self::generics_contains(generics, &name) {
-        Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])))
+        let qualified_name = Self::extract_type_ref_name(form).unwrap_or_else(|| name.clone());
+        Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, Arc::new(vec![])))
       } else {
         Arc::new(CalcitTypeAnnotation::TypeVar(name))
       };
@@ -2279,7 +2280,9 @@ impl CalcitTypeAnnotation {
         if let Some((ns, def)) = stripped.rsplit_once('/') {
           resolve_struct_from_program(ns, def).map(|s| (s, Some((Arc::from(ns), Arc::from(def)))))
         } else {
-          None
+          current_type_annotation_namespace()
+            .and_then(|ns| resolve_struct_from_program(&ns, stripped).map(|s| (s, Some((ns, Arc::from(stripped))))))
+            .or_else(|| resolve_struct_from_program(CORE_NS, stripped).map(|s| (s, Some((Arc::from(CORE_NS), Arc::from(stripped))))))
         }
       }
       Self::Optional(inner) => inner.resolve_to_struct_with_ref(),
@@ -2306,10 +2309,13 @@ impl CalcitTypeAnnotation {
         if let Some((ns, def)) = stripped.rsplit_once('/') {
           resolve_enum_from_program(ns, def).map(|e| (e, Some((Arc::from(ns), Arc::from(def)))))
         } else {
-          // Core named types are commonly written without a namespace in
-          // schemas because calcit.core is implicitly available. Resolve that
-          // global namespace before treating the reference as unknown.
-          resolve_enum_from_program(CORE_NS, stripped).map(|e| (e, Some((Arc::from(CORE_NS), Arc::from(stripped)))))
+          current_type_annotation_namespace()
+            .and_then(|ns| resolve_enum_from_program(&ns, stripped).map(|e| (e, Some((ns, Arc::from(stripped))))))
+            .or_else(|| {
+              // Core named types are commonly written without a namespace in
+              // schemas because calcit.core is implicitly available.
+              resolve_enum_from_program(CORE_NS, stripped).map(|e| (e, Some((Arc::from(CORE_NS), Arc::from(stripped)))))
+            })
         }
       }
       Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
@@ -2443,19 +2449,19 @@ impl CalcitTypeAnnotation {
   /// changing whether an otherwise identical core call emits a warning.
   fn builtin_core_trait_names(&self) -> &'static [&'static str] {
     if matches!(self, Self::StructValue(_) | Self::Struct(_, _)) {
-      return &["Show", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Countable", "Contains"];
     }
     if matches!(self, Self::AnonymousEnum | Self::EnumValue(_) | Self::Enum(_, _)) {
-      return &["Show", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Countable", "Contains"];
     }
     match self.core_impl_list_symbol() {
-      Some("&core-list-impls") => &["Show", "Eq", "Add", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-map-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-set-impls") => &["Show", "Eq", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-string-impls") => &["Show", "Eq", "Add", "Len", "Countable", "Contains", "Compare"],
-      Some("&core-number-impls") => &["Show", "Eq", "Add", "Multiply", "Compare"],
-      Some("&core-fn-impls") => &["Show"],
-      Some("&core-scalar-impls") => &["Show", "Eq"],
+      Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Contains"],
+      Some("&core-string-impls") => &["Debug", "Eq", "Add", "Len", "Countable", "Contains", "Compare"],
+      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare"],
+      Some("&core-fn-impls") => &["Debug"],
+      Some("&core-scalar-impls") => &["Debug", "Eq"],
       _ => &[],
     }
   }
@@ -2660,6 +2666,12 @@ impl CalcitTypeAnnotation {
         if Self::custom_keyword_matches(expected, "enum") || Self::custom_keyword_matches(expected, "tuple") =>
       {
         true
+      }
+      (Self::TypeRef(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct-def") => {
+        self.resolve_to_struct().is_some()
+      }
+      (Self::TypeRef(_, _), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum-def") => {
+        self.resolve_to_enum().is_some()
       }
       (Self::StructDef(actual), Self::StructDef(expected)) => actual.name == expected.name,
       (Self::EnumDef(actual), Self::EnumDef(expected)) => actual.name() == expected.name(),
@@ -3671,13 +3683,15 @@ mod tests {
   #[test]
   fn bootstrap_core_trait_fallback_rejects_non_core_same_name() {
     let number = CalcitTypeAnnotation::Number;
+    let core_debug = Arc::new(CalcitTrait::new_reference("calcit.core/Debug"));
     let core_show = Arc::new(CalcitTrait::new_reference("calcit.core/Show"));
-    let user_show = Arc::new(CalcitTrait::new_reference("app.main/Show"));
-    let runtime_user_show = Arc::new(CalcitTrait::new_runtime(EdnTag::new("Show"), vec![], vec![]));
+    let user_debug = Arc::new(CalcitTrait::new_reference("app.main/Debug"));
+    let runtime_user_debug = Arc::new(CalcitTrait::new_runtime(EdnTag::new("Debug"), vec![], vec![]));
 
-    assert!(number.matches_annotation(&CalcitTypeAnnotation::Trait(core_show)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(user_show)));
-    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_show)));
+    assert!(number.matches_annotation(&CalcitTypeAnnotation::Trait(core_debug)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(core_show)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(user_debug)));
+    assert!(!number.matches_annotation(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
   }
 
   fn symbol(name: &str) -> Calcit {

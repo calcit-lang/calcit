@@ -65,22 +65,22 @@ At the type level, `(:: 'ResultX 'Number 'String)` means the first slot is bound
 
 ### Generic Enums with `where` Bounds
 
-After the optional generics list, `defenum` may also take a `where` map to constrain type variables with traits. This is useful when enum payloads must support methods like `.show`.
+After the optional generics list, `defenum` may also take a `where` map to constrain type variables with traits. This is useful when enum payloads must support methods like `.debug`.
 
 ```cirru
 let
     ShownMaybe $ defenum ShownMaybe ([] 'T)
-      {} $ 'T Show
+      {} $ 'T Debug
       :some 'T
       :none
     some-val $ %:: ShownMaybe :some 1
     none-val $ %:: ShownMaybe :none
   assert-type some-val $ :: 'ShownMaybe 'Number
   assert= |1 $ match some-val
-    (:some item) (.show item)
+    (:some item) (.debug item)
     (:none) |none
   assert= |none $ match none-val
-    (:some item) (.show item)
+    (:some item) (.debug item)
     (:none) |none
 ```
 

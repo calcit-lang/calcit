@@ -3125,7 +3125,12 @@ mod tests {
       load_snapshot(&fixture.path.to_string_lossy())
         .expect("committed snapshot should load")
         .version,
-      "9.0.0"
+      "0.0.0"
+    );
+    assert!(
+      !fs::read_to_string(&fixture.path)
+        .expect("committed snapshot should read")
+        .contains(":version")
     );
   }
 

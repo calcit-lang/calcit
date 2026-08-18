@@ -59,6 +59,16 @@ pub fn format_path(path: &[usize]) -> String {
   }
 }
 
+/// Return the deps.cirru path next to a selected calcit.cirru snapshot.
+pub fn deps_path_for_snapshot(snapshot_path: &str) -> String {
+  Path::new(snapshot_path)
+    .parent()
+    .unwrap_or_else(|| Path::new("."))
+    .join("deps.cirru")
+    .display()
+    .to_string()
+}
+
 fn is_shell_sensitive_char(ch: char) -> bool {
   matches!(
     ch,

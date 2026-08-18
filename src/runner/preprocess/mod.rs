@@ -906,8 +906,17 @@ pub fn preprocess_expr(
       match runner::parse_ns_def(def) {
         Some((ns_alias, def_part)) => {
           if &*ns_alias == "js" {
+            require_js_ffi_feature(
+              &format!("raw JavaScript global `js/{def_part}`"),
+              location
+                .as_ref()
+                .map(|coord| NodeLocation::new(info.at_ns.to_owned(), info.at_def.to_owned(), coord.to_owned())),
+              &info.at_ns,
+              &info.at_def,
+              check_warnings,
+              call_stack,
+            )?;
             Ok(Calcit::RawCode(RawCodeType::Js, def_part))
-            // TODO js syntax to handle in future
           } else if is_registered_proc(def) {
             // registered proc with namespace-qualified name (e.g. "calcit.cli/list-ns")
             // must precede has_def_code: calcit.cli/* also exist in core as metadata stubs
@@ -1064,25 +1073,16 @@ pub fn preprocess_expr(
                 Ok(form)
               }
               None if codegen::codegen_mode() && is_js_syntax_procs(def) => {
-                // Check FFI permission: only allow if the current function's schema has :js-ffi feature
-                let has_ffi = CURRENT_FN_FEATURES.with(|cell| {
-                  cell
-                    .borrow()
+                require_js_ffi_feature(
+                  &format!("JavaScript syntax `{def}`"),
+                  location
                     .as_ref()
-                    .is_some_and(|features| features.contains(&EdnTag::new("js-ffi")))
-                }) || program::lookup_def_schema(&info.at_ns, &info.at_def)
-                  .as_ref()
-                  .as_fn()
-                  .is_some_and(|fn_annot| fn_annot.features.contains(&EdnTag::new("js-ffi")));
-                if !has_ffi {
-                  gen_check_warning_with_location(
-                    format!(
-                      "[Warn] JS FFI function `{def}` used in `{def_ns}/{at_def}` without `:js-ffi` feature in schema — consider isolating FFI operations into dedicated binding functions with `:features $ #{{}} :js-ffi`",
-                    ),
-                    NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
-                    check_warnings,
-                  );
-                }
+                    .map(|coord| NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), coord.to_owned())),
+                  def_ns,
+                  at_def,
+                  check_warnings,
+                  call_stack,
+                )?;
                 Ok(expr.to_owned())
               }
               None => {
@@ -1257,6 +1257,7 @@ fn preprocess_list_call(
     && find_trait_field_type(&traits, field_name.as_ref()).is_some()
   {
     let typed_access = Calcit::Method(field_name.clone(), calcit::MethodKind::ExternalAccess(receiver_type));
+    require_js_ffi_feature_for_operation(&typed_access, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
     let processed_receiver = preprocess_expr(&args[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
     return Ok(Calcit::from(CalcitList::from(&[typed_access, processed_receiver])));
   }
@@ -1284,6 +1285,7 @@ fn preprocess_list_call(
               Arc::from(field_tag.ref_str()),
               calcit::MethodKind::ExternalAccess(type_info.clone()),
             );
+            require_js_ffi_feature_for_operation(&typed_access, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
             return Ok(Calcit::from(CalcitList::from(&[typed_access, head_form])));
           }
           if let Some(struct_def) = type_info.as_ref().resolve_to_struct()
@@ -1356,8 +1358,15 @@ fn preprocess_list_call(
             let expected = format!(".{method_name}");
             methods.iter().any(|method| method.name == expected)
           });
+          // `Show` and `Debug` are presentation contracts. Keep them on the
+          // typed-method path whenever the receiver has a static Calcit type:
+          // an omitted `Show` implementation must be a type error rather than
+          // silently becoming a prefix argument. Dynamic and external JS
+          // values retain the existing escape hatch.
+          let is_display_contract = matches!(method_name.as_ref(), "show" | "debug")
+            && !matches!(type_info.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::JsObject);
 
-          if is_nominal_or_trait || has_known_method {
+          if is_nominal_or_trait || has_known_method || is_display_contract {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let is_external = trait_list_from_type(type_info.as_ref())
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
@@ -1372,7 +1381,11 @@ fn preprocess_list_call(
               processed_args = processed_args.push(preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?);
             }
             let processed_args = CalcitList::from(processed_args);
+            if is_display_contract {
+              validate_method_call(&typed_method, &processed_args, scope_types, call_stack)?;
+            }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+            require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
             let mut ys = CalcitList::new_inner_from(&[typed_method]);
             for arg in processed_args.iter() {
@@ -1827,8 +1840,21 @@ fn preprocess_list_call(
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
-        check_typed_js_field_operation(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        check_typed_js_field_operation(
+          &head_form,
+          &processed_args,
+          scope_types,
+          file_ns,
+          &def_name,
+          check_warnings,
+          call_stack,
+        )?;
         if let Some(rewritten) = rewrite_typed_js_field_operation(&head_form, &processed_args, scope_types) {
+          let rewritten_head = match &rewritten {
+            Calcit::List(items) => items.first().expect("typed JS field rewrite must have a head"),
+            _ => &rewritten,
+          };
+          require_js_ffi_feature_for_operation(rewritten_head, file_ns, &def_name, check_warnings, call_stack)?;
           return Ok(rewritten);
         }
 
@@ -1933,6 +1959,7 @@ fn preprocess_list_call(
         if let Some(call_head) = ys.first() {
           // Recompute processed_args from ys after optimization rewrites (e.g. struct:get→nth, assoc→assoc-at)
           let processed_args = CalcitList::from(ys.drop_left());
+          require_js_ffi_feature_for_operation(call_head, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
           warn_on_nullable_js_ffi_dereference(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_untyped_js_ffi_field_access(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
@@ -2487,6 +2514,187 @@ fn grab_def_name(x: &Calcit) -> Arc<str> {
     Calcit::Symbol { info, .. } | Calcit::Local(CalcitLocal { info, .. }) => info.at_def.to_owned(),
     _ => String::from("??").into(),
   }
+}
+
+/// Capability validation for operations that lower directly to JavaScript.
+///
+/// This deliberately runs after ordinary resolution and does not alter type
+/// annotations, trait lookup, or generic bindings. A function's `:features`
+/// declares what its implementation body may do; callers do not inherit it.
+fn require_js_ffi_feature(
+  operation: &str,
+  location: Option<NodeLocation>,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !codegen::codegen_mode() {
+    return Ok(());
+  }
+  // Core runtime initialization uses internal lowering forms that are not
+  // project-level FFI boundaries and do not carry public function schemas.
+  if file_ns == calcit::CORE_NS {
+    return Ok(());
+  }
+  validate_js_ffi_definition_target(operation, location.clone(), file_ns, def_name, call_stack)?;
+  let policy = program::active_feature_policy("js-ffi");
+  if matches!(policy, crate::snapshot::FeaturePolicy::Allow) {
+    return Ok(());
+  }
+
+  let has_ffi = CURRENT_FN_FEATURES.with(|cell| {
+    cell
+      .borrow()
+      .as_ref()
+      .is_some_and(|features| features.contains(&EdnTag::new("js-ffi")))
+  }) || program::lookup_def_schema(file_ns, def_name)
+    .as_ref()
+    .as_fn()
+    .is_some_and(|fn_annot| fn_annot.features.contains(&EdnTag::new("js-ffi")));
+
+  if has_ffi {
+    return Ok(());
+  }
+
+  let message = format!(
+    "[Warn] {operation} used in {file_ns}/{def_name} without `:js-ffi` feature in schema — isolate host operations in a binding function with `:features $ #{{}} :js-ffi`"
+  );
+  if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      message.replacen("[Warn]", "[Error]", 1),
+      "E_JS_FFI_FEATURE_REQUIRED",
+      call_stack,
+      location,
+    ));
+  }
+  if let Some(location) = location {
+    gen_check_warning_with_location_code(message, "W_JS_FFI_FEATURE_REQUIRED", location, check_warnings);
+  } else {
+    gen_check_warning_code(message, "W_JS_FFI_FEATURE_REQUIRED", file_ns, check_warnings);
+  }
+  Ok(())
+}
+
+fn ffi_metadata_value<'a>(ffi: &'a cirru_edn::Edn, key: &str) -> Option<&'a cirru_edn::Edn> {
+  match ffi {
+    cirru_edn::Edn::Struct(value) => value.pairs.iter().find(|(field, _)| field.ref_str() == key).map(|(_, value)| value),
+    cirru_edn::Edn::Map(value) => value.get(&cirru_edn::Edn::tag(key)),
+    _ => None,
+  }
+}
+
+fn ffi_metadata_target(ffi: &cirru_edn::Edn) -> Option<crate::snapshot::SnapshotTarget> {
+  let value = ffi_metadata_value(ffi, "target")?;
+  let name = match value {
+    cirru_edn::Edn::Tag(tag) => tag.ref_str(),
+    cirru_edn::Edn::Str(text) | cirru_edn::Edn::Symbol(text) => text.trim_start_matches(':'),
+    _ => return None,
+  };
+  match name {
+    "browser" => Some(crate::snapshot::SnapshotTarget::Browser),
+    "node" => Some(crate::snapshot::SnapshotTarget::Node),
+    "native" => Some(crate::snapshot::SnapshotTarget::Native),
+    "wasm" => Some(crate::snapshot::SnapshotTarget::Wasm),
+    _ => None,
+  }
+}
+
+fn validate_js_ffi_target(
+  expected: crate::snapshot::SnapshotTarget,
+  operation: &str,
+  location: Option<NodeLocation>,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Some(active) = program::active_entry_target() else {
+    return Ok(());
+  };
+  if active == expected {
+    return Ok(());
+  }
+  let message = format!(
+    "[Error] {operation} requires `{}` target, but the selected entry targets `{}` in {file_ns}/{def_name}",
+    expected.as_str(),
+    active.as_str()
+  );
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    message,
+    "E_JS_FFI_TARGET_MISMATCH",
+    call_stack,
+    location,
+  ))
+}
+
+fn validate_js_ffi_definition_target(
+  operation: &str,
+  location: Option<NodeLocation>,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Some(ffi) = program::lookup_def_ffi(file_ns, def_name) else {
+    return Ok(());
+  };
+  let Some(expected) = ffi_metadata_target(&ffi) else {
+    return Ok(());
+  };
+  validate_js_ffi_target(expected, operation, location, file_ns, def_name, call_stack)
+}
+
+fn js_ffi_operation_name(head: &Calcit) -> Option<&'static str> {
+  match head {
+    Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "js-get" | "aget") => Some("JavaScript field read"),
+    Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "js-set" | "aset") => Some("JavaScript field write"),
+    Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional) => {
+      Some("native JavaScript method call")
+    }
+    Calcit::Method(_, calcit::MethodKind::Access | calcit::MethodKind::AccessOptional) => Some("native JavaScript property access"),
+    Calcit::Method(_, calcit::MethodKind::ExternalAccess(_)) => Some("external-object field access"),
+    Calcit::Method(_, calcit::MethodKind::ExternalGet(_)) => Some("external-object field read"),
+    Calcit::Method(_, calcit::MethodKind::ExternalSet(_)) => Some("external-object field write"),
+    Calcit::Method(_, calcit::MethodKind::ExternalInvoke(_)) => Some("external-object method call"),
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "unsafe-coerce" => {
+      Some("unsafe host assertion `unsafe-coerce`")
+    }
+    _ => None,
+  }
+}
+
+fn require_js_ffi_feature_for_operation(
+  head: &Calcit,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if let Some(operation) = js_ffi_operation_name(head) {
+    if let Some(receiver_type) = match head {
+      Calcit::Method(_, calcit::MethodKind::ExternalAccess(value))
+      | Calcit::Method(_, calcit::MethodKind::ExternalGet(value))
+      | Calcit::Method(_, calcit::MethodKind::ExternalSet(value))
+      | Calcit::Method(_, calcit::MethodKind::ExternalInvoke(value)) => Some(value.as_ref()),
+      _ => None,
+    } && let Some(traits) = trait_list_from_type(receiver_type)
+    {
+      for trait_def in traits {
+        if let Some(ffi) = trait_def
+          .definition_ref
+          .as_deref()
+          .and_then(|definition| definition.rsplit_once('/'))
+          .and_then(|(ns, def)| program::lookup_def_ffi(ns, def))
+          && let Some(expected) = ffi_metadata_target(&ffi)
+        {
+          validate_js_ffi_target(expected, operation, head.get_location(), file_ns, def_name, call_stack)?;
+        }
+      }
+    }
+    require_js_ffi_feature(operation, head.get_location(), file_ns, def_name, check_warnings, call_stack)?;
+  }
+  Ok(())
 }
 
 pub(crate) fn gen_check_warning(message: String, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
@@ -3473,23 +3681,24 @@ fn check_typed_js_field_operation(
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
   let operation = match head {
     Calcit::Symbol { sym, .. } if sym.as_ref() == "js-get" => "js-get",
     Calcit::Symbol { sym, .. } if sym.as_ref() == "js-set" => "js-set",
-    _ => return,
+    _ => return Ok(()),
   };
   let (Some(receiver), Some(key)) = (args.first(), args.get(1)) else {
-    return;
+    return Ok(());
   };
   let Some(field_name) = static_js_field_name(key) else {
-    return;
+    return Ok(());
   };
   let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
-    return;
+    return Ok(());
   };
   let Some(traits) = trait_list_from_type(receiver_type.as_ref()) else {
-    return;
+    return Ok(());
   };
   let external_traits = traits
     .iter()
@@ -3497,9 +3706,9 @@ fn check_typed_js_field_operation(
     .cloned()
     .collect::<Vec<_>>();
   if external_traits.is_empty() {
-    return;
+    return Ok(());
   }
-  let Some((_, field_type)) = find_trait_field_type(&external_traits, field_name) else {
+  let Some((field_trait, field_type)) = find_trait_field_type(&external_traits, field_name) else {
     let message = format!(
       "[Warn] `{operation}` cannot access undeclared external-object field `:{field_name}` in {file_ns}/{def_name}; declare the field on the external trait, use a dynamic key, or use raw `aget`/`aset`"
     );
@@ -3510,8 +3719,28 @@ fn check_typed_js_field_operation(
       key.get_location().or_else(|| head.get_location()),
       check_warnings,
     );
-    return;
+    return Ok(());
   };
+  let policy = program::active_feature_policy("js-ffi");
+  if operation == "js-set"
+    && !matches!(policy, crate::snapshot::FeaturePolicy::Allow)
+    && !external_trait_field_is_writable(field_trait, field_name)
+  {
+    let message = format!(
+      "[Warn] `js-set` cannot write read-only external-object field `:{field_name}` in {file_ns}/{def_name}; add `:writable $ #{{}} :{field_name}` to that trait's `:ffi` metadata or expose a mutating method instead"
+    );
+    let location = key.get_location().or_else(|| head.get_location());
+    if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        message.replacen("[Warn]", "[Error]", 1),
+        "E_JS_FFI_FIELD_READONLY",
+        call_stack,
+        location,
+      ));
+    }
+    gen_check_warning_code_at(message, "W_JS_FFI_FIELD_READONLY", file_ns, location, check_warnings);
+  }
   if operation == "js-set"
     && let Some(value) = args.get(2)
     && let Some(value_type) = resolve_type_value(value, scope_types)
@@ -3530,6 +3759,7 @@ fn check_typed_js_field_operation(
       check_warnings,
     );
   }
+  Ok(())
 }
 
 /// Raw `.-`/`.!`/`aget`/`aset`/`js-get`/`js-set` on a bare `JsObject` receiver
@@ -4286,7 +4516,7 @@ fn validate_method_call(
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   // Only validate Method(Invoke) calls
-  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(inferred_receiver_type)) = head else {
     return Ok(());
   };
 
@@ -4295,10 +4525,18 @@ fn validate_method_call(
     return Ok(());
   };
 
+  // Trait declarations encode a member signature as `deftrait T .show :fn`.
+  // The temporary Dynamic method receiver and the trailing tag are syntax, not
+  // a value-level method call, so the trait declaration owns its validation.
+  if matches!(inferred_receiver_type.as_ref(), CalcitTypeAnnotation::Dynamic) && matches!(receiver, Calcit::Tag(_)) {
+    return Ok(());
+  }
+
   // Get receiver type
-  let Some(type_value) = resolve_type_value(receiver, scope_types) else {
-    return Ok(()); // No type info, skip validation
-  };
+  // Postfix method rewriting records the receiver type on the method itself.
+  // Literals do not always carry a separately resolvable type in `ScopeTypes`,
+  // so prefer that evidence and only fall back to resolving the expression.
+  let type_value = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
 
   if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
     let method_str = method_name.as_ref();
@@ -4320,6 +4558,23 @@ fn validate_method_call(
         format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
         method_name,
         &type_desc,
+      ),
+      call_stack,
+      head.get_location(),
+    ));
+  }
+
+  // `Show` is opt-in even while the core implementation tables are still
+  // bootstrapping. Without this explicit branch, a primitive receiver can
+  // have no resolved impl table yet and method validation would skip it.
+  if method_name.as_ref() == "show"
+    && static_method_descriptors(type_value.as_ref()).is_some_and(|methods| methods.iter().all(|method| method.name != ".show"))
+  {
+    let type_desc = describe_type(type_value.as_ref());
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!(
+        "unknown method `.show` for {type_desc}. Show is opt-in; attach an explicit `defimpl ... calcit.core/Show` implementation, or use `.debug` for the built-in diagnostic representation"
       ),
       call_stack,
       head.get_location(),
@@ -4565,6 +4820,26 @@ pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
       .is_some_and(|value| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
     _ => false,
   }
+}
+
+fn external_trait_field_is_writable(trait_def: &CalcitTrait, field_name: &str) -> bool {
+  let Some(def_ref) = trait_def.definition_ref.as_deref() else {
+    return false;
+  };
+  let Some((ns, def)) = def_ref.rsplit_once('/') else {
+    return false;
+  };
+  let Some(ffi) = program::lookup_def_ffi(ns, def) else {
+    return false;
+  };
+  let Some(cirru_edn::Edn::Set(values)) = ffi_metadata_value(&ffi, "writable") else {
+    return false;
+  };
+  values.0.iter().any(|value| match value {
+    cirru_edn::Edn::Tag(tag) => tag.ref_str() == field_name,
+    cirru_edn::Edn::Str(name) | cirru_edn::Edn::Symbol(name) => name.as_ref().trim_start_matches(':') == field_name,
+    _ => false,
+  })
 }
 
 fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
@@ -5430,10 +5705,7 @@ pub fn preprocess_defn(
       let prev_features = CURRENT_FN_FEATURES.with(|cell| {
         let mut guard = cell.borrow_mut();
         let old = guard.take();
-        *guard = match def_schema.as_ref() {
-          CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.features.clone()),
-          _ => None,
-        };
+        *guard = effective_fn_schema.as_ref().map(|fn_annot| fn_annot.features.clone());
         old
       });
 
@@ -6254,7 +6526,8 @@ fn validate_def_schema_during_preprocess(
 mod tests {
   use super::*;
   use crate::calcit::{
-    CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitScope, CalcitStructDef, CalcitStructValue, ImportInfo,
+    CalcitEnumDef, CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitImport, CalcitMacro, CalcitScope, CalcitStructDef,
+    CalcitStructValue, ImportInfo,
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
@@ -7290,7 +7563,7 @@ mod tests {
     assert!(trait_def.has_method("show"));
   }
 
-  fn seed_external_field_trait() -> Arc<CalcitTrait> {
+  fn seed_external_field_trait(writable: bool) -> Arc<CalcitTrait> {
     let ns = "tests.external-field";
     let def = "HostElement";
     let trait_code = code_to_calcit(
@@ -7318,15 +7591,63 @@ mod tests {
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
             examples: vec![],
-            ffi: Some(cirru_edn::Edn::map_from_iter([
-              (cirru_edn::Edn::tag("backend"), cirru_edn::Edn::tag("js")),
-              (cirru_edn::Edn::tag("kind"), cirru_edn::Edn::tag("external-object")),
-            ])),
+            ffi: Some(cirru_edn::Edn::map_from_iter(
+              [
+                (cirru_edn::Edn::tag("backend"), cirru_edn::Edn::tag("js")),
+                (cirru_edn::Edn::tag("kind"), cirru_edn::Edn::tag("external-object")),
+              ]
+              .into_iter()
+              .chain(writable.then(|| {
+                (
+                  cirru_edn::Edn::tag("writable"),
+                  cirru_edn::Edn::Set(cirru_edn::EdnSetView(HashSet::from([cirru_edn::Edn::tag("value")]))),
+                )
+              })),
+            )),
           },
         )]),
       },
     );
     Arc::new(trait_def)
+  }
+
+  struct JsFfiFeaturePolicyGuard;
+
+  impl JsFfiFeaturePolicyGuard {
+    fn with(policy: crate::snapshot::FeaturePolicy) -> Self {
+      program::configure_entry_feature_policy(&HashMap::from([("js-ffi".to_owned(), policy)]));
+      Self
+    }
+
+    fn require() -> Self {
+      Self::with(crate::snapshot::FeaturePolicy::Error)
+    }
+
+    fn warn() -> Self {
+      Self::with(crate::snapshot::FeaturePolicy::Warn)
+    }
+  }
+
+  impl Drop for JsFfiFeaturePolicyGuard {
+    fn drop(&mut self) {
+      program::configure_entry_feature_policy(&HashMap::new());
+    }
+  }
+
+  struct CodegenModeGuard(bool);
+
+  impl CodegenModeGuard {
+    fn enabled() -> Self {
+      let previous = codegen::codegen_mode();
+      codegen::set_codegen_mode(true);
+      Self(previous)
+    }
+  }
+
+  impl Drop for CodegenModeGuard {
+    fn drop(&mut self) {
+      codegen::set_codegen_mode(self.0);
+    }
   }
 
   fn external_field_test_symbol(name: &str) -> Calcit {
@@ -7357,7 +7678,7 @@ mod tests {
   #[test]
   fn js_get_infers_external_trait_field_payload() {
     let _guard = lock_preprocess_test_state();
-    let receiver = external_field_test_receiver(seed_external_field_trait());
+    let receiver = external_field_test_receiver(seed_external_field_trait(true));
     let expression = Calcit::from(vec![
       external_field_test_symbol("js-get"),
       receiver,
@@ -7369,7 +7690,7 @@ mod tests {
       Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
     ));
 
-    let receiver = external_field_test_receiver(seed_external_field_trait());
+    let receiver = external_field_test_receiver(seed_external_field_trait(true));
     let rewritten = rewrite_typed_js_field_operation(
       &external_field_test_symbol("js-get"),
       &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value"))]),
@@ -7384,9 +7705,64 @@ mod tests {
   }
 
   #[test]
+  fn typed_js_field_rewrite_obeys_js_ffi_capability_policy() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::require();
+    let _codegen_mode = CodegenModeGuard::enabled();
+    let receiver = external_field_test_receiver(seed_external_field_trait(true));
+    let rewritten = rewrite_typed_js_field_operation(
+      &external_field_test_symbol("js-get"),
+      &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value"))]),
+      &ScopeTypes::new(),
+    )
+    .expect("typed js-get should rewrite");
+    let rewritten_head = match &rewritten {
+      Calcit::List(items) => items.first().expect("typed JS field rewrite must have a head"),
+      _ => &rewritten,
+    };
+    let error = require_js_ffi_feature_for_operation(
+      rewritten_head,
+      "tests.external-field",
+      "unmarked",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("rewritten typed js-get must require the js-ffi feature");
+
+    assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"));
+  }
+
+  #[test]
+  fn unlowered_js_field_operations_still_require_js_ffi_capability() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::require();
+    let _codegen_mode = CodegenModeGuard::enabled();
+
+    for (operation, key) in [
+      ("js-get", Calcit::Tag(EdnTag::new("missing"))),
+      ("aget", untyped_js_ffi_test_receiver()),
+    ] {
+      let expression = Calcit::from(vec![external_field_test_symbol(operation), untyped_js_ffi_test_receiver(), key]);
+      let scope_defs = HashSet::new();
+      let mut scope_types = ScopeTypes::new();
+      let warnings = RefCell::new(vec![]);
+      let error = preprocess_expr(
+        &expression,
+        &scope_defs,
+        &mut scope_types,
+        "tests.untyped-ffi",
+        &warnings,
+        &CallStackList::default(),
+      )
+      .expect_err("raw JS field operations must be gated even when typed lowering is unavailable");
+      assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"), "operation: {operation}");
+    }
+  }
+
+  #[test]
   fn js_set_checks_external_trait_static_fields() {
     let _guard = lock_preprocess_test_state();
-    let receiver = external_field_test_receiver(seed_external_field_trait());
+    let receiver = external_field_test_receiver(seed_external_field_trait(true));
     let head = external_field_test_symbol("js-set");
 
     let valid_warnings = RefCell::new(vec![]);
@@ -7397,7 +7773,9 @@ mod tests {
       "tests.external-field",
       "valid",
       &valid_warnings,
-    );
+      &CallStackList::default(),
+    )
+    .expect("writable external field should be accepted");
     assert!(valid_warnings.borrow().is_empty());
     let rewritten = rewrite_typed_js_field_operation(
       &head,
@@ -7419,7 +7797,9 @@ mod tests {
       "tests.external-field",
       "unknown",
       &unknown_warnings,
-    );
+      &CallStackList::default(),
+    )
+    .expect("unknown external field remains a warning");
     assert_eq!(unknown_warnings.borrow()[0].code(), Some("W_JS_FFI_UNKNOWN_FIELD"));
 
     let mismatch_warnings = RefCell::new(vec![]);
@@ -7430,8 +7810,70 @@ mod tests {
       "tests.external-field",
       "mismatch",
       &mismatch_warnings,
-    );
+      &CallStackList::default(),
+    )
+    .expect("mismatched external field value remains a warning");
     assert_eq!(mismatch_warnings.borrow()[0].code(), Some("W_JS_FFI_FIELD_TYPE_MISMATCH"));
+  }
+
+  #[test]
+  fn js_set_requires_external_field_writable_metadata() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::warn();
+    let receiver = external_field_test_receiver(seed_external_field_trait(false));
+    let warnings = RefCell::new(vec![]);
+    check_typed_js_field_operation(
+      &external_field_test_symbol("js-set"),
+      &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value")), Calcit::Str(Arc::from("blocked"))]),
+      &ScopeTypes::new(),
+      "tests.external-field",
+      "readonly",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("warn policy should not reject a read-only field");
+
+    assert_eq!(warnings.borrow().len(), 1);
+    assert_eq!(warnings.borrow()[0].code(), Some("W_JS_FFI_FIELD_READONLY"));
+  }
+
+  #[test]
+  fn js_set_error_policy_rejects_readonly_external_field() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::require();
+    let receiver = external_field_test_receiver(seed_external_field_trait(false));
+    let error = check_typed_js_field_operation(
+      &external_field_test_symbol("js-set"),
+      &CalcitList::from(&[receiver, Calcit::Tag(EdnTag::new("value")), Calcit::Str(Arc::from("blocked"))]),
+      &ScopeTypes::new(),
+      "tests.external-field",
+      "readonly",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("error policy must reject a read-only external field");
+
+    assert_eq!(error.code(), Some("E_JS_FFI_FIELD_READONLY"));
+  }
+
+  #[test]
+  fn js_ffi_error_policy_rejects_unmarked_host_operations() {
+    let _guard = lock_preprocess_test_state();
+    let _feature_policy = JsFfiFeaturePolicyGuard::require();
+    let _codegen_mode = CodegenModeGuard::enabled();
+    let warnings = RefCell::new(vec![]);
+    let error = require_js_ffi_feature(
+      "raw JavaScript global `js/document`",
+      None,
+      "tests.js-ffi",
+      "unmarked",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("strict policy must reject an unmarked host operation");
+
+    assert_eq!(error.code(), Some("E_JS_FFI_FEATURE_REQUIRED"));
+    assert!(warnings.borrow().is_empty());
   }
 
   fn untyped_js_ffi_test_receiver() -> Calcit {
@@ -7501,7 +7943,7 @@ mod tests {
     assert!(dynamic_key_warnings.borrow().is_empty());
 
     // Already-typed external-object receivers are covered by other diagnostics.
-    let typed_receiver = external_field_test_receiver(seed_external_field_trait());
+    let typed_receiver = external_field_test_receiver(seed_external_field_trait(true));
     let typed_warnings = RefCell::new(vec![]);
     warn_on_untyped_js_ffi_field_access(
       &external_field_test_symbol("aget"),
@@ -7801,6 +8243,13 @@ mod tests {
     router_def.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
     let mut store_def = CalcitStructDef::from_fields(EdnTag::from("ClientStore"), vec![EdnTag::from("router")]);
     store_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Router"), Arc::new(vec![])))]);
+    let event_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("Event"), vec![EdnTag::from("none")])),
+        values: Arc::new(vec![Calcit::Nil]),
+      })
+      .expect("valid Event enum"),
+    );
 
     program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
       Arc::from(ns),
@@ -7827,11 +8276,22 @@ mod tests {
               ffi: None,
             },
           ),
+          (
+            Arc::from("Event"),
+            program::ProgramDefEntry {
+              code: Calcit::EnumDef(event_def.as_ref().clone()),
+              schema: crate::calcit::DYNAMIC_TYPE.clone(),
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          ),
         ]),
       },
     );
     program::write_runtime_ready(ns, "Router", Calcit::StructDef(router_def)).expect("register Router runtime metadata");
     program::write_runtime_ready(ns, "ClientStore", Calcit::StructDef(store_def)).expect("register ClientStore runtime metadata");
+    program::write_runtime_ready(ns, "Event", Calcit::EnumDef(event_def.as_ref().clone())).expect("register Event runtime metadata");
 
     let store_type = Arc::new(CalcitTypeAnnotation::TypeRef(
       Arc::from(format!("{ns}/ClientStore")),
@@ -7856,6 +8316,21 @@ mod tests {
       ),
       "nested field should resolve relative to its owner, got {inferred:?}"
     );
+
+    let struct_marker = CalcitTypeAnnotation::from_tag_name("struct-def");
+    let enum_marker = CalcitTypeAnnotation::from_tag_name("enum-def");
+    let struct_ref = CalcitTypeAnnotation::TypeRef(Arc::from("Router"), Arc::new(vec![]));
+    let enum_ref = CalcitTypeAnnotation::TypeRef(Arc::from("Event"), Arc::new(vec![]));
+    crate::calcit::with_type_annotation_warning_context(format!("{ns}/ClientStore"), || {
+      assert!(
+        struct_ref.matches_annotation(&struct_marker),
+        "unqualified struct TypeRef should resolve in its source namespace"
+      );
+      assert!(
+        enum_ref.matches_annotation(&enum_marker),
+        "unqualified enum TypeRef should resolve in its source namespace"
+      );
+    });
   }
 
   #[test]
@@ -9364,6 +9839,40 @@ mod tests {
     assert!(message.contains("requires a String receiver"), "message: {message}");
     assert!(message.contains("inferred as `struct MapLike`"), "message: {message}");
     assert!(message.contains("`(trim receiver)`"), "message: {message}");
+  }
+
+  #[test]
+  fn show_on_builtin_value_is_a_type_error_but_debug_is_a_typed_method() {
+    let show_expr = Cirru::List(vec![Cirru::leaf("1"), Cirru::leaf(".show")]);
+    let show_code = code_to_calcit(&show_expr, "tests.method", "demo", vec![]).expect("parse show call");
+    let warnings = RefCell::new(vec![]);
+    let mut scope_types = ScopeTypes::new();
+    let show_error = preprocess_expr(
+      &show_code,
+      &HashSet::new(),
+      &mut scope_types,
+      "tests.method",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("a Number must not receive the opt-in Show method");
+    assert!(show_error.to_string().contains("unknown method `.show`"), "error: {show_error}");
+
+    let debug_expr = Cirru::List(vec![Cirru::leaf("1"), Cirru::leaf(".debug")]);
+    let debug_code = code_to_calcit(&debug_expr, "tests.method", "demo", vec![]).expect("parse debug call");
+    let debug_value = preprocess_expr(
+      &debug_code,
+      &HashSet::new(),
+      &mut scope_types,
+      "tests.method",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("a Number should receive the built-in Debug method");
+    let Calcit::List(debug_call) = debug_value else {
+      panic!("debug call should stay a list");
+    };
+    assert!(matches!(debug_call.first(), Some(Calcit::Method(name, calcit::MethodKind::Invoke(_))) if name.as_ref() == "debug"));
   }
 
   #[test]

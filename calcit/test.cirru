@@ -429,14 +429,14 @@
                       assert= true $ any? (&enum:impls a0-tuple)
                         fn (impl)
                           = (impl-origin impl) (%some NumTrait)
-                assert-traits a0 NumTrait calcit.core/Show
+                assert-traits a0 NumTrait calcit.core/Debug
                 let
                     a1 $ .inc a0
                   assert-type a1 NumBox
-                  assert-traits a1 NumTrait calcit.core/Show
+                  assert-traits a1 NumTrait calcit.core/Debug
                   let
                       a2 $ .inc a1
-                    assert-traits a2 NumTrait calcit.core/Show
+                    assert-traits a2 NumTrait calcit.core/Debug
                     assert= (%:: NumBox :number 2) a2
                     assert= |1 $ .show a1
           :examples $ []

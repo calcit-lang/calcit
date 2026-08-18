@@ -14,7 +14,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use super::edit::{bump_semver_value, load_snapshot, parse_semver_value, save_snapshot};
+use super::common::deps_path_for_snapshot;
+use super::edit::{load_snapshot, save_snapshot};
 
 fn load_snapshot_for_display(input_path: &str) -> Result<snapshot::Snapshot, String> {
   if !Path::new(input_path).exists() {
@@ -74,7 +75,8 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
   }
 
   println!("{}", "Project Config:".bold());
-  println!("  {}: {}", "version".cyan(), snapshot.version);
+  let deps_path = deps_path_for_snapshot(input_path);
+  println!("  {}: managed in deps.cirru (use `caps version get {deps_path}`)", "version".cyan());
   println!("\n{}", "Snapshot Entries:".bold());
 
   let mut names: Vec<&String> = snapshot.entries.keys().collect();
@@ -197,42 +199,23 @@ fn load_module_silent(module_path: &str, base_dir: &Path, module_folder: &Path) 
 }
 
 fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<(), String> {
-  let replacement = match opts.value.as_deref() {
-    None => "`caps version get`".to_owned(),
-    Some(v @ ("patch" | "minor" | "major")) => format!("`caps version bump {v}`"),
-    Some(v) => format!("`caps version set {v}`"),
-  };
+  let replacement = version_command_replacement(opts.value.as_deref(), snapshot_file);
   eprintln!(
-    "[Deprecated] `cr config version` manages the snapshot mirror of the project version; prefer {replacement}, which manages `deps.cirru :version` as the authoritative source"
+    "[Deprecated] `cr config version` no longer writes `calcit.cirru :version`; use {replacement}, which manages `deps.cirru :version`"
   );
-  match &opts.value {
-    None => {
-      // Show current version
-      let snapshot = load_snapshot_for_display(snapshot_file)?;
-      println!("{}", snapshot.version);
-      Ok(())
-    }
-    Some(v) if matches!(v.as_str(), "patch" | "minor" | "major") => {
-      let mut snapshot = load_snapshot(snapshot_file)?;
-      let previous = snapshot.version.clone();
-      let next = bump_semver_value(&previous, v)?;
-      snapshot.version = next.clone();
-      save_snapshot(&snapshot, snapshot_file)?;
-      println!("{} Bumped version: {} → {}", "✓".green(), previous.yellow(), next.green());
-      Ok(())
-    }
-    Some(v) => {
-      parse_semver_value(v)?;
-      let mut snapshot = load_snapshot(snapshot_file)?;
-      snapshot.version = v.clone();
-      save_snapshot(&snapshot, snapshot_file)?;
-      println!("{} Set version to {}", "✓".green(), v.green());
-      Ok(())
-    }
-  }
+  let _ = snapshot_file;
+  Err(format!("Project version is stored in deps.cirru; run {replacement}"))
 }
 
 fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String> {
+  if opts.key == "version" {
+    let replacement = version_command_replacement(Some(opts.value.as_str()), snapshot_file);
+    eprintln!(
+      "[Deprecated] `cr config set version` no longer writes `calcit.cirru :version`; use {replacement} to manage `deps.cirru :version`"
+    );
+    return Err(format!("Project version is stored in deps.cirru; run {replacement}"));
+  }
+
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
@@ -259,33 +242,6 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       entry.description = opts.value.clone();
       format!("{} Set [{entry_label}] description = '{}'", "✓".green(), opts.value)
     }
-    "version" => {
-      let replacement = match opts.value.as_str() {
-        "patch" | "minor" | "major" => format!("`caps version bump {}`", opts.value),
-        _ => "`caps version set <version>`".to_owned(),
-      };
-      eprintln!(
-        "[Deprecated] `cr config set version` writes the snapshot mirror; prefer {replacement} to manage `deps.cirru :version` as the authoritative source"
-      );
-      if opts.entry.is_some() {
-        return Err("Project version is top-level; omit `--entry` when setting it".to_owned());
-      }
-      if matches!(opts.value.as_str(), "patch" | "minor" | "major") {
-        let previous = snapshot.version.clone();
-        let next = bump_semver_value(&previous, &opts.value)?;
-        snapshot.version = next.clone();
-        format!(
-          "{} Bumped [{entry_label}] version: {} → {}",
-          "✓".green(),
-          previous.yellow(),
-          next.green()
-        )
-      } else {
-        parse_semver_value(&opts.value)?;
-        snapshot.version = opts.value.clone();
-        format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
-      }
-    }
     _ => {
       return Err(format!(
         "Unknown config key '{}'. Valid keys: mode, init-fn, reload-fn, description, version (accepts semver string or patch|minor|major)",
@@ -297,6 +253,15 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
   save_snapshot(&snapshot, snapshot_file)?;
   println!("{message}");
   Ok(())
+}
+
+fn version_command_replacement(value: Option<&str>, snapshot_file: &str) -> String {
+  let deps_path = deps_path_for_snapshot(snapshot_file);
+  match value {
+    None => format!("`caps version get {deps_path}`"),
+    Some(v @ ("patch" | "minor" | "major")) => format!("`caps version bump {v} {deps_path}`"),
+    Some(v) => format!("`caps version set {v} {deps_path}`"),
+  }
 }
 
 fn handle_add_module(opts: &ConfigAddModuleCommand, snapshot_file: &str) -> Result<(), String> {
@@ -532,6 +497,20 @@ mod tests {
     let loaded = load_module_silent("demo/", &project, &calcit::project_module_folder(&project)).unwrap();
     assert_eq!(loaded.package, "project-demo");
     fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn deprecated_version_set_does_not_load_snapshot_before_migration_error() {
+    let opts = ConfigSetCommand {
+      entry: Some("missing-entry".to_owned()),
+      key: "version".to_owned(),
+      value: "patch".to_owned(),
+    };
+    let err = handle_set(&opts, "/missing-project/calcit.cirru").expect_err("version migration should always fail explicitly");
+    assert!(
+      err.contains("caps version bump patch /missing-project/deps.cirru"),
+      "unexpected error: {err}"
+    );
   }
 
   #[test]

@@ -44,6 +44,10 @@ impl TryFrom<Edn> for PackageDeps {
       v => return Err(format!("invalid calcit-version: {v}")),
     };
     let package_version: Option<String> = match deps_info.get_or_nil("version") {
+      // Treat an explicitly empty version like a missing version. This keeps
+      // old projects migratable with `caps version set` instead of letting an
+      // empty string reach SemVer parsing later in the command flow.
+      Edn::Str(s) if s.trim().is_empty() || s.as_ref() == "|" => None,
       Edn::Str(s) => Some((*s).to_owned()),
       Edn::Nil => None,
       v => return Err(format!("invalid version: {v}")),
@@ -154,7 +158,7 @@ pub fn main() -> Result<(), String> {
 
     if deps.version.is_none() {
       eprintln!(
-        "[Warn] {} has no :version; initialize the project version with `caps version set <version> {}`",
+        "[Warn] {} has no usable :version (it is missing or empty); initialize the project version with `caps version set <version> {}`",
         cli_args.input, cli_args.input
       );
     }
@@ -639,6 +643,13 @@ mod tests {
     assert!(deps.version.is_none());
     assert!(deps.dependencies.is_empty());
     assert!(deps.dev_dependencies.is_empty());
+  }
+
+  #[test]
+  fn empty_package_version_is_treated_as_missing() {
+    let parsed = cirru_edn::parse("{} (:version ||)").unwrap();
+    let deps: PackageDeps = parsed.try_into().unwrap();
+    assert!(deps.version.is_none());
   }
 
   #[test]

@@ -7,7 +7,9 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
+use crate::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context,
+};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
@@ -113,6 +115,50 @@ impl std::fmt::Display for SnapshotRunMode {
   }
 }
 
+/// Host target selected by an entry. This stays separate from the execution
+/// mode because Node.js code is emitted by the JavaScript backend too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotTarget {
+  Browser,
+  Node,
+  Native,
+  Wasm,
+}
+
+impl SnapshotTarget {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Browser => "browser",
+      Self::Node => "node",
+      Self::Native => "native",
+      Self::Wasm => "wasm",
+    }
+  }
+}
+
+/// Per-entry capability policy. Features remain implementation metadata; this
+/// policy only controls the diagnostics emitted when a body uses a capability
+/// without declaring it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum FeaturePolicy {
+  #[default]
+  Allow,
+  Warn,
+  Error,
+}
+
+impl FeaturePolicy {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Allow => "allow",
+      Self::Warn => "warn",
+      Self::Error => "error",
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotEntry {
   pub mode: SnapshotRunMode,
@@ -127,6 +173,12 @@ pub struct SnapshotEntry {
   pub modules: Vec<String>,
   #[serde(default, rename = "type-slots")]
   pub type_slots: HashMap<String, String>,
+  #[serde(default, rename = "feature-policy")]
+  pub feature_policy: HashMap<String, FeaturePolicy>,
+  /// Optional host target. Omitting it preserves old projects and disables
+  /// target-specific FFI validation for that entry.
+  #[serde(default)]
+  pub target: Option<SnapshotTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1646,6 +1698,27 @@ fn code_declares_macro(code: &Cirru) -> bool {
 }
 
 fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  // Data declarations are definition values, not untyped application data.
+  // Older snapshots stored their root schema as Dynamic because the concrete
+  // fields/variants/methods live in the source form. Keep that compatibility
+  // on load, but immediately canonicalize it to the existing definition-kind
+  // markers so Dynamic metrics only describe genuinely unknown slots.
+  if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+    && let Cirru::List(items) = code
+    && let Some(Cirru::Leaf(head)) = items.first()
+  {
+    let marker = match head.as_ref() {
+      "defstruct" => Some("struct-def"),
+      "defenum" => Some("enum-def"),
+      "deftrait" => Some("trait"),
+      "defimpl" => Some("impl"),
+      _ => None,
+    };
+    if let Some(marker) = marker {
+      return Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag(marker))));
+    }
+  }
+
   let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref() else {
     return schema.clone();
   };
@@ -1792,6 +1865,14 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     Some(value) => parse_snapshot_type_slots(value, owner)?,
     None => HashMap::new(),
   };
+  let feature_policy = match data.get(&Edn::tag("feature-policy")) {
+    Some(value) => parse_snapshot_feature_policy(value, owner)?,
+    None => HashMap::new(),
+  };
+  let target = match data.get(&Edn::tag("target")) {
+    Some(value) => Some(parse_snapshot_target(value, owner)?),
+    None => None,
+  };
 
   Ok(SnapshotEntry {
     mode,
@@ -1800,7 +1881,77 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     description,
     modules,
     type_slots,
+    feature_policy,
+    target,
   })
+}
+
+fn parse_snapshot_target(value: &Edn, owner: &str) -> Result<SnapshotTarget, String> {
+  let target = match value {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+    _ => {
+      return Err(format!(
+        "{owner}.target: expected :browser, :node, :native, or :wasm, got {}",
+        format_edn_preview(value)
+      ));
+    }
+  };
+  match target {
+    "browser" => Ok(SnapshotTarget::Browser),
+    "node" => Ok(SnapshotTarget::Node),
+    "native" => Ok(SnapshotTarget::Native),
+    "wasm" => Ok(SnapshotTarget::Wasm),
+    _ => Err(format!(
+      "{owner}.target: expected :browser, :node, :native, or :wasm, got `{target}`"
+    )),
+  }
+}
+
+fn parse_snapshot_feature_policy(data: &Edn, owner: &str) -> Result<HashMap<String, FeaturePolicy>, String> {
+  let policies = data
+    .view_map()
+    .map_err(|e| format!("{owner}.feature-policy: expected a map: {e}; got {}", format_edn_preview(data)))?;
+  let mut result = HashMap::with_capacity(policies.0.len());
+  for (raw_feature, raw_policy) in policies.0.iter() {
+    let feature = match raw_feature {
+      Edn::Tag(tag) => tag.ref_str().to_owned(),
+      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+      _ => {
+        return Err(format!(
+          "{owner}.feature-policy: feature name must be a tag, string, or symbol; got {}",
+          format_edn_preview(raw_feature)
+        ));
+      }
+    };
+    if feature.trim().is_empty() {
+      return Err(format!("{owner}.feature-policy: feature name cannot be empty"));
+    }
+    let policy_name = match raw_policy {
+      Edn::Tag(tag) => tag.ref_str(),
+      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+      _ => {
+        return Err(format!(
+          "{owner}.feature-policy.{feature}: expected :allow, :warn, or :error; got {}",
+          format_edn_preview(raw_policy)
+        ));
+      }
+    };
+    let policy = match policy_name {
+      "allow" => FeaturePolicy::Allow,
+      "warn" => FeaturePolicy::Warn,
+      "error" => FeaturePolicy::Error,
+      _ => {
+        return Err(format!(
+          "{owner}.feature-policy.{feature}: expected :allow, :warn, or :error, got `{policy_name}`"
+        ));
+      }
+    };
+    if result.insert(feature.clone(), policy).is_some() {
+      return Err(format!("{owner}.feature-policy: duplicate feature `:{feature}`"));
+    }
+  }
+  Ok(result)
 }
 
 fn parse_snapshot_type_slots(data: &Edn, owner: &str) -> Result<HashMap<String, String>, String> {
@@ -2063,6 +2214,8 @@ impl Default for Snapshot {
       description: String::new(),
       modules: vec![],
       type_slots: HashMap::new(),
+      feature_policy: HashMap::new(),
+      target: None,
     };
     Snapshot {
       package: "app".into(),
@@ -2301,6 +2454,16 @@ fn type_slots_to_edn(type_slots: &HashMap<String, String>) -> Edn {
   slots_map.into()
 }
 
+fn feature_policy_to_edn(feature_policy: &HashMap<String, FeaturePolicy>) -> Edn {
+  let mut policies = EdnMapView::default();
+  let mut items = feature_policy.iter().collect::<Vec<_>>();
+  items.sort_by_key(|(feature, _)| *feature);
+  for (feature, policy) in items {
+    policies.insert_key(feature.as_str(), Edn::tag(policy.as_str()));
+  }
+  policies.into()
+}
+
 fn canonicalize_legacy_type_leaf(node: &Cirru) -> Option<Cirru> {
   let Cirru::Leaf(value) = node else {
     return None;
@@ -2469,8 +2632,6 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   // Insert about message (always enforce canonical hint)
   edn_map.insert_key("about", Edn::Str(SNAPSHOT_ABOUT_MESSAGE.into()));
 
-  edn_map.insert_key("version", Edn::Str(snapshot.version.as_str().into()));
-
   // Build entries
   let mut entries_map = EdnMapView::default();
   for (k, v) in &snapshot.entries {
@@ -2484,6 +2645,10 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
       Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
     );
     entry_map.insert_key("type-slots", type_slots_to_edn(&v.type_slots));
+    entry_map.insert_key("feature-policy", feature_policy_to_edn(&v.feature_policy));
+    if let Some(target) = v.target {
+      entry_map.insert_key("target", Edn::tag(target.as_str()));
+    }
     entries_map.insert_key(k.as_str(), entry_map.into());
   }
   edn_map.insert_key("entries", entries_map.into());
@@ -3331,6 +3496,34 @@ mod tests {
   }
 
   #[test]
+  fn data_definition_schema_uses_definition_kind_marker() {
+    for (head, marker) in [
+      ("defstruct", "struct-def"),
+      ("defenum", "enum-def"),
+      ("deftrait", "trait"),
+      ("defimpl", "impl"),
+    ] {
+      let code = Cirru::List(vec![Cirru::leaf(head)]);
+      let normalized = normalize_schema_for_code(&code, &DYNAMIC_TYPE);
+      assert!(
+        matches!(normalized.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == marker)),
+        "{head} should normalize Dynamic to {marker}, got {normalized}"
+      );
+      assert!(
+        !matches!(normalized.as_ref(), CalcitTypeAnnotation::Dynamic),
+        "{head} definition marker must not remain Dynamic"
+      );
+    }
+  }
+
+  #[test]
+  fn explicit_data_definition_schema_is_not_overwritten() {
+    let code = Cirru::List(vec![Cirru::leaf("defstruct")]);
+    let explicit = Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct"))));
+    assert_eq!(normalize_schema_for_code(&code, &explicit), explicit);
+  }
+
+  #[test]
   fn test_macro_schema_full_file_round_trip() {
     use crate::calcit::SchemaKind;
     // Simulate saving + loading via the actual file format:
@@ -3801,18 +3994,22 @@ mod tests {
   }
 
   #[test]
-  fn test_entry_type_slots_round_trip_for_default_and_named_entries() {
+  fn test_entry_type_slots_and_feature_policy_round_trip_for_default_and_named_entries() {
     let content = r#"{} (:package |mini)
   :version |0.0.0
   :entries $ {}
     :default $ {} (:mode :js) (:init-fn |mini/main!) (:reload-fn 'mini/reload!)
       :description "|Browser client entry"
+      :target :browser
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
+      :feature-policy $ {} (:js-ffi :error)
     :server $ {} (:mode :native) (:init-fn 'mini/server-main!) (:reload-fn 'mini/reload!)
       :description "|HTTP server entry"
+      :target :node
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
+      :feature-policy $ {} (:js-ffi :warn)
   :files $ {}
     |mini $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
@@ -3832,15 +4029,26 @@ mod tests {
     );
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].mode, SnapshotRunMode::Js);
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].description, "Browser client entry");
+    assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].target, Some(SnapshotTarget::Browser));
+    assert_eq!(
+      snapshot.entries[DEFAULT_ENTRY_NAME].feature_policy.get("js-ffi"),
+      Some(&FeaturePolicy::Error)
+    );
     let server = snapshot.entries.get("server").expect("server entry");
     assert_eq!(server.description, "HTTP server entry");
+    assert_eq!(server.target, Some(SnapshotTarget::Node));
     assert_eq!(
       server.type_slots.get("dispatch-op").map(String::as_str),
       Some("mini.schema/ServerOp")
     );
     assert_eq!(server.type_slots.get("optional-op").map(String::as_str), Some(":dynamic"));
+    assert_eq!(server.feature_policy.get("js-ffi"), Some(&FeaturePolicy::Warn));
 
     let rendered = render_snapshot_content(&snapshot).expect("snapshot should render");
+    assert!(
+      !rendered.contains(":version"),
+      "snapshot version must stay in deps.cirru, not calcit.cirru: {rendered}"
+    );
     assert!(
       rendered.contains(":init-fn 'mini/main!"),
       "entry function should be stored as a symbol: {rendered}"
@@ -3856,6 +4064,16 @@ mod tests {
       snapshot.entries[DEFAULT_ENTRY_NAME].type_slots
     );
     assert_eq!(restored.entries["server"].type_slots, server.type_slots);
+    assert_eq!(
+      restored.entries[DEFAULT_ENTRY_NAME].target,
+      snapshot.entries[DEFAULT_ENTRY_NAME].target
+    );
+    assert_eq!(restored.entries["server"].target, server.target);
+    assert_eq!(
+      restored.entries[DEFAULT_ENTRY_NAME].feature_policy,
+      snapshot.entries[DEFAULT_ENTRY_NAME].feature_policy
+    );
+    assert_eq!(restored.entries["server"].feature_policy, server.feature_policy);
   }
 
   #[test]
@@ -3875,7 +4093,7 @@ mod tests {
     assert!(default_entry.description.is_empty());
 
     let rendered = render_snapshot_content(&snapshot).expect("legacy snapshot should render canonically");
-    assert!(rendered.contains(":version |1.2.3"));
+    assert!(!rendered.contains(":version"));
     assert!(rendered.contains(":default $ {}") && rendered.contains(":mode :native"));
     assert!(!rendered.contains(":configs"));
   }
@@ -3888,6 +4106,13 @@ mod tests {
     ])));
     let err = parse_snapshot_type_slots(&slots, "configs").expect_err("duplicate normalized slot names should fail");
     assert!(err.contains("duplicate slot name `:dispatch-op`"), "unexpected error: {err}");
+  }
+
+  #[test]
+  fn test_feature_policy_rejects_empty_feature_name() {
+    let policies = Edn::map_from_iter([(Edn::str(""), Edn::tag("error"))]);
+    let err = parse_snapshot_feature_policy(&policies, "entry").expect_err("empty feature names should be rejected");
+    assert!(err.contains("feature name cannot be empty"), "unexpected error: {err}");
   }
 
   #[test]

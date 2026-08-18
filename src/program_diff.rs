@@ -395,6 +395,8 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         description: old_description,
         modules: old_modules,
         type_slots: old_type_slots,
+        feature_policy: old_feature_policy,
+        target: old_target,
       } = old;
       let SnapshotEntry {
         mode: new_mode,
@@ -403,7 +405,12 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         description: new_description,
         modules: new_modules,
         type_slots: new_type_slots,
+        feature_policy: new_feature_policy,
+        target: new_target,
       } = new;
+
+      let old_feature_policy = feature_policy_strings(old_feature_policy);
+      let new_feature_policy = feature_policy_strings(new_feature_policy);
 
       let children = vec![
         diff_string("mode", Some(old_mode.as_str()), Some(new_mode.as_str())),
@@ -412,6 +419,12 @@ fn diff_entry(label: &str, old: Option<&SnapshotEntry>, new: Option<&SnapshotEnt
         diff_string("description", Some(old_description.as_str()), Some(new_description.as_str())),
         diff_string_list("modules", old_modules, new_modules),
         diff_string_map("type-slots", old_type_slots, new_type_slots),
+        diff_string_map("feature-policy", &old_feature_policy, &new_feature_policy),
+        diff_string(
+          "target",
+          old_target.map(|value| value.as_str()),
+          new_target.map(|value| value.as_str()),
+        ),
       ];
       DiffNode::new(label, aggregate_status(&children)).with_children(children)
     }
@@ -651,7 +664,11 @@ fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> D
     description,
     modules,
     type_slots,
+    feature_policy,
+    target,
   } = value;
+
+  let feature_policy = feature_policy_strings(feature_policy);
 
   DiffNode::new(label, status).with_children(vec![
     DiffNode::new("mode", status).with_detail(render_text(mode.as_str())),
@@ -659,8 +676,17 @@ fn build_entry_tree(label: &str, value: &SnapshotEntry, status: DiffStatus) -> D
     DiffNode::new("reload-fn", status).with_detail(render_text(reload_fn)),
     DiffNode::new("description", status).with_detail(render_text(description)),
     build_string_list_tree("modules", modules, status),
+    DiffNode::new("target", status).with_detail(render_text(target.map(|value| value.as_str()).unwrap_or(""))),
     build_string_map_tree("type-slots", type_slots, status),
+    build_string_map_tree("feature-policy", &feature_policy, status),
   ])
+}
+
+fn feature_policy_strings(policies: &HashMap<String, crate::snapshot::FeaturePolicy>) -> HashMap<String, String> {
+  policies
+    .iter()
+    .map(|(feature, policy)| (feature.clone(), policy.as_str().to_owned()))
+    .collect()
 }
 
 fn build_string_list_tree(label: &str, items: &[String], status: DiffStatus) -> DiffNode {
@@ -1345,6 +1371,8 @@ mod tests {
         .iter()
         .map(|(slot, type_path)| ((*slot).to_owned(), (*type_path).to_owned()))
         .collect(),
+      feature_policy: HashMap::new(),
+      target: None,
     }
   }
 

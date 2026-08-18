@@ -136,7 +136,7 @@ and implementation-completion status are separate concerns.
 
 `analyze.weak-types` uses protocol `schema_version: 2` because nil intent classes and `W_NIL_TYPE_DEBT` extend previously closed machine-readable enums. Consumers should reject v1 when they require the nil-contract fields rather than accepting the old version and failing on new intent values.
 
-Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, and `deftrait` carry type information in their declarations, so they are classified as data declarations instead of receiving a false top-level `schema-dynamic` finding.
+Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, `deftrait`, and `defimpl` have explicit definition-kind schemas: `StructDef`, `EnumDef`, `Trait`, and `Impl`. Legacy snapshots that used `Dynamic` at these roots are normalized on load and written back with the marker. Their fields, enum payloads, and methods are still analyzed normally, but the declaration root itself neither creates a `schema-dynamic` finding nor increases Dynamic usage counts.
 
 `check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, struct, or component tree. Output explicitly produced by an example is still shown. Pass `--js` to compile the generated examples entry and execute it with Node.js; this is intended for definitions whose examples use JavaScript-only FFI syntax such as `exists? js/process`.
 
@@ -214,17 +214,17 @@ let
 
 ```cirru
 let
-    print-it $ fn (x)
+    debug-it $ fn (x)
       hint-fn $ {}
         :generics $ [] 'T
-        :where $ {} ('T Show)
+        :where $ {} ('T Debug)
         :args $ [] 'T
         :return 'String
-      x .show
-  print-it 1
+      x .debug
+  debug-it 1
 ```
 
-Do not use the old tuple/list form such as `:where $ [] (:: 'Show 'T)`.
+Do not use the old tuple/list form such as `:where $ [] (:: 'Debug 'T)`.
 
 #### 2. Compact Hint (Trailing Label)
 
@@ -352,7 +352,7 @@ If the body only needs a capability, add a trait bound rather than replacing `'T
 ```cirru.no-run
 :: :fn $ {}
   :generics $ [] 'T
-  :where $ {} ('T Show)
+  :where $ {} ('T Debug)
   :args $ [] 'T
   :return :string
 ```

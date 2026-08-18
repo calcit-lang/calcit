@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-14
+更新时间：2026-08-18
 
 ## 目录原则
 
@@ -44,6 +44,7 @@
 | `08-04-strict-cirru-edn-decoding-rfc.md`            | Implemented   | Phase 1：`parse-cirru-edn-as` 严格类型化反序列化、无 Dynamic 的 `EdnDecoderGraph`、名义身份与 Native/JS 一致性。    |
 | `08-05-systematic-nil-reduction-rfc.md`              | Partial       | 类型驱动减少 nil：先拆分可省略参数与 nullable 值，再迁移至 Option/Result 并逐步收紧 typed code。                  |
 | `08-08-cross-backend-host-ffi-contracts-rfc.md`      | Draft         | 统一 JS/native/WASM/WASI 的逻辑 FFI 契约与诊断，ABI transport 保持 backend-specific；首个完整 shape consumer 为 JS/DOM。 |
+| `08-18-calcit-typed-js-ffi-boundary-rfc.md`           | Draft         | 在现有 Struct/Enum/Fn/trait 上补齐 JS capability gate 与 target validation；FFI metadata 不进入普通 trait 匹配和泛型推断。 |
 
 ## 已执行的清理
 

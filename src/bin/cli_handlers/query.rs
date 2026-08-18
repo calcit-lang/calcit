@@ -4,7 +4,8 @@
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{
-  cirru_to_json_value, emit_cli_output, format_path, parse_path, print_cli_warning_block, resolve_definition_lookup,
+  cirru_to_json_value, deps_path_for_snapshot, emit_cli_output, format_path, parse_path, print_cli_warning_block,
+  resolve_definition_lookup,
 };
 use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
@@ -20,6 +21,7 @@ use calcit::cli_args::{
   QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
 };
 use calcit::data::cirru::code_to_calcit;
+use calcit::data::edn::format_edn_display;
 use calcit::load_core_snapshot;
 use calcit::project_state::{self, ERROR_STATE_FILE};
 use calcit::snapshot;
@@ -1036,7 +1038,7 @@ mod type_query_tests {
         ".round",
         ".round?",
         ".sqrt",
-        ".show",
+        ".debug",
         ".eq?",
         ".add",
         ".multiply",
@@ -1250,7 +1252,12 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
     }
 
     let annotation = program::lookup_def_schema(namespace, definition);
-    if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    let is_data_definition_marker = matches!(
+      annotation.as_ref(),
+      CalcitTypeAnnotation::Custom(value)
+        if matches!(value.as_ref(), Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def"))
+    );
+    if !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic) && !is_data_definition_marker {
       return Ok((annotation, "definition schema"));
     }
 
@@ -2964,7 +2971,8 @@ fn handle_config(input_path: &str) -> Result<(), String> {
   let snapshot = load_main_snapshot(input_path)?;
 
   println!("{}", "Project Config:".bold());
-  println!("  {}: {}", "version".cyan(), snapshot.version);
+  let deps_path = deps_path_for_snapshot(input_path);
+  println!("  {}: managed in deps.cirru (use `caps version get {deps_path}`)", "version".cyan());
   println!("\n{}", "Snapshot Entries:".bold());
 
   let mut names: Vec<&String> = snapshot.entries.keys().collect();
@@ -3212,6 +3220,10 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     let _ = writeln!(&mut out, "{} {}", "Tags:".bold(), tags_text);
   }
 
+  if let Some(ffi) = &code_entry.ffi {
+    let _ = writeln!(&mut out, "{} {}", "FFI:".bold(), format_edn_display(ffi));
+  }
+
   if !code_entry.examples.is_empty() {
     let _ = writeln!(&mut out, "\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
@@ -3281,6 +3293,7 @@ fn code_entry_to_json(entry: &snapshot::CodeEntry) -> serde_json::Value {
     }).collect::<Vec<_>>(),
     "code": cirru_to_json(&entry.code),
     "schema": schema_json,
+    "ffi": entry.ffi.as_ref().map(format_edn_display),
   })
 }
 

@@ -1,5 +1,5 @@
 
-{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |calcit) (:version |0.0.0)
+{} (:about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.") (:package |calcit)
   :entries $ {}
     :default $ {} (:description |) (:init-fn 'calcit.core/println!) (:mode :native) (:reload-fn 'calcit.core/println!)
       :modules $ []
@@ -341,7 +341,7 @@
               :tags $ #{} :core :unit
         |&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote
-            def &core-enum-impls $ [] &core-enum-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
+            def &core-enum-impls $ [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -359,7 +359,7 @@
           :tags $ #{} :internal
         |&core-fn-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for fn")
           :code $ quote
-            def &core-fn-impls $ [] &core-fn-methods (&impl::new Show internal/&core-show-impl)
+            def &core-fn-impls $ [] &core-fn-methods (&impl::new Debug internal/&core-debug-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -377,7 +377,7 @@
           :tags $ #{} :internal
         |&core-list-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
-            def &core-list-impls $ [] &core-list-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
+            def &core-list-impls $ [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -389,7 +389,7 @@
           :tags $ #{} :internal
         |&core-map-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
-            def &core-map-impls $ [] &core-map-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl) (&impl::new Contains internal/&core-contains-map-impl)
+            def &core-map-impls $ [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl) (&impl::new Contains internal/&core-contains-map-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -401,7 +401,7 @@
           :tags $ #{} :internal
         |&core-number-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote
-            def &core-number-impls $ [] &core-number-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
+            def &core-number-impls $ [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -411,15 +411,15 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-        |&core-scalar-impls $ %{} 'CodeEntry (:doc "|Built-in nominal Show/Eq implementation list for scalar literals")
+        |&core-scalar-impls $ %{} 'CodeEntry (:doc "|Built-in nominal Debug/Eq implementation list for scalar literals")
           :code $ quote
-            def &core-scalar-impls $ [] (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl)
+            def &core-scalar-impls $ [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         |&core-set-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
-            def &core-set-impls $ [] &core-set-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl) (&impl::new Contains internal/&core-contains-set-impl)
+            def &core-set-impls $ [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl) (&impl::new Contains internal/&core-contains-set-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -431,7 +431,7 @@
           :tags $ #{} :internal
         |&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
-            def &core-string-impls $ [] &core-string-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+            def &core-string-impls $ [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -443,7 +443,7 @@
           :tags $ #{} :internal
         |&core-struct-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for struct values.")
           :code $ quote
-            def &core-struct-impls $ [] &core-struct-methods (&impl::new Show internal/&core-show-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl)
+            def &core-struct-impls $ [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -810,7 +810,7 @@
           :tags $ #{} :builtin :internal
         |&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity &core-enum-impls) (identity &core-struct-impls) (identity &core-scalar-impls) (identity Add) (identity Debug) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls
@@ -2831,7 +2831,7 @@
           :code $ quote
             def Option $ impl-traits
               defenum Option ([] 'T) (:some 'T) (:none)
-              , internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl OptionMethods
+              , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionMethods
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -2851,7 +2851,7 @@
           :code $ quote
             def Result $ impl-traits
               defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
-              , internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl ResultMethods
+              , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultMethods
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
@@ -2898,7 +2898,16 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data
-        |Show $ %{} 'CodeEntry (:doc "|Core trait: Show")
+        |Debug $ %{} 'CodeEntry (:doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation.")
+          :code $ quote
+            deftrait Debug $ .debug
+              :: :fn $ {} (:return :string)
+                :generics $ [] 'T
+                :args $ [] 'T
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :trait
+        |Show $ %{} 'CodeEntry (:doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl.")
           :code $ quote
             deftrait Show $ .show
               :: :fn $ {} (:return :string)
@@ -3732,7 +3741,7 @@
                   and (list? entry)
                     &= 1 $ count entry
                     list? $ &list:first entry
-                  &list:first entry
+                  raise "|data definition forms already receive a list from indentation; remove the extra outer parentheses"
                   , entry
           :examples $ []
           :schema $ :: 'Fn
@@ -8125,9 +8134,9 @@
             def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
           :examples $ []
           :schema $ :: 'Dynamic
-        |&core-show-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Show")
+        |&core-debug-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Debug")
           :code $ quote
-            def &core-show-impl $ &impl::new :&core-show-impl (:: :show &str)
+            def &core-debug-impl $ &impl::new :&core-debug-impl (:: :debug &str)
           :examples $ []
           :schema $ :: 'Dynamic
         |&field-match-internal $ %{} 'CodeEntry (:doc |)
