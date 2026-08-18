@@ -48,6 +48,24 @@ Functions containing raw interop should declare `:features $ #{} :js-ffi` in
 their schema. The feature identifies the boundary but does not suppress
 nullable dereference or strong-type mismatch diagnostics.
 
+### Capability policy
+
+The active entry controls how an unmarked host operation is handled. Existing
+projects default to `:allow` for migration; use `:warn` to inventory call sites
+or `:error` to reject them during preprocessing:
+
+```cirru.no-check
+:feature-policy $ {}
+  :js-ffi :error
+```
+
+The gate applies to `js/...`, JavaScript syntax such as `new` and `js-await`,
+native `.-`/`.!` access, typed external-object access, and host
+`unsafe-coerce`. It is lexical: a normal function may call a typed FFI wrapper
+without declaring `:js-ffi`; only the wrapper's own implementation body needs
+the feature. An anonymous function uses the feature declared in its own
+`hint-fn` schema.
+
 Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
 legacy `nil?`/`some?` reports `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly
 with `js-nullish->option` only after accepting the opaque payload contract;
@@ -100,7 +118,16 @@ receiver type and key are static. A tag or string literal key is checked against
 the trait: `js-get` returns `JsNullish<FieldType>`, while `js-set` checks the
 assigned value and emits the mapped JavaScript property name. Unknown fields
 report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
-`W_JS_FFI_FIELD_TYPE_MISMATCH`.
+`W_JS_FFI_FIELD_TYPE_MISMATCH`. External fields are read-only by default. Add
+only the fields that a host API permits to `:ffi :writable`; otherwise `js-set`
+reports `W_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
+
+```cirru.no-check
+:ffi $ {}
+  :backend :js
+  :kind :external-object
+  :writable $ #{} :value :checked
+```
 
 ```cirru.no-check
 defn clear-input (element)

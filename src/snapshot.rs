@@ -113,6 +113,28 @@ impl std::fmt::Display for SnapshotRunMode {
   }
 }
 
+/// Per-entry capability policy. Features remain implementation metadata; this
+/// policy only controls the diagnostics emitted when a body uses a capability
+/// without declaring it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum FeaturePolicy {
+  #[default]
+  Allow,
+  Warn,
+  Error,
+}
+
+impl FeaturePolicy {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Allow => "allow",
+      Self::Warn => "warn",
+      Self::Error => "error",
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotEntry {
   pub mode: SnapshotRunMode,
@@ -127,6 +149,8 @@ pub struct SnapshotEntry {
   pub modules: Vec<String>,
   #[serde(default, rename = "type-slots")]
   pub type_slots: HashMap<String, String>,
+  #[serde(default, rename = "feature-policy")]
+  pub feature_policy: HashMap<String, FeaturePolicy>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1792,6 +1816,10 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     Some(value) => parse_snapshot_type_slots(value, owner)?,
     None => HashMap::new(),
   };
+  let feature_policy = match data.get(&Edn::tag("feature-policy")) {
+    Some(value) => parse_snapshot_feature_policy(value, owner)?,
+    None => HashMap::new(),
+  };
 
   Ok(SnapshotEntry {
     mode,
@@ -1800,7 +1828,51 @@ fn parse_snapshot_entry_with_context(data: Edn, owner: &str, require_mode: bool)
     description,
     modules,
     type_slots,
+    feature_policy,
   })
+}
+
+fn parse_snapshot_feature_policy(data: &Edn, owner: &str) -> Result<HashMap<String, FeaturePolicy>, String> {
+  let policies = data
+    .view_map()
+    .map_err(|e| format!("{owner}.feature-policy: expected a map: {e}; got {}", format_edn_preview(data)))?;
+  let mut result = HashMap::with_capacity(policies.0.len());
+  for (raw_feature, raw_policy) in policies.0.iter() {
+    let feature = match raw_feature {
+      Edn::Tag(tag) => tag.ref_str().to_owned(),
+      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+      _ => {
+        return Err(format!(
+          "{owner}.feature-policy: feature name must be a tag, string, or symbol; got {}",
+          format_edn_preview(raw_feature)
+        ));
+      }
+    };
+    let policy_name = match raw_policy {
+      Edn::Tag(tag) => tag.ref_str(),
+      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
+      _ => {
+        return Err(format!(
+          "{owner}.feature-policy.{feature}: expected :allow, :warn, or :error; got {}",
+          format_edn_preview(raw_policy)
+        ));
+      }
+    };
+    let policy = match policy_name {
+      "allow" => FeaturePolicy::Allow,
+      "warn" => FeaturePolicy::Warn,
+      "error" => FeaturePolicy::Error,
+      _ => {
+        return Err(format!(
+          "{owner}.feature-policy.{feature}: expected :allow, :warn, or :error, got `{policy_name}`"
+        ));
+      }
+    };
+    if result.insert(feature.clone(), policy).is_some() {
+      return Err(format!("{owner}.feature-policy: duplicate feature `:{feature}`"));
+    }
+  }
+  Ok(result)
 }
 
 fn parse_snapshot_type_slots(data: &Edn, owner: &str) -> Result<HashMap<String, String>, String> {
@@ -2063,6 +2135,7 @@ impl Default for Snapshot {
       description: String::new(),
       modules: vec![],
       type_slots: HashMap::new(),
+      feature_policy: HashMap::new(),
     };
     Snapshot {
       package: "app".into(),
@@ -2301,6 +2374,16 @@ fn type_slots_to_edn(type_slots: &HashMap<String, String>) -> Edn {
   slots_map.into()
 }
 
+fn feature_policy_to_edn(feature_policy: &HashMap<String, FeaturePolicy>) -> Edn {
+  let mut policies = EdnMapView::default();
+  let mut items = feature_policy.iter().collect::<Vec<_>>();
+  items.sort_by_key(|(feature, _)| *feature);
+  for (feature, policy) in items {
+    policies.insert_key(feature.as_str(), Edn::tag(policy.as_str()));
+  }
+  policies.into()
+}
+
 fn canonicalize_legacy_type_leaf(node: &Cirru) -> Option<Cirru> {
   let Cirru::Leaf(value) = node else {
     return None;
@@ -2484,6 +2567,7 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
       Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
     );
     entry_map.insert_key("type-slots", type_slots_to_edn(&v.type_slots));
+    entry_map.insert_key("feature-policy", feature_policy_to_edn(&v.feature_policy));
     entries_map.insert_key(k.as_str(), entry_map.into());
   }
   edn_map.insert_key("entries", entries_map.into());
@@ -3801,7 +3885,7 @@ mod tests {
   }
 
   #[test]
-  fn test_entry_type_slots_round_trip_for_default_and_named_entries() {
+  fn test_entry_type_slots_and_feature_policy_round_trip_for_default_and_named_entries() {
     let content = r#"{} (:package |mini)
   :version |0.0.0
   :entries $ {}
@@ -3809,10 +3893,12 @@ mod tests {
       :description "|Browser client entry"
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
+      :feature-policy $ {} (:js-ffi :error)
     :server $ {} (:mode :native) (:init-fn 'mini/server-main!) (:reload-fn 'mini/reload!)
       :description "|HTTP server entry"
       :modules $ []
       :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
+      :feature-policy $ {} (:js-ffi :warn)
   :files $ {}
     |mini $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns mini)) (:examples $ []) (:schema nil)
@@ -3832,6 +3918,10 @@ mod tests {
     );
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].mode, SnapshotRunMode::Js);
     assert_eq!(snapshot.entries[DEFAULT_ENTRY_NAME].description, "Browser client entry");
+    assert_eq!(
+      snapshot.entries[DEFAULT_ENTRY_NAME].feature_policy.get("js-ffi"),
+      Some(&FeaturePolicy::Error)
+    );
     let server = snapshot.entries.get("server").expect("server entry");
     assert_eq!(server.description, "HTTP server entry");
     assert_eq!(
@@ -3839,6 +3929,7 @@ mod tests {
       Some("mini.schema/ServerOp")
     );
     assert_eq!(server.type_slots.get("optional-op").map(String::as_str), Some(":dynamic"));
+    assert_eq!(server.feature_policy.get("js-ffi"), Some(&FeaturePolicy::Warn));
 
     let rendered = render_snapshot_content(&snapshot).expect("snapshot should render");
     assert!(
@@ -3856,6 +3947,11 @@ mod tests {
       snapshot.entries[DEFAULT_ENTRY_NAME].type_slots
     );
     assert_eq!(restored.entries["server"].type_slots, server.type_slots);
+    assert_eq!(
+      restored.entries[DEFAULT_ENTRY_NAME].feature_policy,
+      snapshot.entries[DEFAULT_ENTRY_NAME].feature_policy
+    );
+    assert_eq!(restored.entries["server"].feature_policy, server.feature_policy);
   }
 
   #[test]

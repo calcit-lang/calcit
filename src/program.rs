@@ -24,6 +24,23 @@ use crate::util::string::extract_pkg_from_ns;
 
 pub use entry_book::EntryBook;
 
+static ACTIVE_FEATURE_POLICY: LazyLock<RwLock<HashMap<String, snapshot::FeaturePolicy>>> =
+  LazyLock::new(|| RwLock::new(HashMap::new()));
+
+pub fn configure_entry_feature_policy(policies: &HashMap<String, snapshot::FeaturePolicy>) {
+  let mut active = ACTIVE_FEATURE_POLICY.write().expect("write active feature policy");
+  active.clone_from(policies);
+}
+
+pub fn active_feature_policy(feature: &str) -> snapshot::FeaturePolicy {
+  ACTIVE_FEATURE_POLICY
+    .read()
+    .expect("read active feature policy")
+    .get(feature)
+    .copied()
+    .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeCell {
   Cold,
@@ -859,6 +876,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
     }
   }
   calcit::configure_entry_type_slots(&entry.type_slots).map_err(|message| format!("{entry_owner}.type-slots: {message}"))?;
+  configure_entry_feature_policy(&entry.feature_policy);
 
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
 
