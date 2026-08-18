@@ -443,6 +443,22 @@ fn type_fail_type_slot_enum_invalid_variant() {
   });
 }
 
+#[test]
+fn data_definition_rejects_extra_parentheses_around_indented_forms() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("defn main! ()\n  defenum BadShownMaybe ('T)\n    ({} ('T Debug))\n    (:some 'T)\n    (:none)");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("extra parentheses around indentation-generated forms should fail");
+    let message = err.to_string();
+    assert!(
+      message.contains("remove the extra outer parentheses"),
+      "unexpected data definition syntax error: {message}"
+    );
+  });
+}
+
 fn contains_with_type_slot(value: &Calcit) -> bool {
   match value {
     Calcit::Proc(CalcitProc::WithTypeSlot) => true,

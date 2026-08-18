@@ -52,16 +52,16 @@
         |ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
           :code $ quote
             defstruct ShownBox ('T)
-              ({} ('T Debug))
-              (:value 'T)
+              {} ('T Debug)
+              :value 'T
           :examples $ []
           :schema $ :: 'Dynamic
         |ShownMaybe $ %{} 'CodeEntry (:doc "|Generic enum with where-bound on payload type")
           :code $ quote
             defenum ShownMaybe ('T)
-              ({} ('T Debug))
-              (:some 'T)
-              (:none)
+              {} ('T Debug)
+              :some 'T
+              :none
           :examples $ []
           :schema $ :: 'Dynamic
         |check-result-type $ %{} 'CodeEntry (:doc "|Check if value has enum origin")

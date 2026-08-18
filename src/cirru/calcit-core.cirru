@@ -3741,7 +3741,7 @@
                   and (list? entry)
                     &= 1 $ count entry
                     list? $ &list:first entry
-                  &list:first entry
+                  raise "|data definition forms already receive a list from indentation; remove the extra outer parentheses"
                   , entry
           :examples $ []
           :schema $ :: 'Fn

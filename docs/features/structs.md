@@ -73,7 +73,12 @@ let
   assert= |1 $ item .debug
 ```
 
-Here `({} ('T Debug))` means `T` must satisfy the built-in `Debug` trait. `%{}` enforces that bound when constructing a struct value, so the constraint lives on the data definition rather than on each individual function schema. Use `Show` instead only when the payload has an explicit user-facing presentation implementation.
+Here `{} $ 'T Debug` means `T` must satisfy the built-in `Debug` trait. The `{}`
+line already becomes a list through indentation, so do not add another outer pair
+of parentheses around it or around `:value 'T`. `%{}` enforces the bound when
+constructing a struct value, so the constraint lives on the data definition rather
+than on each individual function schema. Use `Show` instead only when the payload
+has an explicit user-facing presentation implementation.
 
 ## Creating Struct Values
 
