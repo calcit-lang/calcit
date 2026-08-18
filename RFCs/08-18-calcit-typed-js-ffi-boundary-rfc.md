@@ -119,6 +119,17 @@ read-only 与 writable。DOM、Node 和 npm API 中大量属性只读；仅检�
 不得把 JavaScript object 直接伪装成 Calcit `Struct`。Struct 表示已经转换并满足 Calcit
 数据不变量的值；external trait 才表示“仍由宿主拥有，但我们信任它具有这些能力”。
 
+### 定义值不是 `Dynamic`
+
+`defstruct`、`defenum`、`deftrait`、`defimpl` 产生的是可反射、可传递的定义值，不是
+“任意未知值”。其 `CodeEntry :schema` 分别使用已有的 `StructDef`、`EnumDef`、`Trait`、
+`Impl` 标记。旧快照中为兼容而遗留的根 `Dynamic` 在加载时规范化为对应标记；快照写回时
+保持该标记。
+
+这只描述定义值的种类，不把它们当作普通 Struct/Enum 实例，也不向 trait 匹配或泛型统一
+增加 FFI 特例。字段、variant payload 和方法签名里的 `Dynamic` 仍是实际的动态债务，继续
+参与 weak-types 与 quality gate；定义根本身不参与 Dynamic 计数。
+
 ### 不复制 TypeScript 类型系统
 
 本 RFC 不引入：

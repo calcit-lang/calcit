@@ -7,7 +7,9 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context};
+use crate::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE, SchemaKind, with_type_annotation_warning_context,
+};
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
@@ -1696,6 +1698,27 @@ fn code_declares_macro(code: &Cirru) -> bool {
 }
 
 fn normalize_schema_for_code(code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  // Data declarations are definition values, not untyped application data.
+  // Older snapshots stored their root schema as Dynamic because the concrete
+  // fields/variants/methods live in the source form. Keep that compatibility
+  // on load, but immediately canonicalize it to the existing definition-kind
+  // markers so Dynamic metrics only describe genuinely unknown slots.
+  if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+    && let Cirru::List(items) = code
+    && let Some(Cirru::Leaf(head)) = items.first()
+  {
+    let marker = match head.as_ref() {
+      "defstruct" => Some("struct-def"),
+      "defenum" => Some("enum-def"),
+      "deftrait" => Some("trait"),
+      "defimpl" => Some("impl"),
+      _ => None,
+    };
+    if let Some(marker) = marker {
+      return Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag(marker))));
+    }
+  }
+
   let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref() else {
     return schema.clone();
   };
@@ -3469,6 +3492,34 @@ mod tests {
     assert!(matches!(map.tag_get("return"), Some(Edn::Tag(tag)) if tag.ref_str() == "bool"));
     assert!(matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "fn"));
     assert!(CalcitTypeAnnotation::parse_fn_schema_from_edn(&Edn::Map(map)).is_some());
+  }
+
+  #[test]
+  fn data_definition_schema_uses_definition_kind_marker() {
+    for (head, marker) in [
+      ("defstruct", "struct-def"),
+      ("defenum", "enum-def"),
+      ("deftrait", "trait"),
+      ("defimpl", "impl"),
+    ] {
+      let code = Cirru::List(vec![Cirru::leaf(head)]);
+      let normalized = normalize_schema_for_code(&code, &DYNAMIC_TYPE);
+      assert!(
+        matches!(normalized.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == marker)),
+        "{head} should normalize Dynamic to {marker}, got {normalized}"
+      );
+      assert!(
+        !matches!(normalized.as_ref(), CalcitTypeAnnotation::Dynamic),
+        "{head} definition marker must not remain Dynamic"
+      );
+    }
+  }
+
+  #[test]
+  fn explicit_data_definition_schema_is_not_overwritten() {
+    let code = Cirru::List(vec![Cirru::leaf("defstruct")]);
+    let explicit = Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct"))));
+    assert_eq!(normalize_schema_for_code(&code, &explicit), explicit);
   }
 
   #[test]
