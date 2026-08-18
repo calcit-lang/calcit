@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-18
+更新时间：2026-08-19
 
 ## 目录原则
 
@@ -45,6 +45,7 @@
 | `08-05-systematic-nil-reduction-rfc.md`              | Partial       | 类型驱动减少 nil：先拆分可省略参数与 nullable 值，再迁移至 Option/Result 并逐步收紧 typed code。                  |
 | `08-08-cross-backend-host-ffi-contracts-rfc.md`      | Draft         | 统一 JS/native/WASM/WASI 的逻辑 FFI 契约与诊断，ABI transport 保持 backend-specific；首个完整 shape consumer 为 JS/DOM。 |
 | `08-18-calcit-typed-js-ffi-boundary-rfc.md`           | Draft         | 在现有 Struct/Enum/Fn/trait 上补齐 JS capability gate 与 target validation；FFI metadata 不进入普通 trait 匹配和泛型推断。 |
+| `08-19-transparent-union-types-rfc.md`                 | Partial       | `deftype Name (or ...)` 具名透明联合类型、`struct-match`/predicate flow narrowing，以及与 runtime trait、external-object trait 的分工。 |
 
 ## 已执行的清理
 

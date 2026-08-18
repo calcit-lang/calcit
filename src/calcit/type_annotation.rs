@@ -203,6 +203,38 @@ fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   lookup_schema_registered(ns, def)
 }
 
+/// Resolve a named `deftype Name (or ...)` declaration without changing the source-level
+/// annotation. `deftype` is intentionally transparent: callers keep a `TypeRef(Name)`, while
+/// matching expands it into this internal member list.
+fn resolve_type_ref_as_union_in_namespace(name: &str, default_ns: Option<&str>) -> Option<Arc<CalcitTypeAnnotation>> {
+  let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+  let lookup = |ns: &str, def: &str| lookup_def_code_registered(ns, def).and_then(|code| parse_deftype_union_code(&code));
+
+  if let Some((ns, def)) = stripped.rsplit_once('/') {
+    return lookup(ns, def);
+  }
+
+  default_ns
+    .and_then(|ns| lookup(ns, stripped))
+    .or_else(|| current_type_annotation_namespace().and_then(|ns| lookup(&ns, stripped)))
+    .or_else(|| lookup(CORE_NS, stripped))
+}
+
+fn resolve_type_ref_as_union(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  resolve_type_ref_as_union_in_namespace(name, None)
+}
+
+/// Expand a `deftype Name (or ...)` reference using the caller's namespace
+/// when the source annotation is unqualified. This is used by flow analysis;
+/// ordinary schema display retains the original `TypeRef`.
+pub(crate) fn resolve_transparent_union_type(annotation: &CalcitTypeAnnotation, default_ns: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  match annotation {
+    CalcitTypeAnnotation::Union(_) => Some(Arc::new(annotation.to_owned())),
+    CalcitTypeAnnotation::TypeRef(name, args) if args.is_empty() => resolve_type_ref_as_union_in_namespace(name, Some(default_ns)),
+    _ => None,
+  }
+}
+
 thread_local! {
   static IMPORT_RESOLUTION_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = const { RefCell::new(vec![]) };
 }
@@ -315,6 +347,12 @@ pub enum CalcitTypeAnnotation {
   /// remain a symbolic reference instead of collapsing into a generic variable or eagerly
   /// resolving into a concrete struct/enum definition.
   TypeRef(Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>),
+  /// A transparent union used internally after resolving a named `deftype ... (or ...)` declaration.
+  ///
+  /// Source schemas retain the named `TypeRef`; values are never wrapped in a union runtime
+  /// representation. Keeping this variant internal to type resolution lets assignability and
+  /// runtime struct-field validation reason over every allowed member.
+  Union(Arc<Vec<Arc<CalcitTypeAnnotation>>>),
   /// Trait type annotation for trait objects
   Trait(Arc<CalcitTrait>),
   /// Multiple trait constraints recorded in order
@@ -426,6 +464,18 @@ impl CalcitTypeAnnotation {
       Self::TypeRef(_, args) => {
         for arg in args.iter() {
           arg.validate_applied_type_args()?;
+        }
+        Ok(())
+      }
+      Self::Union(members) => {
+        if members.len() < 2 {
+          return Err("transparent union expects at least two member types".to_owned());
+        }
+        for member in members.iter() {
+          if matches!(member.as_ref(), Self::Dynamic) {
+            return Err("transparent union cannot contain Dynamic".to_owned());
+          }
+          member.validate_applied_type_args()?;
         }
         Ok(())
       }
@@ -2172,6 +2222,7 @@ impl CalcitTypeAnnotation {
         let rendered = traits.iter().map(|t| t.name.to_string()).collect::<Vec<_>>().join(" ");
         format!("traits {rendered}")
       }
+      Self::Union(members) => members.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(" | "),
       Self::TypeVar(name) => format!("'{name}"),
       Self::TypeRef(name, args) => {
         if args.is_empty() {
@@ -2208,6 +2259,9 @@ impl CalcitTypeAnnotation {
         let new_args: Vec<_> = args.iter().map(|a| a.substitute_type_vars(bindings)).collect();
         Arc::new(Self::TypeRef(name.clone(), Arc::new(new_args)))
       }
+      Self::Union(members) => Arc::new(Self::Union(Arc::new(
+        members.iter().map(|member| member.substitute_type_vars(bindings)).collect(),
+      ))),
       Self::List(inner) => Arc::new(Self::List(inner.substitute_type_vars(bindings))),
       Self::Map(k, v) => Arc::new(Self::Map(k.substitute_type_vars(bindings), v.substitute_type_vars(bindings))),
       Self::Set(inner) => Arc::new(Self::Set(inner.substitute_type_vars(bindings))),
@@ -2247,6 +2301,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::TypeVar(_) => true,
       Self::TypeRef(_, args) => args.iter().any(|a| a.contains_type_var()),
+      Self::Union(members) => members.iter().any(|member| member.contains_type_var()),
       Self::List(inner)
       | Self::Set(inner)
       | Self::Ref(inner)
@@ -2517,6 +2572,22 @@ impl CalcitTypeAnnotation {
   }
 
   pub(crate) fn matches_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    // Keep named `deftype` references in schemas and diagnostics, but expand them at the
+    // assignability boundary.  Resolve only bare applications for now: parameterized deftype
+    // is intentionally outside the MVP and must not silently drop type arguments.
+    if let Self::TypeRef(name, args) = self
+      && args.is_empty()
+      && let Some(resolved) = resolve_type_ref_as_union(name)
+    {
+      return resolved.matches_with_bindings(expected, bindings);
+    }
+    if let Self::TypeRef(name, args) = expected
+      && args.is_empty()
+      && let Some(resolved) = resolve_type_ref_as_union(name)
+    {
+      return self.matches_with_bindings(resolved.as_ref(), bindings);
+    }
+
     match (self, expected) {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       // Compatibility for annotations constructed by older embedders before
@@ -2524,6 +2595,26 @@ impl CalcitTypeAnnotation {
       (_, Self::Custom(expected)) if Self::custom_keyword_matches(expected, "any") => true,
       (Self::Custom(actual), _) if Self::custom_keyword_matches(actual, "any") => true,
       (Self::TypeVar(actual), Self::TypeVar(expected)) if actual == expected => true,
+      (Self::Union(actual_members), other) => {
+        let mut candidate_bindings = bindings.clone();
+        let accepted = actual_members
+          .iter()
+          .all(|member| member.matches_with_bindings(other, &mut candidate_bindings));
+        if accepted {
+          *bindings = candidate_bindings;
+        }
+        accepted
+      }
+      (other, Self::Union(expected_members)) => {
+        for member in expected_members.iter() {
+          let mut candidate_bindings = bindings.clone();
+          if other.matches_with_bindings(member, &mut candidate_bindings) {
+            *bindings = candidate_bindings;
+            return true;
+          }
+        }
+        false
+      }
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == actual => true,
         Some(bound) => {
@@ -2967,6 +3058,14 @@ impl CalcitTypeAnnotation {
           Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
         }
       }
+      Self::Union(members) => {
+        let mut items = Vec::with_capacity(members.len() + 1);
+        items.push(Self::make_symbol("or"));
+        for member in members.iter() {
+          items.push(member.to_calcit());
+        }
+        Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
+      }
       Self::Enum(enum_def, _) => Calcit::EnumDef((**enum_def).clone()),
       Self::StructDef(struct_def) => Calcit::StructDef((**struct_def).clone()),
       Self::EnumDef(enum_def) => Calcit::EnumDef((**enum_def).clone()),
@@ -3003,6 +3102,7 @@ impl CalcitTypeAnnotation {
           Edn::enum_value(name.trim_start_matches('\''), args.iter().map(|arg| arg.to_type_edn()).collect())
         }
       }
+      Self::Union(members) => Edn::enum_value("or", members.iter().map(|member| member.to_type_edn()).collect()),
       // Parameterized builtins – keep inner type if non-dynamic
       Self::List(inner) => {
         if matches!(inner.as_ref(), Self::Dynamic) {
@@ -3167,6 +3267,10 @@ impl CalcitTypeAnnotation {
           format!("type {name}<{rendered}>")
         }
       }
+      Self::Union(members) => format!(
+        "union<{}>",
+        members.iter().map(|member| member.describe()).collect::<Vec<_>>().join(", ")
+      ),
       Self::Enum(enum_def, args) => {
         if args.is_empty() {
           format!("enum {}", enum_def.name())
@@ -3208,15 +3312,16 @@ impl CalcitTypeAnnotation {
       Self::Dynamic => 21,
       Self::TypeVar(_) => 22,
       Self::TypeRef(_, _) => 23,
-      Self::Struct(_, _) => 24,
-      Self::Enum(_, _) => 25,
-      Self::Trait(_) => 26,
-      Self::TraitSet(_) => 27,
-      Self::Unit => 28,
-      Self::JsObject => 29,
-      Self::TypeSlot(_) => 30,
-      Self::StructDef(_) => 31,
-      Self::EnumDef(_) => 32,
+      Self::Union(_) => 24,
+      Self::Struct(_, _) => 25,
+      Self::Enum(_, _) => 26,
+      Self::Trait(_) => 27,
+      Self::TraitSet(_) => 28,
+      Self::Unit => 29,
+      Self::JsObject => 30,
+      Self::TypeSlot(_) => 31,
+      Self::StructDef(_) => 32,
+      Self::EnumDef(_) => 33,
     }
   }
 }
@@ -3386,6 +3491,95 @@ fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   None
 }
 
+/// Parse the source form of a transparent union declaration:
+///
+/// ```text
+/// deftype RespoNode
+///   or 'Component 'Element
+/// ```
+///
+/// The declaration itself deliberately has no runtime value.  This parser is used only by
+/// named `TypeRef` resolution, so source schemas keep the concise public name while matching
+/// sees the closed member set.
+fn parse_deftype_union_code(code: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Calcit::Thunk(thunk) = code {
+    return parse_deftype_union_code(thunk.get_code());
+  }
+  let Calcit::List(items) = code else {
+    return None;
+  };
+  if let Some(head) = items.first()
+    && (matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+      || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "quote"))
+    && let Some(inner) = items.get(1)
+  {
+    return parse_deftype_union_code(inner);
+  }
+  if is_def_head(items.first()?)
+    && let Some(value) = items.get(2)
+  {
+    return parse_deftype_union_code(value);
+  }
+  if !is_deftype_head(items.first()?) || items.len() != 3 {
+    return None;
+  }
+
+  let union_form = items.get(2)?;
+  let Calcit::List(forms) = union_form else {
+    return None;
+  };
+  if !is_or_type_head(forms.first()?) || forms.len() < 3 {
+    return None;
+  }
+
+  fn collect_member(form: &Calcit, members: &mut Vec<Arc<CalcitTypeAnnotation>>) -> Option<()> {
+    if let Calcit::List(forms) = form
+      && forms.first().is_some_and(is_or_type_head)
+    {
+      if forms.len() < 3 {
+        return None;
+      }
+      for nested in forms.iter().skip(1) {
+        collect_member(nested, members)?;
+      }
+      return Some(());
+    }
+
+    let member = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]);
+    if matches!(member.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_))
+      || matches!(member.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if args.is_empty() && name.eq_ignore_ascii_case("dynamic"))
+    {
+      return None;
+    }
+    if !members.contains(&member) {
+      members.push(member);
+    }
+    Some(())
+  }
+
+  let mut members = Vec::with_capacity(forms.len() - 1);
+  for form in forms.iter().skip(1) {
+    collect_member(form, &mut members)?;
+  }
+  if members.len() < 2 {
+    return None;
+  }
+  Some(Arc::new(CalcitTypeAnnotation::Union(Arc::new(members))))
+}
+
+/// Validate the MVP `deftype` declaration at its definition site. Keeping the
+/// check here makes the macro a runtime no-op while sharing the exact parser
+/// used later by assignability and runtime field validation.
+pub(crate) fn validate_deftype_union_code(code: &Calcit) -> Result<(), String> {
+  parse_deftype_union_code(code)
+    .map(|_| ())
+    .ok_or_else(|| {
+      "deftype expects `(deftype Name (or MemberA MemberB ...))`; members must be concrete non-Dynamic types and there must be at least two distinct members"
+        .to_owned()
+    })
+}
+
 fn is_def_head(head: &Calcit) -> bool {
   matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "def")
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "def")
@@ -3404,6 +3598,16 @@ fn is_defstruct_head(head: &Calcit) -> bool {
 fn is_defenum_head(head: &Calcit) -> bool {
   matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defenum")
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "defenum")
+}
+
+fn is_deftype_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "deftype")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "deftype")
+}
+
+fn is_or_type_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "or")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "or")
 }
 
 fn is_struct_new_head(head: &Calcit) -> bool {
@@ -3738,6 +3942,39 @@ mod tests {
       ),
       "expected qualified type reference, got {parsed:?}"
     );
+  }
+
+  #[test]
+  fn parses_transparent_deftype_union_and_checks_each_member() {
+    let union_code = Calcit::from(vec![
+      symbol("deftype"),
+      symbol("RespoNode"),
+      Calcit::from(vec![symbol("or"), symbol("'Component"), symbol("'Element")]),
+    ]);
+    let union = parse_deftype_union_code(&union_code).expect("parse transparent union declaration");
+
+    assert!(matches!(
+      union.as_ref(),
+      CalcitTypeAnnotation::Union(members)
+        if members.len() == 2
+          && matches!(members[0].as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Component" && args.is_empty())
+          && matches!(members[1].as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Element" && args.is_empty())
+    ));
+
+    let component = CalcitTypeAnnotation::TypeRef(Arc::from("Component"), Arc::new(vec![]));
+    let element = CalcitTypeAnnotation::TypeRef(Arc::from("Element"), Arc::new(vec![]));
+    let other = CalcitTypeAnnotation::TypeRef(Arc::from("Text"), Arc::new(vec![]));
+    assert!(component.matches_annotation(union.as_ref()));
+    assert!(element.matches_annotation(union.as_ref()));
+    assert!(!other.matches_annotation(union.as_ref()));
+
+    let invalid_dynamic = Calcit::from(vec![
+      symbol("deftype"),
+      symbol("BadNode"),
+      Calcit::from(vec![symbol("or"), symbol("'Component"), symbol("'Dynamic")]),
+    ]);
+    assert!(parse_deftype_union_code(&invalid_dynamic).is_none());
+    assert!(validate_deftype_union_code(&invalid_dynamic).is_err());
   }
 
   #[test]
@@ -4832,6 +5069,10 @@ impl Hash for CalcitTypeAnnotation {
         name.hash(state);
         args.hash(state);
       }
+      Self::Union(members) => {
+        "union".hash(state);
+        members.hash(state);
+      }
       Self::Enum(enum_def, args) => {
         "enum".hash(state);
         enum_def.name().hash(state);
@@ -4901,6 +5142,7 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
       (Self::TypeVar(a), Self::TypeVar(b)) => a.cmp(b),
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => a_name.cmp(b_name).then_with(|| a_args.cmp(b_args)),
+      (Self::Union(a), Self::Union(b)) => a.cmp(b),
       (Self::Struct(a, _), Self::Struct(b, _)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
       (Self::Enum(a, _), Self::Enum(b, _)) => a.name().cmp(b.name()),
       (Self::StructDef(a), Self::StructDef(b)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
@@ -5236,6 +5478,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       _ => false,
     },
     CalcitTypeAnnotation::TypeRef(expected_name, _) => match value {
+      _ if resolve_type_ref_as_union(expected_name).is_some_and(|union| value_matches_type_annotation(value, union.as_ref())) => true,
       Calcit::Struct(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),
       Calcit::Enum(t) => t
         .sum_type
@@ -5243,6 +5486,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
         .is_some_and(|st| CalcitTypeAnnotation::type_ref_name_matches(expected_name, st.name().ref_str())),
       _ => false,
     },
+    CalcitTypeAnnotation::Union(members) => members.iter().any(|member| value_matches_type_annotation(value, member.as_ref())),
     CalcitTypeAnnotation::StructDef(expected_struct) => match value {
       Calcit::StructDef(struct_def) => struct_def.name == expected_struct.name,
       _ => false,

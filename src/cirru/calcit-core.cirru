@@ -2349,7 +2349,7 @@
                         quasiquote $ if (&struct:matches? ~value ~pattern)
                           &let
                               ~ $ &list:nth pair 1
-                              , ~value
+                              , $ assert-type ~value ~pattern
                             ~@ $ &list:slice pair 2
                           &struct-match-internal ~value $ ~@ (&list:rest body)
           :examples $ []
@@ -4233,6 +4233,15 @@
           :schema $ :: 'Macro
             {} $ :args ([] 'Dynamic)
           :tags $ #{} :macro
+        |deftype $ %{} 'CodeEntry (:doc "|Declare a transparent named union type. Syntax: (deftype Name (or 'MemberA 'MemberB)). The declaration is compile-time-only and does not wrap runtime values.")
+          :code $ quote
+            defmacro deftype (_name _type-form) nil
+          :examples $ []
+            quote $ deftype RespoNode
+              or 'Component 'Element
+          :schema $ :: 'Macro
+            {} $ :args ([] 'Dynamic 'Dynamic)
+          :tags $ #{} :macro :type
         |deftype-slot $ %{} 'CodeEntry (:doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with cr config set-type-slot; an unbound slot falls back to :dynamic.")
           :code $ quote &runtime-implementation
           :examples $ []
