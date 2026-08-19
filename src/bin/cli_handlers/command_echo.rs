@@ -1365,25 +1365,6 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::{DEFAULT_ECHO_TOKEN_PREFIX, push_switch, push_value};
-
-  #[test]
-  fn default_command_echo_tokens_are_marked_without_hiding_real_parentheses() {
-    let mut tokens = vec![];
-    push_value(&mut tokens, "format", "human", Some("human"));
-    push_value(&mut tokens, "pattern", "(foo)", None);
-    push_switch(&mut tokens, "list", false);
-    push_switch(&mut tokens, "summary-only", true);
-
-    assert!(tokens[0].starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
-    assert_eq!(tokens[1], "--pattern=(foo)");
-    assert!(tokens[2].starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
-    assert_eq!(tokens[3], "--summary-only=ON");
-  }
-}
-
 fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
   match &cmd.subcommand {
     ConfigSubcommand::Show(opts) => echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none"),
@@ -1410,5 +1391,24 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
       echo_items!(tokens, pos "slot" => &opts.slot);
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{DEFAULT_ECHO_TOKEN_PREFIX, push_switch, push_value};
+
+  #[test]
+  fn default_command_echo_tokens_are_marked_without_hiding_real_parentheses() {
+    let mut tokens = vec![];
+    push_value(&mut tokens, "format", "human", Some("human"));
+    push_value(&mut tokens, "pattern", "(foo)", None);
+    push_switch(&mut tokens, "list", false);
+    push_switch(&mut tokens, "summary-only", true);
+
+    assert!(tokens[0].starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
+    assert_eq!(tokens[1], "--pattern=(foo)");
+    assert!(tokens[2].starts_with(DEFAULT_ECHO_TOKEN_PREFIX));
+    assert_eq!(tokens[3], "--summary-only=ON");
   }
 }

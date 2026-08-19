@@ -25,6 +25,7 @@ use cirru_edn::{Edn, EdnMapView, EdnStructView, EdnTag};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use md5::{Digest, Md5};
+#[cfg(test)]
 use semver::Version;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -2528,10 +2529,11 @@ fn handle_ns_doc(opts: &EditNsDocCommand, snapshot_file: &str) -> Result<(), Str
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Semver helpers (pub(crate) so cr config can reuse them)
+// Semver helpers used by edit tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub(crate) fn parse_semver_value(v: &str) -> Result<Version, String> {
+#[cfg(test)]
+fn parse_semver_value(v: &str) -> Result<Version, String> {
   if v.starts_with('|') {
     return Err(format!(
       "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
@@ -2540,7 +2542,8 @@ pub(crate) fn parse_semver_value(v: &str) -> Result<Version, String> {
   Version::parse(v).map_err(|_| format!("Invalid version '{v}': expected semver format, e.g. '0.0.17'"))
 }
 
-pub(crate) fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
+#[cfg(test)]
+fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
   let mut version = parse_semver_value(current)?;
   match level {
     "patch" => {

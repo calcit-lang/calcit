@@ -33,9 +33,9 @@ deftype RespoNode
 
 ```cirru.no-check
 defenum RequestState
-  (:idle)
-  (:loading)
-  (:failed 'String)
+  :idle
+  :loading
+  :failed 'String
 ```
 
 `deftype` 表示已有类型之间的静态集合，不产生新的值构造器：
@@ -505,8 +505,8 @@ Trait 适合共同方法，但 Respo diff 需要按具体节点种类读取不�
 
 ```cirru.no-check
 defenum RespoNode
-  (:component 'Component)
-  (:element 'Element)
+  :component 'Component
+  :element 'Element
 ```
 
 这会改变 Respo 当前数据表示、相等性路径和 DSL 输出。`deftype` 的目标正是获得相同的静态分支能力，而不引入这层运行时包装。
