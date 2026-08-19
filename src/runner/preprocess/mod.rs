@@ -1428,21 +1428,6 @@ fn preprocess_list_call(
 
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
-      let source_call = Calcit::List(Arc::new(xs.to_owned()));
-      if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "deftype" {
-        crate::calcit::type_annotation::validate_deftype_union_code(&source_call).map_err(|message| {
-          CalcitErr::use_msg_stack_location_with_code(
-            CalcitErrKind::Type,
-            message,
-            "E_DEFTYPE_DECLARATION",
-            call_stack,
-            call_location.clone(),
-          )
-        })?;
-      }
-      if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "struct-match" {
-        validate_transparent_union_struct_match(&args, scope_types, file_ns, call_stack, call_location.clone())?;
-      }
       let mut current_values: Vec<Calcit> = args.to_vec();
 
       warn_on_trait_impl_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), check_warnings);
@@ -1450,7 +1435,8 @@ fn preprocess_list_call(
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
-      let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, source_call, args.to_vec());
+      let code = Calcit::List(Arc::new(xs.to_owned()));
+      let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
 
       let mut body_scope = CalcitScope::default();
 
@@ -5139,144 +5125,6 @@ struct PredicateNarrowing {
   false_binding: Option<(Arc<str>, Arc<CalcitTypeAnnotation>)>,
 }
 
-/// Check the source-level branches before `struct-match` expands into nested
-/// `if`s. The generated form has lost the complete arm list, so this is the
-/// one place where we can report duplicate, foreign, and missing members of a
-/// transparent union precisely.
-fn validate_transparent_union_struct_match(
-  args: &CalcitList,
-  scope_types: &ScopeTypes,
-  file_ns: &str,
-  call_stack: &CallStackList,
-  location: Option<NodeLocation>,
-) -> Result<(), CalcitErr> {
-  let Some(receiver) = args.first() else {
-    return Ok(());
-  };
-  let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
-    return Ok(());
-  };
-  let Some(resolved_union) = crate::calcit::type_annotation::resolve_transparent_union_type(receiver_type.as_ref(), file_ns) else {
-    return Ok(());
-  };
-  let CalcitTypeAnnotation::Union(members) = resolved_union.as_ref() else {
-    return Ok(());
-  };
-
-  let fail = |message: String| {
-    CalcitErr::use_msg_stack_location_with_code(CalcitErrKind::Type, message, "E_STRUCT_MATCH_UNION", call_stack, location.clone())
-  };
-  let mut covered = BTreeSet::new();
-  let mut has_default = false;
-  let arms = args.iter().skip(1).collect::<Vec<_>>();
-  for (arm_index, arm) in arms.iter().enumerate() {
-    let Calcit::List(pair) = arm else {
-      // Leave basic arm-shape diagnostics to the macro, which has the
-      // established source wording for ordinary struct matches.
-      continue;
-    };
-    let Some(pattern) = pair.first() else {
-      continue;
-    };
-    if matches!(pattern, Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
-      if arm_index + 1 != arms.len() {
-        return Err(fail("struct-match `_` branch must be the final branch".to_owned()));
-      }
-      has_default = true;
-      continue;
-    }
-
-    let pattern_type = resolve_type_value(pattern, scope_types).or_else(|| match pattern {
-      // `struct-match` receives its source arms before macro expansion. A
-      // qualified struct name can therefore still be a Symbol rather than a
-      // resolved program value. Keep it as a nominal TypeRef so the common
-      // resolver below can look up its StructDef, including across namespaces.
-      Calcit::Symbol { sym, .. } => Some(Arc::new(CalcitTypeAnnotation::TypeRef(sym.clone(), Arc::new(vec![])))),
-      Calcit::Import(import) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(
-        Arc::from(format!("{}/{}", import.ns, import.def)),
-        Arc::new(vec![]),
-      ))),
-      _ => None,
-    });
-    let Some(pattern_type) = pattern_type else {
-      return Err(fail(format!(
-        "struct-match branch `{pattern}` cannot be resolved to a concrete Struct member of `{}`",
-        receiver_type.to_brief_string()
-      )));
-    };
-    let Some(pattern_def) = resolve_struct_type_for_match(pattern_type.as_ref(), file_ns, scope_types) else {
-      return Err(fail(format!(
-        "struct-match branch `{pattern}` is not a Struct member of `{}`",
-        receiver_type.to_brief_string()
-      )));
-    };
-    let pattern_struct = Arc::new(CalcitTypeAnnotation::Struct(Arc::new(pattern_def), Arc::new(vec![])));
-    let Some(member_index) = members.iter().position(|member| pattern_struct.matches_annotation(member.as_ref())) else {
-      return Err(fail(format!(
-        "struct-match branch `{pattern}` is not a member of transparent union `{}`",
-        receiver_type.to_brief_string()
-      )));
-    };
-    if !covered.insert(member_index) {
-      return Err(fail(format!(
-        "struct-match has duplicate branch `{pattern}` for transparent union `{}`",
-        receiver_type.to_brief_string()
-      )));
-    }
-  }
-
-  if !has_default && covered.len() != members.len() {
-    let remaining = members
-      .iter()
-      .enumerate()
-      .filter(|(idx, _)| !covered.contains(idx))
-      .map(|(_, member)| member.to_brief_string())
-      .collect::<Vec<_>>()
-      .join(", ");
-    return Err(fail(format!(
-      "struct-match does not cover transparent union `{}`; missing {remaining}, or add a final `_` branch",
-      receiver_type.to_brief_string()
-    )));
-  }
-
-  Ok(())
-}
-
-fn resolve_struct_type_for_match(type_ref: &CalcitTypeAnnotation, file_ns: &str, scope_types: &ScopeTypes) -> Option<CalcitStructDef> {
-  if let CalcitTypeAnnotation::StructDef(struct_def) = type_ref {
-    return Some(struct_def.as_ref().to_owned());
-  }
-  if let Some(struct_def) = type_ref.resolve_to_struct() {
-    return Some(struct_def);
-  }
-  let CalcitTypeAnnotation::TypeRef(name, _) = type_ref else {
-    return None;
-  };
-  let stripped = name.trim_start_matches('\'').trim_start_matches(':');
-  let short_name = stripped.rsplit('/').next().unwrap_or(stripped);
-  if let Some(local_type) = scope_types.get(stripped).or_else(|| scope_types.get(short_name)) {
-    match local_type.as_ref() {
-      CalcitTypeAnnotation::StructDef(struct_def) => return Some(struct_def.as_ref().to_owned()),
-      _ if let Some(struct_def) = local_type.resolve_to_struct() => return Some(struct_def),
-      _ => {}
-    }
-  }
-  let (target_ns, target_def) = if let Some((ns, def)) = stripped.rsplit_once('/') {
-    (Arc::from(ns), Arc::from(def))
-  } else if program::has_def_code(file_ns, stripped) {
-    (Arc::from(file_ns), Arc::from(stripped))
-  } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, stripped) {
-    (target_ns, Arc::from(stripped))
-  } else {
-    (Arc::from(calcit::CORE_NS), Arc::from(stripped))
-  };
-  match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
-    Some(Calcit::StructDef(struct_def)) => Some(struct_def),
-    Some(Calcit::Struct(struct_value)) => Some(struct_value.struct_ref.as_ref().to_owned()),
-    _ => None,
-  }
-}
-
 fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {
   let empty = PredicateNarrowing {
     true_binding: None,
@@ -5285,6 +5133,9 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   let Calcit::List(items) = cond_form else {
     return empty;
   };
+  if items.len() != 2 {
+    return empty;
+  }
   let Some(pred_name) = (match items.first() {
     Some(Calcit::Symbol { sym, .. }) => Some(sym.as_ref()),
     Some(Calcit::Import(CalcitImport { def, .. })) => Some(def.as_ref()),
@@ -5293,33 +5144,6 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   }) else {
     return empty;
   };
-
-  // `struct-match` expands each nominal branch into this predicate.  The
-  // runtime check already identifies the exact `StructDef`; retain that fact
-  // while preprocessing the true branch so fields can be accessed without an
-  // `unsafe-coerce` or a second user-facing assertion.
-  if pred_name == "&struct:matches?" && items.len() == 3 {
-    let target = match items.get(1) {
-      Some(Calcit::Local(local)) => local,
-      _ => return empty,
-    };
-    let Some(asserted) = items.get(2).and_then(|pattern| resolve_type_value(pattern, scope_types)) else {
-      return empty;
-    };
-    let narrowed = match asserted.as_ref() {
-      CalcitTypeAnnotation::Struct(def, args) => Arc::new(CalcitTypeAnnotation::Struct(def.clone(), args.clone())),
-      CalcitTypeAnnotation::StructDef(def) => Arc::new(CalcitTypeAnnotation::Struct(def.clone(), Arc::new(vec![]))),
-      _ => return empty,
-    };
-    return PredicateNarrowing {
-      true_binding: Some((target.sym.to_owned(), narrowed)),
-      false_binding: None,
-    };
-  }
-
-  if items.len() != 2 {
-    return empty;
-  }
   let target = match items.get(1) {
     Some(t) => t,
     None => return empty,
@@ -6830,172 +6654,6 @@ mod tests {
       narrowing.true_binding,
       Some((name, inferred)) if name.as_ref() == "host" && matches!(inferred.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
-  }
-
-  #[test]
-  fn struct_matches_predicate_narrows_a_union_local_to_the_branch_struct() {
-    let branch = CalcitStructDef::from_fields(EdnTag::new("Component"), vec![EdnTag::new("name")]);
-    let sym: Arc<str> = Arc::from("node");
-    let node = Calcit::Local(CalcitLocal {
-      idx: CalcitLocal::track_sym(&sym),
-      sym: sym.clone(),
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from("tests.transparent-union"),
-        at_def: Arc::from("match-node"),
-      }),
-      location: None,
-      type_info: Arc::new(CalcitTypeAnnotation::Union(Arc::new(vec![
-        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Component"), Arc::new(vec![]))),
-        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Element"), Arc::new(vec![]))),
-      ]))),
-    });
-    let predicate = Calcit::from(vec![
-      Calcit::Proc(CalcitProc::NativeStructMatches),
-      node,
-      Calcit::StructDef(branch.clone()),
-    ]);
-
-    let narrowing = extract_predicate_bindings(&predicate, &ScopeTypes::new());
-    assert!(matches!(
-      narrowing.true_binding,
-      Some((name, inferred))
-        if name.as_ref() == "node"
-          && matches!(inferred.as_ref(), CalcitTypeAnnotation::Struct(def, args) if def.as_ref() == &branch && args.is_empty())
-    ));
-    assert!(narrowing.false_binding.is_none());
-  }
-
-  #[test]
-  fn transparent_union_struct_match_requires_complete_unique_member_branches() {
-    let cat = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Cat"), vec![EdnTag::new("name")]));
-    let city = Arc::new(CalcitStructDef::from_fields(EdnTag::new("City"), vec![EdnTag::new("name")]));
-    let node_type = Arc::new(CalcitTypeAnnotation::Union(Arc::new(vec![
-      Arc::new(CalcitTypeAnnotation::Struct(cat.clone(), Arc::new(vec![]))),
-      Arc::new(CalcitTypeAnnotation::Struct(city.clone(), Arc::new(vec![]))),
-    ])));
-    let node_sym: Arc<str> = Arc::from("node");
-    let node = Calcit::Local(CalcitLocal {
-      idx: CalcitLocal::track_sym(&node_sym),
-      sym: node_sym,
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from("tests.transparent-union"),
-        at_def: Arc::from("match-node"),
-      }),
-      location: None,
-      type_info: node_type,
-    });
-    let arm = |pattern: Calcit| Calcit::from(vec![pattern, Calcit::Nil]);
-    let missing = CalcitList::from(&[node.clone(), arm(Calcit::StructDef(cat.as_ref().clone()))] as &[Calcit]);
-    let missing_error = validate_transparent_union_struct_match(
-      &missing,
-      &ScopeTypes::new(),
-      "tests.transparent-union",
-      &CallStackList::default(),
-      None,
-    )
-    .expect_err("missing City branch must be rejected");
-    assert!(missing_error.msg.contains("missing"), "{}", missing_error.msg);
-    assert!(missing_error.msg.contains("City"));
-
-    let duplicate = CalcitList::from(&[
-      node.clone(),
-      arm(Calcit::StructDef(cat.as_ref().clone())),
-      arm(Calcit::StructDef(cat.as_ref().clone())),
-      arm(Calcit::StructDef(city.as_ref().clone())),
-    ] as &[Calcit]);
-    let duplicate_error = validate_transparent_union_struct_match(
-      &duplicate,
-      &ScopeTypes::new(),
-      "tests.transparent-union",
-      &CallStackList::default(),
-      None,
-    )
-    .expect_err("duplicate Cat branch must be rejected");
-    assert!(duplicate_error.msg.contains("duplicate branch"));
-
-    let symbol = |name: &str| Calcit::Symbol {
-      sym: Arc::from(name),
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from("tests.transparent-union"),
-        at_def: Arc::from("match-node"),
-      }),
-      location: None,
-    };
-    let mut named_scope_types = ScopeTypes::new();
-    named_scope_types.insert(Arc::from("Cat"), Arc::new(CalcitTypeAnnotation::StructDef(cat.clone())));
-    named_scope_types.insert(Arc::from("City"), Arc::new(CalcitTypeAnnotation::StructDef(city.clone())));
-    let named_branches = CalcitList::from(&[node, arm(symbol("Cat")), arm(symbol("City"))] as &[Calcit]);
-    validate_transparent_union_struct_match(
-      &named_branches,
-      &named_scope_types,
-      "tests.transparent-union",
-      &CallStackList::default(),
-      None,
-    )
-    .expect("symbolic Struct names should resolve through the local type scope");
-  }
-
-  #[test]
-  fn transparent_union_struct_match_resolves_nominal_and_imported_structs() {
-    let _guard = lock_preprocess_test_state();
-    calcit::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
-
-    let nominal_ns = "tests.transparent-union-nominal";
-    let imported_ns = "tests.transparent-union-imported";
-    let consumer_ns = "tests.transparent-union-consumer";
-    let cat = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Cat"), vec![EdnTag::new("name")]));
-    let city = Arc::new(CalcitStructDef::from_fields(EdnTag::new("City"), vec![EdnTag::new("name")]));
-
-    for (ns, name, definition) in [(nominal_ns, "Cat", cat.as_ref()), (nominal_ns, "City", city.as_ref())] {
-      program::write_runtime_ready(ns, name, Calcit::StructDef(definition.clone())).expect("register nominal Struct");
-    }
-    for (ns, name, definition) in [(imported_ns, "Cat", cat.as_ref()), (imported_ns, "City", city.as_ref())] {
-      program::write_runtime_ready(ns, name, Calcit::StructDef(definition.clone())).expect("register imported Struct");
-    }
-
-    let node_sym: Arc<str> = Arc::from("node");
-    let node_type = Arc::new(CalcitTypeAnnotation::Union(Arc::new(vec![
-      Arc::new(CalcitTypeAnnotation::Struct(cat.clone(), Arc::new(vec![]))),
-      Arc::new(CalcitTypeAnnotation::Struct(city.clone(), Arc::new(vec![]))),
-    ])));
-    let node = Calcit::Local(CalcitLocal {
-      idx: CalcitLocal::track_sym(&node_sym),
-      sym: node_sym,
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from(nominal_ns),
-        at_def: Arc::from("match-node"),
-      }),
-      location: None,
-      type_info: node_type,
-    });
-    let arm = |pattern: Calcit| Calcit::from(vec![pattern, Calcit::Nil]);
-    let symbol = |name: &str| Calcit::Symbol {
-      sym: Arc::from(name),
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: Arc::from(nominal_ns),
-        at_def: Arc::from("match-node"),
-      }),
-      location: None,
-    };
-
-    let nominal_branches = CalcitList::from(&[node.clone(), arm(symbol("Cat")), arm(symbol("City"))] as &[Calcit]);
-    validate_transparent_union_struct_match(&nominal_branches, &ScopeTypes::new(), nominal_ns, &CallStackList::default(), None)
-      .expect("nominal Struct branches should resolve without named scope types");
-
-    let imported_pattern = |name: &str| {
-      Calcit::Import(CalcitImport {
-        ns: Arc::from(imported_ns),
-        def: Arc::from(name),
-        info: Arc::new(ImportInfo::NsReferDef {
-          at_ns: Arc::from(consumer_ns),
-          at_def: Arc::from("match-node"),
-        }),
-        def_id: None,
-      })
-    };
-    let imported_branches = CalcitList::from(&[node, arm(imported_pattern("Cat")), arm(imported_pattern("City"))] as &[Calcit]);
-    validate_transparent_union_struct_match(&imported_branches, &ScopeTypes::new(), consumer_ns, &CallStackList::default(), None)
-      .expect("imported Struct branches should resolve by namespace");
   }
 
   #[test]
