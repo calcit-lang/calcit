@@ -5186,7 +5186,19 @@ fn validate_transparent_union_struct_match(
       continue;
     }
 
-    let Some(pattern_type) = resolve_type_value(pattern, scope_types) else {
+    let pattern_type = resolve_type_value(pattern, scope_types).or_else(|| match pattern {
+      // `struct-match` receives its source arms before macro expansion. A
+      // qualified struct name can therefore still be a Symbol rather than a
+      // resolved program value. Keep it as a nominal TypeRef so the common
+      // resolver below can look up its StructDef, including across namespaces.
+      Calcit::Symbol { sym, .. } => Some(Arc::new(CalcitTypeAnnotation::TypeRef(sym.clone(), Arc::new(vec![])))),
+      Calcit::Import(import) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from(format!("{}/{}", import.ns, import.def)),
+        Arc::new(vec![]),
+      ))),
+      _ => None,
+    });
+    let Some(pattern_type) = pattern_type else {
       return Err(fail(format!(
         "struct-match branch `{pattern}` cannot be resolved to a concrete Struct member of `{}`",
         receiver_type.to_brief_string()
@@ -6886,7 +6898,7 @@ mod tests {
     assert!(missing_error.msg.contains("City"));
 
     let duplicate = CalcitList::from(&[
-      node,
+      node.clone(),
       arm(Calcit::StructDef(cat.as_ref().clone())),
       arm(Calcit::StructDef(cat.as_ref().clone())),
       arm(Calcit::StructDef(city.as_ref().clone())),
@@ -6900,6 +6912,27 @@ mod tests {
     )
     .expect_err("duplicate Cat branch must be rejected");
     assert!(duplicate_error.msg.contains("duplicate branch"));
+
+    let symbol = |name: &str| Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.transparent-union"),
+        at_def: Arc::from("match-node"),
+      }),
+      location: None,
+    };
+    let mut named_scope_types = ScopeTypes::new();
+    named_scope_types.insert(Arc::from("Cat"), Arc::new(CalcitTypeAnnotation::StructDef(cat.clone())));
+    named_scope_types.insert(Arc::from("City"), Arc::new(CalcitTypeAnnotation::StructDef(city.clone())));
+    let named_branches = CalcitList::from(&[node, arm(symbol("Cat")), arm(symbol("City"))] as &[Calcit]);
+    validate_transparent_union_struct_match(
+      &named_branches,
+      &named_scope_types,
+      "tests.transparent-union",
+      &CallStackList::default(),
+      None,
+    )
+    .expect("symbolic Struct names should resolve through the local type scope");
   }
 
   #[test]
