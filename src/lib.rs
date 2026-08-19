@@ -203,79 +203,6 @@ pub fn resolve_module_snapshot_candidates(path: &str, base_dir: &Path, module_fo
   items
 }
 
-#[cfg(test)]
-mod module_resolution_tests {
-  use super::{project_module_folder, resolve_module_snapshot_candidates};
-  use std::fs;
-  use std::path::PathBuf;
-
-  fn temp_root(label: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("calcit-module-resolution-{label}-{}", std::process::id()))
-  }
-
-  #[test]
-  fn project_module_view_is_the_only_root_for_named_modules() {
-    let root = temp_root("project-first");
-    let project = root.join("project");
-    let global = root.join("global");
-    fs::create_dir_all(project.join(".calcit/modules/demo")).unwrap();
-    fs::create_dir_all(global.join("demo")).unwrap();
-    fs::write(project.join(".calcit/modules/demo/compact.cirru"), "project").unwrap();
-    fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
-
-    let module_folder = project_module_folder(&project);
-    let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
-    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/compact.cirru"));
-    assert_eq!(candidates[0].2, "<mods>/demo/compact.cirru");
-    fs::remove_dir_all(root).unwrap();
-  }
-
-  #[test]
-  fn named_modules_do_not_fall_back_to_the_global_store() {
-    let root = temp_root("no-global-fallback");
-    let project = root.join("project");
-    let global = root.join("global");
-    fs::create_dir_all(&project).unwrap();
-    fs::create_dir_all(global.join("demo")).unwrap();
-    fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
-
-    let module_folder = project_module_folder(&project);
-    let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/calcit.cirru"));
-    fs::remove_dir_all(root).unwrap();
-  }
-
-  #[test]
-  fn explicit_relative_modules_do_not_use_project_module_view() {
-    let root = temp_root("relative");
-    let project = root.join("project");
-    let global = root.join("global");
-    fs::create_dir_all(&project).unwrap();
-    fs::write(project.join("util.cirru"), "relative").unwrap();
-
-    let candidates = resolve_module_snapshot_candidates("./util.cirru", &project, &global);
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].1, project.join("./util.cirru"));
-    fs::remove_dir_all(root).unwrap();
-  }
-
-  #[test]
-  fn absolute_module_paths_do_not_use_project_module_view() {
-    let root = temp_root("absolute");
-    let project = root.join("project");
-    let global = root.join("global");
-    let module = root.join("external.cirru");
-    fs::create_dir_all(&project).unwrap();
-    fs::write(&module, "absolute").unwrap();
-
-    let candidates = resolve_module_snapshot_candidates(module.to_str().unwrap(), &project, &global);
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].1, module);
-    fs::remove_dir_all(root).unwrap();
-  }
-}
-
 pub fn resolve_module_snapshot_path(path: &str, base_dir: &Path, module_folder: &Path) -> (String, PathBuf, String) {
   resolve_module_snapshot_candidates(path, base_dir, module_folder)
     .into_iter()
@@ -370,4 +297,77 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
   }
 
   Err(last_error.unwrap_or_else(|| format!("expected Cirru snapshot for module path: {path}")))
+}
+
+#[cfg(test)]
+mod module_resolution_tests {
+  use super::{project_module_folder, resolve_module_snapshot_candidates};
+  use std::fs;
+  use std::path::PathBuf;
+
+  fn temp_root(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("calcit-module-resolution-{label}-{}", std::process::id()))
+  }
+
+  #[test]
+  fn project_module_view_is_the_only_root_for_named_modules() {
+    let root = temp_root("project-first");
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(project.join(".calcit/modules/demo")).unwrap();
+    fs::create_dir_all(global.join("demo")).unwrap();
+    fs::write(project.join(".calcit/modules/demo/compact.cirru"), "project").unwrap();
+    fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
+
+    let module_folder = project_module_folder(&project);
+    let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
+    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/compact.cirru"));
+    assert_eq!(candidates[0].2, "<mods>/demo/compact.cirru");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn named_modules_do_not_fall_back_to_the_global_store() {
+    let root = temp_root("no-global-fallback");
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(global.join("demo")).unwrap();
+    fs::write(global.join("demo/calcit.cirru"), "global").unwrap();
+
+    let module_folder = project_module_folder(&project);
+    let candidates = resolve_module_snapshot_candidates("demo/", &project, &module_folder);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, project.join(".calcit/modules/demo/calcit.cirru"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn explicit_relative_modules_do_not_use_project_module_view() {
+    let root = temp_root("relative");
+    let project = root.join("project");
+    let global = root.join("global");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("util.cirru"), "relative").unwrap();
+
+    let candidates = resolve_module_snapshot_candidates("./util.cirru", &project, &global);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, project.join("./util.cirru"));
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn absolute_module_paths_do_not_use_project_module_view() {
+    let root = temp_root("absolute");
+    let project = root.join("project");
+    let global = root.join("global");
+    let module = root.join("external.cirru");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(&module, "absolute").unwrap();
+
+    let candidates = resolve_module_snapshot_candidates(module.to_str().unwrap(), &project, &global);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].1, module);
+    fs::remove_dir_all(root).unwrap();
+  }
 }

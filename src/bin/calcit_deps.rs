@@ -610,119 +610,6 @@ fn valid_module_component(component: &str) -> bool {
       .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-#[cfg(test)]
-mod tests {
-  use super::{
-    PackageDeps, VersionBumpCaps, VersionCaps, VersionGetCaps, VersionSubcommand, handle_version_command, module_folder,
-    normalize_package_name,
-  };
-  use cirru_edn::Edn;
-  use std::collections::HashMap;
-  use std::sync::Arc;
-
-  #[test]
-  fn module_names_are_canonical_before_path_use() {
-    assert_eq!(module_folder("calcit-lang/respo.calcit"), Ok("respo.calcit"));
-    for invalid in ["../outside", "org/../outside", "org//repo", "org/repo/extra", "/tmp/repo"] {
-      assert!(module_folder(invalid).is_err(), "{invalid} should be rejected");
-    }
-  }
-
-  #[test]
-  fn normalized_package_names_reject_extra_path_segments() {
-    assert_eq!(
-      normalize_package_name("https://github.com/calcit-lang/respo.calcit.git"),
-      Ok("calcit-lang/respo.calcit".to_owned())
-    );
-    assert!(normalize_package_name("calcit-lang/respo.calcit/extra").is_err());
-  }
-
-  #[test]
-  fn missing_dependencies_field_is_an_empty_graph() {
-    let deps: PackageDeps = Edn::Map(cirru_edn::EdnMapView::default()).try_into().unwrap();
-    assert!(deps.version.is_none());
-    assert!(deps.dependencies.is_empty());
-    assert!(deps.dev_dependencies.is_empty());
-  }
-
-  #[test]
-  fn empty_package_version_is_treated_as_missing() {
-    let parsed = cirru_edn::parse("{} (:version ||)").unwrap();
-    let deps: PackageDeps = parsed.try_into().unwrap();
-    assert!(deps.version.is_none());
-  }
-
-  #[test]
-  fn version_commands_do_not_read_snapshot_version() {
-    let root = std::env::temp_dir().join(format!("calcit-caps-version-migration-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
-    let deps_path = root.join("deps.cirru");
-    std::fs::write(&deps_path, "{} (:dependencies $ {})").unwrap();
-    // A legacy snapshot version must not be used as a fallback anymore.
-    std::fs::write(root.join("calcit.cirru"), "{} (:version |1.2.3)").unwrap();
-
-    let deps: PackageDeps = cirru_edn::parse("{} (:dependencies $ {})").unwrap().try_into().unwrap();
-    let deps_file = deps_path.to_str().unwrap();
-    let get_error = handle_version_command(
-      deps.clone(),
-      deps_file,
-      &VersionCaps {
-        command: VersionSubcommand::Get(VersionGetCaps {}),
-      },
-    )
-    .expect_err("missing deps.cirru version should reject version get");
-    assert!(get_error.contains("no :version declared in"), "unexpected error: {get_error}");
-    assert!(get_error.contains("deps.cirru"), "unexpected error: {get_error}");
-    assert!(
-      get_error.contains(&format!("caps version set <version> {deps_file}")),
-      "unexpected migration hint: {get_error}"
-    );
-
-    let bump_error = handle_version_command(
-      deps,
-      deps_file,
-      &VersionCaps {
-        command: VersionSubcommand::Bump(VersionBumpCaps { level: "patch".to_owned() }),
-      },
-    )
-    .expect_err("missing deps.cirru version should reject version bump");
-    assert!(bump_error.contains("no :version declared in"), "unexpected error: {bump_error}");
-    assert!(bump_error.contains("deps.cirru"), "unexpected error: {bump_error}");
-    assert!(
-      bump_error.contains(&format!("caps version set <version> {deps_file}")),
-      "unexpected migration hint: {bump_error}"
-    );
-
-    std::fs::remove_dir_all(root).unwrap();
-  }
-
-  #[test]
-  fn parses_development_dependencies_separately() {
-    let parsed = cirru_edn::parse("{} (:dependencies $ {} (|org/runtime |1.0.0)) (:dev-dependencies $ {} (|org/test |main))").unwrap();
-    let deps: PackageDeps = parsed.try_into().unwrap();
-    assert_eq!(deps.dependencies.get("org/runtime").map(AsRef::as_ref), Some("1.0.0"));
-    assert_eq!(deps.dev_dependencies.get("org/test").map(AsRef::as_ref), Some("main"));
-  }
-
-  #[test]
-  fn write_deps_preserves_package_version() {
-    let path = std::env::temp_dir().join(format!("calcit-caps-version-{}.cirru", std::process::id()));
-    let deps = PackageDeps {
-      version: Some("1.2.3".to_string()),
-      calcit_version: Some("0.13.12".to_string()),
-      dependencies: Default::default(),
-      dev_dependencies: HashMap::from([(Arc::from("calcit-lang/test"), Arc::from("main"))]),
-    };
-    super::write_deps_file(path.to_str().unwrap(), &deps).unwrap();
-    let parsed = cirru_edn::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    let restored: PackageDeps = parsed.try_into().unwrap();
-    assert_eq!(restored.version.as_deref(), Some("1.2.3"));
-    assert_eq!(restored.dev_dependencies.get("calcit-lang/test").map(AsRef::as_ref), Some("main"));
-    std::fs::remove_file(path).unwrap();
-  }
-}
-
 fn write_deps_file(deps_file: &str, deps: &PackageDeps) -> Result<(), String> {
   let mut updated_edn = Edn::Map(cirru_edn::EdnMapView::default());
 
@@ -1085,4 +972,117 @@ fn write_package_version(deps_file: &str, version: &str) -> Result<(), String> {
 
 fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {
   println!("{pkg:<32} {expected:<12} {latest:<12} {hint:<12}");
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    PackageDeps, VersionBumpCaps, VersionCaps, VersionGetCaps, VersionSubcommand, handle_version_command, module_folder,
+    normalize_package_name,
+  };
+  use cirru_edn::Edn;
+  use std::collections::HashMap;
+  use std::sync::Arc;
+
+  #[test]
+  fn module_names_are_canonical_before_path_use() {
+    assert_eq!(module_folder("calcit-lang/respo.calcit"), Ok("respo.calcit"));
+    for invalid in ["../outside", "org/../outside", "org//repo", "org/repo/extra", "/tmp/repo"] {
+      assert!(module_folder(invalid).is_err(), "{invalid} should be rejected");
+    }
+  }
+
+  #[test]
+  fn normalized_package_names_reject_extra_path_segments() {
+    assert_eq!(
+      normalize_package_name("https://github.com/calcit-lang/respo.calcit.git"),
+      Ok("calcit-lang/respo.calcit".to_owned())
+    );
+    assert!(normalize_package_name("calcit-lang/respo.calcit/extra").is_err());
+  }
+
+  #[test]
+  fn missing_dependencies_field_is_an_empty_graph() {
+    let deps: PackageDeps = Edn::Map(cirru_edn::EdnMapView::default()).try_into().unwrap();
+    assert!(deps.version.is_none());
+    assert!(deps.dependencies.is_empty());
+    assert!(deps.dev_dependencies.is_empty());
+  }
+
+  #[test]
+  fn empty_package_version_is_treated_as_missing() {
+    let parsed = cirru_edn::parse("{} (:version ||)").unwrap();
+    let deps: PackageDeps = parsed.try_into().unwrap();
+    assert!(deps.version.is_none());
+  }
+
+  #[test]
+  fn version_commands_do_not_read_snapshot_version() {
+    let root = std::env::temp_dir().join(format!("calcit-caps-version-migration-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let deps_path = root.join("deps.cirru");
+    std::fs::write(&deps_path, "{} (:dependencies $ {})").unwrap();
+    // A legacy snapshot version must not be used as a fallback anymore.
+    std::fs::write(root.join("calcit.cirru"), "{} (:version |1.2.3)").unwrap();
+
+    let deps: PackageDeps = cirru_edn::parse("{} (:dependencies $ {})").unwrap().try_into().unwrap();
+    let deps_file = deps_path.to_str().unwrap();
+    let get_error = handle_version_command(
+      deps.clone(),
+      deps_file,
+      &VersionCaps {
+        command: VersionSubcommand::Get(VersionGetCaps {}),
+      },
+    )
+    .expect_err("missing deps.cirru version should reject version get");
+    assert!(get_error.contains("no :version declared in"), "unexpected error: {get_error}");
+    assert!(get_error.contains("deps.cirru"), "unexpected error: {get_error}");
+    assert!(
+      get_error.contains(&format!("caps version set <version> {deps_file}")),
+      "unexpected migration hint: {get_error}"
+    );
+
+    let bump_error = handle_version_command(
+      deps,
+      deps_file,
+      &VersionCaps {
+        command: VersionSubcommand::Bump(VersionBumpCaps { level: "patch".to_owned() }),
+      },
+    )
+    .expect_err("missing deps.cirru version should reject version bump");
+    assert!(bump_error.contains("no :version declared in"), "unexpected error: {bump_error}");
+    assert!(bump_error.contains("deps.cirru"), "unexpected error: {bump_error}");
+    assert!(
+      bump_error.contains(&format!("caps version set <version> {deps_file}")),
+      "unexpected migration hint: {bump_error}"
+    );
+
+    std::fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn parses_development_dependencies_separately() {
+    let parsed = cirru_edn::parse("{} (:dependencies $ {} (|org/runtime |1.0.0)) (:dev-dependencies $ {} (|org/test |main))").unwrap();
+    let deps: PackageDeps = parsed.try_into().unwrap();
+    assert_eq!(deps.dependencies.get("org/runtime").map(AsRef::as_ref), Some("1.0.0"));
+    assert_eq!(deps.dev_dependencies.get("org/test").map(AsRef::as_ref), Some("main"));
+  }
+
+  #[test]
+  fn write_deps_preserves_package_version() {
+    let path = std::env::temp_dir().join(format!("calcit-caps-version-{}.cirru", std::process::id()));
+    let deps = PackageDeps {
+      version: Some("1.2.3".to_string()),
+      calcit_version: Some("0.13.12".to_string()),
+      dependencies: Default::default(),
+      dev_dependencies: HashMap::from([(Arc::from("calcit-lang/test"), Arc::from("main"))]),
+    };
+    super::write_deps_file(path.to_str().unwrap(), &deps).unwrap();
+    let parsed = cirru_edn::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let restored: PackageDeps = parsed.try_into().unwrap();
+    assert_eq!(restored.version.as_deref(), Some("1.2.3"));
+    assert_eq!(restored.dev_dependencies.get("calcit-lang/test").map(AsRef::as_ref), Some("main"));
+    std::fs::remove_file(path).unwrap();
+  }
 }
