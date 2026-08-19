@@ -6936,6 +6936,69 @@ mod tests {
   }
 
   #[test]
+  fn transparent_union_struct_match_resolves_nominal_and_imported_structs() {
+    let _guard = lock_preprocess_test_state();
+    calcit::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+
+    let nominal_ns = "tests.transparent-union-nominal";
+    let imported_ns = "tests.transparent-union-imported";
+    let consumer_ns = "tests.transparent-union-consumer";
+    let cat = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Cat"), vec![EdnTag::new("name")]));
+    let city = Arc::new(CalcitStructDef::from_fields(EdnTag::new("City"), vec![EdnTag::new("name")]));
+
+    for (ns, name, definition) in [(nominal_ns, "Cat", cat.as_ref()), (nominal_ns, "City", city.as_ref())] {
+      program::write_runtime_ready(ns, name, Calcit::StructDef(definition.clone())).expect("register nominal Struct");
+    }
+    for (ns, name, definition) in [(imported_ns, "Cat", cat.as_ref()), (imported_ns, "City", city.as_ref())] {
+      program::write_runtime_ready(ns, name, Calcit::StructDef(definition.clone())).expect("register imported Struct");
+    }
+
+    let node_sym: Arc<str> = Arc::from("node");
+    let node_type = Arc::new(CalcitTypeAnnotation::Union(Arc::new(vec![
+      Arc::new(CalcitTypeAnnotation::Struct(cat.clone(), Arc::new(vec![]))),
+      Arc::new(CalcitTypeAnnotation::Struct(city.clone(), Arc::new(vec![]))),
+    ])));
+    let node = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&node_sym),
+      sym: node_sym,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(nominal_ns),
+        at_def: Arc::from("match-node"),
+      }),
+      location: None,
+      type_info: node_type,
+    });
+    let arm = |pattern: Calcit| Calcit::from(vec![pattern, Calcit::Nil]);
+    let symbol = |name: &str| Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(nominal_ns),
+        at_def: Arc::from("match-node"),
+      }),
+      location: None,
+    };
+
+    let nominal_branches = CalcitList::from(&[node.clone(), arm(symbol("Cat")), arm(symbol("City"))] as &[Calcit]);
+    validate_transparent_union_struct_match(&nominal_branches, &ScopeTypes::new(), nominal_ns, &CallStackList::default(), None)
+      .expect("nominal Struct branches should resolve without named scope types");
+
+    let imported_pattern = |name: &str| {
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(imported_ns),
+        def: Arc::from(name),
+        info: Arc::new(ImportInfo::NsReferDef {
+          at_ns: Arc::from(consumer_ns),
+          at_def: Arc::from("match-node"),
+        }),
+        def_id: None,
+      })
+    };
+    let imported_branches = CalcitList::from(&[node, arm(imported_pattern("Cat")), arm(imported_pattern("City"))] as &[Calcit]);
+    validate_transparent_union_struct_match(&imported_branches, &ScopeTypes::new(), consumer_ns, &CallStackList::default(), None)
+      .expect("imported Struct branches should resolve by namespace");
+  }
+
+  #[test]
   fn nominal_options_warn_on_legacy_nil_and_enum_operations() {
     let core_head = |operation: &str| {
       Calcit::Import(CalcitImport {

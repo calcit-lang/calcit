@@ -2533,7 +2533,7 @@ fn handle_ns_doc(opts: &EditNsDocCommand, snapshot_file: &str) -> Result<(), Str
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
-pub(crate) fn parse_semver_value(v: &str) -> Result<Version, String> {
+fn parse_semver_value(v: &str) -> Result<Version, String> {
   if v.starts_with('|') {
     return Err(format!(
       "Invalid version '{v}': do not include the '|' Cirru string prefix; use bare semver, e.g. '0.0.17'"
@@ -2543,7 +2543,7 @@ pub(crate) fn parse_semver_value(v: &str) -> Result<Version, String> {
 }
 
 #[cfg(test)]
-pub(crate) fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
+fn bump_semver_value(current: &str, level: &str) -> Result<String, String> {
   let mut version = parse_semver_value(current)?;
   match level {
     "patch" => {
