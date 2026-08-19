@@ -103,27 +103,11 @@
               :args $ [] 'test-struct.main/Point2D
         |main! $ %{} 'CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-struct) (test-methods) (test-match) (test-transparent-union) (test-polymorphism) (test-edn) (test-struct-with) (test-partial-struct) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
+            defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-partial-struct) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)
               :args $ []
-        |NamedStruct $ %{} 'CodeEntry (:doc "|Transparent union used by typed struct-match tests.")
-          :code $ quote
-            deftype NamedStruct
-              or 'Cat 'City
-          :examples $ []
-          :schema $ :: 'Dynamic
-        |read-named-struct-name $ %{} 'CodeEntry (:doc "|Reads a shared field after struct-match narrows a transparent union.")
-          :code $ quote
-            defn read-named-struct-name (node)
-              struct-match node
-                Cat cat $ :name cat
-                City city $ :name city
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'String)
-              :args $ [] 'NamedStruct
         |read-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote
             defn read-asserted-map-literal-store (source)
@@ -222,17 +206,6 @@
                   A aa $ :a aa
                   B bb $ :b bb
                   _ o (println |others) :other
-          :examples $ []
-          :schema $ :: 'Fn
-            {} (:return 'Dynamic)
-              :args $ []
-        |test-transparent-union $ %{} 'CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing transparent named union")
-              assert= |kitty $ read-named-struct-name
-                %{} Cat (:name |kitty) (:color :red)
-              assert= |Shanghai $ read-named-struct-name
-                %{} City (:name |Shanghai) (:province |Shanghai)
           :examples $ []
           :schema $ :: 'Fn
             {} (:return 'Dynamic)

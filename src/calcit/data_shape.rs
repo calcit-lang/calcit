@@ -490,9 +490,6 @@ impl GraphBuilder {
         }))
       }
       CalcitTypeAnnotation::TypeRef(name, args) => self.build_named(name, args, default_ns),
-      CalcitTypeAnnotation::Union(_) => Err(unsupported_type(
-        "transparent union has multiple runtime data shapes; decode it after a concrete discriminator is available",
-      )),
       CalcitTypeAnnotation::TypeSlot(name) => match super::resolve_type_slot(name) {
         Some(resolved) => {
           let slot_key = name.to_string();
