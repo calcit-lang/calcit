@@ -7,7 +7,9 @@ history after they leave this directory.
 ## Retention
 
 - Keep individual notes for the current development window (normally the most
-  recent 45 days).
+  recent 45 days), unless a completed topic has produced several overlapping
+  notes. Consolidate those clusters promptly; recency alone is not a reason to
+  retain duplicate implementation checkpoints.
 - Periodically replace older clusters with a concise topic summary in
   [ARCHIVE.md](ARCHIVE.md), then remove their individual files.
 - Each code commit still adds one timestamped note, but it should capture only
