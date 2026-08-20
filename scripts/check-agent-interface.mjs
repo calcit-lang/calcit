@@ -155,7 +155,7 @@ const scenarios = [
       "transaction",
       "--code",
       `[]
-  [] |config |version |9.0.0
+  [] |edit |doc |app.main/main! "|Updated by transaction"
   []
     , |tree
     , |replace

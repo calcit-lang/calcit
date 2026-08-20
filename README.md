@@ -152,7 +152,7 @@ Use `caps add --dev <org/repo>@<ref>` and `caps remove --dev <org/repo>` to mana
 
 To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 
-```cirru
+```cirru.no-check
 :entries $ {}
   :default $ {}
     :modules $ [] |memof/calcit.cirru |lilac/

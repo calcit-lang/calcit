@@ -13,10 +13,10 @@ navigation layer.
 
 ## Release history (Jul–Aug 2026)
 
-Non-functional version-bump notes were consolidated here on 2026-08-08. Each
-release synchronizes `Cargo.toml` / `package.json` and refreshes the workspace
-lockfile with `cargo update --workspace`; the full note text remains recoverable
-from Git history.
+Release and release-policy notes are consolidated here. Each release
+synchronizes `Cargo.toml` / `package.json` and refreshes the workspace lockfile
+with `cargo update --workspace`; the full note text remains recoverable from
+Git history.
 
 | Version | Durable context |
 | --- | --- |
@@ -31,6 +31,23 @@ from Git history.
 | 0.13.2 | Struct/enum data model cleanup (PR #301), direct required Struct field access, symbol-based nominal formatting. |
 | 0.13.3 | Struct/Enum terminology migration, deprecated API analysis, cross-backend canonical EDN formatting. |
 | 0.13.4 | Typed host FFI (external-object traits) merged and released. |
+| 0.12.58 | Receiver-first method inference and nominal trait identity fixes. |
+| 0.12.59 | Top-level nominal value schema fix. |
+| 0.13.5 | Typed `js-get` / `js-set` field access plus named-type preservation. |
+| 0.13.6 | Opt-in raw-JS-FFI warning and readable low-cost JS emission. |
+| 0.13.7 | Definition-attached core tests and safer, less noisy `cr` edits. |
+| 0.13.8 | Typed Struct field access and robust branch-ref resolution. |
+| 0.13.9 | Routine aligned Cargo/npm release. |
+| 0.13.10 | Agent migration convergence and quoted-Cirru edit reliability. |
+| 0.13.11 | Trailing `Option` parameters, typed Option/Struct handling, and terminating JS string replacement. |
+| 0.13.12 | Type guidance/Dynamic audits and typed Struct constructors with omitted Option fields. |
+| 0.13.13 | Project module-store and dependency-boundary work. |
+| 0.13.15 | `decode-map-as` runtime decoder and core metadata. |
+| 0.13.17 | Nested Struct context, migration diagnostics, and agent guidance. |
+| 0.13.18 | Correct source locations for macro-generated field warnings. |
+| 0.13.19 | Project-scoped module resolution, immutable cache visibility, and safe cleanup. |
+| 0.13.20 | Typed JavaScript FFI capability boundary and browser/Node validation. |
+| 0.13.21 | Typed JavaScript FFI follow-ups and `deps.cirru` version migration diagnostics. |
 
 Also consolidated here: the 2026-08-01 ARCHIVE consolidation note, and the
 release main-branch policy note — `main` needs no pull-request protection for
@@ -40,3 +57,27 @@ before tagging, and npm verification uses the published package name
 
 For current behavior, prefer `docs/`, tests, and the retained current-window
 notes over this summary.
+
+## Consolidated development topics (Jul–Aug 2026)
+
+### Cursor and transactional structural editing (Jul 28–29)
+
+The CLI gained a project-local persistent cursor for safe, multi-command tree
+editing. It supports navigation/history, selection search, clipboard actions,
+focus previews, depth-first movement, symmetric slurp/barf operations, and
+duplication. `@cursor` may resolve a definition target and tree path, but
+two-target edits retain explicit destinations and transaction files remain
+self-contained. Snapshot and cursor-sidecar writes are staged and report
+partial success explicitly; a cursor is navigation state, never a concurrency
+primitive or source identity. The authoritative interface and examples are in
+`docs/run/edit-tree.md`, `docs/CalcitAgent.md`, and the cursor RFC.
+
+### Project module cache hardening (Aug 17)
+
+Runtime package-style module resolution is restricted to a project's
+`.calcit/modules/` view, while immutable revisions live in the global
+`module-caches/` store. Cache metadata preserves the highest observed SemVer
+reference; `caps clean` retains the newest revision and every revision still
+linked by a registered project. Cache and project-view updates are serialized
+with OS-managed locks and installation is transactional. Current operational
+details live in `docs/run/load-deps.md` and `docs/run/upgrade.md`.
