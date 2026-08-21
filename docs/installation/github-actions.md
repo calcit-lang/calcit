@@ -41,7 +41,7 @@ Then install it after checkout. Do not repeat the Calcit version in the workflow
 - name: Enable Yarn
   run: corepack enable && corepack prepare yarn@4.12.0 --activate
 
-- uses: tiye/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v1
 ```
 
 `setup-calcit` reads the selected `deps.cirru` when no explicit version input is supplied. A missing selected

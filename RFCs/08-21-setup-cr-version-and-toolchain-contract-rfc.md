@@ -60,7 +60,7 @@ workflow 中重复填写 `version`。
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: tiye/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v1
 ```
 
 对应项目配置：
@@ -91,7 +91,7 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
 增加可选的 `deps-file` input，默认值为 `deps.cirru`。它只用于 monorepo 或非根目录项目：
 
 ```yaml
-- uses: tiye/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v1
   with:
     deps-file: examples/browser/deps.cirru
 ```

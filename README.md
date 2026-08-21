@@ -46,7 +46,7 @@ When installing from source, install the same public tools:
 cargo install --path . --bin cr --bin caps
 ```
 
-For new GitHub Actions workflows, use [setup-calcit](https://github.com/tiye/setup-calcit). Existing
+For new GitHub Actions workflows, use [setup-calcit](https://github.com/calcit-lang/setup-calcit). Existing
 [setup-cr](https://github.com/calcit-lang/setup-cr) workflow tags remain supported.
 
 ### Quick Start
@@ -119,7 +119,7 @@ Related examples and workflows:
 
 - [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md)
 - [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit-workflow)
-- [setup-calcit](https://github.com/tiye/setup-calcit) for new GitHub Actions workflows
+- [setup-calcit](https://github.com/calcit-lang/setup-calcit) for new GitHub Actions workflows
 
 ### Modules
 
@@ -145,7 +145,7 @@ Root projects install both `:dependencies` and `:dev-dependencies`. Recursive re
 `:dependencies`, so test and maintenance modules declared by a dependency do not leak into consumers.
 Use `caps add --dev <org/repo>@<ref>` and `caps remove --dev <org/repo>` to manage the development group.
 
-`:calcit-version` helps with version checks and provides hints in [CI](https://github.com/tiye/setup-calcit).
+`:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-calcit).
 
 To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 
