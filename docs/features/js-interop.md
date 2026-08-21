@@ -142,9 +142,12 @@ calcit analyze weak-types --only unsafe-coerce
 ```
 
 The report gives each assertion's `code@...` Snapshot path and declared target
-schema. Treat the result as a runtime-contract checklist: keep the assertion in
-one adapter, test accepted host values and rejected shapes, then return a
-normal Calcit `Option`, `Result`, struct, or enum to application code.
+schema. JSON also records only static boundary evidence: the source form,
+whether the definition declares `:js-ffi`, and whether its namespace follows
+the `js-ffi.raw.*` adapter convention. Treat the result as a runtime-contract
+checklist: keep the assertion in one adapter, test accepted host values and
+rejected shapes, then return a normal Calcit `Option`, `Result`, struct, or enum
+to application code.
 
 For example, the host name can differ from the Calcit name while the field type
 stays visible to the type checker:

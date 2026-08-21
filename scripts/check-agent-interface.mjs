@@ -243,7 +243,7 @@ const scenarios = [
       "json",
     ],
     check(result) {
-      if (result.schema_version !== 4 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
+      if (result.schema_version !== 5 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
         throw new Error("weak type result is incomplete");
       }
       const occurrences = result.data.definitions.flatMap((definition) => definition.occurrences);
