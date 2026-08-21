@@ -244,6 +244,16 @@ fn compare_detailed_baseline(current: &QualitySnapshot, baseline: &QualityBaseli
   violations
 }
 
+fn reported_baseline_limits(current: &QualitySnapshot, baseline: &QualityBaseline) -> QualityMetrics {
+  let mut limits = baseline.metrics.clone();
+  // v1 predates the explicit unsafe metric. Preserve its original eight-metric
+  // gate and avoid reporting an unenforced positive delta as a regression.
+  if baseline.schema_version == 1 {
+    limits.unsafe_coerce = current.metrics.unsafe_coerce;
+  }
+  limits
+}
+
 fn metric_deltas(actual: &QualityMetrics, limit: &QualityMetrics) -> BTreeMap<String, i64> {
   actual
     .values()
@@ -336,7 +346,13 @@ pub fn analyze_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) 
           ));
         }
         let violations = compare_detailed_baseline(&current, &baseline);
-        ("native-baseline".to_owned(), Some(path.clone()), baseline.metrics, violations)
+        let limits = reported_baseline_limits(&current, &baseline);
+        let mode = if baseline.schema_version == 1 {
+          "native-baseline-v1"
+        } else {
+          "native-baseline"
+        };
+        (mode.to_owned(), Some(path.clone()), limits, violations)
       }
       Err(legacy_limits) => {
         let violations = compare_metrics(&current.metrics, &legacy_limits, None, false);
@@ -522,6 +538,7 @@ mod tests {
       )]),
     };
     assert!(compare_detailed_baseline(&current, &baseline).is_empty());
+    assert_eq!(reported_baseline_limits(&current, &baseline).unsafe_coerce, 1);
   }
 
   #[test]
