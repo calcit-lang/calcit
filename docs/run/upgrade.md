@@ -484,7 +484,8 @@ calcit calcit.cirru --entry test --warn-dyn-method --check-only
 baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` 和
 `levels.none + levels.partial`（未完全覆盖总数）：`none` 变成 `partial` 是进步，不应因为
 `partial` 单项上升而失败。弱类型则分别比较 `kinds.schema-dynamic` / `unresolved-type-slot` / `code-dynamic` / `code-nil`
-和 `intents.declared-optional`，再比较 `unsafe-coerce` 的 occurrence 数与 `deprecated` 的 `summary.calls`。否则一种债务增加、另一种
+和 `intents.declared-optional`，再比较 `deprecated` 的 `summary.calls`。原生 v2 或重新生成的 baseline
+还应比较 `unsafe-coerce` 的 occurrence 数；旧原生 v1 和扁平 baseline 只约束原有八项指标，不要求提供该数据。否则一种债务增加、另一种
 减少时，相同的总数会掩盖回归。
 
 新项目直接执行零容忍门禁：
