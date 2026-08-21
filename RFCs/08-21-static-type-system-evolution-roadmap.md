@@ -268,6 +268,13 @@ ratchet，避免每次类型增强引发全生态同步重写。
 - unsafe/FFI inventory；
 - quality baseline 在参考模块落地。
 
+当前已交付的第一步是把未绑定 `*type-slot` 从 `Dynamic` 中分离为 `weak-types` 的
+`unresolved-type-slot` evidence：`check-types` 将它降为 partial，`analyze quality` 将它计入既有
+`unresolved` budget，机器协议以 v3 公开稳定 path、impact 与修复建议。entry 明确选择
+`:dynamic` 时仍会报告为 `intentional-type-slot-dynamic`，不会伪装成已证明的 concrete binding。
+这保持了旧项目的运行时兼容；hard error、内部 `Unknown` 类型和 generic binding evidence 仍是后续
+增量，不能把本步误解为类型匹配已经收紧。
+
 ### Phase 2：提高 typed core 表达力
 
 - Enum exhaustiveness、Never 和 narrowing；
@@ -306,4 +313,3 @@ ratchet，避免每次类型增强引发全生态同步重写。
 - `08-18-calcit-typed-js-ffi-boundary-rfc.md` 和
   `08-21-js-ffi-runtime-contract-validation-rfc.md` 负责宿主边界。
 - `08-21-type-quality-ci-adoption-rfc.md` 负责把类型演进安全地推入生态。
-

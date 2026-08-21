@@ -2142,6 +2142,69 @@ mod tests {
   fn parse_weak_type_kinds_rejects_unknown_values() {
     let err = type_coverage::parse_weak_type_kinds("schema-dynamic,unknown").expect_err("unknown filters should fail");
     assert!(err.contains("unknown"), "err: {err}");
+    assert!(type_coverage::parse_weak_type_kinds("unresolved-type-slot").is_ok());
+  }
+
+  #[test]
+  fn analyze_weak_types_surfaces_only_unbound_type_slots() {
+    calcit::calcit::clear_type_slots();
+    let slot: Arc<str> = Arc::from("dispatch-op");
+    let entry = code_entry(
+      list(vec![leaf("defn"), leaf("dispatch!"), list(vec![leaf("op")]), leaf("op")]),
+      CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeSlot(slot.clone()))],
+        return_type: Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeSlot(slot)))),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })),
+    );
+
+    let selected = BTreeSet::from([type_coverage::WeakTypeKind::UnresolvedTypeSlot]);
+    let row =
+      type_coverage::analyze_weak_types_entry("app.main", "dispatch!", &entry, &selected).expect("unbound slots should be reported");
+    assert_eq!(row.occurrences.len(), 2);
+    assert!(
+      row
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.kind == type_coverage::WeakTypeKind::UnresolvedTypeSlot)
+    );
+    assert!(row.occurrences.iter().any(|occurrence| occurrence.path == "schema.args.0"));
+    assert!(row.occurrences.iter().any(|occurrence| occurrence.path == "schema.return.item"));
+
+    let coverage = type_coverage::analyze_code_entry("app.main", "dispatch!", &entry);
+    assert_eq!(coverage.level, type_coverage::CoverageLevel::Partial);
+    assert!(coverage.schema_issues.iter().any(|issue| issue.contains("W_UNRESOLVED_TYPE_SLOT")));
+
+    calcit::calcit::configure_entry_type_slots(&std::collections::HashMap::from([(
+      "dispatch-op".to_owned(),
+      "app.schema/Op".to_owned(),
+    )]))
+    .expect("configure slot binding");
+    assert!(type_coverage::analyze_weak_types_entry("app.main", "dispatch!", &entry, &selected).is_none());
+
+    calcit::calcit::configure_entry_type_slots(&std::collections::HashMap::from([(
+      "dispatch-op".to_owned(),
+      ":dynamic".to_owned(),
+    )]))
+    .expect("configure explicit dynamic slot binding");
+    let dynamic_slot = type_coverage::analyze_weak_types_entry(
+      "app.main",
+      "dispatch!",
+      &entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::SchemaDynamic]),
+    )
+    .expect("explicit Dynamic slot binding should remain visible");
+    assert!(
+      dynamic_slot
+        .occurrences
+        .iter()
+        .all(|occurrence| { occurrence.intent == type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic })
+    );
+    calcit::calcit::clear_type_slots();
   }
 
   #[test]
@@ -2262,7 +2325,7 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
-    assert_eq!(weak_value["schema_version"], 2);
+    assert_eq!(weak_value["schema_version"], 3);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");

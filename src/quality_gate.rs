@@ -120,7 +120,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
   let weak_options = WeakTypesCommand {
     ns: options.ns.clone(),
     ns_prefix: options.ns_prefix.clone(),
-    only: Some("schema-dynamic,code-dynamic,code-nil".to_owned()),
+    only: Some("schema-dynamic,unresolved-type-slot,code-dynamic,code-nil".to_owned()),
     intent: Some("unresolved,declared-optional".to_owned()),
     format: "json".to_owned(),
     deps: options.deps,
@@ -161,13 +161,14 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     for occurrence in row.occurrences {
       match occurrence.kind {
         WeakTypeKind::SchemaDynamic => metrics.schema_dynamic += 1,
+        WeakTypeKind::UnresolvedTypeSlot => {}
         WeakTypeKind::CodeDynamic => metrics.code_dynamic += 1,
         WeakTypeKind::CodeNil => metrics.code_nil += 1,
       }
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
         WeakTypeIntent::DeclaredOptional => metrics.declared_optional += 1,
-        WeakTypeIntent::IntentionalJsFfi | WeakTypeIntent::DeclaredUnit => {}
+        WeakTypeIntent::IntentionalJsFfi | WeakTypeIntent::IntentionalTypeSlotDynamic | WeakTypeIntent::DeclaredUnit => {}
       }
     }
   }

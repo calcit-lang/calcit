@@ -116,7 +116,7 @@ cr calcit.cirru analyze quality \
 ```bash
 cr calcit.cirru analyze check-types --summary-only
 cr calcit.cirru analyze weak-types \
-  --only schema-dynamic,code-dynamic \
+  --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved
 ```
 
@@ -270,4 +270,3 @@ cr calcit.cirru analyze quality \
 - `RFCs/07-26-static-semantic-analysis-rfc.md`
 - `RFCs/08-21-setup-cr-version-and-toolchain-contract-rfc.md`
 - `RFCs/08-21-js-ffi-runtime-contract-validation-rfc.md`
-

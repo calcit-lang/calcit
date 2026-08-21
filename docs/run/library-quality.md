@@ -76,7 +76,7 @@ CI 中运行 `edit format` 后必须检查 diff，否则“命令成功”只说
 ```bash
 cr calcit.cirru analyze check-types --summary-only
 cr calcit.cirru analyze weak-types \
-  --only schema-dynamic,code-dynamic \
+  --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved \
   --summary-only
 ```
@@ -182,7 +182,7 @@ git diff --exit-code -- calcit.cirru
 cr calcit.cirru --check-only
 cr calcit.cirru analyze check-types --summary-only --format json
 cr calcit.cirru analyze weak-types \
-  --only schema-dynamic,code-dynamic \
+  --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved \
   --summary-only \
   --format json

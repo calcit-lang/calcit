@@ -439,7 +439,7 @@ cr calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/T
 ```bash
 cr calcit.cirru analyze check-types --summary-only
 cr calcit.cirru analyze weak-types \
-  --only schema-dynamic,code-dynamic,code-nil \
+  --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil \
   --intent unresolved,declared-optional \
   --summary-only
 cr calcit.cirru analyze deprecated --summary-only
@@ -447,7 +447,7 @@ cr calcit.cirru analyze deprecated --summary-only
 
 有命中时去掉 `--summary-only` 查看 definition、Snapshot path、impact、suggestion 和 deprecated
 目标文档。`check-types` 会把缺失或部分 schema（包括没有元素类型的 List/Map/Ref）列出来；
-`weak-types` 同时区分 unresolved dynamic、明确 JS FFI 边界、Unit nil 和旧 Optional 兼容债务；
+`weak-types` 同时区分 unresolved dynamic、unbound type slot、明确 JS FFI 边界、Unit nil 和旧 Optional 兼容债务；
 `deprecated` 按调用位置指出已废弃 API。输入/输出共享类型时用 `:generics`，只约束能力时用 trait
 `:where`，collection/ref 保留类型参数，有限异构值使用 enum。真正的 JS FFI 边界应显式标记
 `:features $ #{} :js-ffi`，并在进入 typed code 前 validate/convert。无返回值使用 `Unit`；业务缺失
@@ -483,7 +483,7 @@ cr calcit.cirru --entry test --warn-dyn-method --check-only
 
 baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` 和
 `levels.none + levels.partial`（未完全覆盖总数）：`none` 变成 `partial` 是进步，不应因为
-`partial` 单项上升而失败。弱类型则分别比较 `kinds.schema-dynamic` / `code-dynamic` / `code-nil`
+`partial` 单项上升而失败。弱类型则分别比较 `kinds.schema-dynamic` / `unresolved-type-slot` / `code-dynamic` / `code-nil`
 和 `intents.declared-optional`，再比较 `deprecated` 的 `summary.calls`。否则一种债务增加、另一种
 减少时，相同的总数会掩盖回归。
 

@@ -216,7 +216,7 @@ Agents can check how much information survives without running the program:
 
 ```bash
 cr analyze check-types --summary-only
-cr analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved --summary-only
+cr analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only
 ```
 
 If the summary reports debt, rerun `weak-types` without `--summary-only` and scope it with `--ns` or `--ns-prefix`. Each occurrence explains whether it affects generic substitution, callback checking, container element propagation, or compile-time method specialization.
