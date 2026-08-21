@@ -113,7 +113,8 @@ config/calcit-quality.json -diff linguist-generated
 ```
 
 这与常见的 `yarn.lock -diff linguist-generated` 约定相同：文件继续参与 CI 和版本控制，只在
-GitHub PR 中默认不展开。任何 baseline 更新仍须人工展开并按 definition 审阅，不能因折叠而自动接受新债务。
+GitHub PR 中默认不展开。注意 `-diff` 也会让本地 Git 默认不显示文本 diff；若需要本地审阅，
+可省略 `-diff`。任何 baseline 更新仍须人工展开并按 definition 审阅，不能因折叠而自动接受新债务。
 
 ## 3. API examples 与文档
 

@@ -16,5 +16,6 @@
   consolidated even within the normal current-development window.
 
 Validation: `yarn compile`, `cargo clippy --all-targets -- -D warnings`,
-`cargo test -q`, `yarn check-agent-interface`, and `cr docs check-md` over
-every Markdown file with `--entry calcit/test.cirru`.
+`cargo test -q`, `yarn check-agent-interface`,
+`cr docs check-md README.md --entry calcit/test.cirru`, and
+`./scripts/check-docs-md.sh calcit/test.cirru` for the Markdown under `docs/`.

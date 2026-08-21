@@ -49,8 +49,9 @@ baseline 是已提交的机器生成工件。为避免它的 JSON diff 默认占
 config/calcit-quality.json -diff linguist-generated
 ```
 
-这不会忽略或删除 baseline；GitHub 只会默认折叠其 diff。更新 baseline 的 PR 仍应展开文件并按
-definition 审阅预算变化。
+这不会忽略或删除 baseline；GitHub 只会默认折叠其 diff。`-diff` 同时会让本地 Git 默认不生成
+该文件的文本 diff；如果本地审阅优先，可省略 `-diff`，只保留 `linguist-generated`。更新
+baseline 的 PR 仍应展开文件并按 definition 审阅预算变化。
 
 ## Option / Result 组合
 
