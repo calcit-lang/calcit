@@ -70,7 +70,7 @@ fn verify_expected_node(actual: &Cirru, expected_input: Option<&str>, path: &[us
     return Ok(());
   }
   Err(format!(
-    "Node guard failed at {}.\nExpected:\n{}\nActual:\n{}\nNo changes were written. Re-run `cr tree show ... --path {}` and update --expect or the path.",
+    "Node guard failed at {}.\nExpected:\n{}\nActual:\n{}\nNo changes were written. Re-run `calcit tree show ... --path {}` and update --expect or the path.",
     format_path(path),
     format_preview_with_type(&expected, 6),
     format_preview_with_type(actual, 6),
@@ -554,7 +554,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!("cr tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
+            format!("calcit tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
           );
         }
         Cirru::List(items) => {
@@ -567,7 +567,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           eprintln!(
             "{} View it with: {}",
             "→".cyan(),
-            format!("cr tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
+            format!("calcit tree show '{}' --path '{}'", resolved_target, format_path(valid_path)).cyan()
           );
 
           // Show first few children as hints
@@ -1001,7 +1001,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
       }
       println!(
         "    Command: {} {} --pattern '{}' {} --pick {}",
-        "cr tree search-replace".cyan(),
+        "calcit tree search-replace".cyan(),
         opts.target,
         opts.pattern,
         replacement_arg,
@@ -1153,7 +1153,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     println!(
       "   {}: Re-run {} to get updated paths",
       "Tip".blue().bold(),
-      "cr query search".cyan()
+      "calcit query search".cyan()
     );
   }
 

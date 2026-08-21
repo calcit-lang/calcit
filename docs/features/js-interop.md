@@ -154,7 +154,7 @@ deftrait StorageHost (:length 'Number)
 Inspect the resulting contract with:
 
 ```text
-cr query def namespace/StorageHost --json
+calcit query def namespace/StorageHost --json
 ```
 
 The output includes the schema and `ffi` metadata, including host member names,
@@ -176,7 +176,7 @@ report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
 only the fields that a host API permits to `:ffi :writable`; otherwise `js-set`
 reports `W_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
 
-`cr query def namespace/name --json` includes the normalized `ffi` metadata.
+`calcit query def namespace/name --json` includes the normalized `ffi` metadata.
 The human-readable form prints an `FFI:` line, making `:names`, `:writable`,
 `:backend`, `:kind`, and `:target` inspectable without opening the snapshot.
 
@@ -401,16 +401,16 @@ When adding or reviewing a JS FFI adapter, check these in order:
    explicitly converts them to `Option<T>`?
 5. Are external fields declared on a trait, with only genuinely mutable fields
    listed in `:writable`?
-6. Does `cr query def namespace/name --json` show the expected schema and FFI
+6. Does `calcit query def namespace/name --json` show the expected schema and FFI
    metadata?
 
 Useful checks for a project with separate entries are:
 
 ```text
-cr --entry browser calcit.cirru --check-only
-cr --entry node calcit.cirru --check-only
-cr --entry browser calcit.cirru js
-cr --entry node calcit.cirru js
+calcit --entry browser calcit.cirru --check-only
+calcit --entry node calcit.cirru --check-only
+calcit --entry browser calcit.cirru js
+calcit --entry node calcit.cirru js
 ```
 
 Generate the two targets serially when they share one `js-out/` directory. A

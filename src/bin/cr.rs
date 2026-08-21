@@ -94,7 +94,7 @@ fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Resul
     Ok(())
   } else {
     Err(format!(
-      "Static quality gate failed with {} regression(s). Run `cr docs read library-quality.md --full` for the baseline and CI workflow.",
+      "Static quality gate failed with {} regression(s). Run `calcit docs read library-quality.md --full` for the baseline and CI workflow.",
       outcome.violations.len()
     ))
   }
@@ -266,7 +266,9 @@ fn run_cli() -> Result<(), String> {
     let snippet = if let Some(ref s) = command.snippet {
       s.clone()
     } else {
-      return Err("No snippet provided. Use a positional argument with `cr eval`, or use `cr exec` to read from stdin.".to_string());
+      return Err(
+        "No snippet provided. Use a positional argument with `calcit eval`, or use `calcit exec` to read from stdin.".to_string(),
+      );
     };
     {
       let main_file = snapshot::create_file_from_snippet(&snippet)?;
@@ -335,7 +337,7 @@ fn run_cli() -> Result<(), String> {
 
   // Attach built-in core namespaces without replacing a source Snapshot's own
   // calcit.core entries. This matters when developing and testing calcit-core.cirru
-  // with an older globally installed `cr` binary.
+  // with an older globally installed `calcit` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
 
@@ -389,7 +391,7 @@ fn run_cli() -> Result<(), String> {
       _ => cli_args.watch,
     };
     if !watch {
-      // `cr js` defaults to once mode; use --watch/-w to keep watching
+      // `calcit js` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
     if cli_args.skip_arity_check {
@@ -398,7 +400,7 @@ fn run_cli() -> Result<(), String> {
     run_codegen_with_timeout(&entries, &cli_args.emit_path, false, cli_args.timeout, cli_args.verbose)
   } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
     if !ir_options.watch {
-      // `cr ir` defaults to once mode; use --watch/-w to keep watching
+      // `calcit ir` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
     run_codegen_with_timeout(&entries, &cli_args.emit_path, true, cli_args.timeout, cli_args.verbose)

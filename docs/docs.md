@@ -8,7 +8,7 @@ aliases:
   - "documentation system"
   - "docs graph"
 entry_for:
-  - "cr docs"
+  - "calcit docs"
 id: core/docs
 leads_to:
   - core/docs/indexing

@@ -38,7 +38,7 @@ Type slot 是 Calcit 为避免在 UI 框架、dispatch 回调等调用链中大�
 | B3. slot 使用声明命名空间作为身份 | 暂缓 | Schema/序列化可能 Breaking | 跨库同名冲突 |
 | B4. 未绑定 slot 不再静默退化 | 暂缓 | 行为 Breaking | 防止类型检查悄悄失效 |
 
-现有 `with-type-slot` 源码仍可继续使用，但新项目应通过 `cr config set-type-slot` 维护 entry 配置。实现 entry 配置 **不代表批准** 显式环境对象、缓存指纹或 namespaced identity 的重构预算；这些内容仍需满足第 8.7 节的证据门槛。
+现有 `with-type-slot` 源码仍可继续使用，但新项目应通过 `calcit config set-type-slot` 维护 entry 配置。实现 entry 配置 **不代表批准** 显式环境对象、缓存指纹或 namespaced identity 的重构预算；这些内容仍需满足第 8.7 节的证据门槛。
 
 ## 3. 背景与原始动机
 
@@ -306,10 +306,10 @@ evaluate(with-type-slot body) -> 在遇到 dependency 时临时影响编译
 命名 entry 不继承 `:entries.default.type-slots`。这里使用完整 definition path，而不是在配置解析阶段求值任意 Calcit expression，因此配置可序列化、可查询，也不依赖入口函数的执行顺序。对应命令为：
 
 ```bash
-cr config set-type-slot :dispatch-op app.schema/Op
-cr config set-type-slot --entry server :dispatch-op app.schema/ServerOp
-cr config type-slots --entry server
-cr config rm-type-slot --entry server :dispatch-op
+calcit config set-type-slot :dispatch-op app.schema/Op
+calcit config set-type-slot --entry server :dispatch-op app.schema/ServerOp
+calcit config type-slots --entry server
+calcit config rm-type-slot --entry server :dispatch-op
 ```
 
 程序加载模块后验证 type path 存在，再在任何 definition 预处理前安装所选 entry 的绑定。局部 `with-type-slot` 兼容形式仍可覆盖 entry 默认值，但新入口不需要 wrapper。
@@ -435,7 +435,7 @@ Type slot 不只影响 warning；它还可能参与 enum tuple 识别和类型�
 
 - 已增加 `:type-slots` 配置；
 - `with-type-slot` 继续可用并始终在预处理阶段擦除；
-- `cr config type-slots [--entry name]` 展示 bindings；
+- `calcit config type-slots [--entry name]` 展示 bindings；
 - `set-type-slot` / `rm-type-slot` 提供安全的 snapshot 修改入口；
 - 未绑定 slot 暂时保持 `:dynamic` 兼容行为；
 - `TypeSlotEnvId` 和自动提取 wrapper 的迁移命令尚未实现。
@@ -451,7 +451,7 @@ defn main! () $ with-type-slot (:dispatch-op Op)
 迁移后：
 
 ```cirru
-;; cr config set-type-slot :dispatch-op app.schema/Op
+;; calcit config set-type-slot :dispatch-op app.schema/Op
 defn main! ()
   setup!
   render-app!
@@ -507,7 +507,7 @@ yarn check-agent-interface
 yarn check-all
 ```
 
-涉及 CLI 查询、编辑或类型分析时，再使用新构建的 `cr` 在 Respo 等真实项目回归。应验证 Respo 的 entry 配置能让大量 `d! $ :: ...` 调用共享同一 `Op` 检查，并验证旧的多 body 兼容 form 生成 JS 不再依赖 `do`。
+涉及 CLI 查询、编辑或类型分析时，再使用新构建的 `calcit` 在 Respo 等真实项目回归。应验证 Respo 的 entry 配置能让大量 `d! $ :: ...` 调用共享同一 `Op` 检查，并验证旧的多 body 兼容 form 生成 JS 不再依赖 `do`。
 
 ## 12. 备选方案
 
@@ -552,8 +552,8 @@ yarn check-all
 为避免 type slot 再次成为只能从生成代码猜测的隐藏状态，当前已经提供面向人的只读查询：
 
 ```bash
-cr config type-slots
-cr config type-slots --entry server
+calcit config type-slots
+calcit config type-slots --entry server
 ```
 
 后续若 Agent 接口确有需要，再增加单 JSON 的机器输出，例如：

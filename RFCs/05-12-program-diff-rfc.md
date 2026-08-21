@@ -1,4 +1,4 @@
-# RFC: `cr analyze program-diff <GIT REF>`
+# RFC: `calcit analyze program-diff <GIT REF>`
 
 状态：Draft
 日期：2026-05-12
@@ -9,9 +9,9 @@
 
 新增命令：
 
-- `cr analyze program-diff <GIT REF>`
+- `calcit analyze program-diff <GIT REF>`
 
-该命令从 Git 中读取指定版本的完整运行时快照文件（默认沿用当前 `cr` 的输入文件路径，优先 `calcit.cirru`，兼容旧文件名 `compact.cirru`），确保**历史版本**与**当前工作区版本**都能被正确解析为 Calcit snapshot，然后做**结构化 diff**。
+该命令从 Git 中读取指定版本的完整运行时快照文件（默认沿用当前 `calcit` 的输入文件路径，优先 `calcit.cirru`，兼容旧文件名 `compact.cirru`），确保**历史版本**与**当前工作区版本**都能被正确解析为 Calcit snapshot，然后做**结构化 diff**。
 
 输出目标不是纯文本行 diff，而是面向程序结构的树形 diff：
 
@@ -37,13 +37,13 @@
 ## 3. 命令定义
 
 ```/dev/null/rfc.txt#L1-2
-cr analyze program-diff <GIT REF>
+calcit analyze program-diff <GIT REF>
 ```
 
 语义：
 
 - `<GIT REF>` 可以是 `HEAD~1`、tag、branch、commit SHA 等；
-- 当前侧使用 `cr` 输入路径（默认优先 `calcit.cirru`，兼容旧文件名 `compact.cirru`）；
+- 当前侧使用 `calcit` 输入路径（默认优先 `calcit.cirru`，兼容旧文件名 `compact.cirru`）；
 - 历史侧使用 `git show <ref>:<repo-relative-input-path>` 读取文件内容；
 - 两边都必须先经过：
   1. `cirru_edn::parse`
@@ -71,7 +71,7 @@ Summary 示例：
 
 ### 4.2 树形 diff 约定
 
-参考 `cr analyze call-graph` 的树形展示风格，继续使用：
+参考 `calcit analyze call-graph` 的树形展示风格，继续使用：
 
 - `├──`
 - `└──`
@@ -190,7 +190,7 @@ list 内部子节点对比采用“带替换代价的序列对齐”策略：
 - patch 应用；
 - HTML/TUI 交互界面；
 - 抽取到 `cirru_parser` crate；
-- 和 `cr tree show` / `cr query def` 的统一 chunk/diff UI。
+- 和 `calcit tree show` / `calcit query def` 的统一 chunk/diff UI。
 
 ## 9. 后续可能扩展
 

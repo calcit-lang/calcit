@@ -27,7 +27,7 @@ related:
 
 升级完成的标准不是“`caps upgrade --all` 执行成功”，而是：
 
-- 新版 `cr` / `caps` 已固定到本地和 CI，且 `deps.cirru`、`@calcit/procs` 版本链路一致；
+- 新版 `calcit` / `caps` 已固定到本地和 CI，且 `deps.cirru`、`@calcit/procs` 版本链路一致；
 - 每个声明支持的 entry 都通过 `--check-only`，并完成对应 native / JS 行为测试；
 - `check-types`、`weak-types`、`deprecated` 已生成可复查报告，存量债务有 baseline，新增债务被阻断；
 - examples、Markdown 示例、项目测试与真实消费者回归覆盖了公开能力。
@@ -44,8 +44,8 @@ related:
 ```bash
 git status --short
 git switch -c upgrade/calcit-latest
-cr --version
-cr compact.cirru                # 替换为旧项目原本可成功执行的入口命令
+calcit --version
+calcit compact.cirru                # 替换为旧项目原本可成功执行的入口命令
 yarn test                       # 替换为项目原有的测试/构建命令
 ```
 
@@ -62,7 +62,7 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 - Node 工具链：`package.json`、`yarn.lock`、Corepack/Yarn 版本
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
 - 依赖边界：运行/编译期需要的模块放在 `:dependencies`；只供当前项目测试、examples、文档检查和维护脚本使用的模块放在 `:dev-dependencies`
-- 结构化编辑优先使用 `cr edit` / `cr tree`；若直接改过 `calcit.cirru`（或旧文件名 `compact.cirru`），提交前执行一次 `cr calcit.cirru edit format`
+- 结构化编辑优先使用 `calcit edit` / `calcit tree`；若直接改过 `calcit.cirru`（或旧文件名 `compact.cirru`），提交前执行一次 `calcit calcit.cirru edit format`
 - 静态质量基线：`check-types`、`weak-types`、公开 namespace examples 与 Markdown 示例
 
 ### 快照文件迁移说明
@@ -72,16 +72,16 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 - `calcit.cirru` — 存放完整 AST 快照，内容包含全部编译信息（带所有代码位置、类型标注等）
 - `compact.cirru` — 存放精简代码，是人工读写的主要文件
 
-当前推荐去掉旧的双文件模式，把精简 Snapshot 直接保存在 `calcit.cirru` 中，方便 `cr` 命令直接读取使用。
+当前推荐去掉旧的双文件模式，把精简 Snapshot 直接保存在 `calcit.cirru` 中，方便 `calcit` 命令直接读取使用。
 如果两个文件同时存在，不要仅凭文件名猜测哪个是有效源码；先在旧版本下分别检查 Git 历史、文件体积、
 项目脚本和实际运行入口。确认 `compact.cirru` 是当前可运行的精简 Snapshot 后再迁移：
 
 1. 确认 `compact.cirru` 是项目实际精简化代码，`calcit.cirru` 是完整 AST 快照（差异通常很大）
 2. 先在独立提交或临时分支中将 `compact.cirru` 复制/重命名为 `calcit.cirru`，不要和业务逻辑修复混在一起
-3. 执行 `cr calcit.cirru edit format`，审阅 diff，再对新的 `calcit.cirru` 运行 `--check-only` 和原有 entry/构建测试
-4. 新旧入口行为一致后再删除旧文件并提交；后续所有 `cr` 命令都显式基于单一的 `calcit.cirru`
+3. 执行 `calcit calcit.cirru edit format`，审阅 diff，再对新的 `calcit.cirru` 运行 `--check-only` 和原有 entry/构建测试
+4. 新旧入口行为一致后再删除旧文件并提交；后续所有 `calcit` 命令都显式基于单一的 `calcit.cirru`
 
-如果新版 `cr` 连旧的完整 `calcit.cirru` 都无法反序列化，就不能先对它执行 `edit format`。先确认旁边的
+如果新版 `calcit` 连旧的完整 `calcit.cirru` 都无法反序列化，就不能先对它执行 `edit format`。先确认旁边的
 `compact.cirru` 能在旧工具链运行，并从 Git 状态/历史确认它是最后的有效精简源码；然后用可恢复的步骤重建：
 
 ```bash
@@ -100,9 +100,9 @@ else
   fi
 fi
 cp compact.cirru calcit.cirru
-cr calcit.cirru edit format
+calcit calcit.cirru edit format
 git diff -- calcit.cirru
-cr calcit.cirru --check-only
+calcit calcit.cirru --check-only
 ```
 
 若 `rg` 没有匹配，才继续复制和格式化；如果仍有匹配，应逐个编辑 namespace 规则，而不是用全局替换，
@@ -126,8 +126,8 @@ ns app.main $ :require
 
 遇到旧写法时，加载阶段会明确报告 `:require-macros` 迁移提示，而不是只返回笼统的 invalid `ns` form。
 
-> `cr` 仍然读取 Snapshot，只是当前约定把精简 Snapshot 直接命名为 `calcit.cirru`；不要把它理解为
-> “不再依赖 Snapshot”。`cr edit` / `cr tree` 会直接修改该文件。确认迁移完成后，可以移除旧的
+> `calcit` 仍然读取 Snapshot，只是当前约定把精简 Snapshot 直接命名为 `calcit.cirru`；不要把它理解为
+> “不再依赖 Snapshot”。`calcit edit` / `calcit tree` 会直接修改该文件。确认迁移完成后，可以移除旧的
 > `.gitattributes` generated 标记和过时的双文件生成脚本；不要把仍可能承载源码的文件直接加入 ignore。
 
 ---
@@ -140,20 +140,20 @@ ns app.main $ :require
 
 ```bash
 # 安装/更新用户工具；本地和 CI 必须使用同一版本链路
-cargo install calcit --bin cr --bin caps --force
-cr --version
+cargo install calcit --bin calcit --bin caps --force
+calcit --version
 caps upgrade --all
 caps
 corepack enable
 corepack prepare yarn@4.12.0 --activate
 yarn install
 yarn install --immutable
-cr calcit.cirru edit format
-cr calcit.cirru --check-only
-cr calcit.cirru --warn-dyn-method --check-only
-cr calcit.cirru analyze deprecated --summary-only --format json
-cr calcit.cirru analyze weak-types --intent unresolved,declared-optional --summary-only --format json
-cr calcit.cirru
+calcit calcit.cirru edit format
+calcit calcit.cirru --check-only
+calcit calcit.cirru --warn-dyn-method --check-only
+calcit calcit.cirru analyze deprecated --summary-only --format json
+calcit calcit.cirru analyze weak-types --intent unresolved,declared-optional --summary-only --format json
+calcit calcit.cirru
 yarn vite build --base=./
 ```
 
@@ -162,16 +162,16 @@ yarn vite build --base=./
 ### Step A：确认 Calcit CLI 版本
 
 ```bash
-cargo install calcit --bin cr --bin caps --force
-cr --version
+cargo install calcit --bin calcit --bin caps --force
+calcit --version
 caps --help
 ```
 
-说明：`cr` 和 `caps` 是同一 Calcit 发布链路中的用户工具，应一起更新。不要先用旧 `caps` 改依赖，
-再用新 `cr` 判断结果；也不要只更新本机而让 CI 继续安装旧版。若团队通过其他受控方式分发二进制，
+说明：`calcit` 和 `caps` 是同一 Calcit 发布链路中的用户工具，应一起更新。不要先用旧 `caps` 改依赖，
+再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装旧版。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
 
-> ⚠️ CI 中 `cr`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。新 workflow 使用 `calcit-lang/setup-calcit@v1` 安装该版本，不要再在 workflow 重复传 `version`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
+> ⚠️ CI 中 `calcit`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。新 workflow 使用 `calcit-lang/setup-calcit@v2` 安装该版本，不要再在 workflow 重复传 `version`。Action 会临时提供 `cr -> calcit` 兼容链接，但新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
 
 ### Step B：先对齐项目版本与 Node 工具链
 
@@ -191,7 +191,7 @@ caps --help
 更新依赖前先读取当前 Agent/CLI 指南，避免沿用旧命令边界：
 
 ```bash
-cr docs agents --full
+calcit docs agents --full
 ```
 
 ### Step C：检查并更新 `deps.cirru`
@@ -270,13 +270,13 @@ nodeLinker: node-modules
 
 ```bash
 caps && yarn install --immutable
-cr calcit.cirru --check-only
-cr calcit.cirru
-cr calcit.cirru --entry <entry-name>
-cr calcit.cirru js && yarn vite build --base=./
+calcit calcit.cirru --check-only
+calcit calcit.cirru
+calcit calcit.cirru --entry <entry-name>
+calcit calcit.cirru js && yarn vite build --base=./
 ```
 
-`cr calcit.cirru` 默认单次执行并选择 `entries.default`；指定 entry 时用 `--entry <name>`。entry 的 `:mode` 已决定 native 运行或 JS 生成，项目脚本与 CI 应优先依赖该配置。只有热更新才加 `-w` / `--watch`；显式 `js` 是兼容/定向 codegen 覆盖，不是每个 JS 项目的必需写法。
+`calcit calcit.cirru` 默认单次执行并选择 `entries.default`；指定 entry 时用 `--entry <name>`。entry 的 `:mode` 已决定 native 运行或 JS 生成，项目脚本与 CI 应优先依赖该配置。只有热更新才加 `-w` / `--watch`；显式 `js` 是兼容/定向 codegen 覆盖，不是每个 JS 项目的必需写法。
 
 `--check-only` 会同时预处理所选 entry 的 init/reload 定义，因此可以发现遗留的 `:reload-fn`
 已不存在、调用参数/返回值不匹配、Struct/Enum 字段错误、trait 实现不完整等问题。它在预处理产生
@@ -284,9 +284,9 @@ warning 时会非零退出，是类型逐渐严格过程中的主要编译门禁
 所以必须逐个执行，不能只验证 default：
 
 ```bash
-cr calcit.cirru --check-only
-cr calcit.cirru --entry test --check-only
-cr calcit.cirru --entry production --check-only
+calcit calcit.cirru --check-only
+calcit calcit.cirru --entry test --check-only
+calcit calcit.cirru --entry production --check-only
 ```
 
 旧项目若一次出现大量错误，按“配置/缺失定义 → deprecated API → nominal data/trait → 函数参数和
@@ -318,8 +318,8 @@ yarn <script-name>
 
 ## 3）近期项目结构与类型迁移
 
-这一节必须在 Step A–E 已完成、项目确实使用新版 `cr` 和新版依赖后执行。先运行一次
-`cr calcit.cirru edit format` 并单独审阅/提交规范化 diff，再根据 `--check-only` 和静态报告逐类
+这一节必须在 Step A–E 已完成、项目确实使用新版 `calcit` 和新版依赖后执行。先运行一次
+`calcit calcit.cirru edit format` 并单独审阅/提交规范化 diff，再根据 `--check-only` 和静态报告逐类
 修复语义问题；不要让自动格式化与大规模业务修复混在同一个不可审阅的提交中。
 
 ### 3.1 类型标注语法规范化
@@ -330,9 +330,9 @@ yarn <script-name>
 `:return`/`:kind` key）不会被改变。
 
 ```bash
-cr calcit.cirru edit format
+calcit calcit.cirru edit format
 git diff -- calcit.cirru
-cr calcit.cirru --check-only
+calcit calcit.cirru --check-only
 ```
 
 `edit format` 只改写 schema、`hint-fn`、`assert-type`、`unsafe-coerce`、`defstruct` 和 `defenum`
@@ -362,7 +362,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `get`、`:field`
 升级业务代码时应删除这类访问后的 `.unwrap`。Map 等动态容器的访问仍返回 `Option<T>`，
 `get-in` 也继续保留可失败路径语义，不能批量删除其 unwrap。
 
-推荐先执行 `cr calcit.cirru --check-only`，按诊断逐项替换，再运行完整 JS 回归。不要先全局删除
+推荐先执行 `calcit calcit.cirru --check-only`，按诊断逐项替换，再运行完整 JS 回归。不要先全局删除
 `.unwrap`；只处理接收者已被推断为 Struct 且字段在 `defstruct` 中声明的访问。
 
 #### Option 返回 API 对照
@@ -409,8 +409,8 @@ match (get-env |APP_MODE)
 顶层 `:configs` 是兼容输入，不应继续作为新配置写法。执行：
 
 ```bash
-cr calcit.cirru edit format
-cr calcit.cirru config show
+calcit calcit.cirru edit format
+calcit calcit.cirru config show
 ```
 
 format 会把旧 `:configs` 迁移为 `:entries.default`，并输出 `W_LEGACY_CONFIG`。随后应审阅：
@@ -425,9 +425,9 @@ format 会把旧 `:configs` 迁移为 `:entries.default`，并输出 `W_LEGACY_C
 类库用 `deftype-slot` 声明由应用提供的编译期类型时，每个使用该 slot 的 entry 都要单独绑定：
 
 ```bash
-cr calcit.cirru config type-slots
-cr calcit.cirru config set-type-slot :dispatch-op app.schema/DispatchOp
-cr calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/TestDispatchOp
+calcit calcit.cirru config type-slots
+calcit calcit.cirru config set-type-slot :dispatch-op app.schema/DispatchOp
+calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/TestDispatchOp
 ```
 
 未绑定 slot 会回退到 `:dynamic`，可能让 callback 检查和 method specialization 失去静态证据。升级后应逐 entry 检查，而不是只验证 default。
@@ -437,12 +437,12 @@ cr calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/T
 `:any` 只保留为 `:dynamic` 的兼容拼写；新 schema 不应继续引入。`edit format` 会输出 `W_LEGACY_ANY` / `W_DYNAMIC_TYPE_DEBT`，但不会猜测并自动改写类型关系。执行：
 
 ```bash
-cr calcit.cirru analyze check-types --summary-only
-cr calcit.cirru analyze weak-types \
+calcit calcit.cirru analyze check-types --summary-only
+calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil \
   --intent unresolved,declared-optional \
   --summary-only
-cr calcit.cirru analyze deprecated --summary-only
+calcit calcit.cirru analyze deprecated --summary-only
 ```
 
 有命中时去掉 `--summary-only` 查看 definition、Snapshot path、impact、suggestion 和 deprecated
@@ -456,8 +456,8 @@ cr calcit.cirru analyze deprecated --summary-only
 再对每个 entry 开启动态方法告警：
 
 ```bash
-cr calcit.cirru --warn-dyn-method --check-only
-cr calcit.cirru --entry test --warn-dyn-method --check-only
+calcit calcit.cirru --warn-dyn-method --check-only
+calcit calcit.cirru --entry test --warn-dyn-method --check-only
 ```
 
 这个开关会暴露无法静态专门化的方法调用和未类型化的动态接收者。它不是第一步：先修复普通
@@ -468,7 +468,7 @@ cr calcit.cirru --entry test --warn-dyn-method --check-only
 三类命令的退出语义不同，不能只看命令是否成功：
 
 - `--check-only` 和实际 native/JS codegen：预处理错误或 warning 会阻断并非零退出，必须修到通过；
-- `check-examples`、`docs check-md` 和 `cr test`：所选示例/测试失败时阻断；测试应加
+- `check-examples`、`docs check-md` 和 `calcit test`：所选示例/测试失败时阻断；测试应加
   `--require-match`，避免过滤条件拼错后“零测试通过”；
 - `check-types`、`weak-types`、`deprecated`：是静态定位报告，有命中不等于非零退出；`analyze quality`
   聚合它们的发布指标，并按零目标或已审阅 baseline 返回失败退出码。
@@ -490,14 +490,14 @@ baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` �
 新项目直接执行零容忍门禁：
 
 ```bash
-cr calcit.cirru analyze quality
+calcit calcit.cirru analyze quality
 ```
 
 存量项目先审阅现状并生成原生 baseline，再在 CI 中执行比较：
 
 ```bash
-cr calcit.cirru analyze quality --write-baseline config/calcit-quality.json
-cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
 
 原生 baseline 记录 scope、汇总指标和每个 definition 的独立预算。新增 definition 默认预算为零；
@@ -527,7 +527,7 @@ cr calcit.cirru analyze quality --baseline config/calcit-quality.json
 
 ### 3.7 format 的边界
 
-`cr edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types` / `weak-types --format json` 来执行项目自己的质量阈值。
+`calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types` / `weak-types --format json` 来执行项目自己的质量阈值。
 
 ### 3.8 Trait impl 从方法包迁移为 nominal impl
 
@@ -538,7 +538,7 @@ defimpl :RenderImpl :Render $ .render
   fn (x) str x
 ```
 
-这种写法继续参与普通 `.method` 分派，但现在明确视为**不具名的 inherent method bag**；它不会满足 `assert-traits`、函数/数据结构的 `:where` 约束，也不能被 `&trait-call` 选中。`cr edit format` 会给出不阻断执行的 `W_LEGACY_INHERENT_IMPL` 迁移告警。需要能力约束的新代码应改成：
+这种写法继续参与普通 `.method` 分派，但现在明确视为**不具名的 inherent method bag**；它不会满足 `assert-traits`、函数/数据结构的 `:where` 约束，也不能被 `&trait-call` 选中。`calcit edit format` 会给出不阻断执行的 `W_LEGACY_INHERENT_IMPL` 迁移告警。需要能力约束的新代码应改成：
 
 ```cirru
 let
@@ -584,34 +584,34 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
     corepack prepare yarn@4.12.0 --activate
     yarn --version
 
-- uses: calcit-lang/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v2
 
 - name: Install deps
   run: caps --ci && yarn install --immutable
 
 - name: Validate Calcit snapshot and types
   run: |
-    cr calcit.cirru edit format
+    calcit calcit.cirru edit format
     git diff --exit-code -- calcit.cirru
-    # `cr config show` lists every configured :entries item, including default.
+    # `calcit config show` lists every configured :entries item, including default.
     while IFS= read -r entry; do
       if [ "$entry" = "default" ]; then
-        cr calcit.cirru --check-only
-        cr calcit.cirru --warn-dyn-method --check-only
+        calcit calcit.cirru --check-only
+        calcit calcit.cirru --warn-dyn-method --check-only
       else
-        cr calcit.cirru --entry "$entry" --check-only
-        cr calcit.cirru --entry "$entry" --warn-dyn-method --check-only
+        calcit calcit.cirru --entry "$entry" --check-only
+        calcit calcit.cirru --entry "$entry" --warn-dyn-method --check-only
       fi
-    done < <(cr calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
-    cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+    done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
+    calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 
 - name: Run project tests
   run: |
-    cr calcit.cirru test --tag unit --require-match --summary-only --format json
-    cr calcit.cirru --entry test
+    calcit calcit.cirru test --tag unit --require-match --summary-only --format json
+    calcit calcit.cirru --entry test
 ```
 
-> ⚠️ CI 中安装的 Calcit 项目版本来自 `deps.cirru`，Action release 只决定安装器协议是否足够新。普通 workflow 不传 `version`；升级时修改 `deps.cirru`，并在需要新安装器能力时更新 `calcit-lang/setup-calcit`。不要在 `caps --ci` 之前运行 `cr` 命令，否则会使用默认旧版模块缓存。完整模板见 [GitHub Actions](../installation/github-actions.md)。
+> ⚠️ CI 中安装的 Calcit 项目版本来自 `deps.cirru`，Action release 只决定安装器协议是否足够新。普通 workflow 不传 `version`；升级时修改 `deps.cirru`，并在需要新安装器能力时更新 `calcit-lang/setup-calcit`。不要在 `caps --ci` 之前运行 `calcit` 命令，否则会使用默认旧版模块缓存。完整模板见 [GitHub Actions](../installation/github-actions.md)。
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
@@ -634,16 +634,16 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 
 建议至少覆盖以下项目：
 
-1. `cr --version`
+1. `calcit --version`
 2. `caps upgrade --all`（确认无遗漏项或已按预期处理）
 3. `caps tree`（确认根开发依赖存在，同时传递模块的开发依赖未进入图）
 4. `yarn install --immutable`
-5. `cr calcit.cirru edit format` 后 `git diff --exit-code -- calcit.cirru`
+5. `calcit calcit.cirru edit format` 后 `git diff --exit-code -- calcit.cirru`
 6. default 与每个 named entry 的 `--check-only`
 7. 每个 entry 的 `--warn-dyn-method --check-only`（普通检查全绿后启用）
 8. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
 9. `analyze quality` 的 JSON baseline 或零目标（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍作为定位报告）
-10. `cr test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
+10. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
 11. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
 12. `package.json` 中与编译/构建相关的脚本
 13. 类库项目在 Respo 等真实消费者中的回归证据
@@ -653,15 +653,15 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | 阶段 | 命令 | 主要发现 | 是否自动阻断 |
 | --- | --- | --- | --- |
 | 依赖图 | `caps tree/status/verify` | 递归版本、链接、store/native 收据 | 状态异常会阻断；普通图告警用 `--strict` 收紧 |
-| Snapshot 规范化 | `cr edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
-| entry 预处理 | `cr --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
-| 动态分派 | `cr --warn-dyn-method --check-only` | 动态 receiver、无法专门化的方法与未类型化 FFI 访问 | warning 会随 check-only 阻断 |
+| Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
+| entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
+| 动态分派 | `calcit --warn-dyn-method --check-only` | 动态 receiver、无法专门化的方法与未类型化 FFI 访问 | warning 会随 check-only 阻断 |
 | 静态债务 | `analyze check-types/weak-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，CI 比较 summary |
-| 示例与测试 | `check-examples`、`docs check-md`、`cr test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
+| 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 
 每次失败先查看终端诊断；需要完整运行栈时再看 `.calcit/error.cirru` 或执行
-`cr calcit.cirru query error`。针对单个定义可用 `cr query context <ns/def> --format json`，针对
-具体表达式可用诊断返回的 Snapshot path 调用 `cr query type-at <ns/def> --path code@... --format json`。
+`calcit calcit.cirru query error`。针对单个定义可用 `calcit query context <ns/def> --format json`，针对
+具体表达式可用诊断返回的 Snapshot path 调用 `calcit query type-at <ns/def> --path code@... --format json`。
 
 call graph 的 `--show-unused` 只能作为 entry-relative 线索；公开 API 和替代入口可能被列为 unreachable，不能据此自动删除。

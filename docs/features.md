@@ -67,7 +67,7 @@ For detailed information about specific features:
 
 ## Quick Find by Task
 
-Use this section as a keyword index for `cr docs read`:
+Use this section as a keyword index for `calcit docs read`:
 
 - **Collections**: list, map, set, struct, enum
 - **Pattern Matching**: enum, match, anonymous enum, tag-match, result, exhaustiveness
@@ -91,8 +91,8 @@ Task-oriented jump map:
 - **Error handling** - Rich stack traces and error messages with source locations
 - **Package management** - Git-based dependency system with `caps` CLI tool
 - **Hot module replacement** - Fast iteration with live code updates
-- **REPL integration** - Interactive development with `cr eval` mode
-- **Bundle mode** - Single-file deployment with `cr bundle`
+- **REPL integration** - Interactive development with `calcit eval` mode
+- **Bundle mode** - Single-file deployment with `calcit bundle`
 
 ## Type System
 

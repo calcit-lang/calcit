@@ -91,7 +91,7 @@ fn run_with_large_stack(path: &'static str) {
 }
 
 /// Main integration test: runs calcit/test.cirru which loads all 23 sub-test
-/// modules plus util.cirru — equivalent to `cargo run --bin cr -- calcit/test.cirru`.
+/// modules plus util.cirru — equivalent to `cargo run --bin calcit -- calcit/test.cirru`.
 #[test]
 fn cirru_test_suite() {
   run_with_large_stack("calcit/test.cirru");

@@ -99,18 +99,18 @@
 
 ## parse 校验示例
 
-文档里保留的 schema 示例应至少能被 `cr` 解析。
+文档里保留的 schema 示例应至少能被 `calcit` 解析。
 
 主示例：
 
 ```bash
-cr demos/calcit.cirru cirru parse-edn "(:: :fn ({} (:generics ([] 'T 'U)) (:where ({} ('T Eq))) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U))))"
+calcit demos/calcit.cirru cirru parse-edn "(:: :fn ({} (:generics ([] 'T 'U)) (:where ({} ('T Eq))) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U))))"
 ```
 
 运行时数据验证：
 
 ```bash
-cr demos/calcit.cirru eval "let ((schema (:: :fn ({} (:generics ([] 'T 'U)) (:where ({} ('T Eq))) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)))))) (println schema) (println (type-of schema)) , schema"
+calcit demos/calcit.cirru eval "let ((schema (:: :fn ({} (:generics ([] 'T 'U)) (:where ({} ('T Eq))) (:args ([] 'T :number)) (:rest :number) (:return (:: :tuple :ok 'U)))))) (println schema) (println (type-of schema)) , schema"
 ```
 
 ## 顶层定义与局部定义的分工

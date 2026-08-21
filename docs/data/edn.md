@@ -8,7 +8,7 @@ aliases:
   - "edn notation"
   - "data notation"
 entry_for:
-  - "cr cirru parse-edn"
+  - "calcit cirru parse-edn"
 ---
 # Cirru Extensible Data Notation
 
@@ -222,7 +222,7 @@ at runtime, its syntax tree uses anonymous enum values:
 which means you can eval:
 
 ```bash
-$ cr eval "println $ format-cirru-edn $ :: 'quote $ [] |def |a |1"
+$ calcit eval "println $ format-cirru-edn $ :: 'quote $ [] |def |a |1"
 
 quote $ def a 1
 
@@ -232,7 +232,7 @@ took 0.027ms: nil
 and also:
 
 ```bash
-$ cr eval 'parse-cirru-edn "|quote $ def a 1"'
+$ calcit eval 'parse-cirru-edn "|quote $ def a 1"'
 took 0.011ms: (:: 'quote ([] |def |a |1))
 ```
 

@@ -93,12 +93,12 @@ caps tree
 caps why calcit-lang/memof
 
 # Inspect the module list for each relevant executable entry.
-cr calcit.cirru config modules
-cr calcit.cirru config modules --entry test
+calcit calcit.cirru config modules
+calcit calcit.cirru config modules --entry test
 
 # Validate the reachable paths for those entries.
-cr calcit.cirru --check-only
-cr calcit.cirru --entry test --check-only
+calcit calcit.cirru --check-only
+calcit calcit.cirru --entry test --check-only
 ```
 
 `caps tree` and `caps why` explain resolver reachability: why a repository is installed and which
@@ -109,7 +109,7 @@ group. An installed module is therefore not automatically a runtime dependency: 
 module, a module configured only for another entry, or a module retained for a documentation check.
 
 Named entries do not inherit the default entry's modules. Audit each entry that CI or a release supports.
-For Markdown code, `cr docs check-md` defaults to modules from the default entry; use an explicit
+For Markdown code, `calcit docs check-md` defaults to modules from the default entry; use an explicit
 `--entry <snapshot>` and repeat `--dep <module-path>` for additional documentation-only modules. These
 checks provide static evidence for selected paths, not a guarantee about dynamic loading or external
 consumer usage.
@@ -131,7 +131,7 @@ caps version bump patch
 
 The project version belongs in `deps.cirru :version`. If it is missing, `caps` invocations that read the file print a
 migration warning; initialize it with `caps version set <version>`. `caps version get` and `caps version bump` fail when the
-field is missing, even if a legacy `calcit.cirru :version` field exists. `cr config version` / `cr config set version`
+field is missing, even if a legacy `calcit.cirru :version` field exists. `calcit config version` / `calcit config set version`
 are deprecated — use `caps version` instead.
 
 ### Outdated

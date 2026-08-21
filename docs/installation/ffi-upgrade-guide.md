@@ -19,7 +19,7 @@ aliases:
 | 文件         | 字段                      | 说明                                                        |
 | ------------ | ------------------------- | ----------------------------------------------------------- |
 | `Cargo.toml` | `cirru_edn = "x.y.z"`     | 必须与运行时 Calcit 二进制所链接的 `cirru_edn` 版本完全一致 |
-| `deps.cirru` | `:calcit-version \|x.y.z` | 必须与 `cr --version` 输出一致，CI 会用它校验               |
+| `deps.cirru` | `:calcit-version \|x.y.z` | 必须与 `calcit --version` 输出一致，CI 会用它校验               |
 
 两者不一致都会导致 CI 失败或运行时 `dlsym failed`。
 
@@ -28,10 +28,10 @@ aliases:
 ### 0. 导出版本变量（所有后续步骤均复用）
 
 ```bash
-CR_VER=$(cr --version | awk '{print $NF}')
+CR_VER=$(calcit --version | awk '{print $NF}')
 EDN_VER=$(cargo search cirru_edn --limit 1 | grep '^cirru_edn' | awk -F'"' '{print $2}')
 PARSER_VER=$(cargo search cirru_parser --limit 1 | grep '^cirru_parser' | awk -F'"' '{print $2}')
-echo "cr=$CR_VER  cirru_edn=$EDN_VER  cirru_parser=$PARSER_VER"
+echo "calcit=$CR_VER  cirru_edn=$EDN_VER  cirru_parser=$PARSER_VER"
 ```
 
 也可以用 crates.io API 查询：
@@ -57,14 +57,14 @@ sed -i "s/^cirru_parser = .*/cirru_parser = \"$PARSER_VER\"/" Cargo.toml
 sed -i "s/:calcit-version |.*/:calcit-version |$CR_VER/" deps.cirru
 ```
 
-确保与 `cr --version` 输出完全对应。
+确保与 `calcit --version` 输出完全对应。
 
 ### 3. 本地构建验证
 
 ```bash
 cargo build --release
 rm -rf dylibs/* && mkdir -p dylibs && cp target/release/*.* dylibs/
-cr calcit.cirru
+calcit calcit.cirru
 ```
 
 三步缺一不可：构建 → 复制产物 → 运行验证。如果只更新了 `target/release/` 而未复制到 `dylibs/`，运行时仍会加载旧库。
@@ -107,7 +107,7 @@ gh pr checks <PR_NUMBER>
 
 ### CI 报版本不匹配
 
-先检查 `deps.cirru` 中 `:calcit-version` 是否与当前 `cr --version` 一致。
+先检查 `deps.cirru` 中 `:calcit-version` 是否与当前 `calcit --version` 一致。
 这是最常见的失败原因，频繁升级 calcit 时容易被遗漏。
 
 ### dlsym failed

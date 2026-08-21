@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-const binary = process.env.CALCIT_AGENT_CR ?? "./target/debug/cr";
+const binary = process.env.CALCIT_AGENT_BIN ?? process.env.CALCIT_AGENT_CR ?? "./target/debug/calcit";
 
 const scenarios = [
   {
@@ -243,7 +243,7 @@ const scenarios = [
       "json",
     ],
     check(result) {
-      if (result.schema_version !== 2 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
+      if (result.schema_version !== 3 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
         throw new Error("weak type result is incomplete");
       }
       const occurrences = result.data.definitions.flatMap((definition) => definition.occurrences);

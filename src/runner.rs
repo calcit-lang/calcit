@@ -260,7 +260,7 @@ pub fn call_expr(
           CalcitErrKind::Unexpected,
           format!(
             "method kind `{kind}` (`.{prefix}{name}`) is only available in JS codegen, not supported in Rust runtime. \
-             Use `cr js` to compile to JS, or avoid `.!` / `.-` syntax in server-side code. \
+             Use `calcit js` to compile to JS, or avoid `.!` / `.-` syntax in server-side code. \
              Expression: `{xs}`",
             prefix = match kind {
               MethodKind::InvokeNative => "!",

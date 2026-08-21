@@ -1,6 +1,6 @@
 //! Docs subcommand handlers
 //!
-//! Handles: cr docs scopes, search, list, sections, read, read-lines
+//! Handles: calcit docs scopes, search, list, sections, read, read-lines
 
 use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsSubcommand};
 use colored::Colorize;
@@ -200,7 +200,7 @@ pub(crate) struct DefinitionDocLink {
 
 /// Resolve documentation nodes for a definition without mutating the docs
 /// cache. Semantic read commands use this to enrich their result while keeping
-/// cache installation an explicit `cr docs graph build` operation.
+/// cache installation an explicit `calcit docs graph build` operation.
 pub(crate) fn lookup_definition_docs(definition: &str) -> Result<Vec<DefinitionDocLink>, String> {
   let docs_dir = get_guidebook_dir()?;
   let cache = match docs_cache::read_cache(&docs_dir) {
@@ -228,7 +228,7 @@ fn graph_node<'a>(cache: &'a docs_cache::DocsCache, node_id: &str) -> Result<&'a
     .nodes
     .iter()
     .find(|node| node.id == node_id)
-    .ok_or_else(|| format!("Documentation node '{node_id}' not found. Use 'cr docs graph build' first or inspect the graph cache."))
+    .ok_or_else(|| format!("Documentation node '{node_id}' not found. Use 'calcit docs graph build' first or inspect the graph cache."))
 }
 
 fn print_graph_node(node: &docs_cache::KnowledgeNode) {
@@ -452,7 +452,7 @@ fn load_agents_document(force_refresh: bool) -> Result<AgentsDocument, String> {
 }
 
 fn handle_read_content(options: ReadRenderOptions<'_>) -> Result<(), String> {
-  let command_prefix = format!("cr docs {}", options.command_hint);
+  let command_prefix = format!("calcit docs {}", options.command_hint);
 
   println!("{} ({})", options.display_title.cyan().bold(), options.display_path.dimmed());
   println!("{}", "=".repeat(60).dimmed());
@@ -506,7 +506,7 @@ fn find_doc_by_query<'a>(guide_docs: &'a [GuideDoc], query: &str) -> Result<&'a 
     })
     .map(|(doc, _)| doc)
     .ok_or_else(|| {
-      format!("Document '{query}' not found. Use 'cr docs list' or 'cr docs search {query}' to locate matching documents.")
+      format!("Document '{query}' not found. Use 'calcit docs list' or 'calcit docs search {query}' to locate matching documents.")
     })
 }
 
@@ -994,10 +994,10 @@ fn handle_scopes() -> Result<(), String> {
 
   println!("\n{} {} scopes", "Total:".dimmed(), scopes.len());
   if command_guidance_enabled() {
-    println!("{}", "Use 'cr docs list' to list guidebook files in calcit.".dimmed());
+    println!("{}", "Use 'calcit docs list' to list guidebook files in calcit.".dimmed());
     println!(
       "{}",
-      "    Use 'cr docs list --module <module>' to list files in an installed module.".dimmed()
+      "    Use 'calcit docs list --module <module>' to list files in an installed module.".dimmed()
     );
   }
 
@@ -1064,7 +1064,7 @@ fn handle_search(
     } else {
       println!(
         "{}",
-        "Tip: Use --context <num> to show more context lines (e.g., 'cr docs search <keyword> --context 20')".dimmed()
+        "Tip: Use --context <num> to show more context lines (e.g., 'calcit docs search <keyword> --context 20')".dimmed()
       );
     }
     println!(
@@ -1121,7 +1121,7 @@ fn handle_agents(
     display_title: frontmatter.title.as_deref().unwrap_or("Agents.md"),
     display_path: &document.display_path,
     command_hint: "agents",
-    no_match_error: "No heading matched in Agents.md. Run 'cr docs agents' to list available headings.",
+    no_match_error: "No heading matched in Agents.md. Run 'calcit docs agents' to list available headings.",
     content: &content,
     heading_queries,
     include_subheadings,
@@ -1155,7 +1155,7 @@ fn handle_read(
 
   if result.is_err() && !heading_queries.is_empty() {
     return Err(format!(
-      "No section matched: {}. Use 'cr docs sections {filename}' to list available headings.",
+      "No section matched: {}. Use 'calcit docs sections {filename}' to list available headings.",
       heading_queries.join(", ")
     ));
   }
@@ -1198,7 +1198,7 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_
   if command_guidance_enabled() {
     println!(
       "{}",
-      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'cr docs read-lines file.md --start 20 --lines 30')"
+      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'calcit docs read-lines file.md --start 20 --lines 30')"
         .dimmed()
     );
   }
@@ -1230,17 +1230,20 @@ fn handle_list(module_filter: Option<&str>) -> Result<(), String> {
 
   println!("\n{} {} topics", "Total:".dimmed(), docs.len());
   if command_guidance_enabled() {
-    println!("{}", "Use 'cr docs sections <filename>' to list headings in a document".dimmed());
     println!(
       "{}",
-      "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
+      "Use 'calcit docs sections <filename>' to list headings in a document".dimmed()
     );
-    println!("{}", "    'cr docs read <filename>' to read the full document".dimmed());
     println!(
       "{}",
-      "    'cr docs read-lines <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
+      "    'calcit docs read <filename> <heading-keyword>' to read matched sections".dimmed()
     );
-    println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
+    println!("{}", "    'calcit docs read <filename>' to read the full document".dimmed());
+    println!(
+      "{}",
+      "    'calcit docs read-lines <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
+    );
+    println!("{}", "    'calcit docs search <keyword>' to search content".dimmed());
   }
 
   Ok(())
@@ -1448,7 +1451,7 @@ fn handle_format_md(file_path: &str, check: bool) -> Result<(), String> {
       return Ok(());
     }
     return Err(format!(
-      "{} Cirru block(s) in '{file_path}' need formatting. Run `cr docs format-md {file_path}`.",
+      "{} Cirru block(s) in '{file_path}' need formatting. Run `calcit docs format-md {file_path}`.",
       formatted.changed_blocks
     ));
   }

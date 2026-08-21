@@ -27,8 +27,8 @@
 | `04-15-wasm-compilation-feasibility.md`             | Active        | WASM 编译三条路径（解释器→WASM / AOT 子集 / WASM GC）的可行性评估。                       |
 | `04-16-wasm-data-structures.md`                     | Active        | WASM codegen 中 Tag/Record/Tuple 等数据结构的内存布局与编译策略。                         |
 | `05-31-generic-where-bounds-mfs.md`                 | Active        | 函数 schema 泛型 `:where` 约束的最小功能规格，先作为主链路开发基线。                      |
-| `06-15-effects-graph-rfc.md`                        | Draft         | `cr analyze effects-graph`：State/Transform/Effect 语义分解图与类型驱动 effect 标注路线。 |
-| `06-29-cr-exec-cli-builtins-rfc.md`                 | **Active**    | `cr exec` + `calcit.cli/*` 内建函数：绕过 Shell 转义的 Cirru 函数调用方案。               |
+| `06-15-effects-graph-rfc.md`                        | Draft         | `calcit analyze effects-graph`：State/Transform/Effect 语义分解图与类型驱动 effect 标注路线。 |
+| `06-29-cr-exec-cli-builtins-rfc.md`                 | **Active**    | `calcit exec` + `calcit.cli/*` 内建函数：绕过 Shell 转义的 Cirru 函数调用方案。               |
 | `07-06-semantic-tree-navigation-rfc.md`             | Draft         | 语义化树形导航与编辑：路径标注、多候选交互、锚点搜索替换、结构化查询语言。                |
 | `07-19-doc-knowledge-index-rfc.md`                  | Draft         | Markdown/Calcit snapshot 的知识节点、关系索引与用户级增量缓存方案。                       |
 | `07-19-type-introspection-consistency-rfc.md`       | Implemented   | 类型自省一致性改进：`&methods-of` 支持裸类型定义、`Enum` Display 补 variants、`to-pairs`/`keys` 类型签名修正（第 4 项可选新增 proc 延后）。 |
@@ -44,7 +44,7 @@
 | `08-05-systematic-nil-reduction-rfc.md`              | Partial       | 类型驱动减少 nil：先拆分可省略参数与 nullable 值，再迁移至 Option/Result 并逐步收紧 typed code。                  |
 | `08-08-cross-backend-host-ffi-contracts-rfc.md`      | Draft         | 统一 JS/native/WASM/WASI 的逻辑 FFI 契约与诊断，ABI transport 保持 backend-specific；首个完整 shape consumer 为 JS/DOM。 |
 | `08-18-calcit-typed-js-ffi-boundary-rfc.md`           | Draft         | 在现有 Struct/Enum/Fn/trait 上补齐 JS capability gate 与 target validation；FFI metadata 不进入普通 trait 匹配和泛型推断。 |
-| `08-21-setup-cr-version-and-toolchain-contract-rfc.md` | Draft       | 以 `deps.cirru` 为正常项目的唯一 Calcit 版本来源，补齐 setup-cr 的冲突检测、缓存、自检、outputs 与工具选择。 |
+| `08-21-setup-calcit-version-and-toolchain-contract-rfc.md` | Draft       | 以 `deps.cirru` 为正常项目的唯一 Calcit 版本来源；只下载 `calcit`，并由 Action 提供 `cr` 兼容链接。 |
 | `08-21-type-quality-ci-adoption-rfc.md`               | Draft       | 统一使用原生 `analyze quality` 与按 definition baseline，定义生态 CI 层级并禁止各项目重复实现 JS 汇总脚本。 |
 | `08-21-js-ffi-runtime-contract-validation-rfc.md`     | Draft       | 在现有 typed JS FFI 声明之上增加 host guard、decoder、runtime contract tests 与 unsafe evidence。 |
 | `08-21-static-type-system-evolution-roadmap.md`       | Draft       | 借鉴 Rust/MoonBit 推进 Unknown/Dynamic 分离、穷尽性、局部推断、trait coherence 与框架类型化。 |

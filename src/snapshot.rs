@@ -12,7 +12,7 @@ use crate::calcit::{
 };
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
-const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `cr query` to inspect and `cr edit`/`cr tree` to modify. Run `cr docs agents --full` first. Manual edits must follow format and schema conventions, then run `cr edit format`.";
+const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --full` first. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
 
 fn default_version() -> String {
   "0.0.0".to_owned()
@@ -1046,7 +1046,7 @@ pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
 /// Convert a Cirru schema tree to a direct Edn value (not Quote-wrapped).
 /// Used when serializing CodeEntry to file: the schema is stored as a native
 /// EDN map instead of a quoted Cirru expression.
-/// `cr edit format` normalises old quote-wrapped schemas to this format.
+/// `calcit edit format` normalises old quote-wrapped schemas to this format.
 /// Returns `Edn::Nil` if conversion fails (should not happen for valid schemas).
 pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
   fn cirru_schema_to_edn(node: &Cirru) -> Option<Edn> {
@@ -1403,7 +1403,7 @@ fn validate_standalone_type_schema(schema: &Cirru) -> Result<(), String> {
   Ok(())
 }
 
-/// Strict validation for schemas submitted via `cr edit schema`.
+/// Strict validation for schemas submitted via `calcit edit schema`.
 /// New writes use one canonical form: direct value types or wrapped
 /// `(:: :fn ({} ...))` / `(:: :macro ({} ...))` callable schemas. Loading
 /// existing snapshots remains deliberately more permissive.
@@ -1482,7 +1482,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     }
   } else if matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "{}") {
     return Err(
-      "Legacy unwrapped callable schema maps are not accepted by `cr edit schema`. Use the canonical wrapped form `:: :fn $ {} ...` or `:: :macro $ {} ...`."
+      "Legacy unwrapped callable schema maps are not accepted by `calcit edit schema`. Use the canonical wrapped form `:: :fn $ {} ...` or `:: :macro $ {} ...`."
         .to_owned(),
     );
   } else {
@@ -1656,7 +1656,7 @@ impl From<CodeEntry> for Edn {
   }
 }
 
-/// Validate and parse one schema submitted through `cr edit schema`.
+/// Validate and parse one schema submitted through `calcit edit schema`.
 /// Leaf schemas cannot be round-tripped through `parse_schema_data`, whose
 /// Cirru formatter requires a top-level expression, so they are converted
 /// directly into EDN before type parsing.
@@ -2016,7 +2016,7 @@ fn legacy_snapshot_recovery_hint(path: &str) -> Option<String> {
   let compact_path = snapshot_path.parent()?.join("compact.cirru");
   if snapshot_path.file_name()?.to_str()? == "calcit.cirru" && compact_path.is_file() {
     Some(format!(
-      "A sibling `{}` exists. If it is the last runnable compact Snapshot, back up this `calcit.cirru`, copy `compact.cirru` over it, then run `cr calcit.cirru edit format` before `cr calcit.cirru --check-only`.",
+      "A sibling `{}` exists. If it is the last runnable compact Snapshot, back up this `calcit.cirru`, copy `compact.cirru` over it, then run `calcit calcit.cirru edit format` before `calcit calcit.cirru --check-only`.",
       compact_path.display()
     ))
   } else {
@@ -2594,7 +2594,7 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 }
 
 /// Rewrite legacy tag-based type syntax in code type positions. This is intentionally
-/// called by `cr edit format`, not by unrelated structural edits: old snapshots stay
+/// called by `calcit edit format`, not by unrelated structural edits: old snapshots stay
 /// compatible until users explicitly request canonical formatting.
 pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
   let mut changed = 0;
@@ -2729,8 +2729,8 @@ mod tests {
 
     assert!(error.contains(snapshot_path.to_str().unwrap()), "error: {error}");
     assert!(error.contains(compact_path.to_str().unwrap()), "error: {error}");
-    assert!(error.contains("cr calcit.cirru edit format"), "error: {error}");
-    assert!(error.contains("cr calcit.cirru --check-only"), "error: {error}");
+    assert!(error.contains("calcit calcit.cirru edit format"), "error: {error}");
+    assert!(error.contains("calcit calcit.cirru --check-only"), "error: {error}");
 
     fs::remove_dir_all(root).expect("remove legacy snapshot fixture directory");
   }
@@ -3932,7 +3932,7 @@ mod tests {
     // into `CalcitTypeAnnotation::Custom(Arc<Calcit>)` (see `from_tag_name`). Any file
     // save previously coerced these back through `builtin_tag_name`, which doesn't know
     // about `Custom` and silently fell back to `:dynamic`, destroying the original kind
-    // on every unrelated `cr edit`/`cr tree` write to the containing file.
+    // on every unrelated `calcit edit`/`calcit tree` write to the containing file.
     for kind in ["struct", "enum", "trait", "impl", "record"] {
       let schema = CalcitTypeAnnotation::from_tag_name(kind);
       let edn = schema_annotation_to_edn(&schema);

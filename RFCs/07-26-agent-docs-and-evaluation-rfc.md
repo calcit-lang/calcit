@@ -22,7 +22,7 @@ calcit://definition/<namespace>/<name>
 
 前端搜索、知识图和校验必须复用同一个版本化 frontmatter parser。逐步校验必填/enum、duplicate ID、dangling edge、scope、可解析 code refs 与可执行的 current 示例；旧文档可兼容读取，再分阶段变严格。
 
-默认 `cr docs search` 只覆盖 current guide/reference 与 definition metadata。RFC、草稿与 `editing-history/` 必须显式带 scope 才进入结果，避免历史语法污染 Agent 上下文。
+默认 `calcit docs search` 只覆盖 current guide/reference 与 definition metadata。RFC、草稿与 `editing-history/` 必须显式带 scope 才进入结果，避免历史语法污染 Agent 上下文。
 
 ## 3. 可重复的 Agent 基准
 

@@ -10,8 +10,8 @@ aliases:
   - "local editing guide"
   - "copilot workflow"
 entry_for:
-  - "cr docs agents"
-  - "cr docs read agent-advanced.md"
+  - "calcit docs agents"
+  - "calcit docs read agent-advanced.md"
 id: core/agent
 related:
   - core/docs/indexing
@@ -23,28 +23,28 @@ leads_to:
 
 # Calcit Agent 快速实践（局部查看与编辑优先）
 
-本文是 Agent 每次进入 Calcit 项目时需要常驻上下文的最小操作契约。只保留高频规则和可执行闭环；低频命令、完整语法与复杂重构通过 `cr docs` 按需读取。
+本文是 Agent 每次进入 Calcit 项目时需要常驻上下文的最小操作契约。只保留高频规则和可执行闭环；低频命令、完整语法与复杂重构通过 `calcit docs` 按需读取。
 
 ## 0. 开始修改前
 
-1. 先遵守当前仓库的 `AGENTS.md`、README 和用户要求；本文只补充 Calcit 源码操作规则。若仓库示例被当前 CLI 以 `Unrecognized argument` 拒绝，保持原约束意图，用该子命令的 live `--help` 换成当前参数，不要因此绕过 `cr` 直接改 Snapshot。
-2. 每个任务第一次执行 `cr edit`、`cr tree` 或 cursor mutation 前，必须先读取当前 CLI 内嵌的完整指南：
+1. 先遵守当前仓库的 `AGENTS.md`、README 和用户要求；本文只补充 Calcit 源码操作规则。若仓库示例被当前 CLI 以 `Unrecognized argument` 拒绝，保持原约束意图，用该子命令的 live `--help` 换成当前参数，不要因此绕过 `calcit` 直接改 Snapshot。
+2. 每个任务第一次执行 `calcit edit`、`calcit tree` 或 cursor mutation 前，必须先读取当前 CLI 内嵌的完整指南：
 
    ```bash
-   cr docs agents --full
+   calcit docs agents --full
    ```
 
-3. `calcit.cirru`（旧项目可能是 `compact.cirru`）是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。不要用 line patch、正则脚本或 formatter 直接改它；使用 `cr edit`、`cr tree`、`cr cursor`。
+3. `calcit.cirru`（旧项目可能是 `compact.cirru`）是 **Cirru EDN 树形 Snapshot**，不是按行维护的文本源码。不要用 line patch、正则脚本或 formatter 直接改它；使用 `calcit edit`、`calcit tree`、`calcit cursor`。
 4. `CURSOR`、`FOLDED:*`、chunk 标题和 path annotation 都是展示信息，绝不能复制回 Snapshot。`cursor show --format json` 中 `tree` 才是真实节点，`preview_tree` 只是展示树。
 
 ### 0.1 发现 Calcit 缺陷时：定位归属仓库并提交 Issue
 
 发现 **Calcit 语言、编译器、运行时或 CLI 工具** 的可复现问题时，必须向该工具的维护仓库提交 GitHub Issue；不要把问题只留在当前项目的提交说明、错误 sidecar 或聊天记录里。发现 **类库/模块** 问题时，也必须提交到该类库的维护仓库，而不是误报到使用它的应用项目或 Calcit 核心仓库。
 
-先收集最小复现、实际结果、预期结果、`cr -v`、平台和相关命令。类库问题先从解析后的模块路径确认归属，再创建 Issue：
+先收集最小复现、实际结果、预期结果、`calcit -v`、平台和相关命令。类库问题先从解析后的模块路径确认归属，再创建 Issue：
 
 ```bash
-cr query modules
+calcit query modules
 # 从输出中复制该模块的实际目录；不要猜仓库名。
 git -C '<module-directory>' remote get-url origin
 # 将 origin 规范化为 OWNER/REPO 后，确认目标确实是对应 GitHub 仓库。
@@ -60,29 +60,29 @@ Issue 正文至少包括：最小 Snapshot/snippet 或步骤、实际与预期�
 以下命令默认在项目根目录读取 `calcit.cirru`。只有操作临时副本或非默认 Snapshot 时才显式写文件：
 
 ```bash
-cr query config
-cr .calcit/snippets/demo.cirru query config
+calcit query config
+calcit .calcit/snippets/demo.cirru query config
 ```
 
-当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `cr ./calcit.cirru ...`）。非默认 Snapshot 会包含在 `Command:` 回显中；默认值为减少噪音会省略，需要审计展开后的全部默认选项时加 `--verbose`。路径仍可能经过 alias 解析，必要时结合 `query config` 确认项目身份。
+当 cwd、`calcit.cirru` / `compact.cirru` 或多个 Snapshot 可能混淆时，先选定文件，并在后续查询、mutation、验证中始终显式传同一个路径（如 `calcit ./calcit.cirru ...`）。非默认 Snapshot 会包含在 `Command:` 回显中；默认值为减少噪音会省略，需要审计展开后的全部默认选项时加 `--verbose`。路径仍可能经过 alias 解析，必要时结合 `query config` 确认项目身份。
 
-`cr [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`cr ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
+`calcit [snapshot-file]` 默认选择 `entries.default` 并按它的 `:mode`（`:native` / `:js`）单次运行；`--entry <name>` 选择其他入口。显式 `js` 保留为覆盖方式。只有明确需要监听时才加 `-w` / `--watch`。`calcit ir` 只用于编译器/生成结果调试，不作为日常构建或完成证明。这里的 snapshot 文件不要与 `--entry <named-entry>` 混淆。
 
 ## 1. 30 秒项目盘点
 
 如果用户已经给出 `namespace/definition`，可直接从 `query context` 开始；否则依次执行：
 
 ```bash
-cr -v
-cr query config
-cr query ns
-cr query modules
+calcit -v
+calcit query config
+calcit query ns
+calcit query modules
 # Dependency intent audit (when deps.cirru uses dev-dependencies):
 caps tree
 # Choose a module from the tree, then explain its root/transitive path:
 caps why '<owner/repo>'
 # 从 query ns 的输出中选择真实 namespace，再执行：
-cr query defs '<namespace>'
+calcit query defs '<namespace>'
 ```
 
 - `query config`：确认 init/reload、版本和项目配置。
@@ -102,12 +102,12 @@ cr query defs '<namespace>'
 ```bash
 caps tree
 caps why '<owner/repo>'
-cr calcit.cirru config modules
-cr calcit.cirru config modules --entry '<entry-name>'
-cr calcit.cirru --check-only
-cr calcit.cirru --entry '<entry-name>' --check-only
+calcit calcit.cirru config modules
+calcit calcit.cirru config modules --entry '<entry-name>'
+calcit calcit.cirru --check-only
+calcit calcit.cirru --entry '<entry-name>' --check-only
 # Here --entry is the snapshot filename, not a named entry:
-cr calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
+calcit calcit.cirru docs check-md README.md --entry calcit.cirru --failures-only
 ```
 
 `caps tree` 和 `caps why` 回答“该仓库为什么被依赖解析器安装”；目前它们会合并显示两个根分组，
@@ -125,7 +125,7 @@ entry 都是独立配置，不能假设其模块继承 default。`--check-only` 
 
 | 概念       | 含义                                                         | 操作习惯                                      |
 | ---------- | ------------------------------------------------------------ | --------------------------------------------- |
-| Snapshot   | 整个项目的 EDN 数据树                                        | 只通过 `cr` 修改                              |
+| Snapshot   | 整个项目的 EDN 数据树                                        | 只通过 `calcit` 修改                              |
 | target     | `namespace/definition`                                       | 先从 `query ns/defs/find` 获取                |
 | path       | definition 内的树坐标，如 `@3.2.1`                          | mutation 后可能变化，不长期缓存               |
 | cursor     | 带 target、path 和 fingerprint 的本地选择                    | 连续编辑时优先使用，避免反复搬运数字坐标      |
@@ -138,16 +138,16 @@ path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list
 
 搜索选择规则：
 
-- 按定义名跨 namespace 找：`cr query find <symbol>`。
-- 在源码 leaf 中找字符串、symbol、tag：`cr query search <leaf> --filter '<ns/def>'`。
-- 按一段树形表达式找：`cr query search-expr '<cirru-expr>' --filter '<ns/def>'`。
+- 按定义名跨 namespace 找：`calcit query find <symbol>`。
+- 在源码 leaf 中找字符串、symbol、tag：`calcit query search <leaf> --filter '<ns/def>'`。
+- 按一段树形表达式找：`calcit query search-expr '<cirru-expr>' --filter '<ns/def>'`。
 
 编辑选择规则：
 
-- 新增/移动 definition，修改 namespace、import、schema、examples：`cr edit`。
-- 一次局部节点修改：`cr tree`，优先 `search-replace`，其次明确 path 的操作。
-- 在一个复杂表达式中连续移动和修改：`cr cursor` 与 `@cursor`。
-- 多个 mutation 必须一起成功：`cr edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `cr docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
+- 新增/移动 definition，修改 namespace、import、schema、examples：`calcit edit`。
+- 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
+- 在一个复杂表达式中连续移动和修改：`calcit cursor` 与 `@cursor`。
+- 多个 mutation 必须一起成功：`calcit edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `calcit docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
 
 同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
 
@@ -157,7 +157,7 @@ path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list
 `docs/architectures/<feature>.cirru`，再运行 scaffold planner：
 
 ```bash
-cr calcit.cirru edit scaffold --file docs/architectures/order.cirru \
+calcit calcit.cirru edit scaffold --file docs/architectures/order.cirru \
   --dry-run --format edn
 ```
 
@@ -167,7 +167,7 @@ Symbol，调用/类型关系使用 `:: :call` / `:: :type` anonymous enum，不�
 已有 definition 仍会出现在结果中。只有确认 revision 后才 apply：
 
 ```bash
-cr calcit.cirru edit scaffold --file docs/architectures/order.cirru \
+calcit calcit.cirru edit scaffold --file docs/architectures/order.cirru \
   --expect-revision md5:... --format edn
 ```
 
@@ -184,32 +184,32 @@ snippets 等临时状态；不要把需要评审的设计落进隐藏目录。
 下面是需要替换 `<...>` 占位符的任务模板，不能原样执行。target、needle 和 replacement 必须来自当前项目及用户目标。先看搜索结果中的 `[#N]`，确认后再用同一序号设置 cursor：
 
 ```bash
-cr query context '<namespace/definition>' --format json
-cr query search '<existing-leaf>' --filter '<namespace/definition>' --exact
-cr query search '<existing-leaf>' --filter '<namespace/definition>' --exact --set-cursor 0
-cr cursor show
-cr cursor apply replace --code 'quote <replacement-leaf>'
-cr tree show @cursor --path @cursor
-cr query type-at @cursor --path @cursor --format json
-cr analyze check-examples --ns '<namespace>' --def '<definition>'
-cr test '<namespace>/<definition>'
+calcit query context '<namespace/definition>' --format json
+calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact
+calcit query search '<existing-leaf>' --filter '<namespace/definition>' --exact --set-cursor 0
+calcit cursor show
+calcit cursor apply replace --code 'quote <replacement-leaf>'
+calcit tree show @cursor --path @cursor
+calcit query type-at @cursor --path @cursor --format json
+calcit analyze check-examples --ns '<namespace>' --def '<definition>'
+calcit test '<namespace>/<definition>'
 ```
 
 `type-at --format json` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。
 
-最后运行当前仓库规定的测试和目标 codegen。只有项目目标是 JS 时，`cr js` 才是对应的编译检查；它不是所有 Calcit 项目的通用完成证明。
+最后运行当前仓库规定的测试和目标 codegen。只有项目目标是 JS 时，`calcit js` 才是对应的编译检查；它不是所有 Calcit 项目的通用完成证明。
 
 ### 废弃 API 清理
 
-迁移 API 时，先运行 `cr analyze deprecated --ns-prefix <package>` 查看调用路径和替换说明；清零前保留兼容 API 及其 `:deprecated` tag。CI 或迁移 gate 使用 `cr analyze deprecated --ns-prefix <package> --summary-only --format json`，仅当目标范围 `calls` 为 `0` 时再删除旧 API。
+迁移 API 时，先运行 `calcit analyze deprecated --ns-prefix <package>` 查看调用路径和替换说明；清零前保留兼容 API 及其 `:deprecated` tag。CI 或迁移 gate 使用 `calcit analyze deprecated --ns-prefix <package> --summary-only --format json`，仅当目标范围 `calls` 为 `0` 时再删除旧 API。
 
 对于唯一 leaf 的小改动，可以不用 cursor：
 
 ```bash
-cr query search '|Old title' --filter 'app.main/comp-page' --exact
-cr tree search-replace 'app.main/comp-page' \
+calcit query search '|Old title' --filter 'app.main/comp-page' --exact
+calcit tree search-replace 'app.main/comp-page' \
   --pattern '|Old title' --code 'quote "|New title"'
-cr query search '|New title' --filter 'app.main/comp-page' --exact
+calcit query search '|New title' --filter 'app.main/comp-page' --exact
 ```
 
 多匹配时 `search-replace` 会拒绝猜测；查看候选后用 `--pick <N>`，或改用 search → cursor → apply。
@@ -217,22 +217,22 @@ cr query search '|New title' --filter 'app.main/comp-page' --exact
 `--set-cursor` 会选中匹配 leaf。若要在它所在的表达式旁插入 sibling，先移动到 parent；插入后 cursor 仍跟随原表达式，再用 `next` 选中新节点：
 
 ```bash
-cr query search '<leaf-in-expression>' --filter '<namespace/definition>' --exact --set-cursor 0
-cr cursor parent
-cr cursor apply insert-after --code 'quote $ <new-expression>'
-cr --cursor-after focus cursor next
+calcit query search '<leaf-in-expression>' --filter '<namespace/definition>' --exact --set-cursor 0
+calcit cursor parent
+calcit cursor apply insert-after --code 'quote $ <new-expression>'
+calcit --cursor-after focus cursor next
 ```
 
 新增 definition 与 import 的最短路径：
 
 ```bash
-cr edit add-ns app.util
-cr edit def 'app.util/double' \
+calcit edit add-ns app.util
+calcit edit def 'app.util/double' \
   --code 'quote $ defn double (x) (* x 2)'
-cr edit add-import app.main \
+calcit edit add-import app.main \
   --code 'quote $ app.util :refer $ double'
-cr query def 'app.util/double'
-cr --check-only
+calcit query def 'app.util/double'
+calcit --check-only
 ```
 
 `edit add-import` 接收一条 import rule body，不包含 `:require`；优先使用它。只有明确要整体替换全部 imports 时才使用 `edit imports`。已有 definition 或同来源 import 需要覆盖时必须显式加 `--overwrite`。优先局部 tree mutation，不要为了改几个节点整段覆盖。最后仍需运行项目规定的测试与 codegen。
@@ -252,11 +252,11 @@ CLI 去掉外层 `quote`，确认 `[]` marker 后，把数组内部每个表达�
 最常用的 cursor 循环只有四步：搜索选中、展示、修改、再展示。
 
 ```bash
-cr query search render-item --filter 'app.main/render!' --exact
-cr query search render-item --filter 'app.main/render!' --exact --set-cursor 0
-cr cursor show
-cr cursor apply wrap --code 'quote $ when visible? self'
-cr cursor show
+calcit query search render-item --filter 'app.main/render!' --exact
+calcit query search render-item --filter 'app.main/render!' --exact --set-cursor 0
+calcit cursor show
+calcit cursor apply wrap --code 'quote $ when visible? self'
+calcit cursor show
 ```
 
 常用补充：
@@ -272,7 +272,7 @@ cr cursor show
 - `query context @cursor`、`tree show @cursor --path @cursor`：后续命令不再重复 target/path。
 - `cursor back` 只回退 cursor 位置，**不会撤销源码修改**。
 
-cursor 密集操作可把顶层选项写在命令前，如 `cr --cursor-after focus cursor forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `cr cursor show --format json --view node`。
+cursor 密集操作可把顶层选项写在命令前，如 `calcit --cursor-after focus cursor forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `calcit cursor show --format json --view node`。
 
 `.calcit/` 是项目本地状态目录，应整体加入 `.gitignore`。其中 `cursor.cirru` 保存 active cursor、单一 anchor、最多 16 个 marks、last query、有限 history/stack 与 clipboard，硬上限 64 KiB；`error.cirru` 保存最近一次持久化 runtime/watcher stack，多行输入临时片段可放 `snippets/`。进入复制项目或已有 worktree 时先 `cursor show`；若选择与当前任务无关，执行 `cursor clear`。目前只有一个 active cursor，不负责多个进程的并发写入；并行 Agent 使用独立 worktree/Snapshot。
 
@@ -281,13 +281,13 @@ cursor 密集操作可把顶层选项写在命令前，如 `cr --cursor-after fo
 Paredit 的 slurp/barf、history/stack、结构化 clipboard、stale relocation 等细节按需查询：
 
 ```bash
-cr docs read edit-tree.md 'Persistent Tree Cursor'
-cr cursor --help
+calcit docs read edit-tree.md 'Persistent Tree Cursor'
+calcit cursor --help
 ```
 
 ## 5. Cirru / Calcit 语法生存指南
 
-先区分三个阶段：**Cirru 文本 → list/leaf AST → Calcit 求值**。`calcit.cirru` 再用 Cirru EDN 保存整个 Snapshot，其中 definition 的 `:code` 是 quoted AST。`cr cirru parse` 只证明文本能解析并展示树形；它不保证这棵树具有预期的 Calcit 语义。`cr cirru parse-edn` 查看的是 EDN 数据，不是同一个解析阶段。
+先区分三个阶段：**Cirru 文本 → list/leaf AST → Calcit 求值**。`calcit.cirru` 再用 Cirru EDN 保存整个 Snapshot，其中 definition 的 `:code` 是 quoted AST。`calcit cirru parse` 只证明文本能解析并展示树形；它不保证这棵树具有预期的 Calcit 语义。`calcit cirru parse-edn` 查看的是 EDN 数据，不是同一个解析阶段。
 
 ### 5.1 先看 AST，不要按传统 Lisp 猜括号
 
@@ -341,7 +341,7 @@ div
     + x y
   ```
 
-- `map`、`filter`、`foldl` 等 Calcit 集合函数把集合放在前面；不确定参数顺序时运行 `cr query examples calcit.core/map` 或查询对应定义，不要套用 Clojure 记忆。
+- `map`、`filter`、`foldl` 等 Calcit 集合函数把集合放在前面；不确定参数顺序时运行 `calcit query examples calcit.core/map` 或查询对应定义，不要套用 Clojure 记忆。
 - 改动缩进、`$`、`,` 或圆括号都会改变 AST 和 path；修改后重新 show/search，或继续使用 cursor。
 
 ### 5.3 可选参数优先使用 `Option`
@@ -414,7 +414,7 @@ empty list/map: quote $ []      /    quote $ {}
 修改命令没有 `--stdin` 参数。多行内容直接省略 `--file/--code`：
 
 ```bash
-cr tree replace 'app.main/main!' --path '@3.1' <<'END'
+calcit tree replace 'app.main/main!' --path '@3.1' <<'END'
 quote $ if ready?
   render-ready
   render-loading
@@ -426,13 +426,13 @@ END
 ### 5.5 写入前先解析，写入后再做语义检查
 
 ```bash
-cr cirru parse -e --validate 'a $ b c'
-cr cirru parse --validate 'fn (x)
+calcit cirru parse -e --validate 'a $ b c'
+calcit cirru parse --validate 'fn (x)
   , x'
-cr cirru show-guide
+calcit cirru show-guide
 ```
 
-`-e` 适合单行 expression 文本；多行 block 即使只表示一个 AST expression，也省略 `-e`。检查 JSON 形状是否符合预期后，再用 `cr eval`、`cr --check-only` 或项目测试验证 Calcit 语义。Shell 中 `$`、反引号、`|`、`>` 有特殊含义；短输入用单引号，多行 mutation 用 heredoc。
+`-e` 适合单行 expression 文本；多行 block 即使只表示一个 AST expression，也省略 `-e`。检查 JSON 形状是否符合预期后，再用 `calcit eval`、`calcit --check-only` 或项目测试验证 Calcit 语义。Shell 中 `$`、反引号、`|`、`>` 有特殊含义；短输入用单引号，多行 mutation 用 heredoc。
 
 ## 6. 验证与失败恢复
 
@@ -440,26 +440,26 @@ cr cirru show-guide
 
 1. 结构：`cursor show` 或 `tree show`，确认实际 subtree。
 2. 语义：`query type-at ... --format json`，运行 `analyze check-types --summary-only`；看到 `W_TYPE_COVERAGE_GAPS` 后继续执行 `analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only`，再对命中范围去掉 `--summary-only` 查看 path、impact 与 suggestion。项目门禁使用 `analyze quality`（零容忍）；存量债务先执行一次 `analyze quality --write-baseline config/calcit-quality.json`，人工审阅后把同一文件提交到仓库，CI 改执行 `analyze quality --baseline config/calcit-quality.json`。不要再拼接多个 JSON 后交给 JavaScript 比较。门禁失败时保留 `--format json` 的单一 envelope，并按其中的 definition/path 回到 `weak-types` 或 `query type-at` 定位。
-3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `cr test <ns>/<def>`。
-4. 项目：运行 `cr test` 及仓库规定的 entry 和测试；默认 `cr test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `cr test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。CI/Agent 按 tag 或 affected 筛选时加 `--require-match`，避免空选择误报成功；大套件可加 `--summary-only --format json` 保持 stdout 紧凑可解析。只有项目目标是 JavaScript 时才运行对应的 `cr js` codegen。
+3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `calcit test <ns>/<def>`。
+4. 项目：运行 `calcit test` 及仓库规定的 entry 和测试；默认 `calcit test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `calcit test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。CI/Agent 按 tag 或 affected 筛选时加 `--require-match`，避免空选择误报成功；大套件可加 `--summary-only --format json` 保持 stdout 紧凑可解析。只有项目目标是 JavaScript 时才运行对应的 `calcit js` codegen。
 
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 
-`cr query tests <ns>/<def>` 查询 definition-attached tests；`cr edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`cr edit rm-test <ns>/<def> <name>` 按名称删除。`cr test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
+`calcit query tests <ns>/<def>` 查询 definition-attached tests；`calcit edit add-test <ns>/<def> <name> --code 'quote $ ...'` 添加稳定命名的测试，`calcit edit rm-test <ns>/<def> <name>` 按名称删除。`calcit test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
 
-不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `cr edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
+不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `calcit edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 
-每次 `cr` 执行或编译都会在 stderr 审计项目自身的 Dynamic 类型位置：少量仅提示，达到较高占比会告警。该提示不写入 stdout，也不替代 `analyze check-types` / `analyze weak-types`；Agent 应先查看告警，再用 `cr analyze weak-types --intent unresolved --format json` 定位并逐步收窄类型。
+每次 `calcit` 执行或编译都会在 stderr 审计项目自身的 Dynamic 类型位置：少量仅提示，达到较高占比会告警。该提示不写入 stdout，也不替代 `analyze check-types` / `analyze weak-types`；Agent 应先查看告警，再用 `calcit analyze weak-types --intent unresolved --format json` 定位并逐步收窄类型。
 
 `:: :tag ...` 是匿名 Enum 字面量；当已有 Enum 定义在头部时，直接使用 `Enum :tag ...`，类型分析会检查变体和 payload，并在预处理阶段降为命名构造。只有需要显式携带运行时 enum prototype、跨模块动态构造或兼容旧代码时才使用 `%:: Enum :tag ...`。不要为了绕过类型检查而主动选择 `%::`。
 
 | 现象                   | 恢复动作                                                                 |
 | ---------------------- | ------------------------------------------------------------------------ |
 | `Invalid path`         | 重新 `query search`，或用 `--set-cursor`；不要继续复用旧坐标             |
-| cursor stale/ambiguous | `cr cursor show` 检查；无法唯一恢复时重新 search + set                   |
-| 输入解析失败           | `cr cirru parse -e` 预检；复杂输入改用 heredoc/文件                      |
+| cursor stale/ambiguous | `calcit cursor show` 检查；无法唯一恢复时重新 search + set                   |
+| 输入解析失败           | `calcit cirru parse -e` 预检；复杂输入改用 heredoc/文件                      |
 | parse/preprocess/query/edit 失败 | 先以当前命令 stderr 为准；这些失败不保证刷新错误 sidecar                 |
-| runtime/watcher stack  | `cr query error` 读取最近持久化栈；若提示 stale，不要追查其中的旧错误      |
+| runtime/watcher stack  | `calcit query error` 读取最近持久化栈；若提示 stale，不要追查其中的旧错误      |
 | 多步修改范围不确定     | transaction `--dry-run --format json`，再带 `--expect-revision` 提交     |
 
 优先用 `--set-cursor` 避免手工转换语义路径与 tree path。
@@ -469,35 +469,35 @@ cr cirru show-guide
 不要在本页复制完整能力地图，也不要凭记忆猜低频参数。先看 live help，再从 scope → 文件 → section 逐层读取：
 
 ```bash
-cr --help
-cr tree --help
-cr tree replace --help
+calcit --help
+calcit tree --help
+calcit tree replace --help
 
-cr docs search 'cursor'
-cr docs sections edit-tree.md
-cr docs read edit-tree.md 'Persistent Tree Cursor'
-cr docs read-lines agent-advanced.md --start 1 --lines 80
+calcit docs search 'cursor'
+calcit docs sections edit-tree.md
+calcit docs read edit-tree.md 'Persistent Tree Cursor'
+calcit docs read-lines agent-advanced.md --start 1 --lines 80
 ```
 
 常见主题路由：
 
 | 主题                         | 查询入口                                                        |
 | ---------------------------- | --------------------------------------------------------------- |
-| Cirru 语法、AST 与常见误写   | `cr cirru show-guide`；`cr docs read cirru-syntax.md 'Common Mistakes'` |
-| Cirru EDN 数据层             | `cr cirru parse-edn --help`；`cr docs read edn.md --full`       |
-| Calcit 与 Clojure 差异       | `cr docs read agent-advanced.md 'Calcit vs Clojure'`            |
-| tree/cursor/transaction      | `cr docs read edit-tree.md --full`                              |
-| query/context/type-at        | `cr docs read query.md --full`                                  |
-| 复杂重构与历史陷阱           | `cr docs read agent-advanced.md --full`                         |
-| Snapshot、deps 与项目结构    | `cr docs read project-structure.md --full`                      |
-| 类型覆盖与 dynamic 审计      | `cr docs read static-analysis.md --full`；`cr analyze --help`   |
-| 类库发布前验收与质量门禁     | `cr docs read library-quality.md --full`                       |
-| run/watch/JS codegen         | `cr docs read cli-options.md 'Common Usage Patterns'`           |
-| 错误排查                     | `cr docs read debugging.md --full`；`cr query error`            |
-| 文档图与 frontmatter         | `cr docs read docs-indexing.md --full`；`cr docs graph --help`  |
-| 安装模块的 API/示例          | `cr docs scopes` → `cr docs search <kw> --module <module>`      |
+| Cirru 语法、AST 与常见误写   | `calcit cirru show-guide`；`calcit docs read cirru-syntax.md 'Common Mistakes'` |
+| Cirru EDN 数据层             | `calcit cirru parse-edn --help`；`calcit docs read edn.md --full`       |
+| Calcit 与 Clojure 差异       | `calcit docs read agent-advanced.md 'Calcit vs Clojure'`            |
+| tree/cursor/transaction      | `calcit docs read edit-tree.md --full`                              |
+| query/context/type-at        | `calcit docs read query.md --full`                                  |
+| 复杂重构与历史陷阱           | `calcit docs read agent-advanced.md --full`                         |
+| Snapshot、deps 与项目结构    | `calcit docs read project-structure.md --full`                      |
+| 类型覆盖与 dynamic 审计      | `calcit docs read static-analysis.md --full`；`calcit analyze --help`   |
+| 类库发布前验收与质量门禁     | `calcit docs read library-quality.md --full`                       |
+| run/watch/JS codegen         | `calcit docs read cli-options.md 'Common Usage Patterns'`           |
+| 错误排查                     | `calcit docs read debugging.md --full`；`calcit query error`            |
+| 文档图与 frontmatter         | `calcit docs read docs-indexing.md --full`；`calcit docs graph --help`  |
+| 安装模块的 API/示例          | `calcit docs scopes` → `calcit docs search <kw> --module <module>`      |
 
-定义级资料优先从源码元数据查询：`cr query schema '<ns/def>'`、`cr query examples '<ns/def>'`、`cr query usages '<ns/def>'`。远程库发现、program diff、call graph、JS escape 等低频能力直接从对应 `--help` 开始。
+定义级资料优先从源码元数据查询：`calcit query schema '<ns/def>'`、`calcit query examples '<ns/def>'`、`calcit query usages '<ns/def>'`。远程库发现、program diff、call graph、JS escape 等低频能力直接从对应 `--help` 开始。
 
 ## 8. 完成检查
 

@@ -122,10 +122,10 @@ query、docs、静态分析与 builtin fallback 应从同一只读描述视图�
 优先完善以下只读命令，而不是新增多套近似查询：
 
 ```bash
-cr capabilities --format edn
-cr query context <ns/def> --budget 2500 --format edn
-cr query type <type-or-definition> --format edn
-cr query type-at <ns/def> --path code@3.2 --format edn
+calcit capabilities --format edn
+calcit query context <ns/def> --budget 2500 --format edn
+calcit query type <type-or-definition> --format edn
+calcit query type-at <ns/def> --path code@3.2 --format edn
 ```
 
 `capabilities` 返回命令、参数/结果 schema、只读性、幂等性和支持的格式，使 Agent 不必加载所有 CLI help。
@@ -143,7 +143,7 @@ cr query type-at <ns/def> --path code@3.2 --format edn
 3. editor/LSP 映射不把行号变成新的事实来源；
 4. 有明确维护者承担协议兼容、进程恢复和跨平台测试。
 
-届时优先实现 `cr serve --stdio`，复用本 RFC typed result。stdio 使用一行一个
+届时优先实现 `calcit serve --stdio`，复用本 RFC typed result。stdio 使用一行一个
 请求、一行一个响应的 framing；每一行必须是一个完整 EDN value，或在握手后是
 一个完整 JSON value，禁止把日志写入 stdout。客户端首先发送：
 

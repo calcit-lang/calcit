@@ -143,8 +143,8 @@ Windows 上优先使用 directory junction；不支持链接时允许显式 copy
 1. `deps.cirru :version` 存在时，它是发布工具的权威值；
 2. 只有 `calcit.cirru :version` 时，`caps version get` 读取旧值并提示迁移；
 3. `caps version set/bump` 只写入 `deps.cirru`，不隐式改写机器生成的 snapshot；
-   迁移期 snapshot `:version` 继续作为旧版 `cr` 的兼容字段，允许暂时不同；
-4. `cr config set version` 先保留，但提示改用 `caps version set`；
+   迁移期 snapshot `:version` 继续作为旧版 `calcit` 的兼容字段，允许暂时不同；
+4. `calcit config set version` 先保留，但提示改用 `caps version set`；
 5. 等生态完成迁移后，再让 snapshot 的 `:version` 变为可选并停止写入镜像。
 
 建议命令：
@@ -302,7 +302,7 @@ root
 列出全部直接版本请求和最终选择理由。稠密依赖图不枚举所有简单路径，避免输出
 组合爆炸。
 
-## 8. `cr` 的模块查找兼容层
+## 8. `calcit` 的模块查找兼容层
 
 目前多个命令各自拼接 `~/.config/calcit/modules/`。实现项目视图前先把它们
 收敛到共享 resolver，至少覆盖运行、query、config、call-graph、docs 和 wasm
@@ -419,7 +419,7 @@ override 的正式语法另开小 RFC，不阻塞 store 和递归解析。
 
 ### Phase A：共享路径解析和元数据
 
-- 集中 `cr`/docs/query 的 module resolver；
+- 集中 `calcit`/docs/query 的 module resolver；
 - 项目 `.calcit/modules` 优先、legacy global fallback；
 - `PackageDeps` 支持 `:version` 与可选 `:native`；
 - 增加 `caps version`，只管理 `deps.cirru`；

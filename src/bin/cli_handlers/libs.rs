@@ -1,6 +1,6 @@
 //! Libs subcommand handler
 //!
-//! Handles: cr libs - fetches available Calcit libraries from registry
+//! Handles: calcit libs - fetches available Calcit libraries from registry
 
 use calcit::cli_args::{LibsCommand, LibsSubcommand};
 use colored::Colorize;
@@ -138,9 +138,9 @@ fn handle_list_libs() -> Result<(), String> {
   println!("{}", format!("Total: {} libraries", registry.libraries.len()).dimmed());
   println!(
     "\n{}",
-    "Use 'cr docs remote-libs readme <package>' to view library README.".dimmed()
+    "Use 'calcit docs remote-libs readme <package>' to view library README.".dimmed()
   );
-  println!("{}", "Use 'cr docs remote-libs search <keyword>' to search libraries.".dimmed());
+  println!("{}", "Use 'calcit docs remote-libs search <keyword>' to search libraries.".dimmed());
   println!("{}", "Use 'caps' command to install libraries.".dimmed());
 
   Ok(())
@@ -183,7 +183,7 @@ fn handle_readme(
 
   let render_readme = |content: &str| -> Result<(), String> {
     let no_match_error =
-      format!("No heading matched in {file_name}. Use 'cr docs remote-libs readme {package} --file {file_name}' to list headings.");
+      format!("No heading matched in {file_name}. Use 'calcit docs remote-libs readme {package} --file {file_name}' to list headings.");
     render_markdown_sections(
       content,
       heading_queries,
@@ -191,7 +191,7 @@ fn handle_readme(
         include_subheadings,
         full,
         with_lines,
-        command_prefix: "cr docs remote-libs readme <package>",
+        command_prefix: "calcit docs remote-libs readme <package>",
         with_file_option: true,
         no_headings_message: "No Markdown headings found, printing full file.",
         print_full_when_no_headings: true,
@@ -310,7 +310,10 @@ fn handle_search(keyword: &str) -> Result<(), String> {
     println!();
   }
 
-  println!("{}", "Use 'cr docs remote-libs readme <package>' to view library README.".dimmed());
+  println!(
+    "{}",
+    "Use 'calcit docs remote-libs readme <package>' to view library README.".dimmed()
+  );
 
   Ok(())
 }
@@ -350,7 +353,7 @@ fn handle_scan_md(module: &str) -> Result<(), String> {
   println!();
   println!(
     "{}",
-    format!("Use 'cr docs remote-libs readme {module} --file <file>' to read a specific file").dimmed()
+    format!("Use 'calcit docs remote-libs readme {module} --file <file>' to read a specific file").dimmed()
   );
 
   Ok(())

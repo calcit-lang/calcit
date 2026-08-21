@@ -41,14 +41,14 @@ related:
 开始修改前先读取当前 Agent 指南：
 
 ```bash
-cr docs agents --full
+calcit docs agents --full
 ```
 
 检查并规范化目标 Snapshot：
 
 ```bash
-cr calcit.cirru edit format
-cr calcit.cirru config show
+calcit calcit.cirru edit format
+calcit calcit.cirru config show
 git diff --exit-code -- calcit.cirru
 ```
 
@@ -74,8 +74,8 @@ CI 中运行 `edit format` 后必须检查 diff，否则“命令成功”只说
 先看覆盖摘要，再定位未解决的动态类型：
 
 ```bash
-cr calcit.cirru analyze check-types --summary-only
-cr calcit.cirru analyze weak-types \
+calcit calcit.cirru analyze check-types --summary-only
+calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved \
   --summary-only
@@ -94,14 +94,14 @@ cr calcit.cirru analyze weak-types \
 `check-types` 与 `weak-types` 是定位报告；`analyze quality` 是带非零失败退出的发布门禁。新类库直接使用零容忍：
 
 ```bash
-cr calcit.cirru analyze quality
+calcit calcit.cirru analyze quality
 ```
 
 存量类库先审阅现状并生成 baseline，再在 CI 中阻止回归：
 
 ```bash
-cr calcit.cirru analyze quality --write-baseline config/calcit-quality.json
-cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
+calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
 
 baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
@@ -120,8 +120,8 @@ GitHub PR 中默认不展开。任何 baseline 更新仍须人工展开并按 de
 对每个公开 namespace 执行 examples：
 
 ```bash
-cr calcit.cirru analyze check-examples --ns package.api
-cr calcit.cirru analyze check-examples --ns package.extra
+calcit calcit.cirru analyze check-examples --ns package.api
+calcit calcit.cirru analyze check-examples --ns package.extra
 ```
 
 定位单个定义时加 `--def <definition>`。`No functions with examples` 且退出 0 只表示没有 example 覆盖，不是验收通过；公开 API 应补 runnable example 或由明确的项目测试覆盖。
@@ -129,10 +129,10 @@ cr calcit.cirru analyze check-examples --ns package.extra
 验证 README 和 `docs/` 中的 Cirru 代码块：
 
 ```bash
-cr calcit.cirru docs format-md README.md --check
-cr calcit.cirru docs format-md docs/api.md --check
-cr calcit.cirru docs check-md README.md --failures-only
-cr calcit.cirru docs check-md docs/api.md --failures-only
+calcit calcit.cirru docs format-md README.md --check
+calcit calcit.cirru docs format-md docs/api.md --check
+calcit calcit.cirru docs check-md README.md --failures-only
+calcit calcit.cirru docs check-md docs/api.md --failures-only
 ```
 
 `format-md` 只规范 fenced Cirru 的文本格式；`--check` 不会写入文件，适合 CI。需要改写时省略 `--check`。如果文档示例使用额外 module，可重复传 `--dep <module-dir>`。第一个表达式可以是带 `:require` 的 `ns`，由 `check-md` 注入 eval 上下文。
@@ -142,12 +142,12 @@ cr calcit.cirru docs check-md docs/api.md --failures-only
 先做不执行业务入口的检查，再按 entry mode 验收：
 
 ```bash
-cr calcit.cirru --check-only
-cr calcit.cirru
-cr calcit.cirru --entry test
+calcit calcit.cirru --check-only
+calcit calcit.cirru
+calcit calcit.cirru --entry test
 ```
 
-默认运行是 once；只有热更新场景才使用 `-w` / `--watch`。entry 的 `:mode` 决定 native 运行或 JS 生成，因此项目脚本和 CI 应优先依赖统一 entry 配置。显式 `cr calcit.cirru js` 只用于兼容或针对性 codegen 验证。
+默认运行是 once；只有热更新场景才使用 `-w` / `--watch`。entry 的 `:mode` 决定 native 运行或 JS 生成，因此项目脚本和 CI 应优先依赖统一 entry 配置。显式 `calcit calcit.cirru js` 只用于兼容或针对性 codegen 验证。
 
 `--check-only` 会预处理所选 entry 的 `:init-fn` 与 `:reload-fn`；任何一个指向不存在或无法预处理的定义都应让验收失败。这能发现“正常启动暂时没走到 reload，所以旧配置被漏过”的问题。
 
@@ -158,37 +158,37 @@ cr calcit.cirru --entry test
 可以用 call graph 辅助发现无意遗留的定义：
 
 ```bash
-cr calcit.cirru analyze call-graph --show-unused --ns-prefix package
+calcit calcit.cirru analyze call-graph --show-unused --ns-prefix package
 ```
 
 这是 entry-relative 报告。公开 API、外部回调、替代入口和由消费者调用的定义都可能显示为 unreachable；不得仅凭该报告自动删除。发布前应把每个命中分类为：真正 dead code、公开 API、替代入口、动态/FFI 调用，或缺失测试覆盖。
 
 ## 6. 真实消费者回归
 
-CLI 查询、编辑、类型分析或公共 API 改动后，使用全局安装的新 `cr` 在 Respo 等真实项目验证：
+CLI 查询、编辑、类型分析或公共 API 改动后，使用全局安装的新 `calcit` 在 Respo 等真实项目验证：
 
 1. 让消费者指向待验收 module 版本或本地副本。
 2. 运行消费者自己的 `--check-only`、entry、测试和目标 codegen。
 3. 只需要大项目统计时使用 `--summary-only`。
-4. 有写入风险的 `cr edit` / `cr tree` 先作用于 Snapshot 临时副本。
+4. 有写入风险的 `calcit edit` / `calcit tree` 先作用于 Snapshot 临时副本。
 5. 记录消费者 commit、entry 和命令，避免只留下“手工试过”的结论。
 
 ## 7. 建议 CI 顺序
 
 ```bash
 caps --ci
-cr calcit.cirru edit format
+calcit calcit.cirru edit format
 git diff --exit-code -- calcit.cirru
-cr calcit.cirru --check-only
-cr calcit.cirru analyze check-types --summary-only --format json
-cr calcit.cirru analyze weak-types \
+calcit calcit.cirru --check-only
+calcit calcit.cirru analyze check-types --summary-only --format json
+calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved \
   --summary-only \
   --format json
-cr calcit.cirru analyze check-examples --ns package.api
-cr calcit.cirru docs check-md README.md --failures-only
-cr calcit.cirru --entry test
+calcit calcit.cirru analyze check-examples --ns package.api
+calcit calcit.cirru docs check-md README.md --failures-only
+calcit calcit.cirru --entry test
 ```
 
 在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。发布门禁统一执行 `analyze quality`：新类库要求零容忍，存量类库传入已审阅的 `--baseline`；该命令的非零退出码就是回归信号，`--format json` 只用于机器读取和保留定位证据。

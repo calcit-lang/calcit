@@ -13,9 +13,9 @@ aliases:
   - "quote code data boundary"
   - "empty collection constructor"
 entry_for:
-  - "cr cirru parse"
-  - "cr cirru format"
-  - "cr cirru show-guide"
+  - "calcit cirru parse"
+  - "calcit cirru format"
+  - "calcit cirru show-guide"
 ---
 
 ## Cirru Syntax Essentials
@@ -174,9 +174,9 @@ LLMs often forget the `|` prefix. **Always** use `|` for string literals, even s
 
 ### 3. Parse Success Is Not Semantic Success
 
-`cr cirru parse -e --validate '<expr>'` verifies Cirru tokens and shows the AST shape. It does not prove that Calcit will accept the resulting call structure. Forms such as `(range 3)`, `x $ (f a)`, `let (x 1) ...`, or a bare indented return value can parse successfully and still be wrong.
+`calcit cirru parse -e --validate '<expr>'` verifies Cirru tokens and shows the AST shape. It does not prove that Calcit will accept the resulting call structure. Forms such as `(range 3)`, `x $ (f a)`, `let (x 1) ...`, or a bare indented return value can parse successfully and still be wrong.
 
-After inspecting the JSON shape, use `cr eval`, `cr --check-only`, or the project's tests to verify semantics.
+After inspecting the JSON shape, use `calcit eval`, `calcit --check-only`, or the project's tests to verify semantics.
 
 ### 4. Arity Awareness
 
@@ -264,7 +264,7 @@ cond
 
 Input is automatically detected as JSON when it starts with `[` (Cirru JSON is always arrays, never objects). No flags needed.
 
-For `cr edit`, `cr tree`, and cursor mutation commands, the primary Cirru EDN form uses `quote` as a code/data boundary. It must wrap exactly one AST node and is removed before writing source:
+For `calcit edit`, `calcit tree`, and cursor mutation commands, the primary Cirru EDN form uses `quote` as a code/data boundary. It must wrap exactly one AST node and is removed before writing source:
 
 ```text
 symbol leaf:    quote new-name

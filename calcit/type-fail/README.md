@@ -6,16 +6,16 @@
 
 在项目根目录执行（都会返回非 0）:
 
-- `cargo run --bin cr -- calcit/type-fail/schema-required-arity.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/schema-rest-missing.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/schema-rest-unexpected.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/schema-kind-mismatch.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/schema-call-arg-type-mismatch.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/trait-method-generic-receiver-mismatch.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/generic-where-bound-mismatch.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/type-slot-bind-unknown.cirru --check-only`
-- `cargo run --bin cr -- calcit/type-fail/type-slot-bind-duplicate.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/schema-required-arity.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/schema-rest-missing.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/schema-rest-unexpected.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/schema-kind-mismatch.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/schema-call-arg-type-mismatch.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/trait-method-generic-receiver-mismatch.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/generic-where-bound-mismatch.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/type-slot-record-call-arg-type-mismatch.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-unknown.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/type-slot-bind-duplicate.cirru --check-only`
 
 其中：
 
@@ -35,13 +35,13 @@
 - call-site arg mismatch fixtures：断言产生 `W_FN_ARG_TYPE_MISMATCH` / `W_GENERIC_WHERE_BOUND_MISMATCH`
 - type-slot hard-fail fixtures：断言错误文本包含具体 slot 绑定失败原因
 
-相关测试位于 [src/bin/cr.rs](src/bin/cr.rs)。
+相关测试位于 [src/bin/calcit.rs](src/bin/calcit.rs)。
 
 日常单独跑这组测试时，可以直接使用：
 
 - `yarn test-fail`
 
-这个命令会执行 `cargo test -q --bin cr type_fail_`，专门覆盖这批 type-fail / schema-fail fixture 对应的测试。
+这个命令会执行 `cargo test -q --bin calcit type_fail_`，专门覆盖这批 type-fail / schema-fail fixture 对应的测试。
 
 ## 当前相关 code
 

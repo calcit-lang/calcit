@@ -34,7 +34,7 @@ xctrace record \
   --template "Time Profiler" \
   --output "$trace_path" \
   --launch -- \
-  cargo run --release --bin cr -- "$entry"
+  cargo run --release --bin calcit -- "$entry"
 
 echo
 echo "Summarizing hotspots..."

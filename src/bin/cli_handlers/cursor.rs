@@ -227,7 +227,7 @@ pub(crate) fn set_cursor_from_query_match(
 pub(crate) fn load_cursor_last_query(snapshot_file: &str) -> Result<CursorLastQuery, String> {
   load_cursor_document(snapshot_file)?
     .last_query
-    .ok_or("No repeatable cursor search is saved. Run `cr query search ... --set-cursor <index>` first.".to_string())
+    .ok_or("No repeatable cursor search is saved. Run `calcit query search ... --set-cursor <index>` first.".to_string())
 }
 
 fn concrete_cursor_path(path: &[usize]) -> String {
@@ -879,7 +879,7 @@ fn show_cursor_region(snapshot_file: &str, format: &str) -> Result<(), String> {
   let saved_anchor = document
     .anchor
     .clone()
-    .ok_or("No region anchor is set. Run `cr cursor anchor` first.")?;
+    .ok_or("No region anchor is set. Run `calcit cursor anchor` first.")?;
   let anchor = relocate_saved_state(snapshot_file, saved_anchor)?;
   let (parent_path, start, end) = cursor_region_bounds(&anchor, &active)?;
   let (parent, _) = read_cursor_target(snapshot_file, &active.target, &parent_path)?;
@@ -954,7 +954,7 @@ fn save_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
   let mut document = load_cursor_document(snapshot_file)?;
   if !document.marks.contains_key(name) && document.marks.len() == CURSOR_MARK_LIMIT {
     return Err(format!(
-      "Cursor mark limit ({CURSOR_MARK_LIMIT}) reached. Remove an unused mark with `cr cursor rm-mark <name>`."
+      "Cursor mark limit ({CURSOR_MARK_LIMIT}) reached. Remove an unused mark with `calcit cursor rm-mark <name>`."
     ));
   }
   document.marks.insert(name.to_string(), state.clone());
@@ -1063,7 +1063,7 @@ fn remove_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
 fn store_cursor_clipboard(snapshot_file: &str, mode: &str, cut: bool) -> Result<(), String> {
   let state = validate_cursor(snapshot_file, true)?;
   if cut && state.path.is_empty() {
-    return Err("Cannot cut the definition root. Use `cr edit mv-def` or replace the definition explicitly.".to_string());
+    return Err("Cannot cut the definition root. Use `calcit edit mv-def` or replace the definition explicitly.".to_string());
   }
   let (node, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
   let clipboard = CursorClipboard {
@@ -1117,7 +1117,7 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
   let clipboard = document
     .clipboard
     .clone()
-    .ok_or("Cursor clipboard is empty. Use `cr cursor copy` or `cr cursor cut` first.")?;
+    .ok_or("Cursor clipboard is empty. Use `calcit cursor copy` or `calcit cursor cut` first.")?;
   let operation = TreeOperation::from_insert_position(at)
     .ok_or_else(|| format!("Unsupported paste position '{at}'. Use before, after, prepend-child, append-child, or replace."))?;
 
@@ -1265,14 +1265,14 @@ pub(crate) fn maintain_cursor_after_tree_mutation(
     document.active.path = new_path;
     note = active_note;
     refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot).map_err(|error| {
-      format!("Snapshot mutation succeeded, but cursor maintenance failed: {error}. Run `cr cursor set` to select it again.")
+      format!("Snapshot mutation succeeded, but cursor maintenance failed: {error}. Run `calcit cursor set` to select it again.")
     })?;
   }
   transform_auxiliary_positions(&mut document, target, snapshot_file, &snapshot, |path| {
     transform_cursor_path(path, mutation).0
   })?;
   save_cursor_document(snapshot_file, &document).map_err(|error| {
-    format!("Snapshot mutation succeeded, but cursor state could not be saved: {error}. Run `cr cursor show` before editing again.")
+    format!("Snapshot mutation succeeded, but cursor state could not be saved: {error}. Run `calcit cursor show` before editing again.")
   })?;
 
   let detail = if document.active.target != target {
@@ -1300,7 +1300,7 @@ pub(crate) fn maintain_cursor_after_definition_move(snapshot_file: &str, source:
   if document.active.target == source {
     document.active.target = target.to_string();
     refresh_cursor_state_from_snapshot(&mut document.active, snapshot_file, &snapshot).map_err(|error| {
-      format!("Definition move succeeded, but cursor maintenance failed: {error}. Run `cr cursor set` to select it again.")
+      format!("Definition move succeeded, but cursor maintenance failed: {error}. Run `calcit cursor set` to select it again.")
     })?;
   }
   retarget_auxiliary_positions(&mut document, source, target, snapshot_file, &snapshot)?;
@@ -1366,7 +1366,7 @@ pub(crate) fn maintain_cursor_after_definition_delete(snapshot_file: &str, targe
   let document = load_cursor_document(snapshot_file)?;
   if document.active.target == target && CURSOR_AFTER_MODE.load(Ordering::Relaxed) != 0 {
     eprintln!(
-      "{} Selected definition '{target}' was deleted; the cursor is stale. Use `cr cursor back` or `cr cursor set`.",
+      "{} Selected definition '{target}' was deleted; the cursor is stale. Use `calcit cursor back` or `calcit cursor set`.",
       "[Cursor]".yellow().bold()
     );
   }
@@ -1381,7 +1381,7 @@ pub(crate) fn maintain_cursor_after_namespace_delete(snapshot_file: &str, namesp
   let cursor_namespace = parse_target(&document.active.target)?.0;
   if cursor_namespace == namespace && CURSOR_AFTER_MODE.load(Ordering::Relaxed) != 0 {
     eprintln!(
-      "{} Selected namespace '{namespace}' was deleted; the cursor is stale. Use `cr cursor back` or `cr cursor set`.",
+      "{} Selected namespace '{namespace}' was deleted; the cursor is stale. Use `calcit cursor back` or `calcit cursor set`.",
       "[Cursor]".yellow().bold()
     );
   }
@@ -1457,7 +1457,7 @@ pub(crate) fn maintain_cursor_after_any_mutation(snapshot_file: &str, detail: &s
     Err(error) => {
       if CURSOR_AFTER_MODE.load(Ordering::Relaxed) != 0 {
         eprintln!(
-          "{} Transaction committed, but the cursor needs attention: {error} Use `cr cursor back` or `cr cursor set`.",
+          "{} Transaction committed, but the cursor needs attention: {error} Use `calcit cursor back` or `calcit cursor set`.",
           "[Cursor]".yellow().bold()
         );
       }
@@ -1656,7 +1656,7 @@ fn validate_cursor_with_status(snapshot_file: &str, announce: bool) -> Result<(C
     Ok((state, "relocated"))
   } else {
     Err(format!(
-      "Cursor is stale: saved node at {} in '{}' has {} fingerprint match(es). Refusing to guess; run `cr cursor set <target> --path <path>`.",
+      "Cursor is stale: saved node at {} in '{}' has {} fingerprint match(es). Refusing to guess; run `calcit cursor set <target> --path <path>`.",
       format_path(&state.path),
       state.target,
       matches.len()
@@ -1790,7 +1790,7 @@ fn load_cursor_document_optional(snapshot_file: &str) -> Result<Option<CursorDoc
 fn load_cursor_document(snapshot_file: &str) -> Result<CursorDocument, String> {
   load_cursor_document_optional(snapshot_file)?.ok_or_else(|| {
     format!(
-      "No cursor is set. Use `cr cursor set <target> --path <path>` first (expected '{}').",
+      "No cursor is set. Use `calcit cursor set <target> --path <path>` first (expected '{}').",
       cursor_file_path(snapshot_file).display()
     )
   })
@@ -2094,7 +2094,7 @@ fn commit_cut_staged_files(staged_cursor: StagedFile, staged_snapshot: StagedFil
   })?;
   staged_snapshot.commit().map_err(|error| {
     format!(
-      "Cut was not applied because the staged snapshot could not be committed: {error}. The expression remains in source and is also recoverable from `cr cursor clipboard`."
+      "Cut was not applied because the staged snapshot could not be committed: {error}. The expression remains in source and is also recoverable from `calcit cursor clipboard`."
     )
   })
 }
@@ -2114,7 +2114,7 @@ fn commit_snapshot_then_cursor_staged_files(
     .map_err(|error| format!("{action} was not applied: {error}"))?;
   staged_cursor.commit().map_err(|error| {
     format!(
-      "{action} succeeded in the snapshot, but cursor state could not be updated: {error}. Do not retry blindly; run `cr cursor show` or `cr cursor set` first.{}",
+      "{action} succeeded in the snapshot, but cursor state could not be updated: {error}. Do not retry blindly; run `calcit cursor show` or `calcit cursor set` first.{}",
       if clipboard_available {
         " The clipboard remains available."
       } else {
@@ -2283,7 +2283,7 @@ mod tests {
     fs::create_dir(&snapshot_destination).expect("snapshot failure directory should be created");
 
     let error = commit_cut_staged_files(staged_cursor, staged_snapshot).expect_err("snapshot commit should fail");
-    assert!(error.contains("recoverable from `cr cursor clipboard`"), "error: {error}");
+    assert!(error.contains("recoverable from `calcit cursor clipboard`"), "error: {error}");
     assert_eq!(
       fs::read_to_string(&cursor_destination).expect("clipboard checkpoint should persist"),
       "clipboard"

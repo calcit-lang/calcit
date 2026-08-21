@@ -1,4 +1,4 @@
-//! Deprecated API usage analysis for `cr analyze deprecated`.
+//! Deprecated API usage analysis for `calcit analyze deprecated`.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;

@@ -1,6 +1,6 @@
 //! Query subcommand handlers
 //!
-//! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
+//! Handles: calcit query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{
@@ -1920,11 +1920,11 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     bindings_complete: false,
     static_methods: methods,
   };
-  let mut next = vec![format!("cr tree show '{namespace}/{definition}' --path '{semantic_path}'")];
+  let mut next = vec![format!("calcit tree show '{namespace}/{definition}' --path '{semantic_path}'")];
   if confidence != "exact" {
-    next.push(format!("cr query schema '{namespace}/{definition}'"));
+    next.push(format!("calcit query schema '{namespace}/{definition}'"));
     next.push(format!(
-      "cr analyze weak-types --ns '{namespace}' --intent unresolved --format json"
+      "calcit analyze weak-types --ns '{namespace}' --intent unresolved --format json"
     ));
   }
   let envelope = SemanticQueryEnvelope {
@@ -2334,20 +2334,20 @@ fn build_regular_context(
   };
 
   let mut next = vec![
-    format!("cr query schema {namespace}/{definition}"),
-    format!("cr docs graph explain {namespace}/{definition} --full"),
+    format!("calcit query schema {namespace}/{definition}"),
+    format!("calcit docs graph explain {namespace}/{definition} --full"),
   ];
   if data.code.truncated || data.code.tree.is_none() {
-    next.push(format!("cr query def {namespace}/{definition}"));
+    next.push(format!("calcit query def {namespace}/{definition}"));
   }
   if data.examples.truncated {
-    next.push(format!("cr query examples {namespace}/{definition}"));
+    next.push(format!("calcit query examples {namespace}/{definition}"));
   }
   if data.tests.truncated {
-    next.push(format!("cr query tests {namespace}/{definition}"));
+    next.push(format!("calcit query tests {namespace}/{definition}"));
   }
   if data.usages.truncated {
-    next.push(format!("cr query usages {namespace}/{definition}"));
+    next.push(format!("calcit query usages {namespace}/{definition}"));
   }
 
   Ok(SemanticQueryEnvelope {
@@ -2436,8 +2436,8 @@ fn build_special_builtin_context(
     data,
     diagnostics,
     next: vec![
-      format!("cr query def {namespace}/{definition}"),
-      format!("cr query examples {namespace}/{definition}"),
+      format!("calcit query def {namespace}/{definition}"),
+      format!("calcit query examples {namespace}/{definition}"),
     ],
   })
 }
@@ -3013,8 +3013,8 @@ fn handle_error(input_path: &str) -> Result<(), String> {
     if command_guidance_enabled() {
       println!();
       println!("{}", "Next steps:".blue().bold());
-      println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
-      println!("  • Run syntax check: {}", "cr --check-only".cyan());
+      println!("  • Start watcher: {} or {}", "calcit".cyan(), "calcit js".cyan());
+      println!("  • Run syntax check: {}", "calcit --check-only".cyan());
     }
     return Ok(());
   }
@@ -3049,9 +3049,9 @@ fn handle_error(input_path: &str) -> Result<(), String> {
     if command_guidance_enabled() {
       println!();
       println!("{}", "Next steps to fix:".blue().bold());
-      println!("  • Search for error location: {} '<symbol>'", "cr query search".cyan());
-      println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
-      println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
+      println!("  • Search for error location: {} '<symbol>'", "calcit query search".cyan());
+      println!("  • View definition: {} '<ns/def>'", "calcit query def".cyan());
+      println!("  • Find usages: {} '<ns/def>'", "calcit query usages".cyan());
       println!();
       println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
     }

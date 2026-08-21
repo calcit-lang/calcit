@@ -95,7 +95,7 @@ descriptor 已用于统一校验：
 
 ## 6. 验收标准（当前版本）
 
-1. `dylib-workflow` 在旧命名下可直接 `cr -1` 通过。
+1. `dylib-workflow` 在旧命名下可直接 `calcit -1` 通过。
 2. `call_registered_proc` 校验（arity/platform/callback）持续生效。
 3. ABI 版本保持 `0.0.9` 且调用链稳定。
 4. 相关测试保持通过（Rust tests + workflow 冒烟）。

@@ -6,7 +6,7 @@
 
 ## 1. 原则
 
-Calcit 的编辑对象是 EDN tree，不是文本行。`cr edit` / `cr tree` 的安全性应来自 revision、semantic selector、subtree fingerprint、preview 与原子写入；不应把行号 patch 作为主工作流。
+Calcit 的编辑对象是 EDN tree，不是文本行。`calcit edit` / `calcit tree` 的安全性应来自 revision、semantic selector、subtree fingerprint、preview 与原子写入；不应把行号 patch 作为主工作流。
 
 数字 path 依然有价值，但只代表某一个 snapshot revision 下的瞬时坐标。任何会改变同级节点的操作后，调用方必须重新查询或使用 selector/fingerprint。
 
@@ -30,7 +30,7 @@ dry-run 返回语义 diff、计划写入、受影响 definitions 和 diagnostics
 新增：
 
 ```bash
-cr edit transaction --file changes.cirru --dry-run --format json
+calcit edit transaction --file changes.cirru --dry-run --format json
 ```
 
 第一版 transaction 以 Cirru EDN 为主输入：外层 list 中，每个内层 list 是一条完整的 `edit`、`tree` 或 `config` 参数序列；`--code` 后可以直接嵌入 `quote` AST 节点，不需要把 Calcit 代码转义成字符串。JSON argument lists 仅作为兼容机器输入保留。这样不复制子命令的参数与校验语义；后续只有在 operation-level precondition 确有需要时，才在兼容此格式的基础上增加 typed operation record。
@@ -47,12 +47,12 @@ transaction 可包含 tree replace、definition/import/config 改动；整体通
 
 任何失败都不修改原 snapshot。输出保存 operation ID，方便 Agent 精确重试。
 
-当前实现进度（2026-07-28）：已加入 `cr edit transaction` 第一版，以可直接嵌入 quoted code 的 Cirru EDN argument lists 为主格式，同时兼容 JSON；支持 `--dry-run`、snapshot `--expect-revision`、human/JSON 输出、同目录 staging、最终 revision 复核与原子 rename。子命令仍作用于 staged snapshot，因此沿用已有 `edit/tree/config` 校验；失败与 stale revision 不写原文件。operation-level precondition、semantic diff 与 `--check-after` 留待后续阶段。
+当前实现进度（2026-07-28）：已加入 `calcit edit transaction` 第一版，以可直接嵌入 quoted code 的 Cirru EDN argument lists 为主格式，同时兼容 JSON；支持 `--dry-run`、snapshot `--expect-revision`、human/JSON 输出、同目录 staging、最终 revision 复核与原子 rename。子命令仍作用于 staged snapshot，因此沿用已有 `edit/tree/config` 校验；失败与 stale revision 不写原文件。operation-level precondition、semantic diff 与 `--check-after` 留待后续阶段。
 
 ## 4. 受影响范围验证
 
 ```bash
-cr analyze verify-changed --format json
+calcit analyze verify-changed --format json
 ```
 
 它读取 Git diff 或最近 transaction result，基于 usages、call graph、schema dependency 找到直接修改项与调用者；执行可信的静态检查，并区分 `executed`、`recommended`、`not_run`。JS/IR/WASM 与全量测试先作为推荐项，避免从不可靠图自动宣称“已全覆盖”。

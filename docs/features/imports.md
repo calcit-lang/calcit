@@ -1,6 +1,6 @@
 ---
 title: "Imports"
-summary: "命名空间导入语法：:require、:refer、:as、:default，以及 cr edit add-import/imports 命令管理"
+summary: "命名空间导入语法：:require、:refer、:as、:default，以及 calcit edit add-import/imports 命令管理"
 scope: "core"
 kind: "reference"
 category: "features"
@@ -15,8 +15,8 @@ aliases:
   - "add import"
   - "edit imports"
 entry_for:
-  - "cr edit add-import"
-  - "cr edit imports"
+  - "calcit edit add-import"
+  - "calcit edit imports"
   - "ns :require"
 ---
 
@@ -29,7 +29,7 @@ Calcit loads namespaces from `calcit.cirru` (legacy filename: `compact.cirru`). 
 - **Alias**: `:require (app.lib :as lib)`
 - **Refer**: `:require (app.lib :refer $ f1 f2)`
 - **Core**: `calcit.core` is auto-imported
-- **CLI Add**: `cr edit add-import app.main --code 'quote (app.lib :refer $ f1)'`
+- **CLI Add**: `calcit edit add-import app.main --code 'quote (app.lib :refer $ f1)'`
 
 ## The `ns` Form
 
@@ -109,7 +109,7 @@ Note the `|` prefix on npm package names — this indicates a string literal (th
 
 ## Validation and Dead-Code Analysis
 
-Import rules are validated both when a snapshot is loaded and before `cr edit add-import` or `cr edit imports` saves it. A rule must:
+Import rules are validated both when a snapshot is loaded and before `calcit edit add-import` or `calcit edit imports` saves it. A rule must:
 
 - contain exactly three items;
 - use one of `:as`, `:refer`, or `:default`;
@@ -122,7 +122,7 @@ Duplicate local aliases or referred symbols are recoverable. Calcit writes a war
 To find definitions that are not reachable from the configured entry function, run:
 
 ```bash
-cr calcit.cirru analyze call-graph --show-unused
+calcit calcit.cirru analyze call-graph --show-unused
 ```
 
 This is an entry-relative static analysis, not a proof that every reported definition is dead. Public functions, alternate entry points, and definitions invoked externally can appear in the report. It currently reports unreachable definitions rather than unused import declarations.
@@ -134,30 +134,30 @@ Circular dependencies (A imports B, B imports A) will cause a compilation error.
 - Core data types and pure functions in low-level namespaces
 - Side-effectful and orchestration code at higher levels
 
-## Using `cr edit` for Import Management
+## Using `calcit edit` for Import Management
 
-The `cr edit` CLI commands help manage imports safely:
+The `calcit edit` CLI commands help manage imports safely:
 
 ```bash
 # Add a new import to a namespace
-cr app.cirru edit add-import app.demo --code 'quote (app.util :refer $ helper)'
+calcit app.cirru edit add-import app.demo --code 'quote (app.util :refer $ helper)'
 
 # Override an existing import (same source namespace)
-cr app.cirru edit add-import app.demo --code 'quote (app.util :refer $ helper new-fn)' --overwrite
+calcit app.cirru edit add-import app.demo --code 'quote (app.util :refer $ helper new-fn)' --overwrite
 ```
 
-See `cr edit --help` for all available operations.
+See `calcit edit --help` for all available operations.
 
 ## Checking Imports
 
-Use `cr docs search` to look up what's available in a namespace before importing:
+Use `calcit docs search` to look up what's available in a namespace before importing:
 
 ```bash
-cr app.cirru docs search my-function
+calcit app.cirru docs search my-function
 ```
 
 or query the examples for a specific definition:
 
 ```bash
-cr app.cirru query examples calcit.core/map
+calcit app.cirru query examples calcit.core/map
 ```

@@ -79,26 +79,26 @@ pub fn print_command_echo(cli_args: &ToplevelCalcit) {
 fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
   let subcommand = cli_args.subcommand.as_ref()?;
   let snapshot_command = if cli_args.input == calcit::DEFAULT_SNAPSHOT_FILE {
-    "cr".to_owned()
+    "calcit".to_owned()
   } else {
-    format!("cr {}", format_atom(&cli_args.input))
+    format!("calcit {}", format_atom(&cli_args.input))
   };
   let mut tokens = vec![match subcommand {
     CalcitCommand::Query(cmd) => format!("{snapshot_command} query {}", query_name(&cmd.subcommand)),
     CalcitCommand::Docs(cmd) => match &cmd.subcommand {
       DocsSubcommand::RemoteLibs(opts) => match opts.subcommand.as_ref() {
-        Some(subcommand) => format!("cr docs remote-libs {}", libs_name(subcommand)),
-        None => "cr docs remote-libs".to_string(),
+        Some(subcommand) => format!("calcit docs remote-libs {}", libs_name(subcommand)),
+        None => "calcit docs remote-libs".to_string(),
       },
-      other => format!("cr docs {}", docs_name(other)),
+      other => format!("calcit docs {}", docs_name(other)),
     },
-    CalcitCommand::Libs(cmd) => format!("cr libs {}", libs_name(cmd.subcommand.as_ref()?)),
+    CalcitCommand::Libs(cmd) => format!("calcit libs {}", libs_name(cmd.subcommand.as_ref()?)),
     CalcitCommand::Edit(cmd) => format!("{snapshot_command} edit {}", edit_name(&cmd.subcommand)),
     CalcitCommand::Tree(cmd) => format!("{snapshot_command} tree {}", tree_name(&cmd.subcommand)),
     CalcitCommand::Cursor(cmd) => format!("{snapshot_command} cursor {}", cursor_name(&cmd.subcommand)),
     CalcitCommand::Config(cmd) => format!("{snapshot_command} config {}", config_name(&cmd.subcommand)),
     CalcitCommand::Analyze(cmd) => format!("{snapshot_command} analyze {}", analyze_name(&cmd.subcommand)),
-    CalcitCommand::Cirru(cmd) => format!("cr cirru {}", cirru_name(&cmd.subcommand)),
+    CalcitCommand::Cirru(cmd) => format!("calcit cirru {}", cirru_name(&cmd.subcommand)),
     CalcitCommand::Test(_) => format!("{snapshot_command} test"),
     _ => return None,
   }];

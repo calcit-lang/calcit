@@ -2,7 +2,7 @@
 //!
 //! The cache is deliberately independent from the normal docs search path in
 //! the first phase. It can be populated and consumed by later graph commands
-//! without making `cr docs search/read` depend on cache availability.
+//! without making `calcit docs search/read` depend on cache availability.
 
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};

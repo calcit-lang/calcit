@@ -8,7 +8,7 @@
 
 Calcit 源码以 EDN tree 保存，数字 path 只是某个 snapshot revision 下的瞬时坐标。复杂表达式需要连续执行 show、insert、wrap、replace、delete 等操作时，Agent 即使第一次选对节点，也可能因为前方兄弟节点增删而继续使用已经漂移的 path。
 
-引入项目本地 `.calcit/cursor.cirru` 与 `cr cursor`，保存当前选择的 namespace、definition 和 tree path。Cursor 不是新的源码身份，也不写进 snapshot；它是 CLI 在多次调用之间维护的结构化选择状态。`.calcit/` 同时作为 error、snippets 与后续模块链接等小型项目本地工件的统一目录，避免继续增加顶层隐藏文件。
+引入项目本地 `.calcit/cursor.cirru` 与 `calcit cursor`，保存当前选择的 namespace、definition 和 tree path。Cursor 不是新的源码身份，也不写进 snapshot；它是 CLI 在多次调用之间维护的结构化选择状态。`.calcit/` 同时作为 error、snippets 与后续模块链接等小型项目本地工件的统一目录，避免继续增加顶层隐藏文件。
 
 核心要求：一旦 cursor 已存在，任何作用于同一 definition 的 tree mutation 都必须尝试迁移 cursor。能够确定新位置时更新坐标并提示；不能确定时明确标为 stale 或移动到可证明安全的父节点，不允许静默指向另一个节点。
 
@@ -90,50 +90,50 @@ cursor 文件位于 snapshot 同目录的 `.calcit/`，使用目标文件所在�
 ## 3. CLI 契约
 
 ```bash
-cr cursor set app.main/render! --path @3.2.1
-cr cursor show
-cr cursor parent
-cr cursor child                 # first child
-cr cursor child 2
-cr cursor child --last          # last child
-cr cursor next --count 3
-cr cursor prev --count 2
-cr cursor forward --count 8
-cr cursor backward --count 5
-cr cursor back --count 4
-cr cursor push
-cr cursor pop
-cr cursor anchor
-cr cursor region
-cr cursor clear-anchor
-cr cursor mark render-start
-cr cursor goto render-start
-cr cursor marks
-cr cursor rm-mark render-start
-cr cursor apply swap-next
-cr cursor apply wrap --code 'quote $ when visible? self'
-cr cursor slurp-next
-cr cursor slurp-prev
-cr cursor barf-last
-cr cursor barf-first
-cr cursor duplicate --at after
-cr cursor copy
-cr cursor cut
-cr cursor paste --at after
-cr cursor clipboard
-cr cursor clear-clipboard
-cr cursor clear
+calcit cursor set app.main/render! --path @3.2.1
+calcit cursor show
+calcit cursor parent
+calcit cursor child                 # first child
+calcit cursor child 2
+calcit cursor child --last          # last child
+calcit cursor next --count 3
+calcit cursor prev --count 2
+calcit cursor forward --count 8
+calcit cursor backward --count 5
+calcit cursor back --count 4
+calcit cursor push
+calcit cursor pop
+calcit cursor anchor
+calcit cursor region
+calcit cursor clear-anchor
+calcit cursor mark render-start
+calcit cursor goto render-start
+calcit cursor marks
+calcit cursor rm-mark render-start
+calcit cursor apply swap-next
+calcit cursor apply wrap --code 'quote $ when visible? self'
+calcit cursor slurp-next
+calcit cursor slurp-prev
+calcit cursor barf-last
+calcit cursor barf-first
+calcit cursor duplicate --at after
+calcit cursor copy
+calcit cursor cut
+calcit cursor paste --at after
+calcit cursor clipboard
+calcit cursor clear-clipboard
+calcit cursor clear
 ```
 
 definition-oriented query/tree/edit 命令的 target 与 tree path 都可用 `@cursor` 引用 active cursor：
 
 ```bash
-cr query context @cursor --format json
-cr query type-at @cursor --path @cursor --format json
-cr tree show @cursor --path @cursor
-cr tree replace @cursor --path @cursor --code 'quote $ render-list items'
-cr tree wrap @cursor --path @cursor --code 'quote $ when visible? self'
-cr edit split-def @cursor --path @cursor --name render-items
+calcit query context @cursor --format json
+calcit query type-at @cursor --path @cursor --format json
+calcit tree show @cursor --path @cursor
+calcit tree replace @cursor --path @cursor --code 'quote $ render-list items'
+calcit tree wrap @cursor --path @cursor --code 'quote $ when visible? self'
+calcit edit split-def @cursor --path @cursor --name render-items
 ```
 
 对连续编辑中最常用的操作，`cursor apply <operation>` 进一步省略重复的 target 和 path，但内部仍构造并调用既有 tree 命令，不另外实现 mutation 语义。支持 `delete`、`swap-next`、`swap-prev`、`unwrap`、`raise`、`replace`、`wrap`、`insert-before`、`insert-after`、`insert-child` 与 `append-child`。其中 `unwrap` 的语义是把选中 list 的所有 child 展开到 parent，不承诺与包含额外语法节点的 wrap 模板严格互逆。
@@ -155,9 +155,9 @@ CURSOR
 编辑后的 cursor 回显由顶层参数控制：
 
 ```bash
-cr --cursor-after none calcit.cirru tree replace app.main/render! --path @cursor --code 'quote nil'
-cr --cursor-after summary calcit.cirru edit cp app.main/render! --from @3 --path @cursor
-cr --cursor-after focus calcit.cirru tree wrap app.main/render! --path @cursor --code 'quote $ when ok? self'
+calcit --cursor-after none calcit.cirru tree replace app.main/render! --path @cursor --code 'quote nil'
+calcit --cursor-after summary calcit.cirru edit cp app.main/render! --from @3 --path @cursor
+calcit --cursor-after focus calcit.cirru tree wrap app.main/render! --path @cursor --code 'quote $ when ok? self'
 ```
 
 `summary` 是默认值，只向 stderr 输出 target、更新后 path 与迁移原因；`focus` 额外输出结构聚焦预览；`none` 关闭自动回显。三种模式都不改变 cursor 的实际维护。
@@ -169,12 +169,12 @@ cr --cursor-after focus calcit.cirru tree wrap app.main/render! --path @cursor -
 搜索结果可直接成为 cursor，不需要 Agent 从展示文本复制 target/path：
 
 ```bash
-cr query search render-item --filter app.main/render! --exact --set-cursor 0
-cr query search-expr 'map items' --filter app.main/render! --set-cursor 1
-cr query search state --start-path @cursor --set-cursor 0
-cr query search-expr 'div $ {}' --start-path @cursor
-cr query next
-cr query prev
+calcit query search render-item --filter app.main/render! --exact --set-cursor 0
+calcit query search-expr 'map items' --filter app.main/render! --set-cursor 1
+calcit query search state --start-path @cursor --set-cursor 0
+calcit query search-expr 'div $ {}' --start-path @cursor
+calcit query next
+calcit query prev
 ```
 
 `query search` 与 `query search-expr` 在 human 输出为每个 match 显示稳定的全局 `[#N]`，JSON match 增加 `cursor_index`。`--filter @cursor` 限定当前 definition；`--start-path @cursor` 同时推导 definition filter 并把搜索根限制到当前 subtree，冲突 filter 直接报错。显式 `--set-cursor N` 采用同一排序后的结果，在返回查询结果前更新 sidecar；成功提示写 stderr，因此 `--format json` 的 stdout 仍是单个 JSON。越界或 dependency-only match 无法映射到当前可编辑 snapshot 时拒绝设置，并提示用 `--filter <project-namespace>` 缩小范围。`query next/prev` 从 last query 计算相邻 index、重新执行搜索并只回显新 cursor；若 snapshot revision 已变化则拒绝复用旧 index，要求重新执行原搜索选中结果，避免结果重排后跳错节点。
@@ -223,7 +223,7 @@ workspace/module 解析、全项目分析、namespace 批量更新与可复现 t
 
 ## 5. 外部变化与 stale 恢复
 
-`cr cursor show` 和 `--path @cursor` 每次都重新解析 snapshot：
+`calcit cursor show` 和 `--path @cursor` 每次都重新解析 snapshot：
 
 1. revision 与 fingerprint 均匹配时状态为 `exact`；
 2. revision 变化但 path fingerprint 仍匹配时刷新 revision，状态为 `verified-at-path`；
@@ -255,9 +255,9 @@ snapshot 与 cursor 是两个文件，无法依靠单次 rename 同时提交。�
 CLI 将引入项目本地 `cursor user`，取代进程间共享的 active selection：
 
 ```bash
-cr --cursor-user agent-a cursor show
-CALCIT_CURSOR_USER=agent-b cr tree show @cursor --path @cursor
-cr cursor show # 未指定时使用 default
+calcit --cursor-user agent-a cursor show
+CALCIT_CURSOR_USER=agent-b calcit tree show @cursor --path @cursor
+calcit cursor show # 未指定时使用 default
 ```
 
 解析优先级为 `--cursor-user` > `CALCIT_CURSOR_USER` > `default`。`@cursor`、history、stack、anchor、marks、last-query 和 clipboard 全部按 user 隔离；`cursor whoami/users` 提供发现接口。
@@ -269,7 +269,7 @@ source mutation 只立即迁移发起 user 的 cursor/anchor/marks；其他 user
 ## 7. 第一阶段实现范围
 
 1. Cirru EDN cursor 状态的读取、v1-v3→v4 兼容、旧路径一次性迁移、校验、64 KiB 上限和原子写入；
-2. `cr cursor set/show/clear/parent/child/next/prev/forward/backward/back/push/pop`，含末子节点、同级多步与跨 list 的深度优先导航；
+2. `calcit cursor set/show/clear/parent/child/next/prev/forward/backward/back/push/pop`，含末子节点、同级多步与跨 list 的深度优先导航；
 3. 结构化 `copy/cut/paste/clipboard`，clipboard 不经过文本序列化；
 4. definition-oriented query/tree/edit 接受 `@cursor` target；tree/type-at/edit 的 path 可同时引用 `@cursor`；
 5. `edit cp/mv/split-def` 接受 `@cursor`，definition replace/rename/move/delete 与 cursor 协作；

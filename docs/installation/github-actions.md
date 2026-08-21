@@ -41,14 +41,16 @@ Then install it after checkout. Do not repeat the Calcit version in the workflow
 - name: Enable Yarn
   run: corepack enable && corepack prepare yarn@4.12.0 --activate
 
-- uses: calcit-lang/setup-calcit@v1
+- uses: calcit-lang/setup-calcit@v2
 ```
 
 `setup-calcit` reads the selected `deps.cirru` when no explicit version input is supplied. A missing selected
 file is treated as a task without a project declaration, so it requires an explicit version; a file with
 no `:calcit-version` behaves the same way. Malformed or duplicate declarations fail rather than falling
 back to `version`. Do not provide two version sources for a regular project. The Action release controls
-installer behavior, while `:calcit-version` controls which `cr` and `caps` release the project uses.
+installer behavior, while `:calcit-version` controls which `calcit` and `caps` release the project uses. Version
+2 also adds `cr -> calcit` inside the Action tool directory so an existing `run: cr ...` command keeps working
+during workflow migration; new and edited commands should use `calcit`.
 
 Existing `calcit-lang/setup-cr` workflows remain supported by their published tags. GitHub Actions does
 not follow action-repository rename redirects, so use `setup-calcit` for new workflows and migrate an
@@ -69,10 +71,10 @@ locally:
 
 - name: Validate Snapshot and type quality
   run: |
-    cr calcit.cirru edit format
+    calcit calcit.cirru edit format
     git diff --exit-code -- calcit.cirru
-    cr calcit.cirru --check-only
-    cr calcit.cirru analyze quality --baseline config/calcit-quality.json
+    calcit calcit.cirru --check-only
+    calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
 
 The workflow above covers installation and the static layer. A project that emits JavaScript must add

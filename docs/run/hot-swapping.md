@@ -9,7 +9,7 @@ aliases:
   - "compact-inc"
   - "incremental compile"
 entry_for:
-  - "cr edit inc"
+  - "calcit edit inc"
 ---
 # Hot Swapping
 

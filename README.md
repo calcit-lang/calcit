@@ -20,7 +20,7 @@ Core design:
 Current direction:
 
 - `calcit.cirru` is the primary source snapshot; legacy `compact.cirru` is still compatible
-- CLI-first development with `cr` and `caps`, designed to work well with AI agents in terminal workflows
+- CLI-first development with `calcit` and `caps`, designed to work well with AI agents in terminal workflows
 - Better CLI editing and validation for CI, docs lookup, module management, and incremental updates
 
 ### Install ![GitHub Release](https://img.shields.io/github/v/release/calcit-lang/calcit)
@@ -32,21 +32,23 @@ Build and install with Rust:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # get Calcit user-facing tools
-cargo install calcit --bin cr --bin caps
+cargo install calcit --bin calcit --bin caps
 ```
 
 Installed binaries:
 
-- `cr`, the runtime and JS compiler
+- `calcit`, the runtime and JS compiler
 - `caps`, for downloading dependencies declared in `deps.cirru`
 
 When installing from source, install the same public tools:
 
 ```bash
-cargo install --path . --bin cr --bin caps
+cargo install --path . --bin calcit --bin caps
 ```
 
-For new GitHub Actions workflows, use [setup-calcit](https://github.com/calcit-lang/setup-calcit). Existing
+For new GitHub Actions workflows, use [setup-calcit@v2](https://github.com/calcit-lang/setup-calcit). It
+installs `calcit` and creates a lightweight `cr -> calcit` compatibility link for existing workflow commands.
+Local installations ship only `calcit`; migrate local scripts directly instead of relying on a wrapper. Existing
 [setup-cr](https://github.com/calcit-lang/setup-cr) workflow tags remain supported.
 
 ### Quick Start
@@ -54,32 +56,32 @@ For new GitHub Actions workflows, use [setup-calcit](https://github.com/calcit-l
 Evaluate snippets:
 
 ```bash
-cr eval 'range 100'
+calcit eval 'range 100'
 
-cr eval 'thread-first 100 range (map $ \ * % %)'
+calcit eval 'thread-first 100 range (map $ \ * % %)'
 ```
 
 Run with a runtime snapshot such as `calcit.cirru` (legacy filename: `compact.cirru`):
 
 ```bash
-cr calcit.cirru # run once (default)
-cr compact.cirru # legacy filename still works
+calcit calcit.cirru # run once (default)
+calcit compact.cirru # legacy filename still works
 
-cr # by default, it picks `calcit.cirru`, then falls back to `compact.cirru`
+calcit # by default, it picks `calcit.cirru`, then falls back to `compact.cirru`
 
-cr -w # watch mode (explicit flag required)
+calcit -w # watch mode (explicit flag required)
 ```
 
 By default Calcit reads `:init-fn` and `:reload-fn` from `calcit.cirru` configs (falling back to `compact.cirru`). You may also specify functions:
 
 ```bash
-cr --init-fn='app.main/main!' --reload-fn='app.main/reload!'
+calcit --init-fn='app.main/main!' --reload-fn='app.main/reload!'
 ```
 
 You may also configure `:entries` in `calcit.cirru`:
 
 ```bash
-cr --entry server
+calcit --entry server
 ```
 
 ### JavaScript codegen
@@ -87,8 +89,8 @@ cr --entry server
 Calcit compiles to JavaScript with consistent semantics. In browser or Node projects, JavaScript interop is still expected.
 
 ```bash
-cr js # compile to js, also picks `calcit.cirru` by default
-cr js --emit-path=out/ # compile to js and save in `out/`
+calcit js # compile to js, also picks `calcit.cirru` by default
+calcit js --emit-path=out/ # compile to js and save in `out/`
 ```
 
 By default, js code is generated to `js-out/`. You will need Vite or Node to run it, from an entry file:
@@ -105,11 +107,11 @@ The recommended workflow is plain text editing plus CLI validation, often driven
 Common commands:
 
 ```bash
-cr docs agents --full   # read the current agent workflow guide
-cr query search 'foo'   # locate code by symbol or string
-cr edit ...             # structured edits for defs, imports, config, modules
-cr js                   # compile once
-cr js -w                # watch mode
+calcit docs agents --full   # read the current agent workflow guide
+calcit query search 'foo'   # locate code by symbol or string
+calcit edit ...             # structured edits for defs, imports, config, modules
+calcit js                   # compile once
+calcit js -w                # watch mode
 caps                    # install/update dependencies from deps.cirru
 ```
 
@@ -175,16 +177,16 @@ Local validation commands:
 
 ```bash
 # run tests in Rust
-cargo run --bin cr -- calcit/test.cirru
+cargo run --bin calcit -- calcit/test.cirru
 
 # run tests in Node.js
-cargo run --bin cr -- calcit/test.cirru js && yarn try-js
+cargo run --bin calcit -- calcit/test.cirru js && yarn try-js
 
 # run snippet
-cargo run --bin cr -- eval 'range 100'
+cargo run --bin calcit -- eval 'range 100'
 
 # internal compiler/WASM validation when working on this repository
-cargo run --bin cr -- calcit/test.cirru ir
+cargo run --bin calcit -- calcit/test.cirru ir
 yarn try-wasm
 ```
 
