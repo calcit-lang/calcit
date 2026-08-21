@@ -289,7 +289,7 @@ const scenarios = [
     ],
     expectedStatus: 1,
     check(result) {
-      if (result.schema_version !== 1 || result.command !== "analyze.quality") {
+      if (result.schema_version !== 2 || result.command !== "analyze.quality") {
         throw new Error("unexpected analyze.quality envelope");
       }
       if (result.data.passed !== false || result.data.mode !== "strict-zero") {
@@ -297,6 +297,9 @@ const scenarios = [
       }
       if (result.data.violations.length === 0 || result.diagnostics[0]?.code !== "E_STATIC_QUALITY_REGRESSION") {
         throw new Error("quality gate failure lost regressions or structured diagnostics");
+      }
+      if (typeof result.data.metrics.unsafeCoerce !== "number") {
+        throw new Error("quality gate v2 lost the unsafeCoerce metric");
       }
     },
   },

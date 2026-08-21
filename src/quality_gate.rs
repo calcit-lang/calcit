@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize};
 use crate::deprecated_api;
 use crate::type_coverage::{self, CoverageLevel, WeakTypeIntent, WeakTypeKind};
 
-const QUALITY_BASELINE_SCHEMA_VERSION: u32 = 1;
+/// Version 2 adds the explicit unsafe-host-boundary budget. Version 1 native
+/// baselines remain valid and are read with a zero budget for that new metric,
+/// so existing projects can migrate deliberately instead of silently dropping
+/// the new check.
+const QUALITY_BASELINE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -25,10 +29,12 @@ pub struct QualityMetrics {
   pub unresolved: usize,
   pub declared_optional: usize,
   pub deprecated_calls: usize,
+  #[serde(default)]
+  pub unsafe_coerce: usize,
 }
 
 impl QualityMetrics {
-  fn values(&self) -> [(&'static str, usize); 8] {
+  fn values(&self) -> [(&'static str, usize); 9] {
     [
       ("typeNone", self.type_none),
       ("typeNotFull", self.type_not_full),
@@ -38,7 +44,23 @@ impl QualityMetrics {
       ("unresolved", self.unresolved),
       ("declaredOptional", self.declared_optional),
       ("deprecatedCalls", self.deprecated_calls),
+      ("unsafeCoerce", self.unsafe_coerce),
     ]
+  }
+
+  fn value(&self, metric: &str) -> usize {
+    match metric {
+      "typeNone" => self.type_none,
+      "typeNotFull" => self.type_not_full,
+      "schemaDynamic" => self.schema_dynamic,
+      "codeDynamic" => self.code_dynamic,
+      "codeNil" => self.code_nil,
+      "unresolved" => self.unresolved,
+      "declaredOptional" => self.declared_optional,
+      "deprecatedCalls" => self.deprecated_calls,
+      "unsafeCoerce" => self.unsafe_coerce,
+      _ => unreachable!("unknown quality metric: {metric}"),
+    }
   }
 
   fn add_assign(&mut self, other: &Self) {
@@ -50,6 +72,7 @@ impl QualityMetrics {
     self.unresolved += other.unresolved;
     self.declared_optional += other.declared_optional;
     self.deprecated_calls += other.deprecated_calls;
+    self.unsafe_coerce += other.unsafe_coerce;
   }
 }
 
@@ -120,8 +143,8 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
   let weak_options = WeakTypesCommand {
     ns: options.ns.clone(),
     ns_prefix: options.ns_prefix.clone(),
-    only: Some("schema-dynamic,unresolved-type-slot,code-dynamic,code-nil".to_owned()),
-    intent: Some("unresolved,declared-optional".to_owned()),
+    only: Some("schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce".to_owned()),
+    intent: Some("unresolved,declared-optional,explicit-unsafe".to_owned()),
     format: "json".to_owned(),
     deps: options.deps,
     summary_only: false,
@@ -164,10 +187,10 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
         WeakTypeKind::UnresolvedTypeSlot => {}
         WeakTypeKind::CodeDynamic => metrics.code_dynamic += 1,
         WeakTypeKind::CodeNil => metrics.code_nil += 1,
-        // Unsafe assertions are intentionally inventoried separately from the
-        // stable eight-metric quality baseline. A future baseline migration can
-        // promote this count into an enforced budget without reclassifying it.
-        WeakTypeKind::UnsafeCoerce => {}
+        // Unlike Dynamic debt, this is an explicit boundary. It has its own
+        // budget so intentional adapters remain visible without being folded
+        // into unresolved inference failures.
+        WeakTypeKind::UnsafeCoerce => metrics.unsafe_coerce += 1,
       }
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
@@ -203,38 +226,55 @@ fn sum_metrics<'a>(items: impl IntoIterator<Item = &'a QualityMetrics>) -> Quali
   total
 }
 
-fn compare_metrics(actual: &QualityMetrics, limit: &QualityMetrics, definition: Option<&str>) -> Vec<QualityViolation> {
+fn compare_metrics(
+  actual: &QualityMetrics,
+  limit: &QualityMetrics,
+  definition: Option<&str>,
+  include_unsafe_coerce: bool,
+) -> Vec<QualityViolation> {
   actual
     .values()
     .into_iter()
-    .zip(limit.values())
-    .filter(|((_, actual), (_, limit))| actual > limit)
-    .map(|((metric, actual), (_, limit))| QualityViolation {
-      definition: definition.map(str::to_owned),
-      metric: metric.to_owned(),
-      actual,
-      limit,
-      delta: actual - limit,
+    .filter(|(metric, _)| include_unsafe_coerce || *metric != "unsafeCoerce")
+    .filter_map(|(metric, actual)| {
+      let limit = limit.value(metric);
+      (actual > limit).then(|| QualityViolation {
+        definition: definition.map(str::to_owned),
+        metric: metric.to_owned(),
+        actual,
+        limit,
+        delta: actual - limit,
+      })
     })
     .collect()
 }
 
 fn compare_detailed_baseline(current: &QualitySnapshot, baseline: &QualityBaseline) -> Vec<QualityViolation> {
   let mut violations = vec![];
+  let include_unsafe_coerce = baseline.schema_version >= 2;
   for (definition, actual) in &current.definitions {
     let limit = baseline.definitions.get(definition).cloned().unwrap_or_default();
-    violations.extend(compare_metrics(actual, &limit, Some(definition)));
+    violations.extend(compare_metrics(actual, &limit, Some(definition), include_unsafe_coerce));
   }
   violations.sort_by(|left, right| left.definition.cmp(&right.definition).then(left.metric.cmp(&right.metric)));
   violations
+}
+
+fn reported_baseline_limits(current: &QualitySnapshot, baseline: &QualityBaseline) -> QualityMetrics {
+  let mut limits = baseline.metrics.clone();
+  // v1 predates the explicit unsafe metric. Preserve its original eight-metric
+  // gate and avoid reporting an unenforced positive delta as a regression.
+  if baseline.schema_version == 1 {
+    limits.unsafe_coerce = current.metrics.unsafe_coerce;
+  }
+  limits
 }
 
 fn metric_deltas(actual: &QualityMetrics, limit: &QualityMetrics) -> BTreeMap<String, i64> {
   actual
     .values()
     .into_iter()
-    .zip(limit.values())
-    .map(|((metric, actual), (_, limit))| (metric.to_owned(), actual as i64 - limit as i64))
+    .map(|(metric, actual)| (metric.to_owned(), actual as i64 - limit.value(metric) as i64))
     .collect()
 }
 
@@ -245,9 +285,9 @@ fn read_baseline(path: &Path) -> Result<Result<QualityBaseline, QualityMetrics>,
   if value.get("schemaVersion").is_some() {
     let baseline: QualityBaseline =
       serde_json::from_value(value).map_err(|error| format!("Invalid native quality baseline '{}': {error}", path.display()))?;
-    if baseline.schema_version != QUALITY_BASELINE_SCHEMA_VERSION {
+    if !matches!(baseline.schema_version, 1 | QUALITY_BASELINE_SCHEMA_VERSION) {
       return Err(format!(
-        "Unsupported quality baseline schemaVersion {} in '{}'; expected {}.",
+        "Unsupported quality baseline schemaVersion {} in '{}'; expected 1 or {}.",
         baseline.schema_version,
         path.display(),
         QUALITY_BASELINE_SCHEMA_VERSION
@@ -321,16 +361,22 @@ pub fn analyze_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) 
           ));
         }
         let violations = compare_detailed_baseline(&current, &baseline);
-        ("native-baseline".to_owned(), Some(path.clone()), baseline.metrics, violations)
+        let limits = reported_baseline_limits(&current, &baseline);
+        let mode = if baseline.schema_version == 1 {
+          "native-baseline-v1"
+        } else {
+          "native-baseline"
+        };
+        (mode.to_owned(), Some(path.clone()), limits, violations)
       }
       Err(legacy_limits) => {
-        let violations = compare_metrics(&current.metrics, &legacy_limits, None);
+        let violations = compare_metrics(&current.metrics, &legacy_limits, None, false);
         ("legacy-baseline".to_owned(), Some(path.clone()), legacy_limits, violations)
       }
     }
   } else {
     let limits = QualityMetrics::default();
-    let violations = compare_metrics(&current.metrics, &limits, None);
+    let violations = compare_metrics(&current.metrics, &limits, None, true);
     ("strict-zero".to_owned(), None, limits, violations)
   };
   let deltas = metric_deltas(&current.metrics, &limits);
@@ -378,11 +424,7 @@ pub fn format_quality_report(outcome: &QualityOutcome) -> String {
   let _ = writeln!(out, "- metrics:");
   for (metric, actual) in outcome.metrics.values() {
     if let Some(limits) = &outcome.limits {
-      let limit = limits
-        .values()
-        .into_iter()
-        .find_map(|(name, value)| (name == metric).then_some(value))
-        .unwrap_or_default();
+      let limit = limits.value(metric);
       let delta = actual as i64 - limit as i64;
       let _ = writeln!(out, "  - {metric}: {actual} (limit {limit}, delta {delta:+})");
     } else {
@@ -416,7 +458,7 @@ pub fn format_quality_json(outcome: &QualityOutcome) -> Result<String, String> {
     })]
   };
   let envelope = serde_json::json!({
-    "schema_version": 1,
+    "schema_version": 2,
     "command": "analyze.quality",
     "revision": outcome.revision,
     "data": {
@@ -461,6 +503,53 @@ mod tests {
     assert_eq!(parsed.type_none, 68);
     assert_eq!(parsed.schema_dynamic, 101);
     assert_eq!(parsed.unresolved, 136);
+    assert_eq!(parsed.unsafe_coerce, 0);
+  }
+
+  #[test]
+  fn v1_native_baseline_migrates_with_zero_unsafe_budget() {
+    let source = r#"{
+      "schemaVersion": 1,
+      "scope": {"namespace": null, "namespacePrefix": null, "includeDependencies": false},
+      "metrics": {"typeNone": 0, "typeNotFull": 0, "schemaDynamic": 0, "codeDynamic": 0, "codeNil": 0, "unresolved": 0, "declaredOptional": 0, "deprecatedCalls": 0},
+      "definitions": {}
+    }"#;
+    let path = std::env::temp_dir().join(format!("calcit-quality-v1-{}.json", std::process::id()));
+    fs::write(&path, source).expect("write v1 baseline");
+    let baseline = read_baseline(&path).expect("v1 baseline should parse").expect("native baseline");
+    fs::remove_file(&path).expect("remove v1 baseline");
+    assert_eq!(baseline.schema_version, 1);
+    assert_eq!(baseline.metrics.unsafe_coerce, 0);
+  }
+
+  #[test]
+  fn v1_baseline_does_not_enforce_the_new_unsafe_metric() {
+    let baseline = QualityBaseline {
+      schema_version: 1,
+      scope: QualityScope {
+        namespace: None,
+        namespace_prefix: None,
+        include_dependencies: false,
+      },
+      metrics: QualityMetrics::default(),
+      definitions: BTreeMap::from([("app/adapter".to_owned(), QualityMetrics::default())]),
+    };
+    let current = QualitySnapshot {
+      revision: "md5:test".to_owned(),
+      metrics: QualityMetrics {
+        unsafe_coerce: 1,
+        ..QualityMetrics::default()
+      },
+      definitions: BTreeMap::from([(
+        "app/adapter".to_owned(),
+        QualityMetrics {
+          unsafe_coerce: 1,
+          ..QualityMetrics::default()
+        },
+      )]),
+    };
+    assert!(compare_detailed_baseline(&current, &baseline).is_empty());
+    assert_eq!(reported_baseline_limits(&current, &baseline).unsafe_coerce, 1);
   }
 
   #[test]
@@ -501,7 +590,7 @@ mod tests {
       ..QualityMetrics::default()
     };
 
-    let violations = compare_metrics(&actual, &limit, None);
+    let violations = compare_metrics(&actual, &limit, None, true);
     assert_eq!(violations.len(), 1);
     assert_eq!(violations[0].metric, "codeNil");
     assert_eq!(violations[0].delta, 1);
