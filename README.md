@@ -46,7 +46,8 @@ When installing from source, install the same public tools:
 cargo install --path . --bin cr --bin caps
 ```
 
-To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/setup-cr).
+For new GitHub Actions workflows, use [setup-calcit](https://github.com/calcit-lang/setup-calcit). Existing
+[setup-cr](https://github.com/calcit-lang/setup-cr) workflow tags remain supported.
 
 ### Quick Start
 
@@ -118,20 +119,16 @@ Related examples and workflows:
 
 - [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md)
 - [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit-workflow)
-- [setup-cr](https://github.com/calcit-lang/setup-cr) for GitHub Actions
+- [setup-calcit](https://github.com/calcit-lang/setup-calcit) for new GitHub Actions workflows
 
 ### Modules
 
 `deps.cirru` declares dependencies that need to download, which correspond to repositories on GitHub. Specify a branch or a tag:
 
 ```cirru
-{}
-  :calcit-version |0.9.11
-  :dependencies $ {}
-    |calcit-lang/memof |0.0.11
-    |calcit-lang/lilac |main
-  :dev-dependencies $ {}
-    |calcit-lang/calcit-test |0.1.0
+{} (:calcit-version |0.9.11)
+  :dependencies $ {} (|calcit-lang/memof |0.0.11) (|calcit-lang/lilac |main)
+  :dev-dependencies $ {} (|calcit-lang/calcit-test |0.1.0)
 ```
 
 Run `caps` to resolve the recursive dependency graph and install it. Immutable revisions are stored under
@@ -148,7 +145,7 @@ Root projects install both `:dependencies` and `:dev-dependencies`. Recursive re
 `:dependencies`, so test and maintenance modules declared by a dependency do not leak into consumers.
 Use `caps add --dev <org/repo>@<ref>` and `caps remove --dev <org/repo>` to manage the development group.
 
-`:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-cr).
+`:calcit-version` helps with version checks and provides hints in [CI](https://github.com/calcit-lang/setup-calcit).
 
 To load modules, use `:modules` configuration and the runtime snapshot file `calcit.cirru` (legacy: `compact.cirru`):
 

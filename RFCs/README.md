@@ -1,6 +1,6 @@
 # RFC 整理索引
 
-更新时间：2026-08-18
+更新时间：2026-08-21
 
 ## 目录原则
 
@@ -37,7 +37,6 @@
 | `07-26-safe-structured-editing-rfc.md`              | Draft         | revision/fingerprint 前置条件、事务编辑、语义 diff 与受影响范围验证。                                                  |
 | `07-26-agent-docs-and-evaluation-rfc.md`            | Draft         | 结构化文档上下文、默认检索范围和 Agent 接口基准。                                                                        |
 | `07-28-git-module-store-rfc.md`                     | Draft         | 保持 `deps.cirru` 与 Git 模块路径，以 tag 为最佳实践并使用 pnpm 式全局目录存储；不引入 registry、lockfile、workspace 或多版本。 |
-| `07-28-project-tooling-contract-rfc.md`             | Draft         | 在既有 `cr` 子命令上补强单项目工具契约，保持 EDN 树形事实来源。                                                        |
 | `07-28-persistent-tree-cursor-rfc.md`               | Draft         | `.calcit/` 本地状态、虚拟 cursor、region/marks/last-query、结构化 clipboard 与 path 迁移。                            |
 | `08-14-architecture-scaffold-rfc.md`                | Implemented   | Cirru EDN architecture graph、existing-definition reconciliation、atomic scaffold apply、work items 与多 Agent 分工边界。 |
 | `08-14-todo-placeholder-rfc.md`                      | Partial       | compiler-known `todo!`、`W_TODO` 与 native/JS/WASM 中止行为已落地；完整 Never/control-flow inference 后续实现。 |
@@ -45,6 +44,10 @@
 | `08-05-systematic-nil-reduction-rfc.md`              | Partial       | 类型驱动减少 nil：先拆分可省略参数与 nullable 值，再迁移至 Option/Result 并逐步收紧 typed code。                  |
 | `08-08-cross-backend-host-ffi-contracts-rfc.md`      | Draft         | 统一 JS/native/WASM/WASI 的逻辑 FFI 契约与诊断，ABI transport 保持 backend-specific；首个完整 shape consumer 为 JS/DOM。 |
 | `08-18-calcit-typed-js-ffi-boundary-rfc.md`           | Draft         | 在现有 Struct/Enum/Fn/trait 上补齐 JS capability gate 与 target validation；FFI metadata 不进入普通 trait 匹配和泛型推断。 |
+| `08-21-setup-cr-version-and-toolchain-contract-rfc.md` | Draft       | 以 `deps.cirru` 为正常项目的唯一 Calcit 版本来源，补齐 setup-cr 的冲突检测、缓存、自检、outputs 与工具选择。 |
+| `08-21-type-quality-ci-adoption-rfc.md`               | Draft       | 统一使用原生 `analyze quality` 与按 definition baseline，定义生态 CI 层级并禁止各项目重复实现 JS 汇总脚本。 |
+| `08-21-js-ffi-runtime-contract-validation-rfc.md`     | Draft       | 在现有 typed JS FFI 声明之上增加 host guard、decoder、runtime contract tests 与 unsafe evidence。 |
+| `08-21-static-type-system-evolution-roadmap.md`       | Draft       | 借鉴 Rust/MoonBit 推进 Unknown/Dynamic 分离、穷尽性、局部推断、trait coherence 与框架类型化。 |
 
 ## 已执行的清理
 
