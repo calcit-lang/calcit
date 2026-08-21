@@ -62,6 +62,14 @@ jobs:
 
       - run: cargo build --release
 
+      - name: Generate release asset manifest
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: >
+          node scripts/release-manifest.mjs "$RELEASE_TAG"
+          target/release/calcit target/release/caps target/release/cr-wasm
+          > target/release/calcit-release-manifest.json
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -69,6 +77,7 @@ jobs:
             target/release/calcit
             target/release/cr-wasm
             target/release/caps
+            target/release/calcit-release-manifest.json
 
       - uses: katyo/publish-crates@v1
         with:
