@@ -79,6 +79,9 @@ calcit analyze weak-types --ns app.main --only code-nil --intent unresolved,decl
 # Inspect explicitly permitted JS FFI dynamic boundaries
 calcit analyze weak-types --ns app.main --intent intentional-js-ffi
 
+# Inventory every explicit unchecked JS FFI assertion with its target schema
+calcit analyze weak-types --ns app.main --only unsafe-coerce
+
 # Machine-readable definition rows and Snapshot paths
 calcit analyze check-types --ns app.main --format json
 calcit analyze weak-types --ns app.main --intent unresolved --format json
@@ -103,6 +106,8 @@ calcit query type-at app.main/calculate-total --path code@3.2 --format json
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. Neither hides the location, but both separate an explicit boundary choice from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
 For `code-nil`, the report includes both raw `nil` and the explicit `;nil` Unit marker. Every nil form inside a function declared to return `Unit` is classified as `declared-unit`; `;nil` is also always classified as explicit Unit, including inside generated macro branches. For legacy `Optional<T>`, only structurally proven return positions inherit `declared-optional`; embedded nil values remain unresolved. `declared-unit` is excluded from migration debt, while `declared-optional` remains visible so application APIs move to `Option` or `Result`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-optional` and requires no findings.
+
+`unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. It is an inventory, not ordinary unresolved Dynamic debt, so the existing quality baseline stays stable while each boundary is audited. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.
 
 For one definition, `calcit query context '<ns/def>' --format json` embeds the same distinction in its diagnostics and returns the definition revision together with Snapshot paths.
 
@@ -134,7 +139,7 @@ warning remains a completion-gate failure until the body is implemented.
 `raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
 and implementation-completion status are separate concerns.
 
-`analyze.weak-types` uses protocol `schema_version: 3`: v2 added nil intent classes, and v3 adds the closed `unresolved-type-slot` kind plus `W_UNRESOLVED_TYPE_SLOT`. Consumers should reject older versions when they require these fields rather than accepting an older envelope and silently missing the new debt.
+`analyze.weak-types` uses protocol `schema_version: 4`: v2 added nil intent classes, v3 added the closed `unresolved-type-slot` kind plus `W_UNRESOLVED_TYPE_SLOT`, and v4 adds the closed `unsafe-coerce` kind, `explicit-unsafe` intent, target-schema detail, and `W_JS_FFI_UNCHECKED_COERCE`. Consumers should reject older versions when they require these fields rather than accepting an older envelope and silently missing the new debt.
 
 Use `--summary-only` when only aggregate counts are needed. Human output stops after the aggregate section; JSON keeps `data.summary` and the scope revision while returning an empty `data.definitions` array. `defstruct`, `defenum`, `deftrait`, and `defimpl` have explicit definition-kind schemas: `StructDef`, `EnumDef`, `Trait`, and `Impl`. Legacy snapshots that used `Dynamic` at these roots are normalized on load and written back with the marker. Their fields, enum payloads, and methods are still analyzed normally, but the declaration root itself neither creates a `schema-dynamic` finding nor increases Dynamic usage counts.
 

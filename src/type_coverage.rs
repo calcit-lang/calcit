@@ -124,6 +124,7 @@ pub enum WeakTypeKind {
   UnresolvedTypeSlot,
   CodeDynamic,
   CodeNil,
+  UnsafeCoerce,
 }
 
 impl WeakTypeKind {
@@ -133,11 +134,18 @@ impl WeakTypeKind {
       Self::UnresolvedTypeSlot => "unresolved-type-slot",
       Self::CodeDynamic => "code-dynamic",
       Self::CodeNil => "code-nil",
+      Self::UnsafeCoerce => "unsafe-coerce",
     }
   }
 
   pub fn all() -> BTreeSet<Self> {
-    BTreeSet::from([Self::SchemaDynamic, Self::UnresolvedTypeSlot, Self::CodeDynamic, Self::CodeNil])
+    BTreeSet::from([
+      Self::SchemaDynamic,
+      Self::UnresolvedTypeSlot,
+      Self::CodeDynamic,
+      Self::CodeNil,
+      Self::UnsafeCoerce,
+    ])
   }
 }
 
@@ -146,6 +154,7 @@ pub enum WeakTypeIntent {
   Unresolved,
   IntentionalJsFfi,
   IntentionalTypeSlotDynamic,
+  ExplicitUnsafe,
   DeclaredUnit,
   DeclaredOptional,
 }
@@ -156,6 +165,7 @@ impl WeakTypeIntent {
       Self::Unresolved => "unresolved",
       Self::IntentionalJsFfi => "intentional-js-ffi",
       Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
+      Self::ExplicitUnsafe => "explicit-unsafe",
       Self::DeclaredUnit => "declared-unit",
       Self::DeclaredOptional => "declared-optional",
     }
@@ -166,6 +176,7 @@ impl WeakTypeIntent {
       Self::Unresolved,
       Self::IntentionalJsFfi,
       Self::IntentionalTypeSlotDynamic,
+      Self::ExplicitUnsafe,
       Self::DeclaredUnit,
       Self::DeclaredOptional,
     ])
@@ -305,9 +316,10 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
       "unresolved-type-slot" => WeakTypeKind::UnresolvedTypeSlot,
       "code-dynamic" => WeakTypeKind::CodeDynamic,
       "code-nil" => WeakTypeKind::CodeNil,
+      "unsafe-coerce" => WeakTypeKind::UnsafeCoerce,
       other => {
         return Err(format!(
-          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil"
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce"
         ));
       }
     };
@@ -316,7 +328,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
 
   if selected.is_empty() {
     return Err(
-      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil"
+      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce"
         .to_owned(),
     );
   }
@@ -332,11 +344,12 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       "unresolved" => WeakTypeIntent::Unresolved,
       "intentional-js-ffi" => WeakTypeIntent::IntentionalJsFfi,
       "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
+      "explicit-unsafe" => WeakTypeIntent::ExplicitUnsafe,
       "declared-unit" => WeakTypeIntent::DeclaredUnit,
       "declared-optional" => WeakTypeIntent::DeclaredOptional,
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, declared-unit, declared-optional"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
         ));
       }
     };
@@ -345,7 +358,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, declared-unit, declared-optional"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
         .to_owned(),
     );
   }
@@ -507,6 +520,9 @@ fn scan_schema_dynamic_annotation(
 }
 
 fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
+  if occurrence.kind == WeakTypeKind::UnsafeCoerce {
+    return "Keep this assertion in a small `:js-ffi` adapter, validate or normalize the host value into Option, Result, a struct, or an enum before it reaches application code, and add positive and negative runtime-contract tests.";
+  }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
   }
@@ -555,6 +571,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
 }
 
 fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
+  if occurrence.kind == WeakTypeKind::UnsafeCoerce {
+    return "This explicit assertion bypasses static compatibility at the host boundary; an incompatible JavaScript value can enter typed code and fail only at runtime.";
+  }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "The value stays dynamic at an explicit boundary; typed callers must validate or convert it before relying on methods or generic relations.";
   }
@@ -776,6 +795,22 @@ fn scan_cirru_weak_types(
           // when it appears inside a macro-generated branch.
           occurrence.intent = WeakTypeIntent::DeclaredUnit;
         }
+      }
+      if root == "code"
+        && selected.contains(&WeakTypeKind::UnsafeCoerce)
+        && matches!(head.as_deref(), Some("unsafe-coerce"))
+        && !matches!(parent.and_then(|it| it.head.as_deref()), Some("quote" | "quasiquote"))
+      {
+        let target = items
+          .get(2)
+          .map(render_cirru_inline)
+          .unwrap_or_else(|| "<missing-target>".to_owned());
+        occurrences.push(WeakTypeOccurrence {
+          kind: WeakTypeKind::UnsafeCoerce,
+          intent: WeakTypeIntent::ExplicitUnsafe,
+          detail: format!("unsafe-coerce:target={target}"),
+          path: format_cirru_path(root, path),
+        });
       }
       for (idx, item) in items.iter().enumerate() {
         path.push(idx);
@@ -1040,18 +1075,20 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   }
   let _ = writeln!(
     out,
-    "- hits: schema-dynamic={} unresolved-type-slot={} code-dynamic={} code-nil={}",
+    "- hits: schema-dynamic={} unresolved-type-slot={} code-dynamic={} code-nil={} unsafe-coerce={}",
     kind_count.get("schema-dynamic").copied().unwrap_or(0),
     kind_count.get("unresolved-type-slot").copied().unwrap_or(0),
     kind_count.get("code-dynamic").copied().unwrap_or(0),
-    kind_count.get("code-nil").copied().unwrap_or(0)
+    kind_count.get("code-nil").copied().unwrap_or(0),
+    kind_count.get("unsafe-coerce").copied().unwrap_or(0)
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} intentional-type-slot-dynamic={} declared-unit={} declared-optional={}",
+    "- intents: unresolved={} intentional-js-ffi={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={} declared-optional={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
     intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
+    intent_count.get("explicit-unsafe").copied().unwrap_or(0),
     intent_count.get("declared-unit").copied().unwrap_or(0),
     intent_count.get("declared-optional").copied().unwrap_or(0)
   );
@@ -1106,11 +1143,32 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
       "- next: filter `--only code-nil --intent unresolved,declared-optional`; declare Unit and remove redundant nil/`;nil` for no-value returns, then prefer Option/Result for application absence or failure."
     );
   }
+  let unsafe_coercions = rows
+    .iter()
+    .flat_map(|row| row.occurrences.iter())
+    .filter(|occurrence| occurrence.kind == WeakTypeKind::UnsafeCoerce)
+    .count();
+  if unsafe_coercions > 0 {
+    let _ = writeln!(
+      out,
+      "- agent-note: {unsafe_coercions} explicit unsafe coercion(s) cross a JS FFI boundary and need a documented runtime contract."
+    );
+    let _ = writeln!(
+      out,
+      "- next: rerun with `--only unsafe-coerce`; keep each assertion in a minimal adapter and add positive and negative boundary-contract tests."
+    );
+  }
   if options.summary_only {
     return Ok(());
   }
   let _ = writeln!(out, "- detail:");
-  for kind in ["schema-dynamic", "unresolved-type-slot", "code-dynamic", "code-nil"] {
+  for kind in [
+    "schema-dynamic",
+    "unresolved-type-slot",
+    "code-dynamic",
+    "code-nil",
+    "unsafe-coerce",
+  ] {
     let _ = writeln!(out, "  - {kind}");
     if let Some(items) = detail_count.get(kind) {
       for (detail, count) in items {
@@ -2347,13 +2405,20 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       *intents.entry(occurrence.intent.as_str()).or_insert(0) += 1;
     }
   }
-  for kind in ["schema-dynamic", "unresolved-type-slot", "code-dynamic", "code-nil"] {
+  for kind in [
+    "schema-dynamic",
+    "unresolved-type-slot",
+    "code-dynamic",
+    "code-nil",
+    "unsafe-coerce",
+  ] {
     kinds.entry(kind).or_insert(0);
   }
   for intent in [
     "unresolved",
     "intentional-js-ffi",
     "intentional-type-slot-dynamic",
+    "explicit-unsafe",
     "declared-unit",
     "declared-optional",
   ] {
@@ -2402,6 +2467,11 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredOptional)
     })
     .count();
+  let unsafe_coercions = rows
+    .iter()
+    .flat_map(|row| row.occurrences.iter())
+    .filter(|occurrence| occurrence.kind == WeakTypeKind::UnsafeCoerce)
+    .count();
   let mut diagnostics = vec![];
   if unresolved_dynamic > 0 {
     diagnostics.push(serde_json::json!({
@@ -2430,8 +2500,17 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "suggestion": "Declare Unit and remove redundant nil/`;nil` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
     }));
   }
+  if unsafe_coercions > 0 {
+    diagnostics.push(serde_json::json!({
+      "code": "W_JS_FFI_UNCHECKED_COERCE",
+      "phase": "analysis",
+      "severity": "warning",
+      "message": format!("{unsafe_coercions} explicit unsafe coercion(s) bypass static compatibility at a JS FFI boundary."),
+      "suggestion": "Keep each assertion in a minimal adapter, validate or normalize host values before application code consumes them, and add positive and negative runtime-contract tests.",
+    }));
+  }
   let envelope = serde_json::json!({
-    "schema_version": 3,
+    "schema_version": 4,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {
