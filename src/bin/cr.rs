@@ -2245,7 +2245,7 @@ mod tests {
     };
 
     let row = type_coverage::analyze_weak_types_entry(
-      "app.npm",
+      "js-ffi.raw.ids",
       "load-id",
       &entry,
       &BTreeSet::from([type_coverage::WeakTypeKind::UnsafeCoerce]),
@@ -2257,6 +2257,88 @@ mod tests {
     assert_eq!(occurrence.intent, type_coverage::WeakTypeIntent::ExplicitUnsafe);
     assert_eq!(occurrence.path, "code@3");
     assert_eq!(occurrence.detail, "unsafe-coerce:target='String");
+    assert_eq!(
+      occurrence.unsafe_evidence,
+      Some(type_coverage::UnsafeCoerceEvidence {
+        source_form: "raw-js-value",
+        target_schema: "'String".to_owned(),
+        js_ffi_feature: true,
+        raw_adapter_namespace: true,
+      })
+    );
+
+    let mut snapshot = snapshot::Snapshot {
+      package: "js-ffi".to_owned(),
+      ..snapshot::Snapshot::default()
+    };
+    snapshot.files.insert(
+      "js-ffi.raw.ids".to_owned(),
+      snapshot::FileInSnapShot {
+        ns: snapshot::NsEntry {
+          doc: String::new(),
+          code: list(vec![leaf("ns"), leaf("js-ffi.raw.ids")]),
+        },
+        defs: std::collections::HashMap::from([("load-id".to_owned(), entry)]),
+      },
+    );
+    let options = WeakTypesCommand {
+      ns: Some("js-ffi.raw.ids".to_owned()),
+      ns_prefix: None,
+      only: Some("unsafe-coerce".to_owned()),
+      intent: None,
+      format: "json".to_owned(),
+      deps: false,
+      summary_only: false,
+    };
+    let json = type_coverage::format_weak_types_json(&options, &snapshot).expect("unsafe evidence JSON should format");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("unsafe evidence JSON should parse");
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(
+      value["data"]["definitions"][0]["occurrences"][0]["evidence"]["source_form"],
+      "raw-js-value"
+    );
+    assert_eq!(
+      value["data"]["definitions"][0]["occurrences"][0]["evidence"]["js_ffi_feature"],
+      true
+    );
+    assert_eq!(
+      value["data"]["definitions"][0]["occurrences"][0]["evidence"]["raw_adapter_namespace"],
+      true
+    );
+  }
+
+  #[test]
+  fn analyze_weak_types_skips_nested_quoted_unsafe_coerce_but_keeps_unquote() {
+    let unsafe_coerce = || list(vec![leaf("unsafe-coerce"), leaf("value"), leaf("String")]);
+    let entry = code_entry(
+      list(vec![
+        leaf("defn"),
+        leaf("template"),
+        list(vec![]),
+        list(vec![leaf("quote"), list(vec![leaf("do"), unsafe_coerce()])]),
+        list(vec![leaf("quasiquote"), list(vec![leaf("do"), unsafe_coerce()])]),
+        list(vec![
+          leaf("quasiquote"),
+          list(vec![leaf("do"), list(vec![leaf("~"), unsafe_coerce()])]),
+        ]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+
+    let row = type_coverage::analyze_weak_types_entry(
+      "app.macro",
+      "template",
+      &entry,
+      &BTreeSet::from([type_coverage::WeakTypeKind::UnsafeCoerce]),
+    )
+    .expect("the quasiquote unquote should remain executable");
+
+    assert_eq!(row.occurrences.len(), 1, "occurrences: {:?}", row.occurrences);
+    assert_eq!(row.occurrences[0].path, "code@5.1.1.1");
+    assert_eq!(
+      row.occurrences[0].unsafe_evidence.as_ref().map(|evidence| evidence.source_form),
+      Some("value")
+    );
   }
 
   #[test]
@@ -2371,7 +2453,7 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
-    assert_eq!(weak_value["schema_version"], 4);
+    assert_eq!(weak_value["schema_version"], 5);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");

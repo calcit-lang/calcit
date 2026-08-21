@@ -189,6 +189,18 @@ pub struct WeakTypeOccurrence {
   pub intent: WeakTypeIntent,
   pub detail: String,
   pub path: String,
+  pub unsafe_evidence: Option<UnsafeCoerceEvidence>,
+}
+
+/// Static evidence attached only to an explicit `unsafe-coerce` boundary.
+/// It intentionally describes source *form*, not an inferred host value type:
+/// `analyze weak-types` reads a Snapshot and never executes the program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsafeCoerceEvidence {
+  pub source_form: &'static str,
+  pub target_schema: String,
+  pub js_ffi_feature: bool,
+  pub raw_adapter_namespace: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -430,6 +442,7 @@ fn push_weak_type_occurrence(
     intent: WeakTypeIntent::Unresolved,
     detail: detail.into(),
     path: path.into(),
+    unsafe_evidence: None,
   });
 }
 
@@ -521,7 +534,10 @@ fn scan_schema_dynamic_annotation(
 
 fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.kind == WeakTypeKind::UnsafeCoerce {
-    return "Keep this assertion in a small `:js-ffi` adapter, validate or normalize the host value into Option, Result, a struct, or an enum before it reaches application code, and add positive and negative runtime-contract tests.";
+    if occurrence.unsafe_evidence.as_ref().is_some_and(|evidence| !evidence.js_ffi_feature) {
+      return "Declare `:features $ #{} :js-ffi` on this adapter first, then keep the assertion narrow, validate or normalize untrusted runtime data before application code consumes it, and add positive and negative runtime-contract tests.";
+    }
+    return "Keep this assertion at a small trusted boundary, validate or normalize untrusted runtime data into Option, Result, a struct, or an enum before it reaches application code, and add positive and negative runtime-contract tests.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
@@ -572,7 +588,7 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
 
 fn weak_type_impact(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.kind == WeakTypeKind::UnsafeCoerce {
-    return "This explicit assertion bypasses static compatibility at the host boundary; an incompatible JavaScript value can enter typed code and fail only at runtime.";
+    return "This explicit assertion bypasses static compatibility, so an incompatible runtime value can enter typed code and fail only at runtime.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "The value stays dynamic at an explicit boundary; typed callers must validate or convert it before relying on methods or generic relations.";
@@ -733,12 +749,78 @@ fn code_declares_embedded_type_schema(code: &Cirru) -> bool {
   )
 }
 
+fn classify_unsafe_coerce_source(items: &[Cirru]) -> &'static str {
+  let Some(source) = items.get(1) else {
+    return "missing-value";
+  };
+  match source {
+    Cirru::Leaf(name) if name.starts_with("js/") => "raw-js-value",
+    Cirru::List(parts) => match parts.first() {
+      Some(Cirru::Leaf(head)) if head.starts_with("js/") => "raw-js-operation",
+      Some(Cirru::Leaf(head))
+        if matches!(head.as_ref(), "aget" | "js-get")
+          || head.starts_with(".-")
+          || head.starts_with(".!")
+          || head.starts_with(".?-")
+          || head.starts_with(".?!") =>
+      {
+        "host-member-operation"
+      }
+      _ => "expression",
+    },
+    Cirru::Leaf(_) => "value",
+  }
+}
+
+fn is_raw_adapter_namespace(ns: &str) -> bool {
+  ns == "js-ffi.raw" || ns.starts_with("js-ffi.raw.") || ns.contains(".js-ffi.raw.")
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct QuoteContext {
+  quoted_depth: usize,
+  quasiquoted_depth: usize,
+}
+
+impl QuoteContext {
+  fn is_quoted(self) -> bool {
+    self.quoted_depth > 0 || self.quasiquoted_depth > 0
+  }
+
+  fn for_child(self, head: Option<&str>, child_index: usize) -> Self {
+    if child_index == 0 {
+      return self;
+    }
+    match head {
+      Some("quote") => Self {
+        quoted_depth: self.quoted_depth + 1,
+        ..self
+      },
+      Some("quasiquote") => Self {
+        quasiquoted_depth: self.quasiquoted_depth + 1,
+        ..self
+      },
+      Some("~" | "~@") if self.quoted_depth == 0 => Self {
+        quasiquoted_depth: self.quasiquoted_depth.saturating_sub(1),
+        ..self
+      },
+      _ => self,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct WeakScanState {
+  nil_return_intent: Option<WeakTypeIntent>,
+  quote_context: QuoteContext,
+}
+
 fn scan_cirru_weak_types(
   node: &Cirru,
   root: &str,
   path: &mut Vec<usize>,
   parent: Option<&WeakCodeParent>,
-  nil_return_intent: Option<WeakTypeIntent>,
+  state: WeakScanState,
   selected: &BTreeSet<WeakTypeKind>,
   occurrences: &mut Vec<WeakTypeOccurrence>,
 ) {
@@ -772,7 +854,7 @@ fn scan_cirru_weak_types(
           weak_type_detail(WeakTypeKind::CodeNil, classify_code_nil(parent)),
           format_cirru_path(root, path),
         );
-        if let (Some(intent), Some(occurrence)) = (nil_return_intent, occurrences.last_mut()) {
+        if let (Some(intent), Some(occurrence)) = (state.nil_return_intent, occurrences.last_mut()) {
           occurrence.intent = intent;
         }
       }
@@ -799,7 +881,7 @@ fn scan_cirru_weak_types(
       if root == "code"
         && selected.contains(&WeakTypeKind::UnsafeCoerce)
         && matches!(head.as_deref(), Some("unsafe-coerce"))
-        && !matches!(parent.and_then(|it| it.head.as_deref()), Some("quote" | "quasiquote"))
+        && !state.quote_context.is_quoted()
       {
         let target = items
           .get(2)
@@ -810,6 +892,12 @@ fn scan_cirru_weak_types(
           intent: WeakTypeIntent::ExplicitUnsafe,
           detail: format!("unsafe-coerce:target={target}"),
           path: format_cirru_path(root, path),
+          unsafe_evidence: Some(UnsafeCoerceEvidence {
+            source_form: classify_unsafe_coerce_source(items),
+            target_schema: target,
+            js_ffi_feature: false,
+            raw_adapter_namespace: false,
+          }),
         });
       }
       for (idx, item) in items.iter().enumerate() {
@@ -820,14 +908,18 @@ fn scan_cirru_weak_types(
         };
         let child_return_position = child_is_return_position(
           root == "code" && path.len() == 1,
-          nil_return_intent.is_some(),
+          state.nil_return_intent.is_some(),
           head.as_deref(),
           idx,
           items.len(),
         );
-        let child_nil_intent =
-          nil_return_intent.filter(|intent| matches!(intent, WeakTypeIntent::DeclaredUnit) || child_return_position);
-        scan_cirru_weak_types(item, root, path, Some(&next_parent), child_nil_intent, selected, occurrences);
+        let child_state = WeakScanState {
+          nil_return_intent: state
+            .nil_return_intent
+            .filter(|intent| matches!(intent, WeakTypeIntent::DeclaredUnit) || child_return_position),
+          quote_context: state.quote_context.for_child(head.as_deref(), idx),
+        };
+        scan_cirru_weak_types(item, root, path, Some(&next_parent), child_state, selected, occurrences);
         path.pop();
       }
     }
@@ -872,7 +964,15 @@ pub fn analyze_weak_types_entry(
       && let Ok(schema_cirru) = snapshot::schema_edn_to_cirru(&entry.schema.to_type_edn())
     {
       let mut path = vec![];
-      scan_cirru_weak_types(&schema_cirru, "schema", &mut path, None, None, selected, &mut occurrences);
+      scan_cirru_weak_types(
+        &schema_cirru,
+        "schema",
+        &mut path,
+        None,
+        WeakScanState::default(),
+        selected,
+        &mut occurrences,
+      );
     }
   }
 
@@ -882,7 +982,10 @@ pub fn analyze_weak_types_entry(
     "code",
     &mut code_path,
     None,
-    Some(nil_return_intent(entry.schema.as_ref())),
+    WeakScanState {
+      nil_return_intent: Some(nil_return_intent(entry.schema.as_ref())),
+      quote_context: QuoteContext::default(),
+    },
     selected,
     &mut occurrences,
   );
@@ -898,6 +1001,12 @@ pub fn analyze_weak_types_entry(
       if matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::CodeDynamic) {
         occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
       }
+    }
+  }
+  for occurrence in &mut occurrences {
+    if let Some(evidence) = &mut occurrence.unsafe_evidence {
+      evidence.js_ffi_feature = has_js_ffi_feature;
+      evidence.raw_adapter_namespace = is_raw_adapter_namespace(ns);
     }
   }
 
@@ -1151,7 +1260,7 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
   if unsafe_coercions > 0 {
     let _ = writeln!(
       out,
-      "- agent-note: {unsafe_coercions} explicit unsafe coercion(s) cross a JS FFI boundary and need a documented runtime contract."
+      "- agent-note: {unsafe_coercions} explicit unsafe coercion(s) bypass static compatibility and need a documented runtime contract."
     );
     let _ = writeln!(
       out,
@@ -1249,6 +1358,13 @@ pub fn run_weak_types_report(options: &WeakTypesCommand, snapshot: &snapshot::Sn
         occurrence.path
       );
       let _ = writeln!(out, "    impact: {}", weak_type_impact(occurrence));
+      if let Some(evidence) = &occurrence.unsafe_evidence {
+        let _ = writeln!(
+          out,
+          "    evidence: source-form={} target={} js-ffi-feature={} raw-adapter-namespace={}",
+          evidence.source_form, evidence.target_schema, evidence.js_ffi_feature, evidence.raw_adapter_namespace
+        );
+      }
       let _ = writeln!(out, "    fix: {}", weak_type_suggestion(occurrence));
     }
     let _ = writeln!(out,);
@@ -2433,14 +2549,23 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
         "id": format!("{}/{}", row.ns, row.def),
         "namespace": row.ns,
         "name": row.def,
-        "occurrences": row.occurrences.iter().map(|occurrence| serde_json::json!({
-          "kind": occurrence.kind.as_str(),
-          "intent": occurrence.intent.as_str(),
-          "detail": occurrence.detail,
-          "path": occurrence.path,
-          "impact": weak_type_impact(occurrence),
-          "suggestion": weak_type_suggestion(occurrence),
-        })).collect::<Vec<_>>(),
+        "occurrences": row.occurrences.iter().map(|occurrence| {
+          let evidence = occurrence.unsafe_evidence.as_ref().map(|evidence| serde_json::json!({
+            "source_form": evidence.source_form,
+            "target_schema": evidence.target_schema,
+            "js_ffi_feature": evidence.js_ffi_feature,
+            "raw_adapter_namespace": evidence.raw_adapter_namespace,
+          }));
+          serde_json::json!({
+            "kind": occurrence.kind.as_str(),
+            "intent": occurrence.intent.as_str(),
+            "detail": occurrence.detail,
+            "path": occurrence.path,
+            "evidence": evidence,
+            "impact": weak_type_impact(occurrence),
+            "suggestion": weak_type_suggestion(occurrence),
+          })
+        }).collect::<Vec<_>>(),
       })
     })
     .collect::<Vec<_>>();
@@ -2505,12 +2630,12 @@ pub fn format_weak_types_json(options: &WeakTypesCommand, snapshot: &snapshot::S
       "code": "W_JS_FFI_UNCHECKED_COERCE",
       "phase": "analysis",
       "severity": "warning",
-      "message": format!("{unsafe_coercions} explicit unsafe coercion(s) bypass static compatibility at a JS FFI boundary."),
-      "suggestion": "Keep each assertion in a minimal adapter, validate or normalize host values before application code consumes them, and add positive and negative runtime-contract tests.",
+      "message": format!("{unsafe_coercions} explicit unsafe coercion(s) bypass static compatibility and need an audited runtime contract when they cross an untrusted boundary."),
+      "suggestion": "Keep each assertion at a minimal trusted boundary, validate or normalize untrusted runtime data before application code consumes it, and add positive and negative runtime-contract tests.",
     }));
   }
   let envelope = serde_json::json!({
-    "schema_version": 4,
+    "schema_version": 5,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {
@@ -2553,8 +2678,9 @@ mod tests {
   use std::sync::Arc;
 
   use calcit::calcit::{CalcitTypeAnnotation, clear_type_slots, push_type_slot_override};
+  use cirru_parser::Cirru;
 
-  use super::{WeakTypeIntent, WeakTypeKind, scan_schema_dynamic_annotation};
+  use super::{WeakTypeIntent, WeakTypeKind, classify_unsafe_coerce_source, is_raw_adapter_namespace, scan_schema_dynamic_annotation};
 
   fn scan(annotation: CalcitTypeAnnotation) -> Vec<super::WeakTypeOccurrence> {
     let mut occurrences = vec![];
@@ -2607,5 +2733,36 @@ mod tests {
     assert_eq!(occurrences[0].kind, WeakTypeKind::SchemaDynamic);
     assert_eq!(occurrences[0].intent, WeakTypeIntent::IntentionalTypeSlotDynamic);
     clear_type_slots();
+  }
+
+  #[test]
+  fn unsafe_coerce_source_forms_and_adapter_names_are_static_and_distinct() {
+    assert_eq!(
+      classify_unsafe_coerce_source(&[Cirru::leaf("unsafe-coerce"), Cirru::leaf("js/window"), Cirru::leaf("Number")]),
+      "raw-js-value"
+    );
+    assert_eq!(
+      classify_unsafe_coerce_source(&[
+        Cirru::leaf("unsafe-coerce"),
+        Cirru::List(vec![Cirru::leaf("js/fetch"), Cirru::leaf("url")]),
+        Cirru::leaf("Response"),
+      ]),
+      "raw-js-operation"
+    );
+    assert_eq!(
+      classify_unsafe_coerce_source(&[
+        Cirru::leaf("unsafe-coerce"),
+        Cirru::List(vec![Cirru::leaf("aget"), Cirru::leaf("host"), Cirru::leaf("key")]),
+        Cirru::leaf("String"),
+      ]),
+      "host-member-operation"
+    );
+    assert_eq!(
+      classify_unsafe_coerce_source(&[Cirru::leaf("unsafe-coerce"), Cirru::leaf("value"), Cirru::leaf("String")]),
+      "value"
+    );
+    assert!(is_raw_adapter_namespace("js-ffi.raw.node"));
+    assert!(is_raw_adapter_namespace("app.js-ffi.raw.browser"));
+    assert!(!is_raw_adapter_namespace("app.js-ffi.host.browser"));
   }
 }
