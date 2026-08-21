@@ -26,13 +26,13 @@ Git history.
 | 0.12.55 | Semantic snapshot entry descriptions and canonical symbol storage for entry functions. |
 | 0.12.56 | Routine version bump after snapshot/entry work. |
 | 0.12.57 | CLI mutation, atomic staging, test deduplication (PR #284) plus Windows staged-file synchronization fixes. |
+| 0.12.58 | Receiver-first method inference and nominal trait identity fixes. |
+| 0.12.59 | Top-level nominal value schema fix. |
 | 0.13.0 | Concentrated breaking-change baseline for the Option/Result/Unit/JsNullish public contracts. |
 | 0.13.1 | Fixed recursive expansion of self-referential nominal struct type annotations. |
 | 0.13.2 | Struct/enum data model cleanup (PR #301), direct required Struct field access, symbol-based nominal formatting. |
 | 0.13.3 | Struct/Enum terminology migration, deprecated API analysis, cross-backend canonical EDN formatting. |
 | 0.13.4 | Typed host FFI (external-object traits) merged and released. |
-| 0.12.58 | Receiver-first method inference and nominal trait identity fixes. |
-| 0.12.59 | Top-level nominal value schema fix. |
 | 0.13.5 | Typed `js-get` / `js-set` field access plus named-type preservation. |
 | 0.13.6 | Opt-in raw-JS-FFI warning and readable low-cost JS emission. |
 | 0.13.7 | Definition-attached core tests and safer, less noisy `cr` edits. |

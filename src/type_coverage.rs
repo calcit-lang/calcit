@@ -440,7 +440,9 @@ fn scan_schema_dynamic_annotation(
         let start = occurrences.len();
         scan_schema_dynamic_annotation(&resolved, path, detail, occurrences);
         for occurrence in &mut occurrences[start..] {
-          occurrence.intent = WeakTypeIntent::IntentionalTypeSlotDynamic;
+          if occurrence.intent == WeakTypeIntent::Unresolved && occurrence.kind != WeakTypeKind::UnresolvedTypeSlot {
+            occurrence.intent = WeakTypeIntent::IntentionalTypeSlotDynamic;
+          }
         }
       }
       None => push_weak_type_occurrence(
@@ -470,7 +472,9 @@ fn scan_schema_dynamic_annotation(
       scan_schema_dynamic_annotation(inner, &format!("{path}.item"), &nested_detail, occurrences);
       if matches!(annotation, CalcitTypeAnnotation::JsNullish(_)) {
         for occurrence in &mut occurrences[occurrence_start..] {
-          occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
+          if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
+            occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
+          }
         }
       }
     }
@@ -2463,4 +2467,66 @@ pub fn format_weak_types(options: &WeakTypesCommand, snapshot: &snapshot::Snapsh
   let mut out = String::new();
   run_weak_types_report(options, snapshot, &mut out)?;
   Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+  use std::sync::Arc;
+
+  use calcit::calcit::{CalcitTypeAnnotation, clear_type_slots, push_type_slot_override};
+
+  use super::{WeakTypeIntent, WeakTypeKind, scan_schema_dynamic_annotation};
+
+  fn scan(annotation: CalcitTypeAnnotation) -> Vec<super::WeakTypeOccurrence> {
+    let mut occurrences = vec![];
+    scan_schema_dynamic_annotation(&annotation, "schema", "root", &mut occurrences);
+    occurrences
+  }
+
+  #[test]
+  fn nested_unresolved_slots_keep_unresolved_intent() {
+    clear_type_slots();
+    push_type_slot_override(
+      Arc::from("outer"),
+      Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::TypeSlot(
+        Arc::from("inner"),
+      )))),
+    );
+
+    let occurrences = scan(CalcitTypeAnnotation::TypeSlot(Arc::from("outer")));
+
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].kind, WeakTypeKind::UnresolvedTypeSlot);
+    assert_eq!(occurrences[0].intent, WeakTypeIntent::Unresolved);
+    clear_type_slots();
+  }
+
+  #[test]
+  fn nested_js_nullish_dynamic_keeps_ffi_intent() {
+    clear_type_slots();
+    push_type_slot_override(
+      Arc::from("outer"),
+      Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::Dynamic))),
+    );
+
+    let occurrences = scan(CalcitTypeAnnotation::TypeSlot(Arc::from("outer")));
+
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].kind, WeakTypeKind::SchemaDynamic);
+    assert_eq!(occurrences[0].intent, WeakTypeIntent::IntentionalJsFfi);
+    clear_type_slots();
+  }
+
+  #[test]
+  fn resolved_dynamic_slots_receive_slot_intent() {
+    clear_type_slots();
+    push_type_slot_override(Arc::from("slot"), Arc::new(CalcitTypeAnnotation::Dynamic));
+
+    let occurrences = scan(CalcitTypeAnnotation::TypeSlot(Arc::from("slot")));
+
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].kind, WeakTypeKind::SchemaDynamic);
+    assert_eq!(occurrences[0].intent, WeakTypeIntent::IntentionalTypeSlotDynamic);
+    clear_type_slots();
+  }
 }
