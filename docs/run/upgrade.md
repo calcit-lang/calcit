@@ -171,7 +171,7 @@ caps --help
 再用新 `calcit` 判断结果；也不要只更新本机而让 CI 继续安装旧版。若团队通过其他受控方式分发二进制，
 使用该方式即可，但要记录实际版本，并确认 `caps --help` 已包含项目需要的新选项。
 
-> ⚠️ CI 中 `calcit`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。新 workflow 使用 `calcit-lang/setup-calcit@v2` 安装该版本，不要再在 workflow 重复传 `version`。Action 会临时提供 `cr -> calcit` 兼容链接，但新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
+> ⚠️ CI 中 `calcit`/`caps` 的项目版本来自 `deps.cirru` 的 `:calcit-version`。新 workflow 使用 `calcit-lang/setup-calcit@v1` 安装该版本，不要再在 workflow 重复传 `version`。Action 会对新 release 临时提供 `cr -> calcit` 兼容链接；对旧 release 则回退到 `cr` asset 并暴露 `calcit`。新命令统一写 `calcit`。已发布的 `calcit-lang/setup-cr` tag 继续支持旧项目；GitHub Actions 不会为 Action 仓库改名重定向，因此迁移必须显式替换 `uses:`。详见 [GitHub Actions](../installation/github-actions.md)。
 
 ### Step B：先对齐项目版本与 Node 工具链
 
@@ -584,7 +584,7 @@ WASM 仍只是仓库内部验证后端，不承诺 trait runtime table。能在�
     corepack prepare yarn@4.12.0 --activate
     yarn --version
 
-- uses: calcit-lang/setup-calcit@v2
+- uses: calcit-lang/setup-calcit@v1
 
 - name: Install deps
   run: caps --ci && yarn install --immutable

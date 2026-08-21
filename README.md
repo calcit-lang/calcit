@@ -46,8 +46,9 @@ When installing from source, install the same public tools:
 cargo install --path . --bin calcit --bin caps
 ```
 
-For new GitHub Actions workflows, use [setup-calcit@v2](https://github.com/calcit-lang/setup-calcit). It
-installs `calcit` and creates a lightweight `cr -> calcit` compatibility link for existing workflow commands.
+For new GitHub Actions workflows, use [setup-calcit@v1](https://github.com/calcit-lang/setup-calcit). It
+installs `calcit` and creates a lightweight `cr -> calcit` compatibility link for existing workflow commands;
+for pre-rename releases it falls back to `cr` and exposes the equivalent `calcit` command.
 Local installations ship only `calcit`; migrate local scripts directly instead of relying on a wrapper. Existing
 [setup-cr](https://github.com/calcit-lang/setup-cr) workflow tags remain supported.
 

@@ -60,7 +60,7 @@ workflow 中重复填写 `version`。
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: calcit-lang/setup-calcit@v2
+- uses: calcit-lang/setup-calcit@v1
 ```
 
 对应项目配置：
@@ -91,7 +91,7 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
 增加可选的 `deps-file` input，默认值为 `deps.cirru`。它只用于 monorepo 或非根目录项目：
 
 ```yaml
-- uses: calcit-lang/setup-calcit@v2
+- uses: calcit-lang/setup-calcit@v1
   with:
     deps-file: examples/browser/deps.cirru
 ```
@@ -181,8 +181,7 @@ Job Summary 只记录版本来源、工具、平台、缓存命中和自检结�
 4. 显式版本用法放入 advanced usage，并说明不应与 `deps.cirru` 冲突；
 5. 错误文案修正历史拼写 `calcit-verison`，并给出实际读取路径。
 
-Action 发布包含 `calcit` 主命令和 `cr` 工作流兼容链接的稳定接口后提供可移动 major tag `@v2`；安全要求更高的仓库仍可固定 commit
-SHA。现有 `@0.0.x` 标签在迁移期继续可用。
+Action 在 `@v1` 内保持兼容：优先下载 `calcit`，对旧 release 回退 `cr` 并暴露同名 `calcit` 命令；对新 release 则创建 `cr` 链接。安全要求更高的仓库仍可固定 commit SHA。
 
 ## 实施阶段
 
