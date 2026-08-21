@@ -48,6 +48,21 @@ impl QualityMetrics {
     ]
   }
 
+  fn value(&self, metric: &str) -> usize {
+    match metric {
+      "typeNone" => self.type_none,
+      "typeNotFull" => self.type_not_full,
+      "schemaDynamic" => self.schema_dynamic,
+      "codeDynamic" => self.code_dynamic,
+      "codeNil" => self.code_nil,
+      "unresolved" => self.unresolved,
+      "declaredOptional" => self.declared_optional,
+      "deprecatedCalls" => self.deprecated_calls,
+      "unsafeCoerce" => self.unsafe_coerce,
+      _ => unreachable!("unknown quality metric: {metric}"),
+    }
+  }
+
   fn add_assign(&mut self, other: &Self) {
     self.type_none += other.type_none;
     self.type_not_full += other.type_not_full;
@@ -220,15 +235,16 @@ fn compare_metrics(
   actual
     .values()
     .into_iter()
-    .zip(limit.values())
-    .filter(|((metric, _), _)| include_unsafe_coerce || *metric != "unsafeCoerce")
-    .filter(|((_, actual), (_, limit))| actual > limit)
-    .map(|((metric, actual), (_, limit))| QualityViolation {
-      definition: definition.map(str::to_owned),
-      metric: metric.to_owned(),
-      actual,
-      limit,
-      delta: actual - limit,
+    .filter(|(metric, _)| include_unsafe_coerce || *metric != "unsafeCoerce")
+    .filter_map(|(metric, actual)| {
+      let limit = limit.value(metric);
+      (actual > limit).then(|| QualityViolation {
+        definition: definition.map(str::to_owned),
+        metric: metric.to_owned(),
+        actual,
+        limit,
+        delta: actual - limit,
+      })
     })
     .collect()
 }
@@ -258,8 +274,7 @@ fn metric_deltas(actual: &QualityMetrics, limit: &QualityMetrics) -> BTreeMap<St
   actual
     .values()
     .into_iter()
-    .zip(limit.values())
-    .map(|((metric, actual), (_, limit))| (metric.to_owned(), actual as i64 - limit as i64))
+    .map(|(metric, actual)| (metric.to_owned(), actual as i64 - limit.value(metric) as i64))
     .collect()
 }
 
@@ -409,11 +424,7 @@ pub fn format_quality_report(outcome: &QualityOutcome) -> String {
   let _ = writeln!(out, "- metrics:");
   for (metric, actual) in outcome.metrics.values() {
     if let Some(limits) = &outcome.limits {
-      let limit = limits
-        .values()
-        .into_iter()
-        .find_map(|(name, value)| (name == metric).then_some(value))
-        .unwrap_or_default();
+      let limit = limits.value(metric);
       let delta = actual as i64 - limit as i64;
       let _ = writeln!(out, "  - {metric}: {actual} (limit {limit}, delta {delta:+})");
     } else {
