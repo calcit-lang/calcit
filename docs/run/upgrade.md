@@ -477,14 +477,14 @@ calcit calcit.cirru --entry test --warn-dyn-method --check-only
 
 1. 运行 `analyze quality --write-baseline <file>` 生成原生 baseline，人工审阅后与 Calcit 版本、Snapshot revision 一起记录；baseline 本身保存 scope、汇总指标和每个 definition 的预算；
 2. 先要求 `--check-only`、测试和行为构建全绿；
-3. CI 拒绝 unresolved dynamic、nil/Optional debt 或 deprecated call 数量上升；
+3. CI 拒绝 unresolved dynamic、nil/Optional debt、deprecated call 或 `unsafeCoerce` host-boundary 数量上升；旧 baseline 应审阅后重生成为 v2，才会开始约束最后一项；
 4. 按模块降低 baseline，降到 0 后改为零容忍；baseline 只能下降，不能无说明地更新；
 5. 对确实动态的 JS FFI 边界显式声明 `:features $ #{} :js-ffi`，不要用 ignore warning 伪造通过。
 
 baseline 不要只保存一个总数。类型覆盖至少比较 `levels.none` 和
 `levels.none + levels.partial`（未完全覆盖总数）：`none` 变成 `partial` 是进步，不应因为
 `partial` 单项上升而失败。弱类型则分别比较 `kinds.schema-dynamic` / `unresolved-type-slot` / `code-dynamic` / `code-nil`
-和 `intents.declared-optional`，再比较 `deprecated` 的 `summary.calls`。否则一种债务增加、另一种
+和 `intents.declared-optional`，再比较 `unsafe-coerce` 的 occurrence 数与 `deprecated` 的 `summary.calls`。否则一种债务增加、另一种
 减少时，相同的总数会掩盖回归。
 
 新项目直接执行零容忍门禁：
@@ -500,7 +500,7 @@ calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
 
-原生 baseline 记录 scope、汇总指标和每个 definition 的独立预算。新增 definition 默认预算为零；
+原生 v2 baseline 记录 scope、汇总指标和每个 definition 的独立预算，并将 `unsafeCoerce` 作为单独的 host-boundary 预算。新增 definition 默认预算为零；
 一个 definition 的改善不能掩盖另一个 definition 的回归。`--write-baseline` 会原子写入文件，
 但 baseline 仍需人工审阅并随仓库提交，每次提高都要在 PR 中解释。
 
@@ -520,7 +520,7 @@ calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
 
 这个旧版扁平 shape 仍可直接传给 `analyze quality --baseline`，便于已有项目删除 Node 检查脚本后
-无缝迁移；重新执行 `--write-baseline` 会生成更严格的按 definition 格式。如果迁移把 `none` 改善为
+无缝迁移，并继续执行原本八项指标；重新执行 `--write-baseline` 会生成 v2 的按 definition 格式并开始约束 `unsafeCoerce`。如果迁移把 `none` 改善为
 `partial`，`typeNone` 会下降且 `typeNotFull` 不变；改善为 `full` 时二者都会下降。确有类型债务在
 不同分类间迁移时，应在 PR 中解释并显式更新 baseline，而不是让一个总数相互抵消。baseline 归零后
 保留 `analyze quality`，以阻止后续重新引入。

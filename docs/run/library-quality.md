@@ -104,7 +104,7 @@ calcit calcit.cirru analyze quality --write-baseline config/calcit-quality.json
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.json
 ```
 
-baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
+新生成的 v2 baseline 按 definition 保存独立预算，某处清债不能抵消另一处新增债务；其中 `unsafeCoerce` 是独立的 host-boundary 预算。旧 v1/扁平 baseline 仍可读取并维持原有八项检查，审阅后重新生成才会启用这一项。后续只应降低 baseline；不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。需要机器报告时追加 `--format json`，stdout 仍是单个 JSON envelope。
 
 将 baseline 保持在 Git 中，但默认折叠其生成 JSON diff。在项目根目录的 `.gitattributes` 添加：
 
@@ -192,7 +192,7 @@ calcit calcit.cirru docs check-md README.md --failures-only
 calcit calcit.cirru --entry test
 ```
 
-在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。发布门禁统一执行 `analyze quality`：新类库要求零容忍，存量类库传入已审阅的 `--baseline`；该命令的非零退出码就是回归信号，`--format json` 只用于机器读取和保留定位证据。
+在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。发布门禁统一执行 `analyze quality`：新类库要求零容忍，存量类库传入已审阅的 `--baseline`；该命令的非零退出码就是回归信号，`--format json` 只用于机器读取和保留定位证据。`unsafeCoerce` 的通过只表示边界数未超预算，不表示 runtime contract 已执行。
 
 ## 8. 发布前记录
 
