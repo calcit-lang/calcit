@@ -42,10 +42,11 @@ Then install it after checkout. Do not repeat the Calcit version in the workflow
 - uses: calcit-lang/setup-cr@0.0.9
 ```
 
-`setup-cr` reads `deps.cirru` when no explicit version input is supplied. Use an explicit version only
-for a task that intentionally has no project `deps.cirru`; do not provide two version sources for a
-regular project. The Action release controls installer behavior, while `:calcit-version` controls which
-`cr` and `caps` release the project uses.
+`setup-cr` reads the selected `deps.cirru` when no explicit version input is supplied. A missing selected
+file is treated as a task without a project declaration, so it requires an explicit version; a file with
+no `:calcit-version` behaves the same way. Malformed or duplicate declarations fail rather than falling
+back to `version`. Do not provide two version sources for a regular project. The Action release controls
+installer behavior, while `:calcit-version` controls which `cr` and `caps` release the project uses.
 
 Then to load packages defined in `deps.cirru` with `caps`:
 

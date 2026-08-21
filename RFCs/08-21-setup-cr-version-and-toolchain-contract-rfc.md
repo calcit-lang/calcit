@@ -72,7 +72,7 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
 ### 确定的解析规则
 
 1. 默认读取仓库根目录的 `deps.cirru`；
-2. 缺少该文件、或文件中没有 `:calcit-version` 时，才允许使用显式 `version`；
+2. 所选 `deps-file` 缺失、或文件中没有 `:calcit-version` 时，才允许使用显式 `version`；
 3. 出现多个声明或任一声明不是合法 SemVer 时，以 `E_SETUP_VERSION_INVALID` 失败，绝不回退
    到 `version` input；
 4. 找到且只找到一个合法 `:calcit-version` 时，以它为项目版本；
@@ -93,8 +93,10 @@ README、Calcit 安装文档、模块模板和 workflow 模板都应优先展示
     deps-file: examples/browser/deps.cirru
 ```
 
-路径必须位于 checkout workspace 内，缺失或包含多个版本声明时明确失败。Action 不递归搜索
-“最像项目”的文件，避免在 monorepo 中安装偶然找到的版本。
+路径必须位于 checkout workspace 内。缺失的所选文件等同于没有项目声明：只能使用显式
+`version`，没有该 input 时以 `E_SETUP_VERSION_MISSING` 失败；多个或畸形版本声明均以
+`E_SETUP_VERSION_INVALID` 失败且不能回退。Action 不递归搜索“最像项目”的文件，避免在
+monorepo 中安装偶然找到的版本。
 
 ## 决策二：扩充基础能力，但不接管项目 CI
 
@@ -181,8 +183,9 @@ SHA。现有 `@0.0.x` 标签在迁移期继续可用。
 - README 默认示例改为从 `deps.cirru` 读取；
 - 明确解析规则；
 - 两个版本不一致时失败；
-- 加入版本解析、缺失、无声明、重复、畸形 SemVer、冲突的单元测试；重复和畸形声明均断言
-  `E_SETUP_VERSION_INVALID`，即使 workflow 同时给出 `version` input 也不能回退。
+- 加入版本解析、默认或显式 `deps-file` 缺失、无声明、重复、畸形 SemVer、冲突的单元测试；
+  缺失文件只在给出 input 时回退，重复和畸形声明均断言 `E_SETUP_VERSION_INVALID`，即使
+  workflow 同时给出 `version` input 也不能回退。
 
 ### Phase 1：可靠安装
 
@@ -210,7 +213,8 @@ SHA。现有 `@0.0.x` 标签在迁移期继续可用。
 2. `deps.cirru` 与 input 冲突时，Action 在下载前失败并展示两个来源。
 3. 安装日志能证明最终版本、来源、工具、平台和缓存状态。
 4. 任一工具下载或自检失败时 Action 必须失败，不能留下部分成功状态。
-5. setup-cr 自身测试覆盖无 deps、合法 deps、畸形 deps、重复声明、冲突和 artifact 缺失。
+5. setup-cr 自身测试覆盖默认或显式缺失 deps、合法 deps、畸形 deps、重复声明、冲突和
+   artifact 缺失。
 6. Action 不隐式运行 `caps`、formatter、类型门禁或业务测试。
 7. 支持的平台都不依赖硬编码 `/home/runner` 路径。
 
